@@ -83,7 +83,27 @@ const CustomerForm = (function() {
     };
 
     /**
-     * Render Machine & Contract section for a branch
+     * Category mapping for contracts (rental types)
+     * TODO: Verify these codes with Mike's legacy system
+     */
+    const categoryMap = {
+        0: { code: 'N/A', name: 'Not Set' },
+        1: { code: 'RTP', name: 'Rental To Purchase' },
+        2: { code: 'RTF', name: 'Rental (Full)' },
+        3: { code: 'RTC', name: 'Rental (Consumable)' },
+        4: { code: 'SVC', name: 'Service Only' },
+        5: { code: 'PUR', name: 'Purchase' },
+        6: { code: 'FMS', name: 'Fleet Management' },
+        8: { code: 'CPC', name: 'Cost Per Copy' },
+        9: { code: 'MPS', name: 'Managed Print Service' },
+        12: { code: 'RTL', name: 'Rental (Lease)' },
+        13: { code: 'CON', name: 'Consignment' },
+        14: { code: 'OTH', name: 'Other' },
+        15: { code: 'TRL', name: 'Trial' }
+    };
+
+    /**
+     * Render Machine & Contract section for a branch (EDITABLE)
      */
     function renderMachineContractSection(branch) {
         // If no branch ID, it's a new branch - no contracts yet
@@ -140,22 +160,31 @@ const CustomerForm = (function() {
             `;
         }
 
-        // Render each contract with machine details
-        const contractsHTML = branchContracts.map(contract => {
+        // Generate status options
+        const statusOptions = Object.entries(statusMap).map(([id, info]) => 
+            `<option value="${id}">${info.text}</option>`
+        ).join('');
+
+        // Generate category options
+        const categoryOptions = Object.entries(categoryMap).map(([id, info]) => 
+            `<option value="${id}">${info.code} - ${info.name}</option>`
+        ).join('');
+
+        // Render each contract with machine details (EDITABLE)
+        const contractsHTML = branchContracts.map((contract, index) => {
             const machine = refData.machines.find(m => m.id == contract.mach_id) || {};
             const model = refData.models.find(m => m.id == machine.model_id) || {};
             const brand = refData.brands.find(b => b.id == machine.brand_id) || {};
             const statusInfo = statusMap[contract.status] || { text: 'Unknown', class: 'pending', color: '#6b7280' };
+            const categoryInfo = categoryMap[contract.category_id] || { code: 'N/A', name: 'Unknown' };
             
-            const modelName = model.modelname || 'Unknown Model';
+            const modelName = model.modelname || machine.description || 'Unknown Model';
             const brandName = brand.brandname || brand.brand_name || '';
             const serial = machine.serial || contract.xserial || 'N/A';
-            
-            // Format currency
-            const formatCurrency = (val) => '₱' + (parseFloat(val) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const contractIdx = `contract_${contract.id}`;
             
             return `
-                <div class="machine-contract-card">
+                <div class="machine-contract-card" data-contract-id="${contract.id}">
                     <div class="machine-contract-header">
                         <div class="machine-info">
                             <div class="machine-icon">
@@ -167,54 +196,90 @@ const CustomerForm = (function() {
                             </div>
                             <div>
                                 <div class="machine-model">${MargaUtils.escapeHtml(brandName ? brandName + ' ' + modelName : modelName)}</div>
-                                <div class="machine-serial">Serial: ${MargaUtils.escapeHtml(serial)}</div>
+                                <div class="machine-serial">Serial: <strong>${MargaUtils.escapeHtml(serial)}</strong></div>
                             </div>
                         </div>
-                        <span class="contract-status-badge" style="background: ${statusInfo.color}20; color: ${statusInfo.color}; border: 1px solid ${statusInfo.color}40;">
-                            ${statusInfo.text}
-                        </span>
+                        <div class="contract-badges">
+                            <span class="category-badge">${categoryInfo.code}</span>
+                            <span class="contract-status-badge" style="background: ${statusInfo.color}20; color: ${statusInfo.color}; border: 1px solid ${statusInfo.color}40;">
+                                ${statusInfo.text}
+                            </span>
+                        </div>
                     </div>
-                    <div class="contract-rates">
-                        <div class="rate-group">
-                            <div class="rate-title">B&W Rates</div>
-                            <div class="rate-items">
-                                <div class="rate-item">
-                                    <span class="rate-label">Page Rate</span>
-                                    <span class="rate-value">${formatCurrency(contract.page_rate)}</span>
+                    
+                    <!-- Editable Contract Details -->
+                    <div class="contract-edit-section">
+                        <div class="contract-edit-row">
+                            <div class="edit-field">
+                                <label>Status</label>
+                                <select class="field-select contract-field" id="${contractIdx}_status" data-field="status">
+                                    ${statusOptions.replace(`value="${contract.status}"`, `value="${contract.status}" selected`)}
+                                </select>
+                            </div>
+                            <div class="edit-field">
+                                <label>Category</label>
+                                <select class="field-select contract-field" id="${contractIdx}_category" data-field="category_id">
+                                    ${categoryOptions.replace(`value="${contract.category_id}"`, `value="${contract.category_id}" selected`)}
+                                </select>
+                            </div>
+                            <div class="edit-field">
+                                <label>VAT</label>
+                                <select class="field-select contract-field" id="${contractIdx}_vat" data-field="withvat">
+                                    <option value="1" ${contract.withvat == 1 ? 'selected' : ''}>VAT Inclusive</option>
+                                    <option value="0" ${contract.withvat != 1 ? 'selected' : ''}>VAT Exclusive</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="rates-edit-grid">
+                            <div class="rates-column">
+                                <div class="rates-title">B&W Rates</div>
+                                <div class="edit-field">
+                                    <label>Page Rate (₱)</label>
+                                    <input type="number" step="0.01" class="field-input contract-field" 
+                                        id="${contractIdx}_page_rate" data-field="page_rate"
+                                        value="${contract.page_rate || 0}">
                                 </div>
-                                <div class="rate-item">
-                                    <span class="rate-label">Monthly Quota</span>
-                                    <span class="rate-value">${contract.monthly_quota || 0} pages</span>
+                                <div class="edit-field">
+                                    <label>Monthly Quota</label>
+                                    <input type="number" class="field-input contract-field" 
+                                        id="${contractIdx}_quota" data-field="monthly_quota"
+                                        value="${contract.monthly_quota || 0}">
                                 </div>
-                                <div class="rate-item">
-                                    <span class="rate-label">Monthly Rate</span>
-                                    <span class="rate-value">${formatCurrency(contract.monthly_rate)}</span>
+                                <div class="edit-field">
+                                    <label>Monthly Rate (₱)</label>
+                                    <input type="number" step="0.01" class="field-input contract-field" 
+                                        id="${contractIdx}_monthly_rate" data-field="monthly_rate"
+                                        value="${contract.monthly_rate || 0}">
+                                </div>
+                            </div>
+                            <div class="rates-column color-column">
+                                <div class="rates-title">Color Rates</div>
+                                <div class="edit-field">
+                                    <label>Page Rate (₱)</label>
+                                    <input type="number" step="0.01" class="field-input contract-field" 
+                                        id="${contractIdx}_page_rate2" data-field="page_rate2"
+                                        value="${contract.page_rate2 || 0}">
+                                </div>
+                                <div class="edit-field">
+                                    <label>Monthly Quota</label>
+                                    <input type="number" class="field-input contract-field" 
+                                        id="${contractIdx}_quota2" data-field="monthly_quota2"
+                                        value="${contract.monthly_quota2 || 0}">
+                                </div>
+                                <div class="edit-field">
+                                    <label>Monthly Rate (₱)</label>
+                                    <input type="number" step="0.01" class="field-input contract-field" 
+                                        id="${contractIdx}_monthly_rate2" data-field="monthly_rate2"
+                                        value="${contract.monthly_rate2 || 0}">
                                 </div>
                             </div>
                         </div>
-                        ${(contract.page_rate2 > 0 || contract.monthly_quota2 > 0 || contract.monthly_rate2 > 0) ? `
-                        <div class="rate-group color-rates">
-                            <div class="rate-title">Color Rates</div>
-                            <div class="rate-items">
-                                <div class="rate-item">
-                                    <span class="rate-label">Page Rate</span>
-                                    <span class="rate-value">${formatCurrency(contract.page_rate2)}</span>
-                                </div>
-                                <div class="rate-item">
-                                    <span class="rate-label">Monthly Quota</span>
-                                    <span class="rate-value">${contract.monthly_quota2 || 0} pages</span>
-                                </div>
-                                <div class="rate-item">
-                                    <span class="rate-label">Monthly Rate</span>
-                                    <span class="rate-value">${formatCurrency(contract.monthly_rate2)}</span>
-                                </div>
-                            </div>
-                        </div>
-                        ` : ''}
                     </div>
+                    
                     <div class="contract-meta">
                         <span>Contract #${contract.id}</span>
-                        ${contract.withvat ? '<span class="vat-badge">VAT Inclusive</span>' : ''}
+                        <span>Machine ID: ${contract.mach_id}</span>
                     </div>
                 </div>
             `;
@@ -237,6 +302,7 @@ const CustomerForm = (function() {
             </div>
         `;
     }
+
 
     /**
      * Create the modal HTML structure
@@ -1088,6 +1154,48 @@ const CustomerForm = (function() {
     }
 
     /**
+     * Collect contract data from form fields
+     * @returns {Array} Array of contract updates
+     */
+    function collectContractData() {
+        const contractUpdates = [];
+        const contractCards = document.querySelectorAll('.machine-contract-card[data-contract-id]');
+        
+        contractCards.forEach(card => {
+            const contractId = card.dataset.contractId;
+            const prefix = `contract_${contractId}`;
+            
+            // Get all contract fields
+            const statusEl = document.getElementById(`${prefix}_status`);
+            const categoryEl = document.getElementById(`${prefix}_category`);
+            const vatEl = document.getElementById(`${prefix}_vat`);
+            const pageRateEl = document.getElementById(`${prefix}_page_rate`);
+            const quotaEl = document.getElementById(`${prefix}_quota`);
+            const monthlyRateEl = document.getElementById(`${prefix}_monthly_rate`);
+            const pageRate2El = document.getElementById(`${prefix}_page_rate2`);
+            const quota2El = document.getElementById(`${prefix}_quota2`);
+            const monthlyRate2El = document.getElementById(`${prefix}_monthly_rate2`);
+            
+            if (statusEl) {
+                contractUpdates.push({
+                    id: contractId,
+                    status: parseInt(statusEl.value) || 0,
+                    category_id: parseInt(categoryEl?.value) || 0,
+                    withvat: parseInt(vatEl?.value) || 0,
+                    page_rate: parseFloat(pageRateEl?.value) || 0,
+                    monthly_quota: parseInt(quotaEl?.value) || 0,
+                    monthly_rate: parseFloat(monthlyRateEl?.value) || 0,
+                    page_rate2: parseFloat(pageRate2El?.value) || 0,
+                    monthly_quota2: parseInt(quota2El?.value) || 0,
+                    monthly_rate2: parseFloat(monthlyRate2El?.value) || 0
+                });
+            }
+        });
+        
+        return contractUpdates;
+    }
+
+    /**
      * Save customer data to Firebase
      */
     async function save() {
@@ -1244,6 +1352,24 @@ const CustomerForm = (function() {
                     const billRef = db.collection('tbl_billinfo').doc(String(billId));
                     batch.set(billRef, billInfoData);
                 }
+            }
+            
+            // Save contract updates (if any)
+            const contractUpdates = collectContractData();
+            for (const contractData of contractUpdates) {
+                const contractRef = db.collection('tbl_contractmain').doc(String(contractData.id));
+                batch.update(contractRef, {
+                    status: contractData.status,
+                    category_id: contractData.category_id,
+                    withvat: contractData.withvat,
+                    page_rate: contractData.page_rate,
+                    monthly_quota: contractData.monthly_quota,
+                    monthly_rate: contractData.monthly_rate,
+                    page_rate2: contractData.page_rate2,
+                    monthly_quota2: contractData.monthly_quota2,
+                    monthly_rate2: contractData.monthly_rate2,
+                    updated_at: firebase.firestore.FieldValue.serverTimestamp()
+                });
             }
             
             // Commit batch
