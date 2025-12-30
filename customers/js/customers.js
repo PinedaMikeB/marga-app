@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load data
     await loadAllData();
+    
+    // Initialize customer form module
+    CustomerForm.init(customers.areas, customers.cities);
 });
 
 /**
@@ -510,22 +513,36 @@ function exportCustomers() {
 }
 
 /**
- * Edit customer (placeholder)
+ * Edit customer - opens the form with current data
  */
 function editCustomer() {
-    MargaUtils.showToast('Edit feature coming soon', 'info');
+    if (!selectedCompanyId) {
+        MargaUtils.showToast('No customer selected', 'error');
+        return;
+    }
+    
+    const company = customers.companies.find(c => c.id == selectedCompanyId);
+    const companyBranches = customers.branches.filter(b => b.company_id == selectedCompanyId);
+    const branchIds = companyBranches.map(b => b.id);
+    const branchBillInfo = customers.billInfo.filter(bi => branchIds.includes(bi.branch_id));
+    
+    // Close the detail panel
+    closePanel();
+    
+    // Open edit form
+    CustomerForm.openEdit(company, companyBranches, branchBillInfo);
 }
 
 /**
- * Print customer details (placeholder)
+ * Print customer details
  */
 function printCustomer() {
     window.print();
 }
 
 /**
- * Show new customer modal (placeholder)
+ * Show new customer modal
  */
 function showNewCustomerModal() {
-    MargaUtils.showToast('Add customer feature coming soon', 'info');
+    CustomerForm.openNew();
 }

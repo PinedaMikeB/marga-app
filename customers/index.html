@@ -1,10 +1,215 @@
-1</span>-<span id="showingEnd">0</span> of <span id="totalRecords">0</span>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Customers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/customers.css">
+    <link rel="stylesheet" href="css/customer-form.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                
+                <a href="../dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+
+                <a href="../customers/" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    </svg>
+                    <span>Customers</span>
+                </a>
+
+                <a href="../billing/" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+
+                <a href="../collections/" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="main-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <h1>Customers</h1>
+                <p>Manage companies, branches, and billing information</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="showNewCustomerModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Add Customer
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon blue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 21h18M3 7v1a3 3 0 006 0V7m0 1a3 3 0 006 0V7m0 1a3 3 0 006 0V7H3l2-4h14l2 4M6 21V10m12 11V10"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value" id="totalCompanies">0</div>
+                    <div class="stat-label">Companies</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value" id="totalBranches">0</div>
+                    <div class="stat-label">Branches</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon purple">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="6" width="20" height="12" rx="2"/>
+                        <path d="M12 12h.01"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value" id="activeMachines">0</div>
+                    <div class="stat-label">Active Machines</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon orange">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6"/>
+                    </svg>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value" id="totalContracts">0</div>
+                    <div class="stat-label">Contracts</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer List -->
+        <div class="content-card">
+            <div class="card-header">
+                <h3>Customer Directory</h3>
+                <div class="card-actions">
+                    <div class="search-input-wrapper">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <input type="text" class="search-input" id="searchInput" placeholder="Search companies...">
                     </div>
-                    <div class="pagination">
-                        <button class="btn btn-secondary btn-sm" id="prevBtn" disabled onclick="prevPage()">Previous</button>
-                        <span class="page-info">Page <span id="currentPage">1</span></span>
-                        <button class="btn btn-secondary btn-sm" id="nextBtn" disabled onclick="nextPage()">Next</button>
-                    </div>
+                    <button class="btn btn-secondary" onclick="exportCustomers()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                        </svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Company / Branch</th>
+                            <th>Location</th>
+                            <th>Contact</th>
+                            <th>Machines</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customerTableBody">
+                        <tr>
+                            <td colspan="6" class="loading-cell">
+                                <div class="spinner"></div>
+                                <span>Loading customers...</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer">
+                <div class="showing-info">
+                    Showing <span id="showingStart">1</span>-<span id="showingEnd">0</span> of <span id="totalRecords">0</span>
+                </div>
+                <div class="pagination">
+                    <button class="btn btn-secondary btn-sm" id="prevBtn" disabled onclick="prevPage()">Previous</button>
+                    <span class="page-info">Page <span id="currentPage">1</span></span>
+                    <button class="btn btn-secondary btn-sm" id="nextBtn" disabled onclick="nextPage()">Next</button>
                 </div>
             </div>
         </div>
@@ -55,6 +260,7 @@
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>
     <script src="../shared/js/utils.js"></script>
+    <script src="js/customer-form.js"></script>
     <script src="js/customers.js"></script>
     <script>
         // Check auth
