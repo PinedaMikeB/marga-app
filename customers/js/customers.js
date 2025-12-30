@@ -36,8 +36,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load data
     await loadAllData();
     
-    // Initialize customer form module
-    CustomerForm.init(customers.areas, customers.cities);
+    // Initialize customer form module with all reference data
+    CustomerForm.init(
+        customers.areas, 
+        customers.cities, 
+        customers.contracts, 
+        customers.machines, 
+        customers.models, 
+        customers.brands
+    );
 });
 
 /**

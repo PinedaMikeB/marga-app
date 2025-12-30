@@ -9,6 +9,7 @@ const CustomerForm = (function() {
     let currentCompany = null;
     let currentBranches = [];
     let currentBillInfo = [];
+    let currentContracts = [];  // Add contracts data
     let activeBranchIndex = 0;
     let isEditMode = false;
     let isDirty = false;
@@ -17,6 +18,10 @@ const CustomerForm = (function() {
     let refData = {
         areas: [],
         cities: [],
+        contracts: [],  // All contracts
+        machines: [],   // All machines
+        models: [],     // All models
+        brands: [],     // All brands
         natureOfBusiness: [
             'Service Business',
             'Merchandising Business',
@@ -50,11 +55,187 @@ const CustomerForm = (function() {
     /**
      * Initialize the form module
      */
-    async function init(areas, cities) {
+    async function init(areas, cities, contracts, machines, models, brands) {
         refData.areas = areas || [];
         refData.cities = cities || [];
+        refData.contracts = contracts || [];
+        refData.machines = machines || [];
+        refData.models = models || [];
+        refData.brands = brands || [];
         createModalHTML();
         bindEvents();
+    }
+
+    /**
+     * Status mapping for contracts
+     */
+    const statusMap = {
+        0: { text: 'Pending', class: 'pending', color: '#f59e0b' },
+        1: { text: 'Active', class: 'active', color: '#10b981' },
+        2: { text: 'Terminated', class: 'terminated', color: '#ef4444' },
+        3: { text: 'On Hold', class: 'pending', color: '#f59e0b' },
+        4: { text: 'Pulled Out', class: 'terminated', color: '#ef4444' },
+        7: { text: 'Ended', class: 'terminated', color: '#6b7280' },
+        8: { text: 'Replaced', class: 'pending', color: '#8b5cf6' },
+        9: { text: 'Transferred', class: 'pending', color: '#3b82f6' },
+        10: { text: 'For Pullout', class: 'pending', color: '#f59e0b' },
+        13: { text: 'Cancelled', class: 'terminated', color: '#ef4444' }
+    };
+
+    /**
+     * Render Machine & Contract section for a branch
+     */
+    function renderMachineContractSection(branch) {
+        // If no branch ID, it's a new branch - no contracts yet
+        if (!branch.id) {
+            return `
+                <div class="form-section">
+                    <div class="section-header cyan">
+                        <div class="section-icon cyan">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                <path d="M12 12h.01"/>
+                            </svg>
+                        </div>
+                        <span class="section-title">Machine & Contract</span>
+                    </div>
+                    <div class="section-body">
+                        <div class="no-machine-info">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.4;">
+                                <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                <path d="M12 12h.01"/>
+                            </svg>
+                            <p>No machine assigned yet. Save this branch first to add machines.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Find contracts for this branch
+        const branchContracts = refData.contracts.filter(c => c.contract_id == branch.id);
+        
+        if (branchContracts.length === 0) {
+            return `
+                <div class="form-section">
+                    <div class="section-header cyan">
+                        <div class="section-icon cyan">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                <path d="M12 12h.01"/>
+                            </svg>
+                        </div>
+                        <span class="section-title">Machine & Contract</span>
+                    </div>
+                    <div class="section-body">
+                        <div class="no-machine-info">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.4;">
+                                <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                <path d="M12 12h.01"/>
+                            </svg>
+                            <p>No machine/contract linked to this branch.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Render each contract with machine details
+        const contractsHTML = branchContracts.map(contract => {
+            const machine = refData.machines.find(m => m.id == contract.mach_id) || {};
+            const model = refData.models.find(m => m.id == machine.model_id) || {};
+            const brand = refData.brands.find(b => b.id == machine.brand_id) || {};
+            const statusInfo = statusMap[contract.status] || { text: 'Unknown', class: 'pending', color: '#6b7280' };
+            
+            const modelName = model.modelname || 'Unknown Model';
+            const brandName = brand.brandname || brand.brand_name || '';
+            const serial = machine.serial || contract.xserial || 'N/A';
+            
+            // Format currency
+            const formatCurrency = (val) => '₱' + (parseFloat(val) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            
+            return `
+                <div class="machine-contract-card">
+                    <div class="machine-contract-header">
+                        <div class="machine-info">
+                            <div class="machine-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                    <path d="M6 10h.01M6 14h.01"/>
+                                    <rect x="10" y="9" width="8" height="6" rx="1"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="machine-model">${MargaUtils.escapeHtml(brandName ? brandName + ' ' + modelName : modelName)}</div>
+                                <div class="machine-serial">Serial: ${MargaUtils.escapeHtml(serial)}</div>
+                            </div>
+                        </div>
+                        <span class="contract-status-badge" style="background: ${statusInfo.color}20; color: ${statusInfo.color}; border: 1px solid ${statusInfo.color}40;">
+                            ${statusInfo.text}
+                        </span>
+                    </div>
+                    <div class="contract-rates">
+                        <div class="rate-group">
+                            <div class="rate-title">B&W Rates</div>
+                            <div class="rate-items">
+                                <div class="rate-item">
+                                    <span class="rate-label">Page Rate</span>
+                                    <span class="rate-value">${formatCurrency(contract.page_rate)}</span>
+                                </div>
+                                <div class="rate-item">
+                                    <span class="rate-label">Monthly Quota</span>
+                                    <span class="rate-value">${contract.monthly_quota || 0} pages</span>
+                                </div>
+                                <div class="rate-item">
+                                    <span class="rate-label">Monthly Rate</span>
+                                    <span class="rate-value">${formatCurrency(contract.monthly_rate)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        ${(contract.page_rate2 > 0 || contract.monthly_quota2 > 0 || contract.monthly_rate2 > 0) ? `
+                        <div class="rate-group color-rates">
+                            <div class="rate-title">Color Rates</div>
+                            <div class="rate-items">
+                                <div class="rate-item">
+                                    <span class="rate-label">Page Rate</span>
+                                    <span class="rate-value">${formatCurrency(contract.page_rate2)}</span>
+                                </div>
+                                <div class="rate-item">
+                                    <span class="rate-label">Monthly Quota</span>
+                                    <span class="rate-value">${contract.monthly_quota2 || 0} pages</span>
+                                </div>
+                                <div class="rate-item">
+                                    <span class="rate-label">Monthly Rate</span>
+                                    <span class="rate-value">${formatCurrency(contract.monthly_rate2)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="contract-meta">
+                        <span>Contract #${contract.id}</span>
+                        ${contract.withvat ? '<span class="vat-badge">VAT Inclusive</span>' : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="form-section">
+                <div class="section-header cyan">
+                    <div class="section-icon cyan">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="6" width="20" height="12" rx="2"/>
+                            <path d="M12 12h.01"/>
+                        </svg>
+                    </div>
+                    <span class="section-title">Machine & Contract (${branchContracts.length})</span>
+                </div>
+                <div class="section-body machine-contract-list">
+                    ${contractsHTML}
+                </div>
+            </div>
+        `;
     }
 
     /**
@@ -457,6 +638,9 @@ const CustomerForm = (function() {
                             </div>
                         </div>
                     </div>
+
+                    <!-- Machine & Contract Information (Read-Only Display) -->
+                    ${renderMachineContractSection(branch)}
 
                     <!-- Delivery Information -->
                     <div class="form-section">
