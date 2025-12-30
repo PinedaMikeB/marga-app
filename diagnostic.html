@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Data Diagnostic Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: #f1f5f9;
+            padding: 2rem;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: #1e3a5f; margin-bottom: 0.5rem; }
+        .subtitle { color: #64748b; margin-bottom: 2rem; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            font-size: 1rem;
+            color: #334155;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat {
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value { font-size: 2rem; font-weight: 700; color: #2563eb; }
+        .stat-label { font-size: 0.8rem; color: #64748b; }
+        .stat.warning .stat-value { color: #f59e0b; }
+        .stat.danger .stat-value { color: #ef4444; }
+        .stat.success .stat-value { color: #10b981; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #64748b;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+        tr:hover { background: #f1f5f9; }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-success { background: #d1fae5; color: #166534; }
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .loading { text-align: center; padding: 3rem; color: #64748b; }
+        .problem-row { background: #fef3c7 !important; }
+        .actions { display: flex; gap: 0.5rem; }
+        #log {
+            background: #1e293b;
+            color: #94a3b8;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        #log .success { color: #4ade80; }
+        #log .error { color: #f87171; }
+        #log .info { color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 MARGA Data Diagnostic Tool</h1>
+        <p class="subtitle">Identify and fix company-branch linking issues from VB.NET migration</p>
+
+        <div class="stats" id="statsContainer">
+            <div class="stat">
+                <div class="stat-value" id="totalCompanies">-</div>
+                <div class="stat-label">Total Companies</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="totalBranches">-</div>
+                <div class="stat-label">Total Branches</div>
+            </div>
+            <div class="stat warning">
+                <div class="stat-value" id="suspiciousBranches">-</div>
+                <div class="stat-label">Suspicious Branches</div>
+            </div>
+            <div class="stat danger">
+                <div class="stat-value" id="orphanBranches">-</div>
+                <div class="stat-label">Orphan Branches</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 Suspicious Branches (Branch name looks like a Company name)</h2>
+            <p style="color: #64748b; font-size: 0.85rem; margin-bottom: 1rem;">
+                These branches have names that might actually be company names. Review and fix if needed.
+            </p>
+            <div id="suspiciousTable">
+                <div class="loading">Loading data...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Action Log</h2>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script src="shared/js/utils.js"></script>
+    <script>
+        let companies = [];
+        let branches = [];
+        let suspiciousList = [];
+
+        // Company name indicators
+        const companyIndicators = [
+            'inc', 'inc.', 'corp', 'corp.', 'corporation', 'company', 'co.', 
+            'llc', 'ltd', 'ltd.', 'limited', 'enterprises', 'enterprise',
+            'services', 'solutions', 'group', 'holdings', 'international',
+            'philippines', 'phils', 'phils.', 'phil', 'phil.',
+            'trading', 'industries', 'industrial', 'manufacturing',
+            'development', 'construction', 'builders', 'realty'
+        ];
+
+        async function init() {
+            log('Starting data analysis...', 'info');
+            
+            try {
+                // Load data
+                [companies, branches] = await Promise.all([
+                    MargaUtils.fetchCollection('tbl_companylist'),
+                    MargaUtils.fetchCollection('tbl_branchinfo')
+                ]);
+
+                log(`Loaded ${companies.length} companies and ${branches.length} branches`, 'success');
+
+                // Update stats
+                document.getElementById('totalCompanies').textContent = companies.length;
+                document.getElementById('totalBranches').textContent = branches.length;
+
+                // Find suspicious branches
+                analyzeBranches();
+
+            } catch (error) {
+                log('Error loading data: ' + error.message, 'error');
+            }
+        }
+
+        function analyzeBranches() {
+            log('Analyzing branch names...', 'info');
+            
+            // Create company lookup
+            const companyMap = {};
+            companies.forEach(c => companyMap[c.id] = c);
+
+            // Find orphan branches (no matching company)
+            const orphans = branches.filter(b => !companyMap[b.company_id]);
+            document.getElementById('orphanBranches').textContent = orphans.length;
+            
+            if (orphans.length > 0) {
+                log(`Found ${orphans.length} orphan branches with no matching company!`, 'error');
+            }
+
+            // Find suspicious branches (name looks like company name)
+            suspiciousList = branches.filter(branch => {
+                const name = (branch.branchname || '').toLowerCase();
+                return companyIndicators.some(indicator => name.includes(indicator));
+            });
+
+            document.getElementById('suspiciousBranches').textContent = suspiciousList.length;
+            log(`Found ${suspiciousList.length} branches with company-like names`, 'info');
+
+            // Render table
+            renderSuspiciousTable(companyMap);
+        }
+
+        function renderSuspiciousTable(companyMap) {
+            const container = document.getElementById('suspiciousTable');
+            
+            if (suspiciousList.length === 0) {
+                container.innerHTML = '<p style="color: #10b981; padding: 1rem;">✅ No suspicious branches found!</p>';
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Branch ID</th>
+                            <th>Branch Name (Suspicious)</th>
+                            <th>Linked Company</th>
+                            <th>Company ID</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            suspiciousList.slice(0, 100).forEach(branch => {
+                const company = companyMap[branch.company_id];
+                const companyName = company?.companyname || 'NOT FOUND';
+                const isMismatch = company && 
+                    !branch.branchname?.toLowerCase().includes(companyName.toLowerCase().split(' ')[0]) &&
+                    !companyName.toLowerCase().includes(branch.branchname?.toLowerCase().split(' ')[0] || '');
+
+                html += `
+                    <tr class="${isMismatch ? 'problem-row' : ''}">
+                        <td>${branch.id}</td>
+                        <td><strong>${escapeHtml(branch.branchname || 'N/A')}</strong></td>
+                        <td>${escapeHtml(companyName)}</td>
+                        <td>${branch.company_id || 'NULL'}</td>
+                        <td>
+                            ${isMismatch ? 
+                                '<span class="badge badge-danger">Likely Mismatch</span>' : 
+                                '<span class="badge badge-warning">Review</span>'}
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            
+            if (suspiciousList.length > 100) {
+                html += `<p style="color: #64748b; padding: 1rem; text-align: center;">Showing first 100 of ${suspiciousList.length} suspicious branches</p>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function log(message, type = '') {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `<div class="${type}">[${time}] ${message}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>
