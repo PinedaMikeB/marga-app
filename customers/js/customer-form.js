@@ -83,23 +83,29 @@ const CustomerForm = (function() {
     };
 
     /**
-     * Category mapping for contracts (rental types)
-     * TODO: Verify these codes with Mike's legacy system
+     * Category mapping for contracts (from tbl_particulars)
+     * with_reading: 1 = requires meter reading (RTP, MAP, STP)
+     * with_reading: 0 = fixed rate, no reading needed (RTF, etc.)
      */
     const categoryMap = {
-        0: { code: 'N/A', name: 'Not Set' },
-        1: { code: 'RTP', name: 'Rental To Purchase' },
-        2: { code: 'RTF', name: 'Rental (Full)' },
-        3: { code: 'RTC', name: 'Rental (Consumable)' },
-        4: { code: 'SVC', name: 'Service Only' },
-        5: { code: 'PUR', name: 'Purchase' },
-        6: { code: 'FMS', name: 'Fleet Management' },
-        8: { code: 'CPC', name: 'Cost Per Copy' },
-        9: { code: 'MPS', name: 'Managed Print Service' },
-        12: { code: 'RTL', name: 'Rental (Lease)' },
-        13: { code: 'CON', name: 'Consignment' },
-        14: { code: 'OTH', name: 'Other' },
-        15: { code: 'TRL', name: 'Trial' }
+        0: { code: 'N/A', name: 'Not Set', with_reading: 0 },
+        1: { code: 'RTP', name: 'Rental (Per Page)', with_reading: 1 },
+        2: { code: 'RTF', name: 'Fixed Rate', with_reading: 0 },
+        3: { code: 'STP', name: 'Short Term', with_reading: 1 },
+        4: { code: 'MAT', name: 'Material Purchase', with_reading: 0 },
+        5: { code: 'RTC', name: 'Cartridge', with_reading: 0 },
+        6: { code: 'STC', name: 'Short Term Cartridge', with_reading: 0 },
+        7: { code: 'MAC', name: 'Maintenance Cartridge', with_reading: 0 },
+        8: { code: 'MAP', name: 'Maintenance Per Page', with_reading: 1 },
+        9: { code: 'REF', name: 'Refill Cartridge', with_reading: 0 },
+        10: { code: 'RD', name: 'Refundable Deposit', with_reading: 0 },
+        11: { code: 'PI', name: 'Production Installation', with_reading: 0 },
+        12: { code: 'OTH', name: 'Others', with_reading: 0 },
+        13: { code: 'INK REF', name: 'Ink Refill', with_reading: 0 },
+        14: { code: 'SVU', name: 'Service Unit', with_reading: 0 },
+        15: { code: 'PUR', name: 'Purchase Machine', with_reading: 0 },
+        16: { code: 'AP', name: 'Advance Payment', with_reading: 0 },
+        17: { code: 'PTF', name: 'Pre-Termination Fee', with_reading: 0 }
     };
 
     /**
@@ -165,11 +171,6 @@ const CustomerForm = (function() {
             `<option value="${id}">${info.text}</option>`
         ).join('');
 
-        // Generate category options
-        const categoryOptions = Object.entries(categoryMap).map(([id, info]) => 
-            `<option value="${id}">${info.code} - ${info.name}</option>`
-        ).join('');
-
         // Render each contract with machine details (EDITABLE)
         const contractsHTML = branchContracts.map((contract, index) => {
             const machine = refData.machines.find(m => m.id == contract.mach_id) || {};
@@ -218,9 +219,11 @@ const CustomerForm = (function() {
                             </div>
                             <div class="edit-field">
                                 <label>Category</label>
-                                <select class="field-select contract-field" id="${contractIdx}_category" data-field="category_id">
-                                    ${categoryOptions.replace(`value="${contract.category_id}"`, `value="${contract.category_id}" selected`)}
-                                </select>
+                                <div class="category-display">
+                                    <span class="category-code">${categoryInfo.code}</span>
+                                    <span class="category-name">${categoryInfo.name}</span>
+                                    ${categoryInfo.with_reading ? '<span class="reading-badge">Needs Reading</span>' : ''}
+                                </div>
                             </div>
                             <div class="edit-field">
                                 <label>VAT</label>
