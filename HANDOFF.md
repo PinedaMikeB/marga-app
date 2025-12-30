@@ -1,6 +1,6 @@
 # MARGA App Development Handoff
 
-## 📅 Date: December 30, 2025
+## 📅 Last Updated: December 31, 2025, 12:30 AM
 
 ## 🎯 Project Overview
 Building a modern web-based enterprise management system for **Marga Enterprises** to replace the legacy VB.NET desktop application. The app manages customers, billing, collections, service, and machine contracts for a printer rental business.
@@ -21,188 +21,225 @@ Building a modern web-based enterprise management system for **Marga Enterprises
 
 ## ✅ What's Been Completed
 
-### 1. Firebase Migration
-- **Source:** MySQL dump from VB.NET app (`Dump20251229 (2).sql`)
-- **Destination:** Firebase Firestore (`sah-spiritual-journal` project)
-- **Migration Script:** `/Users/mike/Downloads/marga_migrate_FIXED.py`
+### Session: December 30-31, 2025
 
-### Migrated Collections:
-| Collection | Records |
-|------------|---------|
-| tbl_companylist | 1,143 |
-| tbl_branchinfo | 3,336 |
-| tbl_billinfo | 3,555 |
-| tbl_contractmain | 4,600 |
-| tbl_machine | 3,602 |
-| tbl_model | 126 |
-| tbl_brand | 153 |
-| tbl_area | 28 |
-| tbl_city | 173 |
-| **TOTAL** | **16,716** |
+#### 1. Fixed Customer/Contract Statistics
+- **Issue:** Dashboard showed 4,594 active machines instead of actual 1,602
+- **Cause:** Code was counting `status != 2` as active instead of `status == 1`
+- **Fix:** Updated `getMachineCount()` and `updateStats()` in customers.js
+- **Result:** Accurate counts now displayed
 
-### 2. App Structure Built
-```
-/Marga-App/
-├── index.html              ← Login page (entry point)
-├── dashboard.html          ← Main dashboard with sidebar navigation
-├── README.md               ← Project documentation
-├── HANDOFF.md              ← This file
-│
-├── shared/                 ← Shared resources across all modules
-│   ├── css/
-│   │   ├── styles.css      ← Global styles (CSS variables, buttons, forms)
-│   │   └── dashboard.css   ← Dashboard & sidebar layout
-│   └── js/
-│       ├── firebase-config.js  ← Firebase connection (sah-spiritual-journal)
-│       ├── auth.js             ← Authentication & role-based access control
-│       └── utils.js            ← Utility functions (formatCurrency, fetchCollection, etc.)
-│
-├── customers/              ← ✅ COMPLETE - Customer Management Module
-│   ├── index.html          ← Customer listing page
-│   ├── css/customers.css   ← Module-specific styles
-│   └── js/customers.js     ← Customer logic (search, pagination, detail panel)
-│
-├── billing/                ← 🔲 PLACEHOLDER - Ready for development
-│   └── js/
-│
-├── collections/            ← 🔲 PLACEHOLDER - Ready for development  
-│   └── js/
-│
-└── assets/                 ← For images, icons (currently empty)
-```
+#### 2. Machine & Contract Section (Edit Customer Form)
+- Added expandable Machine & Contract section to branch tabs
+- Shows all contracts linked to each branch
+- Displays:
+  - Machine ID, Brand, Model, Serial Number
+  - Contract Category Badge (RTP, RTF, MAP, etc.)
+  - Contract Status Badge (Active, Ended, Terminated, etc.)
+  - VAT indicator
 
-### 3. Features Implemented
-- ✅ Modern login page with authentication
-- ✅ Role-based access control (Admin, Billing, Collection, Service, Viewer)
-- ✅ Dashboard with sidebar navigation
-- ✅ Customer module with:
-  - Company listing with pagination (25 per page)
-  - Search functionality (with Active/Inactive filter)
-  - Slide-in detail panel with 3 tabs:
-    - Information (company details, branches)
-    - Billing (payee info, end user)
-    - Machines (contracts, rates, quotas)
-  - Export to CSV
-  - Edit Customer form with:
-    - Multi-branch tabs (add/remove branches)
-    - Company Information section
-    - Branch / Department section
-    - **Machine & Contract section** (shows linked machines, serial numbers, contract rates)
-    - Delivery Information section
-    - Service Information section
-    - Billing Information section
-    - Collection Information section
+#### 3. Editable Contract Rates
+- Status dropdown (Active, Ended, Terminated, etc.)
+- VAT dropdown (Inclusive/Exclusive)
+- B&W Rates: Page Rate, Monthly Quota, Monthly Rate
+- Color Rates: Page Rate, Monthly Quota, Monthly Rate
+- All saved to `tbl_contractmain` on Save
+
+#### 4. Contract Category Codes (tbl_particulars)
+- Migrated category table to Firebase
+- Categories determine billing method:
+  - **RTP** = Rental Per Page (needs meter reading)
+  - **RTF** = Fixed Rate (no reading needed)
+  - **MAP** = Maintenance Per Page (needs reading)
+- Category displayed as read-only (cannot be changed to protect billing logic)
+
+#### 5. Editable Machine Details ⚠️ TEMPORARY
+- Brand, Model, Serial Number now editable
+- Yellow highlighted fields indicate editable machine data
+- **Purpose:** Allow technicians to correct serial numbers
+- **⚠️ DATA INTEGRITY RISKS - SEE BELOW**
 
 ---
 
-## 🔐 Login Credentials
-| Username | Password | Notes |
-|----------|----------|-------|
-| admin | marga2025 | Default admin - CHANGE IN PRODUCTION |
+## ⚠️ CRITICAL: Machine Data Integrity Risks
 
-User accounts can be added to Firebase collection `marga_users` with fields:
-- username, password, name, role, email, active
+### Current Implementation (TEMPORARY)
+The machine fields (Brand, Model, Serial) are currently **directly editable** which poses risks:
+
+### Risk 1: Overwriting History
+```
+OLD: Serial = ABC123 → Changed to → NEW: Serial = XYZ789
+```
+- The old serial "ABC123" is **permanently overwritten**
+- No audit trail of what the serial was before
+- Billing history still references this machine ID but serial changed
+
+### Risk 2: Duplicate Serial Numbers
+- User could enter a serial that already exists for another machine
+- No validation currently prevents duplicate serials
+- Could cause confusion: "Which machine with serial XYZ is deployed where?"
+
+### Risk 3: Orphan References
+- If machine serial is changed, old invoices/readings still reference the machine
+- Reports may show mismatched data
+
+### Recommended Fixes (TODO)
+1. **Add Serial Validation:**
+   ```javascript
+   // Before saving, check if serial already exists
+   const existing = await db.collection('tbl_machine')
+       .where('serial', '==', newSerial)
+       .where('id', '!=', currentMachineId)
+       .get();
+   if (!existing.empty) {
+       alert('This serial already exists!');
+       return;
+   }
+   ```
+
+2. **Add Audit Log:**
+   ```javascript
+   // Log changes to a history collection
+   db.collection('tbl_machine_history').add({
+       machine_id: machineId,
+       changed_by: currentUser,
+       changed_at: timestamp,
+       old_values: { serial: 'ABC123', brand: 'Brother' },
+       new_values: { serial: 'XYZ789', brand: 'Brother' }
+   });
+   ```
+
+3. **Lock After Deployment (Future):**
+   - Once machine is deployed, serial should be read-only
+   - Only admin can unlock for editing
+   - Require reason for change
 
 ---
 
-## 🔥 Firebase Configuration
-**Project:** sah-spiritual-journal (Mike's old project with Firestore enabled)
+## 🔄 Data Flow & Relationships
 
-```javascript
-// In shared/js/firebase-config.js
-const FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M',
-    projectId: 'sah-spiritual-journal',
-    baseUrl: 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents'
-};
+### Customer → Contract → Machine Flow
+```
+┌─────────────────┐
+│ tbl_companylist │  (Company: "ABC Corp")
+│     id = 100    │
+└────────┬────────┘
+         │ company_id
+         ▼
+┌─────────────────┐
+│ tbl_branchinfo  │  (Branch: "Main Office")
+│     id = 200    │
+│  company_id=100 │
+└────────┬────────┘
+         │ branch_id (stored as contract_id in contract)
+         ▼
+┌─────────────────┐
+│tbl_contractmain │  (Contract: rates, status)
+│     id = 300    │
+│ contract_id=200 │ ← This is the BRANCH id
+│   mach_id=400   │
+│ category_id=1   │ ← RTP (Rental Per Page)
+│    status=1     │ ← Active
+│  page_rate=0.5  │
+└────────┬────────┘
+         │ mach_id
+         ▼
+┌─────────────────┐
+│  tbl_machine    │  (Machine: serial, model)
+│     id = 400    │
+│  model_id=10    │
+│  brand_id=5     │
+│  serial=XYZ123  │
+│  status_id=3    │ ← Deployed (in warehouse status)
+└─────────────────┘
 ```
 
-**Security Rules (currently open for development):**
+### Billing Workflow (RTP - Rental Per Page)
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
+1. Get all contracts where category_id = 1 (RTP) AND status = 1 (Active)
+2. For each contract:
+   - Get previous meter reading
+   - Enter present meter reading
+   - Calculate: consumption = present - previous
+   - If consumption < monthly_quota:
+       amount = monthly_quota × page_rate
+   - Else:
+       amount = consumption × page_rate
+   - Add VAT if withvat = 1
+3. Generate invoice
 ```
-⚠️ **TODO:** Tighten security rules before production!
+
+### Billing Workflow (RTF - Fixed Rate)
+```
+1. Get all contracts where category_id = 2 (RTF) AND status = 1 (Active)
+2. For each contract:
+   - amount = monthly_rate (no reading needed)
+   - Add VAT if withvat = 1
+3. Generate invoice
+```
 
 ---
 
-## 🚧 Pending Tasks
+## 📊 Database Collections & Key Fields
 
-### Immediate (Next Session)
-1. **Deploy to Hostinger**
-   - Push code to GitHub
-   - Connect GitHub to Hostinger OR upload via File Manager
-   - Hostinger subdomain `app.marga.biz` is created but needs files
-   - Note: May need to find/create public_html folder or point domain to repo
+### tbl_companylist (1,143 records)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| companyname | string | Company name |
+| company_tin | string | Tax ID |
+| business_style | string | Business style |
 
-2. **Test the app**
-   - Login functionality
-   - Customer module data loading
-   - Navigation between pages
+### tbl_branchinfo (3,336 records)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| company_id | int | FK to companylist |
+| branchname | string | Branch name |
+| city | int | FK to tbl_city |
+| area_id | int | FK to tbl_area |
 
-### Module Development (Priority Order)
-1. **Billing Module** - Invoice generation, billing schedules
-2. **Collections Module** - Payment tracking, messenger assignments
-3. Service Module
-4. Reports Module
-5. User Management (admin panel)
+### tbl_contractmain (4,600 records)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| contract_id | int | FK to branchinfo (branch_id) |
+| mach_id | int | FK to machine |
+| category_id | int | FK to tbl_particulars |
+| status | int | Contract status (1=Active) |
+| page_rate | float | B&W rate per page |
+| monthly_quota | int | Minimum pages |
+| monthly_rate | float | Fixed monthly fee |
+| page_rate2 | float | Color rate per page |
+| monthly_quota2 | int | Color minimum |
+| monthly_rate2 | float | Color monthly fee |
+| withvat | int | 1=VAT inclusive |
 
-### Enhancements
-- [ ] Add/Edit customer functionality
-- [ ] Print customer details
-- [ ] Advanced search filters
-- [ ] Real-time data sync
-- [ ] Mobile responsiveness testing
+### tbl_machine (3,602 records)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| model_id | int | FK to tbl_model |
+| brand_id | int | FK to tbl_brand |
+| serial | string | Serial number |
+| description | string | Model name (fallback) |
+| status_id | int | Warehouse status |
 
----
-
-## 🎨 Design System
-
-### Colors (Blue Theme)
-```css
---primary-900: #0c1929;
---primary-500: #2563eb;
---primary-100: #dbeafe;
---accent: #00d4ff;
---success: #10b981;
---warning: #f59e0b;
---danger: #ef4444;
-```
-
-### Fonts
-- **Headings:** Space Grotesk
-- **Body:** Plus Jakarta Sans
-
----
-
-## 📊 Database Schema Reference
-
-### Key Tables & Relationships
-```
-tbl_companylist (Companies)
-    └── tbl_branchinfo (Branches) via company_id
-        ├── tbl_billinfo (Billing) via branch_id
-        └── tbl_contractmain (Contracts) via contract_id
-            └── tbl_machine (Machines) via mach_id
-                └── tbl_model (Models) via model_id
-                    └── tbl_brand (Brands) via brand_id
-```
-
-### Important Fields
-
-**tbl_companylist:** id, companyname, company_tin, business_style
-
-**tbl_branchinfo:** id, company_id, branchname, street, bldg, brgy, city, area_id, signatory, designation, email
-
-**tbl_contractmain:** id, contract_id (branch), mach_id, status, page_rate, monthly_quota, monthly_rate, page_rate2, monthly_quota2, monthly_rate2, contract_duration, terms, withvat
-
-**tbl_machine:** id, model_id, serial, brand_id, status_id
+### tbl_particulars (17 records) - Contract Categories
+| ID | Code | Name | with_reading |
+|----|------|------|--------------|
+| 1 | **RTP** | Rental (Per Page) | 1 |
+| 2 | **RTF** | Fixed Rate | 0 |
+| 3 | STP | Short Term | 1 |
+| 4 | MAT | Material Purchase | 0 |
+| 5 | RTC | Cartridge | 0 |
+| 6 | STC | Short Term Cartridge | 0 |
+| 7 | MAC | Maintenance Cartridge | 0 |
+| 8 | **MAP** | Maintenance Per Page | 1 |
+| 9 | REF | Refill Cartridge | 0 |
+| 10 | RD | Refundable Deposit | 0 |
+| 11 | PI | Production Installation | 0 |
+| 12 | OTH | Others | 0 |
 
 ### Contract Status Codes
 | Status | Meaning | Count |
@@ -218,65 +255,120 @@ tbl_companylist (Companies)
 | 10 | For Pullout | 39 |
 | 13 | Cancelled | 4 |
 
-**Note:** Only `status = 1` (Active) counts as "Active Machines" in the dashboard.
+### Machine Status (status_id) - TO BE VERIFIED
+| Status | Count | Likely Meaning |
+|--------|-------|----------------|
+| 0 | 269 | Not Set |
+| 2 | 381 | In Warehouse? |
+| 3 | 1,730 | Deployed? |
+| 7 | 348 | Pulled Out? |
+| 18 | 90 | ? |
 
-### Contract Category Codes (tbl_particulars)
-| ID | Code | Name | Needs Reading |
-|----|------|------|---------------|
-| 1 | **RTP** | Rental (Per Page) | ✓ Yes |
-| 2 | **RTF** | Fixed Rate | No |
-| 3 | STP | Short Term | ✓ Yes |
-| 4 | MAT | Material Purchase | No |
-| 5 | RTC | Cartridge | No |
-| 6 | STC | Short Term Cartridge | No |
-| 7 | MAC | Maintenance Cartridge | No |
-| 8 | **MAP** | Maintenance Per Page | ✓ Yes |
-| 9 | REF | Refill Cartridge | No |
-| 10 | RD | Refundable Deposit | No |
-| 11 | PI | Production Installation | No |
-| 12 | OTH | Others | No |
-
-**Billing Logic:**
-- **RTP/MAP/STP (with_reading=1):** Bill by meter reading (present - previous) × page_rate
-- **RTF (with_reading=0):** Fixed monthly rate, no reading needed
+**⚠️ TODO:** Verify machine status meanings with Mike
 
 ---
 
-## 💡 Tips for Next Session
+## 🔥 Firebase Configuration
+**Project:** sah-spiritual-journal
 
-1. **Context Limit:** Work on ONE module at a time to avoid hitting limits
-2. **File Reading:** Start by reading the relevant files before making changes
-3. **Testing:** Test locally by opening index.html in browser before deploying
-4. **Hostinger:** The subdomain might point to main domain's public_html - may need to create subfolder or use .htaccess
+```javascript
+const FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M',
+    projectId: 'sah-spiritual-journal',
+    baseUrl: 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents'
+};
+```
+
+---
+
+## 🔐 Login Credentials
+| Username | Password | Role |
+|----------|----------|------|
+| admin | marga2025 | Admin |
+
+---
+
+## 🚧 Pending Tasks
+
+### Immediate Priority
+1. **Machine Serial Validation** - Prevent duplicates
+2. **Machine Edit Audit Log** - Track changes
+3. **Verify Machine Status IDs** - Get meaning from legacy system
+
+### Module Development (Priority Order)
+1. **Billing Module** - Invoice generation, meter readings
+2. **Collections Module** - Payment tracking
+3. **Machine Inventory Module** - Warehouse tracking
+4. Service Module
+5. Reports Module
+
+### Data Integrity Enhancements
+- [ ] Serial number uniqueness validation
+- [ ] Machine edit history/audit log
+- [ ] Lock machine fields after deployment
+- [ ] Admin override for locked fields
 
 ---
 
 ## 📞 Quick Commands
 
+### Start Fresh Session
+```
+Read the HANDOFF.md file at /Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md
+```
+
 ### Push to GitHub
 ```bash
 cd "/Volumes/Wotg Drive Mike/GitHub/Marga-App"
 git add .
-git commit -m "Initial commit - Customer module complete"
+git commit -m "Your commit message"
 git push origin main
 ```
 
-### Test Firebase Connection
+### Test Firebase
 ```javascript
-// In browser console
 fetch('https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents/tbl_companylist?pageSize=1&key=AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M')
 .then(r => r.json()).then(console.log)
 ```
 
 ---
 
-## 📎 Related Files Outside Project
-
-- **SQL Dump:** `/Users/mike/Downloads/Dump20251229 (2).sql`
-- **Migration Script:** `/Users/mike/Downloads/marga_migrate_FIXED.py`
-- **Migration Summary:** `/Users/mike/Downloads/migration_summary.json`
+## 📁 Project Structure
+```
+/Marga-App/
+├── index.html              ← Login page
+├── dashboard.html          ← Main dashboard
+├── customers.html          ← Customer listing
+├── HANDOFF.md              ← This file
+│
+├── shared/
+│   ├── css/styles.css      ← Global styles
+│   ├── css/dashboard.css   ← Layout styles
+│   └── js/
+│       ├── firebase-config.js
+│       ├── auth.js
+│       └── utils.js
+│
+├── customers/
+│   ├── css/
+│   │   ├── customers.css
+│   │   └── customer-form.css
+│   └── js/
+│       ├── customers.js      ← List, search, pagination
+│       └── customer-form.js  ← Edit form, machine/contract editing
+│
+├── billing/                ← 🔲 TODO
+├── collections/            ← 🔲 TODO
+└── assets/
+```
 
 ---
 
-**Last Updated:** December 30, 2025, 1:10 AM
+## 📎 Related Files Outside Project
+- **SQL Dump:** `/Users/mike/Downloads/Dump20251229 (2).sql`
+- **Migration Script:** `/Users/mike/Downloads/marga_migrate_FIXED.py`
+
+---
+
+**Last Updated:** December 31, 2025, 12:30 AM
 **Author:** Claude (AI Assistant)
