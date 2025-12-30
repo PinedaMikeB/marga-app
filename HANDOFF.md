@@ -220,6 +220,26 @@ tbl_companylist (Companies)
 
 **Note:** Only `status = 1` (Active) counts as "Active Machines" in the dashboard.
 
+### Contract Category Codes (tbl_particulars)
+| ID | Code | Name | Needs Reading |
+|----|------|------|---------------|
+| 1 | **RTP** | Rental (Per Page) | ✓ Yes |
+| 2 | **RTF** | Fixed Rate | No |
+| 3 | STP | Short Term | ✓ Yes |
+| 4 | MAT | Material Purchase | No |
+| 5 | RTC | Cartridge | No |
+| 6 | STC | Short Term Cartridge | No |
+| 7 | MAC | Maintenance Cartridge | No |
+| 8 | **MAP** | Maintenance Per Page | ✓ Yes |
+| 9 | REF | Refill Cartridge | No |
+| 10 | RD | Refundable Deposit | No |
+| 11 | PI | Production Installation | No |
+| 12 | OTH | Others | No |
+
+**Billing Logic:**
+- **RTP/MAP/STP (with_reading=1):** Bill by meter reading (present - previous) × page_rate
+- **RTF (with_reading=0):** Fixed monthly rate, no reading needed
+
 ---
 
 ## 💡 Tips for Next Session
