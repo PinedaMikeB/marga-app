@@ -179,15 +179,16 @@ const CustomerForm = (function() {
             const statusInfo = statusMap[contract.status] || { text: 'Unknown', class: 'pending', color: '#6b7280' };
             const categoryInfo = categoryMap[contract.category_id] || { code: 'N/A', name: 'Unknown' };
             
-            const modelName = model.modelname || machine.description || 'Unknown Model';
+            const modelName = model.modelname || machine.description || '';
             const brandName = brand.brandname || brand.brand_name || '';
-            const serial = machine.serial || contract.xserial || 'N/A';
+            const serial = machine.serial || contract.xserial || '';
             const contractIdx = `contract_${contract.id}`;
+            const machineIdx = `machine_${contract.mach_id}`;
             
             return `
-                <div class="machine-contract-card" data-contract-id="${contract.id}">
+                <div class="machine-contract-card" data-contract-id="${contract.id}" data-machine-id="${contract.mach_id}">
                     <div class="machine-contract-header">
-                        <div class="machine-info">
+                        <div class="machine-info-header">
                             <div class="machine-icon">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="2" y="6" width="20" height="12" rx="2"/>
@@ -195,16 +196,40 @@ const CustomerForm = (function() {
                                     <rect x="10" y="9" width="8" height="6" rx="1"/>
                                 </svg>
                             </div>
-                            <div>
-                                <div class="machine-model">${MargaUtils.escapeHtml(brandName ? brandName + ' ' + modelName : modelName)}</div>
-                                <div class="machine-serial">Serial: <strong>${MargaUtils.escapeHtml(serial)}</strong></div>
-                            </div>
+                            <span class="machine-id-label">Machine #${contract.mach_id}</span>
                         </div>
                         <div class="contract-badges">
                             <span class="category-badge">${categoryInfo.code}</span>
                             <span class="contract-status-badge" style="background: ${statusInfo.color}20; color: ${statusInfo.color}; border: 1px solid ${statusInfo.color}40;">
                                 ${statusInfo.text}
                             </span>
+                        </div>
+                    </div>
+                    
+                    <!-- Editable Machine Details -->
+                    <div class="machine-edit-section">
+                        <div class="machine-edit-row">
+                            <div class="edit-field">
+                                <label>Brand</label>
+                                <input type="text" class="field-input machine-field" 
+                                    id="${machineIdx}_brand" data-field="brand_name"
+                                    value="${MargaUtils.escapeHtml(brandName)}"
+                                    placeholder="Enter brand">
+                            </div>
+                            <div class="edit-field">
+                                <label>Model</label>
+                                <input type="text" class="field-input machine-field" 
+                                    id="${machineIdx}_model" data-field="description"
+                                    value="${MargaUtils.escapeHtml(modelName)}"
+                                    placeholder="Enter model">
+                            </div>
+                            <div class="edit-field span-full">
+                                <label>Serial Number</label>
+                                <input type="text" class="field-input machine-field serial-input" 
+                                    id="${machineIdx}_serial" data-field="serial"
+                                    value="${MargaUtils.escapeHtml(serial)}"
+                                    placeholder="Enter serial number">
+                            </div>
                         </div>
                     </div>
                     
@@ -1199,6 +1224,37 @@ const CustomerForm = (function() {
     }
 
     /**
+     * Collect machine data from form fields
+     * @returns {Array} Array of machine updates
+     */
+    function collectMachineData() {
+        const machineUpdates = [];
+        const machineCards = document.querySelectorAll('.machine-contract-card[data-machine-id]');
+        
+        machineCards.forEach(card => {
+            const machineId = card.dataset.machineId;
+            if (!machineId || machineId === 'undefined') return;
+            
+            const prefix = `machine_${machineId}`;
+            
+            const brandEl = document.getElementById(`${prefix}_brand`);
+            const modelEl = document.getElementById(`${prefix}_model`);
+            const serialEl = document.getElementById(`${prefix}_serial`);
+            
+            if (brandEl || modelEl || serialEl) {
+                machineUpdates.push({
+                    id: machineId,
+                    brand_name: brandEl?.value?.trim() || '',
+                    description: modelEl?.value?.trim() || '',
+                    serial: serialEl?.value?.trim() || ''
+                });
+            }
+        });
+        
+        return machineUpdates;
+    }
+
+    /**
      * Save customer data to Firebase
      */
     async function save() {
@@ -1371,6 +1427,17 @@ const CustomerForm = (function() {
                     page_rate2: contractData.page_rate2,
                     monthly_quota2: contractData.monthly_quota2,
                     monthly_rate2: contractData.monthly_rate2,
+                    updated_at: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            
+            // Save machine updates (if any)
+            const machineUpdates = collectMachineData();
+            for (const machineData of machineUpdates) {
+                const machineRef = db.collection('tbl_machine').doc(String(machineData.id));
+                batch.update(machineRef, {
+                    description: machineData.description,
+                    serial: machineData.serial,
                     updated_at: firebase.firestore.FieldValue.serverTimestamp()
                 });
             }

@@ -844,3 +844,65 @@
     border-radius: 3px;
     text-transform: uppercase;
 }
+
+
+/* ========================================
+   Machine Edit Section Styles
+   ======================================== */
+
+.machine-info-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.machine-id-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.machine-edit-section {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px dashed var(--border);
+}
+
+.machine-edit-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.machine-edit-row .edit-field.span-full {
+    grid-column: span 2;
+}
+
+.serial-input {
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 0.9375rem;
+    letter-spacing: 0.05em;
+}
+
+/* Make machine fields stand out */
+.machine-field {
+    background: #fefce8 !important;
+    border-color: #fde047 !important;
+}
+
+.machine-field:focus {
+    border-color: #eab308 !important;
+    box-shadow: 0 0 0 3px #fef08a !important;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .machine-edit-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .machine-edit-row .edit-field.span-full {
+        grid-column: span 1;
+    }
+}
