@@ -490,6 +490,14 @@ function loadInfoTab(company, companyBranches) {
                         </div>
                     </div>
                     ` : ''}
+                    <div class="branch-actions">
+                        <button class="btn-convert" onclick="event.stopPropagation(); showConvertModal(${branch.id}, '${MargaUtils.escapeHtml(branch.branchname || '').replace(/'/g, "\\'")}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Convert to Company
+                        </button>
+                    </div>
                 </div>
             `}).join('') || '<p class="text-muted text-center">No branches found</p>'}
         </div>
@@ -710,4 +718,178 @@ function editBranch(branchId) {
     
     // Open edit form at specific branch
     CustomerForm.openEditBranch(company, companyBranches, branchBillInfo, branchIndex);
+}
+
+
+/**
+ * Show Convert to Company Modal
+ */
+function showConvertModal(branchId, branchName) {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('convertModal');
+    if (!modal) {
+        const modalHTML = `
+            <div class="modal-overlay" id="convertModalOverlay" onclick="closeConvertModal()"></div>
+            <div class="convert-modal" id="convertModal">
+                <div class="convert-modal-header">
+                    <h3>🔄 Convert Branch to Company</h3>
+                    <button class="modal-close-btn" onclick="closeConvertModal()">×</button>
+                </div>
+                <div class="convert-modal-body">
+                    <p class="convert-info">This will remove the branch from its current company and create a new company with the same information.</p>
+                    
+                    <div class="convert-form">
+                        <div class="form-field">
+                            <label class="field-label">New Company Name</label>
+                            <input type="text" class="field-input" id="newCompanyName" placeholder="Enter company name">
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">TIN (Optional)</label>
+                            <input type="text" class="field-input" id="newCompanyTin" placeholder="000-000-000-000">
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Business Style (Optional)</label>
+                            <input type="text" class="field-input" id="newCompanyStyle" placeholder="Business style">
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="convertBranchId">
+                </div>
+                <div class="convert-modal-footer">
+                    <button class="btn btn-secondary" onclick="closeConvertModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="executeConvert()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Convert & Save
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        modal = document.getElementById('convertModal');
+    }
+    
+    // Set values
+    document.getElementById('convertBranchId').value = branchId;
+    document.getElementById('newCompanyName').value = branchName;
+    document.getElementById('newCompanyTin').value = '';
+    document.getElementById('newCompanyStyle').value = '';
+    
+    // Show modal
+    document.getElementById('convertModalOverlay').classList.add('visible');
+    modal.classList.add('visible');
+    document.getElementById('newCompanyName').focus();
+}
+
+/**
+ * Close Convert Modal
+ */
+function closeConvertModal() {
+    document.getElementById('convertModalOverlay')?.classList.remove('visible');
+    document.getElementById('convertModal')?.classList.remove('visible');
+}
+
+/**
+ * Execute the conversion
+ */
+async function executeConvert() {
+    const branchId = document.getElementById('convertBranchId').value;
+    const newCompanyName = document.getElementById('newCompanyName').value.trim();
+    const newCompanyTin = document.getElementById('newCompanyTin').value.trim();
+    const newCompanyStyle = document.getElementById('newCompanyStyle').value.trim();
+    
+    if (!newCompanyName) {
+        MargaUtils.showToast('Company name is required', 'error');
+        return;
+    }
+    
+    if (!branchId) {
+        MargaUtils.showToast('No branch selected', 'error');
+        return;
+    }
+    
+    try {
+        // Show loading
+        const btn = document.querySelector('#convertModal .btn-primary');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<div class="spinner"></div> Converting...';
+        btn.disabled = true;
+        
+        // Get the branch data
+        const branch = customers.branches.find(b => b.id == branchId);
+        if (!branch) {
+            throw new Error('Branch not found');
+        }
+        
+        // Get next company ID
+        const maxCompanyId = Math.max(...customers.companies.map(c => c.id || 0), 0);
+        const newCompanyId = maxCompanyId + 1;
+        
+        // Create new company via REST API
+        const companyData = {
+            fields: {
+                id: { integerValue: newCompanyId },
+                companyname: { stringValue: newCompanyName },
+                company_tin: { stringValue: newCompanyTin },
+                business_style: { stringValue: newCompanyStyle },
+                nature_of_business: { stringValue: '' },
+                business_industry: { stringValue: '' }
+            }
+        };
+        
+        // Save new company
+        const createResponse = await fetch(
+            `${FIREBASE_CONFIG.baseUrl}/tbl_companylist?documentId=${newCompanyId}&key=${FIREBASE_CONFIG.apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(companyData)
+            }
+        );
+        
+        if (!createResponse.ok) {
+            throw new Error('Failed to create company');
+        }
+        
+        // Update branch to point to new company
+        const updateResponse = await fetch(
+            `${FIREBASE_CONFIG.baseUrl}/tbl_branchinfo/${branchId}?updateMask.fieldPaths=company_id&key=${FIREBASE_CONFIG.apiKey}`,
+            {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fields: {
+                        company_id: { integerValue: newCompanyId }
+                    }
+                })
+            }
+        );
+        
+        if (!updateResponse.ok) {
+            throw new Error('Failed to update branch');
+        }
+        
+        MargaUtils.showToast(`"${newCompanyName}" created successfully!`, 'success');
+        closeConvertModal();
+        closePanel();
+        
+        // Reload data
+        await loadAllData();
+        
+    } catch (error) {
+        console.error('Convert error:', error);
+        MargaUtils.showToast('Error: ' + error.message, 'error');
+    } finally {
+        const btn = document.querySelector('#convertModal .btn-primary');
+        if (btn) {
+            btn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Convert & Save
+            `;
+            btn.disabled = false;
+        }
+    }
 }

@@ -781,3 +781,135 @@
     background: var(--danger);
     border-color: var(--danger);
 }
+
+
+/* Branch Actions */
+.branch-actions {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-convert {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-sm);
+    color: var(--warning);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-convert:hover {
+    background: var(--warning);
+    color: white;
+}
+
+/* Convert Modal */
+.convert-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    width: 90%;
+    max-width: 450px;
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    z-index: 1001;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.convert-modal.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.convert-modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.convert-modal-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.modal-close-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--surface-secondary);
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close-btn:hover {
+    background: var(--danger-light);
+    color: var(--danger);
+}
+
+.convert-modal-body {
+    padding: 1.5rem;
+}
+
+.convert-info {
+    background: var(--primary-50);
+    border: 1px solid var(--primary-200);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    color: var(--primary-700);
+    margin-bottom: 1.5rem;
+}
+
+.convert-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.convert-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    background: var(--surface-secondary);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+#convertModalOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+#convertModalOverlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
