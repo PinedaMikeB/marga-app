@@ -77,12 +77,21 @@ Building a modern web-based enterprise management system for **Marga Enterprises
 - ✅ Dashboard with sidebar navigation
 - ✅ Customer module with:
   - Company listing with pagination (25 per page)
-  - Search functionality
+  - Search functionality (with Active/Inactive filter)
   - Slide-in detail panel with 3 tabs:
     - Information (company details, branches)
     - Billing (payee info, end user)
     - Machines (contracts, rates, quotas)
   - Export to CSV
+  - Edit Customer form with:
+    - Multi-branch tabs (add/remove branches)
+    - Company Information section
+    - Branch / Department section
+    - **Machine & Contract section** (shows linked machines, serial numbers, contract rates)
+    - Delivery Information section
+    - Service Information section
+    - Billing Information section
+    - Collection Information section
 
 ---
 
@@ -194,6 +203,22 @@ tbl_companylist (Companies)
 **tbl_contractmain:** id, contract_id (branch), mach_id, status, page_rate, monthly_quota, monthly_rate, page_rate2, monthly_quota2, monthly_rate2, contract_duration, terms, withvat
 
 **tbl_machine:** id, model_id, serial, brand_id, status_id
+
+### Contract Status Codes
+| Status | Meaning | Count |
+|--------|---------|-------|
+| 0 | Pending | 1 |
+| 1 | **Active** | 1,602 |
+| 2 | Terminated | 6 |
+| 3 | On Hold | 8 |
+| 4 | Pulled Out | 23 |
+| 7 | **Ended** | 2,905 |
+| 8 | Replaced | 2 |
+| 9 | Transferred | 10 |
+| 10 | For Pullout | 39 |
+| 13 | Cancelled | 4 |
+
+**Note:** Only `status = 1` (Active) counts as "Active Machines" in the dashboard.
 
 ---
 
