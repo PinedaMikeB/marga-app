@@ -86,7 +86,10 @@ async function loadAllData() {
 function updateStats() {
     MargaUtils.animateNumber('totalCompanies', customers.companies.length);
     MargaUtils.animateNumber('totalBranches', customers.branches.length);
-    MargaUtils.animateNumber('activeMachines', customers.machines.length);
+    
+    // Count only active machines (status == 1)
+    const activeContracts = customers.contracts.filter(c => c.status == 1);
+    MargaUtils.animateNumber('activeMachines', activeContracts.length);
     MargaUtils.animateNumber('totalContracts', customers.contracts.length);
     
     // Update filter counts
@@ -285,11 +288,13 @@ function renderTable() {
 
 /**
  * Get machine count for branches
+ * Status codes: 1 = Active, 2 = Terminated, 7 = Historical/Ended
+ * Only count status == 1 as active machines
  */
 function getMachineCount(branches) {
     const branchIds = branches.map(b => b.id);
     return customers.contracts.filter(c => 
-        branchIds.includes(c.contract_id) && c.status != 2
+        branchIds.includes(c.contract_id) && c.status == 1
     ).length;
 }
 
@@ -557,6 +562,20 @@ function loadMachinesTab(companyBranches) {
     const branchContracts = customers.contracts.filter(c => branchIds.includes(c.contract_id));
     const content = document.getElementById('panelContent');
     
+    // Status mapping based on legacy system
+    const statusMap = {
+        0: { text: 'Pending', class: 'pending' },
+        1: { text: 'Active', class: 'active' },
+        2: { text: 'Terminated', class: 'terminated' },
+        3: { text: 'On Hold', class: 'pending' },
+        4: { text: 'Pulled Out', class: 'terminated' },
+        7: { text: 'Ended', class: 'terminated' },
+        8: { text: 'Replaced', class: 'pending' },
+        9: { text: 'Transferred', class: 'pending' },
+        10: { text: 'For Pullout', class: 'pending' },
+        13: { text: 'Cancelled', class: 'terminated' }
+    };
+    
     content.innerHTML = `
         <div class="detail-section">
             <div class="detail-section-title">Machines & Contracts (${branchContracts.length})</div>
@@ -564,8 +583,7 @@ function loadMachinesTab(companyBranches) {
                 const machine = customers.machines.find(m => m.id == contract.mach_id) || {};
                 const model = customers.models.find(m => m.id == machine.model_id);
                 const modelName = model?.modelname || 'Unknown Model';
-                const statusText = contract.status == 1 ? 'Active' : contract.status == 2 ? 'Terminated' : 'Pending';
-                const statusClass = contract.status == 1 ? 'active' : 'terminated';
+                const statusInfo = statusMap[contract.status] || { text: `Status ${contract.status}`, class: 'pending' };
                 
                 return `
                     <div class="machine-card">
@@ -574,7 +592,7 @@ function loadMachinesTab(companyBranches) {
                                 <div class="machine-model">${MargaUtils.escapeHtml(modelName)}</div>
                                 <div class="machine-serial">${MargaUtils.escapeHtml(machine.serial || contract.xserial || 'N/A')}</div>
                             </div>
-                            <span class="machine-status ${statusClass}">${statusText}</span>
+                            <span class="machine-status ${statusInfo.class}">${statusInfo.text}</span>
                         </div>
                         <div class="machine-rates">
                             <div class="rate-item">
