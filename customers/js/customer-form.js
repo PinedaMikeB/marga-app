@@ -1129,6 +1129,7 @@ const CustomerForm = (function() {
         init,
         openNew,
         openEdit,
+        openEditBranch,
         addBranch,
         removeBranch,
         copyToDelivery,
@@ -1137,6 +1138,31 @@ const CustomerForm = (function() {
         close
     };
 })();
+
+/**
+ * Open form for editing existing customer at specific branch
+ */
+function openEditBranch(company, branches, billInfo, branchIndex) {
+    CustomerForm.openEdit(company, branches, billInfo);
+    // Switch to the specific branch after a short delay to let the form render
+    setTimeout(() => {
+        if (typeof switchBranch === 'function') {
+            switchBranch(branchIndex);
+        }
+    }, 100);
+}
+
+// Add to CustomerForm
+CustomerForm.openEditBranch = function(company, branches, billInfo, branchIndex) {
+    this.openEdit(company, branches, billInfo);
+    // We need to access the internal switchBranch - let's set the active index before rendering
+    setTimeout(() => {
+        const tabs = document.querySelectorAll('#branchTabs .branch-tab:not(.branch-tab-add)');
+        if (tabs[branchIndex]) {
+            tabs[branchIndex].click();
+        }
+    }, 100);
+};
 
 // Make globally available
 window.CustomerForm = CustomerForm;

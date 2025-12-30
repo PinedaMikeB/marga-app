@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MARGA - Customers</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../shared/css/styles.css">
-    <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/customers.css">
-    <link rel="stylesheet" href="css/customer-form.css">
+    <link rel="stylesheet" href="shared/css/styles.css">
+    <link rel="stylesheet" href="shared/css/dashboard.css">
+    <link rel="stylesheet" href="customers/css/customers.css">
+    <link rel="stylesheet" href="customers/css/customer-form.css">
 </head>
 <body>
     <!-- Sidebar -->
@@ -33,7 +33,7 @@
             <div class="nav-section">
                 <div class="nav-title">Main Menu</div>
                 
-                <a href="../dashboard.html" class="nav-item">
+                <a href="dashboard.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="7" height="7"/>
                         <rect x="14" y="3" width="7" height="7"/>
@@ -43,7 +43,7 @@
                     <span>Dashboard</span>
                 </a>
 
-                <a href="../customers/" class="nav-item active">
+                <a href="customers.html" class="nav-item active">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
                         <circle cx="9" cy="7" r="4"/>
@@ -52,7 +52,7 @@
                     <span>Customers</span>
                 </a>
 
-                <a href="../billing/" class="nav-item">
+                <a href="billing.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
                         <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
@@ -60,7 +60,7 @@
                     <span>Billing</span>
                 </a>
 
-                <a href="../collections/" class="nav-item">
+                <a href="collections.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="1" y="4" width="22" height="16" rx="2"/>
                         <path d="M1 10h22"/>
@@ -165,11 +165,6 @@
             <div class="card-header">
                 <h3>Customer Directory</h3>
                 <div class="card-actions">
-                    <div class="filter-buttons">
-                        <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
-                        <button class="filter-btn" data-filter="active" onclick="setFilter('active')">Active</button>
-                        <button class="filter-btn" data-filter="inactive" onclick="setFilter('inactive')">Inactive</button>
-                    </div>
                     <div class="search-input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="11" cy="11" r="8"/>
@@ -260,32 +255,3 @@
         </div>
     </div>
     <div class="overlay" id="overlay" onclick="closePanel()"></div>
-
-    <!-- Scripts -->
-    <script src="../shared/js/firebase-config.js"></script>
-    <script src="../shared/js/auth.js"></script>
-    <script src="../shared/js/utils.js"></script>
-    <script src="js/customer-form.js"></script>
-    <script src="js/customers.js"></script>
-    <script>
-        // Check auth
-        if (!MargaAuth.requireAccess('customers')) {
-            // Will redirect
-        }
-
-        // Update user display
-        document.addEventListener('DOMContentLoaded', () => {
-            const user = MargaAuth.getUser();
-            if (user) {
-                document.getElementById('userName').textContent = user.name;
-                document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
-                document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
-            }
-        });
-
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-        }
-    </script>
-</body>
-</html>

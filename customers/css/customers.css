@@ -664,3 +664,120 @@
     font-size: 0.85rem;
     color: var(--text-muted);
 }
+
+
+/* Clickable Branch Cards */
+.branch-clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.branch-clickable:hover {
+    border-color: var(--primary-400);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+    transform: translateY(-2px);
+}
+
+.branch-edit-icon {
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.branch-clickable:hover .branch-edit-icon {
+    opacity: 1;
+    color: var(--primary-500);
+}
+
+/* Branch Machines Section */
+.branch-machines {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border);
+}
+
+.branch-machines-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.branch-machines-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.machine-tag {
+    display: inline-flex;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.machine-tag.active {
+    background: var(--success-light);
+    color: #166534;
+}
+
+.machine-tag.pending {
+    background: var(--warning-light);
+    color: #92400e;
+}
+
+.machine-tag.terminated {
+    background: var(--danger-light);
+    color: #991b1b;
+}
+
+.machine-tag.more {
+    background: var(--surface-secondary);
+    color: var(--text-muted);
+}
+
+/* Filter Buttons */
+.filter-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-right: 1rem;
+}
+
+.filter-btn {
+    padding: 0.375rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filter-btn:hover {
+    border-color: var(--primary-300);
+    color: var(--primary-600);
+}
+
+.filter-btn.active {
+    background: var(--primary-500);
+    border-color: var(--primary-500);
+    color: white;
+}
+
+.filter-btn.active.success {
+    background: var(--success);
+    border-color: var(--success);
+}
+
+.filter-btn.active.danger {
+    background: var(--danger);
+    border-color: var(--danger);
+}

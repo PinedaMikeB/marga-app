@@ -21,6 +21,7 @@ let currentPage = 1;
 const itemsPerPage = 25;
 let filteredCompanies = [];
 let selectedCompanyId = null;
+let currentFilter = 'all'; // 'all', 'active', 'inactive'
 
 /**
  * Initialize module
@@ -65,8 +66,10 @@ async function loadAllData() {
         // Update stats
         updateStats();
 
-        // Initial render
-        filteredCompanies = [...companies];
+        // Sort companies alphabetically and apply initial filter
+        filteredCompanies = [...companies].sort((a, b) => 
+            (a.companyname || '').localeCompare(b.companyname || '')
+        );
         renderTable();
 
     } catch (error) {
@@ -108,18 +111,72 @@ function showLoading(show) {
  * Handle search input
  */
 function handleSearch(event) {
-    const query = event.target.value.toLowerCase().trim();
-    
+    const query = event?.target?.value?.toLowerCase().trim() || '';
+    applyFilters(query);
+}
+
+/**
+ * Apply filters (search + status)
+ */
+function applyFilters(query = '') {
+    // Get search query if not provided
     if (!query) {
-        filteredCompanies = [...customers.companies];
-    } else {
-        filteredCompanies = customers.companies.filter(c => 
+        query = document.getElementById('searchInput')?.value?.toLowerCase().trim() || '';
+    }
+    
+    // Group branches by company for status check
+    const branchesByCompany = {};
+    customers.branches.forEach(b => {
+        if (!branchesByCompany[b.company_id]) branchesByCompany[b.company_id] = [];
+        branchesByCompany[b.company_id].push(b);
+    });
+    
+    // Start with all companies
+    let result = [...customers.companies];
+    
+    // Apply search filter
+    if (query) {
+        result = result.filter(c => 
             c.companyname?.toLowerCase().includes(query)
         );
     }
     
+    // Apply status filter
+    if (currentFilter !== 'all') {
+        result = result.filter(company => {
+            const companyBranches = branchesByCompany[company.id] || [];
+            const machineCount = getMachineCount(companyBranches);
+            const isActive = machineCount > 0;
+            
+            if (currentFilter === 'active') return isActive;
+            if (currentFilter === 'inactive') return !isActive;
+            return true;
+        });
+    }
+    
+    // Sort alphabetically
+    result.sort((a, b) => (a.companyname || '').localeCompare(b.companyname || ''));
+    
+    filteredCompanies = result;
     currentPage = 1;
     renderTable();
+}
+
+/**
+ * Set status filter
+ */
+function setFilter(filter) {
+    currentFilter = filter;
+    
+    // Update filter button styles
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.filter === filter) {
+            btn.classList.add('active');
+        }
+    });
+    
+    applyFilters();
 }
 
 /**
@@ -314,6 +371,21 @@ function switchTab(tabName) {
 function loadInfoTab(company, companyBranches) {
     const content = document.getElementById('panelContent');
     
+    // Get machines per branch
+    const machinesByBranch = {};
+    companyBranches.forEach(branch => {
+        const branchContracts = customers.contracts.filter(c => c.contract_id == branch.id);
+        machinesByBranch[branch.id] = branchContracts.map(contract => {
+            const machine = customers.machines.find(m => m.id == contract.mach_id) || {};
+            const model = customers.models.find(m => m.id == machine.model_id);
+            return {
+                model: model?.modelname || 'Unknown Model',
+                serial: machine.serial || contract.xserial || 'N/A',
+                status: contract.status
+            };
+        });
+    });
+    
     content.innerHTML = `
         <div class="detail-section">
             <div class="detail-section-title">Company Information</div>
@@ -335,24 +407,55 @@ function loadInfoTab(company, companyBranches) {
 
         <div class="detail-section">
             <div class="detail-section-title">Branches (${companyBranches.length})</div>
-            ${companyBranches.map(branch => `
-                <div class="branch-card">
+            ${companyBranches.map(branch => {
+                const branchMachines = machinesByBranch[branch.id] || [];
+                const activeMachines = branchMachines.filter(m => m.status == 1).length;
+                
+                return `
+                <div class="branch-card branch-clickable" onclick="editBranch(${branch.id})">
                     <div class="branch-card-header">
                         <div>
                             <div class="branch-name">${MargaUtils.escapeHtml(branch.branchname || 'Unnamed')}</div>
                             <div class="branch-code">${MargaUtils.escapeHtml(branch.code || '')}</div>
                         </div>
-                        <span class="badge ${branch.inactive ? 'badge-danger' : 'badge-success'}">
-                            ${branch.inactive ? 'Inactive' : 'Active'}
-                        </span>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span class="badge ${branch.inactive ? 'badge-danger' : 'badge-success'}">
+                                ${branch.inactive ? 'Inactive' : 'Active'}
+                            </span>
+                            <span class="branch-edit-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </span>
+                        </div>
                     </div>
                     <div class="branch-details">
                         <div><strong>Address:</strong> ${MargaUtils.escapeHtml(formatAddress(branch))}</div>
                         <div><strong>Signatory:</strong> ${MargaUtils.escapeHtml(branch.signatory || 'N/A')} ${branch.designation ? '(' + MargaUtils.escapeHtml(branch.designation) + ')' : ''}</div>
                         <div><strong>Email:</strong> ${MargaUtils.escapeHtml(branch.email || 'N/A')}</div>
                     </div>
+                    ${branchMachines.length > 0 ? `
+                    <div class="branch-machines">
+                        <div class="branch-machines-title">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                <path d="M12 12h.01"/>
+                            </svg>
+                            Machines (${branchMachines.length}) - ${activeMachines} active
+                        </div>
+                        <div class="branch-machines-list">
+                            ${branchMachines.slice(0, 3).map(m => `
+                                <span class="machine-tag ${m.status == 1 ? 'active' : m.status == 0 ? 'pending' : 'terminated'}">
+                                    ${MargaUtils.escapeHtml(m.model)}
+                                </span>
+                            `).join('')}
+                            ${branchMachines.length > 3 ? `<span class="machine-tag more">+${branchMachines.length - 3} more</span>` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
-            `).join('') || '<p class="text-muted text-center">No branches found</p>'}
+            `}).join('') || '<p class="text-muted text-center">No branches found</p>'}
         </div>
     `;
 }
@@ -545,4 +648,30 @@ function printCustomer() {
  */
 function showNewCustomerModal() {
     CustomerForm.openNew();
+}
+
+
+/**
+ * Edit a specific branch
+ */
+function editBranch(branchId) {
+    const branch = customers.branches.find(b => b.id == branchId);
+    if (!branch) {
+        MargaUtils.showToast('Branch not found', 'error');
+        return;
+    }
+    
+    const company = customers.companies.find(c => c.id == branch.company_id);
+    const companyBranches = customers.branches.filter(b => b.company_id == branch.company_id);
+    const branchIds = companyBranches.map(b => b.id);
+    const branchBillInfo = customers.billInfo.filter(bi => branchIds.includes(bi.branch_id));
+    
+    // Find the index of this branch
+    const branchIndex = companyBranches.findIndex(b => b.id == branchId);
+    
+    // Close the detail panel
+    closePanel();
+    
+    // Open edit form at specific branch
+    CustomerForm.openEditBranch(company, companyBranches, branchBillInfo, branchIndex);
 }
