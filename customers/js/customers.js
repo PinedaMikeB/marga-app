@@ -88,6 +88,42 @@ function updateStats() {
     MargaUtils.animateNumber('totalBranches', customers.branches.length);
     MargaUtils.animateNumber('activeMachines', customers.machines.length);
     MargaUtils.animateNumber('totalContracts', customers.contracts.length);
+    
+    // Update filter counts
+    updateFilterCounts();
+}
+
+/**
+ * Update filter button counts
+ */
+function updateFilterCounts() {
+    // Group branches by company
+    const branchesByCompany = {};
+    customers.branches.forEach(b => {
+        if (!branchesByCompany[b.company_id]) branchesByCompany[b.company_id] = [];
+        branchesByCompany[b.company_id].push(b);
+    });
+    
+    let activeCount = 0;
+    let inactiveCount = 0;
+    
+    customers.companies.forEach(company => {
+        const companyBranches = branchesByCompany[company.id] || [];
+        const machineCount = getMachineCount(companyBranches);
+        if (machineCount > 0) {
+            activeCount++;
+        } else {
+            inactiveCount++;
+        }
+    });
+    
+    const countAll = document.getElementById('countAll');
+    const countActive = document.getElementById('countActive');
+    const countInactive = document.getElementById('countInactive');
+    
+    if (countAll) countAll.textContent = `(${customers.companies.length})`;
+    if (countActive) countActive.textContent = `(${activeCount})`;
+    if (countInactive) countInactive.textContent = `(${inactiveCount})`;
 }
 
 /**
