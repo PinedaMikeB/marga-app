@@ -6,6 +6,67 @@
     padding: 2rem;
 }
 
+/* Card Header Layout */
+.card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.card-header-left h3 {
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* Filter Toggle */
+.filter-toggle {
+    display: flex;
+    background: var(--gray-100, #f3f4f6);
+    border-radius: 8px;
+    padding: 4px;
+    gap: 4px;
+}
+
+.filter-btn {
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted, #6b7280);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.filter-btn:hover {
+    color: var(--text-primary, #1f2937);
+    background: rgba(255,255,255,0.5);
+}
+
+.filter-btn.active {
+    background: white;
+    color: var(--primary-600, #2563eb);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.filter-btn.active[data-filter="active"] {
+    color: #059669;
+}
+
+.filter-btn.active[data-filter="inactive"] {
+    color: #dc2626;
+}
+
+.filter-count {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
 /* Stats Row */
 .stats-row {
     display: flex;

@@ -163,7 +163,20 @@
         <!-- Customer List -->
         <div class="content-card">
             <div class="card-header">
-                <h3>Customer Directory</h3>
+                <div class="card-header-left">
+                    <h3>Customer Directory</h3>
+                    <div class="filter-toggle">
+                        <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">
+                            All <span class="filter-count" id="countAll">(0)</span>
+                        </button>
+                        <button class="filter-btn" data-filter="active" onclick="setFilter('active')">
+                            Active <span class="filter-count" id="countActive">(0)</span>
+                        </button>
+                        <button class="filter-btn" data-filter="inactive" onclick="setFilter('inactive')">
+                            Inactive <span class="filter-count" id="countInactive">(0)</span>
+                        </button>
+                    </div>
+                </div>
                 <div class="card-actions">
                     <div class="search-input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
