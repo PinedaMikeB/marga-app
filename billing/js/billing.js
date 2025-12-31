@@ -516,7 +516,7 @@ function proceedToReading() {
 /**
  * Open reading modal
  */
-function openReadingModal() {
+async function openReadingModal() {
     const category = selectedContract.category;
     const categoryCode = category?.particular_code || category?.code || '';
     
@@ -537,20 +537,10 @@ function openReadingModal() {
     const today = new Date();
     document.getElementById('rdPresentDate').value = today.toISOString().split('T')[0];
     
-    // Get previous reading
+    // Initialize previous reading values
     let prevReading = 0;
     let prevDate = new Date(today);
     prevDate.setMonth(prevDate.getMonth() - 1);
-    
-    if (selectedContract.lastReading) {
-        prevReading = selectedContract.lastReading.present_reading || 0;
-        if (selectedContract.lastReading.present_date) {
-            prevDate = new Date(selectedContract.lastReading.present_date);
-        }
-    }
-    
-    document.getElementById('rdPreviousDate').value = prevDate.toISOString().split('T')[0];
-    document.getElementById('rdPreviousMeter').value = prevReading;
     
     // Populate contract rates
     document.getElementById('rdQuota').value = selectedContract.monthly_quota || 0;
@@ -579,12 +569,88 @@ function openReadingModal() {
     document.getElementById('rdAmountDue').textContent = '₱0.00';
     document.getElementById('rdRemarks').value = '';
     
+    // Set initial previous reading values
+    document.getElementById('rdPreviousDate').value = prevDate.toISOString().split('T')[0];
+    document.getElementById('rdPreviousMeter').value = prevReading;
+    
     // Show modal
     document.getElementById('readingModalOverlay').classList.add('visible');
     document.getElementById('readingModal').classList.add('visible');
     
+    // Auto-load previous reading from database
+    await fetchPreviousReading();
+    
     if (!isFixedRate) {
         document.getElementById('rdPresentMeter').focus();
+    }
+}
+
+/**
+ * Fetch previous reading from database
+ */
+async function fetchPreviousReading() {
+    try {
+        const db = initFirebase();
+        
+        // Query for the most recent reading for this contract
+        const readingsSnap = await db.collection('tbl_readings')
+            .where('contract_id', '==', selectedContract.id)
+            .orderBy('created_at', 'desc')
+            .limit(1)
+            .get();
+        
+        if (!readingsSnap.empty) {
+            const lastReading = readingsSnap.docs[0].data();
+            console.log('Found previous reading:', lastReading);
+            
+            // Update the previous reading field
+            document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
+            
+            // Update the previous date
+            if (lastReading.present_date) {
+                document.getElementById('rdPreviousDate').value = lastReading.present_date;
+            } else if (lastReading.reading_date) {
+                const readingDate = lastReading.reading_date.toDate ? 
+                    lastReading.reading_date.toDate() : new Date(lastReading.reading_date);
+                document.getElementById('rdPreviousDate').value = readingDate.toISOString().split('T')[0];
+            }
+            
+            console.log('Previous reading loaded:', lastReading.present_reading);
+        } else {
+            console.log('No previous reading found for contract:', selectedContract.id);
+            // Keep the default 0 value
+        }
+    } catch (error) {
+        // If query fails (e.g., no index), try without orderBy
+        console.log('Trying alternative query...', error.message);
+        try {
+            const db = initFirebase();
+            const readingsSnap = await db.collection('tbl_readings')
+                .where('contract_id', '==', selectedContract.id)
+                .get();
+            
+            if (!readingsSnap.empty) {
+                // Sort manually by created_at
+                const readings = readingsSnap.docs
+                    .map(d => d.data())
+                    .sort((a, b) => {
+                        const dateA = a.created_at?.toDate?.() || new Date(0);
+                        const dateB = b.created_at?.toDate?.() || new Date(0);
+                        return dateB - dateA;
+                    });
+                
+                if (readings.length > 0) {
+                    const lastReading = readings[0];
+                    document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
+                    
+                    if (lastReading.present_date) {
+                        document.getElementById('rdPreviousDate').value = lastReading.present_date;
+                    }
+                }
+            }
+        } catch (e2) {
+            console.error('Error fetching previous reading:', e2);
+        }
     }
 }
 
@@ -709,35 +775,12 @@ function calculateFixedRateBilling() {
 }
 
 /**
- * Load previous reading from database
+ * Load previous reading from database (manual button)
  */
 async function loadPreviousReading() {
     showToast('Loading previous reading...', 'info');
-    
-    try {
-        const db = firebase.firestore();
-        const readingsSnap = await db.collection('tbl_readings')
-            .where('contract_id', '==', selectedContract.id)
-            .orderBy('created_at', 'desc')
-            .limit(1)
-            .get();
-        
-        if (!readingsSnap.empty) {
-            const lastReading = readingsSnap.docs[0].data();
-            document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
-            
-            if (lastReading.present_date) {
-                document.getElementById('rdPreviousDate').value = lastReading.present_date;
-            }
-            
-            showToast('Previous reading loaded', 'success');
-        } else {
-            showToast('No previous reading found', 'info');
-        }
-    } catch (error) {
-        console.error('Error loading reading:', error);
-        showToast('Error loading previous reading', 'error');
-    }
+    await fetchPreviousReading();
+    showToast('Previous reading loaded', 'success');
 }
 
 
