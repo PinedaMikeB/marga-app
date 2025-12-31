@@ -370,15 +370,16 @@ function openPanel(companyId) {
     document.getElementById('panelBranchCount').textContent = `${companyBranches.length} Branch${companyBranches.length !== 1 ? 'es' : ''}`;
     
     // Reset to info tab
-    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-    document.querySelector('.tab-btn[data-tab="info"]').classList.add('active');
+    document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+    const infoTab = document.querySelector('.detail-tab[data-tab="info"]');
+    if (infoTab) infoTab.classList.add('active');
     
     // Load info tab content
     loadInfoTab(company, companyBranches);
     
-    // Show panel
+    // Show modal
     document.getElementById('detailPanel').classList.add('open');
-    document.getElementById('overlay').classList.add('visible');
+    document.getElementById('detailOverlay').classList.add('visible');
 }
 
 /**
@@ -386,7 +387,7 @@ function openPanel(companyId) {
  */
 function closePanel() {
     document.getElementById('detailPanel').classList.remove('open');
-    document.getElementById('overlay').classList.remove('visible');
+    document.getElementById('detailOverlay').classList.remove('visible');
     selectedCompanyId = null;
 }
 
@@ -394,8 +395,9 @@ function closePanel() {
  * Switch tabs
  */
 function switchTab(tabName) {
-    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add('active');
+    document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.detail-tab[data-tab="${tabName}"]`);
+    if (tab) tab.classList.add('active');
     
     const company = customers.companies.find(c => c.id == selectedCompanyId);
     const companyBranches = customers.branches.filter(b => b.company_id == selectedCompanyId);

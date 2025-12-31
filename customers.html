@@ -231,36 +231,32 @@
         </div>
     </main>
 
-    <!-- Detail Slide Panel -->
-    <div class="slide-panel" id="detailPanel">
-        <div class="panel-header">
-            <button class="panel-close" onclick="closePanel()">
+    <!-- Detail Modal (Centered) -->
+    <div class="modal-overlay" id="detailOverlay" onclick="closePanel()"></div>
+    <div class="detail-modal" id="detailPanel">
+        <div class="detail-modal-header">
+            <div class="detail-modal-title">
+                <h2 id="panelCompanyName">Company Name</h2>
+                <p id="panelBranchCount">0 Branches</p>
+            </div>
+            <button class="modal-close-btn" onclick="closePanel()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M18 6L6 18M6 6l12 12"/>
                 </svg>
             </button>
-            <h2 id="panelCompanyName">Company Name</h2>
-            <p id="panelBranchCount">0 Branches</p>
         </div>
 
-        <div class="panel-tabs">
-            <button class="tab-btn active" data-tab="info" onclick="switchTab('info')">Information</button>
-            <button class="tab-btn" data-tab="billing" onclick="switchTab('billing')">Billing</button>
-            <button class="tab-btn" data-tab="machines" onclick="switchTab('machines')">Machines</button>
+        <div class="detail-modal-tabs">
+            <button class="detail-tab active" data-tab="info" onclick="switchTab('info')">Information</button>
+            <button class="detail-tab" data-tab="billing" onclick="switchTab('billing')">Billing</button>
+            <button class="detail-tab" data-tab="machines" onclick="switchTab('machines')">Machines</button>
         </div>
 
-        <div class="panel-content" id="panelContent">
+        <div class="detail-modal-content" id="panelContent">
             <!-- Dynamic content loaded here -->
         </div>
 
-        <div class="panel-footer">
-            <button class="btn btn-primary" onclick="editCustomer()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-                Edit
-            </button>
+        <div class="detail-modal-footer">
             <button class="btn btn-secondary" onclick="printCustomer()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
@@ -268,9 +264,15 @@
                 </svg>
                 Print
             </button>
+            <button class="btn btn-primary" onclick="editCustomer()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                Edit Customer
+            </button>
         </div>
     </div>
-    <div class="overlay" id="overlay" onclick="closePanel()"></div>
 
 
     <!-- Firebase SDKs -->
