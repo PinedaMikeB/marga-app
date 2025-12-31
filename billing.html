@@ -144,7 +144,28 @@
                     <div class="card-header">
                         <div class="card-header-left">
                             <h3>For Reading</h3>
-                            <span class="reading-day-badge" id="readingDayBadge">Day 31</span>
+                            <div class="filter-toggle">
+                                <button class="filter-btn active" data-filter="all" onclick="setStatusFilter('all')">
+                                    All <span class="filter-count" id="countAll">(0)</span>
+                                </button>
+                                <button class="filter-btn" data-filter="today" onclick="setStatusFilter('today')">
+                                    Today <span class="filter-count" id="countToday">(0)</span>
+                                </button>
+                                <button class="filter-btn" data-filter="unbilled" onclick="setStatusFilter('unbilled')">
+                                    Unbilled <span class="filter-count" id="countUnbilled">(0)</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <div class="date-range-filter">
+                                <label>From:</label>
+                                <input type="date" id="filterDateFrom" class="date-input-sm" onchange="applyFilters()">
+                                <label>To:</label>
+                                <input type="date" id="filterDateTo" class="date-input-sm" onchange="applyFilters()">
+                            </div>
+                            <span class="total-count">Showing: <strong id="forReadingCount">0</strong></span>
+                        </div>
+                    </div>
                         </div>
                         <div class="card-actions">
                             <span class="total-count">Total: <strong id="forReadingCount">0</strong></span>

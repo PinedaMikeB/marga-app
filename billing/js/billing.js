@@ -13,7 +13,8 @@ let billingData = {
     brands: [],
     categories: [],
     readings: [],
-    invoices: []
+    invoices: [],
+    billingStatus: [] // Track billing status per contract/month
 };
 
 let selectedContract = null;
@@ -28,6 +29,8 @@ let currentInvoice = {
 };
 
 let printPosition = { x: 0, y: 0 };
+let currentFilter = 'all'; // all, today, unbilled
+let contractsWithInfo = []; // Cached enriched contracts
 
 /**
  * Initialize billing module
@@ -38,9 +41,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         MargaAuth.init();
     }
     
-    // Set today's date
+    // Set today's date in header
     const today = new Date();
     document.getElementById('billingDate').value = today.toISOString().split('T')[0];
+    
+    // Set default date range filter (current month)
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    document.getElementById('filterDateFrom').value = firstOfMonth.toISOString().split('T')[0];
+    document.getElementById('filterDateTo').value = lastOfMonth.toISOString().split('T')[0];
     
     // Populate year dropdowns
     populateYearDropdowns();
@@ -53,12 +62,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadBillingData();
     
     // Update display
-    updateReadingDayBadge();
     renderForReadingTable();
     
-    // Add date change listener
+    // Add date change listener for header date
     document.getElementById('billingDate').addEventListener('change', () => {
-        updateReadingDayBadge();
         renderForReadingTable();
     });
 });
@@ -126,6 +133,9 @@ async function loadBillingData() {
             billingData.readings = [];
         }
         
+        // Build enriched contracts list
+        buildContractsWithInfo();
+        
         // Update stats
         updateBillingStats();
         
@@ -141,6 +151,67 @@ async function loadBillingData() {
     }
 }
 
+/**
+ * Build enriched contracts with all related info
+ */
+function buildContractsWithInfo() {
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+    
+    contractsWithInfo = billingData.contracts.map(contract => {
+        const branch = billingData.branches.find(b => b.id == contract.contract_id);
+        const company = branch ? billingData.companies.find(c => c.id == branch.company_id) : null;
+        const machine = billingData.machines.find(m => m.id == contract.mach_id);
+        const model = machine ? billingData.models.find(m => m.id == machine.model_id) : null;
+        const brand = machine ? billingData.brands.find(b => b.id == machine.brand_id) : null;
+        const category = billingData.categories.find(c => c.id == contract.category_id);
+        
+        // Get reading day from branch or contract
+        const readingDay = parseInt(branch?.reading_date) || parseInt(contract?.reading_day) || 0;
+        
+        // Check if this contract has been billed this month
+        const billedThisMonth = billingData.readings.some(r => 
+            r.contract_id == contract.id && 
+            r.billing_month == currentMonth && 
+            r.billing_year == currentYear
+        );
+        
+        // Get last reading for this contract
+        const lastReading = billingData.readings
+            .filter(r => r.contract_id == contract.id)
+            .sort((a, b) => {
+                const dateA = a.created_at?.toDate?.() || new Date(0);
+                const dateB = b.created_at?.toDate?.() || new Date(0);
+                return dateB - dateA;
+            })[0];
+        
+        // Determine billing status
+        let billingStatus = 'unbilled';
+        if (lastReading) {
+            if (lastReading.status === 'received') {
+                billingStatus = 'received';
+            } else if (lastReading.status === 'pending' || lastReading.status === 'billed') {
+                billingStatus = 'billed';
+            }
+        }
+        
+        return {
+            ...contract,
+            branch,
+            company,
+            machine,
+            model,
+            brand,
+            category,
+            readingDay,
+            billedThisMonth,
+            billingStatus,
+            lastReading
+        };
+    });
+}
+
 
 /**
  * Update billing statistics
@@ -150,32 +221,48 @@ function updateBillingStats() {
     const todayDay = today.getDate();
     
     // Count contracts for today's reading day
-    const forReadingToday = billingData.contracts.filter(c => {
-        const branch = billingData.branches.find(b => b.id == c.contract_id);
-        return branch && parseInt(branch.reading_date) === todayDay;
-    }).length;
+    const forReadingToday = contractsWithInfo.filter(c => c.readingDay === todayDay).length;
+    const unbilledCount = contractsWithInfo.filter(c => c.billingStatus === 'unbilled' || !c.billedThisMonth).length;
+    const billedCount = contractsWithInfo.filter(c => c.billedThisMonth).length;
     
     document.getElementById('totalForReading').textContent = forReadingToday;
-    document.getElementById('forReadingCount').textContent = billingData.contracts.length;
+    document.getElementById('completedToday').textContent = billedCount;
+    document.getElementById('pendingInvoices').textContent = unbilledCount;
     
-    // Completed today (would need readings collection)
-    document.getElementById('completedToday').textContent = '0';
+    // Update filter counts
+    document.getElementById('countAll').textContent = `(${contractsWithInfo.length})`;
+    document.getElementById('countToday').textContent = `(${forReadingToday})`;
+    document.getElementById('countUnbilled').textContent = `(${unbilledCount})`;
     
-    // Pending invoices
-    document.getElementById('pendingInvoices').textContent = '0';
+    // Calculate total billed this month
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+    const totalBilled = billingData.readings
+        .filter(r => r.billing_month == currentMonth && r.billing_year == currentYear)
+        .reduce((sum, r) => sum + (parseFloat(r.amount_due) || 0), 0);
     
-    // Total billed this month
-    document.getElementById('totalBilledMonth').textContent = '₱0';
+    document.getElementById('totalBilledMonth').textContent = formatCurrency(totalBilled);
 }
 
 /**
- * Update reading day badge based on selected date
+ * Set status filter
  */
-function updateReadingDayBadge() {
-    const dateInput = document.getElementById('billingDate');
-    const date = new Date(dateInput.value);
-    const day = date.getDate();
-    document.getElementById('readingDayBadge').textContent = `Day ${day}`;
+function setStatusFilter(filter) {
+    currentFilter = filter;
+    
+    // Update active button
+    document.querySelectorAll('.filter-toggle .filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+    
+    renderForReadingTable();
+}
+
+/**
+ * Apply date range and status filters
+ */
+function applyFilters() {
+    renderForReadingTable();
 }
 
 /**
@@ -187,48 +274,79 @@ function renderForReadingTable() {
     const selectedDate = new Date(dateInput.value);
     const selectedDay = selectedDate.getDate();
     
-    // Build contract data with all related info
-    const contractsWithInfo = billingData.contracts.map(contract => {
-        const branch = billingData.branches.find(b => b.id == contract.contract_id);
-        const company = branch ? billingData.companies.find(c => c.id == branch.company_id) : null;
-        const machine = billingData.machines.find(m => m.id == contract.mach_id);
-        const model = machine ? billingData.models.find(m => m.id == machine.model_id) : null;
-        const brand = machine ? billingData.brands.find(b => b.id == machine.brand_id) : null;
-        const category = billingData.categories.find(c => c.id == contract.category_id);
-        
-        return {
-            ...contract,
-            branch,
-            company,
-            machine,
-            model,
-            brand,
-            category,
-            readingDay: branch ? parseInt(branch.reading_date) || 0 : 0
-        };
-    });
+    // Get date range filter
+    const fromDate = document.getElementById('filterDateFrom').value;
+    const toDate = document.getElementById('filterDateTo').value;
     
-    // Sort: today's reading day first, then by reading day ascending
-    contractsWithInfo.sort((a, b) => {
+    // Filter contracts based on current filter
+    let filteredContracts = [...contractsWithInfo];
+    
+    // Apply status filter
+    if (currentFilter === 'today') {
+        filteredContracts = filteredContracts.filter(c => c.readingDay === selectedDay);
+    } else if (currentFilter === 'unbilled') {
+        filteredContracts = filteredContracts.filter(c => !c.billedThisMonth);
+    }
+    // 'all' shows everything
+    
+    // Apply date range filter on reading day
+    if (fromDate && toDate) {
+        const fromDay = new Date(fromDate).getDate();
+        const toDay = new Date(toDate).getDate();
+        
+        // For reading day filter (if same month)
+        const fromMonth = new Date(fromDate).getMonth();
+        const toMonth = new Date(toDate).getMonth();
+        
+        if (fromMonth === toMonth) {
+            filteredContracts = filteredContracts.filter(c => {
+                if (!c.readingDay) return true; // Include contracts without reading day
+                return c.readingDay >= fromDay && c.readingDay <= toDay;
+            });
+        }
+    }
+    
+    // Sort: today's reading day first, then unbilled, then by reading day
+    filteredContracts.sort((a, b) => {
+        // Unbilled first
+        if (!a.billedThisMonth && b.billedThisMonth) return -1;
+        if (a.billedThisMonth && !b.billedThisMonth) return 1;
+        
+        // Today's reading day second
         const aIsToday = a.readingDay === selectedDay ? 0 : 1;
         const bIsToday = b.readingDay === selectedDay ? 0 : 1;
         if (aIsToday !== bIsToday) return aIsToday - bIsToday;
-        return a.readingDay - b.readingDay;
+        
+        // Then by reading day
+        return (a.readingDay || 99) - (b.readingDay || 99);
     });
     
-    if (contractsWithInfo.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">No active contracts found</td></tr>`;
+    // Update count
+    document.getElementById('forReadingCount').textContent = filteredContracts.length;
+    
+    if (filteredContracts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">No contracts found matching filters</td></tr>`;
         return;
     }
     
-    tbody.innerHTML = contractsWithInfo.map(c => {
+    tbody.innerHTML = filteredContracts.map(c => {
         const isToday = c.readingDay === selectedDay;
         const categoryCode = c.category?.particular_code || c.category?.code || 'N/A';
         const categoryClass = categoryCode.toLowerCase();
         
-        // Determine contract status display
+        // Determine row class based on billing status
+        let rowClass = '';
         let statusText = 'Active';
         let statusClass = 'active';
+        
+        if (c.billedThisMonth) {
+            rowClass = 'billed-row';
+            statusText = 'Billed';
+            statusClass = 'billed';
+        } else if (isToday) {
+            rowClass = 'today-reading';
+        }
+        
         if (c.status === 7 || c.status === 2) {
             statusText = 'For Termination';
             statusClass = 'for-termination';
@@ -238,7 +356,7 @@ function renderForReadingTable() {
         const installDate = c.date_installed ? formatDate(c.date_installed) : 'N/A';
         
         return `
-            <tr class="${isToday ? 'today-reading' : ''}" onclick="selectContract(${c.id})">
+            <tr class="${rowClass}" onclick="selectContract(${c.id})" ${c.billedThisMonth ? 'title="Already billed this month"' : ''}>
                 <td><strong>${c.readingDay || '-'}</strong></td>
                 <td><span class="category-badge ${categoryClass}">${categoryCode}</span></td>
                 <td class="client-cell">
@@ -260,11 +378,9 @@ function renderForReadingTable() {
 function formatDate(dateVal) {
     if (!dateVal) return 'N/A';
     try {
-        // Handle Firestore timestamp
         if (dateVal.toDate) {
             return dateVal.toDate().toLocaleDateString('en-CA');
         }
-        // Handle string date
         const date = new Date(dateVal);
         if (isNaN(date)) return 'N/A';
         return date.toLocaleDateString('en-CA');
@@ -285,48 +401,56 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;');
 }
 
+/**
+ * Format currency
+ */
+function formatCurrency(amount) {
+    return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
 
 /**
  * Select a contract to bill
  */
 function selectContract(contractId) {
-    selectedContract = billingData.contracts.find(c => c.id == contractId);
+    selectedContract = contractsWithInfo.find(c => c.id == contractId);
     if (!selectedContract) {
         showToast('Contract not found', 'error');
         return;
     }
     
-    // Get related info
-    const branch = billingData.branches.find(b => b.id == selectedContract.contract_id);
-    const company = branch ? billingData.companies.find(c => c.id == branch.company_id) : null;
-    const machine = billingData.machines.find(m => m.id == selectedContract.mach_id);
-    const model = machine ? billingData.models.find(m => m.id == machine.model_id) : null;
-    const category = billingData.categories.find(c => c.id == selectedContract.category_id);
-    
-    selectedContract.branch = branch;
-    selectedContract.company = company;
-    selectedContract.machine = machine;
-    selectedContract.model = model;
-    selectedContract.category = category;
+    // Warn if already billed this month
+    if (selectedContract.billedThisMonth) {
+        if (!confirm('This contract has already been billed this month. Create another invoice?')) {
+            return;
+        }
+    }
     
     // Populate contract info in modal
     const infoDiv = document.getElementById('selectedContractInfo');
     infoDiv.innerHTML = `
         <div class="contract-info-row">
             <span class="contract-info-label">Client</span>
-            <span class="contract-info-value">${escapeHtml(company?.companyname || 'Unknown')}</span>
+            <span class="contract-info-value">${escapeHtml(selectedContract.company?.companyname || 'Unknown')}</span>
         </div>
         <div class="contract-info-row">
             <span class="contract-info-label">Branch</span>
-            <span class="contract-info-value">${escapeHtml(branch?.branchname || 'N/A')}</span>
+            <span class="contract-info-value">${escapeHtml(selectedContract.branch?.branchname || 'N/A')}</span>
         </div>
         <div class="contract-info-row">
             <span class="contract-info-label">Model / Serial</span>
-            <span class="contract-info-value">${escapeHtml(model?.modelname || machine?.description || 'N/A')} / ${escapeHtml(machine?.serial || 'N/A')}</span>
+            <span class="contract-info-value">${escapeHtml(selectedContract.model?.modelname || selectedContract.machine?.description || 'N/A')} / ${escapeHtml(selectedContract.machine?.serial || 'N/A')}</span>
         </div>
         <div class="contract-info-row">
             <span class="contract-info-label">Category</span>
-            <span class="contract-info-value">${escapeHtml(category?.particular_code || category?.code || 'N/A')} - ${escapeHtml(category?.particular_desc || category?.name || '')}</span>
+            <span class="contract-info-value">${escapeHtml(selectedContract.category?.particular_code || selectedContract.category?.code || 'N/A')} - ${escapeHtml(selectedContract.category?.particular_desc || selectedContract.category?.name || '')}</span>
+        </div>
+        <div class="contract-info-row">
+            <span class="contract-info-label">Reading Day</span>
+            <span class="contract-info-value">Day ${selectedContract.readingDay || 'Not Set'}</span>
         </div>
     `;
     
@@ -398,29 +522,32 @@ function openReadingModal() {
     const today = new Date();
     document.getElementById('rdPresentDate').value = today.toISOString().split('T')[0];
     
-    // Get previous reading date (from last reading or estimate)
-    const prevDate = new Date(today);
+    // Get previous reading
+    let prevReading = 0;
+    let prevDate = new Date(today);
     prevDate.setMonth(prevDate.getMonth() - 1);
+    
+    if (selectedContract.lastReading) {
+        prevReading = selectedContract.lastReading.present_reading || 0;
+        if (selectedContract.lastReading.present_date) {
+            prevDate = new Date(selectedContract.lastReading.present_date);
+        }
+    }
+    
     document.getElementById('rdPreviousDate').value = prevDate.toISOString().split('T')[0];
+    document.getElementById('rdPreviousMeter').value = prevReading;
     
     // Populate contract rates
     document.getElementById('rdQuota').value = selectedContract.monthly_quota || 0;
     document.getElementById('rdPageRate').value = selectedContract.page_rate || 0;
     document.getElementById('rdExceedRate').value = selectedContract.exceed_rate || selectedContract.page_rate || 0;
     
-    // Get previous reading
-    const prevReading = getLastReading(selectedContract.id);
-    document.getElementById('rdPreviousMeter').value = prevReading;
-    document.getElementById('rdPresentMeter').value = '';
-    
     // Check if RTF (fixed rate - no reading needed)
     const isFixedRate = ['RTF', 'RTC', 'MAT', 'STC', 'MAC', 'REF', 'RD', 'PI', 'OTH'].includes(categoryCode);
     
     if (isFixedRate) {
-        // For fixed rate, just show the monthly rate
         document.getElementById('rdPresentMeter').disabled = true;
         document.getElementById('rdPresentMeter').value = 'N/A';
-        document.getElementById('rdNetAmount').value = selectedContract.monthly_rate || 0;
         calculateFixedRateBilling();
     } else {
         document.getElementById('rdPresentMeter').disabled = false;
@@ -454,28 +581,9 @@ function closeReadingModal() {
     document.getElementById('readingModal').classList.remove('visible');
 }
 
-/**
- * Get last reading for a contract
- */
-function getLastReading(contractId) {
-    // Find the most recent reading for this contract
-    const readings = billingData.readings.filter(r => r.contract_id == contractId);
-    if (readings.length === 0) return 0;
-    
-    // Sort by date descending
-    readings.sort((a, b) => {
-        const dateA = a.reading_date?.toDate?.() || new Date(a.reading_date);
-        const dateB = b.reading_date?.toDate?.() || new Date(b.reading_date);
-        return dateB - dateA;
-    });
-    
-    return readings[0].present_reading || 0;
-}
-
 
 /**
  * Calculate billing based on meter reading
- * This handles RTP, MAP, STP categories
  */
 function calculateBilling() {
     const presentReading = parseFloat(document.getElementById('rdPresentMeter').value) || 0;
@@ -526,8 +634,6 @@ function calculateBilling() {
     let netAmount = amount;
     
     if (isVatInclusive) {
-        // VAT is included in the amount, calculate breakdown
-        // Amount = Net + 12% VAT, so Net = Amount / 1.12
         netAmount = amount / 1.12;
         vatAmount = amount - netAmount;
     }
@@ -535,7 +641,7 @@ function calculateBilling() {
     document.getElementById('rdVat').value = vatAmount.toFixed(2);
     document.getElementById('rdNetAmount').value = netAmount.toFixed(2);
     
-    // Final amount due (after discount)
+    // Final amount due
     const amountDue = amount - discount;
     document.getElementById('rdAmountDue').textContent = formatCurrency(amountDue);
     
@@ -574,7 +680,6 @@ function calculateFixedRateBilling() {
     const amountDue = monthlyRate - discount;
     document.getElementById('rdAmountDue').textContent = formatCurrency(amountDue);
     
-    // Store for invoice
     currentInvoice.presentReading = 0;
     currentInvoice.previousReading = 0;
     currentInvoice.grossConsumption = 0;
@@ -589,16 +694,6 @@ function calculateFixedRateBilling() {
 }
 
 /**
- * Format currency
- */
-function formatCurrency(amount) {
-    return '₱' + parseFloat(amount).toLocaleString('en-PH', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    });
-}
-
-/**
  * Load previous reading from database
  */
 async function loadPreviousReading() {
@@ -608,7 +703,7 @@ async function loadPreviousReading() {
         const db = firebase.firestore();
         const readingsSnap = await db.collection('tbl_readings')
             .where('contract_id', '==', selectedContract.id)
-            .orderBy('reading_date', 'desc')
+            .orderBy('created_at', 'desc')
             .limit(1)
             .get();
         
@@ -616,10 +711,8 @@ async function loadPreviousReading() {
             const lastReading = readingsSnap.docs[0].data();
             document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
             
-            if (lastReading.reading_date) {
-                const date = lastReading.reading_date.toDate ? 
-                    lastReading.reading_date.toDate() : new Date(lastReading.reading_date);
-                document.getElementById('rdPreviousDate').value = date.toISOString().split('T')[0];
+            if (lastReading.present_date) {
+                document.getElementById('rdPreviousDate').value = lastReading.present_date;
             }
             
             showToast('Previous reading loaded', 'success');
@@ -637,16 +730,12 @@ async function loadPreviousReading() {
  * Show print preview modal
  */
 function printInvoicePreview() {
-    // Validate we have calculation done
     if (currentInvoice.amountDue === undefined) {
         showToast('Please complete the billing calculation first', 'error');
         return;
     }
     
-    // Generate invoice preview
     renderInvoicePreview();
-    
-    // Show print modal
     document.getElementById('printModalOverlay').classList.add('visible');
     document.getElementById('printModal').classList.add('visible');
 }
@@ -660,7 +749,7 @@ function closePrintModal() {
 }
 
 /**
- * Render invoice preview for printing
+ * Render invoice preview
  */
 function renderInvoicePreview() {
     const preview = document.getElementById('invoicePreview');
@@ -669,27 +758,19 @@ function renderInvoicePreview() {
     const category = selectedContract.category;
     const categoryCode = category?.particular_code || category?.code || '';
     
-    // Get billing date
     const billingDate = new Date();
     const formattedDate = billingDate.toLocaleDateString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
+        month: '2-digit', day: '2-digit', year: 'numeric'
     });
     
-    // Calculate due date (5 days from now or as configured)
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 5);
     const formattedDueDate = dueDate.toLocaleDateString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
+        month: '2-digit', day: '2-digit', year: 'numeric'
     });
     
-    // Format address
     const address = formatBranchAddress(branch);
     
-    // Description text
     let description = '';
     if (currentInvoice.isFixedRate) {
         description = 'Fixed Monthly Rate';
@@ -703,20 +784,14 @@ function renderInvoicePreview() {
                 <div class="inv-client-name">${escapeHtml(company?.companyname || '')} - ${escapeHtml(branch?.branchname || '')}</div>
                 <div class="inv-date">${formattedDate}</div>
             </div>
-            
             <div class="inv-tin">${escapeHtml(company?.company_tin || '')}</div>
-            
             <div class="inv-row">
                 <div class="inv-address">${escapeHtml(address)}</div>
                 <div class="inv-category">${categoryCode}</div>
             </div>
-            
             <div class="inv-business-style">Business Style : ${escapeHtml(company?.business_style || '')}</div>
-            
-            <div class="inv-model">Printer Model   ${escapeHtml(selectedContract.model?.modelname || selectedContract.machine?.description || '')}   ${escapeHtml(selectedContract.machine?.serial || '')}</div>
-            
+            <div class="inv-model">Printer Model   ${escapeHtml(selectedContract.model?.modelname || '')}   ${escapeHtml(selectedContract.machine?.serial || '')}</div>
             <div class="inv-description">${description}</div>
-            
             <div class="inv-amounts">
                 ${currentInvoice.isVatInclusive ? `
                     <div class="inv-amount-row">
@@ -761,19 +836,12 @@ function renderInvoicePreview() {
  */
 function formatBranchAddress(branch) {
     if (!branch) return '';
-    const parts = [
-        branch.room,
-        branch.floor,
-        branch.bldg,
-        branch.street,
-        branch.brgy,
-        branch.city_name || ''
-    ].filter(Boolean);
+    const parts = [branch.room, branch.floor, branch.bldg, branch.street, branch.brgy, branch.city_name || ''].filter(Boolean);
     return parts.join(' ');
 }
 
 /**
- * Adjust print position for alignment
+ * Adjust print position
  */
 function adjustPrintPosition(dx, dy) {
     printPosition.x += dx;
@@ -798,7 +866,6 @@ function resetPrintPosition() {
  * Confirm and save billing
  */
 async function confirmBilling() {
-    // Validate
     if (currentInvoice.amountDue === undefined) {
         showToast('Please complete the billing calculation first', 'error');
         return;
@@ -807,7 +874,6 @@ async function confirmBilling() {
     try {
         const db = firebase.firestore();
         
-        // Prepare reading data
         const readingData = {
             contract_id: selectedContract.id,
             invoice_number: currentInvoice.invoiceNumber,
@@ -830,10 +896,9 @@ async function confirmBilling() {
             remarks: document.getElementById('rdRemarks').value,
             created_by: firebase.auth().currentUser?.email || 'unknown',
             created_at: firebase.firestore.Timestamp.now(),
-            status: 'pending' // pending, paid, cancelled
+            status: 'pending' // pending = billed but not yet received by customer
         };
         
-        // Save to Firebase
         await db.collection('tbl_readings').add(readingData);
         
         showToast('Billing saved successfully!', 'success');
@@ -853,7 +918,6 @@ async function confirmBilling() {
  * Print invoice
  */
 function printInvoice() {
-    // Save first, then print
     confirmBilling().then(() => {
         window.print();
         closePrintModal();
@@ -882,7 +946,6 @@ async function refreshPendingInvoices() {
         const invoices = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
         
         tbody.innerHTML = invoices.map(inv => {
-            // Calculate age in days
             const createdAt = inv.created_at?.toDate() || new Date();
             const age = Math.floor((new Date() - createdAt) / (1000 * 60 * 60 * 24));
             
@@ -890,16 +953,13 @@ async function refreshPendingInvoices() {
             if (age > 30) ageClass = 'old';
             else if (age > 14) ageClass = 'medium';
             
-            // Get contract info
-            const contract = billingData.contracts.find(c => c.id == inv.contract_id);
-            const branch = contract ? billingData.branches.find(b => b.id == contract.contract_id) : null;
-            const company = branch ? billingData.companies.find(c => c.id == branch.company_id) : null;
+            const contract = contractsWithInfo.find(c => c.id == inv.contract_id);
             
             return `
                 <tr class="pending-invoice-row" onclick="viewInvoice('${inv.docId}')">
                     <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
                     <td><span class="invoice-age ${ageClass}">${age}</span></td>
-                    <td>${escapeHtml(company?.companyname || 'Unknown')}</td>
+                    <td>${escapeHtml(contract?.company?.companyname || 'Unknown')}</td>
                 </tr>
             `;
         }).join('');
@@ -915,7 +975,6 @@ async function refreshPendingInvoices() {
  * View invoice details
  */
 function viewInvoice(docId) {
-    // TODO: Implement invoice detail view
     showToast('Invoice view coming soon', 'info');
 }
 
@@ -923,7 +982,6 @@ function viewInvoice(docId) {
  * Show toast notification
  */
 function showToast(message, type = 'info') {
-    // Remove existing toast
     const existing = document.querySelector('.billing-toast');
     if (existing) existing.remove();
     
@@ -936,8 +994,8 @@ function showToast(message, type = 'info') {
 }
 
 /**
- * Update reading dates based on month selection
+ * Update reading dates
  */
 function updateReadingDates() {
-    // This can be customized based on your reading schedule logic
+    // Can be customized based on reading schedule logic
 }
