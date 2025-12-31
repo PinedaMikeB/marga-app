@@ -182,8 +182,11 @@ function buildContractsWithInfo() {
         const brand = machine ? billingData.brands.find(b => b.id == machine.brand_id) : null;
         const category = billingData.categories.find(c => c.id == contract.category_id);
         
-        // Get reading day from branch or contract
-        const readingDay = parseInt(branch?.reading_date) || parseInt(contract?.reading_day) || 0;
+        // Get reading day from contract's 'rd' field (Reading Day)
+        const readingDay = parseInt(contract.rd) || 0;
+        
+        // Get starting/previous meter from contract
+        const startingMeter = parseFloat(contract.starting_meter) || parseFloat(contract.b_meter) || 0;
         
         // Check if this contract has been billed this month
         const billedThisMonth = billingData.readings.some(r => 
@@ -220,6 +223,7 @@ function buildContractsWithInfo() {
             brand,
             category,
             readingDay,
+            startingMeter,
             billedThisMonth,
             billingStatus,
             lastReading
@@ -537,15 +541,23 @@ async function openReadingModal() {
     const today = new Date();
     document.getElementById('rdPresentDate').value = today.toISOString().split('T')[0];
     
-    // Initialize previous reading values
-    let prevReading = 0;
+    // Get previous/starting meter from contract data
+    // Use starting_meter or b_meter from the contract record
+    let prevReading = selectedContract.startingMeter || 0;
     let prevDate = new Date(today);
     prevDate.setMonth(prevDate.getMonth() - 1);
+    
+    // If there's a reading_date in the contract, use it
+    if (selectedContract.reading_date) {
+        try {
+            prevDate = new Date(selectedContract.reading_date);
+        } catch(e) {}
+    }
     
     // Populate contract rates
     document.getElementById('rdQuota').value = selectedContract.monthly_quota || 0;
     document.getElementById('rdPageRate').value = selectedContract.page_rate || 0;
-    document.getElementById('rdExceedRate').value = selectedContract.exceed_rate || selectedContract.page_rate || 0;
+    document.getElementById('rdExceedRate').value = selectedContract.page_rate_xtra || selectedContract.exceed_rate || selectedContract.page_rate || 0;
     
     // Check if RTF (fixed rate - no reading needed)
     const isFixedRate = ['RTF', 'RTC', 'MAT', 'STC', 'MAC', 'REF', 'RD', 'PI', 'OTH'].includes(categoryCode);
@@ -592,7 +604,7 @@ async function fetchPreviousReading() {
     try {
         const db = initFirebase();
         
-        // Query for the most recent reading for this contract
+        // First, try to get the last reading from tbl_readings (our new billing records)
         const readingsSnap = await db.collection('tbl_readings')
             .where('contract_id', '==', selectedContract.id)
             .orderBy('created_at', 'desc')
@@ -601,12 +613,10 @@ async function fetchPreviousReading() {
         
         if (!readingsSnap.empty) {
             const lastReading = readingsSnap.docs[0].data();
-            console.log('Found previous reading:', lastReading);
+            console.log('Found previous reading from tbl_readings:', lastReading);
             
-            // Update the previous reading field
             document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
             
-            // Update the previous date
             if (lastReading.present_date) {
                 document.getElementById('rdPreviousDate').value = lastReading.present_date;
             } else if (lastReading.reading_date) {
@@ -617,12 +627,24 @@ async function fetchPreviousReading() {
             
             console.log('Previous reading loaded:', lastReading.present_reading);
         } else {
-            console.log('No previous reading found for contract:', selectedContract.id);
-            // Keep the default 0 value
+            // No previous reading in our system, use starting_meter from contract
+            console.log('No previous reading found, using contract starting_meter:', selectedContract.startingMeter);
+            document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
+            
+            // Use reading_date from contract if available
+            if (selectedContract.reading_date) {
+                try {
+                    const rd = new Date(selectedContract.reading_date);
+                    if (!isNaN(rd)) {
+                        document.getElementById('rdPreviousDate').value = rd.toISOString().split('T')[0];
+                    }
+                } catch(e) {}
+            }
         }
     } catch (error) {
-        // If query fails (e.g., no index), try without orderBy
-        console.log('Trying alternative query...', error.message);
+        console.log('Query with orderBy failed, trying without...', error.message);
+        
+        // Fallback: query without orderBy (in case index doesn't exist)
         try {
             const db = initFirebase();
             const readingsSnap = await db.collection('tbl_readings')
@@ -630,7 +652,6 @@ async function fetchPreviousReading() {
                 .get();
             
             if (!readingsSnap.empty) {
-                // Sort manually by created_at
                 const readings = readingsSnap.docs
                     .map(d => d.data())
                     .sort((a, b) => {
@@ -647,9 +668,14 @@ async function fetchPreviousReading() {
                         document.getElementById('rdPreviousDate').value = lastReading.present_date;
                     }
                 }
+            } else {
+                // Use contract's starting_meter
+                document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
             }
         } catch (e2) {
             console.error('Error fetching previous reading:', e2);
+            // Final fallback: use contract's starting_meter
+            document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
         }
     }
 }
