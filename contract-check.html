@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Contract Fields Check</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; background: #f5f5f5; }
+        pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow: auto; max-height: 600px; }
+        .highlight { background: yellow; color: black; padding: 2px 4px; }
+    </style>
+</head>
+<body>
+    <h1>Contract Fields Analysis</h1>
+    <p>Looking for: reading_date, rd, beginning_meter, beg_meter, prev_meter...</p>
+    <div id="output">Loading...</div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+
+        async function analyze() {
+            const output = document.getElementById('output');
+            
+            // Get contracts with different reading dates
+            const snap = await db.collection('tbl_contractmain').limit(50).get();
+            const docs = snap.docs.map(d => d.data());
+            
+            // Get ALL unique fields
+            const allFields = new Set();
+            docs.forEach(doc => Object.keys(doc).forEach(k => allFields.add(k)));
+            const fields = Array.from(allFields).sort();
+            
+            // Find reading-related fields
+            const readingFields = fields.filter(f => {
+                const lower = f.toLowerCase();
+                return lower.includes('read') || 
+                       lower.includes('meter') || 
+                       lower.includes('beg') ||
+                       lower.includes('prev') ||
+                       lower === 'rd' ||
+                       lower === 'pi' ||
+                       lower === 'ap';
+            });
+            
+            let html = '<h2>All Contract Fields (' + fields.length + '):</h2>';
+            html += '<p>' + fields.map(f => {
+                if (readingFields.includes(f)) {
+                    return `<span class="highlight">${f}</span>`;
+                }
+                return f;
+            }).join(', ') + '</p>';
+            
+            html += '<h2>Reading-Related Fields:</h2>';
+            html += '<pre>' + JSON.stringify(readingFields, null, 2) + '</pre>';
+            
+            // Show sample contracts with these fields
+            html += '<h2>Sample Contracts (showing reading fields):</h2>';
+            
+            const samples = docs.slice(0, 10).map(doc => {
+                const relevant = {};
+                relevant.id = doc.id;
+                relevant.contract_id = doc.contract_id;
+                readingFields.forEach(f => {
+                    if (doc[f] !== undefined) relevant[f] = doc[f];
+                });
+                // Also check common variations
+                ['reading_date', 'readingdate', 'rd', 'reading_day', 'beg_meter', 'beginning_meter', 
+                 'begmeter', 'prev_meter', 'prevmeter', 'date_installed', 'install_date'].forEach(f => {
+                    if (doc[f] !== undefined) relevant[f] = doc[f];
+                });
+                return relevant;
+            });
+            
+            html += '<pre>' + JSON.stringify(samples, null, 2) + '</pre>';
+            
+            // Show one complete contract record
+            html += '<h2>Complete Contract Record (first one):</h2>';
+            html += '<pre>' + JSON.stringify(docs[0], null, 2) + '</pre>';
+            
+            output.innerHTML = html;
+        }
+        
+        analyze();
+    </script>
+</body>
+</html>
