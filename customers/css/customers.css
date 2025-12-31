@@ -506,3 +506,402 @@
         white-space: nowrap;
     }
 }
+
+
+/* ============================================
+   DETAIL SECTION STYLING
+   ============================================ */
+
+.detail-section {
+    margin-bottom: 1.75rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.detail-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.detail-section-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #4299e1;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.detail-field {
+    background: #f7fafc;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+}
+
+.detail-field.full {
+    grid-column: span 2;
+}
+
+.field-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #a0aec0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.field-value {
+    font-size: 0.9rem;
+    color: #2d3748;
+    font-weight: 500;
+}
+
+/* ============================================
+   BRANCH CARDS
+   ============================================ */
+
+.branch-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.branch-card:hover {
+    border-color: #4299e1;
+    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.15);
+}
+
+.branch-card:last-child {
+    margin-bottom: 0;
+}
+
+.branch-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #edf2f7;
+}
+
+.branch-name {
+    font-weight: 600;
+    color: #1a365d;
+    font-size: 0.95rem;
+}
+
+.branch-code {
+    font-size: 0.75rem;
+    color: #a0aec0;
+    margin-top: 0.15rem;
+}
+
+.branch-edit-icon {
+    color: #a0aec0;
+    transition: color 0.2s;
+}
+
+.branch-card:hover .branch-edit-icon {
+    color: #4299e1;
+}
+
+.branch-details {
+    font-size: 0.85rem;
+    color: #4a5568;
+    line-height: 1.8;
+}
+
+.branch-details strong {
+    color: #2d3748;
+    font-weight: 600;
+}
+
+.branch-machines {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #edf2f7;
+}
+
+.branch-machines-title {
+    font-size: 0.78rem;
+    color: #718096;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.branch-machines-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.machine-tag {
+    font-size: 0.72rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+.machine-tag.active {
+    background: #c6f6d5;
+    color: #276749;
+}
+
+.machine-tag.pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.machine-tag.terminated {
+    background: #fed7d7;
+    color: #c53030;
+}
+
+.machine-tag.more {
+    background: #e2e8f0;
+    color: #4a5568;
+}
+
+.branch-actions {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #edf2f7;
+}
+
+.btn-convert {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #4299e1;
+    background: #ebf8ff;
+    border: 1px solid #bee3f8;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-convert:hover {
+    background: #bee3f8;
+    border-color: #90cdf4;
+}
+
+/* Badges */
+.badge-success {
+    display: inline-flex;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 20px;
+    background: #c6f6d5;
+    color: #276749;
+}
+
+.badge-danger {
+    display: inline-flex;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 20px;
+    background: #fed7d7;
+    color: #c53030;
+}
+
+
+/* ============================================
+   BILLING TAB STYLING
+   ============================================ */
+
+.billing-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.billing-card:last-child {
+    margin-bottom: 0;
+}
+
+.billing-card-header {
+    font-weight: 600;
+    color: #1a365d;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #edf2f7;
+}
+
+.billing-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+
+.billing-field {
+    padding: 0.5rem 0;
+}
+
+.billing-field .field-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #a0aec0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.2rem;
+}
+
+.billing-field .field-value {
+    font-size: 0.88rem;
+    color: #2d3748;
+    font-weight: 500;
+}
+
+/* ============================================
+   MACHINES TAB STYLING
+   ============================================ */
+
+.machine-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    transition: all 0.2s ease;
+}
+
+.machine-card:hover {
+    border-color: #4299e1;
+    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.1);
+}
+
+.machine-card:last-child {
+    margin-bottom: 0;
+}
+
+.machine-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #edf2f7;
+}
+
+.machine-card-title {
+    font-weight: 600;
+    color: #1a365d;
+    font-size: 0.95rem;
+}
+
+.machine-card-serial {
+    font-size: 0.78rem;
+    color: #a0aec0;
+    margin-top: 0.15rem;
+    font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+.machine-status-badge {
+    display: inline-flex;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 20px;
+}
+
+.machine-status-badge.active {
+    background: #c6f6d5;
+    color: #276749;
+}
+
+.machine-status-badge.ended,
+.machine-status-badge.terminated {
+    background: #fed7d7;
+    color: #c53030;
+}
+
+.machine-status-badge.pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.machine-details-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.machine-detail-item {
+    text-align: center;
+    padding: 0.75rem;
+    background: #f7fafc;
+    border-radius: 8px;
+}
+
+.machine-detail-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #a0aec0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.machine-detail-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.machine-detail-value.currency {
+    color: #38a169;
+}
+
+/* ============================================
+   EMPTY STATE FOR TABS
+   ============================================ */
+
+.tab-empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #a0aec0;
+}
+
+.tab-empty-state svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.tab-empty-state h4 {
+    font-size: 1rem;
+    color: #718096;
+    margin-bottom: 0.5rem;
+}
+
+.tab-empty-state p {
+    font-size: 0.85rem;
+}

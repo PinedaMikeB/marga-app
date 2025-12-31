@@ -526,39 +526,56 @@ function loadBillingTab(companyBranches) {
     const branchBillInfo = customers.billInfo.filter(bi => branchIds.includes(bi.branch_id));
     const content = document.getElementById('panelContent');
     
+    if (branchBillInfo.length === 0) {
+        content.innerHTML = `
+            <div class="tab-empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                </svg>
+                <h4>No Billing Information</h4>
+                <p>No billing records found for this company</p>
+            </div>
+        `;
+        return;
+    }
+    
     content.innerHTML = `
         <div class="detail-section">
             <div class="detail-section-title">Billing Information</div>
-            ${branchBillInfo.length > 0 ? branchBillInfo.map(bi => `
-                <div class="branch-card">
-                    <div class="detail-grid">
-                        <div class="detail-field">
+            ${branchBillInfo.map(bi => {
+                const branch = companyBranches.find(b => b.id == bi.branch_id);
+                return `
+                <div class="billing-card">
+                    <div class="billing-card-header">${MargaUtils.escapeHtml(branch?.branchname || 'Branch')}</div>
+                    <div class="billing-grid">
+                        <div class="billing-field">
                             <div class="field-label">Payee Name</div>
                             <div class="field-value">${MargaUtils.escapeHtml(bi.payeename || 'N/A')}</div>
                         </div>
-                        <div class="detail-field">
+                        <div class="billing-field">
                             <div class="field-label">Contact</div>
                             <div class="field-value">${MargaUtils.escapeHtml(bi.payeecontactnum || 'N/A')}</div>
                         </div>
-                        <div class="detail-field full">
+                        <div class="billing-field" style="grid-column: span 2;">
                             <div class="field-label">Payee Address</div>
                             <div class="field-value">${MargaUtils.escapeHtml(bi.payeeadd || 'N/A')}</div>
                         </div>
-                        <div class="detail-field">
+                        <div class="billing-field">
                             <div class="field-label">End User</div>
                             <div class="field-value">${MargaUtils.escapeHtml(bi.endusername || 'N/A')}</div>
                         </div>
-                        <div class="detail-field">
+                        <div class="billing-field">
                             <div class="field-label">End User Contact</div>
                             <div class="field-value">${MargaUtils.escapeHtml(bi.endusercontactnum || 'N/A')}</div>
                         </div>
-                        <div class="detail-field full">
+                        <div class="billing-field" style="grid-column: span 2;">
                             <div class="field-label">End User Address</div>
                             <div class="field-value">${MargaUtils.escapeHtml(bi.enduseradd || 'N/A')}</div>
                         </div>
                     </div>
                 </div>
-            `).join('') : '<p class="text-muted text-center" style="padding: 2rem;">No billing information found</p>'}
+            `}).join('')}
         </div>
     `;
 }
@@ -578,17 +595,31 @@ function loadMachinesTab(companyBranches) {
         2: { text: 'Terminated', class: 'terminated' },
         3: { text: 'On Hold', class: 'pending' },
         4: { text: 'Pulled Out', class: 'terminated' },
-        7: { text: 'Ended', class: 'terminated' },
+        7: { text: 'Ended', class: 'ended' },
         8: { text: 'Replaced', class: 'pending' },
         9: { text: 'Transferred', class: 'pending' },
         10: { text: 'For Pullout', class: 'pending' },
         13: { text: 'Cancelled', class: 'terminated' }
     };
     
+    if (branchContracts.length === 0) {
+        content.innerHTML = `
+            <div class="tab-empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="6" width="20" height="12" rx="2"/>
+                    <path d="M12 12h.01"/>
+                </svg>
+                <h4>No Machines</h4>
+                <p>No machines or contracts found for this company</p>
+            </div>
+        `;
+        return;
+    }
+    
     content.innerHTML = `
         <div class="detail-section">
             <div class="detail-section-title">Machines & Contracts (${branchContracts.length})</div>
-            ${branchContracts.length > 0 ? branchContracts.map(contract => {
+            ${branchContracts.map(contract => {
                 const machine = customers.machines.find(m => m.id == contract.mach_id) || {};
                 const model = customers.models.find(m => m.id == machine.model_id);
                 const modelName = model?.modelname || 'Unknown Model';
@@ -596,46 +627,46 @@ function loadMachinesTab(companyBranches) {
                 
                 return `
                     <div class="machine-card">
-                        <div class="machine-header">
+                        <div class="machine-card-header">
                             <div>
-                                <div class="machine-model">${MargaUtils.escapeHtml(modelName)}</div>
-                                <div class="machine-serial">${MargaUtils.escapeHtml(machine.serial || contract.xserial || 'N/A')}</div>
+                                <div class="machine-card-title">${MargaUtils.escapeHtml(modelName)}</div>
+                                <div class="machine-card-serial">${MargaUtils.escapeHtml(machine.serial || contract.xserial || 'N/A')}</div>
                             </div>
-                            <span class="machine-status ${statusInfo.class}">${statusInfo.text}</span>
+                            <span class="machine-status-badge ${statusInfo.class}">${statusInfo.text}</span>
                         </div>
-                        <div class="machine-rates">
-                            <div class="rate-item">
-                                <div class="rate-value">${MargaUtils.formatCurrency(contract.page_rate || 0)}</div>
-                                <div class="rate-label">B&W Rate</div>
+                        <div class="machine-details-grid">
+                            <div class="machine-detail-item">
+                                <div class="machine-detail-label">B&W Rate</div>
+                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.page_rate || 0)}</div>
                             </div>
-                            <div class="rate-item">
-                                <div class="rate-value">${contract.monthly_quota || 0}</div>
-                                <div class="rate-label">B&W Quota</div>
+                            <div class="machine-detail-item">
+                                <div class="machine-detail-label">B&W Quota</div>
+                                <div class="machine-detail-value">${(contract.monthly_quota || 0).toLocaleString()}</div>
                             </div>
-                            <div class="rate-item">
-                                <div class="rate-value">${MargaUtils.formatCurrency(contract.monthly_rate || 0)}</div>
-                                <div class="rate-label">Monthly Rate</div>
+                            <div class="machine-detail-item">
+                                <div class="machine-detail-label">Monthly Rate</div>
+                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.monthly_rate || 0)}</div>
                             </div>
                         </div>
                         ${contract.page_rate2 > 0 ? `
-                        <div class="machine-rates" style="border-top: 1px dashed var(--border); margin-top: 0.75rem; padding-top: 0.75rem;">
-                            <div class="rate-item">
-                                <div class="rate-value">${MargaUtils.formatCurrency(contract.page_rate2 || 0)}</div>
-                                <div class="rate-label">Color Rate</div>
+                        <div class="machine-details-grid" style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed #e2e8f0;">
+                            <div class="machine-detail-item">
+                                <div class="machine-detail-label">Color Rate</div>
+                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.page_rate2 || 0)}</div>
                             </div>
-                            <div class="rate-item">
-                                <div class="rate-value">${contract.monthly_quota2 || 0}</div>
-                                <div class="rate-label">Color Quota</div>
+                            <div class="machine-detail-item">
+                                <div class="machine-detail-label">Color Quota</div>
+                                <div class="machine-detail-value">${(contract.monthly_quota2 || 0).toLocaleString()}</div>
                             </div>
-                            <div class="rate-item">
-                                <div class="rate-value">${MargaUtils.formatCurrency(contract.monthly_rate2 || 0)}</div>
-                                <div class="rate-label">Color Monthly</div>
+                            <div class="machine-detail-item">
+                                <div class="machine-detail-label">Color Monthly</div>
+                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.monthly_rate2 || 0)}</div>
                             </div>
                         </div>
                         ` : ''}
                     </div>
                 `;
-            }).join('') : '<p class="text-muted text-center" style="padding: 2rem;">No machines found</p>'}
+            }).join('')}
         </div>
     `;
 }
