@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Find Infinity Internet - b_meter 71075</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; background: #f5f5f5; }
+        pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow: auto; max-height: 500px; }
+        .found { background: #22c55e; color: white; padding: 0.5rem 1rem; border-radius: 4px; margin: 0.5rem 0; display: inline-block; }
+        .not-found { background: #ef4444; color: white; padding: 0.5rem 1rem; border-radius: 4px; }
+        h2 { color: #1e3a5f; margin-top: 2rem; }
+        .card { background: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f1f5f9; font-weight: 600; }
+        .highlight { background: #fef3c7; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Find Infinity Internet - b_meter with 71075</h1>
+    
+    <div id="output">
+        <p>Searching...</p>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+
+        async function search() {
+            const output = document.getElementById('output');
+            let html = '';
+            
+            // Load all data
+            const [contractsSnap, branchesSnap, companiesSnap] = await Promise.all([
+                db.collection('tbl_contractmain').get(),
+                db.collection('tbl_branchinfo').get(),
+                db.collection('tbl_companylist').get()
+            ]);
+            
+            const contracts = contractsSnap.docs.map(d => ({docId: d.id, ...d.data()}));
+            const branches = branchesSnap.docs.map(d => ({docId: d.id, ...d.data()}));
+            const companies = companiesSnap.docs.map(d => ({docId: d.id, ...d.data()}));
+            
+            // Find Infinity company
+            const infinityCompanies = companies.filter(c => 
+                c.companyname && c.companyname.toLowerCase().includes('infinity')
+            );
+            
+            html += '<div class="card">';
+            html += '<h2>Step 1: Find all "Infinity" companies</h2>';
+            html += `<p>Found ${infinityCompanies.length} companies with "Infinity" in name:</p>`;
+            html += '<ul>';
+            infinityCompanies.forEach(c => {
+                html += `<li><strong>${c.companyname}</strong> (ID: ${c.id})</li>`;
+            });
+            html += '</ul></div>';
+            
+            // For each Infinity company, find their contracts
+            html += '<div class="card">';
+            html += '<h2>Step 2: Find contracts for Infinity companies</h2>';
+            
+            let allInfinityContracts = [];
+            
+            for (const company of infinityCompanies) {
+                const companyBranches = branches.filter(b => b.company_id == company.id);
+                const branchIds = companyBranches.map(b => b.id);
+                const companyContracts = contracts.filter(c => branchIds.includes(c.contract_id));
+                
+                allInfinityContracts = allInfinityContracts.concat(
+                    companyContracts.map(c => ({
+                        ...c,
+                        companyName: company.companyname,
+                        branchName: companyBranches.find(b => b.id == c.contract_id)?.branchname
+                    }))
+                );
+                
+                html += `<h3>${company.companyname}</h3>`;
+                html += `<p>Branches: ${companyBranches.length}, Contracts: ${companyContracts.length}</p>`;
+            }
+            html += '</div>';
+            
+            // Show all Infinity contracts with b_meter values
+            html += '<div class="card">';
+            html += '<h2>Step 3: All Infinity contracts with b_meter values</h2>';
+            html += '<table>';
+            html += '<tr><th>Contract ID</th><th>Company</th><th>Branch</th><th>b_meter</th><th>starting_meter</th><th>rd</th><th>Status</th></tr>';
+            
+            allInfinityContracts.forEach(c => {
+                const isTarget = c.b_meter == '71075' || c.b_meter == 71075;
+                html += `<tr class="${isTarget ? 'highlight' : ''}">
+                    <td>${c.id}</td>
+                    <td>${c.companyName}</td>
+                    <td>${c.branchName || '-'}</td>
+                    <td><strong>${c.b_meter || '-'}</strong></td>
+                    <td>${c.starting_meter || '-'}</td>
+                    <td>${c.rd || '-'}</td>
+                    <td>${c.status}</td>
+                </tr>`;
+            });
+            html += '</table></div>';
+            
+            // Search ALL contracts for b_meter = 71075
+            html += '<div class="card">';
+            html += '<h2>Step 4: Search ALL contracts where b_meter = 71075</h2>';
+            
+            const contractsWith71075 = contracts.filter(c => 
+                c.b_meter == '71075' || c.b_meter == 71075 ||
+                String(c.b_meter).includes('71075')
+            );
+            
+            if (contractsWith71075.length > 0) {
+                html += `<p class="found">✅ Found ${contractsWith71075.length} contracts with b_meter containing 71075</p>`;
+                
+                contractsWith71075.forEach(c => {
+                    const branch = branches.find(b => b.id == c.contract_id);
+                    const company = branch ? companies.find(co => co.id == branch.company_id) : null;
+                    
+                    html += `<h4>Contract ID: ${c.id}</h4>`;
+                    html += `<p>Company: <strong>${company?.companyname || 'Unknown'}</strong></p>`;
+                    html += `<p>Branch: ${branch?.branchname || 'Unknown'}</p>`;
+                    html += `<p>b_meter: <strong>${c.b_meter}</strong></p>`;
+                    html += `<pre>${JSON.stringify(c, null, 2)}</pre>`;
+                });
+            } else {
+                html += `<p class="not-found">❌ No contracts found with b_meter = 71075</p>`;
+                html += `<p>This means 71075 is NOT stored in b_meter. It must be in a billing history table.</p>`;
+            }
+            html += '</div>';
+            
+            // Also search for "Infinity Internet and Printing" specifically
+            html += '<div class="card">';
+            html += '<h2>Step 5: Search for "Infinity Internet and Printing Services"</h2>';
+            
+            const infinityPrinting = companies.find(c => 
+                c.companyname && c.companyname.toLowerCase().includes('infinity internet')
+            );
+            
+            if (infinityPrinting) {
+                html += `<p class="found">✅ Found: ${infinityPrinting.companyname} (ID: ${infinityPrinting.id})</p>`;
+                
+                const itsranches = branches.filter(b => b.company_id == infinityPrinting.id);
+                const brIds = itsranches.map(b => b.id);
+                const itsContracts = contracts.filter(c => brIds.includes(c.contract_id));
+                
+                html += `<p>Branches: ${itsranches.length}</p>`;
+                html += `<p>Contracts: ${itsContracts.length}</p>`;
+                
+                if (itsContracts.length > 0) {
+                    html += '<h4>Contract Details:</h4>';
+                    itsContracts.forEach(c => {
+                        html += `<p><strong>Contract ${c.id}:</strong> b_meter=${c.b_meter}, starting_meter=${c.starting_meter}, rd=${c.rd}</p>`;
+                    });
+                    html += `<pre>${JSON.stringify(itsContracts, null, 2)}</pre>`;
+                }
+            } else {
+                html += `<p>No exact match for "Infinity Internet and Printing Services"</p>`;
+            }
+            html += '</div>';
+            
+            output.innerHTML = html;
+        }
+        
+        search();
+    </script>
+</body>
+</html>
