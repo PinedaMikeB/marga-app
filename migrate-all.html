@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Migrate All Tables to Firebase</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; background: #f5f5f5; }
+        .card { background: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { color: #1e3a5f; }
+        .btn { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        .btn:hover { background: #1d4ed8; }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-success { background: #16a34a; }
+        .btn-warning { background: #ea580c; }
+        .progress { background: #e2e8f0; border-radius: 8px; height: 24px; margin: 0.5rem 0; overflow: hidden; }
+        .progress-bar { background: #22c55e; height: 100%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.8rem; }
+        .log { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+        .log .success { color: #4ade80; }
+        .log .error { color: #f87171; }
+        .log .info { color: #60a5fa; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f8fafc; font-weight: 600; }
+        .status-pending { color: #64748b; }
+        .status-loading { color: #f59e0b; }
+        .status-done { color: #22c55e; font-weight: bold; }
+        .status-error { color: #ef4444; }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+        .stat { background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: #1e3a5f; }
+        .stat-label { font-size: 0.75rem; color: #64748b; }
+    </style>
+</head>
+<body>
+    <h1>📦 Migrate All Tables to Firebase</h1>
+    
+    <div class="card">
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="totalTables">0</div>
+                <div class="stat-label">Total Tables</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="totalRecords">0</div>
+                <div class="stat-label">Total Records</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="migratedTables">0</div>
+                <div class="stat-label">Tables Done</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="migratedRecords">0</div>
+                <div class="stat-label">Records Done</div>
+            </div>
+        </div>
+        
+        <button class="btn" onclick="loadAllFiles()">1. Load JSON Files</button>
+        <button class="btn btn-success" onclick="migrateAll()" id="btnMigrateAll" disabled>2. Migrate All Tables</button>
+        <button class="btn btn-warning" onclick="migrateSelected()" id="btnMigrateSelected" disabled>3. Migrate Selected</button>
+    </div>
+
+    <div class="card">
+        <h3>Tables to Migrate</h3>
+        <div style="max-height: 400px; overflow-y: auto;">
+            <table id="tablesTable">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                        <th>Table Name</th>
+                        <th>Records</th>
+                        <th>Status</th>
+                        <th>Progress</th>
+                    </tr>
+                </thead>
+                <tbody id="tablesBody">
+                    <tr><td colspan="5">Click "Load JSON Files" to start</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Log</h3>
+        <div class="log" id="log">Ready...</div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        // Tables to migrate - includes split files
+        const TABLE_FILES = [
+            // Split large tables
+            { file: 'tbl_schedule_part1', table: 'tbl_schedule' },
+            { file: 'tbl_schedule_part2', table: 'tbl_schedule' },
+            { file: 'tbl_schedule_part3', table: 'tbl_schedule' },
+            { file: 'tbl_schedule_part4', table: 'tbl_schedule' },
+            { file: 'tbl_schedule_part5', table: 'tbl_schedule' },
+            { file: 'tbl_schedule_part6', table: 'tbl_schedule' },
+            { file: 'tbl_schedule_part7', table: 'tbl_schedule' },
+            { file: 'tbl_paymentinfo_part1', table: 'tbl_paymentinfo' },
+            { file: 'tbl_paymentinfo_part2', table: 'tbl_paymentinfo' },
+            { file: 'tbl_paymentinfo_part3', table: 'tbl_paymentinfo' },
+            { file: 'tbl_paymentinfo_part4', table: 'tbl_paymentinfo' },
+            { file: 'tbl_invoicenum_part1', table: 'tbl_invoicenum' },
+            { file: 'tbl_invoicenum_part2', table: 'tbl_invoicenum' },
+            { file: 'tbl_invoicenum_part3', table: 'tbl_invoicenum' },
+            { file: 'tbl_invoicenum_part4', table: 'tbl_invoicenum' },
+            { file: 'tbl_collections_part1', table: 'tbl_collections' },
+            { file: 'tbl_collections_part2', table: 'tbl_collections' },
+            { file: 'tbl_collections_part3', table: 'tbl_collections' },
+            // Regular tables
+            { file: 'tbl_collectioninfo', table: 'tbl_collectioninfo' },
+            { file: 'tbl_collectionstatus', table: 'tbl_collectionstatus' },
+            { file: 'tbl_invoiceage', table: 'tbl_invoiceage' },
+            { file: 'tbl_cancelledinvoices', table: 'tbl_cancelledinvoices' },
+            { file: 'tbl_serviceinfo', table: 'tbl_serviceinfo' },
+            { file: 'tbl_techarea', table: 'tbl_techarea' },
+            { file: 'tbl_trouble', table: 'tbl_trouble' },
+            { file: 'tbl_newmachinehistory', table: 'tbl_newmachinehistory' },
+            { file: 'tbl_condition', table: 'tbl_condition' },
+            { file: 'tbl_mtype', table: 'tbl_mtype' },
+            { file: 'tbl_storage', table: 'tbl_storage' },
+            { file: 'tbl_parts', table: 'tbl_parts' },
+            { file: 'tbl_partstype', table: 'tbl_partstype' },
+            { file: 'tbl_cartridge', table: 'tbl_cartridge' },
+            { file: 'tbl_tonerink', table: 'tbl_tonerink' },
+            { file: 'tbl_employee', table: 'tbl_employee' },
+            { file: 'tbl_empos', table: 'tbl_empos' },
+            { file: 'tbl_empstatus', table: 'tbl_empstatus' },
+            { file: 'tbl_contracthistory', table: 'tbl_contracthistory' },
+            { file: 'tbl_contractdetails', table: 'tbl_contractdetails' },
+            { file: 'tbl_deliveryinfo', table: 'tbl_deliveryinfo' },
+            { file: 'tbl_groupings', table: 'tbl_groupings' },
+            { file: 'tbl_bracket', table: 'tbl_bracket' },
+            { file: 'tbl_nature', table: 'tbl_nature' },
+            { file: 'tbl_origin', table: 'tbl_origin' },
+            { file: 'tbl_ownership', table: 'tbl_ownership' },
+            { file: 'tbl_supplier', table: 'tbl_supplier' },
+            { file: 'tbl_industry', table: 'tbl_industry' }
+        ];
+        
+        let fileData = {};
+        let fileStatus = {};
+        let totalRecords = 0;
+        let migratedRecords = 0;
+        let migratedFiles = 0;
+
+        function log(msg, type = '') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div class="${type}">[${time}] ${msg}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function loadAllFiles() {
+            log('Loading JSON files...', 'info');
+            const tbody = document.getElementById('tablesBody');
+            tbody.innerHTML = '';
+            totalRecords = 0;
+            
+            for (const {file, table} of TABLE_FILES) {
+                try {
+                    const response = await fetch(`migrations/${file}.json`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        fileData[file] = { data, table };
+                        fileStatus[file] = 'pending';
+                        totalRecords += data.length;
+                        
+                        tbody.innerHTML += `
+                            <tr id="row-${file}">
+                                <td><input type="checkbox" class="table-select" data-file="${file}" checked></td>
+                                <td>${file} → ${table}</td>
+                                <td>${data.length.toLocaleString()}</td>
+                                <td class="status-pending" id="status-${file}">Pending</td>
+                                <td><div class="progress"><div class="progress-bar" id="progress-${file}" style="width:0%">0%</div></div></td>
+                            </tr>
+                        `;
+                        log(`✅ Loaded ${file}: ${data.length.toLocaleString()} records`, 'success');
+                    }
+                } catch (e) {
+                    log(`⚠️ Could not load ${file}.json: ${e.message}`, 'error');
+                }
+            }
+            
+            document.getElementById('totalTables').textContent = Object.keys(fileData).length;
+            document.getElementById('totalRecords').textContent = totalRecords.toLocaleString();
+            document.getElementById('btnMigrateAll').disabled = false;
+            document.getElementById('btnMigrateSelected').disabled = false;
+            
+            log(`Loaded ${Object.keys(fileData).length} files with ${totalRecords.toLocaleString()} total records`, 'info');
+        }
+
+        function toggleSelectAll() {
+            const checked = document.getElementById('selectAll').checked;
+            document.querySelectorAll('.table-select').forEach(cb => cb.checked = checked);
+        }
+
+        async function migrateFile(fileName) {
+            const {data, table} = fileData[fileName];
+            if (!data || data.length === 0) return;
+            
+            const statusEl = document.getElementById(`status-${fileName}`);
+            const progressEl = document.getElementById(`progress-${fileName}`);
+            
+            statusEl.textContent = 'Migrating...';
+            statusEl.className = 'status-loading';
+            
+            const BATCH_SIZE = 500;
+            let processed = 0;
+            
+            try {
+                for (let i = 0; i < data.length; i += BATCH_SIZE) {
+                    const batch = db.batch();
+                    const chunk = data.slice(i, i + BATCH_SIZE);
+                    
+                    for (const record of chunk) {
+                        const docId = String(record.id || (Math.random().toString(36).substr(2, 9)));
+                        const docRef = db.collection(table).doc(docId);
+                        batch.set(docRef, record);
+                    }
+                    
+                    await batch.commit();
+                    processed += chunk.length;
+                    migratedRecords += chunk.length;
+                    
+                    const pct = Math.round((processed / data.length) * 100);
+                    progressEl.style.width = pct + '%';
+                    progressEl.textContent = pct + '%';
+                    
+                    document.getElementById('migratedRecords').textContent = migratedRecords.toLocaleString();
+                }
+                
+                statusEl.textContent = '✅ Done';
+                statusEl.className = 'status-done';
+                fileStatus[fileName] = 'done';
+                migratedFiles++;
+                document.getElementById('migratedTables').textContent = migratedFiles;
+                
+                log(`✅ ${fileName} → ${table}: ${data.length.toLocaleString()} records`, 'success');
+                
+            } catch (error) {
+                statusEl.textContent = '❌ Error';
+                statusEl.className = 'status-error';
+                log(`❌ ${fileName}: ${error.message}`, 'error');
+            }
+        }
+
+        async function migrateAll() {
+            document.getElementById('btnMigrateAll').disabled = true;
+            migratedRecords = 0;
+            migratedFiles = 0;
+            
+            for (const fileName of Object.keys(fileData)) {
+                if (fileStatus[fileName] !== 'done') {
+                    await migrateFile(fileName);
+                    // Small delay to avoid rate limits
+                    await new Promise(r => setTimeout(r, 300));
+                }
+            }
+            
+            log('🎉 All migrations complete!', 'success');
+        }
+
+        async function migrateSelected() {
+            const selected = Array.from(document.querySelectorAll('.table-select:checked'))
+                .map(cb => cb.dataset.file);
+            
+            if (selected.length === 0) {
+                alert('Please select at least one file');
+                return;
+            }
+            
+            document.getElementById('btnMigrateSelected').disabled = true;
+            
+            for (const fileName of selected) {
+                if (fileStatus[fileName] !== 'done') {
+                    await migrateFile(fileName);
+                    await new Promise(r => setTimeout(r, 300));
+                }
+            }
+            
+            document.getElementById('btnMigrateSelected').disabled = false;
+            log('✅ Selected files migrated!', 'success');
+        }
+    </script>
+</body>
+</html>
