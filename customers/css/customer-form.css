@@ -906,3 +906,91 @@
         grid-column: span 1;
     }
 }
+
+
+
+/* ========================================
+   Serial Number Validation Styles
+   ======================================== */
+
+/* Serial input wrapper */
+.serial-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.serial-input-wrapper .serial-input {
+    flex: 1;
+    padding-right: 2.5rem;
+}
+
+/* Validation icon */
+.serial-validation-icon {
+    position: absolute;
+    right: 0.75rem;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.serial-validation-icon .validating {
+    animation: pulse 1s infinite;
+}
+
+.serial-validation-icon .valid {
+    color: #10b981;
+    font-weight: bold;
+}
+
+.serial-validation-icon .invalid {
+    color: #ef4444;
+    font-weight: bold;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Serial validation message */
+.serial-validation-msg {
+    font-size: 0.75rem;
+    padding: 0.375rem 0.5rem;
+    margin-top: 0.25rem;
+    border-radius: 4px;
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+}
+
+/* Input states */
+.serial-input.serial-valid {
+    border-color: #10b981 !important;
+    background: #f0fdf4 !important;
+}
+
+.serial-input.serial-invalid {
+    border-color: #ef4444 !important;
+    background: #fef2f2 !important;
+}
+
+.serial-input.serial-invalid:focus {
+    box-shadow: 0 0 0 3px #fee2e2 !important;
+}
+
+.serial-input.serial-valid:focus {
+    box-shadow: 0 0 0 3px #dcfce7 !important;
+}
+
+
+/* ========================================
+   Machine Status Badge Styles
+   ======================================== */
+
+.machine-status-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}

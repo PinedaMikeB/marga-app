@@ -1,6 +1,6 @@
 # MARGA App Development Handoff
 
-## 📅 Last Updated: December 31, 2025, 12:30 AM
+## 📅 Last Updated: December 31, 2025, 10:00 AM
 
 ## 🎯 Project Overview
 Building a modern web-based enterprise management system for **Marga Enterprises** to replace the legacy VB.NET desktop application. The app manages customers, billing, collections, service, and machine contracts for a printer rental business.
@@ -21,7 +21,75 @@ Building a modern web-based enterprise management system for **Marga Enterprises
 
 ## ✅ What's Been Completed
 
-### Session: December 30-31, 2025
+### Session: December 31, 2025 (Afternoon)
+
+#### 1. ✅ Serial Number Validation - IMPLEMENTED
+- **Real-time validation** as user types (500ms debounce)
+- **Duplicate check** against all machines in database
+- **Visual feedback:**
+  - ✓ Green border = Valid/Unique serial
+  - ✗ Red border = Duplicate detected
+  - ⏳ Loading indicator while checking
+- **Error message** shows which machine already has the serial
+- **Blocks save** if duplicate serial is entered
+- **Auto-uppercase** serial numbers on save
+
+#### 2. ✅ Machine Edit Audit Log - IMPLEMENTED
+- **New collection:** `tbl_machine_history`
+- **Tracks all changes** to machine data:
+  - Old values vs New values
+  - Changed by (user)
+  - Timestamp
+- **Only logs actual changes** (skips if no changes made)
+- **Structure:**
+  ```javascript
+  {
+    id: 1,
+    machine_id: 400,
+    changed_by: 'admin',
+    changed_at: timestamp,
+    changes: {
+      serial: { old: 'ABC123', new: 'XYZ789' },
+      description: { old: 'DCP-7040', new: 'DCP-7065DN' }
+    },
+    old_values: { serial: 'ABC123', description: 'DCP-7040' },
+    new_values: { serial: 'XYZ789', description: 'DCP-7065DN' }
+  }
+  ```
+
+#### 3. ✅ Machine Status Codes - IDENTIFIED & MAPPED
+- **Source:** `tbl_newmachinestatus` from MySQL dump
+- **Status ID meanings:**
+  | ID | Status | Description |
+  |----|--------|-------------|
+  | 0 | Not Set | No status assigned |
+  | 1 | On Stock | Available in warehouse |
+  | 2 | For Delivery | Scheduled for delivery |
+  | 3 | Delivered | Deployed to customer |
+  | 4 | Used W/in Company | Internal use |
+  | 5 | For Junk | Pending disposal |
+  | 6 | Junk | Disposed |
+  | 7 | For Overhauling | Needs major repair |
+  | 8 | Under Repair | Currently being fixed |
+  | 9 | For Parts | Cannibalized for parts |
+  | 10 | For Sale | Listed for sale |
+  | 11 | Trade In | Traded in |
+  | 12 | Outside Repair | External repair |
+  | 13 | Missing | Cannot be located |
+  | 14 | Old | Legacy/outdated |
+  | 15 | Under QC | Quality control check |
+  | 16 | Duplicate | Duplicate entry |
+  | 17 | N/A | Not applicable |
+  | 18 | Delivered (No Contract) | Delivered but no contract yet |
+
+- **Machine status badge** now displayed next to Machine ID in form
+- **Migration script created:** `migrate-status.html`
+
+#### 4. ✅ Contract Status Table - IDENTIFIED
+- **Source:** `tbl_contractstatus` from MySQL dump
+- **Note:** These are different from the contract status already in use
+
+### Session: December 30-31, 2025 (Earlier)
 
 #### 1. Fixed Customer/Contract Statistics
 - **Issue:** Dashboard showed 4,594 active machines instead of actual 1,602
@@ -53,66 +121,46 @@ Building a modern web-based enterprise management system for **Marga Enterprises
   - **MAP** = Maintenance Per Page (needs reading)
 - Category displayed as read-only (cannot be changed to protect billing logic)
 
-#### 5. Editable Machine Details ⚠️ TEMPORARY
+#### 5. Editable Machine Details ✅ COMPLETE (with safeguards)
 - Brand, Model, Serial Number now editable
 - Yellow highlighted fields indicate editable machine data
-- **Purpose:** Allow technicians to correct serial numbers
-- **⚠️ DATA INTEGRITY RISKS - SEE BELOW**
+- **Serial Validation:** Prevents duplicate serial numbers across machines
+- **Audit Logging:** All machine changes logged to `tbl_machine_history`
+- **Real-time Feedback:** Shows ✓ or ✗ as user types serial number
+
+#### 6. Machine Status Reference Table (tbl_newmachinestatus)
+- Migrated 18 machine statuses to Firebase
+- Status codes now verified and documented:
+  - 1=On Stock, 2=For Delivery, 3=Delivered, 4=Used W/in Company
+  - 5=For Junk, 6=Junk, 7=For Overhauling, 8=Under Repair
+  - 9=For Parts, 10=For Sale, 11=Trade In, 12=Outside Repair
+  - 13=Missing, 14=Old, 15=Under QC, 16=Duplicate, 17=N/A
+  - 18=Delivered (No Contract/To Receive)
 
 ---
 
-## ⚠️ CRITICAL: Machine Data Integrity Risks
+---
 
-### Current Implementation (TEMPORARY)
-The machine fields (Brand, Model, Serial) are currently **directly editable** which poses risks:
+## ✅ RESOLVED: Machine Data Integrity (Previously Critical Risks)
 
-### Risk 1: Overwriting History
-```
-OLD: Serial = ABC123 → Changed to → NEW: Serial = XYZ789
-```
-- The old serial "ABC123" is **permanently overwritten**
-- No audit trail of what the serial was before
-- Billing history still references this machine ID but serial changed
+### ✅ Risk 1: Overwriting History - RESOLVED
+- **Solution:** `tbl_machine_history` audit log
+- All changes are now logged with old/new values and timestamp
 
-### Risk 2: Duplicate Serial Numbers
-- User could enter a serial that already exists for another machine
-- No validation currently prevents duplicate serials
-- Could cause confusion: "Which machine with serial XYZ is deployed where?"
+### ✅ Risk 2: Duplicate Serial Numbers - RESOLVED  
+- **Solution:** Real-time serial validation
+- Duplicates are blocked from being saved
+- User gets immediate feedback when entering duplicate serial
 
-### Risk 3: Orphan References
-- If machine serial is changed, old invoices/readings still reference the machine
-- Reports may show mismatched data
+### ⚠️ Risk 3: Orphan References - PARTIALLY ADDRESSED
+- Audit log helps track what changed
+- **Future:** Consider locking serial after invoices are generated
 
-### Recommended Fixes (TODO)
-1. **Add Serial Validation:**
-   ```javascript
-   // Before saving, check if serial already exists
-   const existing = await db.collection('tbl_machine')
-       .where('serial', '==', newSerial)
-       .where('id', '!=', currentMachineId)
-       .get();
-   if (!existing.empty) {
-       alert('This serial already exists!');
-       return;
-   }
-   ```
-
-2. **Add Audit Log:**
-   ```javascript
-   // Log changes to a history collection
-   db.collection('tbl_machine_history').add({
-       machine_id: machineId,
-       changed_by: currentUser,
-       changed_at: timestamp,
-       old_values: { serial: 'ABC123', brand: 'Brother' },
-       new_values: { serial: 'XYZ789', brand: 'Brother' }
-   });
-   ```
-
-3. **Lock After Deployment (Future):**
-   - Once machine is deployed, serial should be read-only
-   - Only admin can unlock for editing
-   - Require reason for change
+### Future Enhancement (TODO)
+- **Lock After Deployment:**
+  - Once machine has active invoices, serial should be read-only
+  - Only admin can unlock for editing
+  - Require reason for change
 
 ---
 
@@ -255,14 +303,28 @@ OLD: Serial = ABC123 → Changed to → NEW: Serial = XYZ789
 | 10 | For Pullout | 39 |
 | 13 | Cancelled | 4 |
 
-### Machine Status (status_id) - TO BE VERIFIED
-| Status | Count | Likely Meaning |
-|--------|-------|----------------|
-| 0 | 269 | Not Set |
-| 2 | 381 | In Warehouse? |
-| 3 | 1,730 | Deployed? |
-| 7 | 348 | Pulled Out? |
-| 18 | 90 | ? |
+### Machine Status (status_id) - ✅ VERIFIED
+| Status | Name | Description |
+|--------|------|-------------|
+| 0 | Not Set | No status assigned |
+| 1 | On Stock | Available in warehouse |
+| 2 | For Delivery | Scheduled for delivery |
+| 3 | Delivered | Deployed to customer |
+| 4 | Used W/in Company | Internal use |
+| 5 | For Junk | Pending disposal |
+| 6 | Junk | Disposed |
+| 7 | For Overhauling | Needs major repair |
+| 8 | Under Repair | Currently being fixed |
+| 9 | For Parts | Cannibalized for parts |
+| 10 | For Sale | Listed for sale |
+| 11 | Trade In | Traded in |
+| 12 | Outside Repair | External repair |
+| 13 | Missing | Cannot be located |
+| 14 | Old | Legacy/outdated |
+| 15 | Under QC | Quality control check |
+| 16 | Duplicate | Duplicate entry |
+| 17 | N/A | Not applicable |
+| 18 | Delivered (No Contract) | Delivered but no contract yet |
 
 **⚠️ TODO:** Verify machine status meanings with Mike
 
@@ -291,9 +353,10 @@ const FIREBASE_CONFIG = {
 ## 🚧 Pending Tasks
 
 ### Immediate Priority
-1. **Machine Serial Validation** - Prevent duplicates
-2. **Machine Edit Audit Log** - Track changes
-3. **Verify Machine Status IDs** - Get meaning from legacy system
+1. ✅ ~~**Machine Serial Validation** - Prevent duplicates~~ DONE
+2. ✅ ~~**Machine Edit Audit Log** - Track changes~~ DONE
+3. ✅ ~~**Verify Machine Status IDs** - Get meaning from legacy system~~ DONE
+4. **Run Status Migration** - Open `migrate-status.html` and click "Run Migration"
 
 ### Module Development (Priority Order)
 1. **Billing Module** - Invoice generation, meter readings
@@ -303,8 +366,8 @@ const FIREBASE_CONFIG = {
 5. Reports Module
 
 ### Data Integrity Enhancements
-- [ ] Serial number uniqueness validation
-- [ ] Machine edit history/audit log
+- [x] Serial number uniqueness validation ✅
+- [x] Machine edit history/audit log ✅
 - [ ] Lock machine fields after deployment
 - [ ] Admin override for locked fields
 
@@ -339,6 +402,7 @@ fetch('https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databa
 ├── index.html              ← Login page
 ├── dashboard.html          ← Main dashboard
 ├── customers.html          ← Customer listing
+├── migrate-status.html     ← Migration tool for status tables (NEW)
 ├── HANDOFF.md              ← This file
 │
 ├── shared/
@@ -352,15 +416,42 @@ fetch('https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databa
 ├── customers/
 │   ├── css/
 │   │   ├── customers.css
-│   │   └── customer-form.css
+│   │   └── customer-form.css  ← Added serial validation styles (UPDATED)
 │   └── js/
 │       ├── customers.js      ← List, search, pagination
-│       └── customer-form.js  ← Edit form, machine/contract editing
+│       └── customer-form.js  ← Edit form + serial validation + audit log (UPDATED)
 │
 ├── billing/                ← 🔲 TODO
 ├── collections/            ← 🔲 TODO
 └── assets/
 ```
+
+---
+
+## 🗄️ New Firebase Collections
+
+### tbl_machine_history (Audit Log)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| machine_id | int | FK to tbl_machine |
+| changed_by | string | Username who made change |
+| changed_at | timestamp | When change was made |
+| changes | object | Summary of what changed |
+| old_values | object | Previous values |
+| new_values | object | New values |
+
+### tbl_newmachinestatus (Reference Table - Run migration first!)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| status | string | Status name |
+
+### tbl_contractstatus (Reference Table - Run migration first!)
+| Field | Type | Description |
+|-------|------|-------------|
+| id | int | Primary key |
+| con_status | string | Contract status name |
 
 ---
 

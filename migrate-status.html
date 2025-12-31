@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migrate Machine Status Table - Marga</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #1e40af; margin-bottom: 8px; }
+        h2 { color: #374151; font-size: 1.1rem; margin: 0 0 16px 0; }
+        .status-list { font-family: monospace; background: #f3f4f6; padding: 16px; border-radius: 8px; }
+        .status-list div { padding: 4px 0; }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .success { color: #059669; }
+        .error { color: #dc2626; }
+        #log { 
+            background: #1e293b; 
+            color: #e2e8f0; 
+            padding: 16px; 
+            border-radius: 8px; 
+            font-family: monospace;
+            font-size: 0.875rem;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔧 Machine Status Table Migration</h1>
+        <p>This will create the <code>tbl_newmachinestatus</code> collection in Firebase with all machine status codes.</p>
+    </div>
+
+    <div class="card">
+        <h2>Machine Status Codes to Migrate</h2>
+        <div class="status-list" id="statusList"></div>
+    </div>
+
+    <div class="card">
+        <button onclick="runMigration()" id="migrateBtn">Run Migration</button>
+        <button onclick="verifyData()" id="verifyBtn">Verify Data</button>
+    </div>
+
+    <div class="card">
+        <h2>Log Output</h2>
+        <div id="log">Ready to migrate...</div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M',
+            authDomain: 'sah-spiritual-journal.firebaseapp.com',
+            projectId: 'sah-spiritual-journal',
+            storageBucket: 'sah-spiritual-journal.firebasestorage.app',
+            messagingSenderId: '450636566224',
+            appId: '1:450636566224:web:5c46eb4b827e6fd3ad58d5'
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Machine status data from MySQL dump
+        const machineStatusData = [
+            { id: 1, status: 'ON STOCK' },
+            { id: 2, status: 'FOR DELIVERY' },
+            { id: 3, status: 'DELIVERED' },
+            { id: 4, status: 'USED W/IN THE COMPANY' },
+            { id: 5, status: 'FOR JUNK' },
+            { id: 6, status: 'JUNK' },
+            { id: 7, status: 'FOR OVERHAULING' },
+            { id: 8, status: 'UNDER REPAIR' },
+            { id: 9, status: 'FOR PARTS' },
+            { id: 10, status: 'FOR SALE' },
+            { id: 11, status: 'TRADE IN' },
+            { id: 12, status: 'OUTSIDE REPAIR' },
+            { id: 13, status: 'MISSING' },
+            { id: 14, status: 'OLD' },
+            { id: 15, status: 'UNDER QC' },
+            { id: 16, status: 'DUPLICATE' },
+            { id: 17, status: 'N/A' },
+            { id: 18, status: 'Delivered (No Contract/To Receive)' }
+        ];
+
+        // Contract status data from MySQL dump
+        const contractStatusData = [
+            { id: 1, con_status: 'Active' },
+            { id: 2, con_status: 'For Upgrade' },
+            { id: 3, con_status: 'For Change Unit' },
+            { id: 4, con_status: 'For Termination' },
+            { id: 5, con_status: 'Upgraded' },
+            { id: 6, con_status: 'Changed Unit' },
+            { id: 7, con_status: 'Terminated' },
+            { id: 8, con_status: 'For Spot Repair' },
+            { id: 9, con_status: 'Back Up Unit' },
+            { id: 10, con_status: 'Service Unit' },
+            { id: 11, con_status: 'Demo Unit' },
+            { id: 13, con_status: 'Shut Down' }
+        ];
+
+        // Display status list
+        function displayStatusList() {
+            const listEl = document.getElementById('statusList');
+            let html = '<strong>Machine Status (tbl_newmachinestatus):</strong><br>';
+            machineStatusData.forEach(s => {
+                html += `ID ${s.id}: ${s.status}<br>`;
+            });
+            html += '<br><strong>Contract Status (tbl_contractstatus):</strong><br>';
+            contractStatusData.forEach(s => {
+                html += `ID ${s.id}: ${s.con_status}<br>`;
+            });
+            listEl.innerHTML = html;
+        }
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'success' ? '✅' : type === 'error' ? '❌' : '📝';
+            logEl.innerHTML += `\n[${timestamp}] ${prefix} ${message}`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        async function runMigration() {
+            const btn = document.getElementById('migrateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Migrating...';
+
+            try {
+                // Migrate machine status
+                log('Starting machine status migration...');
+                const batch1 = db.batch();
+                
+                for (const status of machineStatusData) {
+                    const docRef = db.collection('tbl_newmachinestatus').doc(String(status.id));
+                    batch1.set(docRef, {
+                        id: status.id,
+                        status: status.status,
+                        created_at: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+                
+                await batch1.commit();
+                log(`Migrated ${machineStatusData.length} machine status records`, 'success');
+
+                // Migrate contract status
+                log('Starting contract status migration...');
+                const batch2 = db.batch();
+                
+                for (const status of contractStatusData) {
+                    const docRef = db.collection('tbl_contractstatus').doc(String(status.id));
+                    batch2.set(docRef, {
+                        id: status.id,
+                        con_status: status.con_status,
+                        created_at: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+                
+                await batch2.commit();
+                log(`Migrated ${contractStatusData.length} contract status records`, 'success');
+
+                log('Migration completed successfully!', 'success');
+                
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Migration';
+            }
+        }
+
+        async function verifyData() {
+            const btn = document.getElementById('verifyBtn');
+            btn.disabled = true;
+            btn.textContent = 'Verifying...';
+
+            try {
+                log('Verifying machine status data...');
+                const machineSnapshot = await db.collection('tbl_newmachinestatus').get();
+                log(`Found ${machineSnapshot.size} machine status records`, 'success');
+                
+                machineSnapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    log(`  ID ${data.id}: ${data.status}`);
+                });
+
+                log('Verifying contract status data...');
+                const contractSnapshot = await db.collection('tbl_contractstatus').get();
+                log(`Found ${contractSnapshot.size} contract status records`, 'success');
+                
+                contractSnapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    log(`  ID ${data.id}: ${data.con_status}`);
+                });
+
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Verify Data';
+            }
+        }
+
+        // Initialize
+        displayStatusList();
+    </script>
+</body>
+</html>

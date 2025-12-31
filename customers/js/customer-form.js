@@ -14,6 +14,32 @@ const CustomerForm = (function() {
     let isEditMode = false;
     let isDirty = false;
 
+    /**
+     * Machine Status Map (from tbl_newmachinestatus)
+     * Maps status_id to human-readable status names
+     */
+    const machineStatusMap = {
+        0: { text: 'Not Set', class: 'unknown', color: '#9ca3af' },
+        1: { text: 'On Stock', class: 'available', color: '#10b981' },
+        2: { text: 'For Delivery', class: 'pending', color: '#f59e0b' },
+        3: { text: 'Delivered', class: 'active', color: '#3b82f6' },
+        4: { text: 'Used W/in Company', class: 'active', color: '#8b5cf6' },
+        5: { text: 'For Junk', class: 'warning', color: '#ef4444' },
+        6: { text: 'Junk', class: 'terminated', color: '#6b7280' },
+        7: { text: 'For Overhauling', class: 'pending', color: '#f59e0b' },
+        8: { text: 'Under Repair', class: 'pending', color: '#f59e0b' },
+        9: { text: 'For Parts', class: 'warning', color: '#ef4444' },
+        10: { text: 'For Sale', class: 'pending', color: '#f59e0b' },
+        11: { text: 'Trade In', class: 'pending', color: '#8b5cf6' },
+        12: { text: 'Outside Repair', class: 'pending', color: '#f59e0b' },
+        13: { text: 'Missing', class: 'terminated', color: '#ef4444' },
+        14: { text: 'Old', class: 'unknown', color: '#9ca3af' },
+        15: { text: 'Under QC', class: 'pending', color: '#f59e0b' },
+        16: { text: 'Duplicate', class: 'warning', color: '#ef4444' },
+        17: { text: 'N/A', class: 'unknown', color: '#9ca3af' },
+        18: { text: 'Delivered (No Contract)', class: 'warning', color: '#f97316' }
+    };
+
     // Reference data
     let refData = {
         areas: [],
@@ -109,6 +135,95 @@ const CustomerForm = (function() {
     };
 
     /**
+     * Validate serial number uniqueness
+     * @param {string} serial - Serial number to check
+     * @param {string} currentMachineId - Current machine ID (to exclude from check)
+     * @returns {Promise<{valid: boolean, existingMachine: object|null}>}
+     */
+    async function validateSerialNumber(serial, currentMachineId) {
+        if (!serial || serial.trim() === '') {
+            return { valid: true, existingMachine: null };
+        }
+
+        const db = firebase.firestore();
+        const normalizedSerial = serial.trim().toUpperCase();
+        
+        // Check if serial exists in any other machine
+        const querySnapshot = await db.collection('tbl_machine')
+            .where('serial', '==', normalizedSerial)
+            .get();
+        
+        if (querySnapshot.empty) {
+            return { valid: true, existingMachine: null };
+        }
+        
+        // Check if it's the same machine
+        for (const doc of querySnapshot.docs) {
+            const machineData = doc.data();
+            if (String(machineData.id) !== String(currentMachineId)) {
+                return { 
+                    valid: false, 
+                    existingMachine: {
+                        id: machineData.id,
+                        serial: machineData.serial,
+                        description: machineData.description
+                    }
+                };
+            }
+        }
+        
+        return { valid: true, existingMachine: null };
+    }
+
+    /**
+     * Log machine changes to audit history
+     * @param {string} machineId - Machine ID
+     * @param {object} oldValues - Previous values
+     * @param {object} newValues - New values
+     * @param {string} changedBy - User who made the change
+     */
+    async function logMachineHistory(machineId, oldValues, newValues, changedBy) {
+        const db = firebase.firestore();
+        
+        // Only log if there are actual changes
+        const changes = {};
+        let hasChanges = false;
+        
+        for (const key of Object.keys(newValues)) {
+            if (oldValues[key] !== newValues[key]) {
+                changes[key] = {
+                    old: oldValues[key] || '',
+                    new: newValues[key] || ''
+                };
+                hasChanges = true;
+            }
+        }
+        
+        if (!hasChanges) return;
+        
+        // Get next history ID
+        const historySnapshot = await db.collection('tbl_machine_history')
+            .orderBy('id', 'desc')
+            .limit(1)
+            .get();
+        
+        const historyId = historySnapshot.empty ? 1 : (historySnapshot.docs[0].data().id || 0) + 1;
+        
+        const historyRecord = {
+            id: historyId,
+            machine_id: parseInt(machineId),
+            changed_by: changedBy || 'admin',
+            changed_at: firebase.firestore.FieldValue.serverTimestamp(),
+            changes: changes,
+            old_values: oldValues,
+            new_values: newValues
+        };
+        
+        await db.collection('tbl_machine_history').doc(String(historyId)).set(historyRecord);
+        console.log(`Machine history logged: Machine #${machineId}`, changes);
+    }
+
+    /**
      * Render Machine & Contract section for a branch (EDITABLE)
      */
     function renderMachineContractSection(branch) {
@@ -178,6 +293,7 @@ const CustomerForm = (function() {
             const brand = refData.brands.find(b => b.id == machine.brand_id) || {};
             const statusInfo = statusMap[contract.status] || { text: 'Unknown', class: 'pending', color: '#6b7280' };
             const categoryInfo = categoryMap[contract.category_id] || { code: 'N/A', name: 'Unknown' };
+            const machineStatus = machineStatusMap[machine.status_id] || { text: 'Unknown', class: 'unknown', color: '#9ca3af' };
             
             const modelName = model.modelname || machine.description || '';
             const brandName = brand.brandname || brand.brand_name || '';
@@ -186,7 +302,7 @@ const CustomerForm = (function() {
             const machineIdx = `machine_${contract.mach_id}`;
             
             return `
-                <div class="machine-contract-card" data-contract-id="${contract.id}" data-machine-id="${contract.mach_id}">
+                <div class="machine-contract-card" data-contract-id="${contract.id}" data-machine-id="${contract.mach_id}" data-original-serial="${MargaUtils.escapeHtml(serial)}">
                     <div class="machine-contract-header">
                         <div class="machine-info-header">
                             <div class="machine-icon">
@@ -197,6 +313,9 @@ const CustomerForm = (function() {
                                 </svg>
                             </div>
                             <span class="machine-id-label">Machine #${contract.mach_id}</span>
+                            <span class="machine-status-badge" style="background: ${machineStatus.color}20; color: ${machineStatus.color}; border: 1px solid ${machineStatus.color}40; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 8px;">
+                                ${machineStatus.text}
+                            </span>
                         </div>
                         <div class="contract-badges">
                             <span class="category-badge">${categoryInfo.code}</span>
@@ -225,10 +344,15 @@ const CustomerForm = (function() {
                             </div>
                             <div class="edit-field span-full">
                                 <label>Serial Number</label>
-                                <input type="text" class="field-input machine-field serial-input" 
-                                    id="${machineIdx}_serial" data-field="serial"
-                                    value="${MargaUtils.escapeHtml(serial)}"
-                                    placeholder="Enter serial number">
+                                <div class="serial-input-wrapper">
+                                    <input type="text" class="field-input machine-field serial-input" 
+                                        id="${machineIdx}_serial" data-field="serial"
+                                        value="${MargaUtils.escapeHtml(serial)}"
+                                        placeholder="Enter serial number"
+                                        data-original-serial="${MargaUtils.escapeHtml(serial)}">
+                                    <span class="serial-validation-icon" id="${machineIdx}_serial_status"></span>
+                                </div>
+                                <div class="serial-validation-msg" id="${machineIdx}_serial_msg" style="display: none;"></div>
                             </div>
                         </div>
                     </div>
@@ -405,6 +529,54 @@ const CustomerForm = (function() {
         document.getElementById('formModalBody').addEventListener('input', () => {
             isDirty = true;
         });
+        
+        // Real-time serial number validation
+        document.getElementById('formModalBody').addEventListener('input', debounce(async (e) => {
+            if (e.target.classList.contains('serial-input')) {
+                const input = e.target;
+                const machineId = input.id.replace('machine_', '').replace('_serial', '');
+                const serial = input.value.trim();
+                const originalSerial = input.dataset.originalSerial || '';
+                const statusIcon = document.getElementById(`machine_${machineId}_serial_status`);
+                const msgEl = document.getElementById(`machine_${machineId}_serial_msg`);
+                
+                // Skip validation if unchanged
+                if (serial.toUpperCase() === originalSerial.toUpperCase()) {
+                    input.classList.remove('serial-invalid', 'serial-valid');
+                    if (statusIcon) statusIcon.innerHTML = '';
+                    if (msgEl) msgEl.style.display = 'none';
+                    return;
+                }
+                
+                // Skip if empty
+                if (!serial) {
+                    input.classList.remove('serial-invalid', 'serial-valid');
+                    if (statusIcon) statusIcon.innerHTML = '';
+                    if (msgEl) msgEl.style.display = 'none';
+                    return;
+                }
+                
+                // Show loading
+                if (statusIcon) statusIcon.innerHTML = '<span class="validating">⏳</span>';
+                
+                const validation = await validateSerialNumber(serial, machineId);
+                
+                if (validation.valid) {
+                    input.classList.remove('serial-invalid');
+                    input.classList.add('serial-valid');
+                    if (statusIcon) statusIcon.innerHTML = '<span class="valid">✓</span>';
+                    if (msgEl) msgEl.style.display = 'none';
+                } else {
+                    input.classList.remove('serial-valid');
+                    input.classList.add('serial-invalid');
+                    if (statusIcon) statusIcon.innerHTML = '<span class="invalid">✗</span>';
+                    if (msgEl) {
+                        msgEl.innerHTML = `⚠️ Serial already exists on Machine #${validation.existingMachine.id} (${validation.existingMachine.description || 'Unknown'})`;
+                        msgEl.style.display = 'block';
+                    }
+                }
+            }
+        }, 500));
 
         // Close on overlay click
         document.getElementById('customerFormOverlay').addEventListener('click', () => {
@@ -416,6 +588,21 @@ const CustomerForm = (function() {
                 close();
             }
         });
+    }
+    
+    /**
+     * Debounce helper function
+     */
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
     }
 
     /**
@@ -1431,13 +1618,51 @@ const CustomerForm = (function() {
                 });
             }
             
-            // Save machine updates (if any)
+            // Save machine updates (if any) - WITH SERIAL VALIDATION AND AUDIT LOGGING
             const machineUpdates = collectMachineData();
+            
+            // First validate all serial numbers
             for (const machineData of machineUpdates) {
+                if (machineData.serial) {
+                    const validation = await validateSerialNumber(machineData.serial, machineData.id);
+                    if (!validation.valid) {
+                        saveBtn.innerHTML = originalText;
+                        saveBtn.disabled = false;
+                        MargaUtils.showToast(
+                            `Duplicate serial number "${machineData.serial}" already exists on Machine #${validation.existingMachine.id}`, 
+                            'error'
+                        );
+                        return;
+                    }
+                }
+            }
+            
+            // Now save machines with audit logging
+            for (const machineData of machineUpdates) {
+                // Get current machine data for audit log
+                const machineDoc = await db.collection('tbl_machine').doc(String(machineData.id)).get();
+                const oldData = machineDoc.exists ? machineDoc.data() : {};
+                
+                const newValues = {
+                    description: machineData.description,
+                    serial: machineData.serial.toUpperCase()
+                };
+                
+                // Log changes to history (if there are changes)
+                const oldValues = {
+                    description: oldData.description || '',
+                    serial: oldData.serial || ''
+                };
+                
+                if (oldValues.description !== newValues.description || 
+                    oldValues.serial !== newValues.serial) {
+                    await logMachineHistory(machineData.id, oldValues, newValues, 'admin');
+                }
+                
                 const machineRef = db.collection('tbl_machine').doc(String(machineData.id));
                 batch.update(machineRef, {
-                    description: machineData.description,
-                    serial: machineData.serial,
+                    description: newValues.description,
+                    serial: newValues.serial,
                     updated_at: firebase.firestore.FieldValue.serverTimestamp()
                 });
             }
