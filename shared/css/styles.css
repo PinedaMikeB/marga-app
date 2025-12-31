@@ -105,7 +105,16 @@ body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     color: var(--text-primary);
     line-height: 1.5;
-    background: linear-gradient(135deg, #c8e0f4 0%, #a8d4f0 20%, #7ec8ed 40%, #5bb8e8 60%, #3aa8e0 80%, #2598d8 100%);
+    background: linear-gradient(180deg, 
+        #d6e9f8 0%, 
+        #b8d8f3 15%, 
+        #9ac8ee 30%, 
+        #7bb8e8 45%, 
+        #5ca8e2 60%, 
+        #4298db 75%, 
+        #3088d4 90%, 
+        #2078cc 100%
+    );
     background-attachment: fixed;
     min-height: 100vh;
 }
