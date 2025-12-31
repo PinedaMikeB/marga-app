@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Billing Data Analysis</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #f1f5f9; padding: 2rem; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: #1e3a5f; margin-bottom: 0.5rem; }
+        .subtitle { color: #64748b; margin-bottom: 2rem; }
+        .card { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 1rem; color: #334155; margin-bottom: 1rem; }
+        pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; max-height: 400px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f8fafc; font-weight: 600; }
+        .highlight { background: #fef3c7; }
+        .btn { padding: 0.5rem 1rem; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        .btn:hover { background: #1d4ed8; }
+        .loading { color: #64748b; }
+        .field-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .field-tag { background: #e0f2fe; color: #0369a1; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+        .field-tag.reading { background: #dcfce7; color: #166534; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Billing Data Analysis</h1>
+        <p class="subtitle">Find reading_day, previous readings, and billing-related fields</p>
+
+        <div class="card">
+            <h2>Actions</h2>
+            <button class="btn" onclick="analyzeContract()">Analyze tbl_contractmain</button>
+            <button class="btn" onclick="analyzeBranch()">Analyze tbl_branchinfo</button>
+            <button class="btn" onclick="analyzeMachine()">Analyze tbl_machine</button>
+            <button class="btn" onclick="searchReadingFields()">Search ALL for 'reading'</button>
+            <button class="btn" onclick="searchMeterFields()">Search ALL for 'meter'</button>
+            <button class="btn" onclick="listAllCollections()">List All Collections</button>
+        </div>
+
+        <div class="card">
+            <h2>Results</h2>
+            <div id="results"><p class="loading">Click a button above to analyze...</p></div>
+        </div>
+
+        <div class="card">
+            <h2>Sample Records</h2>
+            <div id="samples"><p class="loading">Sample data will appear here...</p></div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(FIREBASE_CONFIG);
+        }
+        const db = firebase.firestore();
+
+        async function analyzeContract() {
+            document.getElementById('results').innerHTML = '<p class="loading">Loading contracts...</p>';
+            try {
+                const snap = await db.collection('tbl_contractmain').limit(100).get();
+                const docs = snap.docs.map(d => d.data());
+                
+                // Get all unique fields
+                const allFields = new Set();
+                docs.forEach(doc => Object.keys(doc).forEach(k => allFields.add(k)));
+                
+                const fields = Array.from(allFields).sort();
+                const readingFields = fields.filter(f => 
+                    f.toLowerCase().includes('read') || 
+                    f.toLowerCase().includes('meter') ||
+                    f.toLowerCase().includes('prev') ||
+                    f.toLowerCase().includes('day')
+                );
+                
+                let html = `<h3>Contract Fields (${fields.length} total)</h3>`;
+                html += `<div class="field-list">`;
+                fields.forEach(f => {
+                    const isReading = readingFields.includes(f);
+                    html += `<span class="field-tag ${isReading ? 'reading' : ''}">${f}</span>`;
+                });
+                html += `</div>`;
+                
+                if (readingFields.length > 0) {
+                    html += `<h3 style="margin-top:1rem; color: green;">📍 Reading-related fields found:</h3>`;
+                    html += `<pre>${JSON.stringify(readingFields, null, 2)}</pre>`;
+                }
+                
+                document.getElementById('results').innerHTML = html;
+                
+                // Show sample with reading fields
+                document.getElementById('samples').innerHTML = `<h3>Sample Contract (first 3)</h3><pre>${JSON.stringify(docs.slice(0,3), null, 2)}</pre>`;
+            } catch(e) {
+                document.getElementById('results').innerHTML = `<p style="color:red">Error: ${e.message}</p>`;
+            }
+        }
+
+        async function analyzeBranch() {
+            document.getElementById('results').innerHTML = '<p class="loading">Loading branches...</p>';
+            try {
+                const snap = await db.collection('tbl_branchinfo').limit(100).get();
+                const docs = snap.docs.map(d => d.data());
+                
+                const allFields = new Set();
+                docs.forEach(doc => Object.keys(doc).forEach(k => allFields.add(k)));
+                
+                const fields = Array.from(allFields).sort();
+                const readingFields = fields.filter(f => 
+                    f.toLowerCase().includes('read') || 
+                    f.toLowerCase().includes('meter') ||
+                    f.toLowerCase().includes('prev') ||
+                    f.toLowerCase().includes('day')
+                );
+                
+                let html = `<h3>Branch Fields (${fields.length} total)</h3>`;
+                html += `<div class="field-list">`;
+                fields.forEach(f => {
+                    const isReading = readingFields.includes(f);
+                    html += `<span class="field-tag ${isReading ? 'reading' : ''}">${f}</span>`;
+                });
+                html += `</div>`;
+                
+                if (readingFields.length > 0) {
+                    html += `<h3 style="margin-top:1rem; color: green;">📍 Reading-related fields found:</h3>`;
+                    html += `<pre>${JSON.stringify(readingFields, null, 2)}</pre>`;
+                }
+                
+                document.getElementById('results').innerHTML = html;
+                document.getElementById('samples').innerHTML = `<h3>Sample Branch (first 3)</h3><pre>${JSON.stringify(docs.slice(0,3), null, 2)}</pre>`;
+            } catch(e) {
+                document.getElementById('results').innerHTML = `<p style="color:red">Error: ${e.message}</p>`;
+            }
+        }
+
+        async function analyzeMachine() {
+            document.getElementById('results').innerHTML = '<p class="loading">Loading machines...</p>';
+            try {
+                const snap = await db.collection('tbl_machine').limit(100).get();
+                const docs = snap.docs.map(d => d.data());
+                
+                const allFields = new Set();
+                docs.forEach(doc => Object.keys(doc).forEach(k => allFields.add(k)));
+                
+                const fields = Array.from(allFields).sort();
+                
+                let html = `<h3>Machine Fields (${fields.length} total)</h3>`;
+                html += `<div class="field-list">`;
+                fields.forEach(f => {
+                    html += `<span class="field-tag">${f}</span>`;
+                });
+                html += `</div>`;
+                
+                document.getElementById('results').innerHTML = html;
+                document.getElementById('samples').innerHTML = `<h3>Sample Machine (first 3)</h3><pre>${JSON.stringify(docs.slice(0,3), null, 2)}</pre>`;
+            } catch(e) {
+                document.getElementById('results').innerHTML = `<p style="color:red">Error: ${e.message}</p>`;
+            }
+        }
+
+        async function searchReadingFields() {
+            document.getElementById('results').innerHTML = '<p class="loading">Searching all collections for reading fields...</p>';
+            const collections = ['tbl_contractmain', 'tbl_branchinfo', 'tbl_machine', 'tbl_billinfo', 'tbl_readings'];
+            let html = '<h3>Collections with "reading" fields:</h3>';
+            
+            for (const coll of collections) {
+                try {
+                    const snap = await db.collection(coll).limit(10).get();
+                    if (snap.empty) continue;
+                    
+                    const allFields = new Set();
+                    snap.docs.forEach(d => Object.keys(d.data()).forEach(k => allFields.add(k)));
+                    
+                    const readingFields = Array.from(allFields).filter(f => 
+                        f.toLowerCase().includes('read')
+                    );
+                    
+                    if (readingFields.length > 0) {
+                        html += `<p><strong>${coll}:</strong> ${readingFields.join(', ')}</p>`;
+                    }
+                } catch(e) {
+                    console.log(`${coll}: ${e.message}`);
+                }
+            }
+            
+            document.getElementById('results').innerHTML = html;
+        }
+
+        async function searchMeterFields() {
+            document.getElementById('results').innerHTML = '<p class="loading">Searching all collections for meter/prev fields...</p>';
+            const collections = ['tbl_contractmain', 'tbl_branchinfo', 'tbl_machine', 'tbl_billinfo', 'tbl_readings', 'tbl_invoice'];
+            let html = '<h3>Collections with "meter" or "prev" fields:</h3>';
+            
+            for (const coll of collections) {
+                try {
+                    const snap = await db.collection(coll).limit(10).get();
+                    if (snap.empty) continue;
+                    
+                    const allFields = new Set();
+                    snap.docs.forEach(d => Object.keys(d.data()).forEach(k => allFields.add(k)));
+                    
+                    const meterFields = Array.from(allFields).filter(f => 
+                        f.toLowerCase().includes('meter') || f.toLowerCase().includes('prev')
+                    );
+                    
+                    if (meterFields.length > 0) {
+                        html += `<p><strong>${coll}:</strong> ${meterFields.join(', ')}</p>`;
+                    }
+                } catch(e) {
+                    console.log(`${coll}: ${e.message}`);
+                }
+            }
+            
+            document.getElementById('results').innerHTML = html;
+        }
+
+        async function listAllCollections() {
+            document.getElementById('results').innerHTML = '<p class="loading">This requires admin access. Try these common collections:</p>';
+            
+            const possibleCollections = [
+                'tbl_companylist', 'tbl_branchinfo', 'tbl_contractmain', 'tbl_machine',
+                'tbl_model', 'tbl_brand', 'tbl_billinfo', 'tbl_area', 'tbl_city',
+                'tbl_readings', 'tbl_invoice', 'tbl_meter', 'tbl_billing',
+                'tbl_particulars', 'tbl_contractstatus', 'tbl_newmachinestatus',
+                'tbl_machine_history', 'tbl_reading', 'tbl_meterreading'
+            ];
+            
+            let html = '<h3>Collections found:</h3><ul>';
+            
+            for (const coll of possibleCollections) {
+                try {
+                    const snap = await db.collection(coll).limit(1).get();
+                    const count = snap.size;
+                    if (count > 0) {
+                        html += `<li style="color:green">✅ ${coll} (has data)</li>`;
+                    }
+                } catch(e) {
+                    // Collection doesn't exist or no access
+                }
+            }
+            
+            html += '</ul>';
+            document.getElementById('results').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
