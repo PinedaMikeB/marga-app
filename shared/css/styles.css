@@ -105,7 +105,8 @@ body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     color: var(--text-primary);
     line-height: 1.5;
-    background: var(--bg-gradient-soft);
+    background: linear-gradient(135deg, #c8e0f4 0%, #a8d4f0 20%, #7ec8ed 40%, #5bb8e8 60%, #3aa8e0 80%, #2598d8 100%);
+    background-attachment: fixed;
     min-height: 100vh;
 }
 
@@ -142,25 +143,29 @@ button {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.9) 0%, rgba(37, 99, 235, 0.95) 100%);
     color: white;
-    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 1) 0%, rgba(37, 99, 235, 1) 100%);
 }
 
 .btn-secondary {
-    background: var(--surface);
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.6) 100%);
+    color: #475569;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    backdrop-filter: blur(10px);
 }
 
 .btn-secondary:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--primary-300);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #1e3a5f;
 }
 
 .btn-accent {
