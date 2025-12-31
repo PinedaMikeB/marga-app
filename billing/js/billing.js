@@ -33,9 +33,22 @@ let currentFilter = 'all'; // all, today, unbilled
 let contractsWithInfo = []; // Cached enriched contracts
 
 /**
+ * Initialize Firebase if not already done
+ */
+function initFirebase() {
+    if (!firebase.apps.length) {
+        firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    return firebase.firestore();
+}
+
+/**
  * Initialize billing module
  */
 document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize Firebase first
+    initFirebase();
+    
     // Check auth
     if (typeof MargaAuth !== 'undefined') {
         MargaAuth.init();
@@ -96,7 +109,9 @@ function populateYearDropdowns() {
  */
 async function loadBillingData() {
     try {
-        const db = firebase.firestore();
+        const db = initFirebase();
+        
+        console.log('Loading billing data...');
         
         // Load all required collections in parallel
         const [

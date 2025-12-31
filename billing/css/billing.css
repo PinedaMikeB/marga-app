@@ -961,3 +961,101 @@ code {
         flex-wrap: wrap;
     }
 }
+
+
+/* ============================================
+   LAYOUT SPACING FIXES
+   ============================================ */
+
+.billing-section {
+    margin-bottom: 0;
+}
+
+.billing-section .card-header {
+    border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+    margin-bottom: 0;
+}
+
+.billing-section .table-container {
+    margin-top: 0;
+}
+
+/* Remove gap between filter area and table */
+.content-card.billing-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.content-card.billing-section .card-header {
+    flex-shrink: 0;
+}
+
+.content-card.billing-section .table-container {
+    flex: 1;
+    overflow: auto;
+}
+
+/* Stats grid spacing */
+.billing-stats {
+    margin-bottom: 1.25rem;
+}
+
+/* Billing grid layout */
+.billing-grid-layout {
+    gap: 1.25rem;
+}
+
+/* Table container padding */
+.table-container {
+    padding: 0;
+}
+
+.billing-table {
+    margin: 0;
+}
+
+/* Loading state */
+.loading-cell {
+    text-align: center;
+    padding: 3rem !important;
+    color: #718096;
+}
+
+.loading-cell .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #4299e1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 0.75rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Ensure proper height for the billing section */
+.billing-section .table-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Scrollbar styling */
+.table-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.table-container::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
