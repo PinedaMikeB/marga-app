@@ -1,0 +1,90 @@
+{
+  "last_sync": null,
+  "sync_interval_hours": 24,
+  "tables": [
+    {
+      "name": "tbl_billing",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 1
+    },
+    {
+      "name": "tbl_machinereading",
+      "timestamp_field": "timestmp",
+      "id_field": "id",
+      "priority": 1
+    },
+    {
+      "name": "tbl_collections",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 1
+    },
+    {
+      "name": "tbl_contractmain",
+      "timestamp_field": "update_date",
+      "id_field": "id",
+      "priority": 2
+    },
+    {
+      "name": "tbl_companylist",
+      "timestamp_field": "timestamp",
+      "id_field": "id",
+      "priority": 2
+    },
+    {
+      "name": "tbl_branchinfo",
+      "timestamp_field": "timestamp",
+      "id_field": "id",
+      "priority": 2
+    },
+    {
+      "name": "tbl_machine",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 2
+    },
+    {
+      "name": "tbl_schedule",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 3
+    },
+    {
+      "name": "tbl_paymentinfo",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 2
+    },
+    {
+      "name": "tbl_invoicenum",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 2
+    },
+    {
+      "name": "tbl_newmachinehistory",
+      "timestamp_field": "timestamp",
+      "id_field": "id",
+      "priority": 3
+    },
+    {
+      "name": "tbl_collectionhistory",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 3
+    },
+    {
+      "name": "tbl_newdr",
+      "timestamp_field": "tmestamp",
+      "id_field": "id",
+      "priority": 3
+    },
+    {
+      "name": "tbl_finaldr",
+      "timestamp_field": "timestamp",
+      "id_field": "id",
+      "priority": 3
+    }
+  ]
+}

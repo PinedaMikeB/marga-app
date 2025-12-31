@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Daily Sync Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #f5f7fa; min-height: 100vh; }
+        
+        .header {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            color: white;
+            padding: 2rem;
+        }
+        .header h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+        .header p { opacity: 0.8; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .card h2 {
+            font-size: 1.1rem;
+            color: #1e3a5f;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat {
+            background: #f8fafc;
+            padding: 1.25rem;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e3a5f;
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-top: 0.25rem;
+        }
+        
+        .upload-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: #f8fafc;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #2d5a87;
+            background: #eff6ff;
+        }
+        .upload-zone input { display: none; }
+        .upload-zone svg { width: 48px; height: 48px; color: #94a3b8; margin-bottom: 1rem; }
+        .upload-zone p { color: #64748b; }
+        .upload-zone .hint { font-size: 0.85rem; margin-top: 0.5rem; }
+        
+        .file-list {
+            margin-top: 1rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+        .file-item .name { font-weight: 500; color: #334155; }
+        .file-item .info { font-size: 0.85rem; color: #64748b; }
+        .file-item .status { font-size: 0.85rem; padding: 0.25rem 0.75rem; border-radius: 20px; }
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-syncing { background: #dbeafe; color: #1e40af; }
+        .status-done { background: #d1fae5; color: #065f46; }
+        .status-error { background: #fee2e2; color: #991b1b; }
+        
+        .btn {
+            padding: 0.875rem 1.5rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(30,58,95,0.3); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #f1f5f9; color: #475569; }
+        .btn-secondary:hover { background: #e2e8f0; }
+        
+        .progress-container { margin: 1.5rem 0; }
+        .progress {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 12px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+        }
+        
+        .log {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 10px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.8rem;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .log .time { color: #64748b; }
+        .log .success { color: #4ade80; }
+        .log .error { color: #f87171; }
+        .log .info { color: #60a5fa; }
+        
+        .sync-history {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-date { font-weight: 500; color: #334155; }
+        .history-stats { font-size: 0.85rem; color: #64748b; }
+        
+        .actions { display: flex; gap: 1rem; margin-top: 1.5rem; }
+        
+        .last-sync {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .last-sync svg { color: #22c55e; }
+        .last-sync-text { color: #166534; font-weight: 500; }
+        .last-sync-date { color: #15803d; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>🔄 MARGA Daily Sync</h1>
+            <p>Keep Firebase in sync with your MySQL database</p>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Last Sync Info -->
+        <div class="last-sync" id="lastSyncInfo" style="display: none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                <path d="M22 4L12 14.01l-3-3"/>
+            </svg>
+            <div>
+                <div class="last-sync-text">Last Successful Sync</div>
+                <div class="last-sync-date" id="lastSyncDate">-</div>
+            </div>
+        </div>
+        
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="statFiles">0</div>
+                <div class="stat-label">Files Loaded</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="statRecords">0</div>
+                <div class="stat-label">Total Records</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="statSynced">0</div>
+                <div class="stat-label">Records Synced</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="statTables">0</div>
+                <div class="stat-label">Tables Updated</div>
+            </div>
+        </div>
+        
+        <!-- Upload Section -->
+        <div class="card">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="17,8 12,3 7,8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Step 1: Upload Export Files
+            </h2>
+            
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" accept=".json" multiple onchange="handleFiles(this.files)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <path d="M14 2v6h6"/>
+                    <path d="M12 18v-6"/>
+                    <path d="M9 15l3-3 3 3"/>
+                </svg>
+                <p>Drop JSON export files here or click to browse</p>
+                <p class="hint">Export files from MySQL using export-mysql.php</p>
+            </div>
+            
+            <div class="file-list" id="fileList"></div>
+        </div>
+        
+        <!-- Sync Section -->
+        <div class="card">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M23 4v6h-6"/>
+                    <path d="M1 20v-6h6"/>
+                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+                Step 2: Sync to Firebase
+            </h2>
+            
+            <div class="progress-container" id="progressContainer" style="display: none;">
+                <div class="progress">
+                    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="progressText">0 / 0 records</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <button class="btn btn-primary" id="btnSync" onclick="startSync()" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                    </svg>
+                    Start Sync
+                </button>
+                <button class="btn btn-secondary" onclick="clearFiles()">Clear All</button>
+            </div>
+        </div>
+        
+        <!-- Log Section -->
+        <div class="card">
+            <h2>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                    <path d="M14 2v6h6"/>
+                    <path d="M16 13H8"/>
+                    <path d="M16 17H8"/>
+                    <path d="M10 9H8"/>
+                </svg>
+                Sync Log
+            </h2>
+            <div class="log" id="log">
+                <div><span class="time">[Ready]</span> Upload export files to begin sync</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="../shared/js/firebase-config.js"></script>
+    
+    <script>
+        // Initialize Firebase
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        let uploadedFiles = [];
+        let totalRecords = 0;
+        let syncedRecords = 0;
+        let tablesUpdated = new Set();
+        
+        // Drag and drop
+        const uploadZone = document.getElementById('uploadZone');
+        
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        // Handle file upload
+        async function handleFiles(files) {
+            for (const file of files) {
+                if (!file.name.endsWith('.json')) continue;
+                
+                try {
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    
+                    // Extract table name from filename (e.g., tbl_billing_20250101_120000.json)
+                    const tableName = file.name.split('_').slice(0, 2).join('_');
+                    
+                    const records = Array.isArray(data) ? data : [data];
+                    
+                    uploadedFiles.push({
+                        name: file.name,
+                        table: tableName,
+                        data: records,
+                        status: 'pending'
+                    });
+                    
+                    totalRecords += records.length;
+                    
+                    log(`Loaded ${file.name}: ${records.length} records`, 'info');
+                } catch (e) {
+                    log(`Error loading ${file.name}: ${e.message}`, 'error');
+                }
+            }
+            
+            updateUI();
+        }
+        
+        function updateUI() {
+            // Update stats
+            document.getElementById('statFiles').textContent = uploadedFiles.length;
+            document.getElementById('statRecords').textContent = totalRecords.toLocaleString();
+            document.getElementById('statSynced').textContent = syncedRecords.toLocaleString();
+            document.getElementById('statTables').textContent = tablesUpdated.size;
+            
+            // Update file list
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = uploadedFiles.map((f, i) => `
+                <div class="file-item" id="file-${i}">
+                    <div>
+                        <div class="name">${f.name}</div>
+                        <div class="info">${f.table} • ${f.data.length.toLocaleString()} records</div>
+                    </div>
+                    <span class="status status-${f.status}">${f.status}</span>
+                </div>
+            `).join('');
+            
+            // Enable sync button
+            document.getElementById('btnSync').disabled = uploadedFiles.length === 0;
+        }
+        
+        function clearFiles() {
+            uploadedFiles = [];
+            totalRecords = 0;
+            syncedRecords = 0;
+            tablesUpdated.clear();
+            updateUI();
+            document.getElementById('progressContainer').style.display = 'none';
+            log('Cleared all files', 'info');
+        }
+        
+        async function startSync() {
+            document.getElementById('btnSync').disabled = true;
+            document.getElementById('progressContainer').style.display = 'block';
+            syncedRecords = 0;
+            
+            log('Starting sync...', 'info');
+            
+            for (let i = 0; i < uploadedFiles.length; i++) {
+                const file = uploadedFiles[i];
+                file.status = 'syncing';
+                updateUI();
+                
+                log(`Syncing ${file.table}...`, 'info');
+                
+                try {
+                    await syncTable(file.table, file.data, i);
+                    file.status = 'done';
+                    tablesUpdated.add(file.table);
+                    log(`✅ ${file.table}: ${file.data.length} records synced`, 'success');
+                } catch (e) {
+                    file.status = 'error';
+                    log(`❌ ${file.table}: ${e.message}`, 'error');
+                }
+                
+                updateUI();
+            }
+            
+            // Save sync timestamp
+            await saveSyncTimestamp();
+            
+            log('🎉 Sync complete!', 'success');
+            document.getElementById('btnSync').disabled = false;
+        }
+        
+        async function syncTable(tableName, records, fileIndex) {
+            const BATCH_SIZE = 500;
+            
+            for (let i = 0; i < records.length; i += BATCH_SIZE) {
+                const batch = db.batch();
+                const chunk = records.slice(i, i + BATCH_SIZE);
+                
+                for (const record of chunk) {
+                    const docId = String(record.id || Math.random().toString(36).substr(2, 9));
+                    const docRef = db.collection(tableName).doc(docId);
+                    batch.set(docRef, record, { merge: true }); // merge to update existing
+                }
+                
+                await batch.commit();
+                syncedRecords += chunk.length;
+                
+                // Update progress
+                const percent = Math.round((syncedRecords / totalRecords) * 100);
+                document.getElementById('progressBar').style.width = percent + '%';
+                document.getElementById('progressText').textContent = `${syncedRecords.toLocaleString()} / ${totalRecords.toLocaleString()} records`;
+                document.getElementById('progressPercent').textContent = percent + '%';
+                document.getElementById('statSynced').textContent = syncedRecords.toLocaleString();
+            }
+        }
+        
+        async function saveSyncTimestamp() {
+            try {
+                await db.collection('_sync_meta').doc('last_sync').set({
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    records_synced: syncedRecords,
+                    tables_updated: Array.from(tablesUpdated)
+                });
+                
+                loadLastSync();
+            } catch (e) {
+                console.error('Error saving sync timestamp:', e);
+            }
+        }
+        
+        async function loadLastSync() {
+            try {
+                const doc = await db.collection('_sync_meta').doc('last_sync').get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    const date = data.timestamp?.toDate();
+                    if (date) {
+                        document.getElementById('lastSyncInfo').style.display = 'flex';
+                        document.getElementById('lastSyncDate').textContent = 
+                            date.toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                month: 'short', 
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }) + ` (${data.records_synced?.toLocaleString() || 0} records)`;
+                    }
+                }
+            } catch (e) {
+                console.error('Error loading last sync:', e);
+            }
+        }
+        
+        function log(message, type = '') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div><span class="time">[${time}]</span> <span class="${type}">${message}</span></div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // Load last sync on page load
+        loadLastSync();
+    </script>
+</body>
+</html>
