@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Migrate Remaining Tables (Batch 3)</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; background: #f5f5f5; }
+        .card { background: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { color: #1e3a5f; }
+        .btn { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        .btn:hover { background: #1d4ed8; }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-success { background: #16a34a; }
+        .progress { background: #e2e8f0; border-radius: 8px; height: 24px; margin: 0.5rem 0; overflow: hidden; }
+        .progress-bar { background: #22c55e; height: 100%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.8rem; }
+        .log { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+        .log .success { color: #4ade80; }
+        .log .error { color: #f87171; }
+        .log .info { color: #60a5fa; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f8fafc; font-weight: 600; }
+        .status-pending { color: #64748b; }
+        .status-loading { color: #f59e0b; }
+        .status-done { color: #22c55e; font-weight: bold; }
+        .status-error { color: #ef4444; }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+        .stat { background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: #1e3a5f; }
+        .stat-label { font-size: 0.75rem; color: #64748b; }
+    </style>
+</head>
+<body>
+    <h1>📦 Migrate Remaining Tables (Batch 3) - 1.7M Records</h1>
+    
+    <div class="card">
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="totalFiles">0</div>
+                <div class="stat-label">Total Files</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="totalRecords">0</div>
+                <div class="stat-label">Total Records</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="migratedFiles">0</div>
+                <div class="stat-label">Files Done</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="migratedRecords">0</div>
+                <div class="stat-label">Records Done</div>
+            </div>
+        </div>
+        
+        <button class="btn" onclick="loadAllFiles()">1. Load JSON Files</button>
+        <button class="btn btn-success" onclick="migrateAll()" id="btnMigrateAll" disabled>2. Migrate All</button>
+    </div>
+
+    <div class="card">
+        <h3>Migration Progress</h3>
+        <div class="progress">
+            <div class="progress-bar" id="overallProgress" style="width:0%">0%</div>
+        </div>
+        <div style="max-height: 300px; overflow-y: auto;">
+            <table>
+                <thead>
+                    <tr><th>File</th><th>Target Table</th><th>Records</th><th>Status</th></tr>
+                </thead>
+                <tbody id="tablesBody">
+                    <tr><td colspan="4">Click "Load JSON Files" to start</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Log</h3>
+        <div class="log" id="log">Ready...</div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        // New batch 3 tables (from remaining extraction)
+        const TABLE_FILES = [
+            // Check payments
+            { file: 'tbl_checkpayments_part1', table: 'tbl_checkpayments' },
+            { file: 'tbl_checkpayments_part2', table: 'tbl_checkpayments' },
+            { file: 'tbl_checkpayments_part3', table: 'tbl_checkpayments' },
+            // Closed ref
+            { file: 'tbl_closedref_part1', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part2', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part3', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part4', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part5', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part6', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part7', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part8', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part9', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part10', table: 'tbl_closedref' },
+            { file: 'tbl_closedref_part11', table: 'tbl_closedref' },
+            // Final DR
+            { file: 'tbl_finaldr_part1', table: 'tbl_finaldr' },
+            { file: 'tbl_finaldr_part2', table: 'tbl_finaldr' },
+            { file: 'tbl_finaldr_part3', table: 'tbl_finaldr' },
+            // Final DR details
+            { file: 'tbl_finaldrdetails_part1', table: 'tbl_finaldrdetails' },
+            { file: 'tbl_finaldrdetails_part2', table: 'tbl_finaldrdetails' },
+            { file: 'tbl_finaldrdetails_part3', table: 'tbl_finaldrdetails' },
+            { file: 'tbl_finaldrdetails_part4', table: 'tbl_finaldrdetails' },
+            { file: 'tbl_finaldrdetails_part5', table: 'tbl_finaldrdetails' },
+            { file: 'tbl_finaldrdetails_part6', table: 'tbl_finaldrdetails' },
+            { file: 'tbl_finaldrdetails_part7', table: 'tbl_finaldrdetails' },
+            // New cartridge history
+            { file: 'tbl_newcartridgehistory_part1', table: 'tbl_newcartridgehistory' },
+            { file: 'tbl_newcartridgehistory_part2', table: 'tbl_newcartridgehistory' },
+            { file: 'tbl_newcartridgehistory_part3', table: 'tbl_newcartridgehistory' },
+            { file: 'tbl_newcartridgehistory_part4', table: 'tbl_newcartridgehistory' },
+            { file: 'tbl_newcartridgehistory_part5', table: 'tbl_newcartridgehistory' },
+            // New DR
+            { file: 'tbl_newdr_part1', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part2', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part3', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part4', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part5', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part6', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part7', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part8', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part9', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part10', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part11', table: 'tbl_newdr' },
+            { file: 'tbl_newdr_part12', table: 'tbl_newdr' },
+            // New for DR
+            { file: 'tbl_newfordr_part1', table: 'tbl_newfordr' },
+            { file: 'tbl_newfordr_part2', table: 'tbl_newfordr' },
+            { file: 'tbl_newfordr_part3', table: 'tbl_newfordr' },
+            { file: 'tbl_newfordr_part4', table: 'tbl_newfordr' },
+            // New parts history
+            { file: 'tbl_newpartshistory_part1', table: 'tbl_newpartshistory' },
+            { file: 'tbl_newpartshistory_part2', table: 'tbl_newpartshistory' },
+            { file: 'tbl_newpartshistory_part3', table: 'tbl_newpartshistory' },
+            // Collection history
+            { file: 'tbl_collectionhistory_part1', table: 'tbl_collectionhistory' },
+            { file: 'tbl_collectionhistory_part2', table: 'tbl_collectionhistory' },
+            { file: 'tbl_collectionhistory_part3', table: 'tbl_collectionhistory' },
+            { file: 'tbl_collectionhistory_part4', table: 'tbl_collectionhistory' },
+            { file: 'tbl_collectionhistory_part5', table: 'tbl_collectionhistory' },
+            { file: 'tbl_collectionhistory_part6', table: 'tbl_collectionhistory' },
+            // Single files
+            { file: 'tbl_clientpaymentsummary', table: 'tbl_clientpaymentsummary' },
+            { file: 'tbl_machinemonthlystatus', table: 'tbl_machinemonthlystatus' },
+            { file: 'tbl_newothershistory', table: 'tbl_newothershistory' },
+            { file: 'tbl_ornumber', table: 'tbl_ornumber' },
+            { file: 'tbl_newcartridgerepair', table: 'tbl_newcartridgerepair' },
+            { file: 'tbl_repaircartridgecounter', table: 'tbl_repaircartridgecounter' },
+            { file: 'tbl_machinepickupreceipt', table: 'tbl_machinepickupreceipt' },
+            { file: 'tbl_newotherrequest', table: 'tbl_newotherrequest' },
+            { file: 'tbl_newmachinerepair', table: 'tbl_newmachinerepair' },
+            { file: 'tbl_paymentrequest', table: 'tbl_paymentrequest' },
+            { file: 'tbl_prrequestdetails', table: 'tbl_prrequestdetails' },
+            { file: 'tbl_newcheckvoucher', table: 'tbl_newcheckvoucher' },
+            { file: 'tbl_prrequest', table: 'tbl_prrequest' },
+            { file: 'tbl_mapinfo', table: 'tbl_mapinfo' },
+            { file: 'tbl_itemrequest', table: 'tbl_itemrequest' },
+            { file: 'tbl_itemrequestdetails', table: 'tbl_itemrequestdetails' },
+            { file: 'tbl_changeunitrequest', table: 'tbl_changeunitrequest' },
+            { file: 'tbl_rdprocessrequest', table: 'tbl_rdprocessrequest' },
+            { file: 'tbl_irstatus', table: 'tbl_irstatus' },
+            // Small status/lookup tables
+            { file: 'tbl_adminreqdesc', table: 'tbl_adminreqdesc' },
+            { file: 'tbl_adminreqtype', table: 'tbl_adminreqtype' },
+            { file: 'tbl_cstatus', table: 'tbl_cstatus' },
+            { file: 'tbl_depositslip', table: 'tbl_depositslip' },
+            { file: 'tbl_depositsliptransaction', table: 'tbl_depositsliptransaction' },
+            { file: 'tbl_dr_itemtype', table: 'tbl_dr_itemtype' },
+            { file: 'tbl_financereqdesc', table: 'tbl_financereqdesc' },
+            { file: 'tbl_financereqtype', table: 'tbl_financereqtype' },
+            { file: 'tbl_fstatus', table: 'tbl_fstatus' },
+            { file: 'tbl_itemcat', table: 'tbl_itemcat' },
+            { file: 'tbl_itemstat', table: 'tbl_itemstat' },
+            { file: 'tbl_maritalstatus', table: 'tbl_maritalstatus' },
+            { file: 'tbl_mstatus', table: 'tbl_mstatus' },
+            { file: 'tbl_newcartridgestatus', table: 'tbl_newcartridgestatus' },
+            { file: 'tbl_newchecktype', table: 'tbl_newchecktype' },
+            { file: 'tbl_newcheckvoucherdetails', table: 'tbl_newcheckvoucherdetails' },
+            { file: 'tbl_newdepositslip', table: 'tbl_newdepositslip' },
+            { file: 'tbl_newdepositslipdetails', table: 'tbl_newdepositslipdetails' },
+            { file: 'tbl_newpartsstatus', table: 'tbl_newpartsstatus' },
+            { file: 'tbl_partsstatus', table: 'tbl_partsstatus' },
+            { file: 'tbl_partsused', table: 'tbl_partsused' },
+            { file: 'tbl_partstaken', table: 'tbl_partstaken' },
+            { file: 'tbl_paymenttype', table: 'tbl_paymenttype' },
+            { file: 'tbl_pstatus', table: 'tbl_pstatus' },
+            { file: 'tbl_request', table: 'tbl_request' },
+            { file: 'tbl_status', table: 'tbl_status' },
+            { file: 'tbl_tistatus', table: 'tbl_tistatus' },
+            { file: 'tbl_checkmachine', table: 'tbl_checkmachine' },
+            { file: 'tbl_machinerepair', table: 'tbl_machinerepair' },
+            { file: 'tbl_machinerequest', table: 'tbl_machinerequest' },
+            { file: 'tbl_newmachinerepairuseditems', table: 'tbl_newmachinerepairuseditems' },
+        ];
+        
+        let fileData = {};
+        let fileStatus = {};
+        let totalRecords = 0;
+        let migratedRecords = 0;
+        let migratedFiles = 0;
+
+        function log(msg, type = '') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div class="${type}">[${time}] ${msg}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function loadAllFiles() {
+            log('Loading JSON files...', 'info');
+            const tbody = document.getElementById('tablesBody');
+            tbody.innerHTML = '';
+            totalRecords = 0;
+            let loadedCount = 0;
+            
+            for (const {file, table} of TABLE_FILES) {
+                try {
+                    const response = await fetch(`migrations/${file}.json`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        fileData[file] = { data, table };
+                        fileStatus[file] = 'pending';
+                        totalRecords += data.length;
+                        loadedCount++;
+                        
+                        tbody.innerHTML += `
+                            <tr id="row-${file}">
+                                <td>${file}</td>
+                                <td>${table}</td>
+                                <td>${data.length.toLocaleString()}</td>
+                                <td class="status-pending" id="status-${file}">Pending</td>
+                            </tr>
+                        `;
+                    }
+                } catch (e) {
+                    // File not found
+                }
+            }
+            
+            document.getElementById('totalFiles').textContent = loadedCount;
+            document.getElementById('totalRecords').textContent = totalRecords.toLocaleString();
+            document.getElementById('btnMigrateAll').disabled = false;
+            
+            log(`Loaded ${loadedCount} files with ${totalRecords.toLocaleString()} records`, 'success');
+        }
+
+        async function migrateFile(fileName) {
+            const {data, table} = fileData[fileName];
+            if (!data || data.length === 0) return;
+            
+            const statusEl = document.getElementById(`status-${fileName}`);
+            statusEl.textContent = 'Migrating...';
+            statusEl.className = 'status-loading';
+            
+            const BATCH_SIZE = 500;
+            let processed = 0;
+            
+            try {
+                for (let i = 0; i < data.length; i += BATCH_SIZE) {
+                    const batch = db.batch();
+                    const chunk = data.slice(i, i + BATCH_SIZE);
+                    
+                    for (const record of chunk) {
+                        const docId = String(record.id || Math.random().toString(36).substr(2, 9));
+                        const docRef = db.collection(table).doc(docId);
+                        batch.set(docRef, record);
+                    }
+                    
+                    await batch.commit();
+                    processed += chunk.length;
+                    migratedRecords += chunk.length;
+                    document.getElementById('migratedRecords').textContent = migratedRecords.toLocaleString();
+                    
+                    const pct = Math.round((migratedRecords / totalRecords) * 100);
+                    document.getElementById('overallProgress').style.width = pct + '%';
+                    document.getElementById('overallProgress').textContent = pct + '%';
+                }
+                
+                statusEl.textContent = '✅ Done';
+                statusEl.className = 'status-done';
+                fileStatus[fileName] = 'done';
+                migratedFiles++;
+                document.getElementById('migratedFiles').textContent = migratedFiles;
+                
+                log(`✅ ${fileName} → ${table}: ${data.length.toLocaleString()}`, 'success');
+                
+            } catch (error) {
+                statusEl.textContent = '❌ Error';
+                statusEl.className = 'status-error';
+                log(`❌ ${fileName}: ${error.message}`, 'error');
+            }
+        }
+
+        async function migrateAll() {
+            document.getElementById('btnMigrateAll').disabled = true;
+            migratedRecords = 0;
+            migratedFiles = 0;
+            
+            for (const fileName of Object.keys(fileData)) {
+                if (fileStatus[fileName] !== 'done') {
+                    await migrateFile(fileName);
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            }
+            
+            log('🎉 All migrations complete!', 'success');
+        }
+    </script>
+</body>
+</html>
