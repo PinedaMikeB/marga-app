@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Migrate Billing Tables to Firebase</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; background: #f5f5f5; }
+        .card { background: white; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { color: #1e3a5f; }
+        h2 { color: #334155; margin-top: 0; }
+        .btn { padding: 0.75rem 1.5rem; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; margin-right: 0.5rem; }
+        .btn:hover { background: #1d4ed8; }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-danger { background: #dc2626; }
+        .btn-danger:hover { background: #b91c1c; }
+        .progress { background: #e2e8f0; border-radius: 8px; height: 24px; margin: 1rem 0; overflow: hidden; }
+        .progress-bar { background: #22c55e; height: 100%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; }
+        .log { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; }
+        .log .success { color: #4ade80; }
+        .log .error { color: #f87171; }
+        .log .info { color: #60a5fa; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0; }
+        .stat { background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: bold; color: #2563eb; }
+        .stat-label { color: #64748b; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <h1>📦 Migrate Billing Tables to Firebase</h1>
+    <p>Import tbl_machinereading and tbl_billing from MySQL to Firebase</p>
+
+    <div class="card">
+        <h2>Migration Status</h2>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="machineReadingCount">0</div>
+                <div class="stat-label">Machine Readings</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="billingCount">0</div>
+                <div class="stat-label">Billing Records</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="migratedCount">0</div>
+                <div class="stat-label">Migrated</div>
+            </div>
+        </div>
+        
+        <div class="progress">
+            <div class="progress-bar" id="progressBar" style="width: 0%">0%</div>
+        </div>
+        
+        <button class="btn" onclick="loadJsonFiles()">1. Load JSON Files</button>
+        <button class="btn" onclick="migrateMachineReadings()" id="btnMachineReading" disabled>2. Migrate Machine Readings</button>
+        <button class="btn" onclick="migrateBilling()" id="btnBilling" disabled>3. Migrate Billing</button>
+        <button class="btn btn-danger" onclick="clearCollections()" id="btnClear" disabled>Clear Collections</button>
+    </div>
+
+    <div class="card">
+        <h2>Log</h2>
+        <div class="log" id="log">Ready to start migration...</div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        let machineReadings = [];
+        let billingRecords = [];
+        let migrated = 0;
+
+        function log(msg, type = '') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div class="${type}">[${time}] ${msg}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateProgress(current, total) {
+            const pct = Math.round((current / total) * 100);
+            document.getElementById('progressBar').style.width = pct + '%';
+            document.getElementById('progressBar').textContent = pct + '%';
+            document.getElementById('migratedCount').textContent = current;
+        }
+
+        async function loadJsonFiles() {
+            log('Loading JSON files...', 'info');
+            
+            try {
+                // Load machine readings
+                const mrResponse = await fetch('migrations/tbl_machinereading.json');
+                machineReadings = await mrResponse.json();
+                document.getElementById('machineReadingCount').textContent = machineReadings.length.toLocaleString();
+                log(`Loaded ${machineReadings.length.toLocaleString()} machine reading records`, 'success');
+                
+                // Load billing
+                const billResponse = await fetch('migrations/tbl_billing.json');
+                billingRecords = await billResponse.json();
+                document.getElementById('billingCount').textContent = billingRecords.length.toLocaleString();
+                log(`Loaded ${billingRecords.length.toLocaleString()} billing records`, 'success');
+                
+                // Enable buttons
+                document.getElementById('btnMachineReading').disabled = false;
+                document.getElementById('btnBilling').disabled = false;
+                document.getElementById('btnClear').disabled = false;
+                
+                log('JSON files loaded successfully! Ready to migrate.', 'success');
+            } catch (error) {
+                log(`Error loading files: ${error.message}`, 'error');
+            }
+        }
+
+        async function migrateMachineReadings() {
+            if (machineReadings.length === 0) {
+                log('No machine readings to migrate', 'error');
+                return;
+            }
+            
+            log(`Starting migration of ${machineReadings.length.toLocaleString()} machine readings...`, 'info');
+            document.getElementById('btnMachineReading').disabled = true;
+            
+            const BATCH_SIZE = 500;
+            let processed = 0;
+            
+            for (let i = 0; i < machineReadings.length; i += BATCH_SIZE) {
+                const batch = db.batch();
+                const chunk = machineReadings.slice(i, i + BATCH_SIZE);
+                
+                for (const record of chunk) {
+                    const docRef = db.collection('tbl_machinereading').doc(String(record.id));
+                    batch.set(docRef, record);
+                }
+                
+                await batch.commit();
+                processed += chunk.length;
+                updateProgress(processed, machineReadings.length);
+                log(`Migrated ${processed.toLocaleString()} / ${machineReadings.length.toLocaleString()} machine readings`);
+            }
+            
+            log(`✅ Machine readings migration complete! ${processed.toLocaleString()} records`, 'success');
+        }
+
+        async function migrateBilling() {
+            if (billingRecords.length === 0) {
+                log('No billing records to migrate', 'error');
+                return;
+            }
+            
+            log(`Starting migration of ${billingRecords.length.toLocaleString()} billing records...`, 'info');
+            document.getElementById('btnBilling').disabled = true;
+            
+            const BATCH_SIZE = 500;
+            let processed = 0;
+            
+            for (let i = 0; i < billingRecords.length; i += BATCH_SIZE) {
+                const batch = db.batch();
+                const chunk = billingRecords.slice(i, i + BATCH_SIZE);
+                
+                for (const record of chunk) {
+                    const docRef = db.collection('tbl_billing').doc(String(record.id));
+                    batch.set(docRef, record);
+                }
+                
+                await batch.commit();
+                processed += chunk.length;
+                updateProgress(processed, billingRecords.length);
+                log(`Migrated ${processed.toLocaleString()} / ${billingRecords.length.toLocaleString()} billing records`);
+            }
+            
+            log(`✅ Billing migration complete! ${processed.toLocaleString()} records`, 'success');
+        }
+
+        async function clearCollections() {
+            if (!confirm('Are you sure you want to delete all records from tbl_machinereading and tbl_billing?')) {
+                return;
+            }
+            
+            log('Clearing collections...', 'info');
+            
+            // This is a simplified clear - for large collections, you'd need a cloud function
+            const collections = ['tbl_machinereading', 'tbl_billing'];
+            
+            for (const coll of collections) {
+                const snapshot = await db.collection(coll).limit(500).get();
+                if (!snapshot.empty) {
+                    const batch = db.batch();
+                    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                    log(`Deleted ${snapshot.size} records from ${coll}`);
+                }
+            }
+            
+            log('Collections cleared', 'success');
+        }
+    </script>
+</body>
+</html>
