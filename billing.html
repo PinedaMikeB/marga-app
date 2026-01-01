@@ -1196,11 +1196,14 @@
 
 
     function selectContract(contractId) {
+        console.log('selectContract called with:', contractId);
         selectedContract = contractsWithInfo.find(c => c.docId == contractId || c.id == contractId);
+        console.log('Found contract:', selectedContract);
         if (!selectedContract) { showToast('Contract not found', 'error'); return; }
         
         document.querySelectorAll('#forReadingList .contract-item').forEach(el => el.classList.toggle('selected', el.dataset.id == contractId));
         document.getElementById('btnEnterReading').disabled = false;
+        showToast('Contract selected: ' + (selectedContract.company?.companyname || 'Unknown'), 'success');
     }
 
     function selectReadingForPrint(docId) {
