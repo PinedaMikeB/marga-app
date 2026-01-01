@@ -182,8 +182,22 @@ function buildContractsWithInfo() {
         const brand = machine ? billingData.brands.find(b => b.id == machine.brand_id) : null;
         const category = billingData.categories.find(c => c.id == contract.category_id);
         
-        // Get reading day from contract's 'rd' field (Reading Day)
-        const readingDay = parseInt(contract.rd) || 0;
+        // Get reading day from contract's reading_date (extract day of month)
+        let readingDay = 0;
+        if (contract.reading_date) {
+            if (typeof contract.reading_date === 'string') {
+                // Format: "YYYY-MM-DD"
+                const parts = contract.reading_date.split('-');
+                if (parts.length === 3) {
+                    readingDay = parseInt(parts[2]) || 0;
+                }
+            } else if (contract.reading_date.toDate) {
+                // Firestore timestamp
+                readingDay = contract.reading_date.toDate().getDate();
+            } else {
+                readingDay = new Date(contract.reading_date).getDate();
+            }
+        }
         
         // Get starting/previous meter from contract
         const startingMeter = parseFloat(contract.starting_meter) || parseFloat(contract.b_meter) || 0;
