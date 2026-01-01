@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Analyze Billing Flow</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; max-width: 1400px; margin: 0 auto; }
+        .card { background: #f8fafc; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
+        button { padding: 0.75rem 1.5rem; font-size: 1rem; border-radius: 8px; background: #2563eb; color: white; border: none; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.8rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #1e3a5f; color: white; position: sticky; top: 0; }
+        h1, h2, h3 { color: #1e3a5f; }
+        .stat { display: inline-block; background: #dbeafe; padding: 0.5rem 1rem; border-radius: 8px; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        .warning { background: #fef3c7; color: #92400e; }
+        .success { background: #d1fae5; color: #065f46; }
+        .info { background: #dbeafe; color: #1e40af; }
+        #results { max-height: 400px; overflow: auto; }
+        .flow-diagram { background: #1e293b; color: #e2e8f0; padding: 1.5rem; border-radius: 8px; font-family: monospace; white-space: pre; margin: 1rem 0; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Analyze Old System Billing Flow</h1>
+    
+    <div class="card">
+        <h3>Understanding the Tables</h3>
+        <div class="flow-diagram">
+CONTRACT (tbl_contractmain)
+    │
+    ├── reading_date → R. DAY (day of month)
+    │
+    ▼
+METER READING (tbl_machinereading)
+    │
+    ├── machine_id, current_contract
+    ├── meter_reading (the actual meter value)
+    ├── date_red (reading date)
+    ├── invoice_id → links to invoice
+    │
+    ▼
+BILLING (tbl_billing)
+    │
+    ├── contract_id
+    ├── invoice_id → links to invoice
+    ├── month, year (billing period)
+    ├── amount, consumption
+    ├── status
+    │
+    ▼
+INVOICE (tbl_invoicenum)
+    │
+    ├── invoice_number
+    ├── status_id → delivery status
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>Check Billing Status Logic</h3>
+        <button onclick="analyzeCurrentMonth()">Analyze Current Month (Jan 2026)</button>
+        <button onclick="analyzeDecember()">Analyze December 2025</button>
+        <button onclick="checkReadingWithoutInvoice()">Find: Reading but No Invoice</button>
+    </div>
+    
+    <div class="card">
+        <h3>Results</h3>
+        <div id="stats"></div>
+        <div id="results"></div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        async function analyzeCurrentMonth() {
+            await analyzeMonth(1, 2026); // January 2026
+        }
+        
+        async function analyzeDecember() {
+            await analyzeMonth(12, 2025);
+        }
+        
+        async function analyzeMonth(month, year) {
+            document.getElementById('stats').innerHTML = 'Loading...';
+            document.getElementById('results').innerHTML = '';
+            
+            try {
+                // Get billing records for the month
+                const billingSnap = await db.collection('tbl_billing')
+                    .where('month', '==', String(month))
+                    .where('year', '==', String(year))
+                    .limit(500)
+                    .get();
+                
+                const billings = billingSnap.docs.map(d => ({id: d.id, ...d.data()}));
+                
+                // Get contracts billed this month
+                const contractIds = [...new Set(billings.map(b => b.contract_id))];
+                
+                // Count by status
+                const statusCounts = {};
+                billings.forEach(b => {
+                    const status = b.status || 0;
+                    statusCounts[status] = (statusCounts[status] || 0) + 1;
+                });
+                
+                // Count received vs not received
+                const received = billings.filter(b => b.isreceived === 1).length;
+                const notReceived = billings.filter(b => b.isreceived !== 1).length;
+                
+                document.getElementById('stats').innerHTML = `
+                    <h4>Billing for ${month}/${year}</h4>
+                    <div class="stat info">Total Billing Records: ${billings.length}</div>
+                    <div class="stat info">Unique Contracts Billed: ${contractIds.length}</div>
+                    <div class="stat success">Received (isreceived=1): ${received}</div>
+                    <div class="stat warning">Not Received: ${notReceived}</div>
+                    <br><br>
+                    <strong>Status Distribution:</strong><br>
+                    ${Object.entries(statusCounts).map(([s, c]) => `<div class="stat">Status ${s}: ${c}</div>`).join('')}
+                `;
+                
+                // Show sample records
+                document.getElementById('results').innerHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Contract ID</th>
+                                <th>Invoice ID</th>
+                                <th>Month/Year</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>isReceived</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${billings.slice(0, 50).map(b => `
+                                <tr>
+                                    <td>${b.id}</td>
+                                    <td>${b.contract_id}</td>
+                                    <td>${b.invoice_id}</td>
+                                    <td>${b.month}/${b.year}</td>
+                                    <td>${b.totalamount || b.amount}</td>
+                                    <td>${b.status}</td>
+                                    <td>${b.isreceived}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                
+            } catch (e) {
+                document.getElementById('stats').innerHTML = `<div class="stat warning">Error: ${e.message}</div>`;
+            }
+        }
+        
+        async function checkReadingWithoutInvoice() {
+            document.getElementById('stats').innerHTML = 'Analyzing readings vs invoices...';
+            
+            try {
+                // Get recent readings
+                const readingsSnap = await db.collection('tbl_machinereading')
+                    .limit(1000)
+                    .get();
+                
+                const readings = readingsSnap.docs.map(d => ({id: d.id, ...d.data()}));
+                
+                // Group by invoice status
+                const withInvoice = readings.filter(r => r.invoice_id && r.invoice_id > 0);
+                const withoutInvoice = readings.filter(r => !r.invoice_id || r.invoice_id === 0);
+                
+                document.getElementById('stats').innerHTML = `
+                    <h4>Machine Readings Analysis</h4>
+                    <div class="stat info">Total Readings Checked: ${readings.length}</div>
+                    <div class="stat success">With Invoice ID: ${withInvoice.length}</div>
+                    <div class="stat warning">Without Invoice ID (invoice_id=0): ${withoutInvoice.length}</div>
+                    <br><br>
+                    <p><strong>Conclusion:</strong> Readings with invoice_id = 0 have been read but invoice not yet generated.</p>
+                `;
+                
+                // Show readings without invoice
+                document.getElementById('results').innerHTML = `
+                    <h4>Readings Without Invoice (First 50)</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Machine ID</th>
+                                <th>Contract</th>
+                                <th>Meter Reading</th>
+                                <th>Date Read</th>
+                                <th>Invoice ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${withoutInvoice.slice(0, 50).map(r => `
+                                <tr>
+                                    <td>${r.id}</td>
+                                    <td>${r.machine_id}</td>
+                                    <td>${r.current_contract}</td>
+                                    <td><strong>${r.meter_reading}</strong></td>
+                                    <td>${r.date_red}</td>
+                                    <td>${r.invoice_id || 0}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                
+            } catch (e) {
+                document.getElementById('stats').innerHTML = `<div class="stat warning">Error: ${e.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
