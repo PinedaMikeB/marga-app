@@ -7,8 +7,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="shared/css/styles.css">
     <link rel="stylesheet" href="shared/css/dashboard.css">
+    <link rel="stylesheet" href="billing/css/billing.css">
     <style>
-        /* Alert Banner for Backlogs */
+        /* Backlog Alert */
         .backlog-alert {
             background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
             color: white;
@@ -19,31 +20,10 @@
             box-shadow: 0 4px 15px rgba(220,38,38,0.3);
         }
         .backlog-alert.show { display: block; }
-        .backlog-alert-header {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 0.75rem;
-        }
+        .backlog-alert-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
         .backlog-alert-icon { font-size: 1.5rem; }
         .backlog-alert-title { font-weight: 700; font-size: 1rem; flex: 1; }
-        .backlog-alert-dismiss { background: none; border: none; color: white; cursor: pointer; opacity: 0.7; }
-        .backlog-alert-dismiss:hover { opacity: 1; }
-        .backlog-items {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 0.75rem;
-        }
-        .backlog-item {
-            background: rgba(255,255,255,0.15);
-            padding: 0.6rem 0.75rem;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.15s;
-        }
-        .backlog-item:hover { background: rgba(255,255,255,0.25); }
-        .backlog-item-count { font-size: 1.25rem; font-weight: 700; }
-        .backlog-item-label { font-size: 0.75rem; opacity: 0.9; }
+        .backlog-alert-dismiss { background: none; border: none; color: white; cursor: pointer; font-size: 1.2rem; }
 
         /* Stats Bar */
         .stats-bar {
@@ -73,16 +53,14 @@
         .stat-item.danger .stat-value { color: #dc2626; }
         .stat-item.warning { background: #fef3c7; }
         .stat-item.warning .stat-value { color: #92400e; }
-        .stat-item.success { background: #d1fae5; }
-        .stat-item.success .stat-value { color: #065f46; }
 
-        /* 3-Panel Layout - FULL HEIGHT with Pagination */
+        /* 3-Panel Layout */
         .billing-panels {
             display: grid;
             grid-template-columns: 1fr 1fr 360px;
             gap: 1rem;
             padding: 0 1rem 1rem;
-            min-height: calc(100vh - 280px);
+            min-height: calc(100vh - 300px);
         }
         .panel {
             background: white;
@@ -100,21 +78,8 @@
             background: #f8fafc;
             border-radius: 12px 12px 0 0;
         }
-        .panel-title {
-            font-size: 0.9rem;
-            font-weight: 700;
-            color: #1e3a5f;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .panel-title .icon { font-size: 1rem; }
-        .badge {
-            padding: 0.2rem 0.5rem;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: 600;
-        }
+        .panel-title { font-size: 0.9rem; font-weight: 700; color: #1e3a5f; display: flex; align-items: center; gap: 0.5rem; }
+        .badge { padding: 0.2rem 0.5rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
         .badge.blue { background: #dbeafe; color: #1e40af; }
         .badge.orange { background: #fed7aa; color: #9a3412; }
         .badge.green { background: #d1fae5; color: #065f46; }
@@ -138,12 +103,10 @@
             cursor: pointer;
             color: #64748b;
             font-weight: 500;
-            transition: all 0.15s;
         }
         .filter-btn:hover { background: #f1f5f9; }
         .filter-btn.active { background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%); color: white; border-color: #1e3a5f; }
-        .filter-btn.alert { background: #dc2626; color: white; border-color: #dc2626; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .filter-btn.alert { background: #dc2626; color: white; border-color: #dc2626; }
         .search-input {
             flex: 1;
             min-width: 80px;
@@ -152,16 +115,12 @@
             border-radius: 5px;
             font-size: 0.75rem;
         }
-        .search-input:focus { outline: none; border-color: #2d5a87; }
 
-        .panel-body {
-            flex: 1;
-            padding: 0;
-        }
+        .panel-body { flex: 1; padding: 0; overflow-y: auto; max-height: 600px; }
 
-        /* Contract Items - Fixed height for 15 items */
+        /* Contract Items */
         .contract-item {
-            padding: 0.5rem 0.75rem;
+            padding: 0.6rem 0.75rem;
             border-bottom: 1px solid #f1f5f9;
             cursor: pointer;
             display: grid;
@@ -169,14 +128,10 @@
             gap: 0.5rem;
             align-items: center;
             transition: background 0.15s;
-            height: 52px;
         }
-        .contract-item:hover { background: #f8fafc; }
-        .contract-item.selected { background: #eff6ff; border-left: 3px solid #2d5a87; padding-left: calc(0.75rem - 3px); }
-        .contract-item.done { opacity: 0.5; background: #f0fdf4; }
-        .contract-item.fixed-rate { border-left: 3px solid #8b5cf6; padding-left: calc(0.75rem - 3px); }
-        .contract-item.overdue { background: #fef2f2; }
-        .contract-item.backlog { background: #fefce8; border-left: 3px solid #f59e0b; padding-left: calc(0.75rem - 3px); }
+        .contract-item:hover { background: #f0f9ff; }
+        .contract-item.selected { background: #dbeafe; border-left: 3px solid #2d5a87; }
+        .contract-item.inactive { opacity: 0.5; background: #f1f5f9; }
 
         .rd-day {
             width: 36px; height: 36px;
@@ -194,37 +149,14 @@
         .rd-day.backlog { background: #fef3c7; color: #92400e; }
 
         .contract-info { min-width: 0; }
-        .client-name {
-            font-weight: 600;
-            font-size: 0.8rem;
-            color: #1e3a5f;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .contract-meta {
-            font-size: 0.65rem;
-            color: #64748b;
-            display: flex;
-            gap: 0.4rem;
-            margin-top: 0.1rem;
-        }
-        .contract-meta .month-tag {
-            background: #fef3c7;
-            color: #92400e;
-            padding: 0 0.3rem;
-            border-radius: 3px;
-            font-weight: 600;
-        }
+        .client-name { font-weight: 600; font-size: 0.8rem; color: #1e3a5f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .contract-meta { font-size: 0.65rem; color: #64748b; display: flex; gap: 0.4rem; margin-top: 0.1rem; flex-wrap: wrap; }
+        .contract-meta .month-tag { background: #fef3c7; color: #92400e; padding: 0 0.3rem; border-radius: 3px; font-weight: 600; }
+        .contract-meta .status-inactive { background: #fee2e2; color: #dc2626; padding: 0 0.3rem; border-radius: 3px; font-weight: 600; }
+        .contract-meta .status-active { background: #d1fae5; color: #065f46; padding: 0 0.3rem; border-radius: 3px; font-weight: 600; }
 
         .contract-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
-        .type-badge {
-            font-size: 0.55rem;
-            padding: 0.1rem 0.35rem;
-            border-radius: 3px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
+        .type-badge { font-size: 0.55rem; padding: 0.1rem 0.35rem; border-radius: 3px; font-weight: 600; text-transform: uppercase; }
         .type-badge.rtp { background: #fef3c7; color: #92400e; }
         .type-badge.rtf, .type-badge.mat, .type-badge.ref, .type-badge.oth { background: #dbeafe; color: #1e40af; }
         .type-badge.fixed { background: #f3e8ff; color: #7c3aed; }
@@ -232,33 +164,22 @@
 
         /* Reading/Invoice Items */
         .reading-item, .invoice-item {
-            padding: 0.5rem 0.75rem;
+            padding: 0.6rem 0.75rem;
             border-bottom: 1px solid #f1f5f9;
             display: flex;
             justify-content: space-between;
             align-items: center;
             cursor: pointer;
-            transition: background 0.15s;
-            height: 52px;
         }
-        .reading-item:hover, .invoice-item:hover { background: #f8fafc; }
-        .reading-item.selected, .invoice-item.selected { background: #eff6ff; border-left: 3px solid #2d5a87; padding-left: calc(0.75rem - 3px); }
-
+        .reading-item:hover, .invoice-item:hover { background: #f0f9ff; }
+        .reading-item.selected, .invoice-item.selected { background: #dbeafe; border-left: 3px solid #2d5a87; }
         .reading-info, .invoice-info { flex: 1; min-width: 0; }
-        .reading-client, .invoice-num { font-weight: 600; font-size: 0.8rem; color: #1e3a5f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .reading-meta, .invoice-client { font-size: 0.65rem; color: #64748b; margin-top: 0.1rem; }
-        .reading-amount, .invoice-amount { font-weight: 600; font-size: 0.8rem; color: #065f46; text-align: right; }
-
-        .status-badge {
-            font-size: 0.55rem;
-            padding: 0.1rem 0.35rem;
-            border-radius: 3px;
-            font-weight: 600;
-            margin-left: 0.3rem;
-        }
-        .status-badge.pending { background: #fef3c7; color: #92400e; }
-        .status-badge.assigned { background: #dbeafe; color: #1e40af; }
+        .reading-client, .invoice-num { font-weight: 600; font-size: 0.8rem; color: #1e3a5f; }
+        .reading-meta, .invoice-client { font-size: 0.65rem; color: #64748b; }
+        .reading-amount, .invoice-amount { font-weight: 600; font-size: 0.8rem; color: #065f46; }
+        .status-badge { font-size: 0.55rem; padding: 0.1rem 0.35rem; border-radius: 3px; font-weight: 600; margin-left: 0.3rem; }
         .status-badge.old { background: #fee2e2; color: #dc2626; }
+        .status-badge.pending { background: #fef3c7; color: #92400e; }
 
         /* Pagination */
         .panel-pagination {
@@ -269,9 +190,7 @@
             align-items: center;
             background: #f8fafc;
             font-size: 0.7rem;
-            color: #64748b;
         }
-        .pagination-info { }
         .pagination-btns { display: flex; gap: 0.3rem; }
         .pagination-btn {
             padding: 0.3rem 0.6rem;
@@ -295,7 +214,7 @@
 
         /* Buttons */
         .btn {
-            padding: 0.45rem 0.8rem;
+            padding: 0.5rem 1rem;
             border-radius: 6px;
             font-weight: 600;
             cursor: pointer;
@@ -306,42 +225,28 @@
             justify-content: center;
             gap: 0.35rem;
             flex: 1;
-            transition: all 0.15s;
         }
         .btn-primary { background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%); color: white; }
         .btn-success { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
         .btn-secondary { background: white; color: #475569; border: 1px solid #e2e8f0; }
-        .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .btn svg { width: 14px; height: 14px; }
+        .btn:hover:not(:disabled) { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 2rem 1rem;
-            color: #94a3b8;
-        }
-        .empty-state svg { width: 32px; height: 32px; margin-bottom: 0.4rem; opacity: 0.4; }
-        .empty-state p { font-size: 0.75rem; }
+        .empty-state { text-align: center; padding: 2rem 1rem; color: #94a3b8; }
+        .empty-state p { font-size: 0.8rem; }
 
         /* Toast */
         .toast {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
-            background: #1e3a5f;
-            color: white;
-            padding: 0.75rem 1rem;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            z-index: 2000;
-            display: none;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            position: fixed; bottom: 1rem; right: 1rem;
+            background: #1e3a5f; color: white;
+            padding: 0.75rem 1rem; border-radius: 8px;
+            font-size: 0.8rem; z-index: 9999;
+            display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
-        .toast.show { display: flex; align-items: center; gap: 0.5rem; animation: slideUp 0.3s; }
+        .toast.show { display: block; }
         .toast.success { background: #16a34a; }
         .toast.error { background: #dc2626; }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
         /* Responsive */
         @media (max-width: 1200px) {
@@ -353,7 +258,6 @@
             .billing-panels { grid-template-columns: 1fr; }
             .billing-panels .panel:last-child { grid-column: span 1; }
             .stats-bar { grid-template-columns: repeat(2, 1fr); }
-            .backlog-items { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
@@ -409,37 +313,34 @@
             </div>
         </header>
 
-        <!-- Backlog Alert Banner -->
+        <!-- Backlog Alert -->
         <div class="backlog-alert" id="backlogAlert">
             <div class="backlog-alert-header">
                 <span class="backlog-alert-icon">🚨</span>
-                <span class="backlog-alert-title">Pending Backlogs Detected!</span>
-                <button class="backlog-alert-dismiss" onclick="dismissBacklogAlert()">✕</button>
-            </div>
-            <div class="backlog-items" id="backlogItems">
-                <!-- Populated by JS -->
+                <span class="backlog-alert-title"><span id="backlogCount">0</span> Unbilled from Oct/Nov</span>
+                <button class="backlog-alert-dismiss" onclick="document.getElementById('backlogAlert').classList.remove('show')">✕</button>
             </div>
         </div>
 
         <!-- Stats Bar -->
         <div class="stats-bar">
-            <div class="stat-item active" onclick="setQuickFilter('today')">
+            <div class="stat-item active" id="statTodayCard" onclick="window.setReadingFilter('today')">
                 <div class="stat-value" id="statToday">0</div>
                 <div class="stat-label">Today's Reading</div>
             </div>
-            <div class="stat-item danger" onclick="setQuickFilter('overdue')" id="statOverdueCard">
+            <div class="stat-item danger" id="statOverdueCard" onclick="window.setReadingFilter('overdue')">
                 <div class="stat-value" id="statOverdue">0</div>
                 <div class="stat-label">⚠️ Overdue</div>
             </div>
-            <div class="stat-item warning" onclick="setQuickFilter('backlog')" id="statBacklogCard">
+            <div class="stat-item warning" id="statBacklogCard" onclick="window.setReadingFilter('backlog')">
                 <div class="stat-value" id="statBacklog">0</div>
                 <div class="stat-label">📅 Backlog</div>
             </div>
-            <div class="stat-item" onclick="setQuickFilter('forInvoice')">
+            <div class="stat-item" id="statForInvoiceCard">
                 <div class="stat-value" id="statForInvoice">0</div>
                 <div class="stat-label">For Invoice</div>
             </div>
-            <div class="stat-item" onclick="setQuickFilter('pending')">
+            <div class="stat-item" id="statPendingCard">
                 <div class="stat-value" id="statPending">0</div>
                 <div class="stat-label">Pending Delivery</div>
             </div>
@@ -450,102 +351,93 @@
             <!-- Panel 1: For Reading -->
             <div class="panel" id="panelForReading">
                 <div class="panel-header">
-                    <div class="panel-title"><span class="icon">📖</span> For Reading <span class="badge blue" id="forReadingCount">0</span></div>
+                    <div class="panel-title"><span>📖</span> For Reading <span class="badge blue" id="forReadingCount">0</span></div>
                 </div>
                 <div class="panel-toolbar">
-                    <button class="filter-btn active" data-filter="today" onclick="setReadingFilter('today')">Today</button>
-                    <button class="filter-btn" data-filter="overdue" onclick="setReadingFilter('overdue')" id="btnOverdue">Overdue</button>
-                    <button class="filter-btn" data-filter="backlog" onclick="setReadingFilter('backlog')" id="btnBacklog">Backlog</button>
-                    <button class="filter-btn" data-filter="all" onclick="setReadingFilter('all')">All</button>
-                    <input type="text" class="search-input" placeholder="Search..." id="searchReading" oninput="renderForReadingPanel()">
+                    <button type="button" class="filter-btn active" id="filterToday" onclick="window.setReadingFilter('today')">Today</button>
+                    <button type="button" class="filter-btn" id="filterOverdue" onclick="window.setReadingFilter('overdue')">Overdue</button>
+                    <button type="button" class="filter-btn" id="filterBacklog" onclick="window.setReadingFilter('backlog')">Backlog</button>
+                    <button type="button" class="filter-btn" id="filterAll" onclick="window.setReadingFilter('all')">All</button>
+                    <input type="text" class="search-input" placeholder="Search..." id="searchReading" oninput="window.renderForReadingPanel()">
                 </div>
                 <div class="panel-body" id="forReadingList"></div>
-                <div class="panel-pagination" id="readingPagination">
-                    <span class="pagination-info" id="readingPageInfo">Page 1 of 1</span>
+                <div class="panel-pagination">
+                    <span id="readingPageInfo">Page 1 of 1</span>
                     <div class="pagination-btns">
-                        <button class="pagination-btn" onclick="changeReadingPage(-1)" id="readingPrevBtn">← Prev</button>
-                        <button class="pagination-btn" onclick="changeReadingPage(1)" id="readingNextBtn">Next →</button>
+                        <button type="button" class="pagination-btn" id="readingPrevBtn" onclick="window.changeReadingPage(-1)">← Prev</button>
+                        <button type="button" class="pagination-btn" id="readingNextBtn" onclick="window.changeReadingPage(1)">Next →</button>
                     </div>
                 </div>
                 <div class="panel-footer">
-                    <button class="btn btn-primary" onclick="openBillingModal()" id="btnEnterReading" disabled>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        Enter Reading
-                    </button>
+                    <button type="button" class="btn btn-primary" id="btnEnterReading" onclick="window.openBillingModal()" disabled>Enter Reading</button>
                 </div>
             </div>
 
             <!-- Panel 2: For Invoice -->
             <div class="panel" id="panelForInvoice">
                 <div class="panel-header">
-                    <div class="panel-title"><span class="icon">📄</span> For Invoice <span class="badge orange" id="forInvoiceCount">0</span></div>
+                    <div class="panel-title"><span>📄</span> For Invoice <span class="badge orange" id="forInvoiceCount">0</span></div>
                 </div>
                 <div class="panel-toolbar">
-                    <button class="filter-btn active" data-filter="all" onclick="setInvoiceFilter('all')">All</button>
-                    <button class="filter-btn" data-filter="thisMonth" onclick="setInvoiceFilter('thisMonth')">This Month</button>
-                    <button class="filter-btn" data-filter="backlog" onclick="setInvoiceFilter('backlog')" id="btnInvoiceBacklog">Backlog</button>
-                    <input type="text" class="search-input" placeholder="Search..." id="searchForInvoice" oninput="renderForInvoicePanel()" style="flex:1;">
+                    <button type="button" class="filter-btn active" onclick="window.setInvoiceFilter('all')">All</button>
+                    <button type="button" class="filter-btn" onclick="window.setInvoiceFilter('thisMonth')">This Month</button>
+                    <button type="button" class="filter-btn" onclick="window.setInvoiceFilter('backlog')">Backlog</button>
+                    <input type="text" class="search-input" placeholder="Search..." id="searchForInvoice" oninput="window.renderForInvoicePanel()">
                 </div>
                 <div class="panel-body" id="forInvoiceList"></div>
-                <div class="panel-pagination" id="invoicePagination">
-                    <span class="pagination-info" id="invoicePageInfo">Page 1 of 1</span>
+                <div class="panel-pagination">
+                    <span id="invoicePageInfo">Page 1 of 1</span>
                     <div class="pagination-btns">
-                        <button class="pagination-btn" onclick="changeInvoicePage(-1)" id="invoicePrevBtn">← Prev</button>
-                        <button class="pagination-btn" onclick="changeInvoicePage(1)" id="invoiceNextBtn">Next →</button>
+                        <button type="button" class="pagination-btn" id="invoicePrevBtn" onclick="window.changeInvoicePage(-1)">← Prev</button>
+                        <button type="button" class="pagination-btn" id="invoiceNextBtn" onclick="window.changeInvoicePage(1)">Next →</button>
                     </div>
                 </div>
                 <div class="panel-footer">
-                    <button class="btn btn-success" onclick="printSelectedInvoice()" id="btnPrint" disabled>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                        Print Invoice
-                    </button>
-                    <button class="btn btn-secondary" onclick="markAsPrinted()" id="btnMarkPrinted" disabled>Mark Printed</button>
+                    <button type="button" class="btn btn-success" id="btnPrint" onclick="window.printSelectedInvoice()" disabled>Print Invoice</button>
+                    <button type="button" class="btn btn-secondary" id="btnMarkPrinted" onclick="window.markAsPrinted()" disabled>Mark Printed</button>
                 </div>
             </div>
 
             <!-- Panel 3: Pending Delivery -->
             <div class="panel" id="panelPending">
                 <div class="panel-header">
-                    <div class="panel-title"><span class="icon">📬</span> Pending Delivery <span class="badge green" id="pendingCount">0</span></div>
+                    <div class="panel-title"><span>📬</span> Pending Delivery <span class="badge green" id="pendingCount">0</span></div>
                 </div>
                 <div class="panel-toolbar">
-                    <button class="filter-btn active" data-filter="all" onclick="setPendingFilter('all')">All</button>
-                    <button class="filter-btn" data-filter="unassigned" onclick="setPendingFilter('unassigned')">Unassigned</button>
-                    <button class="filter-btn" data-filter="assigned" onclick="setPendingFilter('assigned')">Assigned</button>
+                    <button type="button" class="filter-btn active" onclick="window.setPendingFilter('all')">All</button>
+                    <button type="button" class="filter-btn" onclick="window.setPendingFilter('unassigned')">Unassigned</button>
+                    <button type="button" class="filter-btn" onclick="window.setPendingFilter('assigned')">Assigned</button>
                 </div>
                 <div class="panel-body" id="pendingList"></div>
-                <div class="panel-pagination" id="pendingPagination">
-                    <span class="pagination-info" id="pendingPageInfo">Page 1 of 1</span>
+                <div class="panel-pagination">
+                    <span id="pendingPageInfo">Page 1 of 1</span>
                     <div class="pagination-btns">
-                        <button class="pagination-btn" onclick="changePendingPage(-1)" id="pendingPrevBtn">← Prev</button>
-                        <button class="pagination-btn" onclick="changePendingPage(1)" id="pendingNextBtn">Next →</button>
+                        <button type="button" class="pagination-btn" id="pendingPrevBtn" onclick="window.changePendingPage(-1)">← Prev</button>
+                        <button type="button" class="pagination-btn" id="pendingNextBtn" onclick="window.changePendingPage(1)">Next →</button>
                     </div>
                 </div>
                 <div class="panel-footer">
-                    <button class="btn btn-secondary" onclick="assignToMessenger()" id="btnAssign" disabled>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                        Assign Messenger
-                    </button>
+                    <button type="button" class="btn btn-secondary" id="btnAssign" onclick="window.assignToMessenger()" disabled>Assign Messenger</button>
                 </div>
             </div>
         </div>
     </main>
 
     <!-- Invoice Number Modal -->
-    <div class="modal-overlay" id="invoiceModalOverlay"></div>
+    <div class="modal-overlay" id="invoiceModalOverlay" onclick="window.closeInvoiceModal()"></div>
     <div class="billing-modal" id="invoiceModal">
         <div class="billing-modal-header">
             <h3>Enter Invoice Details</h3>
-            <button class="modal-close-btn" onclick="closeInvoiceModal()">✕</button>
+            <button class="modal-close-btn" onclick="window.closeInvoiceModal()">✕</button>
         </div>
         <div class="billing-modal-body">
-            <div class="selected-contract-info" id="selectedContractInfo"></div>
+            <div id="selectedContractInfo"></div>
             <div class="invoice-form">
                 <div class="form-field">
                     <label class="field-label">Invoice Number</label>
                     <input type="text" id="invoiceNumber" class="field-input" placeholder="Enter pre-printed invoice number">
                 </div>
-                <div class="form-row">
+                <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;">
                     <div class="form-field">
                         <label class="field-label">Billing Month</label>
                         <select id="billingMonth" class="field-select">
@@ -563,17 +455,17 @@
             </div>
         </div>
         <div class="billing-modal-footer">
-            <button class="btn btn-secondary" onclick="closeInvoiceModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="proceedToReading()">Proceed →</button>
+            <button type="button" class="btn btn-secondary" onclick="window.closeInvoiceModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="window.proceedToReading()">Proceed →</button>
         </div>
     </div>
 
     <!-- Meter Reading Modal -->
-    <div class="modal-overlay" id="readingModalOverlay"></div>
+    <div class="modal-overlay" id="readingModalOverlay" onclick="window.closeReadingModal()"></div>
     <div class="billing-modal reading-modal" id="readingModal">
         <div class="billing-modal-header">
             <h3>Billing Details</h3>
-            <button class="modal-close-btn" onclick="closeReadingModal()">✕</button>
+            <button class="modal-close-btn" onclick="window.closeReadingModal()">✕</button>
         </div>
         <div class="billing-modal-body">
             <div class="reading-form-layout">
@@ -590,7 +482,7 @@
                 </div>
                 <div class="reading-section">
                     <div class="section-title">Reading Info</div>
-                    <div class="reading-dates">
+                    <div class="reading-dates" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
                         <div class="form-field"><label class="field-label">Month</label>
                             <select id="rdMonth" class="field-select"><option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option><option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option><option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option></select>
                         </div>
@@ -599,45 +491,45 @@
                         <div class="form-field"><label class="field-label">Previous Date</label><input type="date" id="rdPreviousDate" class="field-input" disabled></div>
                     </div>
                 </div>
-                <div class="reading-section calculation-section">
+                <div class="reading-section calculation-section" id="meterReadingSection">
                     <div class="section-title">B&W Meter Reading</div>
                     <div class="calculation-grid">
-                        <div class="calc-row">
-                            <div class="form-field"><label class="field-label">Present Reading</label><input type="number" id="rdPresentMeter" class="field-input highlight" oninput="calculateBilling()"></div>
+                        <div class="calc-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
+                            <div class="form-field"><label class="field-label">Present Reading</label><input type="number" id="rdPresentMeter" class="field-input highlight" oninput="window.calculateBilling()"></div>
                             <div class="form-field"><label class="field-label">Quota</label><input type="number" id="rdQuota" class="field-input" disabled></div>
                         </div>
-                        <div class="calc-row">
+                        <div class="calc-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
                             <div class="form-field"><label class="field-label">Previous Reading</label><input type="number" id="rdPreviousMeter" class="field-input" disabled></div>
                             <div class="form-field"><label class="field-label">Page Rate</label><input type="number" id="rdPageRate" class="field-input" step="0.01" disabled></div>
                         </div>
-                        <div class="calc-row">
+                        <div class="calc-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
                             <div class="form-field"><label class="field-label">Gross Consumption</label><input type="number" id="rdGrossTotal" class="field-input" disabled></div>
                             <div class="form-field"><label class="field-label">Exceed Rate</label><input type="number" id="rdExceedRate" class="field-input" step="0.01" disabled></div>
                         </div>
-                        <div class="calc-row">
-                            <div class="form-field spoilage-field"><input type="checkbox" id="rdSpoilage" checked onchange="calculateBilling()"><label for="rdSpoilage">Spoilage (2%)</label><input type="number" id="rdSpoilageAmt" class="field-input small" disabled></div>
+                        <div class="calc-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
+                            <div class="form-field spoilage-field" style="display:flex;align-items:center;gap:0.5rem;"><input type="checkbox" id="rdSpoilage" checked onchange="window.calculateBilling()"><label for="rdSpoilage">Spoilage (2%)</label><input type="number" id="rdSpoilageAmt" class="field-input" style="width:80px;" disabled></div>
                             <div class="form-field"><label class="field-label">VAT (12%)</label><input type="number" id="rdVat" class="field-input" step="0.01" disabled></div>
                         </div>
-                        <div class="calc-row">
+                        <div class="calc-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
                             <div class="form-field"><label class="field-label">Net Consumption</label><input type="number" id="rdNetConsumption" class="field-input" disabled></div>
                             <div class="form-field"><label class="field-label">Net Amount</label><input type="number" id="rdNetAmount" class="field-input" step="0.01" disabled></div>
                         </div>
                     </div>
                 </div>
                 <div class="reading-section totals-section">
-                    <div class="totals-grid">
-                        <div class="form-field"><label class="field-label">Discount</label><input type="number" id="rdDiscount" class="field-input" step="0.01" value="0" oninput="calculateBilling()"></div>
-                        <div class="total-display"><span class="total-label">Amount Due</span><span class="total-value" id="rdAmountDue">₱0.00</span></div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:end;">
+                        <div class="form-field"><label class="field-label">Discount</label><input type="number" id="rdDiscount" class="field-input" step="0.01" value="0" oninput="window.calculateBilling()"></div>
+                        <div style="text-align:right;"><div style="font-size:0.7rem;color:#64748b;">Amount Due</div><div style="font-size:1.5rem;font-weight:700;color:#1e3a5f;" id="rdAmountDue">₱0.00</div></div>
                     </div>
                 </div>
                 <div class="reading-section"><div class="form-field"><label class="field-label">Remarks</label><textarea id="rdRemarks" class="field-textarea" rows="2" placeholder="Optional remarks..."></textarea></div></div>
             </div>
         </div>
         <div class="billing-modal-footer">
-            <button class="btn btn-secondary" onclick="loadPreviousReading()">Load Reading</button>
+            <button type="button" class="btn btn-secondary" onclick="window.loadPreviousReading()">Load Reading</button>
             <div style="flex:1;"></div>
-            <button class="btn btn-secondary" onclick="closeReadingModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="confirmBilling()">✓ Confirm</button>
+            <button type="button" class="btn btn-secondary" onclick="window.closeReadingModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="window.confirmBilling()">✓ Confirm</button>
         </div>
     </div>
 
@@ -650,12 +542,11 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="shared/js/firebase-config.js"></script>
     <script src="shared/js/auth.js"></script>
-    <link rel="stylesheet" href="billing/css/billing.css">
 
     <script>
-    /**
-     * MARGA Billing Dashboard - With Backlog Detection & Pagination
-     */
+    // ========================================
+    // MARGA Billing Dashboard - Fixed Version
+    // ========================================
 
     // Config
     const ITEMS_PER_PAGE = 15;
@@ -667,7 +558,6 @@
     let contractsWithInfo = [];
     let readingsForInvoice = [];
     let pendingDeliveries = [];
-    let backlogSummary = { unreadContracts: [], unprintedReadings: [], undeliveredInvoices: [] };
     
     let selectedContract = null;
     let selectedReading = null;
@@ -682,12 +572,15 @@
     let filteredInvoiceReadings = [];
     let filteredPendingItems = [];
 
+    // Initialize Firebase
     function initFirebase() {
         if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
         return firebase.firestore();
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
+    // Page Load
+    document.addEventListener('DOMContentLoaded', async function() {
+        console.log('Page loaded, initializing...');
         initFirebase();
         if (typeof MargaAuth !== 'undefined') MargaAuth.init();
         
@@ -697,23 +590,26 @@
         document.getElementById('billingMonth').value = today.getMonth() + 1;
         
         await loadAllBillingData();
-        detectBacklogs();
         renderAllPanels();
         
-        document.getElementById('billingDate').addEventListener('change', () => {
+        document.getElementById('billingDate').addEventListener('change', function() {
             readingPage = 1;
             renderForReadingPanel();
         });
+        
+        console.log('Initialization complete');
     });
 
     function populateYearDropdowns() {
         const currentYear = new Date().getFullYear();
         const years = [currentYear - 1, currentYear, currentYear + 1];
-        ['billingYear', 'rdYear'].forEach(id => {
+        ['billingYear', 'rdYear'].forEach(function(id) {
             const el = document.getElementById(id);
             if (el && el.tagName === 'SELECT') {
-                el.innerHTML = years.map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('');
-            } else if (el) el.value = currentYear;
+                el.innerHTML = years.map(function(y) { return '<option value="' + y + '"' + (y === currentYear ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+            } else if (el) {
+                el.value = currentYear;
+            }
         });
     }
 
@@ -731,20 +627,19 @@
                 db.collection('tbl_particulars').get()
             ]);
             
-            billingData.contracts = contractsSnap.docs.map(d => ({ docId: d.id, ...d.data() }));
+            billingData.contracts = contractsSnap.docs.map(function(d) { return Object.assign({ docId: d.id }, d.data()); });
             
             // Build lookup tables
-            branchesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.branches[d.id] = data; if (data.id) billingData.branches[data.id] = data; });
-            companiesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.companies[d.id] = data; if (data.id) billingData.companies[data.id] = data; });
-            machinesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.machines[d.id] = data; if (data.id) billingData.machines[data.id] = data; });
-            modelsSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.models[d.id] = data; if (data.id) billingData.models[data.id] = data; });
-            categoriesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.categories[d.id] = data; if (data.id) billingData.categories[data.id] = data; });
+            branchesSnap.docs.forEach(function(d) { var data = Object.assign({ docId: d.id }, d.data()); billingData.branches[d.id] = data; if (data.id) billingData.branches[data.id] = data; });
+            companiesSnap.docs.forEach(function(d) { var data = Object.assign({ docId: d.id }, d.data()); billingData.companies[d.id] = data; if (data.id) billingData.companies[data.id] = data; });
+            machinesSnap.docs.forEach(function(d) { var data = Object.assign({ docId: d.id }, d.data()); billingData.machines[d.id] = data; if (data.id) billingData.machines[data.id] = data; });
+            modelsSnap.docs.forEach(function(d) { var data = Object.assign({ docId: d.id }, d.data()); billingData.models[d.id] = data; if (data.id) billingData.models[data.id] = data; });
+            categoriesSnap.docs.forEach(function(d) { var data = Object.assign({ docId: d.id }, d.data()); billingData.categories[d.id] = data; if (data.id) billingData.categories[data.id] = data; });
             
-            try { const snap = await db.collection('tbl_readings').get(); billingData.readings = snap.docs.map(d => ({ docId: d.id, ...d.data() })); } catch (e) { billingData.readings = []; }
-            try { const snap = await db.collection('tbl_invoices').get(); billingData.invoices = snap.docs.map(d => ({ docId: d.id, ...d.data() })); } catch (e) { billingData.invoices = []; }
+            try { var snap = await db.collection('tbl_readings').get(); billingData.readings = snap.docs.map(function(d) { return Object.assign({ docId: d.id }, d.data()); }); } catch (e) { billingData.readings = []; }
+            try { var snap = await db.collection('tbl_invoices').get(); billingData.invoices = snap.docs.map(function(d) { return Object.assign({ docId: d.id }, d.data()); }); } catch (e) { billingData.invoices = []; }
             
-            console.log('Data loaded:', { contracts: billingData.contracts.length, readings: billingData.readings.length, invoices: billingData.invoices.length });
-            
+            console.log('Data loaded:', { contracts: billingData.contracts.length, readings: billingData.readings.length });
             buildContractsWithInfo();
             showToast('Data loaded!', 'success');
         } catch (error) {
@@ -754,139 +649,85 @@
     }
 
     function buildContractsWithInfo() {
-        const today = new Date();
-        const currentMonth = today.getMonth() + 1;
-        const currentYear = today.getFullYear();
-        const todayDay = today.getDate();
+        var today = new Date();
+        var currentMonth = today.getMonth() + 1;
+        var currentYear = today.getFullYear();
+        var todayDay = today.getDate();
         
-        contractsWithInfo = billingData.contracts.map(contract => {
-            const branch = billingData.branches[contract.contract_id] || billingData.branches[contract.branch_id] || null;
-            const company = branch ? (billingData.companies[branch.company_id] || null) : null;
-            const machine = billingData.machines[contract.mach_id] || billingData.machines[contract.machine_id] || null;
-            const model = machine ? (billingData.models[machine.model_id] || null) : null;
-            const category = billingData.categories[contract.category_id] || null;
+        contractsWithInfo = billingData.contracts.map(function(contract) {
+            var branch = billingData.branches[contract.contract_id] || billingData.branches[contract.branch_id] || null;
+            var company = branch ? (billingData.companies[branch.company_id] || null) : null;
+            var machine = billingData.machines[contract.mach_id] || billingData.machines[contract.machine_id] || null;
+            var model = machine ? (billingData.models[machine.model_id] || null) : null;
+            var category = billingData.categories[contract.category_id] || null;
             
-            let readingDay = 0;
+            var readingDay = 0;
             if (contract.reading_date) {
-                const rdStr = String(contract.reading_date);
-                if (rdStr.includes('-')) { const parts = rdStr.split('-'); if (parts.length === 3) readingDay = parseInt(parts[2]) || 0; }
+                var rdStr = String(contract.reading_date);
+                if (rdStr.includes('-')) { var parts = rdStr.split('-'); if (parts.length === 3) readingDay = parseInt(parts[2]) || 0; }
                 else readingDay = parseInt(rdStr) || 0;
             }
             
-            const categoryCode = (category?.particular_code || category?.code || category?.particular || 'N/A').toUpperCase();
-            const isFixedRate = FIXED_RATE_CODES.includes(categoryCode);
+            var categoryCode = (category && (category.particular_code || category.code || category.particular)) || 'N/A';
+            categoryCode = categoryCode.toUpperCase();
+            var isFixedRate = FIXED_RATE_CODES.indexOf(categoryCode) !== -1;
             
-            // Check billing status for each month (current and past 3 months)
-            const billingHistory = {};
-            for (let m = 0; m < 4; m++) {
-                let checkMonth = currentMonth - m;
-                let checkYear = currentYear;
+            // Check billing status for each month
+            var billingHistory = {};
+            for (var m = 0; m < 4; m++) {
+                var checkMonth = currentMonth - m;
+                var checkYear = currentYear;
                 if (checkMonth <= 0) { checkMonth += 12; checkYear--; }
-                
-                const billed = billingData.readings.some(r => 
-                    (r.contract_id == contract.id || r.contract_id == contract.docId) && 
-                    r.billing_month == checkMonth && r.billing_year == checkYear
-                );
-                billingHistory[`${checkYear}-${checkMonth}`] = billed;
+                var billed = billingData.readings.some(function(r) {
+                    return (r.contract_id == contract.id || r.contract_id == contract.docId) && r.billing_month == checkMonth && r.billing_year == checkYear;
+                });
+                billingHistory[checkYear + '-' + checkMonth] = billed;
             }
             
-            const billedThisMonth = billingHistory[`${currentYear}-${currentMonth}`];
-            const isOverdue = readingDay > 0 && readingDay < todayDay && !billedThisMonth;
+            var billedThisMonth = billingHistory[currentYear + '-' + currentMonth];
+            var isOverdue = readingDay > 0 && readingDay < todayDay && !billedThisMonth;
             
-            // Check for backlog (unbilled previous months)
-            let backlogMonths = [];
-            for (let m = 1; m <= 3; m++) {
-                let checkMonth = currentMonth - m;
-                let checkYear = currentYear;
+            // Check for backlog
+            var backlogMonths = [];
+            for (var m = 1; m <= 3; m++) {
+                var checkMonth = currentMonth - m;
+                var checkYear = currentYear;
                 if (checkMonth <= 0) { checkMonth += 12; checkYear--; }
-                if (!billingHistory[`${checkYear}-${checkMonth}`]) {
-                    backlogMonths.push({ month: checkMonth, year: checkYear, label: `${MONTHS[checkMonth]} ${checkYear}` });
+                if (!billingHistory[checkYear + '-' + checkMonth]) {
+                    backlogMonths.push({ month: checkMonth, year: checkYear, label: MONTHS[checkMonth] + ' ' + checkYear });
                 }
             }
             
-            return {
-                ...contract, branch, company, machine, model, category, categoryCode, readingDay, billedThisMonth, isFixedRate, isOverdue, backlogMonths, hasBacklog: backlogMonths.length > 0,
+            // Contract status (active/inactive)
+            var isActive = contract.status == 1;
+            
+            return Object.assign({}, contract, {
+                branch: branch,
+                company: company,
+                machine: machine,
+                model: model,
+                category: category,
+                categoryCode: categoryCode,
+                readingDay: readingDay,
+                billedThisMonth: billedThisMonth,
+                isFixedRate: isFixedRate,
+                isOverdue: isOverdue,
+                backlogMonths: backlogMonths,
+                hasBacklog: backlogMonths.length > 0,
+                isActive: isActive,
                 monthlyRate: parseFloat(contract.monthly_rate) || 0,
                 quota: parseFloat(contract.monthly_quota) || 0,
                 pageRate: parseFloat(contract.page_rate) || 0,
                 startingMeter: parseFloat(contract.starting_meter) || parseFloat(contract.b_meter) || 0
-            };
-        });
-    }
-
-    function detectBacklogs() {
-        const today = new Date();
-        const currentMonth = today.getMonth() + 1;
-        const currentYear = today.getFullYear();
-        
-        // 1. Contracts with unbilled previous months
-        backlogSummary.unreadContracts = contractsWithInfo.filter(c => c.hasBacklog);
-        
-        // 2. Readings not printed (from previous months)
-        backlogSummary.unprintedReadings = billingData.readings.filter(r => {
-            if (r.printed) return false;
-            if (r.billing_year < currentYear) return true;
-            if (r.billing_year === currentYear && r.billing_month < currentMonth) return true;
-            return false;
+            });
         });
         
-        // 3. Invoices/Readings pending delivery
-        backlogSummary.undeliveredInvoices = billingData.readings.filter(r => {
-            if (r.status === 'delivered' || r.status === 'paid') return false;
-            if (r.printed && r.status !== 'delivered') return true;
-            return false;
-        });
-        
-        // Also check invoices collection
-        billingData.invoices.forEach(inv => {
-            if (inv.status === 'pending_delivery' || inv.status === 'assigned' || inv.status === 'for_delivery') {
-                backlogSummary.undeliveredInvoices.push(inv);
-            }
-        });
-        
-        // Show backlog alert if any backlogs found
-        const totalBacklog = backlogSummary.unreadContracts.length + backlogSummary.unprintedReadings.length + backlogSummary.undeliveredInvoices.length;
-        
-        if (totalBacklog > 0) {
-            showBacklogAlert();
+        // Show backlog alert
+        var backlogCount = contractsWithInfo.filter(function(c) { return c.hasBacklog; }).length;
+        if (backlogCount > 0) {
+            document.getElementById('backlogCount').textContent = backlogCount;
+            document.getElementById('backlogAlert').classList.add('show');
         }
-        
-        console.log('Backlog Summary:', backlogSummary);
-    }
-
-    function showBacklogAlert() {
-        const alert = document.getElementById('backlogAlert');
-        const itemsDiv = document.getElementById('backlogItems');
-        
-        let html = '';
-        
-        if (backlogSummary.unreadContracts.length > 0) {
-            html += `<div class="backlog-item" onclick="setReadingFilter('backlog')">
-                <div class="backlog-item-count">${backlogSummary.unreadContracts.length}</div>
-                <div class="backlog-item-label">Unbilled from Oct/Nov</div>
-            </div>`;
-        }
-        
-        if (backlogSummary.unprintedReadings.length > 0) {
-            html += `<div class="backlog-item" onclick="setInvoiceFilter('backlog')">
-                <div class="backlog-item-count">${backlogSummary.unprintedReadings.length}</div>
-                <div class="backlog-item-label">Unprinted Invoices</div>
-            </div>`;
-        }
-        
-        if (backlogSummary.undeliveredInvoices.length > 0) {
-            html += `<div class="backlog-item" onclick="setPendingFilter('all')">
-                <div class="backlog-item-count">${backlogSummary.undeliveredInvoices.length}</div>
-                <div class="backlog-item-label">Pending Delivery</div>
-            </div>`;
-        }
-        
-        itemsDiv.innerHTML = html;
-        alert.classList.add('show');
-    }
-
-    function dismissBacklogAlert() {
-        document.getElementById('backlogAlert').classList.remove('show');
     }
 
     function renderAllPanels() {
@@ -898,18 +739,18 @@
 
 
     function renderForReadingPanel() {
-        const dateInput = document.getElementById('billingDate');
-        const selectedDate = new Date(dateInput.value);
-        const todayDay = selectedDate.getDate();
-        const search = (document.getElementById('searchReading')?.value || '').toLowerCase();
+        var dateInput = document.getElementById('billingDate');
+        var selectedDate = new Date(dateInput.value);
+        var todayDay = selectedDate.getDate();
+        var search = (document.getElementById('searchReading').value || '').toLowerCase();
         
         // Filter contracts
-        filteredReadingContracts = contractsWithInfo.filter(c => {
+        filteredReadingContracts = contractsWithInfo.filter(function(c) {
             if (search) {
-                const companyName = c.company?.companyname || '';
-                const serial = c.machine?.serial || c.xserial || '';
-                const branchName = c.branch?.branchname || '';
-                if (!companyName.toLowerCase().includes(search) && !serial.toLowerCase().includes(search) && !branchName.toLowerCase().includes(search)) return false;
+                var companyName = (c.company && c.company.companyname) || '';
+                var serial = (c.machine && c.machine.serial) || c.xserial || '';
+                var branchName = (c.branch && c.branch.branchname) || '';
+                if (companyName.toLowerCase().indexOf(search) === -1 && serial.toLowerCase().indexOf(search) === -1 && branchName.toLowerCase().indexOf(search) === -1) return false;
             }
             
             if (readingFilter === 'today') return c.readingDay === todayDay;
@@ -919,95 +760,120 @@
         });
         
         // Sort
-        filteredReadingContracts.sort((a, b) => {
+        filteredReadingContracts.sort(function(a, b) {
             if (a.hasBacklog && !b.hasBacklog) return -1;
             if (!a.hasBacklog && b.hasBacklog) return 1;
             if (a.isOverdue && !b.isOverdue) return -1;
             if (!a.isOverdue && b.isOverdue) return 1;
-            if (!a.billedThisMonth && b.billedThisMonth) return -1;
-            if (a.billedThisMonth && !b.billedThisMonth) return 1;
             return (a.readingDay || 99) - (b.readingDay || 99);
         });
         
-        // Update UI
-        const totalCount = filteredReadingContracts.length;
-        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+        // Pagination
+        var totalCount = filteredReadingContracts.length;
+        var totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
         if (readingPage > totalPages) readingPage = totalPages;
+        if (readingPage < 1) readingPage = 1;
         
         document.getElementById('forReadingCount').textContent = totalCount;
-        document.getElementById('readingPageInfo').textContent = `Page ${readingPage} of ${totalPages} (${totalCount} items)`;
+        document.getElementById('readingPageInfo').textContent = 'Page ' + readingPage + ' of ' + totalPages + ' (' + totalCount + ')';
         document.getElementById('readingPrevBtn').disabled = readingPage <= 1;
         document.getElementById('readingNextBtn').disabled = readingPage >= totalPages;
         
         // Get current page items
-        const startIdx = (readingPage - 1) * ITEMS_PER_PAGE;
-        const pageItems = filteredReadingContracts.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+        var startIdx = (readingPage - 1) * ITEMS_PER_PAGE;
+        var pageItems = filteredReadingContracts.slice(startIdx, startIdx + ITEMS_PER_PAGE);
         
-        const list = document.getElementById('forReadingList');
+        var list = document.getElementById('forReadingList');
         
         if (pageItems.length === 0) {
-            list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg><p>No contracts found</p></div>`;
+            list.innerHTML = '<div class="empty-state"><p>No contracts found</p></div>';
             return;
         }
         
-        list.innerHTML = pageItems.map(c => {
-            const isToday = c.readingDay === todayDay;
-            const companyName = c.company?.companyname || 'Unknown Company';
-            const branchName = c.branch?.branchname || '';
-            const modelName = c.model?.modelname || c.machine?.description || '';
-            const serial = c.machine?.serial || c.xserial || 'N/A';
+        var html = '';
+        for (var i = 0; i < pageItems.length; i++) {
+            var c = pageItems[i];
+            var isToday = c.readingDay === todayDay;
+            var companyName = (c.company && c.company.companyname) || 'Unknown Company';
+            var serial = (c.machine && c.machine.serial) || c.xserial || 'N/A';
             
-            let itemClass = c.hasBacklog ? 'backlog' : (c.isOverdue ? 'overdue' : (c.billedThisMonth ? 'done' : (c.isFixedRate ? 'fixed-rate' : '')));
-            let rdClass = c.hasBacklog ? 'backlog' : (isToday ? 'today' : (c.isOverdue ? 'overdue' : ''));
+            var itemClass = c.hasBacklog ? 'backlog' : (c.isOverdue ? 'overdue' : (!c.isActive ? 'inactive' : ''));
+            var rdClass = c.hasBacklog ? 'backlog' : (isToday ? 'today' : (c.isOverdue ? 'overdue' : ''));
             
-            let metaHtml = `<span>${escapeHtml(serial)}</span>`;
+            var metaHtml = '<span>' + escapeHtml(serial) + '</span>';
             if (c.hasBacklog && c.backlogMonths.length > 0) {
-                metaHtml += ` <span class="month-tag">${c.backlogMonths[0].label}</span>`;
+                metaHtml += ' <span class="month-tag">' + c.backlogMonths[0].label + '</span>';
             }
+            metaHtml += ' <span class="' + (c.isActive ? 'status-active' : 'status-inactive') + '">' + (c.isActive ? 'Active' : 'Inactive') + '</span>';
             
-            return `
-                <div class="contract-item ${itemClass}" onclick="selectContract('${c.docId || c.id}')" data-id="${c.docId || c.id}">
-                    <div class="rd-day ${rdClass}">${c.readingDay || '-'}</div>
-                    <div class="contract-info">
-                        <div class="client-name">${escapeHtml(companyName)}</div>
-                        <div class="contract-meta">${metaHtml}</div>
-                    </div>
-                    <div class="contract-badges">
-                        <span class="type-badge ${c.categoryCode.toLowerCase()}">${c.categoryCode}</span>
-                        ${c.isFixedRate ? '<span class="type-badge fixed">FIXED</span>' : ''}
-                        <span class="amount-preview">₱${c.monthlyRate.toLocaleString()}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
+            var contractId = c.docId || c.id;
+            
+            html += '<div class="contract-item ' + itemClass + '" data-id="' + contractId + '">';
+            html += '<div class="rd-day ' + rdClass + '">' + (c.readingDay || '-') + '</div>';
+            html += '<div class="contract-info">';
+            html += '<div class="client-name">' + escapeHtml(companyName) + '</div>';
+            html += '<div class="contract-meta">' + metaHtml + '</div>';
+            html += '</div>';
+            html += '<div class="contract-badges">';
+            html += '<span class="type-badge ' + c.categoryCode.toLowerCase() + '">' + c.categoryCode + '</span>';
+            if (c.isFixedRate) html += '<span class="type-badge fixed">FIXED</span>';
+            html += '<span class="amount-preview">₱' + c.monthlyRate.toLocaleString() + '</span>';
+            html += '</div>';
+            html += '</div>';
+        }
         
-        // Update overdue button
-        const overdueCount = contractsWithInfo.filter(c => c.isOverdue).length;
-        const btnOverdue = document.getElementById('btnOverdue');
-        if (overdueCount > 0) { btnOverdue.classList.add('alert'); btnOverdue.textContent = `Overdue (${overdueCount})`; }
-        else { btnOverdue.classList.remove('alert'); btnOverdue.textContent = 'Overdue'; }
+        list.innerHTML = html;
         
-        // Update backlog button
-        const backlogCount = contractsWithInfo.filter(c => c.hasBacklog).length;
-        const btnBacklog = document.getElementById('btnBacklog');
-        if (backlogCount > 0) { btnBacklog.classList.add('alert'); btnBacklog.textContent = `Backlog (${backlogCount})`; }
-        else { btnBacklog.classList.remove('alert'); btnBacklog.textContent = 'Backlog'; }
+        // Add click handlers
+        var items = list.querySelectorAll('.contract-item');
+        for (var i = 0; i < items.length; i++) {
+            items[i].addEventListener('click', function(e) {
+                var id = this.getAttribute('data-id');
+                console.log('Contract clicked:', id);
+                selectContract(id);
+            });
+        }
+        
+        // Update filter buttons
+        updateFilterButtons();
+    }
+
+    function updateFilterButtons() {
+        var overdueCount = contractsWithInfo.filter(function(c) { return c.isOverdue; }).length;
+        var backlogCount = contractsWithInfo.filter(function(c) { return c.hasBacklog; }).length;
+        
+        var btnOverdue = document.getElementById('filterOverdue');
+        var btnBacklog = document.getElementById('filterBacklog');
+        
+        btnOverdue.textContent = 'Overdue' + (overdueCount > 0 ? ' (' + overdueCount + ')' : '');
+        btnBacklog.textContent = 'Backlog' + (backlogCount > 0 ? ' (' + backlogCount + ')' : '');
+        
+        if (overdueCount > 0) btnOverdue.classList.add('alert');
+        else btnOverdue.classList.remove('alert');
+        
+        if (backlogCount > 0) btnBacklog.classList.add('alert');
+        else btnBacklog.classList.remove('alert');
+        
+        // Active state
+        document.getElementById('filterToday').classList.toggle('active', readingFilter === 'today');
+        document.getElementById('filterOverdue').classList.toggle('active', readingFilter === 'overdue');
+        document.getElementById('filterBacklog').classList.toggle('active', readingFilter === 'backlog');
+        document.getElementById('filterAll').classList.toggle('active', readingFilter === 'all');
     }
 
     function renderForInvoicePanel() {
-        const search = (document.getElementById('searchForInvoice')?.value || '').toLowerCase();
-        const today = new Date();
-        const currentMonth = today.getMonth() + 1;
-        const currentYear = today.getFullYear();
+        var today = new Date();
+        var currentMonth = today.getMonth() + 1;
+        var currentYear = today.getFullYear();
+        var search = (document.getElementById('searchForInvoice').value || '').toLowerCase();
         
-        // Get readings that need invoice/printing
-        filteredInvoiceReadings = billingData.readings.filter(r => {
-            if (r.printed) return false; // Already printed
+        filteredInvoiceReadings = billingData.readings.filter(function(r) {
+            if (r.printed) return false;
             if (r.status === 'delivered' || r.status === 'paid') return false;
             
             if (search) {
-                const name = r.company_name || '';
-                if (!name.toLowerCase().includes(search)) return false;
+                var name = r.company_name || '';
+                if (name.toLowerCase().indexOf(search) === -1) return false;
             }
             
             if (invoiceFilter === 'thisMonth') {
@@ -1021,257 +887,259 @@
             return true;
         });
         
-        // Sort by date (oldest first for backlog)
-        filteredInvoiceReadings.sort((a, b) => {
-            const dateA = (a.billing_year * 100) + a.billing_month;
-            const dateB = (b.billing_year * 100) + b.billing_month;
-            return dateA - dateB;
-        });
-        
-        const totalCount = filteredInvoiceReadings.length;
-        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+        var totalCount = filteredInvoiceReadings.length;
+        var totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
         if (invoicePage > totalPages) invoicePage = totalPages;
+        if (invoicePage < 1) invoicePage = 1;
         
         document.getElementById('forInvoiceCount').textContent = totalCount;
-        document.getElementById('invoicePageInfo').textContent = `Page ${invoicePage} of ${totalPages} (${totalCount} items)`;
+        document.getElementById('invoicePageInfo').textContent = 'Page ' + invoicePage + ' of ' + totalPages;
         document.getElementById('invoicePrevBtn').disabled = invoicePage <= 1;
         document.getElementById('invoiceNextBtn').disabled = invoicePage >= totalPages;
         document.getElementById('btnMarkPrinted').disabled = totalCount === 0;
         
-        const startIdx = (invoicePage - 1) * ITEMS_PER_PAGE;
-        const pageItems = filteredInvoiceReadings.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+        var startIdx = (invoicePage - 1) * ITEMS_PER_PAGE;
+        var pageItems = filteredInvoiceReadings.slice(startIdx, startIdx + ITEMS_PER_PAGE);
         
-        const list = document.getElementById('forInvoiceList');
+        var list = document.getElementById('forInvoiceList');
         
         if (pageItems.length === 0) {
-            list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p>No readings pending print</p></div>`;
+            list.innerHTML = '<div class="empty-state"><p>No readings pending print</p></div>';
             return;
         }
         
-        list.innerHTML = pageItems.map(r => {
-            const companyName = r.company_name || 'Unknown';
-            const invoiceNum = r.invoice_number || 'Pending';
-            const amount = r.amount_due || 0;
-            const monthLabel = `${MONTHS[r.billing_month]} ${r.billing_year}`;
-            const isBacklog = r.billing_year < currentYear || (r.billing_year == currentYear && r.billing_month < currentMonth);
+        var html = '';
+        for (var i = 0; i < pageItems.length; i++) {
+            var r = pageItems[i];
+            var companyName = r.company_name || 'Unknown';
+            var invoiceNum = r.invoice_number || 'N/A';
+            var amount = r.amount_due || 0;
+            var monthLabel = MONTHS[r.billing_month] + ' ' + r.billing_year;
+            var isBacklog = r.billing_year < currentYear || (r.billing_year == currentYear && r.billing_month < currentMonth);
             
-            return `
-                <div class="reading-item" onclick="selectReadingForPrint('${r.docId}')" data-id="${r.docId}">
-                    <div class="reading-info">
-                        <div class="reading-client">${escapeHtml(companyName)}</div>
-                        <div class="reading-meta">#${escapeHtml(invoiceNum)} | ${monthLabel} ${isBacklog ? '<span class="status-badge old">BACKLOG</span>' : ''}</div>
-                    </div>
-                    <div class="reading-amount">₱${amount.toLocaleString()}</div>
-                </div>
-            `;
-        }).join('');
+            html += '<div class="reading-item" data-id="' + r.docId + '">';
+            html += '<div class="reading-info">';
+            html += '<div class="reading-client">' + escapeHtml(companyName) + '</div>';
+            html += '<div class="reading-meta">#' + escapeHtml(invoiceNum) + ' | ' + monthLabel + (isBacklog ? ' <span class="status-badge old">BACKLOG</span>' : '') + '</div>';
+            html += '</div>';
+            html += '<div class="reading-amount">₱' + amount.toLocaleString() + '</div>';
+            html += '</div>';
+        }
         
-        // Update backlog button
-        const backlogInvoiceCount = backlogSummary.unprintedReadings.length;
-        const btnInvoiceBacklog = document.getElementById('btnInvoiceBacklog');
-        if (backlogInvoiceCount > 0) { btnInvoiceBacklog.classList.add('alert'); btnInvoiceBacklog.textContent = `Backlog (${backlogInvoiceCount})`; }
-        else { btnInvoiceBacklog.classList.remove('alert'); btnInvoiceBacklog.textContent = 'Backlog'; }
+        list.innerHTML = html;
+        
+        // Add click handlers
+        var items = list.querySelectorAll('.reading-item');
+        for (var i = 0; i < items.length; i++) {
+            items[i].addEventListener('click', function() {
+                selectReadingForPrint(this.getAttribute('data-id'));
+            });
+        }
     }
 
     function renderPendingPanel() {
-        // Combine all pending deliveries
         filteredPendingItems = [];
         
-        billingData.readings.forEach(r => {
+        billingData.readings.forEach(function(r) {
             if (r.printed && r.status !== 'delivered' && r.status !== 'paid') {
-                filteredPendingItems.push({ ...r, type: 'reading', deliveryStatus: r.assigned_to ? 'assigned' : 'pending' });
+                filteredPendingItems.push(Object.assign({}, r, { type: 'reading', deliveryStatus: r.assigned_to ? 'assigned' : 'pending' }));
             }
         });
         
-        billingData.invoices.forEach(inv => {
-            if (inv.status === 'pending_delivery' || inv.status === 'assigned' || inv.status === 'for_delivery') {
-                filteredPendingItems.push({ ...inv, type: 'invoice', deliveryStatus: inv.assigned_to ? 'assigned' : 'pending' });
-            }
-        });
-        
-        // Apply filter
         if (pendingFilter === 'unassigned') {
-            filteredPendingItems = filteredPendingItems.filter(i => !i.assigned_to);
+            filteredPendingItems = filteredPendingItems.filter(function(i) { return !i.assigned_to; });
         } else if (pendingFilter === 'assigned') {
-            filteredPendingItems = filteredPendingItems.filter(i => i.assigned_to);
+            filteredPendingItems = filteredPendingItems.filter(function(i) { return i.assigned_to; });
         }
         
-        const totalCount = filteredPendingItems.length;
-        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+        var totalCount = filteredPendingItems.length;
+        var totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
         if (pendingPage > totalPages) pendingPage = totalPages;
+        if (pendingPage < 1) pendingPage = 1;
         
         document.getElementById('pendingCount').textContent = totalCount;
-        document.getElementById('pendingPageInfo').textContent = `Page ${pendingPage} of ${totalPages} (${totalCount} items)`;
+        document.getElementById('pendingPageInfo').textContent = 'Page ' + pendingPage + ' of ' + totalPages;
         document.getElementById('pendingPrevBtn').disabled = pendingPage <= 1;
         document.getElementById('pendingNextBtn').disabled = pendingPage >= totalPages;
         document.getElementById('btnAssign').disabled = totalCount === 0;
         
-        const startIdx = (pendingPage - 1) * ITEMS_PER_PAGE;
-        const pageItems = filteredPendingItems.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+        var startIdx = (pendingPage - 1) * ITEMS_PER_PAGE;
+        var pageItems = filteredPendingItems.slice(startIdx, startIdx + ITEMS_PER_PAGE);
         
-        const list = document.getElementById('pendingList');
+        var list = document.getElementById('pendingList');
         
         if (pageItems.length === 0) {
-            list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg><p>No pending deliveries</p></div>`;
+            list.innerHTML = '<div class="empty-state"><p>No pending deliveries</p></div>';
             return;
         }
         
-        list.innerHTML = pageItems.map(inv => {
-            const createdAt = inv.created_at?.toDate?.() || new Date(inv.created_at || Date.now());
-            const age = Math.floor((Date.now() - createdAt) / (1000 * 60 * 60 * 24));
-            let statusClass = inv.deliveryStatus === 'assigned' ? 'assigned' : (age > 7 ? 'old' : 'pending');
+        var html = '';
+        for (var i = 0; i < pageItems.length; i++) {
+            var inv = pageItems[i];
+            var invoiceNum = inv.invoice_number || 'N/A';
+            var companyName = inv.company_name || 'Unknown';
+            var amount = inv.amount_due || 0;
             
-            const invoiceNum = inv.invoice_number || inv.invoice_num || 'N/A';
-            const companyName = inv.company_name || 'Unknown';
-            const amount = inv.amount_due || inv.total_amount || 0;
-            const assignedTo = inv.assigned_to || '';
-            
-            return `
-                <div class="invoice-item" data-id="${inv.docId}">
-                    <div class="invoice-info">
-                        <div class="invoice-num">${escapeHtml(invoiceNum)}</div>
-                        <div class="invoice-client">${escapeHtml(companyName)} <span class="status-badge ${statusClass}">${assignedTo || `${age}d`}</span></div>
-                    </div>
-                    <div class="invoice-amount">₱${amount.toLocaleString()}</div>
-                </div>
-            `;
-        }).join('');
+            html += '<div class="invoice-item" data-id="' + inv.docId + '">';
+            html += '<div class="invoice-info">';
+            html += '<div class="invoice-num">' + escapeHtml(invoiceNum) + '</div>';
+            html += '<div class="invoice-client">' + escapeHtml(companyName) + '</div>';
+            html += '</div>';
+            html += '<div class="invoice-amount">₱' + amount.toLocaleString() + '</div>';
+            html += '</div>';
+        }
+        
+        list.innerHTML = html;
     }
 
     function updateStats() {
-        const today = new Date();
-        const todayDay = today.getDate();
+        var today = new Date();
+        var todayDay = today.getDate();
         
-        document.getElementById('statToday').textContent = contractsWithInfo.filter(c => c.readingDay === todayDay && !c.billedThisMonth).length;
-        document.getElementById('statOverdue').textContent = contractsWithInfo.filter(c => c.isOverdue).length;
-        document.getElementById('statBacklog').textContent = contractsWithInfo.filter(c => c.hasBacklog).length;
-        document.getElementById('statForInvoice').textContent = billingData.readings.filter(r => !r.printed && r.status !== 'delivered' && r.status !== 'paid').length;
+        document.getElementById('statToday').textContent = contractsWithInfo.filter(function(c) { return c.readingDay === todayDay && !c.billedThisMonth; }).length;
+        document.getElementById('statOverdue').textContent = contractsWithInfo.filter(function(c) { return c.isOverdue; }).length;
+        document.getElementById('statBacklog').textContent = contractsWithInfo.filter(function(c) { return c.hasBacklog; }).length;
+        document.getElementById('statForInvoice').textContent = billingData.readings.filter(function(r) { return !r.printed && r.status !== 'delivered' && r.status !== 'paid'; }).length;
         document.getElementById('statPending').textContent = filteredPendingItems.length;
     }
 
-    // Pagination handlers
-    function changeReadingPage(delta) { readingPage += delta; renderForReadingPanel(); }
-    function changeInvoicePage(delta) { invoicePage += delta; renderForInvoicePanel(); }
-    function changePendingPage(delta) { pendingPage += delta; renderPendingPanel(); }
 
-    // Filter handlers
-    function setReadingFilter(filter) {
+    // Pagination handlers - exposed to window
+    window.changeReadingPage = function(delta) {
+        readingPage += delta;
+        renderForReadingPanel();
+    };
+    
+    window.changeInvoicePage = function(delta) {
+        invoicePage += delta;
+        renderForInvoicePanel();
+    };
+    
+    window.changePendingPage = function(delta) {
+        pendingPage += delta;
+        renderPendingPanel();
+    };
+
+    // Filter handlers - exposed to window
+    window.setReadingFilter = function(filter) {
+        console.log('Setting reading filter:', filter);
         readingFilter = filter;
         readingPage = 1;
-        document.querySelectorAll('#panelForReading .panel-toolbar .filter-btn').forEach(btn => {
-            const isActive = btn.dataset.filter === filter;
-            btn.classList.toggle('active', isActive);
-            // Preserve alert class for overdue/backlog
-            if (btn.dataset.filter === 'overdue' || btn.dataset.filter === 'backlog') {
-                // Keep alert if it has it
-            }
-        });
         renderForReadingPanel();
-    }
+    };
 
-    function setInvoiceFilter(filter) {
+    window.setInvoiceFilter = function(filter) {
         invoiceFilter = filter;
         invoicePage = 1;
-        document.querySelectorAll('#panelForInvoice .panel-toolbar .filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
         renderForInvoicePanel();
-    }
+    };
 
-    function setPendingFilter(filter) {
+    window.setPendingFilter = function(filter) {
         pendingFilter = filter;
         pendingPage = 1;
-        document.querySelectorAll('#panelPending .panel-toolbar .filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
         renderPendingPanel();
-    }
+    };
 
-    function setQuickFilter(filter) {
-        document.querySelectorAll('.stat-item').forEach(s => s.classList.remove('active'));
-        event?.target?.closest('.stat-item')?.classList.add('active');
-        
-        if (filter === 'today') setReadingFilter('today');
-        else if (filter === 'overdue') setReadingFilter('overdue');
-        else if (filter === 'backlog') setReadingFilter('backlog');
-        else if (filter === 'forInvoice') { setInvoiceFilter('all'); document.getElementById('panelForInvoice').scrollIntoView({ behavior: 'smooth' }); }
-        else if (filter === 'pending') { setPendingFilter('all'); document.getElementById('panelPending').scrollIntoView({ behavior: 'smooth' }); }
-    }
-
-
+    // Selection handlers
     function selectContract(contractId) {
-        console.log('selectContract called with:', contractId);
-        selectedContract = contractsWithInfo.find(c => c.docId == contractId || c.id == contractId);
-        console.log('Found contract:', selectedContract);
-        if (!selectedContract) { showToast('Contract not found', 'error'); return; }
+        console.log('selectContract called:', contractId);
+        selectedContract = contractsWithInfo.find(function(c) { return c.docId == contractId || c.id == contractId; });
         
-        document.querySelectorAll('#forReadingList .contract-item').forEach(el => el.classList.toggle('selected', el.dataset.id == contractId));
+        if (!selectedContract) {
+            showToast('Contract not found', 'error');
+            return;
+        }
+        
+        // Update UI
+        var items = document.querySelectorAll('#forReadingList .contract-item');
+        for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('selected', items[i].getAttribute('data-id') == contractId);
+        }
+        
         document.getElementById('btnEnterReading').disabled = false;
-        showToast('Contract selected: ' + (selectedContract.company?.companyname || 'Unknown'), 'success');
+        showToast('Selected: ' + ((selectedContract.company && selectedContract.company.companyname) || 'Unknown'), 'success');
     }
 
     function selectReadingForPrint(docId) {
-        selectedReading = filteredInvoiceReadings.find(r => r.docId === docId);
-        document.querySelectorAll('#forInvoiceList .reading-item').forEach(el => el.classList.toggle('selected', el.dataset.id === docId));
+        selectedReading = filteredInvoiceReadings.find(function(r) { return r.docId === docId; });
+        
+        var items = document.querySelectorAll('#forInvoiceList .reading-item');
+        for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('selected', items[i].getAttribute('data-id') === docId);
+        }
+        
         document.getElementById('btnPrint').disabled = !selectedReading;
     }
 
-    function openBillingModal() {
-        if (!selectedContract) { showToast('Please select a contract first', 'error'); return; }
-        if (selectedContract.billedThisMonth && !confirm('Already billed this month. Create another?')) return;
-        
-        const c = selectedContract;
-        let backlogInfo = '';
-        if (c.hasBacklog && c.backlogMonths.length > 0) {
-            backlogInfo = `<div style="background:#fef3c7;padding:0.5rem;border-radius:6px;margin-top:0.5rem;font-size:0.75rem;color:#92400e;">⚠️ Has backlog: ${c.backlogMonths.map(m => m.label).join(', ')}</div>`;
+    // Modal handlers - exposed to window
+    window.openBillingModal = function() {
+        if (!selectedContract) {
+            showToast('Please select a contract first', 'error');
+            return;
         }
         
-        document.getElementById('selectedContractInfo').innerHTML = `
-            <div style="padding:0.75rem;background:#f8fafc;border-radius:8px;margin-bottom:1rem;">
-                <div style="font-weight:700;color:#1e3a5f;">${escapeHtml(c.company?.companyname || 'Unknown')}</div>
-                <div style="font-size:0.8rem;color:#64748b;">${escapeHtml(c.branch?.branchname || '')} | ${c.categoryCode} | ₱${c.monthlyRate.toLocaleString()}/mo</div>
-                <div style="font-size:0.75rem;color:#94a3b8;">${escapeHtml(c.model?.modelname || '')} | ${escapeHtml(c.machine?.serial || '')}</div>
-                ${backlogInfo}
-            </div>
-        `;
-        
-        // If backlog, suggest billing for the oldest unbilled month
+        var c = selectedContract;
+        var backlogInfo = '';
         if (c.hasBacklog && c.backlogMonths.length > 0) {
-            const oldest = c.backlogMonths[c.backlogMonths.length - 1];
+            backlogInfo = '<div style="background:#fef3c7;padding:0.5rem;border-radius:6px;margin-top:0.5rem;font-size:0.75rem;color:#92400e;">⚠️ Has backlog: ' + c.backlogMonths.map(function(m) { return m.label; }).join(', ') + '</div>';
+        }
+        
+        document.getElementById('selectedContractInfo').innerHTML = 
+            '<div style="padding:0.75rem;background:#f8fafc;border-radius:8px;margin-bottom:1rem;">' +
+            '<div style="font-weight:700;color:#1e3a5f;">' + escapeHtml((c.company && c.company.companyname) || 'Unknown') + '</div>' +
+            '<div style="font-size:0.8rem;color:#64748b;">' + escapeHtml((c.branch && c.branch.branchname) || '') + ' | ' + c.categoryCode + ' | ₱' + c.monthlyRate.toLocaleString() + '/mo</div>' +
+            '<div style="font-size:0.75rem;color:#94a3b8;">' + escapeHtml((c.model && c.model.modelname) || '') + ' | ' + escapeHtml((c.machine && c.machine.serial) || '') + '</div>' +
+            backlogInfo +
+            '</div>';
+        
+        // If backlog, suggest oldest unbilled month
+        if (c.hasBacklog && c.backlogMonths.length > 0) {
+            var oldest = c.backlogMonths[c.backlogMonths.length - 1];
             document.getElementById('billingMonth').value = oldest.month;
             document.getElementById('billingYear').value = oldest.year;
+        } else {
+            var today = new Date();
+            document.getElementById('billingMonth').value = today.getMonth() + 1;
+            document.getElementById('billingYear').value = today.getFullYear();
         }
         
         document.getElementById('invoiceNumber').value = '';
         document.getElementById('invoiceModalOverlay').classList.add('visible');
         document.getElementById('invoiceModal').classList.add('visible');
         document.getElementById('invoiceNumber').focus();
-    }
+    };
 
-    function closeInvoiceModal() {
+    window.closeInvoiceModal = function() {
         document.getElementById('invoiceModalOverlay').classList.remove('visible');
         document.getElementById('invoiceModal').classList.remove('visible');
-    }
+    };
 
-    function proceedToReading() {
-        const invoiceNumber = document.getElementById('invoiceNumber').value.trim();
-        if (!invoiceNumber) { showToast('Please enter invoice number', 'error'); return; }
+    window.proceedToReading = function() {
+        var invoiceNumber = document.getElementById('invoiceNumber').value.trim();
+        if (!invoiceNumber) {
+            showToast('Please enter invoice number', 'error');
+            return;
+        }
         
         currentInvoice = {
-            invoiceNumber,
+            invoiceNumber: invoiceNumber,
             billingMonth: parseInt(document.getElementById('billingMonth').value),
             billingYear: parseInt(document.getElementById('billingYear').value)
         };
         
         closeInvoiceModal();
         openReadingModal();
-    }
+    };
 
-    async function openReadingModal() {
-        const c = selectedContract;
+    function openReadingModal() {
+        var c = selectedContract;
         
-        document.getElementById('rdCompanyName').textContent = c.company?.companyname || 'N/A';
-        document.getElementById('rdBranch').textContent = c.branch?.branchname || 'N/A';
-        document.getElementById('rdCategory').textContent = c.categoryCode + (c.isFixedRate ? ' (Fixed)' : '');
+        document.getElementById('rdCompanyName').textContent = (c.company && c.company.companyname) || 'N/A';
+        document.getElementById('rdBranch').textContent = (c.branch && c.branch.branchname) || 'N/A';
+        document.getElementById('rdCategory').textContent = c.categoryCode + (c.isFixedRate ? ' (Fixed Rate)' : '');
         document.getElementById('rdInvoiceNum').textContent = currentInvoice.invoiceNumber;
-        document.getElementById('rdModel').textContent = c.model?.modelname || 'N/A';
-        document.getElementById('rdSerial').textContent = c.machine?.serial || c.xserial || 'N/A';
+        document.getElementById('rdModel').textContent = (c.model && c.model.modelname) || 'N/A';
+        document.getElementById('rdSerial').textContent = (c.machine && c.machine.serial) || c.xserial || 'N/A';
         
         document.getElementById('rdMonth').value = currentInvoice.billingMonth;
         document.getElementById('rdYear').value = currentInvoice.billingYear;
@@ -1280,90 +1148,98 @@
         document.getElementById('rdQuota').value = c.quota || 0;
         document.getElementById('rdPageRate').value = c.pageRate || 0;
         document.getElementById('rdExceedRate').value = c.page_rate_xtra || c.pageRate || 0;
+        document.getElementById('rdPreviousMeter').value = c.startingMeter || 0;
         
+        // Show/hide meter reading section based on fixed rate
+        var meterSection = document.getElementById('meterReadingSection');
         if (c.isFixedRate) {
-            document.getElementById('rdPresentMeter').disabled = true;
-            document.getElementById('rdPresentMeter').value = 'N/A';
+            meterSection.style.display = 'none';
             calculateFixedRateBilling();
         } else {
-            document.getElementById('rdPresentMeter').disabled = false;
+            meterSection.style.display = 'block';
             document.getElementById('rdPresentMeter').value = '';
+            document.getElementById('rdGrossTotal').value = '';
+            document.getElementById('rdSpoilageAmt').value = '';
+            document.getElementById('rdNetConsumption').value = '';
+            document.getElementById('rdVat').value = '';
+            document.getElementById('rdNetAmount').value = '';
+            document.getElementById('rdAmountDue').textContent = '₱0.00';
         }
         
-        document.getElementById('rdGrossTotal').value = '';
-        document.getElementById('rdSpoilageAmt').value = '';
-        document.getElementById('rdNetConsumption').value = '';
-        document.getElementById('rdVat').value = '';
-        document.getElementById('rdNetAmount').value = '';
         document.getElementById('rdDiscount').value = '0';
-        document.getElementById('rdAmountDue').textContent = '₱0.00';
         document.getElementById('rdRemarks').value = '';
-        document.getElementById('rdPreviousMeter').value = c.startingMeter || 0;
         
         document.getElementById('readingModalOverlay').classList.add('visible');
         document.getElementById('readingModal').classList.add('visible');
         
-        await fetchPreviousReading();
-        if (!c.isFixedRate) document.getElementById('rdPresentMeter').focus();
+        fetchPreviousReading();
+        
+        if (!c.isFixedRate) {
+            document.getElementById('rdPresentMeter').focus();
+        }
     }
 
-    function closeReadingModal() {
+    window.closeReadingModal = function() {
         document.getElementById('readingModalOverlay').classList.remove('visible');
         document.getElementById('readingModal').classList.remove('visible');
-    }
+    };
 
     async function fetchPreviousReading() {
-        const db = initFirebase();
-        const contractId = selectedContract.id || selectedContract.docId;
-        const machineId = selectedContract.mach_id || selectedContract.machine_id;
+        var db = initFirebase();
+        var contractId = selectedContract.id || selectedContract.docId;
+        var machineId = selectedContract.mach_id || selectedContract.machine_id;
         
         try {
-            const snap = await db.collection('tbl_readings').where('contract_id', '==', contractId).orderBy('created_at', 'desc').limit(1).get();
+            var snap = await db.collection('tbl_readings').where('contract_id', '==', contractId).orderBy('created_at', 'desc').limit(1).get();
             if (!snap.empty) {
-                const r = snap.docs[0].data();
+                var r = snap.docs[0].data();
                 document.getElementById('rdPreviousMeter').value = r.present_reading || 0;
                 if (r.present_date) document.getElementById('rdPreviousDate').value = r.present_date;
                 return;
             }
-        } catch (e) { }
+        } catch (e) { console.log('Readings query error:', e); }
         
         try {
-            let snap = await db.collection('tbl_machinereading').where('current_contract', '==', parseInt(contractId)).orderBy('date_red', 'desc').limit(1).get();
-            if (snap.empty && machineId) snap = await db.collection('tbl_machinereading').where('machine_id', '==', parseInt(machineId)).orderBy('date_red', 'desc').limit(1).get();
+            var snap = await db.collection('tbl_machinereading').where('current_contract', '==', parseInt(contractId)).orderBy('date_red', 'desc').limit(1).get();
             if (!snap.empty) {
-                const r = snap.docs[0].data();
+                var r = snap.docs[0].data();
                 document.getElementById('rdPreviousMeter').value = r.meter_reading || 0;
                 if (r.date_red) document.getElementById('rdPreviousDate').value = r.date_red;
                 return;
             }
-        } catch (e) { }
+        } catch (e) { console.log('Machine reading query error:', e); }
         
         document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
     }
 
-    async function loadPreviousReading() {
+    window.loadPreviousReading = async function() {
         showToast('Loading...');
         await fetchPreviousReading();
         showToast('Loaded!', 'success');
-    }
+    };
 
-    function calculateBilling() {
-        const present = parseFloat(document.getElementById('rdPresentMeter').value) || 0;
-        const previous = parseFloat(document.getElementById('rdPreviousMeter').value) || 0;
-        const quota = parseFloat(document.getElementById('rdQuota').value) || 0;
-        const pageRate = parseFloat(document.getElementById('rdPageRate').value) || 0;
-        const exceedRate = parseFloat(document.getElementById('rdExceedRate').value) || pageRate;
-        const discount = parseFloat(document.getElementById('rdDiscount').value) || 0;
-        const applySpoilage = document.getElementById('rdSpoilage').checked;
-        const isVat = selectedContract.withvat == 1;
+    window.calculateBilling = function() {
+        var present = parseFloat(document.getElementById('rdPresentMeter').value) || 0;
+        var previous = parseFloat(document.getElementById('rdPreviousMeter').value) || 0;
+        var quota = parseFloat(document.getElementById('rdQuota').value) || 0;
+        var pageRate = parseFloat(document.getElementById('rdPageRate').value) || 0;
+        var exceedRate = parseFloat(document.getElementById('rdExceedRate').value) || pageRate;
+        var discount = parseFloat(document.getElementById('rdDiscount').value) || 0;
+        var applySpoilage = document.getElementById('rdSpoilage').checked;
+        var isVat = selectedContract.withvat == 1;
         
-        const gross = Math.max(0, present - previous);
-        const spoilage = applySpoilage && gross > 0 ? Math.round(gross * 0.02) : 0;
-        const net = gross - spoilage;
+        var gross = Math.max(0, present - previous);
+        var spoilage = applySpoilage && gross > 0 ? Math.round(gross * 0.02) : 0;
+        var net = gross - spoilage;
         
-        let amount = quota > 0 ? (net <= quota ? quota * pageRate : (quota * pageRate) + ((net - quota) * exceedRate)) : net * pageRate;
+        var amount = 0;
+        if (quota > 0) {
+            amount = net <= quota ? quota * pageRate : (quota * pageRate) + ((net - quota) * exceedRate);
+        } else {
+            amount = net * pageRate;
+        }
         
-        let vat = 0, netAmt = amount;
+        var vat = 0, netAmt = amount;
         if (isVat) { netAmt = amount / 1.12; vat = amount - netAmt; }
         
         document.getElementById('rdGrossTotal').value = gross;
@@ -1373,35 +1249,56 @@
         document.getElementById('rdNetAmount').value = netAmt.toFixed(2);
         document.getElementById('rdAmountDue').textContent = '₱' + (amount - discount).toLocaleString(undefined, {minimumFractionDigits: 2});
         
-        currentInvoice = { ...currentInvoice, presentReading: present, previousReading: previous, grossConsumption: gross, spoilage, netConsumption: net, vatAmount: vat, netAmount: netAmt, discount, amountDue: amount - discount, isVatInclusive: isVat, isFixedRate: false };
-    }
+        currentInvoice.presentReading = present;
+        currentInvoice.previousReading = previous;
+        currentInvoice.grossConsumption = gross;
+        currentInvoice.spoilage = spoilage;
+        currentInvoice.netConsumption = net;
+        currentInvoice.vatAmount = vat;
+        currentInvoice.netAmount = netAmt;
+        currentInvoice.discount = discount;
+        currentInvoice.amountDue = amount - discount;
+        currentInvoice.isVatInclusive = isVat;
+        currentInvoice.isFixedRate = false;
+    };
 
     function calculateFixedRateBilling() {
-        const rate = selectedContract.monthlyRate || 0;
-        const discount = parseFloat(document.getElementById('rdDiscount').value) || 0;
-        const isVat = selectedContract.withvat == 1;
+        var rate = selectedContract.monthlyRate || 0;
+        var discount = parseFloat(document.getElementById('rdDiscount').value) || 0;
+        var isVat = selectedContract.withvat == 1;
         
-        let vat = 0, netAmt = rate;
+        var vat = 0, netAmt = rate;
         if (isVat) { netAmt = rate / 1.12; vat = rate - netAmt; }
         
-        document.getElementById('rdVat').value = vat.toFixed(2);
-        document.getElementById('rdNetAmount').value = netAmt.toFixed(2);
         document.getElementById('rdAmountDue').textContent = '₱' + (rate - discount).toLocaleString(undefined, {minimumFractionDigits: 2});
         
-        currentInvoice = { ...currentInvoice, presentReading: 0, previousReading: 0, grossConsumption: 0, spoilage: 0, netConsumption: 0, vatAmount: vat, netAmount: netAmt, discount, amountDue: rate - discount, isVatInclusive: isVat, isFixedRate: true };
+        currentInvoice.presentReading = 0;
+        currentInvoice.previousReading = 0;
+        currentInvoice.grossConsumption = 0;
+        currentInvoice.spoilage = 0;
+        currentInvoice.netConsumption = 0;
+        currentInvoice.vatAmount = vat;
+        currentInvoice.netAmount = netAmt;
+        currentInvoice.discount = discount;
+        currentInvoice.amountDue = rate - discount;
+        currentInvoice.isVatInclusive = isVat;
+        currentInvoice.isFixedRate = true;
     }
 
-    async function confirmBilling() {
-        if (!currentInvoice.amountDue && currentInvoice.amountDue !== 0) { showToast('Please complete billing calculation', 'error'); return; }
+    window.confirmBilling = async function() {
+        if (!currentInvoice.amountDue && currentInvoice.amountDue !== 0) {
+            showToast('Please complete billing calculation', 'error');
+            return;
+        }
         
         try {
-            const db = firebase.firestore();
-            const c = selectedContract;
+            var db = firebase.firestore();
+            var c = selectedContract;
             
             await db.collection('tbl_readings').add({
                 contract_id: c.id || c.docId,
-                company_name: c.company?.companyname || '',
-                branch_name: c.branch?.branchname || '',
+                company_name: (c.company && c.company.companyname) || '',
+                branch_name: (c.branch && c.branch.branchname) || '',
                 invoice_number: currentInvoice.invoiceNumber,
                 billing_month: currentInvoice.billingMonth,
                 billing_year: currentInvoice.billingYear,
@@ -1419,7 +1316,7 @@
                 present_date: document.getElementById('rdPresentDate').value,
                 previous_date: document.getElementById('rdPreviousDate').value,
                 remarks: document.getElementById('rdRemarks').value,
-                created_by: firebase.auth().currentUser?.email || 'billing_staff',
+                created_by: firebase.auth().currentUser ? firebase.auth().currentUser.email : 'billing_staff',
                 created_at: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'pending',
                 printed: false
@@ -1431,41 +1328,57 @@
             document.getElementById('btnEnterReading').disabled = true;
             
             await loadAllBillingData();
-            detectBacklogs();
             renderAllPanels();
         } catch (e) {
             console.error('Error:', e);
             showToast('Error: ' + e.message, 'error');
         }
-    }
+    };
 
-    async function printSelectedInvoice() { if (!selectedReading) return; showToast('Print preview coming soon...'); }
+    window.printSelectedInvoice = function() {
+        if (!selectedReading) return;
+        showToast('Print preview coming soon...');
+    };
 
-    async function markAsPrinted() {
-        const toPrint = filteredInvoiceReadings.slice(0, 15); // Current page
+    window.markAsPrinted = async function() {
+        var toPrint = filteredInvoiceReadings.slice(0, ITEMS_PER_PAGE);
         if (toPrint.length === 0) return;
-        if (!confirm(`Mark ${toPrint.length} reading(s) as printed?`)) return;
+        if (!confirm('Mark ' + toPrint.length + ' reading(s) as printed?')) return;
         
-        const db = firebase.firestore();
-        const batch = db.batch();
-        toPrint.forEach(r => batch.update(db.collection('tbl_readings').doc(r.docId), { printed: true, status: 'printed' }));
+        var db = firebase.firestore();
+        var batch = db.batch();
+        toPrint.forEach(function(r) {
+            batch.update(db.collection('tbl_readings').doc(r.docId), { printed: true, status: 'printed' });
+        });
         
         await batch.commit();
         showToast('Marked as printed!', 'success');
         await loadAllBillingData();
-        detectBacklogs();
         renderAllPanels();
+    };
+
+    window.assignToMessenger = function() {
+        showToast('Messenger assignment coming soon!');
+    };
+
+    // Utility functions
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    function assignToMessenger() { showToast('Messenger assignment coming soon!'); }
-
-    function escapeHtml(str) { return str ? String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : ''; }
-    function showToast(msg, type = 'info') {
-        const toast = document.getElementById('toast');
+    function showToast(msg, type) {
+        var toast = document.getElementById('toast');
         toast.textContent = msg;
-        toast.className = 'toast show ' + type;
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        toast.className = 'toast show' + (type ? ' ' + type : '');
+        setTimeout(function() { toast.classList.remove('show'); }, 3000);
     }
+
+    // Also expose close functions
+    window.closeInvoiceModal = window.closeInvoiceModal || function() {
+        document.getElementById('invoiceModalOverlay').classList.remove('visible');
+        document.getElementById('invoiceModal').classList.remove('visible');
+    };
     </script>
 </body>
 </html>
