@@ -2,52 +2,34 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Check RD Values in Contracts</title>
+    <title>Find Reading Day Field</title>
     <style>
-        body { font-family: system-ui; padding: 2rem; max-width: 1000px; margin: 0 auto; }
+        body { font-family: system-ui; padding: 2rem; max-width: 1200px; margin: 0 auto; }
         .card { background: #f8fafc; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
-        button { padding: 0.75rem 1.5rem; font-size: 1rem; border-radius: 8px; background: #2563eb; color: white; border: none; cursor: pointer; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
+        button { padding: 0.75rem 1.5rem; font-size: 1rem; border-radius: 8px; background: #2563eb; color: white; border: none; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.8rem; }
         th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
-        th { background: #1e3a5f; color: white; }
-        .highlight { background: #fef3c7; font-weight: bold; }
+        th { background: #1e3a5f; color: white; position: sticky; top: 0; }
+        .highlight { background: #fef3c7; }
         h1 { color: #1e3a5f; }
-        .stat { display: inline-block; background: #dbeafe; padding: 0.5rem 1rem; border-radius: 8px; margin-right: 1rem; margin-bottom: 0.5rem; }
-        .warning { background: #fef3c7; color: #92400e; }
-        .good { background: #d1fae5; color: #065f46; }
+        .stat { display: inline-block; background: #dbeafe; padding: 0.5rem 1rem; border-radius: 8px; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        #results { max-height: 500px; overflow: auto; }
     </style>
 </head>
 <body>
-    <h1>📅 Check Reading Day (RD) Values</h1>
+    <h1>🔍 Find Reading Day Field</h1>
     
     <div class="card">
-        <button onclick="checkRD()">Check RD Field in tbl_contractmain</button>
+        <p>Looking for where Reading Day (1-31) is stored...</p>
+        <button onclick="checkContractReadingDate()">Check reading_date in Contracts</button>
+        <button onclick="checkAllContractFields()">Show ALL Contract Fields</button>
+        <button onclick="checkBranchFields()">Show ALL Branch Fields</button>
     </div>
     
     <div class="card">
-        <h3>Statistics</h3>
-        <div id="stats">Click button to load...</div>
-    </div>
-    
-    <div class="card">
-        <h3>Sample Contracts with RD Values</h3>
-        <div style="max-height: 400px; overflow: auto;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Machine ID</th>
-                        <th class="highlight">RD (Reading Day)</th>
-                        <th>Monthly Rate</th>
-                        <th>Monthly Quota</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody">
-                    <tr><td colspan="6">Click button to load...</td></tr>
-                </tbody>
-            </table>
-        </div>
+        <h3>Results</h3>
+        <div id="stats"></div>
+        <div id="results"></div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -57,51 +39,133 @@
         if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
         const db = firebase.firestore();
         
-        async function checkRD() {
+        async function checkContractReadingDate() {
             document.getElementById('stats').innerHTML = 'Loading...';
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
             
-            try {
-                // Get all contracts
-                const snap = await db.collection('tbl_contractmain').get();
-                const contracts = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                
-                // Analyze RD values
-                const rdValues = contracts.map(c => c.rd).filter(v => v != null && v !== '');
-                const uniqueRD = [...new Set(rdValues)].sort((a,b) => a - b);
-                
-                const hasRD = contracts.filter(c => c.rd != null && c.rd !== '' && c.rd !== 0);
-                const noRD = contracts.filter(c => c.rd == null || c.rd === '' || c.rd === 0);
-                const validRD = contracts.filter(c => c.rd >= 1 && c.rd <= 31);
-                const invalidRD = contracts.filter(c => c.rd != null && c.rd !== '' && (c.rd < 1 || c.rd > 31));
-                
-                // Stats
-                document.getElementById('stats').innerHTML = `
-                    <div class="stat">Total Contracts: ${contracts.length}</div>
-                    <div class="stat ${hasRD.length > 0 ? 'good' : 'warning'}">With RD: ${hasRD.length}</div>
-                    <div class="stat ${noRD.length > 0 ? 'warning' : 'good'}">Without RD: ${noRD.length}</div>
-                    <div class="stat ${validRD.length > 0 ? 'good' : ''}">Valid RD (1-31): ${validRD.length}</div>
-                    <div class="stat ${invalidRD.length > 0 ? 'warning' : ''}">Invalid RD: ${invalidRD.length}</div>
-                    <br><br>
-                    <div class="stat">Unique RD values: ${uniqueRD.slice(0, 20).join(', ')}${uniqueRD.length > 20 ? '...' : ''}</div>
-                `;
-                
-                // Show sample with RD
-                const samples = hasRD.slice(0, 50);
-                document.getElementById('tableBody').innerHTML = samples.map(c => `
-                    <tr>
-                        <td>${c.id}</td>
-                        <td>${c.machine_id || '-'}</td>
-                        <td class="highlight">${c.rd}</td>
-                        <td>${c.monthly_rate || '-'}</td>
-                        <td>${c.monthly_quota || '-'}</td>
-                        <td>${c.status || '-'}</td>
-                    </tr>
-                `).join('') || '<tr><td colspan="6">No contracts with RD found</td></tr>';
-                
-            } catch (e) {
-                document.getElementById('stats').innerHTML = `<div class="stat warning">Error: ${e.message}</div>`;
+            const snap = await db.collection('tbl_contractmain').limit(100).get();
+            const contracts = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            // Extract day from reading_date
+            const withReadingDate = contracts.filter(c => c.reading_date);
+            const days = withReadingDate.map(c => {
+                const date = new Date(c.reading_date);
+                return date.getDate();
+            });
+            const uniqueDays = [...new Set(days)].sort((a,b) => a - b);
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">Contracts checked: ${contracts.length}</div>
+                <div class="stat">With reading_date: ${withReadingDate.length}</div>
+                <div class="stat">Unique days extracted: ${uniqueDays.join(', ')}</div>
+            `;
+            
+            // Show table
+            document.getElementById('results').innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Contract ID</th>
+                            <th>Machine ID</th>
+                            <th class="highlight">reading_date</th>
+                            <th class="highlight">Day of Month</th>
+                            <th>Monthly Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${withReadingDate.slice(0, 50).map(c => {
+                            const date = new Date(c.reading_date);
+                            const day = date.getDate();
+                            return `<tr>
+                                <td>${c.id}</td>
+                                <td>${c.machine_id || '-'}</td>
+                                <td class="highlight">${c.reading_date}</td>
+                                <td class="highlight"><strong>${day}</strong></td>
+                                <td>${c.monthly_rate || '-'}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        async function checkAllContractFields() {
+            document.getElementById('stats').innerHTML = 'Loading all fields...';
+            
+            const snap = await db.collection('tbl_contractmain').limit(5).get();
+            const contracts = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            if (contracts.length === 0) {
+                document.getElementById('stats').innerHTML = 'No contracts found';
+                return;
             }
+            
+            // Get all unique keys
+            const allKeys = new Set();
+            contracts.forEach(c => Object.keys(c).forEach(k => allKeys.add(k)));
+            const keys = [...allKeys].sort();
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">Total fields: ${keys.length}</div>
+                <div class="stat">Sample contracts: ${contracts.length}</div>
+                <p style="margin-top: 1rem;"><strong>All fields:</strong> ${keys.join(', ')}</p>
+            `;
+            
+            // Show all values for first contract
+            const first = contracts[0];
+            document.getElementById('results').innerHTML = `
+                <table>
+                    <thead>
+                        <tr><th>Field Name</th><th>Value</th></tr>
+                    </thead>
+                    <tbody>
+                        ${keys.map(k => `
+                            <tr class="${k.toLowerCase().includes('day') || k.toLowerCase().includes('read') ? 'highlight' : ''}">
+                                <td><strong>${k}</strong></td>
+                                <td>${JSON.stringify(first[k])}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        async function checkBranchFields() {
+            document.getElementById('stats').innerHTML = 'Loading branch fields...';
+            
+            const snap = await db.collection('tbl_branchinfo').limit(5).get();
+            const branches = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            if (branches.length === 0) {
+                document.getElementById('stats').innerHTML = 'No branches found';
+                return;
+            }
+            
+            const allKeys = new Set();
+            branches.forEach(c => Object.keys(c).forEach(k => allKeys.add(k)));
+            const keys = [...allKeys].sort();
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">Total fields: ${keys.length}</div>
+                <div class="stat">Sample branches: ${branches.length}</div>
+                <p style="margin-top: 1rem;"><strong>All fields:</strong> ${keys.join(', ')}</p>
+            `;
+            
+            const first = branches[0];
+            document.getElementById('results').innerHTML = `
+                <table>
+                    <thead>
+                        <tr><th>Field Name</th><th>Value</th></tr>
+                    </thead>
+                    <tbody>
+                        ${keys.map(k => `
+                            <tr class="${k.toLowerCase().includes('day') || k.toLowerCase().includes('read') ? 'highlight' : ''}">
+                                <td><strong>${k}</strong></td>
+                                <td>${JSON.stringify(first[k])}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
         }
     </script>
 </body>
