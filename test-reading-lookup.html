@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Previous Reading Lookup</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; max-width: 800px; margin: 0 auto; }
+        .card { background: #f8fafc; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
+        input, button { padding: 0.75rem; font-size: 1rem; border-radius: 8px; }
+        input { border: 2px solid #e2e8f0; width: 200px; margin-right: 0.5rem; }
+        button { background: #2563eb; color: white; border: none; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        .result { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; font-family: monospace; white-space: pre-wrap; margin-top: 1rem; }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        h1 { color: #1e3a5f; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Test Previous Reading Lookup</h1>
+    
+    <div class="card">
+        <h3>Search by Contract ID</h3>
+        <input type="number" id="contractId" placeholder="Contract ID (e.g., 939)">
+        <button onclick="searchByContract()">Search</button>
+    </div>
+    
+    <div class="card">
+        <h3>Search by Machine ID</h3>
+        <input type="number" id="machineId" placeholder="Machine ID (e.g., 3545)">
+        <button onclick="searchByMachine()">Search</button>
+    </div>
+    
+    <div class="card">
+        <h3>Results</h3>
+        <div id="result" class="result">Enter a Contract ID or Machine ID and click Search...</div>
+    </div>
+    
+    <div class="card">
+        <h3>Readings Found</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Machine ID</th>
+                    <th>Contract</th>
+                    <th>Meter Reading</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody id="readingsTable">
+                <tr><td colspan="5">No results yet</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        async function searchByContract() {
+            const contractId = parseInt(document.getElementById('contractId').value);
+            if (!contractId) {
+                alert('Enter a contract ID');
+                return;
+            }
+            
+            const result = document.getElementById('result');
+            result.innerHTML = 'Searching...';
+            
+            try {
+                // Search tbl_machinereading by current_contract
+                const snap = await db.collection('tbl_machinereading')
+                    .where('current_contract', '==', contractId)
+                    .get();
+                
+                if (snap.empty) {
+                    result.innerHTML = `<span class="error">No readings found for contract ${contractId}</span>`;
+                    document.getElementById('readingsTable').innerHTML = '<tr><td colspan="5">No results</td></tr>';
+                    return;
+                }
+                
+                const readings = snap.docs.map(d => ({id: d.id, ...d.data()}))
+                    .sort((a, b) => new Date(b.date_red || 0) - new Date(a.date_red || 0));
+                
+                const latest = readings[0];
+                result.innerHTML = `<span class="success">✅ Found ${readings.length} readings for contract ${contractId}</span>\n\n` +
+                    `Latest Reading:\n` +
+                    `  Meter: ${latest.meter_reading}\n` +
+                    `  Date: ${latest.date_red}\n` +
+                    `  Machine ID: ${latest.machine_id}\n` +
+                    `  Invoice ID: ${latest.invoice_id}`;
+                
+                renderTable(readings);
+                
+            } catch (e) {
+                result.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+        
+        async function searchByMachine() {
+            const machineId = parseInt(document.getElementById('machineId').value);
+            if (!machineId) {
+                alert('Enter a machine ID');
+                return;
+            }
+            
+            const result = document.getElementById('result');
+            result.innerHTML = 'Searching...';
+            
+            try {
+                const snap = await db.collection('tbl_machinereading')
+                    .where('machine_id', '==', machineId)
+                    .get();
+                
+                if (snap.empty) {
+                    result.innerHTML = `<span class="error">No readings found for machine ${machineId}</span>`;
+                    document.getElementById('readingsTable').innerHTML = '<tr><td colspan="5">No results</td></tr>';
+                    return;
+                }
+                
+                const readings = snap.docs.map(d => ({id: d.id, ...d.data()}))
+                    .sort((a, b) => new Date(b.date_red || 0) - new Date(a.date_red || 0));
+                
+                const latest = readings[0];
+                result.innerHTML = `<span class="success">✅ Found ${readings.length} readings for machine ${machineId}</span>\n\n` +
+                    `Latest Reading:\n` +
+                    `  Meter: ${latest.meter_reading}\n` +
+                    `  Date: ${latest.date_red}\n` +
+                    `  Contract: ${latest.current_contract}\n` +
+                    `  Invoice ID: ${latest.invoice_id}`;
+                
+                renderTable(readings);
+                
+            } catch (e) {
+                result.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+        
+        function renderTable(readings) {
+            const tbody = document.getElementById('readingsTable');
+            tbody.innerHTML = readings.slice(0, 20).map(r => `
+                <tr>
+                    <td>${r.id}</td>
+                    <td>${r.machine_id}</td>
+                    <td>${r.current_contract}</td>
+                    <td><strong>${r.meter_reading}</strong></td>
+                    <td>${r.date_red}</td>
+                </tr>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
