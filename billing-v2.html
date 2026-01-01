@@ -6,7 +6,6 @@
     <title>MARGA - Billing Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Reset and Base */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
             font-family: 'Plus Jakarta Sans', system-ui, sans-serif; 
@@ -17,10 +16,8 @@
         /* Sidebar */
         .sidebar {
             position: fixed;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 240px;
+            left: 0; top: 0; bottom: 0;
+            width: 220px;
             background: linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%);
             color: white;
             display: flex;
@@ -28,124 +25,30 @@
             z-index: 100;
         }
         
-        .sidebar-header {
-            padding: 1.25rem;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
+        .sidebar-header { padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .logo { display: flex; align-items: center; gap: 0.5rem; }
+        .logo-icon { width: 32px; height: 32px; background: #3b82f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+        .logo-text { font-size: 1.1rem; font-weight: 700; }
         
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
+        .sidebar-menu { flex: 1; padding: 0.5rem 0; }
+        .menu-label { padding: 0.75rem 1rem 0.5rem; font-size: 0.65rem; font-weight: 600; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.05em; }
+        .menu-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.85rem; transition: all 0.2s; }
+        .menu-item:hover { background: rgba(255,255,255,0.1); color: white; }
+        .menu-item.active { background: rgba(255,255,255,0.15); color: white; border-left: 3px solid #3b82f6; }
+        .menu-icon { width: 18px; height: 18px; }
         
-        .logo-icon {
-            width: 36px;
-            height: 36px;
-            background: #3b82f6;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 1.1rem;
-        }
-        
-        .logo-text {
-            font-size: 1.25rem;
-            font-weight: 700;
-        }
-        
-        .sidebar-menu {
-            flex: 1;
-            padding: 1rem 0;
-            overflow-y: auto;
-        }
-        
-        .menu-label {
-            padding: 0.5rem 1.25rem;
-            font-size: 0.7rem;
-            font-weight: 600;
-            color: rgba(255,255,255,0.5);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        
-        .menu-item {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.75rem 1.25rem;
-            color: rgba(255,255,255,0.7);
-            text-decoration: none;
-            transition: all 0.2s;
-        }
-        
-        .menu-item:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
-        }
-        
-        .menu-item.active {
-            background: rgba(255,255,255,0.15);
-            color: white;
-            border-left: 3px solid #3b82f6;
-        }
-        
-        .menu-icon {
-            width: 20px;
-            height: 20px;
-        }
-        
-        .sidebar-footer {
-            padding: 1rem 1.25rem;
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }
-        
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
-        .user-avatar {
-            width: 36px;
-            height: 36px;
-            background: #3b82f6;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-        }
-        
-        .user-details {
-            flex: 1;
-            min-width: 0;
-        }
-        
-        .user-name {
-            font-weight: 600;
-            font-size: 0.9rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .user-role {
-            font-size: 0.75rem;
-            color: rgba(255,255,255,0.6);
-        }
+        .sidebar-footer { padding: 0.75rem 1rem; border-top: 1px solid rgba(255,255,255,0.1); }
+        .user-info { display: flex; align-items: center; gap: 0.6rem; }
+        .user-avatar { width: 32px; height: 32px; background: #3b82f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem; }
+        .user-name { font-weight: 600; font-size: 0.8rem; }
+        .user-role { font-size: 0.7rem; color: rgba(255,255,255,0.5); }
         
         /* Main Content */
-        .main-content {
-            margin-left: 240px;
-            min-height: 100vh;
-        }
+        .main-content { margin-left: 220px; min-height: 100vh; }
         
         .top-header {
             background: white;
-            padding: 1rem 1.5rem;
+            padding: 0.75rem 1.25rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -155,405 +58,269 @@
             z-index: 50;
         }
         
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
+        .page-title { font-size: 1.1rem; font-weight: 700; color: #1e3a5f; }
+        .page-subtitle { font-size: 0.8rem; color: #64748b; }
+        
+        .date-picker {
+            display: flex; align-items: center; gap: 0.5rem;
+            background: #f8fafc; padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;
         }
-        
-        .menu-toggle {
-            display: none;
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 0.5rem;
-        }
-        
-        .menu-toggle svg {
-            width: 24px;
-            height: 24px;
-            color: #64748b;
-        }
-        
-        .page-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #1e3a5f;
-        }
-        
-        .page-subtitle {
-            font-size: 0.85rem;
-            color: #64748b;
-        }
-        
-        @media (max-width: 1024px) {
-            .sidebar { transform: translateX(-100%); }
-            .main-content { margin-left: 0; }
-            .menu-toggle { display: block; }
-            .sidebar.open { transform: translateX(0); }
-        }
-        .billing-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr 350px;
-            gap: 1rem;
-            height: calc(100vh - 140px);
-            padding: 1rem;
-        }
-        
-        .panel {
-            background: white;
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        
-        .panel-header {
-            padding: 1rem 1.25rem;
-            border-bottom: 1px solid #e5e7eb;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
-        }
-        
-        .panel-title {
-            font-size: 1rem;
-            font-weight: 700;
-            color: #1e3a5f;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .panel-count {
-            background: #2d5a87;
-            color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-        
-        .panel-count.warning { background: #f59e0b; }
-        .panel-count.success { background: #22c55e; }
-        .panel-count.danger { background: #ef4444; }
-        
-        .panel-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0;
-        }
-        
-        .panel-toolbar {
-            padding: 0.75rem 1rem;
-            background: #f8fafc;
-            border-bottom: 1px solid #e5e7eb;
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        
-        .date-selector {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: white;
-            padding: 0.5rem 0.75rem;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-        }
-        
-        .date-selector input {
-            border: none;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #1e3a5f;
-            width: 130px;
-        }
-        
-        .day-filter {
-            display: flex;
-            gap: 0.25rem;
-        }
-        
-        .day-btn {
-            padding: 0.375rem 0.625rem;
-            border: 1px solid #e2e8f0;
-            background: white;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            color: #64748b;
-        }
-        
-        .day-btn:hover { background: #f1f5f9; }
-        .day-btn.active { background: #2d5a87; color: white; border-color: #2d5a87; }
-        
-        /* Contract List */
-        .contract-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .contract-item {
-            padding: 0.875rem 1rem;
-            border-bottom: 1px solid #f1f5f9;
-            cursor: pointer;
-            transition: background 0.15s;
-            display: grid;
-            grid-template-columns: 40px 1fr auto;
-            gap: 0.75rem;
-            align-items: center;
-        }
-        
-        .contract-item:hover { background: #f8fafc; }
-        .contract-item.selected { background: #eff6ff; border-left: 3px solid #2d5a87; }
-        .contract-item.billed { opacity: 0.5; background: #f0fdf4; }
-        .contract-item.for-termination { background: #fef2f2; }
-        
-        .rd-badge {
-            width: 36px;
-            height: 36px;
-            background: #e0e7ff;
-            color: #3730a3;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 0.9rem;
-        }
-        
-        .rd-badge.today { background: #2d5a87; color: white; }
-        .rd-badge.overdue { background: #fee2e2; color: #dc2626; }
-        
-        .contract-info {
-            min-width: 0;
-        }
-        
-        .contract-client {
-            font-weight: 600;
-            color: #1e3a5f;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            font-size: 0.9rem;
-        }
-        
-        .contract-details {
-            font-size: 0.8rem;
-            color: #64748b;
-            display: flex;
-            gap: 0.75rem;
-            margin-top: 0.25rem;
-        }
-        
-        .contract-details span {
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-        }
-        
-        .contract-status {
-            text-align: right;
-        }
-        
-        .status-badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .status-badge.active { background: #d1fae5; color: #065f46; }
-        .status-badge.for-term { background: #fee2e2; color: #dc2626; }
-        .status-badge.billed { background: #dbeafe; color: #1e40af; }
-        
-        .category-tag {
-            font-size: 0.7rem;
-            padding: 0.125rem 0.375rem;
-            border-radius: 4px;
-            font-weight: 600;
-            margin-top: 0.25rem;
-            display: inline-block;
-        }
-        
-        .category-tag.rtp { background: #fef3c7; color: #92400e; }
-        .category-tag.rtf { background: #dbeafe; color: #1e40af; }
-        .category-tag.ref { background: #e0e7ff; color: #5b21b6; }
-        
-        /* Invoice Panel */
-        .invoice-item {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #f1f5f9;
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 0.75rem;
-            align-items: center;
-            cursor: pointer;
-        }
-        
-        .invoice-item:hover { background: #f8fafc; }
-        .invoice-item.old { background: #fef9c3; }
-        
-        .invoice-number {
-            font-weight: 700;
-            color: #1e3a5f;
-            font-size: 0.9rem;
-        }
-        
-        .invoice-client {
-            font-size: 0.85rem;
-            color: #475569;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .invoice-age {
-            font-size: 0.75rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-        
-        .invoice-age.new { background: #d1fae5; color: #065f46; }
-        .invoice-age.medium { background: #fef3c7; color: #92400e; }
-        .invoice-age.old { background: #fee2e2; color: #dc2626; }
-        
-        /* Quick Actions */
-        .quick-actions {
-            display: flex;
-            gap: 0.5rem;
-            padding: 1rem;
-            background: #f8fafc;
-            border-top: 1px solid #e5e7eb;
-        }
-        
-        .btn-action {
-            flex: 1;
-            padding: 0.75rem;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-        
-        .btn-action.primary {
-            background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%);
-            color: white;
-        }
-        
-        .btn-action.secondary {
-            background: white;
-            color: #475569;
-            border: 1px solid #e2e8f0;
-        }
-        
-        .btn-action:hover { transform: translateY(-1px); }
+        .date-picker input { border: none; background: transparent; font-size: 0.9rem; font-weight: 600; color: #1e3a5f; }
         
         /* Stats Bar */
         .stats-bar {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
-            padding: 1rem;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
             background: white;
-            border-radius: 12px;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            margin: 0.75rem;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
         
-        .stat-item {
+        .stat-card {
             text-align: center;
             padding: 0.75rem;
             border-radius: 8px;
             background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .stat-card:hover { background: #f1f5f9; }
+        .stat-card.active { border-color: #2d5a87; background: #eff6ff; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; color: #1e3a5f; }
+        .stat-label { font-size: 0.7rem; color: #64748b; margin-top: 0.25rem; }
+        .stat-card.warning { background: #fef3c7; }
+        .stat-card.warning .stat-value { color: #92400e; }
+        .stat-card.success { background: #d1fae5; }
+        .stat-card.success .stat-value { color: #065f46; }
+        
+        /* Three Panel Layout */
+        .panels-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 320px;
+            gap: 0.75rem;
+            padding: 0 0.75rem 0.75rem;
+            height: calc(100vh - 180px);
         }
         
-        .stat-value {
-            font-size: 1.75rem;
+        .panel {
+            background: white;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .panel-header {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-title {
+            font-size: 0.9rem;
             font-weight: 700;
+            color: #1e3a5f;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .badge {
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge.blue { background: #dbeafe; color: #1e40af; }
+        .badge.orange { background: #fed7aa; color: #9a3412; }
+        .badge.green { background: #d1fae5; color: #065f46; }
+        .badge.red { background: #fee2e2; color: #dc2626; }
+        
+        .panel-toolbar {
+            padding: 0.5rem 0.75rem;
+            background: #f8fafc;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .filter-btn {
+            padding: 0.35rem 0.65rem;
+            border: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .filter-btn:hover { background: #f1f5f9; }
+        .filter-btn.active { background: #1e3a5f; color: white; border-color: #1e3a5f; }
+        
+        .search-input {
+            flex: 1;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+        
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+        }
+        
+        .panel-footer {
+            padding: 0.6rem;
+            border-top: 1px solid #e5e7eb;
+            background: #f8fafc;
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        /* Contract Items */
+        .contract-item {
+            padding: 0.65rem 0.75rem;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            display: grid;
+            grid-template-columns: 36px 1fr auto;
+            gap: 0.6rem;
+            align-items: center;
+            transition: background 0.15s;
+        }
+        .contract-item:hover { background: #f8fafc; }
+        .contract-item.selected { background: #eff6ff; border-left: 3px solid #2d5a87; }
+        .contract-item.done { opacity: 0.5; background: #f0fdf4; }
+        .contract-item.fixed-rate { border-left: 3px solid #8b5cf6; }
+        
+        .rd-day {
+            width: 36px; height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+        .rd-day.today { background: #1e3a5f; color: white; }
+        .rd-day.overdue { background: #fee2e2; color: #dc2626; }
+        
+        .contract-info { min-width: 0; }
+        .client-name {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #1e3a5f;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .contract-meta {
+            font-size: 0.75rem;
+            color: #64748b;
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.15rem;
+        }
+        
+        .contract-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+        .type-badge {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .type-badge.rtp { background: #fef3c7; color: #92400e; }
+        .type-badge.rtf { background: #dbeafe; color: #1e40af; }
+        .type-badge.ref { background: #e0e7ff; color: #5b21b6; }
+        .type-badge.fixed { background: #f3e8ff; color: #7c3aed; }
+        
+        .amount-preview {
+            font-size: 0.8rem;
+            font-weight: 600;
             color: #1e3a5f;
         }
         
-        .stat-label {
-            font-size: 0.75rem;
-            color: #64748b;
-            margin-top: 0.25rem;
+        /* Invoice Items */
+        .invoice-item {
+            padding: 0.6rem 0.75rem;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
         }
+        .invoice-item:hover { background: #f8fafc; }
+        .invoice-item.old { background: #fef9c3; }
         
-        .stat-item.highlight { background: #fef3c7; }
-        .stat-item.highlight .stat-value { color: #92400e; }
+        .invoice-num { font-weight: 700; font-size: 0.85rem; color: #1e3a5f; }
+        .invoice-client { font-size: 0.75rem; color: #64748b; }
+        .invoice-amount { font-weight: 600; font-size: 0.85rem; color: #065f46; }
         
-        /* Search */
-        .search-box {
-            flex: 1;
-            position: relative;
+        .age-badge {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 600;
         }
+        .age-badge.new { background: #d1fae5; color: #065f46; }
+        .age-badge.old { background: #fee2e2; color: #dc2626; }
         
-        .search-box input {
-            width: 100%;
-            padding: 0.5rem 0.75rem 0.5rem 2rem;
-            border: 1px solid #e2e8f0;
+        /* Buttons */
+        .btn {
+            padding: 0.5rem 1rem;
             border-radius: 6px;
-            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.8rem;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            flex: 1;
         }
-        
-        .search-box svg {
-            position: absolute;
-            left: 0.5rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #94a3b8;
-            width: 16px;
-            height: 16px;
-        }
+        .btn-primary { background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%); color: white; }
+        .btn-success { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
+        .btn-secondary { background: white; color: #475569; border: 1px solid #e2e8f0; }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn svg { width: 16px; height: 16px; }
         
         /* Empty State */
         .empty-state {
             text-align: center;
-            padding: 3rem 2rem;
+            padding: 2rem;
             color: #94a3b8;
         }
+        .empty-state svg { width: 40px; height: 40px; margin-bottom: 0.5rem; opacity: 0.5; }
         
-        .empty-state svg {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 1rem;
-            opacity: 0.5;
-        }
-        
-        /* Reading Modal */
+        /* Modal */
         .modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
             background: rgba(0,0,0,0.5);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 1000;
         }
-        
         .modal-overlay.visible { display: flex; }
         
         .modal {
             background: white;
-            border-radius: 16px;
-            width: 500px;
+            border-radius: 12px;
+            width: 480px;
             max-width: 95vw;
             max-height: 90vh;
             overflow: hidden;
@@ -561,196 +328,148 @@
         }
         
         .modal-header {
-            padding: 1.25rem 1.5rem;
+            padding: 1rem 1.25rem;
             border-bottom: 1px solid #e5e7eb;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
+        .modal-title { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
+        .modal-close { background: none; border: none; cursor: pointer; color: #94a3b8; padding: 0.25rem; }
         
-        .modal-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #1e3a5f;
-        }
+        .modal-body { padding: 1.25rem; overflow-y: auto; max-height: 60vh; }
         
-        .modal-close {
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: #94a3b8;
-            padding: 0.25rem;
-        }
-        
-        .modal-body {
-            padding: 1.5rem;
-            overflow-y: auto;
-        }
-        
-        .reading-form {
-            display: grid;
-            gap: 1rem;
-        }
-        
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-        
-        .form-group {
+        .modal-footer {
+            padding: 0.75rem 1.25rem;
+            border-top: 1px solid #e5e7eb;
             display: flex;
-            flex-direction: column;
-            gap: 0.375rem;
+            gap: 0.5rem;
+            justify-content: flex-end;
         }
         
-        .form-group label {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: #64748b;
-        }
-        
-        .form-group input {
-            padding: 0.625rem 0.75rem;
+        /* Form Elements */
+        .form-group { margin-bottom: 1rem; }
+        .form-label { display: block; font-size: 0.75rem; font-weight: 600; color: #64748b; margin-bottom: 0.35rem; }
+        .form-input {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
-            font-size: 1rem;
+            font-size: 0.95rem;
         }
+        .form-input:focus { outline: none; border-color: #2d5a87; }
+        .form-input.large { font-size: 1.5rem; font-weight: 700; text-align: center; }
         
-        .form-group input:focus {
-            outline: none;
-            border-color: #2d5a87;
-        }
-        
-        .form-group input.large {
-            font-size: 1.5rem;
-            font-weight: 700;
-            text-align: center;
-        }
-        
-        .meter-display {
+        .client-card {
             background: #f8fafc;
-            padding: 1rem;
+            padding: 0.75rem 1rem;
             border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .client-card-name { font-weight: 700; color: #1e3a5f; }
+        .client-card-details { font-size: 0.8rem; color: #64748b; }
+        
+        .meter-row {
             display: grid;
             grid-template-columns: 1fr auto 1fr;
             gap: 1rem;
             align-items: center;
-            text-align: center;
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
         }
+        .meter-col { text-align: center; }
+        .meter-label { font-size: 0.7rem; color: #64748b; margin-bottom: 0.25rem; }
+        .meter-value { font-size: 1.25rem; font-weight: 700; color: #1e3a5f; }
+        .meter-date { font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem; }
+        .meter-arrow { font-size: 1.5rem; color: #94a3b8; }
         
-        .meter-display .arrow {
-            color: #94a3b8;
-            font-size: 1.5rem;
-        }
-        
-        .meter-value {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #1e3a5f;
-        }
-        
-        .meter-label {
-            font-size: 0.75rem;
-            color: #64748b;
-        }
-        
-        .consumption-display {
+        .consumption-box {
             background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%);
             color: white;
             padding: 1rem;
             border-radius: 8px;
             text-align: center;
+            margin-bottom: 1rem;
         }
+        .consumption-value { font-size: 2rem; font-weight: 700; }
+        .consumption-label { font-size: 0.8rem; opacity: 0.8; }
         
-        .consumption-value {
-            font-size: 2rem;
-            font-weight: 700;
-        }
-        
-        .consumption-label {
-            font-size: 0.85rem;
-            opacity: 0.8;
-        }
-        
-        .calculation-grid {
+        .calc-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 0.75rem;
-            margin-top: 1rem;
+            gap: 0.5rem;
         }
-        
-        .calc-item {
-            background: #f8fafc;
-            padding: 0.75rem;
-            border-radius: 8px;
+        .calc-row {
             display: flex;
             justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+            background: #f8fafc;
+            border-radius: 6px;
         }
-        
-        .calc-item span:first-child {
-            color: #64748b;
-            font-size: 0.85rem;
-        }
-        
-        .calc-item span:last-child {
-            font-weight: 600;
-            color: #1e3a5f;
-        }
-        
-        .calc-item.total {
+        .calc-row span:first-child { color: #64748b; font-size: 0.8rem; }
+        .calc-row span:last-child { font-weight: 600; color: #1e3a5f; }
+        .calc-row.total {
+            grid-column: span 2;
             background: #1e3a5f;
             color: white;
-            grid-column: span 2;
+            margin-top: 0.5rem;
         }
+        .calc-row.total span { color: white; font-size: 1rem; }
         
-        .calc-item.total span:first-child { color: rgba(255,255,255,0.8); }
-        .calc-item.total span:last-child { color: white; font-size: 1.25rem; }
-        
-        .modal-footer {
-            padding: 1rem 1.5rem;
-            border-top: 1px solid #e5e7eb;
-            display: flex;
-            gap: 0.75rem;
-            justify-content: flex-end;
-        }
-        
-        .btn {
-            padding: 0.75rem 1.5rem;
+        /* Fixed Rate Display */
+        .fixed-rate-box {
+            background: #f3e8ff;
+            border: 2px solid #8b5cf6;
             border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 0.9rem;
-            border: none;
+            padding: 1rem;
+            text-align: center;
+            margin-bottom: 1rem;
         }
+        .fixed-rate-box .label { font-size: 0.8rem; color: #7c3aed; }
+        .fixed-rate-box .amount { font-size: 2rem; font-weight: 700; color: #5b21b6; }
         
-        .btn-primary {
-            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: #1e3a5f;
             color: white;
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            z-index: 2000;
+            display: none;
         }
+        .toast.show { display: block; animation: slideIn 0.3s; }
+        .toast.success { background: #16a34a; }
+        .toast.error { background: #dc2626; }
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         
-        .btn-secondary {
-            background: #f1f5f9;
-            color: #475569;
+        /* Checkbox */
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            cursor: pointer;
         }
+        .checkbox-item input { width: 18px; height: 18px; cursor: pointer; }
         
         /* Responsive */
         @media (max-width: 1200px) {
-            .billing-container {
-                grid-template-columns: 1fr 1fr;
-            }
-            .panel:last-child {
-                grid-column: span 2;
-            }
+            .panels-container { grid-template-columns: 1fr 1fr; }
+            .panel:last-child { grid-column: span 2; }
         }
-        
         @media (max-width: 768px) {
-            .billing-container {
-                grid-template-columns: 1fr;
-            }
-            .panel:last-child {
-                grid-column: span 1;
-            }
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.open { transform: translateX(0); }
+            .main-content { margin-left: 0; }
+            .panels-container { grid-template-columns: 1fr; height: auto; }
+            .panel { min-height: 400px; }
+            .panel:last-child { grid-column: span 1; }
         }
     </style>
 </head>
@@ -766,51 +485,30 @@
         <div class="sidebar-menu">
             <div class="menu-label">MAIN MENU</div>
             <a href="dashboard.html" class="menu-item">
-                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="7" height="7" rx="1"/>
-                    <rect x="14" y="3" width="7" height="7" rx="1"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1"/>
-                </svg>
+                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 <span>Dashboard</span>
             </a>
             <a href="customers.html" class="menu-item">
-                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
+                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                 <span>Customers</span>
             </a>
             <a href="billing-v2.html" class="menu-item active">
-                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                </svg>
+                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <span>Billing</span>
             </a>
             <a href="#" class="menu-item">
-                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="1" x2="12" y2="23"/>
-                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                </svg>
+                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                 <span>Collections</span>
             </a>
             <a href="#" class="menu-item">
-                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                </svg>
+                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
                 <span>Service</span>
             </a>
         </div>
         <div class="sidebar-footer">
             <div class="user-info">
                 <div class="user-avatar">M</div>
-                <div class="user-details">
+                <div>
                     <div class="user-name">michael.marga</div>
                     <div class="user-role">Billing Staff</div>
                 </div>
@@ -820,91 +518,57 @@
 
     <!-- Main Content -->
     <main class="main-content">
-        <!-- Header -->
         <header class="top-header">
-            <div class="header-left">
-                <button class="menu-toggle" onclick="toggleSidebar()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="3" y1="12" x2="21" y2="12"/>
-                        <line x1="3" y1="6" x2="21" y2="6"/>
-                        <line x1="3" y1="18" x2="21" y2="18"/>
-                    </svg>
-                </button>
-                <div class="page-info">
-                    <h1 class="page-title">Billing Dashboard</h1>
-                    <p class="page-subtitle">Meter readings & invoice generation</p>
-                </div>
+            <div>
+                <h1 class="page-title">Billing Dashboard</h1>
+                <p class="page-subtitle">Meter readings & invoice generation</p>
             </div>
-            <div class="header-right">
-                <div class="date-selector">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6"/>
-                        <line x1="8" y1="2" x2="8" y2="6"/>
-                        <line x1="3" y1="10" x2="21" y2="10"/>
-                    </svg>
-                    <input type="date" id="billingDate" value="">
-                </div>
+            <div class="date-picker">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <input type="date" id="billingDate">
             </div>
         </header>
 
         <!-- Stats Bar -->
-        <div style="padding: 1rem 1rem 0;">
-            <div class="stats-bar">
-                <div class="stat-item highlight">
-                    <div class="stat-value" id="statForReading">0</div>
-                    <div class="stat-label">For Reading Today</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" id="statForInvoice">0</div>
-                    <div class="stat-label">For Invoice</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" id="statPending">0</div>
-                    <div class="stat-label">Pending Delivery</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value" id="statCompleted">0</div>
-                    <div class="stat-label">Completed Today</div>
-                </div>
+        <div class="stats-bar">
+            <div class="stat-card active" onclick="setFilter('today')">
+                <div class="stat-value" id="statToday">0</div>
+                <div class="stat-label">For Reading Today</div>
+            </div>
+            <div class="stat-card warning" onclick="setFilter('forInvoice')">
+                <div class="stat-value" id="statForInvoice">0</div>
+                <div class="stat-label">Ready for Invoice</div>
+            </div>
+            <div class="stat-card" onclick="setFilter('pending')">
+                <div class="stat-value" id="statPending">0</div>
+                <div class="stat-label">Pending Delivery</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-value" id="statCompleted">0</div>
+                <div class="stat-label">Completed Today</div>
             </div>
         </div>
 
-        <!-- Main Panels -->
-        <div class="billing-container">
+        <!-- Three Panels -->
+        <div class="panels-container">
             <!-- Panel 1: For Reading -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-title">
                         📖 For Reading
-                        <span class="panel-count" id="forReadingCount">0</span>
+                        <span class="badge blue" id="forReadingCount">0</span>
                     </div>
                 </div>
                 <div class="panel-toolbar">
-                    <div class="day-filter">
-                        <button class="day-btn active" data-filter="today">Today</button>
-                        <button class="day-btn" data-filter="overdue">Overdue</button>
-                        <button class="day-btn" data-filter="all">All</button>
-                    </div>
-                    <div class="search-box">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="M21 21l-4.35-4.35"/>
-                        </svg>
-                        <input type="text" placeholder="Search client..." id="searchReading">
-                    </div>
+                    <button class="filter-btn active" data-filter="today" onclick="setReadingFilter('today')">Today</button>
+                    <button class="filter-btn" data-filter="overdue" onclick="setReadingFilter('overdue')">Overdue</button>
+                    <button class="filter-btn" data-filter="all" onclick="setReadingFilter('all')">All</button>
+                    <input type="text" class="search-input" placeholder="Search..." id="searchReading" oninput="renderForReading()">
                 </div>
-                <div class="panel-body">
-                    <ul class="contract-list" id="forReadingList">
-                        <!-- Populated by JS -->
-                    </ul>
-                </div>
-                <div class="quick-actions">
-                    <button class="btn-action primary" onclick="enterReading()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
+                <div class="panel-body" id="forReadingList"></div>
+                <div class="panel-footer">
+                    <button class="btn btn-primary" onclick="openReadingModal()" id="btnEnterReading" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         Enter Reading
                     </button>
                 </div>
@@ -915,133 +579,118 @@
                 <div class="panel-header">
                     <div class="panel-title">
                         📄 For Invoice
-                        <span class="panel-count warning" id="forInvoiceCount">0</span>
+                        <span class="badge orange" id="forInvoiceCount">0</span>
                     </div>
                 </div>
                 <div class="panel-toolbar">
-                    <div class="search-box">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="M21 21l-4.35-4.35"/>
-                        </svg>
-                        <input type="text" placeholder="Search..." id="searchInvoice">
-                    </div>
+                    <input type="text" class="search-input" placeholder="Search..." id="searchForInvoice" oninput="renderForInvoice()">
                 </div>
-                <div class="panel-body">
-                    <ul class="contract-list" id="forInvoiceList">
-                        <!-- Populated by JS -->
-                    </ul>
-                </div>
-                <div class="quick-actions">
-                    <button class="btn-action primary" onclick="generateInvoice()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="12" y1="18" x2="12" y2="12"/>
-                            <line x1="9" y1="15" x2="15" y2="15"/>
-                        </svg>
+                <div class="panel-body" id="forInvoiceList"></div>
+                <div class="panel-footer">
+                    <button class="btn btn-success" onclick="generateSelectedInvoice()" id="btnGenerate" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                         Generate Invoice
                     </button>
-                    <button class="btn-action secondary" onclick="generateAll()">
-                        Generate All
-                    </button>
+                    <button class="btn btn-secondary" onclick="generateAllInvoices()">All</button>
                 </div>
             </div>
 
-            <!-- Panel 3: Pending Invoices -->
+            <!-- Panel 3: Pending Delivery -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="panel-title">
                         📬 Pending Delivery
-                        <span class="panel-count success" id="pendingCount">0</span>
+                        <span class="badge green" id="pendingCount">0</span>
                     </div>
                 </div>
-                <div class="panel-body">
-                    <div id="pendingInvoicesList">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
-                <div class="quick-actions">
-                    <button class="btn-action secondary" onclick="printInvoices()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                            <polyline points="6 9 6 2 18 2 18 9"/>
-                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                            <rect x="6" y="14" width="12" height="8"/>
-                        </svg>
-                        Print Selected
+                <div class="panel-body" id="pendingList"></div>
+                <div class="panel-footer">
+                    <button class="btn btn-secondary" onclick="assignToMessenger()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                        Assign Messenger
                     </button>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Reading Modal -->
+    <!-- Reading Modal (Per-Page) -->
     <div class="modal-overlay" id="readingModal">
         <div class="modal">
             <div class="modal-header">
-                <div class="modal-title">Enter Meter Reading</div>
-                <button class="modal-close" onclick="closeModal()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
+                <div class="modal-title" id="modalTitle">Enter Meter Reading</div>
+                <button class="modal-close" onclick="closeModal('readingModal')">✕</button>
             </div>
             <div class="modal-body">
-                <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-                    <div style="font-weight: 700; color: #1e3a5f;" id="modalClientName">Client Name</div>
-                    <div style="font-size: 0.85rem; color: #64748b;" id="modalContractInfo">Model • Serial</div>
+                <div class="client-card">
+                    <div class="client-card-name" id="modalClient">Client Name</div>
+                    <div class="client-card-details" id="modalDetails">Model • Serial</div>
                 </div>
                 
-                <div class="meter-display">
-                    <div>
-                        <div class="meter-label">Previous Reading</div>
-                        <div class="meter-value" id="modalPrevReading">0</div>
-                        <div class="meter-label" id="modalPrevDate">-</div>
+                <!-- For Per-Page contracts -->
+                <div id="perPageSection">
+                    <div class="meter-row">
+                        <div class="meter-col">
+                            <div class="meter-label">Previous</div>
+                            <div class="meter-value" id="modalPrev">0</div>
+                            <div class="meter-date" id="modalPrevDate">-</div>
+                        </div>
+                        <div class="meter-arrow">→</div>
+                        <div class="meter-col">
+                            <div class="meter-label">Present</div>
+                            <input type="number" class="form-input large" id="modalPresent" placeholder="0" oninput="calculateAmount()">
+                            <div class="meter-date" id="modalPresentDate">Today</div>
+                        </div>
                     </div>
-                    <div class="arrow">→</div>
-                    <div>
-                        <div class="meter-label">Present Reading</div>
-                        <input type="number" class="large" id="modalPresentReading" placeholder="0" style="width: 120px;">
-                        <div class="meter-label" id="modalPresentDate">Today</div>
+                    
+                    <div class="consumption-box">
+                        <div class="consumption-label">Consumption</div>
+                        <div class="consumption-value" id="modalConsumption">0</div>
                     </div>
                 </div>
                 
-                <div class="consumption-display" style="margin-top: 1rem;">
-                    <div class="consumption-label">Consumption</div>
-                    <div class="consumption-value" id="modalConsumption">0</div>
+                <!-- For Fixed Rate contracts -->
+                <div id="fixedRateSection" style="display: none;">
+                    <div class="fixed-rate-box">
+                        <div class="label">Fixed Monthly Rate</div>
+                        <div class="amount" id="modalFixedAmount">₱0.00</div>
+                    </div>
                 </div>
                 
-                <div class="calculation-grid">
-                    <div class="calc-item">
+                <div class="calc-grid">
+                    <div class="calc-row">
                         <span>Monthly Rate</span>
-                        <span id="modalMonthlyRate">₱0.00</span>
+                        <span id="modalRate">₱0.00</span>
                     </div>
-                    <div class="calc-item">
+                    <div class="calc-row">
                         <span>Quota</span>
                         <span id="modalQuota">0</span>
                     </div>
-                    <div class="calc-item">
+                    <div class="calc-row">
                         <span>Excess Copies</span>
                         <span id="modalExcess">0</span>
                     </div>
-                    <div class="calc-item">
+                    <div class="calc-row">
                         <span>Excess Amount</span>
-                        <span id="modalExcessAmount">₱0.00</span>
+                        <span id="modalExcessAmt">₱0.00</span>
                     </div>
-                    <div class="calc-item total">
-                        <span>TOTAL AMOUNT</span>
+                    <div class="calc-row total">
+                        <span>TOTAL</span>
                         <span id="modalTotal">₱0.00</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="saveReading()">Save & Generate Invoice</button>
+                <button class="btn btn-secondary" onclick="closeModal('readingModal')">Cancel</button>
+                <button class="btn btn-success" onclick="saveReading()" id="btnSaveReading">Save Reading</button>
             </div>
         </div>
     </div>
 
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Scripts -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="shared/js/firebase-config.js"></script>
@@ -1052,72 +701,83 @@
         
         // State
         let contracts = [];
-        let readings = [];
-        let billings = [];
+        let companies = {};
+        let branches = {};
+        let machines = {};
+        let models = {};
+        let categories = {};
+        let readingsForInvoice = []; // Readings ready for invoice generation
+        let pendingInvoices = []; // Generated invoices pending delivery
         let selectedContract = null;
-        let currentFilter = 'today';
+        let selectedReading = null;
+        let readingFilter = 'today';
+        
+        // Category codes that are Fixed Rate (no meter reading needed)
+        const FIXED_RATE_CATEGORIES = ['REF', 'RTF']; // Adjust based on your data
+        const PER_PAGE_CATEGORIES = ['RTP']; // Rental Type Per-page
         
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
-            // Set today's date
             const today = new Date();
             document.getElementById('billingDate').value = today.toISOString().split('T')[0];
+            document.getElementById('modalPresentDate').textContent = formatDate(today);
             
-            // Load data
-            await loadData();
-            
-            // Setup event listeners
-            setupEventListeners();
+            await loadAllData();
+            renderAll();
         });
         
-        async function loadData() {
+        // Load all required data
+        async function loadAllData() {
+            showToast('Loading data...');
+            
             try {
-                // Load contracts
-                const contractsSnap = await db.collection('tbl_contractmain')
-                    .where('status', '==', 1)
-                    .get();
-                contracts = contractsSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                
                 // Load companies
-                const companiesSnap = await db.collection('tbl_companylist').get();
-                const companies = {};
-                companiesSnap.docs.forEach(d => companies[d.id] = d.data());
+                const compSnap = await db.collection('tbl_companylist').get();
+                compSnap.docs.forEach(d => companies[d.id] = d.data());
                 
                 // Load branches
-                const branchesSnap = await db.collection('tbl_branchinfo').get();
-                const branches = {};
-                branchesSnap.docs.forEach(d => branches[d.id] = d.data());
+                const branchSnap = await db.collection('tbl_branchinfo').get();
+                branchSnap.docs.forEach(d => branches[d.id] = d.data());
                 
                 // Load machines
-                const machinesSnap = await db.collection('tbl_machine').get();
-                const machines = {};
-                machinesSnap.docs.forEach(d => machines[d.id] = d.data());
+                const machSnap = await db.collection('tbl_machine').get();
+                machSnap.docs.forEach(d => machines[d.id] = d.data());
                 
                 // Load models
-                const modelsSnap = await db.collection('tbl_model').get();
-                const models = {};
-                modelsSnap.docs.forEach(d => models[d.id] = d.data());
+                const modelSnap = await db.collection('tbl_model').get();
+                modelSnap.docs.forEach(d => models[d.id] = d.data());
                 
                 // Load categories
-                const categoriesSnap = await db.collection('tbl_category').get();
-                const categories = {};
-                categoriesSnap.docs.forEach(d => categories[d.id] = d.data());
+                const catSnap = await db.collection('tbl_category').get();
+                catSnap.docs.forEach(d => categories[d.id] = d.data());
                 
-                // Enrich contracts
-                contracts = contracts.map(c => {
+                // Load active contracts
+                const contractSnap = await db.collection('tbl_contractmain')
+                    .where('status', '==', 1)
+                    .get();
+                    
+                contracts = contractSnap.docs.map(d => {
+                    const c = { id: d.id, ...d.data() };
+                    
+                    // Enrich with related data
                     const branch = branches[c.contract_id] || {};
                     const company = companies[branch.company_id] || {};
                     const machine = machines[c.mach_id] || {};
                     const model = models[machine.model_id] || {};
                     const category = categories[c.category_id] || {};
                     
-                    // Extract reading day
+                    // Extract reading day from reading_date
                     let readingDay = 0;
                     if (c.reading_date) {
                         if (typeof c.reading_date === 'string') {
-                            readingDay = parseInt(c.reading_date.split('-')[2]) || 0;
+                            const parts = c.reading_date.split('-');
+                            if (parts.length === 3) readingDay = parseInt(parts[2]) || 0;
                         }
                     }
+                    
+                    // Determine if fixed rate or per-page
+                    const catCode = (category.particular_code || '').toUpperCase();
+                    const isFixedRate = FIXED_RATE_CATEGORIES.includes(catCode);
                     
                     return {
                         ...c,
@@ -1125,42 +785,69 @@
                         branchName: branch.branchname || '',
                         serial: machine.serial || c.xserial || 'N/A',
                         modelName: model.modelname || 'N/A',
-                        categoryCode: category.particular_code || 'N/A',
-                        readingDay
+                        categoryCode: catCode || 'N/A',
+                        readingDay,
+                        isFixedRate,
+                        monthlyRate: parseFloat(c.monthly_rate) || 0,
+                        quota: parseFloat(c.monthly_quota) || 0,
+                        pageRate: parseFloat(c.page_rate) || 0,
+                        startingMeter: parseFloat(c.starting_meter) || parseFloat(c.b_meter) || 0
                     };
                 });
                 
                 console.log('Loaded', contracts.length, 'contracts');
                 
-                // Render panels
-                renderForReading();
-                renderForInvoice();
-                renderPendingInvoices();
-                updateStats();
+                // Load readings that need invoice (from our new system)
+                await loadReadingsForInvoice();
+                
+                // Load pending invoices
+                await loadPendingInvoices();
+                
+                showToast('Data loaded!', 'success');
                 
             } catch (e) {
                 console.error('Error loading data:', e);
+                showToast('Error loading data: ' + e.message, 'error');
             }
         }
         
-        function setupEventListeners() {
-            // Day filter buttons
-            document.querySelectorAll('.day-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    currentFilter = btn.dataset.filter;
-                    renderForReading();
-                });
-            });
-            
-            // Search
-            document.getElementById('searchReading').addEventListener('input', renderForReading);
-            
-            // Present reading input
-            document.getElementById('modalPresentReading').addEventListener('input', calculateBilling);
+        // Load readings that have been entered but not yet invoiced
+        async function loadReadingsForInvoice() {
+            try {
+                const snap = await db.collection('tbl_readings')
+                    .where('invoice_generated', '==', false)
+                    .get();
+                    
+                readingsForInvoice = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+            } catch (e) {
+                readingsForInvoice = [];
+            }
         }
         
+        // Load pending invoices
+        async function loadPendingInvoices() {
+            try {
+                const snap = await db.collection('tbl_invoices')
+                    .where('status', '==', 'pending_delivery')
+                    .orderBy('created_at', 'desc')
+                    .limit(100)
+                    .get();
+                    
+                pendingInvoices = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+            } catch (e) {
+                pendingInvoices = [];
+            }
+        }
+        
+        // Render all panels
+        function renderAll() {
+            renderForReading();
+            renderForInvoice();
+            renderPendingInvoices();
+            updateStats();
+        }
+        
+        // Render For Reading panel
         function renderForReading() {
             const today = new Date();
             const todayDay = today.getDate();
@@ -1168,135 +855,285 @@
             
             let filtered = contracts.filter(c => {
                 // Search filter
-                if (search && !c.companyName.toLowerCase().includes(search)) return false;
+                if (search && !c.companyName.toLowerCase().includes(search) && 
+                    !c.serial.toLowerCase().includes(search)) return false;
                 
                 // Day filter
-                if (currentFilter === 'today') {
+                if (readingFilter === 'today') {
                     return c.readingDay === todayDay;
-                } else if (currentFilter === 'overdue') {
-                    return c.readingDay < todayDay && c.readingDay > 0;
+                } else if (readingFilter === 'overdue') {
+                    return c.readingDay > 0 && c.readingDay < todayDay;
                 }
                 return true;
             });
             
-            // Sort by reading day
-            filtered.sort((a, b) => (a.readingDay || 99) - (b.readingDay || 99));
+            // Sort by reading day, then fixed rate last
+            filtered.sort((a, b) => {
+                if (a.readingDay !== b.readingDay) return (a.readingDay || 99) - (b.readingDay || 99);
+                if (a.isFixedRate !== b.isFixedRate) return a.isFixedRate ? 1 : -1;
+                return 0;
+            });
             
             document.getElementById('forReadingCount').textContent = filtered.length;
-            document.getElementById('statForReading').textContent = contracts.filter(c => c.readingDay === todayDay).length;
             
             const list = document.getElementById('forReadingList');
             
             if (filtered.length === 0) {
-                list.innerHTML = `
-                    <div class="empty-state">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M8 12h8"/>
-                        </svg>
-                        <div>No contracts for reading</div>
-                    </div>
-                `;
+                list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg><div>No contracts for reading</div></div>`;
                 return;
             }
             
             list.innerHTML = filtered.map(c => {
                 const isToday = c.readingDay === todayDay;
-                const isOverdue = c.readingDay < todayDay && c.readingDay > 0;
+                const isOverdue = c.readingDay > 0 && c.readingDay < todayDay;
                 
                 return `
-                    <li class="contract-item ${isOverdue ? 'for-termination' : ''}" onclick="selectForReading(${c.id})">
-                        <div class="rd-badge ${isToday ? 'today' : ''} ${isOverdue ? 'overdue' : ''}">${c.readingDay || '-'}</div>
+                    <div class="contract-item ${c.isFixedRate ? 'fixed-rate' : ''}" onclick="selectContract(${c.id})">
+                        <div class="rd-day ${isToday ? 'today' : ''} ${isOverdue ? 'overdue' : ''}">${c.readingDay || '-'}</div>
                         <div class="contract-info">
-                            <div class="contract-client">${c.companyName}</div>
-                            <div class="contract-details">
+                            <div class="client-name">${escapeHtml(c.companyName)}</div>
+                            <div class="contract-meta">
                                 <span>${c.modelName}</span>
                                 <span>${c.serial}</span>
                             </div>
                         </div>
-                        <div class="contract-status">
-                            <span class="category-tag ${c.categoryCode.toLowerCase()}">${c.categoryCode}</span>
+                        <div class="contract-badges">
+                            <span class="type-badge ${c.categoryCode.toLowerCase()}">${c.categoryCode}</span>
+                            ${c.isFixedRate ? '<span class="type-badge fixed">FIXED</span>' : ''}
+                            <span class="amount-preview">₱${c.monthlyRate.toLocaleString()}</span>
                         </div>
-                    </li>
+                    </div>
                 `;
             }).join('');
         }
         
+        // Render For Invoice panel
         function renderForInvoice() {
-            // TODO: Load readings without invoice
-            const list = document.getElementById('forInvoiceList');
-            list.innerHTML = `
-                <div class="empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                    </svg>
-                    <div>No pending readings</div>
-                </div>
-            `;
-            document.getElementById('forInvoiceCount').textContent = 0;
-        }
-        
-        function renderPendingInvoices() {
-            // TODO: Load pending invoices
-            const list = document.getElementById('pendingInvoicesList');
-            list.innerHTML = `
-                <div class="empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6"/>
-                        <line x1="8" y1="2" x2="8" y2="6"/>
-                    </svg>
-                    <div>No pending invoices</div>
-                </div>
-            `;
-            document.getElementById('pendingCount').textContent = 0;
-        }
-        
-        function updateStats() {
-            const today = new Date();
-            const todayDay = today.getDate();
+            const search = document.getElementById('searchForInvoice').value.toLowerCase();
             
-            document.getElementById('statForReading').textContent = 
-                contracts.filter(c => c.readingDay === todayDay).length;
-            document.getElementById('statForInvoice').textContent = 0;
-            document.getElementById('statPending').textContent = 0;
-            document.getElementById('statCompleted').textContent = 0;
+            let filtered = readingsForInvoice.filter(r => {
+                if (search) {
+                    const contract = contracts.find(c => c.id == r.contract_id);
+                    return contract && contract.companyName.toLowerCase().includes(search);
+                }
+                return true;
+            });
+            
+            document.getElementById('forInvoiceCount').textContent = filtered.length;
+            
+            const list = document.getElementById('forInvoiceList');
+            
+            if (filtered.length === 0) {
+                list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><div>No readings pending invoice</div></div>`;
+                return;
+            }
+            
+            list.innerHTML = filtered.map(r => {
+                const contract = contracts.find(c => c.id == r.contract_id) || {};
+                return `
+                    <div class="contract-item" onclick="selectReading('${r.docId}')">
+                        <div class="rd-day">${contract.readingDay || '-'}</div>
+                        <div class="contract-info">
+                            <div class="client-name">${escapeHtml(contract.companyName || 'Unknown')}</div>
+                            <div class="contract-meta">
+                                <span>Consumption: ${r.consumption || 0}</span>
+                            </div>
+                        </div>
+                        <div class="contract-badges">
+                            <span class="amount-preview">₱${(r.total_amount || 0).toLocaleString()}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
         
-        function selectForReading(contractId) {
+        // Render Pending Invoices panel
+        function renderPendingInvoices() {
+            document.getElementById('pendingCount').textContent = pendingInvoices.length;
+            
+            const list = document.getElementById('pendingList');
+            
+            if (pendingInvoices.length === 0) {
+                list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg><div>No pending invoices</div></div>`;
+                return;
+            }
+            
+            list.innerHTML = pendingInvoices.map(inv => {
+                const age = Math.floor((Date.now() - (inv.created_at?.toDate?.() || new Date())) / (1000 * 60 * 60 * 24));
+                return `
+                    <div class="invoice-item ${age > 7 ? 'old' : ''}">
+                        <div>
+                            <div class="invoice-num">${inv.invoice_number || 'N/A'}</div>
+                            <div class="invoice-client">${escapeHtml(inv.company_name || 'Unknown')}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="invoice-amount">₱${(inv.total_amount || 0).toLocaleString()}</div>
+                            <span class="age-badge ${age > 7 ? 'old' : 'new'}">${age}d ago</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Update stats
+        function updateStats() {
+            const today = new Date().getDate();
+            document.getElementById('statToday').textContent = contracts.filter(c => c.readingDay === today).length;
+            document.getElementById('statForInvoice').textContent = readingsForInvoice.length;
+            document.getElementById('statPending').textContent = pendingInvoices.length;
+            document.getElementById('statCompleted').textContent = 0; // TODO: count completed today
+        }
+        
+        // Filter handlers
+        function setReadingFilter(filter) {
+            readingFilter = filter;
+            document.querySelectorAll('.panel-toolbar .filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+            renderForReading();
+        }
+        
+        function setFilter(filter) {
+            document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+            event.target.closest('.stat-card').classList.add('active');
+            
+            if (filter === 'today') setReadingFilter('today');
+            else if (filter === 'forInvoice') document.getElementById('forInvoiceList').scrollIntoView();
+            else if (filter === 'pending') document.getElementById('pendingList').scrollIntoView();
+        }
+        
+        // Select contract for reading
+        function selectContract(contractId) {
             selectedContract = contracts.find(c => c.id == contractId);
             if (!selectedContract) return;
             
-            // Update modal
-            document.getElementById('modalClientName').textContent = selectedContract.companyName;
-            document.getElementById('modalContractInfo').textContent = 
-                `${selectedContract.modelName} • ${selectedContract.serial}`;
-            document.getElementById('modalPrevReading').textContent = 
-                (selectedContract.starting_meter || 0).toLocaleString();
-            document.getElementById('modalMonthlyRate').textContent = 
-                '₱' + (selectedContract.monthly_rate || 0).toLocaleString();
-            document.getElementById('modalQuota').textContent = 
-                (selectedContract.monthly_quota || 0).toLocaleString();
+            // Highlight selected
+            document.querySelectorAll('.contract-item').forEach(el => el.classList.remove('selected'));
+            event.target.closest('.contract-item')?.classList.add('selected');
             
-            // Show modal
+            document.getElementById('btnEnterReading').disabled = false;
+        }
+        
+        // Select reading for invoice generation
+        function selectReading(docId) {
+            selectedReading = readingsForInvoice.find(r => r.docId === docId);
+            if (!selectedReading) return;
+            
+            document.querySelectorAll('#forInvoiceList .contract-item').forEach(el => el.classList.remove('selected'));
+            event.target.closest('.contract-item')?.classList.add('selected');
+            
+            document.getElementById('btnGenerate').disabled = false;
+        }
+        
+        // Open reading modal
+        async function openReadingModal() {
+            if (!selectedContract) {
+                showToast('Please select a contract first', 'error');
+                return;
+            }
+            
+            const c = selectedContract;
+            
+            // Update modal content
+            document.getElementById('modalClient').textContent = c.companyName;
+            document.getElementById('modalDetails').textContent = `${c.modelName} • ${c.serial} • ${c.branchName}`;
+            document.getElementById('modalRate').textContent = '₱' + c.monthlyRate.toLocaleString();
+            document.getElementById('modalQuota').textContent = c.quota.toLocaleString();
+            
+            // Show/hide sections based on type
+            if (c.isFixedRate) {
+                document.getElementById('perPageSection').style.display = 'none';
+                document.getElementById('fixedRateSection').style.display = 'block';
+                document.getElementById('modalFixedAmount').textContent = '₱' + c.monthlyRate.toLocaleString();
+                document.getElementById('modalTitle').textContent = 'Generate Fixed Rate Invoice';
+                document.getElementById('btnSaveReading').textContent = 'Generate Invoice';
+                
+                // Set total directly
+                document.getElementById('modalTotal').textContent = '₱' + c.monthlyRate.toLocaleString();
+                document.getElementById('modalExcess').textContent = '0';
+                document.getElementById('modalExcessAmt').textContent = '₱0.00';
+            } else {
+                document.getElementById('perPageSection').style.display = 'block';
+                document.getElementById('fixedRateSection').style.display = 'none';
+                document.getElementById('modalTitle').textContent = 'Enter Meter Reading';
+                document.getElementById('btnSaveReading').textContent = 'Save Reading';
+                
+                // Fetch previous reading
+                await fetchPreviousReading(c);
+                
+                document.getElementById('modalPresent').value = '';
+                document.getElementById('modalConsumption').textContent = '0';
+                document.getElementById('modalExcess').textContent = '0';
+                document.getElementById('modalExcessAmt').textContent = '₱0.00';
+                document.getElementById('modalTotal').textContent = '₱' + c.monthlyRate.toLocaleString();
+            }
+            
             document.getElementById('readingModal').classList.add('visible');
-            document.getElementById('modalPresentReading').focus();
             
-            // Fetch previous reading from tbl_machinereading
-            fetchPreviousReading();
+            if (!c.isFixedRate) {
+                document.getElementById('modalPresent').focus();
+            }
         }
         
-        async function fetchPreviousReading() {
-            // ... Similar to billing.js
+        // Fetch previous reading
+        async function fetchPreviousReading(contract) {
+            let prevReading = contract.startingMeter;
+            let prevDate = '-';
+            
+            try {
+                // Check tbl_machinereading first (migrated data)
+                const machineId = contract.mach_id || contract.machine_id;
+                if (machineId) {
+                    const snap = await db.collection('tbl_machinereading')
+                        .where('machine_id', '==', parseInt(machineId))
+                        .get();
+                    
+                    if (!snap.empty) {
+                        const readings = snap.docs.map(d => d.data())
+                            .filter(r => r.meter_reading)
+                            .sort((a, b) => new Date(b.date_red || 0) - new Date(a.date_red || 0));
+                        
+                        if (readings.length > 0) {
+                            prevReading = readings[0].meter_reading;
+                            prevDate = readings[0].date_red || '-';
+                        }
+                    }
+                }
+                
+                // Also check our new readings collection
+                const newSnap = await db.collection('tbl_readings')
+                    .where('contract_id', '==', contract.id)
+                    .get();
+                
+                if (!newSnap.empty) {
+                    const newReadings = newSnap.docs.map(d => d.data())
+                        .filter(r => r.present_reading)
+                        .sort((a, b) => new Date(b.present_date || 0) - new Date(a.present_date || 0));
+                    
+                    if (newReadings.length > 0 && new Date(newReadings[0].present_date) > new Date(prevDate || 0)) {
+                        prevReading = newReadings[0].present_reading;
+                        prevDate = newReadings[0].present_date;
+                    }
+                }
+            } catch (e) {
+                console.error('Error fetching previous reading:', e);
+            }
+            
+            document.getElementById('modalPrev').textContent = parseInt(prevReading).toLocaleString();
+            document.getElementById('modalPrevDate').textContent = prevDate;
+            
+            selectedContract._prevReading = prevReading;
         }
         
-        function calculateBilling() {
-            const present = parseInt(document.getElementById('modalPresentReading').value) || 0;
-            const previous = parseInt(document.getElementById('modalPrevReading').textContent.replace(/,/g, '')) || 0;
-            const quota = selectedContract?.monthly_quota || 0;
-            const monthlyRate = selectedContract?.monthly_rate || 0;
-            const pageRate = selectedContract?.page_rate || 0;
+        // Calculate amount
+        function calculateAmount() {
+            if (!selectedContract || selectedContract.isFixedRate) return;
+            
+            const present = parseInt(document.getElementById('modalPresent').value) || 0;
+            const previous = selectedContract._prevReading || 0;
+            const quota = selectedContract.quota || 0;
+            const monthlyRate = selectedContract.monthlyRate || 0;
+            const pageRate = selectedContract.pageRate || 0;
             
             const consumption = Math.max(0, present - previous);
             const excess = Math.max(0, consumption - quota);
@@ -1305,41 +1142,229 @@
             
             document.getElementById('modalConsumption').textContent = consumption.toLocaleString();
             document.getElementById('modalExcess').textContent = excess.toLocaleString();
-            document.getElementById('modalExcessAmount').textContent = '₱' + excessAmount.toLocaleString();
+            document.getElementById('modalExcessAmt').textContent = '₱' + excessAmount.toLocaleString();
             document.getElementById('modalTotal').textContent = '₱' + total.toLocaleString();
         }
         
-        function enterReading() {
-            if (!selectedContract) {
-                alert('Please select a contract first');
+        // Save reading
+        async function saveReading() {
+            if (!selectedContract) return;
+            
+            const c = selectedContract;
+            const today = new Date();
+            const billingMonth = today.getMonth() + 1;
+            const billingYear = today.getFullYear();
+            
+            let readingData;
+            
+            if (c.isFixedRate) {
+                // Fixed rate - no reading needed
+                readingData = {
+                    contract_id: c.id,
+                    company_name: c.companyName,
+                    branch_name: c.branchName,
+                    machine_id: c.mach_id,
+                    serial: c.serial,
+                    model: c.modelName,
+                    category: c.categoryCode,
+                    is_fixed_rate: true,
+                    previous_reading: 0,
+                    present_reading: 0,
+                    consumption: 0,
+                    monthly_rate: c.monthlyRate,
+                    excess_copies: 0,
+                    excess_amount: 0,
+                    total_amount: c.monthlyRate,
+                    billing_month: billingMonth,
+                    billing_year: billingYear,
+                    present_date: today.toISOString().split('T')[0],
+                    invoice_generated: false,
+                    created_at: firebase.firestore.FieldValue.serverTimestamp(),
+                    created_by: 'billing_staff' // TODO: use actual user
+                };
+            } else {
+                // Per-page - needs reading
+                const present = parseInt(document.getElementById('modalPresent').value) || 0;
+                const previous = c._prevReading || 0;
+                
+                if (present <= previous) {
+                    showToast('Present reading must be greater than previous', 'error');
+                    return;
+                }
+                
+                const consumption = present - previous;
+                const excess = Math.max(0, consumption - c.quota);
+                const excessAmount = excess * c.pageRate;
+                const total = c.monthlyRate + excessAmount;
+                
+                readingData = {
+                    contract_id: c.id,
+                    company_name: c.companyName,
+                    branch_name: c.branchName,
+                    machine_id: c.mach_id,
+                    serial: c.serial,
+                    model: c.modelName,
+                    category: c.categoryCode,
+                    is_fixed_rate: false,
+                    previous_reading: previous,
+                    present_reading: present,
+                    consumption: consumption,
+                    monthly_rate: c.monthlyRate,
+                    quota: c.quota,
+                    page_rate: c.pageRate,
+                    excess_copies: excess,
+                    excess_amount: excessAmount,
+                    total_amount: total,
+                    billing_month: billingMonth,
+                    billing_year: billingYear,
+                    previous_date: document.getElementById('modalPrevDate').textContent,
+                    present_date: today.toISOString().split('T')[0],
+                    invoice_generated: false,
+                    created_at: firebase.firestore.FieldValue.serverTimestamp(),
+                    created_by: 'billing_staff'
+                };
+            }
+            
+            try {
+                await db.collection('tbl_readings').add(readingData);
+                showToast('Reading saved!', 'success');
+                closeModal('readingModal');
+                
+                // Refresh data
+                await loadReadingsForInvoice();
+                renderAll();
+                
+                selectedContract = null;
+                document.getElementById('btnEnterReading').disabled = true;
+                
+            } catch (e) {
+                console.error('Error saving reading:', e);
+                showToast('Error saving: ' + e.message, 'error');
+            }
+        }
+        
+        // Generate invoice
+        async function generateSelectedInvoice() {
+            if (!selectedReading) {
+                showToast('Please select a reading first', 'error');
                 return;
             }
-            document.getElementById('readingModal').classList.add('visible');
+            
+            try {
+                // Generate invoice number (simple increment for now)
+                const invoiceNumber = 'INV-' + Date.now();
+                
+                const invoiceData = {
+                    invoice_number: invoiceNumber,
+                    reading_id: selectedReading.docId,
+                    contract_id: selectedReading.contract_id,
+                    company_name: selectedReading.company_name,
+                    branch_name: selectedReading.branch_name,
+                    total_amount: selectedReading.total_amount,
+                    billing_month: selectedReading.billing_month,
+                    billing_year: selectedReading.billing_year,
+                    status: 'pending_delivery',
+                    created_at: firebase.firestore.FieldValue.serverTimestamp(),
+                    created_by: 'billing_staff'
+                };
+                
+                // Create invoice
+                await db.collection('tbl_invoices').add(invoiceData);
+                
+                // Update reading as invoiced
+                await db.collection('tbl_readings').doc(selectedReading.docId).update({
+                    invoice_generated: true,
+                    invoice_number: invoiceNumber
+                });
+                
+                showToast('Invoice generated: ' + invoiceNumber, 'success');
+                
+                // Refresh
+                await loadReadingsForInvoice();
+                await loadPendingInvoices();
+                renderAll();
+                
+                selectedReading = null;
+                document.getElementById('btnGenerate').disabled = true;
+                
+            } catch (e) {
+                console.error('Error generating invoice:', e);
+                showToast('Error: ' + e.message, 'error');
+            }
         }
         
-        function closeModal() {
-            document.getElementById('readingModal').classList.remove('visible');
+        // Generate all invoices
+        async function generateAllInvoices() {
+            if (readingsForInvoice.length === 0) {
+                showToast('No readings to invoice', 'error');
+                return;
+            }
+            
+            if (!confirm(`Generate ${readingsForInvoice.length} invoices?`)) return;
+            
+            showToast('Generating invoices...');
+            
+            let count = 0;
+            for (const reading of readingsForInvoice) {
+                try {
+                    const invoiceNumber = 'INV-' + Date.now() + '-' + count;
+                    
+                    await db.collection('tbl_invoices').add({
+                        invoice_number: invoiceNumber,
+                        reading_id: reading.docId,
+                        contract_id: reading.contract_id,
+                        company_name: reading.company_name,
+                        total_amount: reading.total_amount,
+                        billing_month: reading.billing_month,
+                        billing_year: reading.billing_year,
+                        status: 'pending_delivery',
+                        created_at: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    await db.collection('tbl_readings').doc(reading.docId).update({
+                        invoice_generated: true,
+                        invoice_number: invoiceNumber
+                    });
+                    
+                    count++;
+                } catch (e) {
+                    console.error('Error generating invoice:', e);
+                }
+            }
+            
+            showToast(`Generated ${count} invoices!`, 'success');
+            
+            await loadReadingsForInvoice();
+            await loadPendingInvoices();
+            renderAll();
         }
         
-        function saveReading() {
-            // TODO: Save reading and generate invoice
-            alert('Save reading functionality coming soon!');
+        // Assign to messenger
+        function assignToMessenger() {
+            showToast('Messenger assignment coming soon!');
         }
         
-        function generateInvoice() {
-            alert('Generate invoice functionality coming soon!');
+        // Close modal
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('visible');
         }
         
-        function generateAll() {
-            alert('Generate all invoices functionality coming soon!');
+        // Utility functions
+        function formatDate(date) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
         
-        function printInvoices() {
-            alert('Print invoices functionality coming soon!');
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
         }
         
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('collapsed');
+        function showToast(message, type = '') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast show ' + type;
+            setTimeout(() => toast.classList.remove('show'), 3000);
         }
     </script>
 </body>
