@@ -2,28 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Find Reading Day Field</title>
+    <title>Check Reading Day</title>
     <style>
         body { font-family: system-ui; padding: 2rem; max-width: 1200px; margin: 0 auto; }
         .card { background: #f8fafc; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
-        button { padding: 0.75rem 1.5rem; font-size: 1rem; border-radius: 8px; background: #2563eb; color: white; border: none; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.8rem; }
+        button { padding: 0.75rem 1.5rem; font-size: 1rem; border-radius: 8px; background: #2563eb; color: white; border: none; cursor: pointer; margin-right: 0.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
         th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
         th { background: #1e3a5f; color: white; position: sticky; top: 0; }
-        .highlight { background: #fef3c7; }
+        .highlight { background: #fef3c7; font-weight: bold; }
         h1 { color: #1e3a5f; }
         .stat { display: inline-block; background: #dbeafe; padding: 0.5rem 1rem; border-radius: 8px; margin-right: 0.5rem; margin-bottom: 0.5rem; }
         #results { max-height: 500px; overflow: auto; }
+        .day-29 { background: #dcfce7; }
     </style>
 </head>
 <body>
-    <h1>🔍 Find Reading Day Field</h1>
+    <h1>📅 Check Reading Day (R. DAY)</h1>
     
     <div class="card">
-        <p>Looking for where Reading Day (1-31) is stored...</p>
-        <button onclick="checkContractReadingDate()">Check reading_date in Contracts</button>
-        <button onclick="checkAllContractFields()">Show ALL Contract Fields</button>
-        <button onclick="checkBranchFields()">Show ALL Branch Fields</button>
+        <p>Finding where R. DAY (1-31) comes from...</p>
+        <button onclick="checkReadingDay()">Check Reading Day from Contracts</button>
+        <button onclick="filterByDay(29)">Show Day 29 Only</button>
     </div>
     
     <div class="card">
@@ -39,128 +39,76 @@
         if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
         const db = firebase.firestore();
         
-        async function checkContractReadingDate() {
+        let allContracts = [];
+        
+        async function checkReadingDay() {
             document.getElementById('stats').innerHTML = 'Loading...';
             
-            const snap = await db.collection('tbl_contractmain').limit(100).get();
-            const contracts = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            // Get contracts with status = 1 (active)
+            const snap = await db.collection('tbl_contractmain').where('status', '==', 1).limit(200).get();
+            allContracts = snap.docs.map(d => ({id: d.id, ...d.data()}));
             
-            // Extract day from reading_date
-            const withReadingDate = contracts.filter(c => c.reading_date);
-            const days = withReadingDate.map(c => {
-                const date = new Date(c.reading_date);
-                return date.getDate();
+            // Extract reading day from reading_date
+            const withReadingDate = allContracts.filter(c => c.reading_date);
+            
+            // Count by day
+            const dayCounts = {};
+            withReadingDate.forEach(c => {
+                let day;
+                if (typeof c.reading_date === 'string') {
+                    // Format: "YYYY-MM-DD"
+                    day = parseInt(c.reading_date.split('-')[2]);
+                } else if (c.reading_date.toDate) {
+                    day = c.reading_date.toDate().getDate();
+                } else {
+                    day = new Date(c.reading_date).getDate();
+                }
+                c._readingDay = day;
+                dayCounts[day] = (dayCounts[day] || 0) + 1;
             });
-            const uniqueDays = [...new Set(days)].sort((a,b) => a - b);
+            
+            // Sort by count
+            const sortedDays = Object.entries(dayCounts).sort((a,b) => b[1] - a[1]);
             
             document.getElementById('stats').innerHTML = `
-                <div class="stat">Contracts checked: ${contracts.length}</div>
+                <div class="stat">Active Contracts: ${allContracts.length}</div>
                 <div class="stat">With reading_date: ${withReadingDate.length}</div>
-                <div class="stat">Unique days extracted: ${uniqueDays.join(', ')}</div>
+                <br><br>
+                <strong>Reading Days Distribution:</strong><br>
+                ${sortedDays.map(([day, count]) => `<div class="stat">Day ${day}: ${count} contracts</div>`).join('')}
             `;
             
-            // Show table
+            renderTable(withReadingDate.slice(0, 100));
+        }
+        
+        function filterByDay(day) {
+            const filtered = allContracts.filter(c => c._readingDay === day);
+            document.getElementById('stats').innerHTML += `<br><br><strong>Showing ${filtered.length} contracts for Day ${day}</strong>`;
+            renderTable(filtered);
+        }
+        
+        function renderTable(contracts) {
             document.getElementById('results').innerHTML = `
                 <table>
                     <thead>
                         <tr>
+                            <th class="highlight">R. DAY</th>
                             <th>Contract ID</th>
                             <th>Machine ID</th>
-                            <th class="highlight">reading_date</th>
-                            <th class="highlight">Day of Month</th>
+                            <th>reading_date</th>
                             <th>Monthly Rate</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${withReadingDate.slice(0, 50).map(c => {
-                            const date = new Date(c.reading_date);
-                            const day = date.getDate();
-                            return `<tr>
+                        ${contracts.map(c => `
+                            <tr class="${c._readingDay === 29 ? 'day-29' : ''}">
+                                <td class="highlight">${c._readingDay || '-'}</td>
                                 <td>${c.id}</td>
                                 <td>${c.machine_id || '-'}</td>
-                                <td class="highlight">${c.reading_date}</td>
-                                <td class="highlight"><strong>${day}</strong></td>
+                                <td>${c.reading_date || '-'}</td>
                                 <td>${c.monthly_rate || '-'}</td>
-                            </tr>`;
-                        }).join('')}
-                    </tbody>
-                </table>
-            `;
-        }
-        
-        async function checkAllContractFields() {
-            document.getElementById('stats').innerHTML = 'Loading all fields...';
-            
-            const snap = await db.collection('tbl_contractmain').limit(5).get();
-            const contracts = snap.docs.map(d => ({id: d.id, ...d.data()}));
-            
-            if (contracts.length === 0) {
-                document.getElementById('stats').innerHTML = 'No contracts found';
-                return;
-            }
-            
-            // Get all unique keys
-            const allKeys = new Set();
-            contracts.forEach(c => Object.keys(c).forEach(k => allKeys.add(k)));
-            const keys = [...allKeys].sort();
-            
-            document.getElementById('stats').innerHTML = `
-                <div class="stat">Total fields: ${keys.length}</div>
-                <div class="stat">Sample contracts: ${contracts.length}</div>
-                <p style="margin-top: 1rem;"><strong>All fields:</strong> ${keys.join(', ')}</p>
-            `;
-            
-            // Show all values for first contract
-            const first = contracts[0];
-            document.getElementById('results').innerHTML = `
-                <table>
-                    <thead>
-                        <tr><th>Field Name</th><th>Value</th></tr>
-                    </thead>
-                    <tbody>
-                        ${keys.map(k => `
-                            <tr class="${k.toLowerCase().includes('day') || k.toLowerCase().includes('read') ? 'highlight' : ''}">
-                                <td><strong>${k}</strong></td>
-                                <td>${JSON.stringify(first[k])}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        }
-        
-        async function checkBranchFields() {
-            document.getElementById('stats').innerHTML = 'Loading branch fields...';
-            
-            const snap = await db.collection('tbl_branchinfo').limit(5).get();
-            const branches = snap.docs.map(d => ({id: d.id, ...d.data()}));
-            
-            if (branches.length === 0) {
-                document.getElementById('stats').innerHTML = 'No branches found';
-                return;
-            }
-            
-            const allKeys = new Set();
-            branches.forEach(c => Object.keys(c).forEach(k => allKeys.add(k)));
-            const keys = [...allKeys].sort();
-            
-            document.getElementById('stats').innerHTML = `
-                <div class="stat">Total fields: ${keys.length}</div>
-                <div class="stat">Sample branches: ${branches.length}</div>
-                <p style="margin-top: 1rem;"><strong>All fields:</strong> ${keys.join(', ')}</p>
-            `;
-            
-            const first = branches[0];
-            document.getElementById('results').innerHTML = `
-                <table>
-                    <thead>
-                        <tr><th>Field Name</th><th>Value</th></tr>
-                    </thead>
-                    <tbody>
-                        ${keys.map(k => `
-                            <tr class="${k.toLowerCase().includes('day') || k.toLowerCase().includes('read') ? 'highlight' : ''}">
-                                <td><strong>${k}</strong></td>
-                                <td>${JSON.stringify(first[k])}</td>
+                                <td>${c.status || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
