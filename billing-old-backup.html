@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Billing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="shared/css/styles.css">
+    <link rel="stylesheet" href="shared/css/dashboard.css">
+    <link rel="stylesheet" href="billing/css/billing.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11H10z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#4299e1"/>
+                            <stop offset="1" stop-color="#3182ce"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                <a href="dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    Dashboard
+                </a>
+                <a href="customers.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                    Customers
+                </a>
+                <a href="billing.html" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                    Billing
+                </a>
+                <a href="#" class="nav-item disabled">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+                    Collections
+                </a>
+                <a href="#" class="nav-item disabled">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+                    Service
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Loading...</div>
+                    <div class="user-role" id="userRole">...</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="main-header">
+            <button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+            <div class="header-title">
+                <h1>Billing</h1>
+                <p>Manage meter readings and generate invoices</p>
+            </div>
+            <div class="header-actions">
+                <div class="date-selector">
+                    <input type="date" id="billingDate" class="date-input">
+                </div>
+            </div>
+        </header>
+
+        <div class="dashboard-content">
+            <!-- Stats Row -->
+            <div class="stats-grid billing-stats">
+                <div class="stat-card">
+                    <div class="stat-icon blue">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <path d="M14 2v6h6M16 13H8M16 17H8"/>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="totalForReading">0</div>
+                        <div class="stat-label">For Reading Today</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon green">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <path d="M22 4L12 14.01l-3-3"/>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="completedToday">0</div>
+                        <div class="stat-label">Completed Today</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon orange">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="pendingInvoices">0</div>
+                        <div class="stat-label">Pending Invoices</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon purple">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="totalBilledMonth">₱0</div>
+                        <div class="stat-label">Billed This Month</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Billing Grid -->
+            <div class="billing-grid-layout">
+                <!-- For Reading Section -->
+                <div class="content-card billing-section">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <h3>For Reading</h3>
+                            <div class="filter-toggle">
+                                <button class="filter-btn active" data-filter="all" onclick="setStatusFilter('all')">
+                                    All <span class="filter-count" id="countAll">(0)</span>
+                                </button>
+                                <button class="filter-btn" data-filter="today" onclick="setStatusFilter('today')">
+                                    Today <span class="filter-count" id="countToday">(0)</span>
+                                </button>
+                                <button class="filter-btn" data-filter="unbilled" onclick="setStatusFilter('unbilled')">
+                                    Unbilled <span class="filter-count" id="countUnbilled">(0)</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <div class="date-range-filter">
+                                <label>From:</label>
+                                <input type="date" id="filterDateFrom" class="date-input-sm" onchange="applyFilters()">
+                                <label>To:</label>
+                                <input type="date" id="filterDateTo" class="date-input-sm" onchange="applyFilters()">
+                            </div>
+                            <span class="total-count">Showing: <strong id="forReadingCount">0</strong></span>
+                        </div>
+                    </div>
+                        </div>
+                        <div class="card-actions">
+                            <span class="total-count">Total: <strong id="forReadingCount">0</strong></span>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="table billing-table">
+                            <thead>
+                                <tr>
+                                    <th>R.Day</th>
+                                    <th>Category</th>
+                                    <th>Client / Branch</th>
+                                    <th>Model</th>
+                                    <th>Serial</th>
+                                    <th>Status</th>
+                                    <th>Install Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="forReadingBody">
+                                <tr>
+                                    <td colspan="7" class="loading-cell">
+                                        <div class="spinner"></div>
+                                        <span>Loading contracts...</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Pending Invoices Section -->
+                <div class="content-card billing-section">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <h3>Pending Invoice List</h3>
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="refreshPendingInvoices()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="table billing-table">
+                            <thead>
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Age</th>
+                                    <th>Client</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pendingInvoicesBody">
+                                <tr>
+                                    <td colspan="3" class="empty-cell">No pending invoices</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+
+    <!-- Invoice Number Modal -->
+    <div class="modal-overlay" id="invoiceModalOverlay"></div>
+    <div class="billing-modal" id="invoiceModal">
+        <div class="billing-modal-header">
+            <h3>Enter Invoice Details</h3>
+            <button class="modal-close-btn" onclick="closeInvoiceModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="billing-modal-body">
+            <div class="selected-contract-info" id="selectedContractInfo">
+                <!-- Contract info will be populated here -->
+            </div>
+            <div class="invoice-form">
+                <div class="form-field">
+                    <label class="field-label">Invoice Number</label>
+                    <input type="text" id="invoiceNumber" class="field-input" placeholder="Enter pre-printed invoice number">
+                </div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label class="field-label">Billing Month</label>
+                        <select id="billingMonth" class="field-select">
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">Billing Year</label>
+                        <select id="billingYear" class="field-select">
+                            <!-- Years will be populated -->
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="billing-modal-footer">
+            <button class="btn btn-secondary" onclick="closeInvoiceModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="proceedToReading()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+                Proceed
+            </button>
+        </div>
+    </div>
+
+    <!-- Meter Reading Modal -->
+    <div class="modal-overlay" id="readingModalOverlay"></div>
+    <div class="billing-modal reading-modal" id="readingModal">
+        <div class="billing-modal-header">
+            <h3>Billing Details</h3>
+            <button class="modal-close-btn" onclick="closeReadingModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="billing-modal-body">
+            <!-- Contract Header Info -->
+            <div class="contract-header-info" id="contractHeaderInfo">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Reading Form -->
+            <div class="reading-form-layout">
+                <div class="reading-section">
+                    <div class="section-title">Contract Info</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Company Name</span>
+                            <span class="info-value" id="rdCompanyName">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Branch</span>
+                            <span class="info-value" id="rdBranch">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Category</span>
+                            <span class="info-value" id="rdCategory">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Invoice #</span>
+                            <span class="info-value" id="rdInvoiceNum">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Model</span>
+                            <span class="info-value" id="rdModel">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Serial</span>
+                            <span class="info-value" id="rdSerial">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="reading-section">
+                    <div class="section-title">Reading Information</div>
+                    <div class="reading-dates">
+                        <div class="form-field">
+                            <label class="field-label">Reading Month</label>
+                            <select id="rdMonth" class="field-select" onchange="updateReadingDates()">
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3">March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                                <option value="6">June</option>
+                                <option value="7">July</option>
+                                <option value="8">August</option>
+                                <option value="9">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Year</label>
+                            <input type="number" id="rdYear" class="field-input" onchange="updateReadingDates()">
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Present Reading Date</label>
+                            <input type="date" id="rdPresentDate" class="field-input">
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Previous Reading Date</label>
+                            <input type="date" id="rdPreviousDate" class="field-input" disabled>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- B&W Reading Section -->
+                <div class="reading-section calculation-section">
+                    <div class="section-title">B&W Meter Reading</div>
+                    <div class="calculation-grid">
+                        <div class="calc-row">
+                            <div class="form-field">
+                                <label class="field-label">Present Reading</label>
+                                <input type="number" id="rdPresentMeter" class="field-input highlight" oninput="calculateBilling()">
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">Quota</label>
+                                <input type="number" id="rdQuota" class="field-input" disabled>
+                            </div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="form-field">
+                                <label class="field-label">Previous Reading</label>
+                                <input type="number" id="rdPreviousMeter" class="field-input" disabled>
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">Page Rate</label>
+                                <input type="number" id="rdPageRate" class="field-input" step="0.01" disabled>
+                            </div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="form-field">
+                                <label class="field-label">Gross Total Cons.</label>
+                                <input type="number" id="rdGrossTotal" class="field-input" disabled>
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">Exceed Page Rate</label>
+                                <input type="number" id="rdExceedRate" class="field-input" step="0.01" disabled>
+                            </div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="form-field spoilage-field">
+                                <input type="checkbox" id="rdSpoilage" checked onchange="calculateBilling()">
+                                <label for="rdSpoilage">Spoilage (2%)</label>
+                                <input type="number" id="rdSpoilageAmt" class="field-input small" disabled>
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">VAT (12%)</label>
+                                <input type="number" id="rdVat" class="field-input" step="0.01" disabled>
+                            </div>
+                        </div>
+                        <div class="calc-row">
+                            <div class="form-field">
+                                <label class="field-label">Net Consumption</label>
+                                <input type="number" id="rdNetConsumption" class="field-input" disabled>
+                            </div>
+                            <div class="form-field">
+                                <label class="field-label">Net Amount</label>
+                                <input type="number" id="rdNetAmount" class="field-input" step="0.01" disabled>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Totals Section -->
+                <div class="reading-section totals-section">
+                    <div class="totals-grid">
+                        <div class="form-field">
+                            <label class="field-label">Other Discount(s)</label>
+                            <input type="number" id="rdDiscount" class="field-input" step="0.01" value="0" oninput="calculateBilling()">
+                        </div>
+                        <div class="total-display">
+                            <span class="total-label">Amount Due</span>
+                            <span class="total-value" id="rdAmountDue">₱0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Remarks -->
+                <div class="reading-section">
+                    <div class="form-field">
+                        <label class="field-label">Remarks</label>
+                        <textarea id="rdRemarks" class="field-textarea" rows="2" placeholder="Optional remarks..."></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="billing-modal-footer">
+            <div class="footer-left">
+                <button class="btn btn-secondary" onclick="loadPreviousReading()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                    </svg>
+                    Load Reading
+                </button>
+            </div>
+            <div class="footer-right">
+                <button class="btn btn-secondary" onclick="closeReadingModal()">Cancel</button>
+                <button class="btn btn-secondary" onclick="printInvoicePreview()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
+                        <rect x="6" y="14" width="12" height="8"/>
+                    </svg>
+                    Print Invoice
+                </button>
+                <button class="btn btn-primary" onclick="confirmBilling()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                        <path d="M22 4L12 14.01l-3-3"/>
+                    </svg>
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Print Preview Modal -->
+    <div class="modal-overlay" id="printModalOverlay"></div>
+    <div class="print-modal" id="printModal">
+        <div class="print-modal-header">
+            <h3>Invoice Print Preview</h3>
+            <div class="print-controls">
+                <button class="btn btn-secondary btn-sm" onclick="adjustPrintPosition(-1, 0)">← Left</button>
+                <button class="btn btn-secondary btn-sm" onclick="adjustPrintPosition(1, 0)">Right →</button>
+                <button class="btn btn-secondary btn-sm" onclick="adjustPrintPosition(0, -1)">↑ Up</button>
+                <button class="btn btn-secondary btn-sm" onclick="adjustPrintPosition(0, 1)">Down ↓</button>
+                <button class="btn btn-secondary btn-sm" onclick="resetPrintPosition()">Reset</button>
+            </div>
+            <button class="modal-close-btn" onclick="closePrintModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="print-modal-body">
+            <div class="invoice-preview" id="invoicePreview">
+                <!-- Invoice content will be rendered here -->
+            </div>
+        </div>
+        <div class="print-modal-footer">
+            <span class="position-info">Position: X=<span id="posX">0</span>mm, Y=<span id="posY">0</span>mm</span>
+            <div class="footer-right">
+                <button class="btn btn-secondary" onclick="closePrintModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="printInvoice()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
+                        <rect x="6" y="14" width="12" height="8"/>
+                    </svg>
+                    Save and Print
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <!-- Shared modules -->
+    <script src="shared/js/firebase-config.js"></script>
+    <script src="shared/js/utils.js"></script>
+    <script src="shared/js/auth.js"></script>
+    
+    <!-- Billing module -->
+    <script src="billing/js/billing.js"></script>
+</body>
+</html>

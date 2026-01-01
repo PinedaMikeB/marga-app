@@ -447,6 +447,17 @@
         .toast.success { background: #16a34a; }
         .toast.error { background: #dc2626; }
         @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #2d5a87;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
         
         /* Checkbox */
         .checkbox-item {
@@ -701,6 +712,7 @@
         
         // State
         let contracts = [];
+        let contractsById = {}; // Quick lookup by ID
         let companies = {};
         let branches = {};
         let machines = {};
@@ -711,10 +723,12 @@
         let selectedContract = null;
         let selectedReading = null;
         let readingFilter = 'today';
+        let currentUser = null;
         
         // Category codes that are Fixed Rate (no meter reading needed)
-        const FIXED_RATE_CATEGORIES = ['REF', 'RTF']; // Adjust based on your data
-        const PER_PAGE_CATEGORIES = ['RTP']; // Rental Type Per-page
+        // Based on typical Marga categories: RTP=per-page, RTF=fixed, REF=refurbished fixed
+        const FIXED_RATE_CATEGORIES = ['RTF', 'REF', 'FIXED'];
+        const PER_PAGE_CATEGORIES = ['RTP', 'PERPAGE', 'PER-PAGE'];
         
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -722,9 +736,23 @@
             document.getElementById('billingDate').value = today.toISOString().split('T')[0];
             document.getElementById('modalPresentDate').textContent = formatDate(today);
             
+            // Show loading state
+            showLoadingState();
+            
             await loadAllData();
             renderAll();
+            hideLoadingState();
         });
+        
+        function showLoadingState() {
+            document.getElementById('forReadingList').innerHTML = '<div class="empty-state"><div class="spinner" style="width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:#2d5a87;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 0.5rem;"></div><div>Loading contracts...</div></div>';
+            document.getElementById('forInvoiceList').innerHTML = '<div class="empty-state"><div>Loading...</div></div>';
+            document.getElementById('pendingList').innerHTML = '<div class="empty-state"><div>Loading...</div></div>';
+        }
+        
+        function hideLoadingState() {
+            // Will be replaced by actual renders
+        }
         
         // Load all required data
         async function loadAllData() {
