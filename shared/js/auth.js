@@ -3,7 +3,9 @@
  * Handles user login, role-based access control, and route protection
  */
 
-const MargaAuth = {
+// Prevent redeclaration errors
+if (typeof MargaAuth === 'undefined') {
+var MargaAuth = {
     currentUser: null,
     userProfile: null,
     
@@ -333,3 +335,4 @@ const MargaAuth = {
 
 // Export for use in other modules
 window.MargaAuth = MargaAuth;
+} // End of if (typeof MargaAuth === 'undefined')
