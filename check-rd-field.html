@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Check Reading Day (RD) Field</title>
+    <style>
+        body { font-family: system-ui; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        .card { background: #f8fafc; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
+        input, button, select { padding: 0.75rem; font-size: 1rem; border-radius: 8px; }
+        input, select { border: 2px solid #e2e8f0; margin-right: 0.5rem; }
+        button { background: #2563eb; color: white; border: none; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; }
+        th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #1e3a5f; color: white; }
+        .highlight { background: #fef3c7; font-weight: bold; }
+        h1 { color: #1e3a5f; }
+        .stat { display: inline-block; background: #dbeafe; padding: 0.5rem 1rem; border-radius: 8px; margin-right: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>📅 Check Reading Day (RD) Fields</h1>
+    
+    <div class="card">
+        <button onclick="checkContracts()">Check tbl_contractmain</button>
+        <button onclick="checkMachines()">Check tbl_machine</button>
+        <button onclick="checkBranches()">Check tbl_branchinfo</button>
+        <p style="margin-top: 1rem; color: #64748b;">Click to see which table has the reading day (rd) field</p>
+    </div>
+    
+    <div class="card">
+        <h3>Results</h3>
+        <div id="stats"></div>
+        <div style="max-height: 500px; overflow: auto;">
+            <table>
+                <thead id="tableHead">
+                    <tr><th>Click a button above to load data</th></tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const db = firebase.firestore();
+        
+        async function checkContracts() {
+            const snap = await db.collection('tbl_contractmain').limit(50).get();
+            const docs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            // Find all unique keys
+            const allKeys = new Set();
+            docs.forEach(d => Object.keys(d).forEach(k => allKeys.add(k)));
+            
+            // Look for rd-related fields
+            const rdFields = [...allKeys].filter(k => 
+                k.toLowerCase().includes('rd') || 
+                k.toLowerCase().includes('reading') ||
+                k.toLowerCase().includes('day')
+            );
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">Total: ${docs.length} contracts</div>
+                <div class="stat">RD-related fields: ${rdFields.join(', ') || 'None found'}</div>
+            `;
+            
+            // Show relevant columns
+            const columns = ['id', 'company_id', 'branch_id', 'machine_id', 'rd', 'reading_day', 'readingday', 'b_meter', 'monthly_rate'];
+            const existingCols = columns.filter(c => allKeys.has(c));
+            
+            renderTable(docs, existingCols.length > 0 ? existingCols : [...allKeys].slice(0, 10));
+        }
+        
+        async function checkMachines() {
+            const snap = await db.collection('tbl_machine').limit(50).get();
+            const docs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            const allKeys = new Set();
+            docs.forEach(d => Object.keys(d).forEach(k => allKeys.add(k)));
+            
+            const rdFields = [...allKeys].filter(k => 
+                k.toLowerCase().includes('rd') || 
+                k.toLowerCase().includes('reading') ||
+                k.toLowerCase().includes('day')
+            );
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">Total: ${docs.length} machines</div>
+                <div class="stat">RD-related fields: ${rdFields.join(', ') || 'None found'}</div>
+                <div class="stat">All fields: ${[...allKeys].join(', ')}</div>
+            `;
+            
+            const columns = ['id', 'serial_number', 'rd', 'reading_day', 'model_id', 'brand_id'];
+            const existingCols = columns.filter(c => allKeys.has(c));
+            
+            renderTable(docs, existingCols.length > 0 ? existingCols : [...allKeys].slice(0, 10));
+        }
+        
+        async function checkBranches() {
+            const snap = await db.collection('tbl_branchinfo').limit(50).get();
+            const docs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            
+            const allKeys = new Set();
+            docs.forEach(d => Object.keys(d).forEach(k => allKeys.add(k)));
+            
+            const rdFields = [...allKeys].filter(k => 
+                k.toLowerCase().includes('rd') || 
+                k.toLowerCase().includes('reading') ||
+                k.toLowerCase().includes('day')
+            );
+            
+            document.getElementById('stats').innerHTML = `
+                <div class="stat">Total: ${docs.length} branches</div>
+                <div class="stat">RD-related fields: ${rdFields.join(', ') || 'None found'}</div>
+            `;
+            
+            const columns = ['id', 'branch_name', 'company_id', 'rd', 'reading_day'];
+            const existingCols = columns.filter(c => allKeys.has(c));
+            
+            renderTable(docs, existingCols.length > 0 ? existingCols : [...allKeys].slice(0, 10));
+        }
+        
+        function renderTable(data, columns) {
+            const thead = document.getElementById('tableHead');
+            const tbody = document.getElementById('tableBody');
+            
+            thead.innerHTML = '<tr>' + columns.map(c => 
+                `<th class="${c.includes('rd') || c.includes('reading') ? 'highlight' : ''}">${c}</th>`
+            ).join('') + '</tr>';
+            
+            tbody.innerHTML = data.map(row => 
+                '<tr>' + columns.map(c => {
+                    const val = row[c];
+                    const isRD = c.includes('rd') || c.includes('reading');
+                    return `<td class="${isRD ? 'highlight' : ''}">${val ?? '-'}</td>`;
+                }).join('') + '</tr>'
+            ).join('');
+        }
+    </script>
+</body>
+</html>
