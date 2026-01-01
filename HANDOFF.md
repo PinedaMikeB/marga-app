@@ -1,5 +1,6 @@
 # MARGA App - Handoff Document
 **Date:** January 1, 2026  
+**Last Updated:** January 1, 2026 - 5:20 PM PHT  
 **Project:** Marga Enterprises - Printer Rental Management System  
 **Repository:** /Volumes/Wotg Drive Mike/GitHub/Marga-App  
 **Live URL:** https://margaapp.netlify.app
@@ -24,18 +25,6 @@ Modernizing Marga Enterprises' legacy VB.NET/MySQL system to a web-based Firebas
 | Batch 3 (66 tables) | ~1,711,000 | ✅ Done |
 | **TOTAL** | **~2,536,000** | ✅ Complete |
 
-**Key Tables Migrated:**
-- `tbl_contractmain` - Contracts
-- `tbl_companylist` - Companies
-- `tbl_branchinfo` - Branches
-- `tbl_machine` - Machines
-- `tbl_machinereading` - Historical meter readings (120k+)
-- `tbl_billing` - Billing records (74k+)
-- `tbl_collections` - Collections
-- `tbl_invoicenum` - Invoices
-- `tbl_schedule` - Service schedules
-- Plus 80+ more tables
-
 ### 2. Daily Sync System Created
 
 For syncing ongoing data from VB.NET (MySQL) to Firebase until full transition.
@@ -45,55 +34,21 @@ For syncing ongoing data from VB.NET (MySQL) to Firebase until full transition.
 - `/sync/daily-export.ps1` - PowerShell automation
 - `/synclatest.html` - Upload JSON files to sync
 
-**Workflow:**
-1. AnyDesk into office PC
-2. Run SQL in MySQL Workbench
-3. Export to Google Drive
-4. Upload via synclatest.html
+### 3. Authentication System ✅
 
-### 3. Authentication System
-
-**Files:**
-- `/shared/js/auth.js` - Authentication module
-- `/login.html` - Login page
-- `/setup-admin.html` - Initial admin setup
-
+**Files:** `/shared/js/auth.js`, `/login.html`, `/setup-admin.html`
 **Roles:** Admin, Manager, Billing Staff, Collection Staff, Service Tech, Viewer
 
-### 4. Customer Management Module
+### 4. Customer Management Module ✅
 
-**Files:**
-- `/customers.html` - Customer list with search/filter
-- `/customer-detail.html` - Customer details with contracts
+**Files:** `/customers.html`, `/customer-detail.html`
+**Features:** View companies/branches, contracts, machine details, status
 
-**Features:**
-- View all companies/branches
-- View contracts per customer
-- Machine details
-- Contract status
+### 5. Billing Module - 3-Panel Dashboard ✅ (NEW!)
 
-### 5. Billing Module (Partial)
+**File:** `/billing.html` (completely rebuilt)
 
-**Current Files:**
-- `/billing.html` - Original billing interface (working but basic)
-- `/billing-v2.html` - New 3-panel layout (IN PROGRESS)
-
-**Working Features:**
-- R.DAY extraction from `reading_date` field
-- Previous meter reading from `tbl_machinereading`
-- Basic meter reading entry
-- Filter by Today/All/Unbilled
-
----
-
-## 🚧 What Needs To Be Done
-
-### IMMEDIATE: Complete Billing Dashboard v2
-
-The new billing dashboard (`billing-v2.html`) was started but needs completion. Currently showing old billing.html instead.
-
-**Required 3-Panel Layout:**
-
+**NEW 3-Panel Workflow Layout:**
 ```
 ┌─────────────────┬─────────────────┬──────────────────┐
 │  📖 FOR READING │  📄 FOR INVOICE │ 📬 PENDING       │
@@ -110,57 +65,71 @@ The new billing dashboard (`billing-v2.html`) was started but needs completion. 
 └─────────────────┴─────────────────┴──────────────────┘
 ```
 
-**Contract Types:**
+**Implemented Features:**
+- ✅ Panel 1: For Reading - Filter by Today/Overdue/All, search by client
+- ✅ Panel 2: For Invoice - Readings that need invoice generation
+- ✅ Panel 3: Pending Delivery - Invoices waiting for messenger assignment
+- ✅ Stats bar with quick navigation to each panel
+- ✅ Fixed rate contracts (RTF/REF) highlighted with purple border
+- ✅ Previous reading fetched from `tbl_machinereading` (migrated MySQL) or `tbl_readings` (new)
+- ✅ Invoice modal with contract details, billing calculations
+- ✅ Spoilage (2%) calculation, VAT handling
+- ✅ Print preview with position adjustment
+- ✅ Save readings to `tbl_readings` collection
+
+**Contract Types Handled:**
 - **RTP** (Rental Type Per-page) - Needs meter reading
-- **RTF** (Rental Type Fixed) - Fixed monthly rate, no reading
-- **REF** (Refurbished/Refill?) - Fixed rate, no reading
+- **RTF** (Rental Type Fixed) - Fixed monthly rate, no reading needed
+- **REF** (Refurbished/Refill) - Fixed rate, no reading needed
 
 **Key Logic:**
 - R.DAY = Day extracted from `reading_date` field (NOT from `rd` which is Refundable Deposit)
-- Previous reading comes from `tbl_machinereading` (migrated MySQL data)
-- New readings go to `tbl_readings` (our new collection)
-- Invoices go to `tbl_invoices` (our new collection)
+- Previous reading priority: `tbl_readings` → `tbl_machinereading` → `starting_meter`
+
+---
+
+## 🚧 What Still Needs To Be Done
 
 ### NEXT: Complete Billing-to-Collection Workflow
 
 **Full Workflow:**
 
 ```
-1. BILLING STAFF - Generate Invoices
+1. BILLING STAFF - Generate Invoices ✅ DONE
    ├── Per-Page: Enter meter reading → Calculate
    └── Fixed Rate: Just generate (no reading)
               ↓
-2. BILLING STAFF - Invoices go to "Pending Delivery"
+2. BILLING STAFF - Invoices go to "Pending Delivery" ✅ DONE
               ↓
-3. MESSENGER (Mobile App) - Delivers invoice
+3. MESSENGER (Mobile App) - Delivers invoice 🔲 TODO
    ├── Takes photo of signed invoice
    ├── Records: Received by, Date/Time
    └── Submits via app
               ↓
-4. BILLING STAFF - Verifies delivery
+4. BILLING STAFF - Verifies delivery 🔲 TODO
    ├── Checks physical invoice matches app
    ├── Confirms with checkbox
    └── Grouped by messenger
               ↓
-5. COLLECTION STAFF - Follows up payment
+5. COLLECTION STAFF - Follows up payment 🔲 TODO
    └── Only sees VERIFIED invoices
 ```
 
 **Status Flow:**
 | Status | Location |
 |--------|----------|
-| `generated` | Billing Dashboard |
-| `for_delivery` | Messenger Queue |
-| `delivered_pending` | Verification Queue |
-| `verified` | Collection Dashboard |
-| `paid` | Archive |
+| `generated` | Billing Dashboard ✅ |
+| `pending_delivery` | Messenger Queue ✅ |
+| `delivered_pending` | Verification Queue 🔲 |
+| `verified` | Collection Dashboard 🔲 |
+| `paid` | Archive 🔲 |
 
-### Interfaces To Build
+### Interfaces Still To Build
 
-1. **Billing Dashboard v2** - Complete the 3-panel layout
-2. **Verification Dashboard** - Billing staff confirms messenger deliveries
-3. **Messenger Mobile App (PWA)** - Photo capture, delivery confirmation
-4. **Collection Dashboard** - Track verified invoices, payments
+1. ✅ **Billing Dashboard v2** - COMPLETED (3-panel layout)
+2. 🔲 **Verification Dashboard** - Billing staff confirms messenger deliveries
+3. 🔲 **Messenger Mobile App (PWA)** - Photo capture, delivery confirmation
+4. 🔲 **Collection Dashboard** - Track verified invoices, payments
 
 ---
 
@@ -168,11 +137,12 @@ The new billing dashboard (`billing-v2.html`) was started but needs completion. 
 
 ```
 /Volumes/Wotg Drive Mike/GitHub/Marga-App/
-├── billing.html              # Current billing (working)
-├── billing-v2.html           # New 3-panel layout (IN PROGRESS)
+├── billing.html              # NEW 3-panel billing dashboard ✅
+├── billing-old-backup.html   # Old table-based billing (backup)
+├── billing-v2.html           # Original prototype (can be removed)
 ├── billing/
-│   ├── js/billing.js         # Billing logic
-│   └── css/billing.css       # Billing styles
+│   ├── js/billing.js         # Old billing logic (not used)
+│   └── css/billing.css       # Billing styles (still used for modals)
 ├── customers.html            # Customer management
 ├── customer-detail.html      # Customer details
 ├── login.html                # Login page
@@ -181,29 +151,38 @@ The new billing dashboard (`billing-v2.html`) was started but needs completion. 
 │   │   ├── firebase-config.js    # Firebase configuration
 │   │   └── auth.js               # Authentication
 │   └── css/
-│       └── main.css              # Shared styles
+│       └── styles.css            # Shared styles
+│       └── dashboard.css         # Dashboard layout styles
 ├── sync/                     # Daily sync tools
-├── migrations/               # JSON migration files
-└── various test/check tools
+└── migrations/               # JSON migration files
 ```
 
 ---
 
 ## 🔧 Technical Details
 
-### Firebase Collections (New System)
+### Firebase Collections
 
+**New Collections (Our System):**
 | Collection | Purpose |
 |------------|---------|
-| `tbl_readings` | New meter readings (from our app) |
+| `tbl_readings` | New meter readings & billing records |
 | `tbl_invoices` | Generated invoices |
 | `_sync_meta` | Sync metadata |
 
-### Firebase Collections (Migrated from MySQL)
+**Migrated Collections (from MySQL):**
+| Collection | Purpose |
+|------------|---------|
+| `tbl_contractmain` | Contracts |
+| `tbl_companylist` | Companies |
+| `tbl_branchinfo` | Branches |
+| `tbl_machine` | Machines |
+| `tbl_machinereading` | Historical meter readings (120k+) |
+| `tbl_billing` | Old billing records (74k+) |
+| `tbl_particulars` | Categories (RTP, RTF, REF, etc.) |
+| Plus 80+ more tables |
 
-All original MySQL tables with `tbl_` prefix are now in Firebase.
-
-### Key Fields
+### Key Fields Reference
 
 **Contract (`tbl_contractmain`):**
 - `reading_date` → Extract day for R.DAY
@@ -212,44 +191,47 @@ All original MySQL tables with `tbl_` prefix are now in Firebase.
 - `page_rate` → Cost per excess page
 - `category_id` → Links to category (RTP/RTF/REF)
 - `rd` → Refundable Deposit (NOT reading day!)
+- `mach_id` → Links to machine
+- `contract_id` → Links to branch
 
-**Machine Reading (`tbl_machinereading`):**
-- `machine_id` → Links to machine
-- `current_contract` → Links to contract
-- `meter_reading` → The actual meter value
-- `date_red` → Date of reading
-- `invoice_id` → 0 = no invoice, >0 = has invoice
+**Reading (`tbl_readings`):**
+- `contract_id` → Links to contract
+- `present_reading` / `previous_reading` → Meter values
+- `net_consumption` → Pages printed
+- `amount_due` → Total to pay
+- `invoice_generated` → false until formal invoice created
+- `status` → pending/delivered/verified/paid
 
 ---
 
 ## 🎯 Immediate Next Steps
 
-1. **Fix billing-v2.html** - The 3-panel dashboard is not loading correctly
-2. **Complete the reading entry flow** - Both per-page and fixed rate
-3. **Add invoice generation** - Create invoices from readings
-4. **Build messenger assignment** - Assign invoices to messengers
+1. **Test the new billing dashboard** - Visit https://margaapp.netlify.app/billing
+2. **Verify data loads correctly** - Check contracts, readings, invoices
+3. **Test the reading entry flow** - Select contract → Enter invoice # → Enter reading → Save
+4. **Test invoice generation** - Select reading in Panel 2 → Generate Invoice
+5. **Plan Verification Dashboard** - For confirming messenger deliveries
 
 ---
 
 ## 🔗 Useful URLs
 
 - **Live App:** https://margaapp.netlify.app
-- **Billing (current):** https://margaapp.netlify.app/billing.html
-- **Billing v2:** https://margaapp.netlify.app/billing-v2.html
+- **Billing Dashboard:** https://margaapp.netlify.app/billing.html
 - **Customers:** https://margaapp.netlify.app/customers.html
 - **Login:** https://margaapp.netlify.app/login.html
-- **Firebase Console:** Check Mike's Firebase account
+- **Check Categories:** https://margaapp.netlify.app/check-categories.html
 
 ---
 
-## 📝 Notes for Next Session
+## 📝 Notes
 
-1. User is viewing `/billing` not `/billing-v2.html` - need to check routing
-2. The billing-v2.html was created but may have issues loading
-3. Categories need verification: RTP = per-page, RTF/REF = fixed rate
-4. Check https://margaapp.netlify.app/check-categories.html for category data
-5. Previous reading logic is working (fetches from `tbl_machinereading`)
+1. Old billing.html backed up to `billing-old-backup.html`
+2. billing-v2.html was the prototype - can be deleted once confirmed working
+3. The billing.js in `/billing/js/` is no longer used (logic is inline in billing.html)
+4. Fixed rate categories: RTF, RTC, MAT, STC, MAC, REF, RD, PI, OTH
+5. Per-page category: RTP
 
 ---
 
-**To Continue:** Read this file and proceed with completing the Billing Dashboard v2 with the 3-panel workflow layout.
+**Last Commit:** cfdf763 - "Implement 3-panel Billing Dashboard workflow"
