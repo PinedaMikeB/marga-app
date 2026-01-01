@@ -8,37 +8,98 @@
     <link rel="stylesheet" href="shared/css/styles.css">
     <link rel="stylesheet" href="shared/css/dashboard.css">
     <style>
-        /* 3-Panel Layout - FIXED HEIGHT */
+        /* Alert Banner for Backlogs */
+        .backlog-alert {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            color: white;
+            padding: 1rem 1.25rem;
+            margin: 0 1rem 1rem;
+            border-radius: 12px;
+            display: none;
+            box-shadow: 0 4px 15px rgba(220,38,38,0.3);
+        }
+        .backlog-alert.show { display: block; }
+        .backlog-alert-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .backlog-alert-icon { font-size: 1.5rem; }
+        .backlog-alert-title { font-weight: 700; font-size: 1rem; flex: 1; }
+        .backlog-alert-dismiss { background: none; border: none; color: white; cursor: pointer; opacity: 0.7; }
+        .backlog-alert-dismiss:hover { opacity: 1; }
+        .backlog-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75rem;
+        }
+        .backlog-item {
+            background: rgba(255,255,255,0.15);
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .backlog-item:hover { background: rgba(255,255,255,0.25); }
+        .backlog-item-count { font-size: 1.25rem; font-weight: 700; }
+        .backlog-item-label { font-size: 0.75rem; opacity: 0.9; }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            margin: 0 1rem 1rem;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .stat-item {
+            text-align: center;
+            padding: 0.6rem 0.4rem;
+            border-radius: 8px;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 2px solid transparent;
+        }
+        .stat-item:hover { background: #f1f5f9; }
+        .stat-item.active { border-color: #2d5a87; background: #eff6ff; }
+        .stat-value { font-size: 1.4rem; font-weight: 700; color: #1e3a5f; }
+        .stat-label { font-size: 0.65rem; color: #64748b; margin-top: 0.1rem; }
+        .stat-item.danger { background: #fee2e2; }
+        .stat-item.danger .stat-value { color: #dc2626; }
+        .stat-item.warning { background: #fef3c7; }
+        .stat-item.warning .stat-value { color: #92400e; }
+        .stat-item.success { background: #d1fae5; }
+        .stat-item.success .stat-value { color: #065f46; }
+
+        /* 3-Panel Layout - FULL HEIGHT with Pagination */
         .billing-panels {
             display: grid;
-            grid-template-columns: 1fr 1fr 320px;
+            grid-template-columns: 1fr 1fr 360px;
             gap: 1rem;
             padding: 0 1rem 1rem;
-            height: calc(100vh - 220px);
-            max-height: 600px;
-            min-height: 450px;
+            min-height: calc(100vh - 280px);
         }
-        
         .panel {
             background: white;
             border-radius: 12px;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
             box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-            max-height: 100%;
         }
-        
         .panel-header {
             padding: 0.75rem 1rem;
             border-bottom: 1px solid #e5e7eb;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-shrink: 0;
             background: #f8fafc;
+            border-radius: 12px 12px 0 0;
         }
-        
         .panel-title {
             font-size: 0.9rem;
             font-weight: 700;
@@ -47,9 +108,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
         .panel-title .icon { font-size: 1rem; }
-        
         .badge {
             padding: 0.2rem 0.5rem;
             border-radius: 20px;
@@ -60,7 +119,7 @@
         .badge.orange { background: #fed7aa; color: #9a3412; }
         .badge.green { background: #d1fae5; color: #065f46; }
         .badge.red { background: #fee2e2; color: #dc2626; }
-        
+
         .panel-toolbar {
             padding: 0.5rem 0.75rem;
             background: #f8fafc;
@@ -69,9 +128,7 @@
             gap: 0.4rem;
             align-items: center;
             flex-wrap: wrap;
-            flex-shrink: 0;
         }
-        
         .filter-btn {
             padding: 0.35rem 0.6rem;
             border: 1px solid #e2e8f0;
@@ -84,113 +141,58 @@
             transition: all 0.15s;
         }
         .filter-btn:hover { background: #f1f5f9; }
-        .filter-btn.active { 
-            background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%); 
-            color: white; 
-            border-color: #1e3a5f; 
-        }
-        .filter-btn.alert {
-            background: #dc2626;
-            color: white;
-            border-color: #dc2626;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
+        .filter-btn.active { background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%); color: white; border-color: #1e3a5f; }
+        .filter-btn.alert { background: #dc2626; color: white; border-color: #dc2626; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .search-input {
             flex: 1;
-            min-width: 100px;
+            min-width: 80px;
             padding: 0.35rem 0.6rem;
             border: 1px solid #e2e8f0;
             border-radius: 5px;
             font-size: 0.75rem;
         }
-        .search-input:focus {
-            outline: none;
-            border-color: #2d5a87;
-        }
-        
+        .search-input:focus { outline: none; border-color: #2d5a87; }
+
         .panel-body {
             flex: 1;
-            overflow-y: auto;
-            min-height: 0;
+            padding: 0;
         }
-        
-        .panel-footer {
-            padding: 0.6rem;
-            border-top: 1px solid #e5e7eb;
-            background: #f8fafc;
-            display: flex;
-            gap: 0.5rem;
-            flex-shrink: 0;
-        }
-        
-        /* Alert Banner */
-        .alert-banner {
-            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-            color: white;
-            padding: 0.75rem 1rem;
-            margin: 0 1rem 0.75rem;
-            border-radius: 10px;
-            display: none;
-            align-items: center;
-            gap: 0.75rem;
-            box-shadow: 0 4px 12px rgba(220,38,38,0.3);
-        }
-        .alert-banner.show { display: flex; }
-        .alert-banner .alert-icon { font-size: 1.5rem; }
-        .alert-banner .alert-text { flex: 1; }
-        .alert-banner .alert-title { font-weight: 700; font-size: 0.9rem; }
-        .alert-banner .alert-desc { font-size: 0.8rem; opacity: 0.9; }
-        .alert-banner .alert-action {
-            padding: 0.5rem 1rem;
-            background: white;
-            color: #dc2626;
-            border: none;
-            border-radius: 6px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 0.8rem;
-        }
-        
-        /* Contract Items - Compact */
+
+        /* Contract Items - Fixed height for 15 items */
         .contract-item {
-            padding: 0.6rem 0.75rem;
+            padding: 0.5rem 0.75rem;
             border-bottom: 1px solid #f1f5f9;
             cursor: pointer;
             display: grid;
-            grid-template-columns: 38px 1fr auto;
-            gap: 0.6rem;
+            grid-template-columns: 36px 1fr auto;
+            gap: 0.5rem;
             align-items: center;
             transition: background 0.15s;
+            height: 52px;
         }
         .contract-item:hover { background: #f8fafc; }
-        .contract-item.selected { 
-            background: #eff6ff; 
-            border-left: 3px solid #2d5a87; 
-            padding-left: calc(0.75rem - 3px);
-        }
+        .contract-item.selected { background: #eff6ff; border-left: 3px solid #2d5a87; padding-left: calc(0.75rem - 3px); }
         .contract-item.done { opacity: 0.5; background: #f0fdf4; }
         .contract-item.fixed-rate { border-left: 3px solid #8b5cf6; padding-left: calc(0.75rem - 3px); }
         .contract-item.overdue { background: #fef2f2; }
-        
+        .contract-item.backlog { background: #fefce8; border-left: 3px solid #f59e0b; padding-left: calc(0.75rem - 3px); }
+
         .rd-day {
-            width: 38px; height: 38px;
+            width: 36px; height: 36px;
             border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             background: #e0e7ff;
             color: #3730a3;
         }
         .rd-day.today { background: linear-gradient(135deg, #2d5a87 0%, #1e3a5f 100%); color: white; }
         .rd-day.overdue { background: #fee2e2; color: #dc2626; }
-        
+        .rd-day.backlog { background: #fef3c7; color: #92400e; }
+
         .contract-info { min-width: 0; }
         .client-name {
             font-weight: 600;
@@ -201,17 +203,24 @@
             text-overflow: ellipsis;
         }
         .contract-meta {
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             color: #64748b;
             display: flex;
             gap: 0.4rem;
-            margin-top: 0.15rem;
+            margin-top: 0.1rem;
         }
-        
-        .contract-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
+        .contract-meta .month-tag {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 0 0.3rem;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        .contract-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
         .type-badge {
-            font-size: 0.6rem;
-            padding: 0.15rem 0.4rem;
+            font-size: 0.55rem;
+            padding: 0.1rem 0.35rem;
             border-radius: 3px;
             font-weight: 600;
             text-transform: uppercase;
@@ -219,51 +228,71 @@
         .type-badge.rtp { background: #fef3c7; color: #92400e; }
         .type-badge.rtf, .type-badge.mat, .type-badge.ref, .type-badge.oth { background: #dbeafe; color: #1e40af; }
         .type-badge.fixed { background: #f3e8ff; color: #7c3aed; }
-        
-        .amount-preview { font-size: 0.75rem; font-weight: 600; color: #1e3a5f; }
-        
+        .amount-preview { font-size: 0.7rem; font-weight: 600; color: #1e3a5f; }
+
         /* Reading/Invoice Items */
         .reading-item, .invoice-item {
-            padding: 0.6rem 0.75rem;
+            padding: 0.5rem 0.75rem;
             border-bottom: 1px solid #f1f5f9;
             display: flex;
             justify-content: space-between;
             align-items: center;
             cursor: pointer;
             transition: background 0.15s;
+            height: 52px;
         }
         .reading-item:hover, .invoice-item:hover { background: #f8fafc; }
-        .reading-item.selected, .invoice-item.selected { 
-            background: #eff6ff; 
-            border-left: 3px solid #2d5a87;
-            padding-left: calc(0.75rem - 3px);
-        }
-        
+        .reading-item.selected, .invoice-item.selected { background: #eff6ff; border-left: 3px solid #2d5a87; padding-left: calc(0.75rem - 3px); }
+
         .reading-info, .invoice-info { flex: 1; min-width: 0; }
-        .reading-client, .invoice-num { 
-            font-weight: 600; 
-            font-size: 0.8rem; 
-            color: #1e3a5f; 
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .reading-meta, .invoice-client { font-size: 0.7rem; color: #64748b; margin-top: 0.1rem; }
-        .reading-amount, .invoice-amount { font-weight: 600; font-size: 0.85rem; color: #065f46; text-align: right; }
-        
+        .reading-client, .invoice-num { font-weight: 600; font-size: 0.8rem; color: #1e3a5f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .reading-meta, .invoice-client { font-size: 0.65rem; color: #64748b; margin-top: 0.1rem; }
+        .reading-amount, .invoice-amount { font-weight: 600; font-size: 0.8rem; color: #065f46; text-align: right; }
+
         .status-badge {
-            font-size: 0.6rem;
-            padding: 0.15rem 0.4rem;
+            font-size: 0.55rem;
+            padding: 0.1rem 0.35rem;
             border-radius: 3px;
             font-weight: 600;
-            margin-top: 0.2rem;
-            display: inline-block;
+            margin-left: 0.3rem;
         }
         .status-badge.pending { background: #fef3c7; color: #92400e; }
         .status-badge.assigned { background: #dbeafe; color: #1e40af; }
-        .status-badge.delivered { background: #d1fae5; color: #065f46; }
         .status-badge.old { background: #fee2e2; color: #dc2626; }
-        
+
+        /* Pagination */
+        .panel-pagination {
+            padding: 0.5rem 0.75rem;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8fafc;
+            font-size: 0.7rem;
+            color: #64748b;
+        }
+        .pagination-info { }
+        .pagination-btns { display: flex; gap: 0.3rem; }
+        .pagination-btn {
+            padding: 0.3rem 0.6rem;
+            border: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }
+        .pagination-btn:hover:not(:disabled) { background: #f1f5f9; }
+        .pagination-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .panel-footer {
+            padding: 0.6rem;
+            border-top: 1px solid #e5e7eb;
+            background: #f8fafc;
+            display: flex;
+            gap: 0.5rem;
+            border-radius: 0 0 12px 12px;
+        }
+
         /* Buttons */
         .btn {
             padding: 0.45rem 0.8rem;
@@ -285,59 +314,16 @@
         .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         .btn svg { width: 14px; height: 14px; }
-        
+
         /* Empty State */
         .empty-state {
             text-align: center;
-            padding: 1.5rem 1rem;
+            padding: 2rem 1rem;
             color: #94a3b8;
         }
-        .empty-state svg { width: 36px; height: 36px; margin-bottom: 0.5rem; opacity: 0.4; }
-        .empty-state p { font-size: 0.8rem; }
-        
-        /* Stats Bar - Compact */
-        .stats-bar {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 0.75rem;
-            padding: 0.75rem 1rem;
-            margin: 0 1rem 0.75rem;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-        
-        .stat-item {
-            text-align: center;
-            padding: 0.5rem;
-            border-radius: 8px;
-            background: #f8fafc;
-            cursor: pointer;
-            transition: all 0.15s;
-            border: 2px solid transparent;
-        }
-        .stat-item:hover { background: #f1f5f9; }
-        .stat-item.active { border-color: #2d5a87; background: #eff6ff; }
-        .stat-value { font-size: 1.5rem; font-weight: 700; color: #1e3a5f; }
-        .stat-label { font-size: 0.65rem; color: #64748b; margin-top: 0.15rem; }
-        .stat-item.warning { background: #fef3c7; }
-        .stat-item.warning .stat-value { color: #92400e; }
-        .stat-item.danger { background: #fee2e2; }
-        .stat-item.danger .stat-value { color: #dc2626; }
-        .stat-item.success { background: #d1fae5; }
-        .stat-item.success .stat-value { color: #065f46; }
-        
-        /* Spinner */
-        .spinner {
-            width: 20px; height: 20px;
-            border: 2px solid #e5e7eb;
-            border-top-color: #2d5a87;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 0.4rem;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        
+        .empty-state svg { width: 32px; height: 32px; margin-bottom: 0.4rem; opacity: 0.4; }
+        .empty-state p { font-size: 0.75rem; }
+
         /* Toast */
         .toast {
             position: fixed;
@@ -356,17 +342,18 @@
         .toast.success { background: #16a34a; }
         .toast.error { background: #dc2626; }
         @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        
+
         /* Responsive */
         @media (max-width: 1200px) {
-            .billing-panels { grid-template-columns: 1fr 1fr; max-height: none; }
+            .billing-panels { grid-template-columns: 1fr 1fr; }
             .billing-panels .panel:last-child { grid-column: span 2; }
+            .stats-bar { grid-template-columns: repeat(3, 1fr); }
         }
         @media (max-width: 768px) {
             .billing-panels { grid-template-columns: 1fr; }
-            .billing-panels .panel { min-height: 300px; max-height: 400px; }
             .billing-panels .panel:last-child { grid-column: span 1; }
             .stats-bar { grid-template-columns: repeat(2, 1fr); }
+            .backlog-items { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
@@ -378,11 +365,7 @@
                 <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
                     <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
                     <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11H10z" fill="white"/>
-                    <defs>
-                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
-                            <stop stop-color="#4299e1"/><stop offset="1" stop-color="#3182ce"/>
-                        </linearGradient>
-                    </defs>
+                    <defs><linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40"><stop stop-color="#4299e1"/><stop offset="1" stop-color="#3182ce"/></linearGradient></defs>
                 </svg>
                 <span class="logo-text">MARGA<span>.</span></span>
             </div>
@@ -390,26 +373,11 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <div class="nav-title">Main Menu</div>
-                <a href="dashboard.html" class="nav-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    Dashboard
-                </a>
-                <a href="customers.html" class="nav-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                    Customers
-                </a>
-                <a href="billing.html" class="nav-item active">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>
-                    Billing
-                </a>
-                <a href="#" class="nav-item disabled">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-                    Collections
-                </a>
-                <a href="#" class="nav-item disabled">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
-                    Service
-                </a>
+                <a href="dashboard.html" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard</a>
+                <a href="customers.html" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Customers</a>
+                <a href="billing.html" class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>Billing</a>
+                <a href="#" class="nav-item disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Collections</a>
+                <a href="#" class="nav-item disabled"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>Service</a>
             </div>
         </nav>
         <div class="sidebar-footer">
@@ -441,27 +409,33 @@
             </div>
         </header>
 
-        <!-- Alert Banner for Overdue -->
-        <div class="alert-banner" id="alertBanner">
-            <span class="alert-icon">⚠️</span>
-            <div class="alert-text">
-                <div class="alert-title">Immediate Action Required!</div>
-                <div class="alert-desc" id="alertDesc">There are contracts past their reading day this month.</div>
+        <!-- Backlog Alert Banner -->
+        <div class="backlog-alert" id="backlogAlert">
+            <div class="backlog-alert-header">
+                <span class="backlog-alert-icon">🚨</span>
+                <span class="backlog-alert-title">Pending Backlogs Detected!</span>
+                <button class="backlog-alert-dismiss" onclick="dismissBacklogAlert()">✕</button>
             </div>
-            <button class="alert-action" onclick="setReadingFilter('overdue')">View Overdue</button>
+            <div class="backlog-items" id="backlogItems">
+                <!-- Populated by JS -->
+            </div>
         </div>
 
         <!-- Stats Bar -->
         <div class="stats-bar">
             <div class="stat-item active" onclick="setQuickFilter('today')">
                 <div class="stat-value" id="statToday">0</div>
-                <div class="stat-label">For Reading Today</div>
+                <div class="stat-label">Today's Reading</div>
             </div>
             <div class="stat-item danger" onclick="setQuickFilter('overdue')" id="statOverdueCard">
                 <div class="stat-value" id="statOverdue">0</div>
                 <div class="stat-label">⚠️ Overdue</div>
             </div>
-            <div class="stat-item warning" onclick="setQuickFilter('forInvoice')">
+            <div class="stat-item warning" onclick="setQuickFilter('backlog')" id="statBacklogCard">
+                <div class="stat-value" id="statBacklog">0</div>
+                <div class="stat-label">📅 Backlog</div>
+            </div>
+            <div class="stat-item" onclick="setQuickFilter('forInvoice')">
                 <div class="stat-value" id="statForInvoice">0</div>
                 <div class="stat-label">For Invoice</div>
             </div>
@@ -476,19 +450,22 @@
             <!-- Panel 1: For Reading -->
             <div class="panel" id="panelForReading">
                 <div class="panel-header">
-                    <div class="panel-title">
-                        <span class="icon">📖</span> For Reading
-                        <span class="badge blue" id="forReadingCount">0</span>
-                    </div>
+                    <div class="panel-title"><span class="icon">📖</span> For Reading <span class="badge blue" id="forReadingCount">0</span></div>
                 </div>
                 <div class="panel-toolbar">
                     <button class="filter-btn active" data-filter="today" onclick="setReadingFilter('today')">Today</button>
                     <button class="filter-btn" data-filter="overdue" onclick="setReadingFilter('overdue')" id="btnOverdue">Overdue</button>
+                    <button class="filter-btn" data-filter="backlog" onclick="setReadingFilter('backlog')" id="btnBacklog">Backlog</button>
                     <button class="filter-btn" data-filter="all" onclick="setReadingFilter('all')">All</button>
                     <input type="text" class="search-input" placeholder="Search..." id="searchReading" oninput="renderForReadingPanel()">
                 </div>
-                <div class="panel-body" id="forReadingList">
-                    <div class="empty-state"><div class="spinner"></div><p>Loading...</p></div>
+                <div class="panel-body" id="forReadingList"></div>
+                <div class="panel-pagination" id="readingPagination">
+                    <span class="pagination-info" id="readingPageInfo">Page 1 of 1</span>
+                    <div class="pagination-btns">
+                        <button class="pagination-btn" onclick="changeReadingPage(-1)" id="readingPrevBtn">← Prev</button>
+                        <button class="pagination-btn" onclick="changeReadingPage(1)" id="readingNextBtn">Next →</button>
+                    </div>
                 </div>
                 <div class="panel-footer">
                     <button class="btn btn-primary" onclick="openBillingModal()" id="btnEnterReading" disabled>
@@ -498,21 +475,23 @@
                 </div>
             </div>
 
-            <!-- Panel 2: For Invoice (Readings computed but not printed) -->
+            <!-- Panel 2: For Invoice -->
             <div class="panel" id="panelForInvoice">
                 <div class="panel-header">
-                    <div class="panel-title">
-                        <span class="icon">📄</span> For Invoice
-                        <span class="badge orange" id="forInvoiceCount">0</span>
-                    </div>
+                    <div class="panel-title"><span class="icon">📄</span> For Invoice <span class="badge orange" id="forInvoiceCount">0</span></div>
                 </div>
                 <div class="panel-toolbar">
+                    <button class="filter-btn active" data-filter="all" onclick="setInvoiceFilter('all')">All</button>
+                    <button class="filter-btn" data-filter="thisMonth" onclick="setInvoiceFilter('thisMonth')">This Month</button>
+                    <button class="filter-btn" data-filter="backlog" onclick="setInvoiceFilter('backlog')" id="btnInvoiceBacklog">Backlog</button>
                     <input type="text" class="search-input" placeholder="Search..." id="searchForInvoice" oninput="renderForInvoicePanel()" style="flex:1;">
                 </div>
-                <div class="panel-body" id="forInvoiceList">
-                    <div class="empty-state">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        <p>No readings pending invoice</p>
+                <div class="panel-body" id="forInvoiceList"></div>
+                <div class="panel-pagination" id="invoicePagination">
+                    <span class="pagination-info" id="invoicePageInfo">Page 1 of 1</span>
+                    <div class="pagination-btns">
+                        <button class="pagination-btn" onclick="changeInvoicePage(-1)" id="invoicePrevBtn">← Prev</button>
+                        <button class="pagination-btn" onclick="changeInvoicePage(1)" id="invoiceNextBtn">Next →</button>
                     </div>
                 </div>
                 <div class="panel-footer">
@@ -520,22 +499,26 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                         Print Invoice
                     </button>
-                    <button class="btn btn-secondary" onclick="markAsPrinted()" id="btnMarkPrinted" disabled>Done</button>
+                    <button class="btn btn-secondary" onclick="markAsPrinted()" id="btnMarkPrinted" disabled>Mark Printed</button>
                 </div>
             </div>
 
             <!-- Panel 3: Pending Delivery -->
             <div class="panel" id="panelPending">
                 <div class="panel-header">
-                    <div class="panel-title">
-                        <span class="icon">📬</span> Pending Delivery
-                        <span class="badge green" id="pendingCount">0</span>
-                    </div>
+                    <div class="panel-title"><span class="icon">📬</span> Pending Delivery <span class="badge green" id="pendingCount">0</span></div>
                 </div>
-                <div class="panel-body" id="pendingList">
-                    <div class="empty-state">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
-                        <p>No pending deliveries</p>
+                <div class="panel-toolbar">
+                    <button class="filter-btn active" data-filter="all" onclick="setPendingFilter('all')">All</button>
+                    <button class="filter-btn" data-filter="unassigned" onclick="setPendingFilter('unassigned')">Unassigned</button>
+                    <button class="filter-btn" data-filter="assigned" onclick="setPendingFilter('assigned')">Assigned</button>
+                </div>
+                <div class="panel-body" id="pendingList"></div>
+                <div class="panel-pagination" id="pendingPagination">
+                    <span class="pagination-info" id="pendingPageInfo">Page 1 of 1</span>
+                    <div class="pagination-btns">
+                        <button class="pagination-btn" onclick="changePendingPage(-1)" id="pendingPrevBtn">← Prev</button>
+                        <button class="pagination-btn" onclick="changePendingPage(1)" id="pendingNextBtn">Next →</button>
                     </div>
                 </div>
                 <div class="panel-footer">
@@ -608,103 +591,46 @@
                 <div class="reading-section">
                     <div class="section-title">Reading Info</div>
                     <div class="reading-dates">
-                        <div class="form-field">
-                            <label class="field-label">Month</label>
-                            <select id="rdMonth" class="field-select">
-                                <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
-                                <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
-                                <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
-                                <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
-                            </select>
+                        <div class="form-field"><label class="field-label">Month</label>
+                            <select id="rdMonth" class="field-select"><option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option><option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option><option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option></select>
                         </div>
-                        <div class="form-field">
-                            <label class="field-label">Year</label>
-                            <input type="number" id="rdYear" class="field-input">
-                        </div>
-                        <div class="form-field">
-                            <label class="field-label">Present Date</label>
-                            <input type="date" id="rdPresentDate" class="field-input">
-                        </div>
-                        <div class="form-field">
-                            <label class="field-label">Previous Date</label>
-                            <input type="date" id="rdPreviousDate" class="field-input" disabled>
-                        </div>
+                        <div class="form-field"><label class="field-label">Year</label><input type="number" id="rdYear" class="field-input"></div>
+                        <div class="form-field"><label class="field-label">Present Date</label><input type="date" id="rdPresentDate" class="field-input"></div>
+                        <div class="form-field"><label class="field-label">Previous Date</label><input type="date" id="rdPreviousDate" class="field-input" disabled></div>
                     </div>
                 </div>
                 <div class="reading-section calculation-section">
                     <div class="section-title">B&W Meter Reading</div>
                     <div class="calculation-grid">
                         <div class="calc-row">
-                            <div class="form-field">
-                                <label class="field-label">Present Reading</label>
-                                <input type="number" id="rdPresentMeter" class="field-input highlight" oninput="calculateBilling()">
-                            </div>
-                            <div class="form-field">
-                                <label class="field-label">Quota</label>
-                                <input type="number" id="rdQuota" class="field-input" disabled>
-                            </div>
+                            <div class="form-field"><label class="field-label">Present Reading</label><input type="number" id="rdPresentMeter" class="field-input highlight" oninput="calculateBilling()"></div>
+                            <div class="form-field"><label class="field-label">Quota</label><input type="number" id="rdQuota" class="field-input" disabled></div>
                         </div>
                         <div class="calc-row">
-                            <div class="form-field">
-                                <label class="field-label">Previous Reading</label>
-                                <input type="number" id="rdPreviousMeter" class="field-input" disabled>
-                            </div>
-                            <div class="form-field">
-                                <label class="field-label">Page Rate</label>
-                                <input type="number" id="rdPageRate" class="field-input" step="0.01" disabled>
-                            </div>
+                            <div class="form-field"><label class="field-label">Previous Reading</label><input type="number" id="rdPreviousMeter" class="field-input" disabled></div>
+                            <div class="form-field"><label class="field-label">Page Rate</label><input type="number" id="rdPageRate" class="field-input" step="0.01" disabled></div>
                         </div>
                         <div class="calc-row">
-                            <div class="form-field">
-                                <label class="field-label">Gross Consumption</label>
-                                <input type="number" id="rdGrossTotal" class="field-input" disabled>
-                            </div>
-                            <div class="form-field">
-                                <label class="field-label">Exceed Rate</label>
-                                <input type="number" id="rdExceedRate" class="field-input" step="0.01" disabled>
-                            </div>
+                            <div class="form-field"><label class="field-label">Gross Consumption</label><input type="number" id="rdGrossTotal" class="field-input" disabled></div>
+                            <div class="form-field"><label class="field-label">Exceed Rate</label><input type="number" id="rdExceedRate" class="field-input" step="0.01" disabled></div>
                         </div>
                         <div class="calc-row">
-                            <div class="form-field spoilage-field">
-                                <input type="checkbox" id="rdSpoilage" checked onchange="calculateBilling()">
-                                <label for="rdSpoilage">Spoilage (2%)</label>
-                                <input type="number" id="rdSpoilageAmt" class="field-input small" disabled>
-                            </div>
-                            <div class="form-field">
-                                <label class="field-label">VAT (12%)</label>
-                                <input type="number" id="rdVat" class="field-input" step="0.01" disabled>
-                            </div>
+                            <div class="form-field spoilage-field"><input type="checkbox" id="rdSpoilage" checked onchange="calculateBilling()"><label for="rdSpoilage">Spoilage (2%)</label><input type="number" id="rdSpoilageAmt" class="field-input small" disabled></div>
+                            <div class="form-field"><label class="field-label">VAT (12%)</label><input type="number" id="rdVat" class="field-input" step="0.01" disabled></div>
                         </div>
                         <div class="calc-row">
-                            <div class="form-field">
-                                <label class="field-label">Net Consumption</label>
-                                <input type="number" id="rdNetConsumption" class="field-input" disabled>
-                            </div>
-                            <div class="form-field">
-                                <label class="field-label">Net Amount</label>
-                                <input type="number" id="rdNetAmount" class="field-input" step="0.01" disabled>
-                            </div>
+                            <div class="form-field"><label class="field-label">Net Consumption</label><input type="number" id="rdNetConsumption" class="field-input" disabled></div>
+                            <div class="form-field"><label class="field-label">Net Amount</label><input type="number" id="rdNetAmount" class="field-input" step="0.01" disabled></div>
                         </div>
                     </div>
                 </div>
                 <div class="reading-section totals-section">
                     <div class="totals-grid">
-                        <div class="form-field">
-                            <label class="field-label">Discount</label>
-                            <input type="number" id="rdDiscount" class="field-input" step="0.01" value="0" oninput="calculateBilling()">
-                        </div>
-                        <div class="total-display">
-                            <span class="total-label">Amount Due</span>
-                            <span class="total-value" id="rdAmountDue">₱0.00</span>
-                        </div>
+                        <div class="form-field"><label class="field-label">Discount</label><input type="number" id="rdDiscount" class="field-input" step="0.01" value="0" oninput="calculateBilling()"></div>
+                        <div class="total-display"><span class="total-label">Amount Due</span><span class="total-value" id="rdAmountDue">₱0.00</span></div>
                     </div>
                 </div>
-                <div class="reading-section">
-                    <div class="form-field">
-                        <label class="field-label">Remarks</label>
-                        <textarea id="rdRemarks" class="field-textarea" rows="2" placeholder="Optional remarks..."></textarea>
-                    </div>
-                </div>
+                <div class="reading-section"><div class="form-field"><label class="field-label">Remarks</label><textarea id="rdRemarks" class="field-textarea" rows="2" placeholder="Optional remarks..."></textarea></div></div>
             </div>
         </div>
         <div class="billing-modal-footer">
@@ -728,33 +654,33 @@
 
     <script>
     /**
-     * MARGA Billing Dashboard - 3-Panel Workflow
-     * Fixed data loading and overdue alerts
+     * MARGA Billing Dashboard - With Backlog Detection & Pagination
      */
 
-    // Global state
-    let billingData = {
-        contracts: [],
-        branches: {},      // Changed to object for faster lookup
-        companies: {},     // Changed to object for faster lookup
-        machines: {},      // Changed to object for faster lookup
-        models: {},
-        brands: {},
-        categories: {},
-        readings: [],
-        invoices: []
-    };
+    // Config
+    const ITEMS_PER_PAGE = 15;
+    const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const FIXED_RATE_CODES = ['RTF', 'RTC', 'MAT', 'STC', 'MAC', 'REF', 'RD', 'PI', 'OTH'];
 
+    // Global state
+    let billingData = { contracts: [], branches: {}, companies: {}, machines: {}, models: {}, categories: {}, readings: [], invoices: [] };
     let contractsWithInfo = [];
     let readingsForInvoice = [];
     let pendingDeliveries = [];
+    let backlogSummary = { unreadContracts: [], unprintedReadings: [], undeliveredInvoices: [] };
+    
     let selectedContract = null;
     let selectedReading = null;
-    let readingFilter = 'today';
     let currentInvoice = {};
 
-    // Fixed rate category codes
-    const FIXED_RATE_CODES = ['RTF', 'RTC', 'MAT', 'STC', 'MAC', 'REF', 'RD', 'PI', 'OTH'];
+    // Filters & Pagination
+    let readingFilter = 'today';
+    let invoiceFilter = 'all';
+    let pendingFilter = 'all';
+    let readingPage = 1, invoicePage = 1, pendingPage = 1;
+    let filteredReadingContracts = [];
+    let filteredInvoiceReadings = [];
+    let filteredPendingItems = [];
 
     function initFirebase() {
         if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
@@ -771,10 +697,13 @@
         document.getElementById('billingMonth').value = today.getMonth() + 1;
         
         await loadAllBillingData();
+        detectBacklogs();
         renderAllPanels();
-        checkOverdueAlert();
         
-        document.getElementById('billingDate').addEventListener('change', renderForReadingPanel);
+        document.getElementById('billingDate').addEventListener('change', () => {
+            readingPage = 1;
+            renderForReadingPanel();
+        });
     });
 
     function populateYearDropdowns() {
@@ -784,9 +713,7 @@
             const el = document.getElementById(id);
             if (el && el.tagName === 'SELECT') {
                 el.innerHTML = years.map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('');
-            } else if (el) {
-                el.value = currentYear;
-            }
+            } else if (el) el.value = currentYear;
         });
     }
 
@@ -804,73 +731,24 @@
                 db.collection('tbl_particulars').get()
             ]);
             
-            // Store contracts as array
             billingData.contracts = contractsSnap.docs.map(d => ({ docId: d.id, ...d.data() }));
             
-            // Store lookup tables as objects keyed by BOTH docId AND id field
-            billingData.branches = {};
-            branchesSnap.docs.forEach(d => {
-                const data = { docId: d.id, ...d.data() };
-                billingData.branches[d.id] = data;
-                if (data.id) billingData.branches[data.id] = data;
-            });
+            // Build lookup tables
+            branchesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.branches[d.id] = data; if (data.id) billingData.branches[data.id] = data; });
+            companiesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.companies[d.id] = data; if (data.id) billingData.companies[data.id] = data; });
+            machinesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.machines[d.id] = data; if (data.id) billingData.machines[data.id] = data; });
+            modelsSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.models[d.id] = data; if (data.id) billingData.models[data.id] = data; });
+            categoriesSnap.docs.forEach(d => { const data = { docId: d.id, ...d.data() }; billingData.categories[d.id] = data; if (data.id) billingData.categories[data.id] = data; });
             
-            billingData.companies = {};
-            companiesSnap.docs.forEach(d => {
-                const data = { docId: d.id, ...d.data() };
-                billingData.companies[d.id] = data;
-                if (data.id) billingData.companies[data.id] = data;
-            });
+            try { const snap = await db.collection('tbl_readings').get(); billingData.readings = snap.docs.map(d => ({ docId: d.id, ...d.data() })); } catch (e) { billingData.readings = []; }
+            try { const snap = await db.collection('tbl_invoices').get(); billingData.invoices = snap.docs.map(d => ({ docId: d.id, ...d.data() })); } catch (e) { billingData.invoices = []; }
             
-            billingData.machines = {};
-            machinesSnap.docs.forEach(d => {
-                const data = { docId: d.id, ...d.data() };
-                billingData.machines[d.id] = data;
-                if (data.id) billingData.machines[data.id] = data;
-            });
-            
-            billingData.models = {};
-            modelsSnap.docs.forEach(d => {
-                const data = { docId: d.id, ...d.data() };
-                billingData.models[d.id] = data;
-                if (data.id) billingData.models[data.id] = data;
-            });
-            
-            billingData.categories = {};
-            categoriesSnap.docs.forEach(d => {
-                const data = { docId: d.id, ...d.data() };
-                billingData.categories[d.id] = data;
-                if (data.id) billingData.categories[data.id] = data;
-            });
-            
-            // Load readings
-            try {
-                const readingsSnap = await db.collection('tbl_readings').get();
-                billingData.readings = readingsSnap.docs.map(d => ({ docId: d.id, ...d.data() }));
-            } catch (e) { billingData.readings = []; }
-            
-            // Load invoices
-            try {
-                const invoicesSnap = await db.collection('tbl_invoices').get();
-                billingData.invoices = invoicesSnap.docs.map(d => ({ docId: d.id, ...d.data() }));
-            } catch (e) { billingData.invoices = []; }
-            
-            console.log('Data loaded:', {
-                contracts: billingData.contracts.length,
-                branches: Object.keys(billingData.branches).length,
-                companies: Object.keys(billingData.companies).length,
-                machines: Object.keys(billingData.machines).length,
-                readings: billingData.readings.length,
-                invoices: billingData.invoices.length
-            });
+            console.log('Data loaded:', { contracts: billingData.contracts.length, readings: billingData.readings.length, invoices: billingData.invoices.length });
             
             buildContractsWithInfo();
-            loadReadingsForInvoice();
-            loadPendingDeliveries();
-            
             showToast('Data loaded!', 'success');
         } catch (error) {
-            console.error('Error loading data:', error);
+            console.error('Error:', error);
             showToast('Error: ' + error.message, 'error');
         }
     }
@@ -882,114 +760,133 @@
         const todayDay = today.getDate();
         
         contractsWithInfo = billingData.contracts.map(contract => {
-            // Lookup using contract_id for branch (contract_id = branch_id in the old system)
             const branch = billingData.branches[contract.contract_id] || billingData.branches[contract.branch_id] || null;
             const company = branch ? (billingData.companies[branch.company_id] || null) : null;
             const machine = billingData.machines[contract.mach_id] || billingData.machines[contract.machine_id] || null;
             const model = machine ? (billingData.models[machine.model_id] || null) : null;
             const category = billingData.categories[contract.category_id] || null;
             
-            // Extract reading day
             let readingDay = 0;
             if (contract.reading_date) {
                 const rdStr = String(contract.reading_date);
-                if (rdStr.includes('-')) {
-                    const parts = rdStr.split('-');
-                    if (parts.length === 3) readingDay = parseInt(parts[2]) || 0;
-                } else {
-                    readingDay = parseInt(rdStr) || 0;
+                if (rdStr.includes('-')) { const parts = rdStr.split('-'); if (parts.length === 3) readingDay = parseInt(parts[2]) || 0; }
+                else readingDay = parseInt(rdStr) || 0;
+            }
+            
+            const categoryCode = (category?.particular_code || category?.code || category?.particular || 'N/A').toUpperCase();
+            const isFixedRate = FIXED_RATE_CODES.includes(categoryCode);
+            
+            // Check billing status for each month (current and past 3 months)
+            const billingHistory = {};
+            for (let m = 0; m < 4; m++) {
+                let checkMonth = currentMonth - m;
+                let checkYear = currentYear;
+                if (checkMonth <= 0) { checkMonth += 12; checkYear--; }
+                
+                const billed = billingData.readings.some(r => 
+                    (r.contract_id == contract.id || r.contract_id == contract.docId) && 
+                    r.billing_month == checkMonth && r.billing_year == checkYear
+                );
+                billingHistory[`${checkYear}-${checkMonth}`] = billed;
+            }
+            
+            const billedThisMonth = billingHistory[`${currentYear}-${currentMonth}`];
+            const isOverdue = readingDay > 0 && readingDay < todayDay && !billedThisMonth;
+            
+            // Check for backlog (unbilled previous months)
+            let backlogMonths = [];
+            for (let m = 1; m <= 3; m++) {
+                let checkMonth = currentMonth - m;
+                let checkYear = currentYear;
+                if (checkMonth <= 0) { checkMonth += 12; checkYear--; }
+                if (!billingHistory[`${checkYear}-${checkMonth}`]) {
+                    backlogMonths.push({ month: checkMonth, year: checkYear, label: `${MONTHS[checkMonth]} ${checkYear}` });
                 }
             }
             
-            // Check if billed this month
-            const billedThisMonth = billingData.readings.some(r => 
-                (r.contract_id == contract.id || r.contract_id == contract.docId) && 
-                r.billing_month == currentMonth && 
-                r.billing_year == currentYear
-            );
-            
-            // Category info
-            const categoryCode = category?.particular_code || category?.code || category?.particular || 'N/A';
-            const isFixedRate = FIXED_RATE_CODES.includes(categoryCode.toUpperCase());
-            
-            // Check if overdue (reading day passed this month and not billed)
-            const isOverdue = readingDay > 0 && readingDay < todayDay && !billedThisMonth;
-            
             return {
-                ...contract,
-                branch,
-                company,
-                machine,
-                model,
-                category,
-                categoryCode: categoryCode.toUpperCase(),
-                readingDay,
-                billedThisMonth,
-                isFixedRate,
-                isOverdue,
+                ...contract, branch, company, machine, model, category, categoryCode, readingDay, billedThisMonth, isFixedRate, isOverdue, backlogMonths, hasBacklog: backlogMonths.length > 0,
                 monthlyRate: parseFloat(contract.monthly_rate) || 0,
                 quota: parseFloat(contract.monthly_quota) || 0,
                 pageRate: parseFloat(contract.page_rate) || 0,
                 startingMeter: parseFloat(contract.starting_meter) || parseFloat(contract.b_meter) || 0
             };
         });
-        
-        console.log('Sample enriched contract:', contractsWithInfo[0]);
     }
 
-    function loadReadingsForInvoice() {
-        // Readings that are computed (status = 'pending') but not yet printed (printed = false or null)
-        readingsForInvoice = billingData.readings.filter(r => 
-            r.status === 'pending' && !r.printed
-        );
-        console.log('Readings for invoice:', readingsForInvoice.length);
-    }
-
-    function loadPendingDeliveries() {
-        // Combine readings with status 'printed' or invoices with various delivery statuses
-        pendingDeliveries = [];
+    function detectBacklogs() {
+        const today = new Date();
+        const currentMonth = today.getMonth() + 1;
+        const currentYear = today.getFullYear();
         
-        // From readings - printed but not delivered
-        billingData.readings.forEach(r => {
-            if (r.printed && r.status !== 'delivered' && r.status !== 'paid') {
-                pendingDeliveries.push({
-                    ...r,
-                    type: 'reading',
-                    deliveryStatus: r.assigned_to ? 'assigned' : 'pending'
-                });
-            }
+        // 1. Contracts with unbilled previous months
+        backlogSummary.unreadContracts = contractsWithInfo.filter(c => c.hasBacklog);
+        
+        // 2. Readings not printed (from previous months)
+        backlogSummary.unprintedReadings = billingData.readings.filter(r => {
+            if (r.printed) return false;
+            if (r.billing_year < currentYear) return true;
+            if (r.billing_year === currentYear && r.billing_month < currentMonth) return true;
+            return false;
         });
         
-        // From invoices collection
+        // 3. Invoices/Readings pending delivery
+        backlogSummary.undeliveredInvoices = billingData.readings.filter(r => {
+            if (r.status === 'delivered' || r.status === 'paid') return false;
+            if (r.printed && r.status !== 'delivered') return true;
+            return false;
+        });
+        
+        // Also check invoices collection
         billingData.invoices.forEach(inv => {
             if (inv.status === 'pending_delivery' || inv.status === 'assigned' || inv.status === 'for_delivery') {
-                pendingDeliveries.push({
-                    ...inv,
-                    type: 'invoice',
-                    deliveryStatus: inv.assigned_to ? 'assigned' : 'pending'
-                });
+                backlogSummary.undeliveredInvoices.push(inv);
             }
         });
         
-        console.log('Pending deliveries:', pendingDeliveries.length);
+        // Show backlog alert if any backlogs found
+        const totalBacklog = backlogSummary.unreadContracts.length + backlogSummary.unprintedReadings.length + backlogSummary.undeliveredInvoices.length;
+        
+        if (totalBacklog > 0) {
+            showBacklogAlert();
+        }
+        
+        console.log('Backlog Summary:', backlogSummary);
     }
 
-    function checkOverdueAlert() {
-        const overdueCount = contractsWithInfo.filter(c => c.isOverdue).length;
-        const alertBanner = document.getElementById('alertBanner');
-        const btnOverdue = document.getElementById('btnOverdue');
+    function showBacklogAlert() {
+        const alert = document.getElementById('backlogAlert');
+        const itemsDiv = document.getElementById('backlogItems');
         
-        if (overdueCount > 0) {
-            alertBanner.classList.add('show');
-            document.getElementById('alertDesc').textContent = 
-                `${overdueCount} contract${overdueCount > 1 ? 's are' : ' is'} past their reading day this month and need immediate billing!`;
-            btnOverdue.classList.add('alert');
-            btnOverdue.textContent = `Overdue (${overdueCount})`;
-        } else {
-            alertBanner.classList.remove('show');
-            btnOverdue.classList.remove('alert');
-            btnOverdue.textContent = 'Overdue';
+        let html = '';
+        
+        if (backlogSummary.unreadContracts.length > 0) {
+            html += `<div class="backlog-item" onclick="setReadingFilter('backlog')">
+                <div class="backlog-item-count">${backlogSummary.unreadContracts.length}</div>
+                <div class="backlog-item-label">Unbilled from Oct/Nov</div>
+            </div>`;
         }
+        
+        if (backlogSummary.unprintedReadings.length > 0) {
+            html += `<div class="backlog-item" onclick="setInvoiceFilter('backlog')">
+                <div class="backlog-item-count">${backlogSummary.unprintedReadings.length}</div>
+                <div class="backlog-item-label">Unprinted Invoices</div>
+            </div>`;
+        }
+        
+        if (backlogSummary.undeliveredInvoices.length > 0) {
+            html += `<div class="backlog-item" onclick="setPendingFilter('all')">
+                <div class="backlog-item-count">${backlogSummary.undeliveredInvoices.length}</div>
+                <div class="backlog-item-label">Pending Delivery</div>
+            </div>`;
+        }
+        
+        itemsDiv.innerHTML = html;
+        alert.classList.add('show');
+    }
+
+    function dismissBacklogAlert() {
+        document.getElementById('backlogAlert').classList.remove('show');
     }
 
     function renderAllPanels() {
@@ -1006,30 +903,25 @@
         const todayDay = selectedDate.getDate();
         const search = (document.getElementById('searchReading')?.value || '').toLowerCase();
         
-        let filtered = contractsWithInfo.filter(c => {
-            // Search filter
+        // Filter contracts
+        filteredReadingContracts = contractsWithInfo.filter(c => {
             if (search) {
                 const companyName = c.company?.companyname || '';
                 const serial = c.machine?.serial || c.xserial || '';
                 const branchName = c.branch?.branchname || '';
-                if (!companyName.toLowerCase().includes(search) && 
-                    !serial.toLowerCase().includes(search) &&
-                    !branchName.toLowerCase().includes(search)) {
-                    return false;
-                }
+                if (!companyName.toLowerCase().includes(search) && !serial.toLowerCase().includes(search) && !branchName.toLowerCase().includes(search)) return false;
             }
             
-            // Day filter
-            if (readingFilter === 'today') {
-                return c.readingDay === todayDay;
-            } else if (readingFilter === 'overdue') {
-                return c.isOverdue;
-            }
+            if (readingFilter === 'today') return c.readingDay === todayDay;
+            if (readingFilter === 'overdue') return c.isOverdue;
+            if (readingFilter === 'backlog') return c.hasBacklog;
             return true;
         });
         
-        // Sort: overdue first, then unbilled, then by reading day
-        filtered.sort((a, b) => {
+        // Sort
+        filteredReadingContracts.sort((a, b) => {
+            if (a.hasBacklog && !b.hasBacklog) return -1;
+            if (!a.hasBacklog && b.hasBacklog) return 1;
             if (a.isOverdue && !b.isOverdue) return -1;
             if (!a.isOverdue && b.isOverdue) return 1;
             if (!a.billedThisMonth && b.billedThisMonth) return -1;
@@ -1037,38 +929,48 @@
             return (a.readingDay || 99) - (b.readingDay || 99);
         });
         
-        document.getElementById('forReadingCount').textContent = filtered.length;
+        // Update UI
+        const totalCount = filteredReadingContracts.length;
+        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+        if (readingPage > totalPages) readingPage = totalPages;
+        
+        document.getElementById('forReadingCount').textContent = totalCount;
+        document.getElementById('readingPageInfo').textContent = `Page ${readingPage} of ${totalPages} (${totalCount} items)`;
+        document.getElementById('readingPrevBtn').disabled = readingPage <= 1;
+        document.getElementById('readingNextBtn').disabled = readingPage >= totalPages;
+        
+        // Get current page items
+        const startIdx = (readingPage - 1) * ITEMS_PER_PAGE;
+        const pageItems = filteredReadingContracts.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+        
         const list = document.getElementById('forReadingList');
         
-        if (filtered.length === 0) {
-            list.innerHTML = `<div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
-                <p>No contracts found</p>
-            </div>`;
+        if (pageItems.length === 0) {
+            list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg><p>No contracts found</p></div>`;
             return;
         }
         
-        list.innerHTML = filtered.map(c => {
+        list.innerHTML = pageItems.map(c => {
             const isToday = c.readingDay === todayDay;
             const companyName = c.company?.companyname || 'Unknown Company';
             const branchName = c.branch?.branchname || '';
-            const modelName = c.model?.modelname || c.machine?.description || 'N/A';
+            const modelName = c.model?.modelname || c.machine?.description || '';
             const serial = c.machine?.serial || c.xserial || 'N/A';
             
-            let itemClass = '';
-            if (c.isOverdue) itemClass = 'overdue';
-            else if (c.billedThisMonth) itemClass = 'done';
-            else if (c.isFixedRate) itemClass = 'fixed-rate';
+            let itemClass = c.hasBacklog ? 'backlog' : (c.isOverdue ? 'overdue' : (c.billedThisMonth ? 'done' : (c.isFixedRate ? 'fixed-rate' : '')));
+            let rdClass = c.hasBacklog ? 'backlog' : (isToday ? 'today' : (c.isOverdue ? 'overdue' : ''));
+            
+            let metaHtml = `<span>${escapeHtml(serial)}</span>`;
+            if (c.hasBacklog && c.backlogMonths.length > 0) {
+                metaHtml += ` <span class="month-tag">${c.backlogMonths[0].label}</span>`;
+            }
             
             return `
                 <div class="contract-item ${itemClass}" onclick="selectContract('${c.docId || c.id}')" data-id="${c.docId || c.id}">
-                    <div class="rd-day ${isToday ? 'today' : ''} ${c.isOverdue ? 'overdue' : ''}">${c.readingDay || '-'}</div>
+                    <div class="rd-day ${rdClass}">${c.readingDay || '-'}</div>
                     <div class="contract-info">
                         <div class="client-name">${escapeHtml(companyName)}</div>
-                        <div class="contract-meta">
-                            <span>${escapeHtml(branchName || modelName)}</span>
-                            <span>${escapeHtml(serial)}</span>
-                        </div>
+                        <div class="contract-meta">${metaHtml}</div>
                     </div>
                     <div class="contract-badges">
                         <span class="type-badge ${c.categoryCode.toLowerCase()}">${c.categoryCode}</span>
@@ -1078,66 +980,143 @@
                 </div>
             `;
         }).join('');
+        
+        // Update overdue button
+        const overdueCount = contractsWithInfo.filter(c => c.isOverdue).length;
+        const btnOverdue = document.getElementById('btnOverdue');
+        if (overdueCount > 0) { btnOverdue.classList.add('alert'); btnOverdue.textContent = `Overdue (${overdueCount})`; }
+        else { btnOverdue.classList.remove('alert'); btnOverdue.textContent = 'Overdue'; }
+        
+        // Update backlog button
+        const backlogCount = contractsWithInfo.filter(c => c.hasBacklog).length;
+        const btnBacklog = document.getElementById('btnBacklog');
+        if (backlogCount > 0) { btnBacklog.classList.add('alert'); btnBacklog.textContent = `Backlog (${backlogCount})`; }
+        else { btnBacklog.classList.remove('alert'); btnBacklog.textContent = 'Backlog'; }
     }
 
     function renderForInvoicePanel() {
         const search = (document.getElementById('searchForInvoice')?.value || '').toLowerCase();
+        const today = new Date();
+        const currentMonth = today.getMonth() + 1;
+        const currentYear = today.getFullYear();
         
-        let filtered = readingsForInvoice.filter(r => {
+        // Get readings that need invoice/printing
+        filteredInvoiceReadings = billingData.readings.filter(r => {
+            if (r.printed) return false; // Already printed
+            if (r.status === 'delivered' || r.status === 'paid') return false;
+            
             if (search) {
                 const name = r.company_name || '';
-                return name.toLowerCase().includes(search);
+                if (!name.toLowerCase().includes(search)) return false;
+            }
+            
+            if (invoiceFilter === 'thisMonth') {
+                return r.billing_month == currentMonth && r.billing_year == currentYear;
+            }
+            if (invoiceFilter === 'backlog') {
+                if (r.billing_year < currentYear) return true;
+                if (r.billing_year == currentYear && r.billing_month < currentMonth) return true;
+                return false;
             }
             return true;
         });
         
-        document.getElementById('forInvoiceCount').textContent = filtered.length;
-        document.getElementById('btnPrint').disabled = true;
-        document.getElementById('btnMarkPrinted').disabled = filtered.length === 0;
+        // Sort by date (oldest first for backlog)
+        filteredInvoiceReadings.sort((a, b) => {
+            const dateA = (a.billing_year * 100) + a.billing_month;
+            const dateB = (b.billing_year * 100) + b.billing_month;
+            return dateA - dateB;
+        });
+        
+        const totalCount = filteredInvoiceReadings.length;
+        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+        if (invoicePage > totalPages) invoicePage = totalPages;
+        
+        document.getElementById('forInvoiceCount').textContent = totalCount;
+        document.getElementById('invoicePageInfo').textContent = `Page ${invoicePage} of ${totalPages} (${totalCount} items)`;
+        document.getElementById('invoicePrevBtn').disabled = invoicePage <= 1;
+        document.getElementById('invoiceNextBtn').disabled = invoicePage >= totalPages;
+        document.getElementById('btnMarkPrinted').disabled = totalCount === 0;
+        
+        const startIdx = (invoicePage - 1) * ITEMS_PER_PAGE;
+        const pageItems = filteredInvoiceReadings.slice(startIdx, startIdx + ITEMS_PER_PAGE);
         
         const list = document.getElementById('forInvoiceList');
         
-        if (filtered.length === 0) {
-            list.innerHTML = `<div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                <p>No readings pending print</p>
-            </div>`;
+        if (pageItems.length === 0) {
+            list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p>No readings pending print</p></div>`;
             return;
         }
         
-        list.innerHTML = filtered.map(r => {
-            const contract = contractsWithInfo.find(c => c.id == r.contract_id || c.docId == r.contract_id);
-            const companyName = r.company_name || contract?.company?.companyname || 'Unknown';
+        list.innerHTML = pageItems.map(r => {
+            const companyName = r.company_name || 'Unknown';
             const invoiceNum = r.invoice_number || 'Pending';
             const amount = r.amount_due || 0;
+            const monthLabel = `${MONTHS[r.billing_month]} ${r.billing_year}`;
+            const isBacklog = r.billing_year < currentYear || (r.billing_year == currentYear && r.billing_month < currentMonth);
             
             return `
                 <div class="reading-item" onclick="selectReadingForPrint('${r.docId}')" data-id="${r.docId}">
                     <div class="reading-info">
                         <div class="reading-client">${escapeHtml(companyName)}</div>
-                        <div class="reading-meta">Invoice: ${escapeHtml(invoiceNum)} | Cons: ${r.net_consumption || 0}</div>
+                        <div class="reading-meta">#${escapeHtml(invoiceNum)} | ${monthLabel} ${isBacklog ? '<span class="status-badge old">BACKLOG</span>' : ''}</div>
                     </div>
                     <div class="reading-amount">₱${amount.toLocaleString()}</div>
                 </div>
             `;
         }).join('');
+        
+        // Update backlog button
+        const backlogInvoiceCount = backlogSummary.unprintedReadings.length;
+        const btnInvoiceBacklog = document.getElementById('btnInvoiceBacklog');
+        if (backlogInvoiceCount > 0) { btnInvoiceBacklog.classList.add('alert'); btnInvoiceBacklog.textContent = `Backlog (${backlogInvoiceCount})`; }
+        else { btnInvoiceBacklog.classList.remove('alert'); btnInvoiceBacklog.textContent = 'Backlog'; }
     }
 
     function renderPendingPanel() {
-        document.getElementById('pendingCount').textContent = pendingDeliveries.length;
-        document.getElementById('btnAssign').disabled = pendingDeliveries.length === 0;
+        // Combine all pending deliveries
+        filteredPendingItems = [];
+        
+        billingData.readings.forEach(r => {
+            if (r.printed && r.status !== 'delivered' && r.status !== 'paid') {
+                filteredPendingItems.push({ ...r, type: 'reading', deliveryStatus: r.assigned_to ? 'assigned' : 'pending' });
+            }
+        });
+        
+        billingData.invoices.forEach(inv => {
+            if (inv.status === 'pending_delivery' || inv.status === 'assigned' || inv.status === 'for_delivery') {
+                filteredPendingItems.push({ ...inv, type: 'invoice', deliveryStatus: inv.assigned_to ? 'assigned' : 'pending' });
+            }
+        });
+        
+        // Apply filter
+        if (pendingFilter === 'unassigned') {
+            filteredPendingItems = filteredPendingItems.filter(i => !i.assigned_to);
+        } else if (pendingFilter === 'assigned') {
+            filteredPendingItems = filteredPendingItems.filter(i => i.assigned_to);
+        }
+        
+        const totalCount = filteredPendingItems.length;
+        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
+        if (pendingPage > totalPages) pendingPage = totalPages;
+        
+        document.getElementById('pendingCount').textContent = totalCount;
+        document.getElementById('pendingPageInfo').textContent = `Page ${pendingPage} of ${totalPages} (${totalCount} items)`;
+        document.getElementById('pendingPrevBtn').disabled = pendingPage <= 1;
+        document.getElementById('pendingNextBtn').disabled = pendingPage >= totalPages;
+        document.getElementById('btnAssign').disabled = totalCount === 0;
+        
+        const startIdx = (pendingPage - 1) * ITEMS_PER_PAGE;
+        const pageItems = filteredPendingItems.slice(startIdx, startIdx + ITEMS_PER_PAGE);
         
         const list = document.getElementById('pendingList');
         
-        if (pendingDeliveries.length === 0) {
-            list.innerHTML = `<div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
-                <p>No pending deliveries</p>
-            </div>`;
+        if (pageItems.length === 0) {
+            list.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg><p>No pending deliveries</p></div>`;
             return;
         }
         
-        list.innerHTML = pendingDeliveries.map(inv => {
+        list.innerHTML = pageItems.map(inv => {
             const createdAt = inv.created_at?.toDate?.() || new Date(inv.created_at || Date.now());
             const age = Math.floor((Date.now() - createdAt) / (1000 * 60 * 60 * 24));
             let statusClass = inv.deliveryStatus === 'assigned' ? 'assigned' : (age > 7 ? 'old' : 'pending');
@@ -1151,8 +1130,7 @@
                 <div class="invoice-item" data-id="${inv.docId}">
                     <div class="invoice-info">
                         <div class="invoice-num">${escapeHtml(invoiceNum)}</div>
-                        <div class="invoice-client">${escapeHtml(companyName)}</div>
-                        <span class="status-badge ${statusClass}">${assignedTo ? `📦 ${assignedTo}` : `${age}d ago`}</span>
+                        <div class="invoice-client">${escapeHtml(companyName)} <span class="status-badge ${statusClass}">${assignedTo || `${age}d`}</span></div>
                     </div>
                     <div class="invoice-amount">₱${amount.toLocaleString()}</div>
                 </div>
@@ -1164,33 +1142,45 @@
         const today = new Date();
         const todayDay = today.getDate();
         
-        const forToday = contractsWithInfo.filter(c => c.readingDay === todayDay && !c.billedThisMonth).length;
-        const overdue = contractsWithInfo.filter(c => c.isOverdue).length;
-        const forInvoice = readingsForInvoice.length;
-        const pending = pendingDeliveries.length;
-        
-        document.getElementById('statToday').textContent = forToday;
-        document.getElementById('statOverdue').textContent = overdue;
-        document.getElementById('statForInvoice').textContent = forInvoice;
-        document.getElementById('statPending').textContent = pending;
-        
-        // Hide/show overdue card
-        const overdueCard = document.getElementById('statOverdueCard');
-        if (overdue === 0) {
-            overdueCard.classList.remove('danger');
-            overdueCard.classList.add('success');
-        }
+        document.getElementById('statToday').textContent = contractsWithInfo.filter(c => c.readingDay === todayDay && !c.billedThisMonth).length;
+        document.getElementById('statOverdue').textContent = contractsWithInfo.filter(c => c.isOverdue).length;
+        document.getElementById('statBacklog').textContent = contractsWithInfo.filter(c => c.hasBacklog).length;
+        document.getElementById('statForInvoice').textContent = billingData.readings.filter(r => !r.printed && r.status !== 'delivered' && r.status !== 'paid').length;
+        document.getElementById('statPending').textContent = filteredPendingItems.length;
     }
 
+    // Pagination handlers
+    function changeReadingPage(delta) { readingPage += delta; renderForReadingPanel(); }
+    function changeInvoicePage(delta) { invoicePage += delta; renderForInvoicePanel(); }
+    function changePendingPage(delta) { pendingPage += delta; renderPendingPanel(); }
+
+    // Filter handlers
     function setReadingFilter(filter) {
         readingFilter = filter;
-        document.querySelectorAll('#panelForReading .filter-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.filter === filter);
-            if (btn.dataset.filter === 'overdue' && btn.classList.contains('alert')) {
-                // Keep alert class
+        readingPage = 1;
+        document.querySelectorAll('#panelForReading .panel-toolbar .filter-btn').forEach(btn => {
+            const isActive = btn.dataset.filter === filter;
+            btn.classList.toggle('active', isActive);
+            // Preserve alert class for overdue/backlog
+            if (btn.dataset.filter === 'overdue' || btn.dataset.filter === 'backlog') {
+                // Keep alert if it has it
             }
         });
         renderForReadingPanel();
+    }
+
+    function setInvoiceFilter(filter) {
+        invoiceFilter = filter;
+        invoicePage = 1;
+        document.querySelectorAll('#panelForInvoice .panel-toolbar .filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
+        renderForInvoicePanel();
+    }
+
+    function setPendingFilter(filter) {
+        pendingFilter = filter;
+        pendingPage = 1;
+        document.querySelectorAll('#panelPending .panel-toolbar .filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
+        renderPendingPanel();
     }
 
     function setQuickFilter(filter) {
@@ -1199,52 +1189,51 @@
         
         if (filter === 'today') setReadingFilter('today');
         else if (filter === 'overdue') setReadingFilter('overdue');
-        else if (filter === 'forInvoice') document.getElementById('panelForInvoice').scrollIntoView({ behavior: 'smooth' });
-        else if (filter === 'pending') document.getElementById('panelPending').scrollIntoView({ behavior: 'smooth' });
+        else if (filter === 'backlog') setReadingFilter('backlog');
+        else if (filter === 'forInvoice') { setInvoiceFilter('all'); document.getElementById('panelForInvoice').scrollIntoView({ behavior: 'smooth' }); }
+        else if (filter === 'pending') { setPendingFilter('all'); document.getElementById('panelPending').scrollIntoView({ behavior: 'smooth' }); }
     }
+
 
     function selectContract(contractId) {
         selectedContract = contractsWithInfo.find(c => c.docId == contractId || c.id == contractId);
-        if (!selectedContract) {
-            showToast('Contract not found', 'error');
-            return;
-        }
+        if (!selectedContract) { showToast('Contract not found', 'error'); return; }
         
-        document.querySelectorAll('#forReadingList .contract-item').forEach(el => {
-            el.classList.toggle('selected', el.dataset.id == contractId);
-        });
-        
+        document.querySelectorAll('#forReadingList .contract-item').forEach(el => el.classList.toggle('selected', el.dataset.id == contractId));
         document.getElementById('btnEnterReading').disabled = false;
     }
 
     function selectReadingForPrint(docId) {
-        selectedReading = readingsForInvoice.find(r => r.docId === docId);
-        
-        document.querySelectorAll('#forInvoiceList .reading-item').forEach(el => {
-            el.classList.toggle('selected', el.dataset.id === docId);
-        });
-        
+        selectedReading = filteredInvoiceReadings.find(r => r.docId === docId);
+        document.querySelectorAll('#forInvoiceList .reading-item').forEach(el => el.classList.toggle('selected', el.dataset.id === docId));
         document.getElementById('btnPrint').disabled = !selectedReading;
     }
 
     function openBillingModal() {
-        if (!selectedContract) {
-            showToast('Please select a contract first', 'error');
-            return;
-        }
-        
-        if (selectedContract.billedThisMonth) {
-            if (!confirm('This contract was already billed this month. Create another?')) return;
-        }
+        if (!selectedContract) { showToast('Please select a contract first', 'error'); return; }
+        if (selectedContract.billedThisMonth && !confirm('Already billed this month. Create another?')) return;
         
         const c = selectedContract;
+        let backlogInfo = '';
+        if (c.hasBacklog && c.backlogMonths.length > 0) {
+            backlogInfo = `<div style="background:#fef3c7;padding:0.5rem;border-radius:6px;margin-top:0.5rem;font-size:0.75rem;color:#92400e;">⚠️ Has backlog: ${c.backlogMonths.map(m => m.label).join(', ')}</div>`;
+        }
+        
         document.getElementById('selectedContractInfo').innerHTML = `
             <div style="padding:0.75rem;background:#f8fafc;border-radius:8px;margin-bottom:1rem;">
                 <div style="font-weight:700;color:#1e3a5f;">${escapeHtml(c.company?.companyname || 'Unknown')}</div>
                 <div style="font-size:0.8rem;color:#64748b;">${escapeHtml(c.branch?.branchname || '')} | ${c.categoryCode} | ₱${c.monthlyRate.toLocaleString()}/mo</div>
                 <div style="font-size:0.75rem;color:#94a3b8;">${escapeHtml(c.model?.modelname || '')} | ${escapeHtml(c.machine?.serial || '')}</div>
+                ${backlogInfo}
             </div>
         `;
+        
+        // If backlog, suggest billing for the oldest unbilled month
+        if (c.hasBacklog && c.backlogMonths.length > 0) {
+            const oldest = c.backlogMonths[c.backlogMonths.length - 1];
+            document.getElementById('billingMonth').value = oldest.month;
+            document.getElementById('billingYear').value = oldest.year;
+        }
         
         document.getElementById('invoiceNumber').value = '';
         document.getElementById('invoiceModalOverlay').classList.add('visible');
@@ -1259,10 +1248,7 @@
 
     function proceedToReading() {
         const invoiceNumber = document.getElementById('invoiceNumber').value.trim();
-        if (!invoiceNumber) {
-            showToast('Please enter invoice number', 'error');
-            return;
-        }
+        if (!invoiceNumber) { showToast('Please enter invoice number', 'error'); return; }
         
         currentInvoice = {
             invoiceNumber,
@@ -1273,7 +1259,6 @@
         closeInvoiceModal();
         openReadingModal();
     }
-
 
     async function openReadingModal() {
         const c = selectedContract;
@@ -1329,52 +1314,32 @@
         const contractId = selectedContract.id || selectedContract.docId;
         const machineId = selectedContract.mach_id || selectedContract.machine_id;
         
-        // Check tbl_readings first
         try {
-            const snap = await db.collection('tbl_readings')
-                .where('contract_id', '==', contractId)
-                .orderBy('created_at', 'desc')
-                .limit(1)
-                .get();
-            
+            const snap = await db.collection('tbl_readings').where('contract_id', '==', contractId).orderBy('created_at', 'desc').limit(1).get();
             if (!snap.empty) {
                 const r = snap.docs[0].data();
                 document.getElementById('rdPreviousMeter').value = r.present_reading || 0;
                 if (r.present_date) document.getElementById('rdPreviousDate').value = r.present_date;
                 return;
             }
-        } catch (e) { console.log('Readings query:', e.message); }
+        } catch (e) { }
         
-        // Check tbl_machinereading
         try {
-            let snap = await db.collection('tbl_machinereading')
-                .where('current_contract', '==', parseInt(contractId))
-                .orderBy('date_red', 'desc')
-                .limit(1)
-                .get();
-            
-            if (snap.empty && machineId) {
-                snap = await db.collection('tbl_machinereading')
-                    .where('machine_id', '==', parseInt(machineId))
-                    .orderBy('date_red', 'desc')
-                    .limit(1)
-                    .get();
-            }
-            
+            let snap = await db.collection('tbl_machinereading').where('current_contract', '==', parseInt(contractId)).orderBy('date_red', 'desc').limit(1).get();
+            if (snap.empty && machineId) snap = await db.collection('tbl_machinereading').where('machine_id', '==', parseInt(machineId)).orderBy('date_red', 'desc').limit(1).get();
             if (!snap.empty) {
                 const r = snap.docs[0].data();
                 document.getElementById('rdPreviousMeter').value = r.meter_reading || 0;
                 if (r.date_red) document.getElementById('rdPreviousDate').value = r.date_red;
                 return;
             }
-        } catch (e) { console.log('Machine readings query:', e.message); }
+        } catch (e) { }
         
-        // Fallback
         document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
     }
 
     async function loadPreviousReading() {
-        showToast('Loading previous reading...');
+        showToast('Loading...');
         await fetchPreviousReading();
         showToast('Loaded!', 'success');
     }
@@ -1393,12 +1358,7 @@
         const spoilage = applySpoilage && gross > 0 ? Math.round(gross * 0.02) : 0;
         const net = gross - spoilage;
         
-        let amount = 0;
-        if (quota > 0) {
-            amount = net <= quota ? quota * pageRate : (quota * pageRate) + ((net - quota) * exceedRate);
-        } else {
-            amount = net * pageRate;
-        }
+        let amount = quota > 0 ? (net <= quota ? quota * pageRate : (quota * pageRate) + ((net - quota) * exceedRate)) : net * pageRate;
         
         let vat = 0, netAmt = amount;
         if (isVat) { netAmt = amount / 1.12; vat = amount - netAmt; }
@@ -1429,16 +1389,13 @@
     }
 
     async function confirmBilling() {
-        if (!currentInvoice.amountDue && currentInvoice.amountDue !== 0) {
-            showToast('Please complete billing calculation', 'error');
-            return;
-        }
+        if (!currentInvoice.amountDue && currentInvoice.amountDue !== 0) { showToast('Please complete billing calculation', 'error'); return; }
         
         try {
             const db = firebase.firestore();
             const c = selectedContract;
             
-            const data = {
+            await db.collection('tbl_readings').add({
                 contract_id: c.id || c.docId,
                 company_name: c.company?.companyname || '',
                 branch_name: c.branch?.branchname || '',
@@ -1463,65 +1420,43 @@
                 created_at: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'pending',
                 printed: false
-            };
+            });
             
-            await db.collection('tbl_readings').add(data);
             showToast('Billing saved!', 'success');
             closeReadingModal();
-            
             selectedContract = null;
             document.getElementById('btnEnterReading').disabled = true;
             
             await loadAllBillingData();
+            detectBacklogs();
             renderAllPanels();
-            checkOverdueAlert();
-            
         } catch (e) {
             console.error('Error:', e);
             showToast('Error: ' + e.message, 'error');
         }
     }
 
-    async function printSelectedInvoice() {
-        if (!selectedReading) return;
-        showToast('Opening print preview...');
-        // TODO: Implement print preview
-        window.print();
-    }
+    async function printSelectedInvoice() { if (!selectedReading) return; showToast('Print preview coming soon...'); }
 
     async function markAsPrinted() {
-        if (readingsForInvoice.length === 0) return;
-        
-        if (!confirm(`Mark ${readingsForInvoice.length} reading(s) as printed?`)) return;
+        const toPrint = filteredInvoiceReadings.slice(0, 15); // Current page
+        if (toPrint.length === 0) return;
+        if (!confirm(`Mark ${toPrint.length} reading(s) as printed?`)) return;
         
         const db = firebase.firestore();
         const batch = db.batch();
-        
-        readingsForInvoice.forEach(r => {
-            batch.update(db.collection('tbl_readings').doc(r.docId), { printed: true, status: 'printed' });
-        });
+        toPrint.forEach(r => batch.update(db.collection('tbl_readings').doc(r.docId), { printed: true, status: 'printed' }));
         
         await batch.commit();
         showToast('Marked as printed!', 'success');
-        
         await loadAllBillingData();
+        detectBacklogs();
         renderAllPanels();
     }
 
-    function assignToMessenger() {
-        showToast('Messenger assignment coming soon!');
-    }
+    function assignToMessenger() { showToast('Messenger assignment coming soon!'); }
 
-    // Utilities
-    function formatCurrency(amt) {
-        return '₱' + parseFloat(amt || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
+    function escapeHtml(str) { return str ? String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : ''; }
     function showToast(msg, type = 'info') {
         const toast = document.getElementById('toast');
         toast.textContent = msg;
