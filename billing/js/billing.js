@@ -599,84 +599,104 @@ async function openReadingModal() {
 
 /**
  * Fetch previous reading from database
+ * Priority: 1) tbl_readings (new system) -> 2) tbl_machinereading (migrated MySQL) -> 3) starting_meter
  */
 async function fetchPreviousReading() {
+    const db = initFirebase();
+    const contractId = selectedContract.id;
+    const machineId = selectedContract.machine_id || selectedContract.machineId;
+    
+    console.log('Fetching previous reading for contract:', contractId, 'machine:', machineId);
+    
+    // STEP 1: Check tbl_readings (our new billing system)
     try {
-        const db = initFirebase();
-        
-        // First, try to get the last reading from tbl_readings (our new billing records)
         const readingsSnap = await db.collection('tbl_readings')
-            .where('contract_id', '==', selectedContract.id)
-            .orderBy('created_at', 'desc')
-            .limit(1)
+            .where('contract_id', '==', contractId)
             .get();
         
         if (!readingsSnap.empty) {
-            const lastReading = readingsSnap.docs[0].data();
-            console.log('Found previous reading from tbl_readings:', lastReading);
+            // Sort by date to get the most recent
+            const readings = readingsSnap.docs
+                .map(d => d.data())
+                .sort((a, b) => {
+                    const dateA = a.created_at?.toDate?.() || new Date(a.present_date || 0);
+                    const dateB = b.created_at?.toDate?.() || new Date(b.present_date || 0);
+                    return dateB - dateA;
+                });
             
-            document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
-            
-            if (lastReading.present_date) {
-                document.getElementById('rdPreviousDate').value = lastReading.present_date;
-            } else if (lastReading.reading_date) {
-                const readingDate = lastReading.reading_date.toDate ? 
-                    lastReading.reading_date.toDate() : new Date(lastReading.reading_date);
-                document.getElementById('rdPreviousDate').value = readingDate.toISOString().split('T')[0];
-            }
-            
-            console.log('Previous reading loaded:', lastReading.present_reading);
-        } else {
-            // No previous reading in our system, use starting_meter from contract
-            console.log('No previous reading found, using contract starting_meter:', selectedContract.startingMeter);
-            document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
-            
-            // Use reading_date from contract if available
-            if (selectedContract.reading_date) {
-                try {
-                    const rd = new Date(selectedContract.reading_date);
-                    if (!isNaN(rd)) {
-                        document.getElementById('rdPreviousDate').value = rd.toISOString().split('T')[0];
-                    }
-                } catch(e) {}
-            }
-        }
-    } catch (error) {
-        console.log('Query with orderBy failed, trying without...', error.message);
-        
-        // Fallback: query without orderBy (in case index doesn't exist)
-        try {
-            const db = initFirebase();
-            const readingsSnap = await db.collection('tbl_readings')
-                .where('contract_id', '==', selectedContract.id)
-                .get();
-            
-            if (!readingsSnap.empty) {
-                const readings = readingsSnap.docs
-                    .map(d => d.data())
-                    .sort((a, b) => {
-                        const dateA = a.created_at?.toDate?.() || new Date(0);
-                        const dateB = b.created_at?.toDate?.() || new Date(0);
-                        return dateB - dateA;
-                    });
+            if (readings.length > 0) {
+                const lastReading = readings[0];
+                console.log('✅ Found previous reading from tbl_readings:', lastReading.present_reading);
                 
-                if (readings.length > 0) {
-                    const lastReading = readings[0];
-                    document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
-                    
-                    if (lastReading.present_date) {
-                        document.getElementById('rdPreviousDate').value = lastReading.present_date;
-                    }
+                document.getElementById('rdPreviousMeter').value = lastReading.present_reading || 0;
+                if (lastReading.present_date) {
+                    document.getElementById('rdPreviousDate').value = lastReading.present_date;
                 }
-            } else {
-                // Use contract's starting_meter
-                document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
+                return; // Found it, we're done
             }
-        } catch (e2) {
-            console.error('Error fetching previous reading:', e2);
-            // Final fallback: use contract's starting_meter
-            document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || 0;
         }
+    } catch (e) {
+        console.log('tbl_readings query error:', e.message);
+    }
+    
+    // STEP 2: Check tbl_machinereading (migrated from MySQL)
+    // This table has the historical readings from the old VB.NET system
+    try {
+        // Try by contract ID first
+        let machineReadingsSnap = await db.collection('tbl_machinereading')
+            .where('current_contract', '==', parseInt(contractId))
+            .get();
+        
+        // If no results by contract, try by machine ID
+        if (machineReadingsSnap.empty && machineId) {
+            console.log('No readings by contract, trying by machine_id:', machineId);
+            machineReadingsSnap = await db.collection('tbl_machinereading')
+                .where('machine_id', '==', parseInt(machineId))
+                .get();
+        }
+        
+        if (!machineReadingsSnap.empty) {
+            // Sort by date_red (reading date) descending to get most recent
+            const machineReadings = machineReadingsSnap.docs
+                .map(d => d.data())
+                .filter(r => r.meter_reading != null && r.meter_reading !== '')
+                .sort((a, b) => {
+                    // date_red format is "YYYY-MM-DD" string
+                    const dateA = new Date(a.date_red || '1970-01-01');
+                    const dateB = new Date(b.date_red || '1970-01-01');
+                    return dateB - dateA;
+                });
+            
+            if (machineReadings.length > 0) {
+                const lastReading = machineReadings[0];
+                console.log('✅ Found previous reading from tbl_machinereading:', lastReading);
+                
+                document.getElementById('rdPreviousMeter').value = lastReading.meter_reading || 0;
+                
+                if (lastReading.date_red) {
+                    document.getElementById('rdPreviousDate').value = lastReading.date_red;
+                }
+                
+                console.log('Previous reading:', lastReading.meter_reading, 'Date:', lastReading.date_red);
+                return; // Found it, we're done
+            }
+        }
+    } catch (e) {
+        console.log('tbl_machinereading query error:', e.message);
+    }
+    
+    // STEP 3: Fallback to contract's starting_meter
+    console.log('⚠️ No previous reading found, using contract starting_meter:', selectedContract.startingMeter);
+    document.getElementById('rdPreviousMeter').value = selectedContract.startingMeter || selectedContract.b_meter || 0;
+    
+    // Use reading_date from contract if available
+    if (selectedContract.reading_date) {
+        try {
+            const rd = new Date(selectedContract.reading_date);
+            if (!isNaN(rd)) {
+                document.getElementById('rdPreviousDate').value = rd.toISOString().split('T')[0];
+            }
+        } catch(e) {}
     }
 }
 
