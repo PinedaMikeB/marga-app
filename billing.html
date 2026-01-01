@@ -324,15 +324,15 @@
 
         <!-- Stats Bar -->
         <div class="stats-bar">
-            <div class="stat-item active" id="statTodayCard" onclick="window.setReadingFilter('today')">
+            <div class="stat-item active" id="statTodayCard">
                 <div class="stat-value" id="statToday">0</div>
                 <div class="stat-label">Today's Reading</div>
             </div>
-            <div class="stat-item danger" id="statOverdueCard" onclick="window.setReadingFilter('overdue')">
+            <div class="stat-item danger" id="statOverdueCard">
                 <div class="stat-value" id="statOverdue">0</div>
                 <div class="stat-label">⚠️ Overdue</div>
             </div>
-            <div class="stat-item warning" id="statBacklogCard" onclick="window.setReadingFilter('backlog')">
+            <div class="stat-item warning" id="statBacklogCard">
                 <div class="stat-value" id="statBacklog">0</div>
                 <div class="stat-label">📅 Backlog</div>
             </div>
@@ -595,7 +595,13 @@
         document.getElementById('billingDate').addEventListener('change', function() {
             readingPage = 1;
             renderForReadingPanel();
+            updateStats();
         });
+        
+        // Stats card click handlers
+        document.getElementById('statTodayCard').addEventListener('click', function() { setReadingFilter('today'); });
+        document.getElementById('statOverdueCard').addEventListener('click', function() { setReadingFilter('overdue'); });
+        document.getElementById('statBacklogCard').addEventListener('click', function() { setReadingFilter('backlog'); });
         
         console.log('Initialization complete');
     });
@@ -654,12 +660,45 @@
         var currentYear = today.getFullYear();
         var todayDay = today.getDate();
         
+        // Debug first contract
+        if (billingData.contracts.length > 0) {
+            console.log('Sample contract:', billingData.contracts[0]);
+            console.log('Sample branch keys:', Object.keys(billingData.branches).slice(0, 5));
+        }
+        
         contractsWithInfo = billingData.contracts.map(function(contract) {
-            var branch = billingData.branches[contract.contract_id] || billingData.branches[contract.branch_id] || null;
-            var company = branch ? (billingData.companies[branch.company_id] || null) : null;
-            var machine = billingData.machines[contract.mach_id] || billingData.machines[contract.machine_id] || null;
-            var model = machine ? (billingData.models[machine.model_id] || null) : null;
-            var category = billingData.categories[contract.category_id] || null;
+            // Try multiple ways to find branch
+            var branch = billingData.branches[contract.contract_id] || 
+                         billingData.branches[contract.branch_id] || 
+                         billingData.branches[String(contract.contract_id)] ||
+                         billingData.branches[String(contract.branch_id)] ||
+                         null;
+            
+            // Try multiple ways to find company
+            var company = null;
+            if (branch && branch.company_id) {
+                company = billingData.companies[branch.company_id] || 
+                          billingData.companies[String(branch.company_id)] ||
+                          null;
+            }
+            
+            // Try multiple ways to find machine
+            var machine = billingData.machines[contract.mach_id] || 
+                          billingData.machines[contract.machine_id] ||
+                          billingData.machines[String(contract.mach_id)] ||
+                          billingData.machines[String(contract.machine_id)] ||
+                          null;
+            
+            var model = null;
+            if (machine && machine.model_id) {
+                model = billingData.models[machine.model_id] || 
+                        billingData.models[String(machine.model_id)] ||
+                        null;
+            }
+            
+            var category = billingData.categories[contract.category_id] || 
+                           billingData.categories[String(contract.category_id)] ||
+                           null;
             
             var readingDay = 0;
             if (contract.reading_date) {
@@ -721,6 +760,13 @@
                 startingMeter: parseFloat(contract.starting_meter) || parseFloat(contract.b_meter) || 0
             });
         });
+        
+        // Debug
+        var withCompany = contractsWithInfo.filter(function(c) { return c.company; }).length;
+        console.log('Contracts with company found:', withCompany, 'of', contractsWithInfo.length);
+        if (contractsWithInfo.length > 0 && !contractsWithInfo[0].company) {
+            console.log('First contract branch lookup:', contractsWithInfo[0].contract_id, contractsWithInfo[0].branch_id);
+        }
         
         // Show backlog alert
         var backlogCount = contractsWithInfo.filter(function(c) { return c.hasBacklog; }).length;
@@ -993,13 +1039,19 @@
     }
 
     function updateStats() {
-        var today = new Date();
-        var todayDay = today.getDate();
+        var dateInput = document.getElementById('billingDate');
+        var selectedDate = new Date(dateInput.value);
+        var selectedDay = selectedDate.getDate();
         
-        document.getElementById('statToday').textContent = contractsWithInfo.filter(function(c) { return c.readingDay === todayDay && !c.billedThisMonth; }).length;
-        document.getElementById('statOverdue').textContent = contractsWithInfo.filter(function(c) { return c.isOverdue; }).length;
-        document.getElementById('statBacklog').textContent = contractsWithInfo.filter(function(c) { return c.hasBacklog; }).length;
-        document.getElementById('statForInvoice').textContent = billingData.readings.filter(function(r) { return !r.printed && r.status !== 'delivered' && r.status !== 'paid'; }).length;
+        var forTodayCount = contractsWithInfo.filter(function(c) { return c.readingDay === selectedDay && !c.billedThisMonth; }).length;
+        var overdueCount = contractsWithInfo.filter(function(c) { return c.isOverdue; }).length;
+        var backlogCount = contractsWithInfo.filter(function(c) { return c.hasBacklog; }).length;
+        var forInvoiceCount = billingData.readings.filter(function(r) { return !r.printed && r.status !== 'delivered' && r.status !== 'paid'; }).length;
+        
+        document.getElementById('statToday').textContent = forTodayCount;
+        document.getElementById('statOverdue').textContent = overdueCount;
+        document.getElementById('statBacklog').textContent = backlogCount;
+        document.getElementById('statForInvoice').textContent = forInvoiceCount;
         document.getElementById('statPending').textContent = filteredPendingItems.length;
     }
 
@@ -1021,24 +1073,32 @@
     };
 
     // Filter handlers - exposed to window
-    window.setReadingFilter = function(filter) {
+    function setReadingFilter(filter) {
         console.log('Setting reading filter:', filter);
         readingFilter = filter;
         readingPage = 1;
         renderForReadingPanel();
-    };
+        
+        // Update stat card active states
+        document.getElementById('statTodayCard').classList.toggle('active', filter === 'today');
+        document.getElementById('statOverdueCard').classList.toggle('active', filter === 'overdue');
+        document.getElementById('statBacklogCard').classList.toggle('active', filter === 'backlog');
+    }
+    window.setReadingFilter = setReadingFilter;
 
-    window.setInvoiceFilter = function(filter) {
+    function setInvoiceFilter(filter) {
         invoiceFilter = filter;
         invoicePage = 1;
         renderForInvoicePanel();
-    };
+    }
+    window.setInvoiceFilter = setInvoiceFilter;
 
-    window.setPendingFilter = function(filter) {
+    function setPendingFilter(filter) {
         pendingFilter = filter;
         pendingPage = 1;
         renderPendingPanel();
-    };
+    }
+    window.setPendingFilter = setPendingFilter;
 
     // Selection handlers
     function selectContract(contractId) {

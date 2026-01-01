@@ -285,13 +285,12 @@
     <script src="shared/js/auth.js"></script>
     <script src="shared/js/utils.js"></script>
     <script>
-        // Check authentication
-        if (!MargaAuth.requireAuth()) {
-            // Will redirect to login
-        }
-
         // Update user info
         document.addEventListener('DOMContentLoaded', () => {
+            // Check authentication
+            if (typeof MargaAuth !== 'undefined' && MargaAuth.requireAuth) {
+                MargaAuth.requireAuth();
+            }
             const user = MargaAuth.getUser();
             if (user) {
                 document.getElementById('userName').textContent = user.name;
