@@ -281,34 +281,33 @@
         </div>
     </main>
 
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="shared/js/firebase-config.js"></script>
     <script src="shared/js/auth.js"></script>
     <script src="shared/js/utils.js"></script>
     <script>
-        // Update user info
+        // Initialize and load dashboard
         document.addEventListener('DOMContentLoaded', () => {
-            // Check authentication
-            if (typeof MargaAuth !== 'undefined' && MargaAuth.requireAuth) {
-                MargaAuth.requireAuth();
+            // Initialize Firebase
+            if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+                firebase.initializeApp(FIREBASE_CONFIG);
             }
+            
+            // Initialize auth
+            if (typeof MargaAuth !== 'undefined') {
+                MargaAuth.init();
+            }
+            
+            // Update user info
             const user = MargaAuth.getUser();
             if (user) {
-                document.getElementById('userName').textContent = user.name;
-                document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
-                document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
+                document.getElementById('userName').textContent = user.name || user.email || 'User';
+                document.getElementById('userRole').textContent = (user.role || 'viewer').charAt(0).toUpperCase() + (user.role || 'viewer').slice(1);
+                document.getElementById('userAvatar').textContent = (user.name || user.email || 'U').charAt(0).toUpperCase();
             }
-
-            // Check module access and disable unauthorized links
-            document.querySelectorAll('[data-module]').forEach(el => {
-                const module = el.dataset.module;
-                if (!MargaAuth.hasAccess(module)) {
-                    el.classList.add('disabled');
-                    el.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        alert('You do not have permission to access this module.');
-                    });
-                }
-            });
 
             // Load dashboard data
             loadDashboardData();
@@ -410,35 +409,6 @@
                 </div>
             `;
         }
-    </script>
-    
-    <!-- Firebase Auth -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="shared/js/firebase-config.js"></script>
-    <script src="shared/js/auth.js"></script>
-    <script>
-        // Route protection
-        document.addEventListener('DOMContentLoaded', () => {
-            if (!firebase.apps.length) {
-                firebase.initializeApp(FIREBASE_CONFIG);
-            }
-            
-            firebase.auth().onAuthStateChanged(async (user) => {
-                if (!user) {
-                    window.location.href = '/login.html';
-                    return;
-                }
-                
-                // Load user profile and update UI
-                await MargaAuth.loadUserProfile(user.uid);
-                MargaAuth.updateUI();
-                
-                // Hide loading overlay
-                document.getElementById('authLoading').style.display = 'none';
-            });
-        });
     </script>
 </body>
 </html>
