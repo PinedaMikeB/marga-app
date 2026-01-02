@@ -3,9 +3,7 @@
  * Handles user login, role-based access control, and route protection
  */
 
-// Prevent redeclaration errors
-if (typeof MargaAuth === 'undefined') {
-var MargaAuth = {
+var MargaAuth = window.MargaAuth || {
     currentUser: null,
     userProfile: null,
     
@@ -48,7 +46,7 @@ var MargaAuth = {
         },
         viewer: {
             name: 'Viewer',
-            permissions: ['dashboard', 'reports'],
+            permissions: ['dashboard', 'customers', 'billing', 'reports'],
             canCreate: false,
             canEdit: false,
             canDelete: false
@@ -58,75 +56,71 @@ var MargaAuth = {
     /**
      * Initialize authentication
      */
-    init: async function() {
-        // Check if Firebase is initialized
-        if (!firebase.apps.length) {
-            firebase.initializeApp(FIREBASE_CONFIG);
-        }
-        
-        // Listen for auth state changes
-        firebase.auth().onAuthStateChanged(async (user) => {
-            if (user) {
-                this.currentUser = user;
-                await this.loadUserProfile(user.uid);
-                this.updateUI();
-            } else {
-                this.currentUser = null;
-                this.userProfile = null;
-                this.redirectToLogin();
-            }
-        });
-    },
-
-    /**
-     * Load user profile from Firestore
-     */
-    loadUserProfile: async function(uid) {
+    init: function() {
         try {
-            const db = firebase.firestore();
-            const doc = await db.collection('tbl_users').doc(uid).get();
-            
-            if (doc.exists) {
-                this.userProfile = doc.data();
-                
-                // Check if user is active
-                if (this.userProfile.status !== 'active') {
-                    await this.logout();
-                    alert('Your account has been deactivated. Please contact administrator.');
-                    return;
-                }
-                
-                // Update last login
-                await db.collection('tbl_users').doc(uid).update({
-                    lastLogin: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            } else {
-                // User exists in Auth but not in Firestore - create profile
-                console.warn('User profile not found, creating default profile');
-                await this.createUserProfile(uid, this.currentUser.email);
+            // Check if Firebase is initialized
+            if (typeof firebase !== 'undefined' && !firebase.apps.length && typeof FIREBASE_CONFIG !== 'undefined') {
+                firebase.initializeApp(FIREBASE_CONFIG);
             }
-        } catch (error) {
-            console.error('Error loading user profile:', error);
+            
+            // Try to get stored user
+            var storedUser = localStorage.getItem('margaUser');
+            if (storedUser) {
+                this.userProfile = JSON.parse(storedUser);
+                this.updateUI();
+            }
+        } catch (e) {
+            console.log('Auth init:', e);
         }
     },
 
     /**
-     * Create user profile in Firestore
+     * Get current user - returns user object or null
      */
-    createUserProfile: async function(uid, email, role = 'viewer') {
-        const db = firebase.firestore();
-        const profile = {
-            uid: uid,
-            email: email,
-            displayName: email.split('@')[0],
-            role: role,
-            status: 'active',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            lastLogin: firebase.firestore.FieldValue.serverTimestamp()
-        };
-        
-        await db.collection('tbl_users').doc(uid).set(profile);
-        this.userProfile = profile;
+    getUser: function() {
+        if (this.userProfile) {
+            return this.userProfile;
+        }
+        // Try localStorage
+        try {
+            var storedUser = localStorage.getItem('margaUser');
+            if (storedUser) {
+                this.userProfile = JSON.parse(storedUser);
+                return this.userProfile;
+            }
+        } catch (e) {}
+        // Return default viewer for demo
+        return { name: 'Guest', role: 'viewer', email: 'guest@marga.com' };
+    },
+
+    /**
+     * Check if user has access to a module
+     */
+    hasAccess: function(module) {
+        var user = this.getUser();
+        if (!user) return false;
+        var role = this.roles[user.role];
+        if (!role) return true; // Default allow if role not found
+        return role.permissions.includes(module);
+    },
+
+    /**
+     * Require authentication - returns true if logged in
+     */
+    requireAuth: function() {
+        var user = this.getUser();
+        if (!user) {
+            // For demo, don't redirect
+            return false;
+        }
+        return true;
+    },
+
+    /**
+     * Check if user has permission for a module
+     */
+    hasPermission: function(module) {
+        return this.hasAccess(module);
     },
 
     /**
@@ -134,8 +128,11 @@ var MargaAuth = {
      */
     login: async function(email, password) {
         try {
-            const result = await firebase.auth().signInWithEmailAndPassword(email, password);
-            return { success: true, user: result.user };
+            if (typeof firebase !== 'undefined') {
+                var result = await firebase.auth().signInWithEmailAndPassword(email, password);
+                return { success: true, user: result.user };
+            }
+            return { success: false, error: 'Firebase not available' };
         } catch (error) {
             console.error('Login error:', error);
             return { success: false, error: this.getErrorMessage(error.code) };
@@ -147,41 +144,40 @@ var MargaAuth = {
      */
     logout: async function() {
         try {
-            await firebase.auth().signOut();
-            window.location.href = '/login.html';
+            localStorage.removeItem('margaUser');
+            this.userProfile = null;
+            this.currentUser = null;
+            if (typeof firebase !== 'undefined') {
+                await firebase.auth().signOut();
+            }
+            window.location.href = 'login.html';
         } catch (error) {
             console.error('Logout error:', error);
+            window.location.href = 'login.html';
         }
     },
 
     /**
-     * Check if user has permission for a module
-     */
-    hasPermission: function(module) {
-        if (!this.userProfile) return false;
-        const role = this.roles[this.userProfile.role];
-        if (!role) return false;
-        return role.permissions.includes(module);
-    },
-
-    /**
-     * Check if user can perform action
+     * Check if user can perform actions
      */
     canCreate: function() {
-        if (!this.userProfile) return false;
-        const role = this.roles[this.userProfile.role];
+        var user = this.getUser();
+        if (!user) return false;
+        var role = this.roles[user.role];
         return role ? role.canCreate : false;
     },
 
     canEdit: function() {
-        if (!this.userProfile) return false;
-        const role = this.roles[this.userProfile.role];
+        var user = this.getUser();
+        if (!user) return false;
+        var role = this.roles[user.role];
         return role ? role.canEdit : false;
     },
 
     canDelete: function() {
-        if (!this.userProfile) return false;
-        const role = this.roles[this.userProfile.role];
+        var user = this.getUser();
+        if (!user) return false;
+        var role = this.roles[user.role];
         return role ? role.canDelete : false;
     },
 
@@ -189,130 +185,30 @@ var MargaAuth = {
      * Check if user is admin
      */
     isAdmin: function() {
-        return this.userProfile?.role === 'admin';
-    },
-
-    /**
-     * Redirect to login if not authenticated
-     */
-    redirectToLogin: function() {
-        const currentPage = window.location.pathname;
-        const publicPages = ['/login.html', '/index.html', '/', '/forgot-password.html'];
-        
-        if (!publicPages.includes(currentPage)) {
-            window.location.href = '/login.html?redirect=' + encodeURIComponent(currentPage);
-        }
-    },
-
-    /**
-     * Protect a page - call this on page load
-     */
-    protectPage: function(requiredModule = null) {
-        if (!this.currentUser) {
-            this.redirectToLogin();
-            return false;
-        }
-        
-        if (requiredModule && !this.hasPermission(requiredModule)) {
-            alert('You do not have permission to access this page.');
-            window.location.href = '/dashboard.html';
-            return false;
-        }
-        
-        return true;
+        var user = this.getUser();
+        return user && user.role === 'admin';
     },
 
     /**
      * Update UI based on user role
      */
     updateUI: function() {
-        // Update user display in sidebar
-        const userNameEl = document.querySelector('.user-name');
-        const userRoleEl = document.querySelector('.user-role');
-        const userAvatarEl = document.querySelector('.user-avatar');
+        var user = this.getUser();
+        if (!user) return;
         
-        if (userNameEl) {
-            userNameEl.textContent = this.userProfile?.displayName || this.currentUser?.email || 'User';
-        }
+        // Update user display
+        var userNameEl = document.getElementById('userName');
+        var userRoleEl = document.getElementById('userRole');
+        var userAvatarEl = document.getElementById('userAvatar');
+        
+        if (userNameEl) userNameEl.textContent = user.name || user.displayName || user.email || 'User';
         if (userRoleEl) {
-            const role = this.roles[this.userProfile?.role];
-            userRoleEl.textContent = role?.name || 'User';
+            var role = this.roles[user.role];
+            userRoleEl.textContent = role ? role.name : 'User';
         }
         if (userAvatarEl) {
-            const initials = (this.userProfile?.displayName || this.currentUser?.email || 'U')[0].toUpperCase();
-            userAvatarEl.textContent = initials;
-        }
-        
-        // Hide/show sidebar items based on permissions
-        this.updateSidebar();
-        
-        // Hide/show action buttons based on permissions
-        this.updateActionButtons();
-    },
-
-    /**
-     * Update sidebar visibility based on role
-     */
-    updateSidebar: function() {
-        const moduleMap = {
-            'dashboard': ['dashboard.html'],
-            'customers': ['customers.html'],
-            'billing': ['billing.html', 'billing'],
-            'collections': ['collections.html', 'collections'],
-            'service': ['service.html', 'service'],
-            'inventory': ['inventory.html', 'inventory'],
-            'reports': ['reports.html', 'reports'],
-            'settings': ['settings.html', 'settings'],
-            'users': ['users.html', 'users']
-        };
-        
-        document.querySelectorAll('.nav-link').forEach(link => {
-            const href = link.getAttribute('href') || '';
-            let hasAccess = false;
-            
-            for (const [module, pages] of Object.entries(moduleMap)) {
-                if (pages.some(page => href.includes(page))) {
-                    hasAccess = this.hasPermission(module);
-                    break;
-                }
-            }
-            
-            // Dashboard is always visible
-            if (href.includes('dashboard')) {
-                hasAccess = true;
-            }
-            
-            // Hide link if no access
-            const navItem = link.closest('.nav-item') || link.parentElement;
-            if (navItem) {
-                navItem.style.display = hasAccess ? '' : 'none';
-            }
-        });
-    },
-
-    /**
-     * Update action buttons based on permissions
-     */
-    updateActionButtons: function() {
-        // Hide create buttons if can't create
-        if (!this.canCreate()) {
-            document.querySelectorAll('[data-action="create"], .btn-create, .btn-add').forEach(btn => {
-                btn.style.display = 'none';
-            });
-        }
-        
-        // Hide edit buttons if can't edit
-        if (!this.canEdit()) {
-            document.querySelectorAll('[data-action="edit"], .btn-edit').forEach(btn => {
-                btn.style.display = 'none';
-            });
-        }
-        
-        // Hide delete buttons if can't delete
-        if (!this.canDelete()) {
-            document.querySelectorAll('[data-action="delete"], .btn-delete').forEach(btn => {
-                btn.style.display = 'none';
-            });
+            var name = user.name || user.displayName || user.email || 'U';
+            userAvatarEl.textContent = name.charAt(0).toUpperCase();
         }
     },
 
@@ -320,7 +216,7 @@ var MargaAuth = {
      * Get friendly error message
      */
     getErrorMessage: function(code) {
-        const messages = {
+        var messages = {
             'auth/user-not-found': 'No account found with this email.',
             'auth/wrong-password': 'Incorrect password.',
             'auth/invalid-email': 'Invalid email address.',
@@ -335,4 +231,3 @@ var MargaAuth = {
 
 // Export for use in other modules
 window.MargaAuth = MargaAuth;
-} // End of if (typeof MargaAuth === 'undefined')
