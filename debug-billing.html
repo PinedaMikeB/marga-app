@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Billing Structure</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; background: #f5f5f5; }
+        .card { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 500px; }
+        button { background: #e91e8c; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        h2 { color: #e91e8c; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug: Billing Data Structure</h1>
+    
+    <div class="card">
+        <h2>1. Full tbl_billing Record (ALL Fields)</h2>
+        <button onclick="showFullBillingRecord()">Show Full Record</button>
+        <div id="full-record"></div>
+    </div>
+
+    <div class="card">
+        <h2>2. Check Key Fields Across Multiple Records</h2>
+        <button onclick="analyzeKeyFields()">Analyze 20 Records</button>
+        <div id="key-fields"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. Find Records WITH Company Links</h2>
+        <button onclick="findLinkedRecords()">Find Records with contract_id > 0</button>
+        <div id="linked-records"></div>
+    </div>
+
+    <div class="card">
+        <h2>4. Count Total Billing Records</h2>
+        <button onclick="countAllRecords()">Count All (Paginated)</button>
+        <div id="count-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>5. Check tbl_billing Field Names</h2>
+        <button onclick="listAllFieldNames()">List All Unique Field Names</button>
+        <div id="field-names"></div>
+    </div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+
+        async function firestoreGet(collection, pageSize = 10, pageToken = null) {
+            let url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
+            if (pageToken) url += `&pageToken=${pageToken}`;
+            const response = await fetch(url);
+            return response.json();
+        }
+
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        // 1. Show full billing record
+        async function showFullBillingRecord() {
+            const result = document.getElementById('full-record');
+            result.innerHTML = 'Loading...';
+            
+            try {
+                const data = await firestoreGet('tbl_billing', 1);
+                if (data.documents && data.documents.length > 0) {
+                    const fields = data.documents[0].fields;
+                    
+                    // List all field names
+                    const fieldNames = Object.keys(fields).sort();
+                    
+                    let html = `<p><strong>Total Fields: ${fieldNames.length}</strong></p>`;
+                    html += '<table><tr><th>Field Name</th><th>Type</th><th>Value</th></tr>';
+                    
+                    fieldNames.forEach(name => {
+                        const field = fields[name];
+                        const type = Object.keys(field)[0];
+                        const value = getValue(field);
+                        html += `<tr><td><strong>${name}</strong></td><td>${type}</td><td>${value}</td></tr>`;
+                    });
+                    
+                    html += '</table>';
+                    html += '<h4>Raw JSON:</h4>';
+                    html += `<pre>${JSON.stringify(fields, null, 2)}</pre>`;
+                    
+                    result.innerHTML = html;
+                }
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 2. Analyze key fields across records
+        async function analyzeKeyFields() {
+            const result = document.getElementById('key-fields');
+            result.innerHTML = 'Loading...';
+            
+            try {
+                const data = await firestoreGet('tbl_billing', 20);
+                if (data.documents) {
+                    let html = '<table><tr><th>ID</th><th>contract_id</th><th>branch_id</th><th>company_id</th><th>invmonth</th><th>invyear</th><th>amount</th><th>dateprinted</th></tr>';
+                    
+                    data.documents.forEach(doc => {
+                        const f = doc.fields;
+                        html += `<tr>
+                            <td>${getValue(f.id)}</td>
+                            <td>${getValue(f.contract_id)}</td>
+                            <td>${getValue(f.branch_id) || getValue(f.branchid) || '-'}</td>
+                            <td>${getValue(f.company_id) || getValue(f.companyid) || '-'}</td>
+                            <td>${getValue(f.invmonth) || getValue(f.inv_month) || getValue(f.month) || '-'}</td>
+                            <td>${getValue(f.invyear) || getValue(f.inv_year) || getValue(f.year) || '-'}</td>
+                            <td>${getValue(f.amount) || getValue(f.totalamount) || '-'}</td>
+                            <td>${getValue(f.dateprinted) || getValue(f.date_printed) || getValue(f.invdate) || '-'}</td>
+                        </tr>`;
+                    });
+                    
+                    html += '</table>';
+                    result.innerHTML = html;
+                }
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 3. Find records with contract_id > 0
+        async function findLinkedRecords() {
+            const result = document.getElementById('linked-records');
+            result.innerHTML = 'Loading... searching for records with contract_id > 0...';
+            
+            try {
+                // Fetch more records to find ones with links
+                const data = await firestoreGet('tbl_billing', 500);
+                if (data.documents) {
+                    const linked = data.documents.filter(doc => {
+                        const contractId = getValue(doc.fields.contract_id);
+                        return contractId && parseInt(contractId) > 0;
+                    });
+                    
+                    let html = `<p>Found ${linked.length} records with contract_id > 0 (out of ${data.documents.length} sampled)</p>`;
+                    
+                    if (linked.length > 0) {
+                        html += '<table><tr><th>ID</th><th>contract_id</th><th>amount</th><th>invmonth/year</th><th>All Fields</th></tr>';
+                        
+                        linked.slice(0, 10).forEach(doc => {
+                            const f = doc.fields;
+                            html += `<tr>
+                                <td>${getValue(f.id)}</td>
+                                <td><strong>${getValue(f.contract_id)}</strong></td>
+                                <td>${getValue(f.amount)}</td>
+                                <td>${getValue(f.invmonth)}/${getValue(f.invyear)}</td>
+                                <td><pre style="max-height:100px;overflow:auto;font-size:10px;">${JSON.stringify(f, null, 1)}</pre></td>
+                            </tr>`;
+                        });
+                        
+                        html += '</table>';
+                    } else {
+                        html += '<p><strong>No records with contract_id > 0 found. Checking alternative fields...</strong></p>';
+                        
+                        // Show first record's fields to find alternatives
+                        const firstDoc = data.documents[0].fields;
+                        html += '<p>First record fields:</p>';
+                        html += `<pre>${JSON.stringify(firstDoc, null, 2)}</pre>`;
+                    }
+                    
+                    result.innerHTML = html;
+                }
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 4. Count all records with pagination
+        async function countAllRecords() {
+            const result = document.getElementById('count-result');
+            result.innerHTML = 'Counting... (this may take a while)';
+            
+            try {
+                let total = 0;
+                let pageToken = null;
+                let pages = 0;
+                const maxPages = 50; // Safety limit
+                
+                while (pages < maxPages) {
+                    const data = await firestoreGet('tbl_billing', 500, pageToken);
+                    const count = data.documents ? data.documents.length : 0;
+                    total += count;
+                    pages++;
+                    
+                    result.innerHTML = `Counting... ${total} records found (page ${pages})`;
+                    
+                    if (!data.nextPageToken || count < 500) break;
+                    pageToken = data.nextPageToken;
+                }
+                
+                result.innerHTML = `<p><strong>Total tbl_billing records: ${total.toLocaleString()}</strong></p>
+                    <p>Pages fetched: ${pages}</p>
+                    <p>${pages >= maxPages ? '(Stopped at limit - there may be more)' : '(Complete count)'}</p>`;
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 5. List all unique field names
+        async function listAllFieldNames() {
+            const result = document.getElementById('field-names');
+            result.innerHTML = 'Loading...';
+            
+            try {
+                const data = await firestoreGet('tbl_billing', 50);
+                const allFields = new Set();
+                
+                if (data.documents) {
+                    data.documents.forEach(doc => {
+                        Object.keys(doc.fields).forEach(field => allFields.add(field));
+                    });
+                }
+                
+                const fieldList = Array.from(allFields).sort();
+                let html = `<p><strong>${fieldList.length} unique field names found:</strong></p>`;
+                html += '<ul>';
+                fieldList.forEach(f => html += `<li>${f}</li>`);
+                html += '</ul>';
+                
+                result.innerHTML = html;
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

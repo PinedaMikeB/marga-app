@@ -1,6 +1,7 @@
 /**
  * MARGA Collections Module
  * Phase 1: View Unpaid Invoices
+ * Updated with correct field mappings
  */
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
@@ -24,22 +25,74 @@ function getValue(field) {
     return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
 }
 
-// Firestore REST API fetch
-async function firestoreGet(collection, pageSize = 500) {
-    const url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
+// Firestore REST API fetch with pagination
+async function firestoreGet(collection, pageSize = 500, pageToken = null) {
+    let url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
+    if (pageToken) url += `&pageToken=${pageToken}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch ${collection}`);
     return response.json();
 }
 
-// Calculate invoice age in days
-function calculateAge(invMonth, invYear) {
-    if (!invMonth || !invYear) return 0;
-    const invoiceDate = new Date(invYear, invMonth - 1, 1);
+// Fetch ALL documents from a collection (handles pagination)
+async function firestoreGetAll(collection, maxRecords = 10000) {
+    let allDocs = [];
+    let pageToken = null;
+    let fetched = 0;
+    
+    while (fetched < maxRecords) {
+        const data = await firestoreGet(collection, 500, pageToken);
+        if (data.documents) {
+            allDocs = allDocs.concat(data.documents);
+            fetched += data.documents.length;
+        }
+        
+        if (!data.nextPageToken || (data.documents && data.documents.length < 500)) {
+            break;
+        }
+        pageToken = data.nextPageToken;
+    }
+    
+    return allDocs;
+}
+
+// Convert month name to number
+function monthNameToNumber(monthName) {
+    const months = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+        'september': 9, 'october': 10, 'november': 11, 'december': 12
+    };
+    return months[String(monthName).toLowerCase()] || 0;
+}
+
+// Calculate invoice age in days from due_date
+function calculateAgeFromDueDate(dueDate) {
+    if (!dueDate) return 0;
+    try {
+        // Parse date string like "2025-10-16 00:00:00"
+        const datePart = dueDate.split(' ')[0];
+        const invoiceDate = new Date(datePart);
+        const today = new Date();
+        const diffTime = today - invoiceDate;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return Math.max(0, diffDays);
+    } catch (e) {
+        return 0;
+    }
+}
+
+// Calculate age from month/year strings
+function calculateAgeFromMonthYear(month, year) {
+    if (!month || !year) return 0;
+    const monthNum = monthNameToNumber(month);
+    if (!monthNum) return 0;
+    
+    const invoiceDate = new Date(parseInt(year), monthNum - 1, 1);
     const today = new Date();
     const diffTime = today - invoiceDate;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    return Math.max(0, diffDays);
 }
 
 // Get age class for styling
@@ -59,121 +112,160 @@ function formatCurrency(amount) {
     });
 }
 
-// Load all required data
-async function loadUnpaidInvoices() {
-    const tableContainer = document.getElementById('table-container');
-    tableContainer.innerHTML = `
+// Update loading status
+function updateLoadingStatus(message) {
+    const container = document.getElementById('table-container');
+    container.innerHTML = `
         <div class="loading-overlay">
             <div class="loading-spinner"></div>
-            <span>Loading unpaid invoices...</span>
+            <span>${message}</span>
         </div>
     `;
+}
+
+// Load all required data
+async function loadUnpaidInvoices() {
+    updateLoadingStatus('Loading billing records...');
 
     try {
-        // Fetch all data in parallel
+        // Fetch all data - using pagination for large collections
         console.log('Fetching data from Firebase...');
-        const [billing, payments, contracts, branches, companies] = await Promise.all([
-            firestoreGet('tbl_billing', 1000),
-            firestoreGet('tbl_paymentinfo', 1000),
-            firestoreGet('tbl_contractmain', 1000),
-            firestoreGet('tbl_branchinfo', 1000),
-            firestoreGet('tbl_companylist', 500)
-        ]);
+        
+        updateLoadingStatus('Loading billing records...');
+        const billingDocs = await firestoreGetAll('tbl_billing', 5000);
+        console.log('Billing records:', billingDocs.length);
+        
+        updateLoadingStatus('Loading payment records...');
+        const paymentDocs = await firestoreGetAll('tbl_paymentinfo', 10000);
+        console.log('Payment records:', paymentDocs.length);
+        
+        updateLoadingStatus('Loading contracts...');
+        const contractDocs = await firestoreGetAll('tbl_contractmain', 5000);
+        console.log('Contracts:', contractDocs.length);
+        
+        updateLoadingStatus('Loading branches...');
+        const branchDocs = await firestoreGetAll('tbl_branchinfo', 5000);
+        console.log('Branches:', branchDocs.length);
+        
+        updateLoadingStatus('Loading companies...');
+        const companyDocs = await firestoreGetAll('tbl_companylist', 2000);
+        console.log('Companies:', companyDocs.length);
 
-        console.log('Data fetched:', {
-            billing: billing.documents?.length || 0,
-            payments: payments.documents?.length || 0,
-            contracts: contracts.documents?.length || 0,
-            branches: branches.documents?.length || 0,
-            companies: companies.documents?.length || 0
-        });
-
-        // Build payment lookup (which invoices are paid)
+        // Build payment lookup - check both invoice_id and id matching
+        updateLoadingStatus('Processing payment data...');
         paidInvoiceIds = new Set();
-        if (payments.documents) {
-            payments.documents.forEach(doc => {
-                const invId = getValue(doc.fields.invoice_id);
-                if (invId) paidInvoiceIds.add(String(invId));
-            });
-        }
+        const paidBillingIds = new Set();
+        
+        paymentDocs.forEach(doc => {
+            const f = doc.fields;
+            // invoice_id in payments might match invoice_id in billing
+            const invId = getValue(f.invoice_id);
+            if (invId) {
+                paidInvoiceIds.add(String(invId));
+            }
+        });
+        console.log('Paid invoice IDs:', paidInvoiceIds.size);
 
-        // Build contract lookup
+        // Build contract lookup (contractmain_id → branch info)
+        updateLoadingStatus('Building contract lookup...');
         contractMap = {};
-        if (contracts.documents) {
-            contracts.documents.forEach(doc => {
-                const f = doc.fields;
-                const id = getValue(f.id);
-                contractMap[id] = {
-                    branch_id: getValue(f.contract_id), // contract_id field = branch_id
-                    mach_id: getValue(f.mach_id),
-                    category_id: getValue(f.category_id)
-                };
-            });
-        }
+        contractDocs.forEach(doc => {
+            const f = doc.fields;
+            const id = getValue(f.id);
+            contractMap[id] = {
+                branch_id: getValue(f.contract_id), // contract_id in contractmain = branch_id
+                mach_id: getValue(f.mach_id),
+                category_id: getValue(f.category_id)
+            };
+        });
+        console.log('Contract map size:', Object.keys(contractMap).length);
 
         // Build branch lookup
         branchMap = {};
-        if (branches.documents) {
-            branches.documents.forEach(doc => {
-                const f = doc.fields;
-                const id = getValue(f.id);
-                branchMap[id] = {
-                    name: getValue(f.branchname) || 'Main',
-                    company_id: getValue(f.company_id)
-                };
-            });
-        }
+        branchDocs.forEach(doc => {
+            const f = doc.fields;
+            const id = getValue(f.id);
+            branchMap[id] = {
+                name: getValue(f.branchname) || 'Main',
+                company_id: getValue(f.company_id)
+            };
+        });
+        console.log('Branch map size:', Object.keys(branchMap).length);
 
         // Build company lookup
         companyMap = {};
-        if (companies.documents) {
-            companies.documents.forEach(doc => {
-                const f = doc.fields;
-                const id = getValue(f.id);
-                companyMap[id] = getValue(f.companyname) || 'Unknown';
-            });
-        }
+        companyDocs.forEach(doc => {
+            const f = doc.fields;
+            const id = getValue(f.id);
+            companyMap[id] = getValue(f.companyname) || 'Unknown';
+        });
+        console.log('Company map size:', Object.keys(companyMap).length);
 
         // Process billing records to find unpaid
+        updateLoadingStatus('Finding unpaid invoices...');
         allInvoices = [];
-        if (billing.documents) {
-            billing.documents.forEach(doc => {
-                const f = doc.fields;
-                const id = getValue(f.id);
-                
-                // Skip if paid
-                if (paidInvoiceIds.has(String(id))) return;
+        
+        billingDocs.forEach(doc => {
+            const f = doc.fields;
+            const billingId = getValue(f.id);
+            const invoiceId = getValue(f.invoice_id);
+            
+            // Check if this invoice is paid (by invoice_id)
+            if (paidInvoiceIds.has(String(invoiceId))) {
+                return; // Skip - this invoice is paid
+            }
 
-                const contractId = getValue(f.contract_id);
-                const contract = contractMap[contractId] || {};
-                const branch = branchMap[contract.branch_id] || {};
-                const companyName = companyMap[branch.company_id] || 'Unknown';
-                
-                const invMonth = getValue(f.invmonth);
-                const invYear = getValue(f.invyear);
-                const age = calculateAge(invMonth, invYear);
-                
-                const amount = parseFloat(getValue(f.amount) || getValue(f.totalamount) || 0);
-                const vatAmount = parseFloat(getValue(f.vatamount) || 0);
-                const totalAmount = amount + vatAmount;
+            // Get contract info using contractmain_id (the correct field!)
+            const contractmainId = getValue(f.contractmain_id);
+            const contract = contractMap[contractmainId] || {};
+            
+            // Get branch and company from contract
+            const branch = branchMap[contract.branch_id] || {};
+            const companyName = companyMap[branch.company_id] || 'Unknown';
+            
+            // Get month/year - field names are 'month' and 'year' as strings
+            const monthStr = getValue(f.month); // e.g., "October"
+            const yearStr = getValue(f.year);   // e.g., "2025"
+            const dueDate = getValue(f.due_date);
+            
+            // Calculate age from due_date first, fall back to month/year
+            let age = calculateAgeFromDueDate(dueDate);
+            if (age === 0 && monthStr && yearStr) {
+                age = calculateAgeFromMonthYear(monthStr, yearStr);
+            }
+            
+            // Get amount
+            const totalAmount = parseFloat(getValue(f.totalamount) || getValue(f.amount) || 0);
+            const vatAmount = parseFloat(getValue(f.vatamount) || 0);
+            const finalAmount = totalAmount + vatAmount;
 
-                allInvoices.push({
-                    id: id,
-                    invoiceNo: getValue(f.invoiceno) || id,
-                    contractId: contractId,
-                    amount: totalAmount,
-                    month: invMonth,
-                    year: invYear,
-                    monthYear: invMonth && invYear ? `${getMonthName(invMonth)} ${invYear}` : '-',
-                    age: age,
-                    company: companyName,
-                    branch: branch.name || 'Unknown',
-                    category: getCategoryCode(contract.category_id),
-                    location: getValue(f.location),
-                    dateprinted: getValue(f.dateprinted)
-                });
+            // Format month/year for display
+            let monthYear = '-';
+            if (monthStr && yearStr) {
+                monthYear = `${monthStr} ${yearStr}`;
+            }
+
+            allInvoices.push({
+                id: billingId,
+                invoiceId: invoiceId,
+                invoiceNo: invoiceId || billingId,
+                contractmainId: contractmainId,
+                amount: finalAmount,
+                month: monthStr,
+                year: yearStr,
+                monthYear: monthYear,
+                dueDate: dueDate,
+                age: age,
+                company: companyName,
+                branch: branch.name || 'Unknown',
+                category: getCategoryCode(contract.category_id),
+                receivedBy: getValue(f.receivedby),
+                dateReceived: getValue(f.date_received),
+                status: getValue(f.status)
             });
-        }
+        });
+
+        console.log('Total unpaid invoices found:', allInvoices.length);
 
         // Sort by amount descending (highest first)
         allInvoices.sort((a, b) => b.amount - a.amount);
@@ -197,7 +289,7 @@ async function loadUnpaidInvoices() {
 
     } catch (error) {
         console.error('Error loading data:', error);
-        tableContainer.innerHTML = `
+        document.getElementById('table-container').innerHTML = `
             <div class="empty-state">
                 <h3>Error Loading Data</h3>
                 <p>${error.message}</p>
@@ -207,18 +299,12 @@ async function loadUnpaidInvoices() {
     }
 }
 
-// Get month name
-function getMonthName(month) {
-    const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
-                    'July', 'August', 'September', 'October', 'November', 'December'];
-    return months[parseInt(month)] || month;
-}
-
 // Get category code
 function getCategoryCode(categoryId) {
     const categories = {
         1: 'RTP', 2: 'RTF', 3: 'STP', 4: 'MAT', 5: 'RTC',
-        6: 'STC', 7: 'MAC', 8: 'MAP', 9: 'REF', 10: 'RD'
+        6: 'STC', 7: 'MAC', 8: 'MAP', 9: 'REF', 10: 'RD',
+        11: 'PI', 12: 'OTH'
     };
     return categories[categoryId] || '-';
 }
@@ -251,12 +337,13 @@ function populateMonthFilter() {
     select.innerHTML = '<option value="">All Months</option>';
     
     // Sort months (most recent first)
+    const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    
     const sortedMonths = Array.from(months).sort((a, b) => {
         const [monthA, yearA] = a.split(' ');
         const [monthB, yearB] = b.split(' ');
-        if (yearA !== yearB) return yearB - yearA;
-        const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
-                          'July', 'August', 'September', 'October', 'November', 'December'];
+        if (yearA !== yearB) return parseInt(yearB) - parseInt(yearA);
         return monthOrder.indexOf(monthB) - monthOrder.indexOf(monthA);
     });
     
@@ -283,7 +370,7 @@ function applyFilters() {
         
         // Search filter
         if (searchTerm) {
-            const searchStr = `${inv.company} ${inv.branch} ${inv.invoiceNo}`.toLowerCase();
+            const searchStr = `${inv.company} ${inv.branch} ${inv.invoiceNo} ${inv.invoiceId}`.toLowerCase();
             if (!searchStr.includes(searchTerm)) return false;
         }
         
@@ -346,6 +433,8 @@ function renderTable() {
 
     pageInvoices.forEach(inv => {
         const ageClass = getAgeClass(inv.age);
+        const ageDisplay = inv.age > 0 ? `${inv.age} days` : '-';
+        
         html += `
             <tr onclick="viewInvoice(${inv.id})" data-id="${inv.id}">
                 <td><strong>${inv.invoiceNo}</strong></td>
@@ -355,8 +444,8 @@ function renderTable() {
                 </td>
                 <td class="amount">${formatCurrency(inv.amount)}</td>
                 <td>${inv.monthYear}</td>
-                <td class="${ageClass}">${inv.age} days</td>
-                <td><span class="badge badge-${inv.category?.toLowerCase() || 'rtp'}">${inv.category}</span></td>
+                <td class="${ageClass}">${ageDisplay}</td>
+                <td><span class="badge badge-${(inv.category || 'rtp').toLowerCase()}">${inv.category}</span></td>
                 <td>
                     <button class="btn btn-secondary" onclick="event.stopPropagation(); viewInvoice(${inv.id})">
                         View
@@ -383,6 +472,7 @@ function prevPage() {
     if (currentPage > 1) {
         currentPage--;
         renderTable();
+        document.querySelector('.table-scroll').scrollTop = 0;
     }
 }
 
@@ -391,35 +481,47 @@ function nextPage() {
     if (currentPage < maxPage) {
         currentPage++;
         renderTable();
+        document.querySelector('.table-scroll').scrollTop = 0;
     }
 }
 
 // View invoice details (Phase 2)
 function viewInvoice(invoiceId) {
-    console.log('View invoice:', invoiceId);
-    // TODO: Open invoice detail modal/page
-    alert(`Invoice ${invoiceId} details - Coming in Phase 2!`);
+    const invoice = allInvoices.find(inv => inv.id == invoiceId);
+    if (invoice) {
+        console.log('View invoice:', invoice);
+        alert(`Invoice #${invoice.invoiceNo}\n\nCompany: ${invoice.company}\nBranch: ${invoice.branch}\nAmount: ${formatCurrency(invoice.amount)}\nMonth: ${invoice.monthYear}\nAge: ${invoice.age} days\n\n(Detail view coming in Phase 2)`);
+    }
 }
 
-// Export to Excel (basic CSV)
+// Export to Excel (CSV format)
 function exportToExcel() {
-    const headers = ['Invoice #', 'Company', 'Branch', 'Amount', 'Month/Year', 'Age (Days)', 'Category'];
+    if (filteredInvoices.length === 0) {
+        alert('No data to export');
+        return;
+    }
+
+    const headers = ['Invoice #', 'Invoice ID', 'Company', 'Branch', 'Amount', 'Month/Year', 'Due Date', 'Age (Days)', 'Category', 'Received By'];
     const rows = filteredInvoices.map(inv => [
         inv.invoiceNo,
+        inv.invoiceId,
         inv.company,
         inv.branch,
         inv.amount.toFixed(2),
         inv.monthYear,
+        inv.dueDate || '',
         inv.age,
-        inv.category
+        inv.category,
+        inv.receivedBy || ''
     ]);
 
-    let csv = headers.join(',') + '\n';
+    let csv = '\uFEFF'; // BOM for Excel UTF-8
+    csv += headers.join(',') + '\n';
     rows.forEach(row => {
-        csv += row.map(cell => `"${cell}"`).join(',') + '\n';
+        csv += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
     });
 
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
