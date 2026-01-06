@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="shared/css/styles.css">
     <link rel="stylesheet" href="shared/css/dashboard.css">
     <style>
-        /* Collections specific styles */
         .collections-header {
             display: flex;
             justify-content: space-between;
@@ -16,10 +15,8 @@
             flex-wrap: wrap;
             gap: 15px;
         }
-        .collections-header h1 {
-            margin: 0;
-            color: #333;
-        }
+        .collections-header h1 { margin: 0; color: #333; }
+        
         .stats-row {
             display: flex;
             gap: 15px;
@@ -31,37 +28,45 @@
             border-radius: 8px;
             padding: 15px 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            min-width: 150px;
+            min-width: 120px;
         }
         .stat-card.primary {
             background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%);
             color: white;
         }
-        .stat-card .label {
-            font-size: 12px;
-            opacity: 0.8;
-            margin-bottom: 5px;
-        }
-        .stat-card .value {
-            font-size: 24px;
-            font-weight: bold;
-        }
-        .stat-card.primary .value {
-            color: white;
-        }
+        .stat-card .label { font-size: 11px; opacity: 0.8; margin-bottom: 5px; }
+        .stat-card .value { font-size: 20px; font-weight: bold; }
+        .stat-card.primary .value { color: white; }
         
+        .filters-section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
         .filters-row {
             display: flex;
             gap: 10px;
-            margin-bottom: 20px;
             flex-wrap: wrap;
             align-items: center;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .filter-group label {
+            font-size: 11px;
+            color: #666;
+            font-weight: 500;
         }
         .filters-row select, .filters-row input {
             padding: 8px 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            font-size: 14px;
+            font-size: 13px;
+            min-width: 120px;
         }
         .filters-row select:focus, .filters-row input:focus {
             border-color: #e91e8c;
@@ -73,24 +78,17 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
-        .btn-primary {
-            background: #e91e8c;
-            color: white;
-        }
-        .btn-primary:hover {
-            background: #c2185b;
-        }
-        .btn-secondary {
-            background: #f5f5f5;
-            color: #333;
-            border: 1px solid #ddd;
-        }
-        .btn-secondary:hover {
-            background: #eee;
-        }
+        .btn-primary { background: #e91e8c; color: white; }
+        .btn-primary:hover { background: #c2185b; }
+        .btn-secondary { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
+        .btn-secondary:hover { background: #eee; }
+        .btn-success { background: #4caf50; color: white; }
         
         .data-table-container {
             background: white;
@@ -98,33 +96,24 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             overflow: hidden;
         }
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+        .data-table { width: 100%; border-collapse: collapse; }
         .data-table th {
             background: #f8f9fa;
             padding: 12px 15px;
             text-align: left;
             font-weight: 600;
-            font-size: 13px;
+            font-size: 12px;
             color: #555;
             border-bottom: 2px solid #eee;
             position: sticky;
             top: 0;
         }
         .data-table td {
-            padding: 12px 15px;
+            padding: 10px 15px;
             border-bottom: 1px solid #f0f0f0;
             font-size: 13px;
         }
-        .data-table tr:hover {
-            background: #fdf2f8;
-            cursor: pointer;
-        }
-        .data-table tr.selected {
-            background: #fce4ec;
-        }
+        .data-table tr:hover { background: #fdf2f8; cursor: pointer; }
         
         .badge {
             display: inline-block;
@@ -133,23 +122,13 @@
             font-size: 11px;
             font-weight: 500;
         }
-        .badge-unpaid { background: #ffebee; color: #c62828; }
         .badge-rtp { background: #e3f2fd; color: #1565c0; }
         .badge-rtf { background: #f3e5f5; color: #7b1fa2; }
-        .badge-overdue { background: #fff3e0; color: #e65100; }
+        .badge-map { background: #fff3e0; color: #e65100; }
         
-        .amount { 
-            font-weight: 600; 
-            color: #c62828;
-        }
-        .company-name {
-            font-weight: 600;
-            color: #333;
-        }
-        .branch-name {
-            font-size: 12px;
-            color: #666;
-        }
+        .amount { font-weight: 600; color: #c62828; }
+        .company-name { font-weight: 600; color: #333; }
+        .branch-name { font-size: 12px; color: #666; }
         
         .loading-overlay {
             display: flex;
@@ -172,11 +151,7 @@
             100% { transform: rotate(360deg); }
         }
         
-        .empty-state {
-            text-align: center;
-            padding: 60px;
-            color: #666;
-        }
+        .empty-state { text-align: center; padding: 60px; color: #666; }
         
         .pagination {
             display: flex;
@@ -186,25 +161,45 @@
             background: #f8f9fa;
             border-top: 1px solid #eee;
         }
-        .pagination-info {
-            font-size: 13px;
-            color: #666;
-        }
-        .pagination-buttons {
-            display: flex;
-            gap: 5px;
-        }
+        .pagination-info { font-size: 13px; color: #666; }
+        .pagination-buttons { display: flex; gap: 5px; }
         
-        .table-scroll {
-            max-height: calc(100vh - 350px);
-            overflow-y: auto;
-        }
+        .table-scroll { max-height: calc(100vh - 400px); overflow-y: auto; }
 
         /* Age coloring */
         .age-30 { color: #f57c00; }
         .age-60 { color: #e65100; }
         .age-90 { color: #d32f2f; }
         .age-120 { color: #b71c1c; font-weight: bold; }
+        .age-180 { color: #880e4f; font-weight: bold; }
+        .age-240 { color: #4a148c; font-weight: bold; }
+        
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .active-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .filter-tag {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .filter-tag .remove {
+            cursor: pointer;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -273,24 +268,76 @@
                     <div class="label">90+ Days</div>
                     <div class="value" id="age-90">0</div>
                 </div>
+                <div class="stat-card">
+                    <div class="label">120+ Days</div>
+                    <div class="value" id="age-120">0</div>
+                </div>
             </div>
 
-            <!-- Filters -->
-            <div class="filters-row">
-                <select id="filter-month">
-                    <option value="">All Months</option>
-                </select>
-                <select id="filter-age">
-                    <option value="">All Ages</option>
-                    <option value="30">30+ Days</option>
-                    <option value="60">60+ Days</option>
-                    <option value="90">90+ Days</option>
-                    <option value="120">120+ Days</option>
-                </select>
-                <input type="text" id="search-input" placeholder="Search company/invoice..." style="width:250px;">
-                <button class="btn btn-secondary" onclick="applyFilters()">Apply Filters</button>
-                <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
-                <button class="btn btn-secondary" onclick="exportToExcel()">📥 Export to Excel</button>
+            <!-- Filters Section -->
+            <div class="filters-section">
+                <div class="filters-row">
+                    <div class="filter-group">
+                        <label>Year</label>
+                        <select id="filter-year">
+                            <option value="">All Years</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Month</label>
+                        <select id="filter-month">
+                            <option value="">All Months</option>
+                            <option value="January">January</option>
+                            <option value="February">February</option>
+                            <option value="March">March</option>
+                            <option value="April">April</option>
+                            <option value="May">May</option>
+                            <option value="June">June</option>
+                            <option value="July">July</option>
+                            <option value="August">August</option>
+                            <option value="September">September</option>
+                            <option value="October">October</option>
+                            <option value="November">November</option>
+                            <option value="December">December</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Age (Days Overdue)</label>
+                        <select id="filter-age">
+                            <option value="">All Ages</option>
+                            <option value="30">30+ Days</option>
+                            <option value="60">60+ Days</option>
+                            <option value="90">90+ Days</option>
+                            <option value="120">120+ Days</option>
+                            <option value="150">150+ Days</option>
+                            <option value="180">180+ Days</option>
+                            <option value="210">210+ Days</option>
+                            <option value="240">240+ Days</option>
+                            <option value="365">1 Year+</option>
+                            <option value="730">2 Years+</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Category</label>
+                        <select id="filter-category">
+                            <option value="">All Categories</option>
+                            <option value="RTP">RTP - Rental Per Page</option>
+                            <option value="RTF">RTF - Fixed Rate</option>
+                            <option value="MAP">MAP - Maintenance Per Page</option>
+                            <option value="STP">STP - Short Term</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Search Company/Invoice</label>
+                        <input type="text" id="search-input" placeholder="Type to search..." style="width:200px;">
+                    </div>
+                    <div class="filter-actions">
+                        <button class="btn btn-primary" onclick="applyFilters()">🔍 Apply Filters</button>
+                        <button class="btn btn-secondary" onclick="clearFilters()">✕ Clear</button>
+                        <button class="btn btn-success" onclick="exportToExcel()">📥 Export Excel</button>
+                    </div>
+                </div>
+                <div class="active-filters" id="active-filters"></div>
             </div>
 
             <!-- Data Table -->
