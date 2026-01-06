@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Collection History</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Debug Collection History & Unknown Companies</h1>
+    <button onclick="checkHistory()">Check Collection History</button>
+    <button onclick="checkUnknown()">Check Unknown Invoices</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+            console.log(msg);
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function checkHistory() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Collection History ===\n');
+            
+            const url = `${BASE_URL}/tbl_collectionhistory?pageSize=20&key=${API_KEY}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            log(`Total docs in first page: ${data.documents?.length || 0}`);
+            log(`Has more pages: ${data.nextPageToken ? 'YES' : 'NO'}\n`);
+            
+            const today = new Date().toISOString().split('T')[0];
+            log(`Today's date: ${today}\n`);
+            
+            data.documents?.slice(0, 10).forEach((doc, i) => {
+                const f = doc.fields;
+                log(`--- Record ${i + 1} ---`);
+                log(`  invoice_num: ${getValue(f.invoice_num)}`);
+                log(`  followup_datetime: ${getValue(f.followup_datetime)}`);
+                log(`  remarks: ${getValue(f.remarks)}`);
+                log(`  contact_person: ${getValue(f.contact_person)}`);
+                log(`  timestamp: ${getValue(f.timestamp)}`);
+                log(`  collector_id: ${getValue(f.collector_id)}`);
+                
+                // Check if followup is today
+                const followup = getValue(f.followup_datetime);
+                if (followup) {
+                    const followupDate = followup.split(' ')[0];
+                    log(`  Is today? ${followupDate === today ? 'YES ✅' : 'NO'}`);
+                }
+                log('');
+            });
+        }
+
+        async function checkUnknown() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Unknown Invoices ===\n');
+            
+            // Get a few billing records
+            const billingUrl = `${BASE_URL}/tbl_billing?pageSize=5&key=${API_KEY}`;
+            const billingRes = await fetch(billingUrl);
+            const billingData = await billingRes.json();
+            
+            log(`Sample billing records:\n`);
+            
+            for (const doc of billingData.documents || []) {
+                const f = doc.fields;
+                const billingId = getValue(f.id);
+                const invoiceId = getValue(f.invoice_id);
+                const contractmainId = getValue(f.contractmain_id);
+                
+                log(`Billing ID: ${billingId}, Invoice: ${invoiceId}`);
+                log(`  contractmain_id: ${contractmainId} (type: ${typeof contractmainId})`);
+                
+                // Try to find contract
+                if (contractmainId) {
+                    // Query contract
+                    const contractUrl = `${BASE_URL}/tbl_contractmain?pageSize=1&key=${API_KEY}`;
+                    // Note: REST API doesn't support direct ID lookup easily
+                    // Let's check the contract_id field in billing instead
+                    log(`  contract_id field: ${getValue(f.contract_id)}`);
+                    log(`  branch_id field: ${getValue(f.branch_id)}`);
+                    log(`  company_id field: ${getValue(f.company_id)}`);
+                }
+                log('');
+            }
+            
+            // Check if billing has direct company_id or branch_id
+            log('\n=== Checking all fields in one billing record ===\n');
+            const firstDoc = billingData.documents?.[0];
+            if (firstDoc) {
+                Object.keys(firstDoc.fields).sort().forEach(key => {
+                    const val = getValue(firstDoc.fields[key]);
+                    if (val !== null && val !== '') {
+                        log(`  ${key}: ${val}`);
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>

@@ -106,7 +106,7 @@
         /* Modal Styles */
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .modal-overlay.hidden { display: none; }
-        .modal { background: white; border-radius: 12px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal { background: white; border-radius: 12px; max-width: 500px; width: 90%; max-height: 70vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
         .modal-header { background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%); color: white; padding: 16px 20px; border-radius: 12px 12px 0 0; }
         .modal-header h2 { margin: 0 0 4px 0; font-size: 18px; }
         .modal-header p { margin: 0; opacity: 0.9; font-size: 13px; }
@@ -128,14 +128,12 @@
         
         .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; }
 
-        /* Follow-up Modal */
-        .followup-item { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; border-left: 3px solid #ff9800; }
-        .followup-item:hover { background: #fff3e0; }
-        .followup-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
-        .followup-time { color: #ff9800; font-size: 11px; }
-        .followup-company { font-weight: 600; color: #333; font-size: 13px; }
-        .followup-remarks { font-size: 12px; color: #666; font-style: italic; margin-top: 5px; }
-        .followup-contact { font-size: 11px; color: #999; margin-top: 5px; }
+        /* Follow-up Modal - Simplified */
+        .followup-item { background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid #eee; }
+        .followup-item:hover { background: #fff3e0; border-color: #ff9800; }
+        .followup-company { font-weight: 600; color: #333; font-size: 14px; }
+        .followup-invoice { font-size: 11px; color: #666; }
+        .followup-list { max-height: 300px; overflow-y: auto; }
         .empty-followup { text-align: center; padding: 30px; color: #4caf50; font-size: 14px; }
 
         /* Detail Modal */
