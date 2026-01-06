@@ -7,480 +7,236 @@
     <link rel="stylesheet" href="shared/css/styles.css">
     <link rel="stylesheet" href="shared/css/dashboard.css">
     <style>
-        .collections-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
+        .collections-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 15px; }
         .collections-header h1 { margin: 0; color: #333; }
         
-        /* Priority Cards */
-        .priority-section {
-            margin-bottom: 20px;
-        }
-        .priority-section h3 {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .priority-cards {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .priority-card {
-            background: white;
-            border-radius: 10px;
-            padding: 15px 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            cursor: pointer;
-            transition: all 0.2s;
-            border-left: 4px solid #ddd;
-            min-width: 180px;
-            flex: 1;
-            max-width: 220px;
-        }
-        .priority-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .priority-card.active {
-            background: #fdf2f8;
-        }
+        .priority-section { margin-bottom: 20px; }
+        .priority-section h3 { font-size: 14px; color: #666; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .priority-cards { display: flex; gap: 12px; flex-wrap: wrap; }
+        .priority-card { background: white; border-radius: 10px; padding: 15px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer; transition: all 0.2s; border-left: 4px solid #ddd; min-width: 150px; flex: 1; max-width: 180px; }
+        .priority-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .priority-card.active { background: #fdf2f8; }
         .priority-card.urgent { border-left-color: #d32f2f; }
         .priority-card.high { border-left-color: #f57c00; }
         .priority-card.medium { border-left-color: #fbc02d; }
-        .priority-card.low { border-left-color: #66bb6a; }
+        .priority-card.current { border-left-color: #66bb6a; }
         .priority-card.review { border-left-color: #7b1fa2; }
         .priority-card.baddebt { border-left-color: #455a64; }
+        .priority-card .card-title { font-size: 12px; font-weight: 600; color: #333; margin-bottom: 5px; }
+        .priority-card .card-count { font-size: 22px; font-weight: bold; color: #e91e8c; }
+        .priority-card .card-amount { font-size: 11px; color: #666; margin-top: 3px; }
+        .priority-card .card-hint { font-size: 9px; color: #999; margin-top: 6px; line-height: 1.3; }
         
-        .priority-card .card-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 5px;
-        }
-        .priority-card .card-count {
-            font-size: 24px;
-            font-weight: bold;
-            color: #e91e8c;
-        }
-        .priority-card .card-amount {
-            font-size: 12px;
-            color: #666;
-            margin-top: 3px;
-        }
-        .priority-card .card-hint {
-            font-size: 10px;
-            color: #999;
-            margin-top: 8px;
-            line-height: 1.3;
-        }
-        
-        /* Stats Row */
-        .stats-row {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-        }
-        .stat-card {
-            background: white;
-            border-radius: 8px;
-            padding: 12px 16px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-            min-width: 100px;
-        }
-        .stat-card.primary {
-            background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%);
-            color: white;
-        }
+        .stats-row { display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
+        .stat-card { background: white; border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); min-width: 100px; }
+        .stat-card.primary { background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%); color: white; }
         .stat-card .label { font-size: 10px; opacity: 0.8; margin-bottom: 3px; text-transform: uppercase; }
         .stat-card .value { font-size: 18px; font-weight: bold; }
         .stat-card.primary .value { color: white; }
         
-        /* Tip Banner */
-        .tip-banner {
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .tip-banner .tip-icon {
-            font-size: 24px;
-        }
-        .tip-banner .tip-content {
-            flex: 1;
-        }
-        .tip-banner .tip-title {
-            font-weight: 600;
-            color: #1565c0;
-            font-size: 13px;
-        }
-        .tip-banner .tip-text {
-            font-size: 12px;
-            color: #1976d2;
-            margin-top: 2px;
-        }
-        .tip-banner .tip-close {
-            cursor: pointer;
-            color: #1976d2;
-            font-size: 18px;
-        }
+        .tip-banner { background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 8px; padding: 10px 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+        .tip-banner .tip-icon { font-size: 20px; }
+        .tip-banner .tip-content { flex: 1; }
+        .tip-banner .tip-text { font-size: 12px; color: #1976d2; }
+        .tip-banner .tip-close { cursor: pointer; color: #1976d2; font-size: 16px; }
         
-        /* Filters Section */
-        .filters-section {
-            background: white;
-            border-radius: 8px;
-            padding: 12px 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-        }
-        .filters-row {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            align-items: flex-end;
-        }
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-        }
-        .filter-group label {
-            font-size: 10px;
-            color: #666;
-            font-weight: 500;
-            text-transform: uppercase;
-        }
-        .filters-row select, .filters-row input {
-            padding: 7px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 13px;
-            min-width: 110px;
-        }
-        .filters-row select:focus, .filters-row input:focus {
-            border-color: #e91e8c;
-            outline: none;
-        }
+        .filters-section { background: white; border-radius: 8px; padding: 12px 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+        .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+        .filter-group { display: flex; flex-direction: column; gap: 3px; }
+        .filter-group label { font-size: 10px; color: #666; font-weight: 500; text-transform: uppercase; }
+        .filters-row select, .filters-row input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; min-width: 100px; }
+        .filters-row select:focus, .filters-row input:focus { border-color: #e91e8c; outline: none; }
         
-        .btn {
-            padding: 7px 14px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px; }
         .btn-primary { background: #e91e8c; color: white; }
         .btn-primary:hover { background: #c2185b; }
         .btn-secondary { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
         .btn-secondary:hover { background: #eee; }
         .btn-success { background: #4caf50; color: white; }
+        .btn-warning { background: #ff9800; color: white; }
         .btn-sm { padding: 5px 10px; font-size: 11px; }
-        .btn.active { background: #7b1fa2; color: white; }
+        .btn.active { background: #7b1fa2; color: white; border-color: #7b1fa2; }
         
-        /* Data Table */
-        .data-table-container {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-            overflow: hidden;
-        }
+        .followup-btn { position: relative; }
+        .followup-badge { position: absolute; top: -8px; right: -8px; background: #d32f2f; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; display: none; }
+        
+        .data-table-container { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); overflow: hidden; }
         .data-table { width: 100%; border-collapse: collapse; }
-        .data-table th {
-            background: #f8f9fa;
-            padding: 10px 12px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 11px;
-            color: #555;
-            border-bottom: 2px solid #eee;
-            position: sticky;
-            top: 0;
-            text-transform: uppercase;
-        }
-        .data-table td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 13px;
-        }
+        .data-table th { background: #f8f9fa; padding: 10px 12px; text-align: left; font-weight: 600; font-size: 11px; color: #555; border-bottom: 2px solid #eee; position: sticky; top: 0; text-transform: uppercase; }
+        .data-table td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
         .data-table tr:hover { background: #fdf2f8; cursor: pointer; }
+        .data-table tr.has-followup { background: #fff8e1; }
+        .data-table tr.has-followup:hover { background: #fff3c4; }
         
-        .badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 10px;
-            font-size: 10px;
-            font-weight: 600;
-        }
-        .badge-rtp { background: #e3f2fd; color: #1565c0; }
-        .badge-rtf { background: #f3e5f5; color: #7b1fa2; }
-        .badge-map { background: #fff3e0; color: #e65100; }
-        
-        .priority-badge {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 9px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
+        .priority-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
         .priority-badge.urgent { background: #ffebee; color: #c62828; }
         .priority-badge.high { background: #fff3e0; color: #e65100; }
         .priority-badge.medium { background: #fffde7; color: #f9a825; }
-        .priority-badge.low { background: #e8f5e9; color: #2e7d32; }
         .priority-badge.current { background: #e8f5e9; color: #2e7d32; }
         .priority-badge.review { background: #f3e5f5; color: #7b1fa2; }
         .priority-badge.doubtful { background: #fce4ec; color: #880e4f; }
         .priority-badge.baddebt { background: #eceff1; color: #455a64; }
         
-        .amount { font-weight: 600; color: #c62828; }
-        .company-name { font-weight: 600; color: #333; font-size: 12px; }
-        .branch-name { font-size: 11px; color: #666; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 8px; font-size: 10px; font-weight: 500; }
+        .badge-rtp { background: #e3f2fd; color: #1565c0; }
+        .badge-rtf { background: #f3e5f5; color: #7b1fa2; }
+        .badge-map { background: #fff3e0; color: #e65100; }
         
-        .loading-overlay {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 60px;
-            color: #666;
-        }
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #e91e8c;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 15px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .amount { font-weight: 600; color: #c62828; }
+        .company-name { font-weight: 600; color: #333; font-size: 11px; }
+        .branch-name { font-size: 10px; color: #666; }
+        .remarks-cell { font-size: 10px; color: #666; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .loading-overlay { display: flex; align-items: center; justify-content: center; padding: 60px; color: #666; }
+        .loading-spinner { width: 40px; height: 40px; border: 3px solid #f3f3f3; border-top: 3px solid #e91e8c; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         .empty-state { text-align: center; padding: 60px; color: #666; }
-        
-        .pagination {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 15px;
-            background: #f8f9fa;
-            border-top: 1px solid #eee;
-        }
-        .pagination-info { font-size: 12px; color: #666; }
+        .pagination { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa; border-top: 1px solid #eee; }
+        .pagination-info { font-size: 11px; color: #666; }
         .pagination-buttons { display: flex; gap: 5px; }
-        
-        .table-scroll { max-height: calc(100vh - 450px); overflow-y: auto; }
+        .table-scroll { max-height: calc(100vh - 420px); overflow-y: auto; }
 
-        /* Age coloring */
-        .age-current { color: #4caf50; }
-        .age-30 { color: #8bc34a; }
-        .age-60 { color: #ffc107; }
-        .age-90 { color: #ff9800; }
-        .age-120 { color: #ff5722; }
-        .age-180 { color: #f44336; font-weight: 600; }
-        .age-365 { color: #9c27b0; font-weight: 600; }
+        .age-current { color: #4caf50; } .age-30 { color: #8bc34a; } .age-60 { color: #ffc107; } .age-90 { color: #ff9800; } .age-120 { color: #ff5722; } .age-180 { color: #f44336; font-weight: 600; } .age-365 { color: #9c27b0; font-weight: 600; }
         
-        .active-filters {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin-top: 8px;
-        }
-        .filter-tag {
-            background: #e8f5e9;
-            color: #2e7d32;
-            padding: 3px 8px;
-            border-radius: 10px;
-            font-size: 11px;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
+        .active-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .filter-tag { background: #e8f5e9; color: #2e7d32; padding: 3px 8px; border-radius: 10px; font-size: 10px; display: flex; align-items: center; gap: 4px; }
         .filter-tag .remove { cursor: pointer; font-weight: bold; }
 
         /* Modal Styles */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .modal-overlay.hidden { display: none; }
-        .modal {
-            background: white;
-            border-radius: 12px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        .modal-header {
-            background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%);
-            color: white;
-            padding: 20px 25px;
-            border-radius: 12px 12px 0 0;
-        }
-        .modal-header h2 { margin: 0 0 5px 0; font-size: 20px; }
-        .modal-header p { margin: 0; opacity: 0.9; font-size: 14px; }
-        .modal-body { padding: 25px; }
-        .modal-footer {
-            padding: 15px 25px;
-            background: #f8f9fa;
-            border-radius: 0 0 12px 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        .modal { background: white; border-radius: 12px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal-header { background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%); color: white; padding: 16px 20px; border-radius: 12px 12px 0 0; }
+        .modal-header h2 { margin: 0 0 4px 0; font-size: 18px; }
+        .modal-header p { margin: 0; opacity: 0.9; font-size: 13px; }
+        .modal-body { padding: 20px; }
+        .modal-footer { padding: 12px 20px; background: #f8f9fa; border-radius: 0 0 12px 12px; display: flex; justify-content: space-between; align-items: center; }
         
-        .guide-section {
-            margin-bottom: 20px;
-        }
-        .guide-section h4 {
-            color: #e91e8c;
-            font-size: 14px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .guide-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        .guide-list li {
-            padding: 8px 12px;
-            margin-bottom: 6px;
-            border-radius: 6px;
-            font-size: 13px;
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
-        }
+        .guide-section { margin-bottom: 16px; }
+        .guide-section h4 { color: #e91e8c; font-size: 13px; margin-bottom: 8px; }
+        .guide-list { list-style: none; padding: 0; margin: 0; }
+        .guide-list li { padding: 10px 12px; margin-bottom: 6px; border-radius: 6px; font-size: 12px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s; }
+        .guide-list li:hover { transform: translateX(5px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
         .guide-list li.urgent { background: #ffebee; border-left: 3px solid #d32f2f; }
         .guide-list li.high { background: #fff3e0; border-left: 3px solid #f57c00; }
         .guide-list li.medium { background: #fffde7; border-left: 3px solid #fbc02d; }
         .guide-list li.low { background: #e8f5e9; border-left: 3px solid #66bb6a; }
         .guide-list li.info { background: #e3f2fd; border-left: 3px solid #1976d2; }
+        .guide-list .priority-label { font-weight: 600; min-width: 70px; font-size: 11px; }
+        .guide-list .click-hint { font-size: 10px; color: #999; margin-left: auto; }
         
-        .guide-list .priority-label {
-            font-weight: 600;
-            min-width: 80px;
-        }
-        
-        .checkbox-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-            color: #666;
-        }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; }
+
+        /* Follow-up Modal */
+        .followup-item { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; border-left: 3px solid #ff9800; }
+        .followup-item:hover { background: #fff3e0; }
+        .followup-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .followup-time { color: #ff9800; font-size: 11px; }
+        .followup-company { font-weight: 600; color: #333; font-size: 13px; }
+        .followup-remarks { font-size: 12px; color: #666; font-style: italic; margin-top: 5px; }
+        .followup-contact { font-size: 11px; color: #999; margin-top: 5px; }
+        .empty-followup { text-align: center; padding: 30px; color: #4caf50; font-size: 14px; }
+
+        /* Detail Modal */
+        .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+        .detail-item { background: #f8f9fa; padding: 10px; border-radius: 6px; }
+        .detail-item label { font-size: 10px; color: #666; display: block; margin-bottom: 3px; text-transform: uppercase; }
+        .detail-item span { font-size: 14px; font-weight: 500; }
+        .history-section h4 { font-size: 13px; color: #e91e8c; margin-bottom: 10px; }
+        .history-list { max-height: 250px; overflow-y: auto; }
+        .history-item { background: #f8f9fa; padding: 10px; margin-bottom: 8px; border-radius: 6px; border-left: 3px solid #e91e8c; }
+        .history-date { font-size: 10px; color: #999; margin-bottom: 3px; }
+        .history-remarks { font-size: 12px; color: #333; }
+        .history-followup { font-size: 11px; color: #ff9800; margin-top: 5px; }
+        .no-history { text-align: center; padding: 20px; color: #999; font-size: 13px; }
     </style>
 </head>
 <body>
-    <!-- Welcome Guide Modal -->
+    <!-- Welcome Guide Modal (Clickable) -->
     <div class="modal-overlay" id="welcomeModal">
         <div class="modal">
             <div class="modal-header">
                 <h2>👋 Welcome to Collections!</h2>
-                <p>Quick guide to help you work efficiently</p>
+                <p>Click any priority to start working on those accounts</p>
             </div>
             <div class="modal-body">
                 <div class="guide-section">
-                    <h4>🎯 Collection Priority Guide</h4>
+                    <h4>🎯 Collection Priority Guide (Click to filter)</h4>
                     <ul class="guide-list">
-                        <li class="urgent">
+                        <li class="urgent" onclick="goToPriority('urgent')">
                             <span class="priority-label">🔴 URGENT</span>
-                            <span><strong>91-120 days</strong> - Call immediately! High chance of recovery. Send final notice.</span>
+                            <span><strong>91-120 days</strong> - Call NOW! Recovery: 50-60%</span>
+                            <span class="click-hint">Click →</span>
                         </li>
-                        <li class="high">
+                        <li class="high" onclick="goToPriority('high')">
                             <span class="priority-label">🟠 HIGH</span>
-                            <span><strong>61-90 days</strong> - Follow up aggressively. Recovery rate: 70-80%</span>
+                            <span><strong>61-90 days</strong> - Follow up aggressively. Recovery: 70-80%</span>
+                            <span class="click-hint">Click →</span>
                         </li>
-                        <li class="medium">
+                        <li class="medium" onclick="goToPriority('medium')">
                             <span class="priority-label">🟡 MEDIUM</span>
-                            <span><strong>31-60 days</strong> - Regular reminder calls. Recovery rate: 85-90%</span>
+                            <span><strong>31-60 days</strong> - Regular reminders. Recovery: 85-90%</span>
+                            <span class="click-hint">Click →</span>
                         </li>
-                        <li class="low">
+                        <li class="low" onclick="goToPriority('current')">
                             <span class="priority-label">🟢 CURRENT</span>
-                            <span><strong>0-30 days</strong> - Standard follow-up. Recovery rate: 95%+</span>
+                            <span><strong>0-30 days</strong> - Standard follow-up. Recovery: 95%+</span>
+                            <span class="click-hint">Click →</span>
                         </li>
                     </ul>
                 </div>
-                
                 <div class="guide-section">
-                    <h4>⚠️ Special Attention</h4>
+                    <h4>📊 Best Practices</h4>
                     <ul class="guide-list">
-                        <li class="info">
-                            <span class="priority-label">📋 FOR REVIEW</span>
-                            <span><strong>121-365 days</strong> - Needs manager review. Consider machine pull-out.</span>
-                        </li>
-                        <li class="info">
-                            <span class="priority-label">📝 BAD DEBT</span>
-                            <span><strong>1+ year</strong> - For write-off processing. Recovery rate below 10%.</span>
-                        </li>
-                    </ul>
-                </div>
-
-                <div class="guide-section">
-                    <h4>💡 Daily Workflow Tips</h4>
-                    <ul class="guide-list">
-                        <li class="info">
-                            <span>1. Start with <strong>URGENT (91-120 days)</strong> - these need immediate attention</span>
-                        </li>
-                        <li class="info">
-                            <span>2. Work through <strong>HIGH priority</strong> next - before they become urgent</span>
-                        </li>
-                        <li class="info">
-                            <span>3. Use the <strong>quick filter buttons</strong> to focus on each category</span>
-                        </li>
-                        <li class="info">
-                            <span>4. Log all call attempts and remarks for tracking</span>
-                        </li>
+                        <li class="info"><span><strong>Daily Focus:</strong> 0-120 days (highest recovery 50-95%)</span></li>
+                        <li class="info"><span><strong>Weekly Review:</strong> 121-180 days (needs escalation)</span></li>
+                        <li class="info"><span><strong>Monthly:</strong> 180+ days (management decision)</span></li>
                     </ul>
                 </div>
             </div>
             <div class="modal-footer">
-                <label class="checkbox-row">
-                    <input type="checkbox" id="dontShowAgain">
-                    Don't show this again
-                </label>
-                <button class="btn btn-primary" onclick="closeWelcomeModal()">Got it! Let's start 💪</button>
+                <label class="checkbox-row"><input type="checkbox" id="dontShowAgain"> Don't show on startup</label>
+                <button class="btn btn-primary" onclick="closeWelcomeModal()">Got it! 💪</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Today's Follow-ups Modal -->
+    <div class="modal-overlay hidden" id="followupModal">
+        <div class="modal">
+            <div class="modal-header" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);">
+                <h2>📅 Today's Follow-ups</h2>
+                <p>Scheduled calls for today</p>
+            </div>
+            <div class="modal-body">
+                <div id="followupList"></div>
+            </div>
+            <div class="modal-footer">
+                <span></span>
+                <button class="btn btn-warning" onclick="closeFollowupModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invoice Detail Modal -->
+    <div class="modal-overlay hidden" id="detailModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📄 Invoice #<span id="detailInvoiceNo"></span></h2>
+                <p>Invoice details and collection history</p>
+            </div>
+            <div class="modal-body" id="detailContent"></div>
+            <div class="modal-footer">
+                <span></span>
+                <button class="btn btn-primary" onclick="closeDetailModal()">Close</button>
             </div>
         </div>
     </div>
 
     <div class="dashboard-container">
-        <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2>MARGA</h2>
-                <span class="subtitle">Enterprise System</span>
-            </div>
+            <div class="sidebar-header"><h2>MARGA</h2><span class="subtitle">Enterprise System</span></div>
             <nav class="sidebar-nav">
                 <a href="dashboard.html" class="nav-item"><span class="icon">📊</span> Dashboard</a>
                 <a href="customers.html" class="nav-item"><span class="icon">👥</span> Customers</a>
@@ -489,37 +245,29 @@
                 <a href="#" class="nav-item"><span class="icon">🔧</span> Service</a>
                 <a href="#" class="nav-item"><span class="icon">📈</span> Reports</a>
             </nav>
-            <div class="sidebar-footer">
-                <span id="current-user">Collector</span>
-                <a href="index.html" class="logout-btn">Logout</a>
-            </div>
+            <div class="sidebar-footer"><span id="current-user">Collector</span><a href="index.html" class="logout-btn">Logout</a></div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <div class="collections-header">
                 <h1>💰 Collections <span id="dataMode" style="font-size:12px; color:#666; font-weight:normal;">(Active 0-180 days)</span></h1>
                 <div style="display:flex; gap:8px; align-items:center;">
+                    <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">📅 Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">📖 Guide</button>
-                    <button class="btn btn-secondary btn-sm" id="btnShowBadDebt" onclick="toggleBadDebt()" title="Toggle bad debt visibility">📋 Show Bad Debt</button>
-                    <span id="last-updated" style="font-size:11px; color:#666;"></span>
-                    <button class="btn btn-primary btn-sm" onclick="loadUnpaidInvoices()">🔄 Refresh</button>
+                    <button class="btn btn-secondary btn-sm" id="btnShowBadDebt" onclick="toggleBadDebt()">📋 Bad Debt</button>
+                    <span id="last-updated" style="font-size:10px; color:#666;"></span>
+                    <button class="btn btn-primary btn-sm" onclick="loadUnpaidInvoices()">🔄</button>
                 </div>
             </div>
 
-            <!-- Daily Tip Banner -->
             <div class="tip-banner" id="tipBanner">
                 <span class="tip-icon">💡</span>
-                <div class="tip-content">
-                    <div class="tip-title">Daily Tip</div>
-                    <div class="tip-text" id="tipText">Focus on URGENT (91-120 days) invoices first - they have the highest recovery potential!</div>
-                </div>
+                <div class="tip-content"><div class="tip-text" id="tipText"></div></div>
                 <span class="tip-close" onclick="closeTip()">×</span>
             </div>
 
-            <!-- Priority Quick Actions -->
             <div class="priority-section">
-                <h3>🎯 Quick Actions - Click to filter by priority</h3>
+                <h3>🎯 Click to filter by priority</h3>
                 <div class="priority-cards">
                     <div class="priority-card urgent" onclick="filterByPriority('urgent')">
                         <div class="card-title">🔴 URGENT</div>
@@ -531,106 +279,49 @@
                         <div class="card-title">🟠 HIGH</div>
                         <div class="card-count" id="count-high">0</div>
                         <div class="card-amount" id="amount-high">₱0</div>
-                        <div class="card-hint">61-90 days • Follow up aggressively</div>
+                        <div class="card-hint">61-90 days • Follow up</div>
                     </div>
                     <div class="priority-card medium" onclick="filterByPriority('medium')">
                         <div class="card-title">🟡 MEDIUM</div>
                         <div class="card-count" id="count-medium">0</div>
                         <div class="card-amount" id="amount-medium">₱0</div>
-                        <div class="card-hint">31-60 days • Regular reminders</div>
+                        <div class="card-hint">31-60 days • Reminders</div>
                     </div>
-                    <div class="priority-card low" onclick="filterByPriority('current')">
+                    <div class="priority-card current" onclick="filterByPriority('current')">
                         <div class="card-title">🟢 CURRENT</div>
                         <div class="card-count" id="count-current">0</div>
                         <div class="card-amount" id="amount-current">₱0</div>
-                        <div class="card-hint">0-30 days • Standard follow-up</div>
+                        <div class="card-hint">0-30 days • Standard</div>
                     </div>
                     <div class="priority-card review" onclick="filterByPriority('review')">
                         <div class="card-title">📋 FOR REVIEW</div>
                         <div class="card-count" id="count-review">0</div>
                         <div class="card-amount" id="amount-review">₱0</div>
-                        <div class="card-hint">121-365 days • Needs manager</div>
+                        <div class="card-hint">121-365 days • Manager</div>
                     </div>
                     <div class="priority-card baddebt" onclick="filterByPriority('baddebt')">
                         <div class="card-title">📝 BAD DEBT</div>
                         <div class="card-count" id="count-baddebt">0</div>
                         <div class="card-amount" id="amount-baddebt">₱0</div>
-                        <div class="card-hint">1+ year • For write-off</div>
+                        <div class="card-hint">1+ year • Write-off</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Summary Stats -->
             <div class="stats-row">
-                <div class="stat-card primary">
-                    <div class="label">Total Receivables</div>
-                    <div class="value" id="total-unpaid">₱0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Active Collection</div>
-                    <div class="value" id="total-active">₱0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Invoice Count</div>
-                    <div class="value" id="invoice-count">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Collectible (≤180d)</div>
-                    <div class="value" id="collectible-count">0</div>
-                </div>
+                <div class="stat-card primary"><div class="label">Total Receivables</div><div class="value" id="total-unpaid">₱0</div></div>
+                <div class="stat-card"><div class="label">Active (≤120d)</div><div class="value" id="total-active">₱0</div></div>
+                <div class="stat-card"><div class="label">Invoices</div><div class="value" id="invoice-count">0</div></div>
+                <div class="stat-card"><div class="label">Collectible</div><div class="value" id="collectible-count">0</div></div>
             </div>
 
-            <!-- Filters Section -->
             <div class="filters-section">
                 <div class="filters-row">
-                    <div class="filter-group">
-                        <label>Year</label>
-                        <select id="filter-year"><option value="">All Years</option></select>
-                    </div>
-                    <div class="filter-group">
-                        <label>Month</label>
-                        <select id="filter-month">
-                            <option value="">All Months</option>
-                            <option value="January">January</option>
-                            <option value="February">February</option>
-                            <option value="March">March</option>
-                            <option value="April">April</option>
-                            <option value="May">May</option>
-                            <option value="June">June</option>
-                            <option value="July">July</option>
-                            <option value="August">August</option>
-                            <option value="September">September</option>
-                            <option value="October">October</option>
-                            <option value="November">November</option>
-                            <option value="December">December</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label>Age Range</label>
-                        <select id="filter-age">
-                            <option value="">All Ages</option>
-                            <option value="0-30">0-30 days (Current)</option>
-                            <option value="31-60">31-60 days (Medium)</option>
-                            <option value="61-90">61-90 days (High)</option>
-                            <option value="91-120">91-120 days (Urgent)</option>
-                            <option value="121-180">121-180 days (For Review)</option>
-                            <option value="181-365">181-365 days (Doubtful)</option>
-                            <option value="366+">1+ year (Bad Debt)</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label>Category</label>
-                        <select id="filter-category">
-                            <option value="">All Categories</option>
-                            <option value="RTP">RTP</option>
-                            <option value="RTF">RTF</option>
-                            <option value="MAP">MAP</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label>Search</label>
-                        <input type="text" id="search-input" placeholder="Company or Invoice #" style="width:150px;">
-                    </div>
+                    <div class="filter-group"><label>Year</label><select id="filter-year"><option value="">All</option></select></div>
+                    <div class="filter-group"><label>Month</label><select id="filter-month"><option value="">All</option><option>January</option><option>February</option><option>March</option><option>April</option><option>May</option><option>June</option><option>July</option><option>August</option><option>September</option><option>October</option><option>November</option><option>December</option></select></div>
+                    <div class="filter-group"><label>Age</label><select id="filter-age"><option value="">All</option><option value="0-30">0-30d</option><option value="31-60">31-60d</option><option value="61-90">61-90d</option><option value="91-120">91-120d</option><option value="121-180">121-180d</option><option value="181-365">181-365d</option><option value="366+">1yr+</option></select></div>
+                    <div class="filter-group"><label>Category</label><select id="filter-category"><option value="">All</option><option>RTP</option><option>RTF</option><option>MAP</option></select></div>
+                    <div class="filter-group"><label>Search</label><input type="text" id="search-input" placeholder="Company..." style="width:120px;"></div>
                     <button class="btn btn-primary btn-sm" onclick="applyFilters()">🔍 Filter</button>
                     <button class="btn btn-secondary btn-sm" onclick="clearFilters()">✕ Clear</button>
                     <button class="btn btn-success btn-sm" onclick="exportToExcel()">📥 Export</button>
@@ -638,22 +329,11 @@
                 <div class="active-filters" id="active-filters"></div>
             </div>
 
-            <!-- Data Table -->
             <div class="data-table-container">
-                <div class="table-scroll" id="table-container">
-                    <div class="loading-overlay">
-                        <div class="loading-spinner"></div>
-                        <span>Loading collections data...</span>
-                    </div>
-                </div>
+                <div class="table-scroll" id="table-container"><div class="loading-overlay"><div class="loading-spinner"></div><span>Loading...</span></div></div>
                 <div class="pagination" id="pagination" style="display:none;">
-                    <div class="pagination-info">
-                        Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-records">0</span>
-                    </div>
-                    <div class="pagination-buttons">
-                        <button class="btn btn-secondary btn-sm" onclick="prevPage()" id="btn-prev">← Prev</button>
-                        <button class="btn btn-secondary btn-sm" onclick="nextPage()" id="btn-next">Next →</button>
-                    </div>
+                    <div class="pagination-info">Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-records">0</span></div>
+                    <div class="pagination-buttons"><button class="btn btn-secondary btn-sm" onclick="prevPage()" id="btn-prev">← Prev</button><button class="btn btn-secondary btn-sm" onclick="nextPage()" id="btn-next">Next →</button></div>
                 </div>
             </div>
         </main>
