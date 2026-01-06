@@ -1,7 +1,7 @@
 /**
  * MARGA Collections Module
  * Phase 1: View Unpaid Invoices
- * Updated with correct field mappings
+ * Fixed: Fetch ALL records from all tables
  */
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
@@ -35,24 +35,30 @@ async function firestoreGet(collection, pageSize = 500, pageToken = null) {
 }
 
 // Fetch ALL documents from a collection (handles pagination)
-async function firestoreGetAll(collection, maxRecords = 10000) {
+async function firestoreGetAll(collection, statusCallback = null) {
     let allDocs = [];
     let pageToken = null;
-    let fetched = 0;
+    let page = 0;
     
-    while (fetched < maxRecords) {
+    while (true) {
         const data = await firestoreGet(collection, 500, pageToken);
         if (data.documents) {
             allDocs = allDocs.concat(data.documents);
-            fetched += data.documents.length;
+        }
+        page++;
+        
+        if (statusCallback) {
+            statusCallback(`Loading ${collection}... ${allDocs.length} records (page ${page})`);
         }
         
-        if (!data.nextPageToken || (data.documents && data.documents.length < 500)) {
+        // Check if there are more pages
+        if (!data.nextPageToken || !data.documents || data.documents.length < 500) {
             break;
         }
         pageToken = data.nextPageToken;
     }
     
+    console.log(`${collection}: ${allDocs.length} total records`);
     return allDocs;
 }
 
@@ -70,7 +76,6 @@ function monthNameToNumber(monthName) {
 function calculateAgeFromDueDate(dueDate) {
     if (!dueDate) return 0;
     try {
-        // Parse date string like "2025-10-16 00:00:00"
         const datePart = dueDate.split(' ')[0];
         const invoiceDate = new Date(datePart);
         const today = new Date();
@@ -125,62 +130,48 @@ function updateLoadingStatus(message) {
 
 // Load all required data
 async function loadUnpaidInvoices() {
-    updateLoadingStatus('Loading billing records...');
+    updateLoadingStatus('Starting data load...');
 
     try {
-        // Fetch all data - using pagination for large collections
-        console.log('Fetching data from Firebase...');
+        console.log('=== Starting data fetch ===');
         
-        updateLoadingStatus('Loading billing records...');
-        const billingDocs = await firestoreGetAll('tbl_billing', 5000);
-        console.log('Billing records:', billingDocs.length);
+        // Fetch ALL data from each collection
+        updateLoadingStatus('Loading companies (1,143 records)...');
+        const companyDocs = await firestoreGetAll('tbl_companylist', updateLoadingStatus);
         
-        updateLoadingStatus('Loading payment records...');
-        const paymentDocs = await firestoreGetAll('tbl_paymentinfo', 10000);
-        console.log('Payment records:', paymentDocs.length);
+        updateLoadingStatus('Loading branches (3,336 records)...');
+        const branchDocs = await firestoreGetAll('tbl_branchinfo', updateLoadingStatus);
         
-        updateLoadingStatus('Loading contracts...');
-        const contractDocs = await firestoreGetAll('tbl_contractmain', 5000);
-        console.log('Contracts:', contractDocs.length);
+        updateLoadingStatus('Loading contracts (4,600 records)...');
+        const contractDocs = await firestoreGetAll('tbl_contractmain', updateLoadingStatus);
         
-        updateLoadingStatus('Loading branches...');
-        const branchDocs = await firestoreGetAll('tbl_branchinfo', 5000);
-        console.log('Branches:', branchDocs.length);
+        updateLoadingStatus('Loading payments (15,000+ records)...');
+        const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus);
         
-        updateLoadingStatus('Loading companies...');
-        const companyDocs = await firestoreGetAll('tbl_companylist', 2000);
-        console.log('Companies:', companyDocs.length);
+        updateLoadingStatus('Loading billing records (15,000+ records)...');
+        const billingDocs = await firestoreGetAll('tbl_billing', updateLoadingStatus);
 
-        // Build payment lookup - check both invoice_id and id matching
-        updateLoadingStatus('Processing payment data...');
-        paidInvoiceIds = new Set();
-        const paidBillingIds = new Set();
-        
-        paymentDocs.forEach(doc => {
-            const f = doc.fields;
-            // invoice_id in payments might match invoice_id in billing
-            const invId = getValue(f.invoice_id);
-            if (invId) {
-                paidInvoiceIds.add(String(invId));
-            }
+        console.log('=== Data fetch complete ===');
+        console.log({
+            companies: companyDocs.length,
+            branches: branchDocs.length,
+            contracts: contractDocs.length,
+            payments: paymentDocs.length,
+            billing: billingDocs.length
         });
-        console.log('Paid invoice IDs:', paidInvoiceIds.size);
 
-        // Build contract lookup (contractmain_id → branch info)
-        updateLoadingStatus('Building contract lookup...');
-        contractMap = {};
-        contractDocs.forEach(doc => {
+        // Build company lookup FIRST
+        updateLoadingStatus('Building company lookup...');
+        companyMap = {};
+        companyDocs.forEach(doc => {
             const f = doc.fields;
             const id = getValue(f.id);
-            contractMap[id] = {
-                branch_id: getValue(f.contract_id), // contract_id in contractmain = branch_id
-                mach_id: getValue(f.mach_id),
-                category_id: getValue(f.category_id)
-            };
+            companyMap[id] = getValue(f.companyname) || 'Unknown';
         });
-        console.log('Contract map size:', Object.keys(contractMap).length);
+        console.log('Company map size:', Object.keys(companyMap).length);
 
         // Build branch lookup
+        updateLoadingStatus('Building branch lookup...');
         branchMap = {};
         branchDocs.forEach(doc => {
             const f = doc.fields;
@@ -192,43 +183,81 @@ async function loadUnpaidInvoices() {
         });
         console.log('Branch map size:', Object.keys(branchMap).length);
 
-        // Build company lookup
-        companyMap = {};
-        companyDocs.forEach(doc => {
+        // Build contract lookup - KEY FIX: Map by contract ID
+        updateLoadingStatus('Building contract lookup...');
+        contractMap = {};
+        contractDocs.forEach(doc => {
             const f = doc.fields;
-            const id = getValue(f.id);
-            companyMap[id] = getValue(f.companyname) || 'Unknown';
+            const id = getValue(f.id); // This is the contractmain_id that billing references
+            contractMap[id] = {
+                branch_id: getValue(f.contract_id), // contract_id in contractmain = branch_id in branchinfo
+                mach_id: getValue(f.mach_id),
+                category_id: getValue(f.category_id),
+                status: getValue(f.status)
+            };
         });
-        console.log('Company map size:', Object.keys(companyMap).length);
+        console.log('Contract map size:', Object.keys(contractMap).length);
+        
+        // Debug: Check if contract 5485 exists now
+        console.log('Contract 5485 exists?', contractMap[5485] ? 'YES' : 'NO');
+        if (contractMap[5485]) {
+            console.log('Contract 5485:', contractMap[5485]);
+        }
+
+        // Build payment lookup
+        updateLoadingStatus('Processing payment data...');
+        paidInvoiceIds = new Set();
+        paymentDocs.forEach(doc => {
+            const f = doc.fields;
+            const invId = getValue(f.invoice_id);
+            if (invId) {
+                paidInvoiceIds.add(String(invId));
+            }
+        });
+        console.log('Paid invoice IDs:', paidInvoiceIds.size);
 
         // Process billing records to find unpaid
         updateLoadingStatus('Finding unpaid invoices...');
         allInvoices = [];
+        let linkedCount = 0;
+        let unlinkedCount = 0;
         
         billingDocs.forEach(doc => {
             const f = doc.fields;
             const billingId = getValue(f.id);
             const invoiceId = getValue(f.invoice_id);
             
-            // Check if this invoice is paid (by invoice_id)
+            // Check if this invoice is paid
             if (paidInvoiceIds.has(String(invoiceId))) {
-                return; // Skip - this invoice is paid
+                return; // Skip paid invoices
             }
 
-            // Get contract info using contractmain_id (the correct field!)
+            // Get contract info using contractmain_id
             const contractmainId = getValue(f.contractmain_id);
-            const contract = contractMap[contractmainId] || {};
+            const contract = contractMap[contractmainId];
             
-            // Get branch and company from contract
-            const branch = branchMap[contract.branch_id] || {};
-            const companyName = companyMap[branch.company_id] || 'Unknown';
+            let companyName = 'Unknown';
+            let branchName = 'Unknown';
+            let categoryId = null;
             
-            // Get month/year - field names are 'month' and 'year' as strings
-            const monthStr = getValue(f.month); // e.g., "October"
-            const yearStr = getValue(f.year);   // e.g., "2025"
+            if (contract) {
+                linkedCount++;
+                const branch = branchMap[contract.branch_id];
+                if (branch) {
+                    branchName = branch.name || 'Main';
+                    companyName = companyMap[branch.company_id] || 'Unknown';
+                }
+                categoryId = contract.category_id;
+            } else {
+                unlinkedCount++;
+            }
+            
+            // Get month/year
+            const monthStr = getValue(f.month);
+            const yearStr = getValue(f.year);
             const dueDate = getValue(f.due_date);
             
-            // Calculate age from due_date first, fall back to month/year
+            // Calculate age
             let age = calculateAgeFromDueDate(dueDate);
             if (age === 0 && monthStr && yearStr) {
                 age = calculateAgeFromMonthYear(monthStr, yearStr);
@@ -239,7 +268,7 @@ async function loadUnpaidInvoices() {
             const vatAmount = parseFloat(getValue(f.vatamount) || 0);
             const finalAmount = totalAmount + vatAmount;
 
-            // Format month/year for display
+            // Format month/year
             let monthYear = '-';
             if (monthStr && yearStr) {
                 monthYear = `${monthStr} ${yearStr}`;
@@ -257,33 +286,31 @@ async function loadUnpaidInvoices() {
                 dueDate: dueDate,
                 age: age,
                 company: companyName,
-                branch: branch.name || 'Unknown',
-                category: getCategoryCode(contract.category_id),
+                branch: branchName,
+                category: getCategoryCode(categoryId),
                 receivedBy: getValue(f.receivedby),
                 dateReceived: getValue(f.date_received),
                 status: getValue(f.status)
             });
         });
 
-        console.log('Total unpaid invoices found:', allInvoices.length);
+        console.log('=== Processing complete ===');
+        console.log('Total unpaid:', allInvoices.length);
+        console.log('Linked to company:', linkedCount);
+        console.log('Unlinked (Unknown):', unlinkedCount);
 
-        // Sort by amount descending (highest first)
+        // Sort by amount descending
         allInvoices.sort((a, b) => b.amount - a.amount);
 
         // Apply initial filters
         filteredInvoices = [...allInvoices];
         
-        // Update stats
+        // Update UI
         updateStats();
-        
-        // Populate month filter
         populateMonthFilter();
-        
-        // Render table
         currentPage = 1;
         renderTable();
 
-        // Update timestamp
         document.getElementById('last-updated').textContent = 
             'Last updated: ' + new Date().toLocaleTimeString();
 
@@ -336,7 +363,6 @@ function populateMonthFilter() {
     const select = document.getElementById('filter-month');
     select.innerHTML = '<option value="">All Months</option>';
     
-    // Sort months (most recent first)
     const monthOrder = ['January', 'February', 'March', 'April', 'May', 'June',
                         'July', 'August', 'September', 'October', 'November', 'December'];
     
@@ -362,18 +388,12 @@ function applyFilters() {
     const searchTerm = document.getElementById('search-input').value.toLowerCase();
 
     filteredInvoices = allInvoices.filter(inv => {
-        // Month filter
         if (monthFilter && inv.monthYear !== monthFilter) return false;
-        
-        // Age filter
         if (ageFilter && inv.age < parseInt(ageFilter)) return false;
-        
-        // Search filter
         if (searchTerm) {
             const searchStr = `${inv.company} ${inv.branch} ${inv.invoiceNo} ${inv.invoiceId}`.toLowerCase();
             if (!searchStr.includes(searchTerm)) return false;
         }
-        
         return true;
     });
 
@@ -409,12 +429,10 @@ function renderTable() {
         return;
     }
 
-    // Calculate pagination
     const startIdx = (currentPage - 1) * pageSize;
     const endIdx = Math.min(startIdx + pageSize, filteredInvoices.length);
     const pageInvoices = filteredInvoices.slice(startIdx, endIdx);
 
-    // Build table HTML
     let html = `
         <table class="data-table">
             <thead>
@@ -458,7 +476,6 @@ function renderTable() {
     html += '</tbody></table>';
     container.innerHTML = html;
 
-    // Update pagination
     document.getElementById('showing-start').textContent = startIdx + 1;
     document.getElementById('showing-end').textContent = endIdx;
     document.getElementById('total-records').textContent = filteredInvoices.length;
@@ -485,7 +502,7 @@ function nextPage() {
     }
 }
 
-// View invoice details (Phase 2)
+// View invoice details
 function viewInvoice(invoiceId) {
     const invoice = allInvoices.find(inv => inv.id == invoiceId);
     if (invoice) {
@@ -494,7 +511,7 @@ function viewInvoice(invoiceId) {
     }
 }
 
-// Export to Excel (CSV format)
+// Export to Excel
 function exportToExcel() {
     if (filteredInvoices.length === 0) {
         alert('No data to export');
@@ -515,7 +532,7 @@ function exportToExcel() {
         inv.receivedBy || ''
     ]);
 
-    let csv = '\uFEFF'; // BOM for Excel UTF-8
+    let csv = '\uFEFF';
     csv += headers.join(',') + '\n';
     rows.forEach(row => {
         csv += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
@@ -530,7 +547,7 @@ function exportToExcel() {
     window.URL.revokeObjectURL(url);
 }
 
-// Search on Enter key
+// Initialize
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('search-input').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
@@ -538,6 +555,5 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Load data on page load
     loadUnpaidInvoices();
 });

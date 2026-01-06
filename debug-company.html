@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Company Link Chain</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; background: #f5f5f5; }
+        .card { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 400px; }
+        button { background: #e91e8c; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        h2 { color: #e91e8c; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f5f5f5; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug: Company Link Chain</h1>
+    
+    <div class="card">
+        <h2>1. Trace One Billing Record → Company</h2>
+        <p>This traces: tbl_billing.contractmain_id → tbl_contractmain → tbl_branchinfo → tbl_companylist</p>
+        <button onclick="traceOneRecord()">Trace Link Chain</button>
+        <div id="trace-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>2. Check tbl_contractmain Structure</h2>
+        <button onclick="checkContractMain()">Check Contract Structure</button>
+        <div id="contract-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. Check tbl_invoicenum (might have more records)</h2>
+        <button onclick="checkInvoiceNum()">Check tbl_invoicenum Count</button>
+        <button onclick="showInvoiceNumFields()">Show tbl_invoicenum Fields</button>
+        <div id="invoicenum-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>4. Count ALL Collections</h2>
+        <button onclick="countAllCollections()">Count All Tables</button>
+        <div id="count-result"></div>
+    </div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+
+        async function firestoreGet(collection, pageSize = 10, pageToken = null) {
+            let url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
+            if (pageToken) url += `&pageToken=${pageToken}`;
+            const response = await fetch(url);
+            return response.json();
+        }
+
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        // 1. Trace one billing record through the chain
+        async function traceOneRecord() {
+            const result = document.getElementById('trace-result');
+            result.innerHTML = 'Tracing...';
+            
+            try {
+                // Step 1: Get a billing record
+                const billing = await firestoreGet('tbl_billing', 1);
+                const billingDoc = billing.documents[0].fields;
+                const contractmainId = getValue(billingDoc.contractmain_id);
+                
+                let html = '<h3>Step 1: tbl_billing record</h3>';
+                html += `<p>contractmain_id: <strong>${contractmainId}</strong></p>`;
+                html += `<pre>${JSON.stringify(billingDoc, null, 2)}</pre>`;
+
+                // Step 2: Find the contract with this ID
+                html += '<h3>Step 2: Find in tbl_contractmain where id = ' + contractmainId + '</h3>';
+                
+                // We need to search for the contract - Firestore REST doesn't have direct lookup by field
+                const contracts = await firestoreGet('tbl_contractmain', 100);
+                let foundContract = null;
+                
+                if (contracts.documents) {
+                    for (const doc of contracts.documents) {
+                        if (getValue(doc.fields.id) == contractmainId) {
+                            foundContract = doc.fields;
+                            break;
+                        }
+                    }
+                }
+
+                if (foundContract) {
+                    const branchId = getValue(foundContract.contract_id);
+                    html += `<p class="success">✅ Found contract! contract_id (branch): <strong>${branchId}</strong></p>`;
+                    html += `<pre>${JSON.stringify(foundContract, null, 2)}</pre>`;
+
+                    // Step 3: Find the branch
+                    html += '<h3>Step 3: Find in tbl_branchinfo where id = ' + branchId + '</h3>';
+                    
+                    const branches = await firestoreGet('tbl_branchinfo', 200);
+                    let foundBranch = null;
+                    
+                    if (branches.documents) {
+                        for (const doc of branches.documents) {
+                            if (getValue(doc.fields.id) == branchId) {
+                                foundBranch = doc.fields;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (foundBranch) {
+                        const companyId = getValue(foundBranch.company_id);
+                        const branchName = getValue(foundBranch.branchname);
+                        html += `<p class="success">✅ Found branch! branchname: <strong>${branchName}</strong>, company_id: <strong>${companyId}</strong></p>`;
+                        html += `<pre>${JSON.stringify(foundBranch, null, 2)}</pre>`;
+
+                        // Step 4: Find the company
+                        html += '<h3>Step 4: Find in tbl_companylist where id = ' + companyId + '</h3>';
+                        
+                        const companies = await firestoreGet('tbl_companylist', 200);
+                        let foundCompany = null;
+                        
+                        if (companies.documents) {
+                            for (const doc of companies.documents) {
+                                if (getValue(doc.fields.id) == companyId) {
+                                    foundCompany = doc.fields;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (foundCompany) {
+                            const companyName = getValue(foundCompany.companyname);
+                            html += `<p class="success">✅ Found company! <strong style="font-size:18px;">${companyName}</strong></p>`;
+                            html += `<pre>${JSON.stringify(foundCompany, null, 2)}</pre>`;
+                        } else {
+                            html += `<p class="error">❌ Company with id ${companyId} NOT FOUND in first 200 records</p>`;
+                        }
+                    } else {
+                        html += `<p class="error">❌ Branch with id ${branchId} NOT FOUND in first 200 records</p>`;
+                    }
+                } else {
+                    html += `<p class="error">❌ Contract with id ${contractmainId} NOT FOUND in first 100 records</p>`;
+                    
+                    // Show what IDs we do have
+                    html += '<p>Contract IDs found in sample: ';
+                    const ids = contracts.documents.slice(0, 20).map(d => getValue(d.fields.id));
+                    html += ids.join(', ') + '...</p>';
+                }
+
+                result.innerHTML = html;
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 2. Check contract structure
+        async function checkContractMain() {
+            const result = document.getElementById('contract-result');
+            result.innerHTML = 'Loading...';
+            
+            try {
+                const data = await firestoreGet('tbl_contractmain', 5);
+                let html = '<table><tr><th>id</th><th>contract_id (branch)</th><th>mach_id</th><th>category_id</th><th>status</th></tr>';
+                
+                if (data.documents) {
+                    data.documents.forEach(doc => {
+                        const f = doc.fields;
+                        html += `<tr>
+                            <td>${getValue(f.id)}</td>
+                            <td>${getValue(f.contract_id)}</td>
+                            <td>${getValue(f.mach_id)}</td>
+                            <td>${getValue(f.category_id)}</td>
+                            <td>${getValue(f.status)}</td>
+                        </tr>`;
+                    });
+                }
+                
+                html += '</table>';
+                html += '<h4>Full first record:</h4>';
+                html += `<pre>${JSON.stringify(data.documents[0].fields, null, 2)}</pre>`;
+                
+                result.innerHTML = html;
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 3. Check tbl_invoicenum
+        async function checkInvoiceNum() {
+            const result = document.getElementById('invoicenum-result');
+            result.innerHTML = 'Counting tbl_invoicenum...';
+            
+            try {
+                let total = 0;
+                let pageToken = null;
+                let pages = 0;
+                
+                while (pages < 100) {
+                    const data = await firestoreGet('tbl_invoicenum', 500, pageToken);
+                    total += data.documents ? data.documents.length : 0;
+                    pages++;
+                    result.innerHTML = `Counting... ${total} records (page ${pages})`;
+                    
+                    if (!data.nextPageToken) break;
+                    pageToken = data.nextPageToken;
+                }
+                
+                result.innerHTML = `<p><strong>tbl_invoicenum total: ${total.toLocaleString()} records</strong></p>`;
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        async function showInvoiceNumFields() {
+            const result = document.getElementById('invoicenum-result');
+            result.innerHTML = 'Loading...';
+            
+            try {
+                const data = await firestoreGet('tbl_invoicenum', 1);
+                if (data.documents && data.documents.length > 0) {
+                    const fields = Object.keys(data.documents[0].fields).sort();
+                    let html = `<p><strong>${fields.length} fields in tbl_invoicenum:</strong></p>`;
+                    html += '<ul>' + fields.map(f => `<li>${f}</li>`).join('') + '</ul>';
+                    html += '<h4>Sample record:</h4>';
+                    html += `<pre>${JSON.stringify(data.documents[0].fields, null, 2)}</pre>`;
+                    result.innerHTML = html;
+                }
+            } catch (e) {
+                result.innerHTML = `Error: ${e.message}`;
+            }
+        }
+
+        // 4. Count all collections
+        async function countAllCollections() {
+            const result = document.getElementById('count-result');
+            const collections = ['tbl_billing', 'tbl_invoicenum', 'tbl_paymentinfo', 'tbl_contractmain', 'tbl_branchinfo', 'tbl_companylist'];
+            
+            let html = '<table><tr><th>Collection</th><th>Count</th></tr>';
+            
+            for (const coll of collections) {
+                result.innerHTML = `Counting ${coll}...`;
+                try {
+                    let total = 0;
+                    let pageToken = null;
+                    let pages = 0;
+                    
+                    while (pages < 50) {
+                        const data = await firestoreGet(coll, 500, pageToken);
+                        total += data.documents ? data.documents.length : 0;
+                        pages++;
+                        if (!data.nextPageToken) break;
+                        pageToken = data.nextPageToken;
+                    }
+                    
+                    html += `<tr><td>${coll}</td><td><strong>${total.toLocaleString()}</strong>${pages >= 50 ? '+' : ''}</td></tr>`;
+                } catch (e) {
+                    html += `<tr><td>${coll}</td><td class="error">Error</td></tr>`;
+                }
+            }
+            
+            html += '</table>';
+            result.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
