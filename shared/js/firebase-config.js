@@ -1,9 +1,12 @@
 /**
  * MARGA Enterprise Management System
  * Firebase Configuration
+ * 
+ * This file contains Firebase connection settings.
+ * Used by all modules across the application.
  */
 
-var FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
+const FIREBASE_CONFIG = {
     apiKey: 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M',
     authDomain: 'sah-spiritual-journal.firebaseapp.com',
     projectId: 'sah-spiritual-journal',
@@ -15,4 +18,5 @@ var FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
     baseUrl: 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents'
 };
 
+// Make available globally
 window.FIREBASE_CONFIG = FIREBASE_CONFIG;
