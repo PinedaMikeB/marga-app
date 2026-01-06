@@ -1,7 +1,6 @@
 /**
  * MARGA Collections Module
- * Phase 1: View Unpaid Invoices
- * With improved filters: Year, Month, Age (30-240+ days), Category
+ * With Priority-Based Workflow & Best Practices
  */
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
@@ -12,6 +11,7 @@ let allInvoices = [];
 let filteredInvoices = [];
 let currentPage = 1;
 const pageSize = 50;
+let currentPriorityFilter = null;
 
 // Lookup maps
 let contractMap = {};
@@ -19,13 +19,24 @@ let branchMap = {};
 let companyMap = {};
 let paidInvoiceIds = new Set();
 
-// Helper to extract Firestore value
+// Daily tips rotation
+const dailyTips = [
+    "Focus on URGENT (91-120 days) invoices first - they have the highest recovery potential!",
+    "Follow up on HIGH priority (61-90 days) before they become urgent. Recovery rate: 70-80%",
+    "Document all call attempts - this helps track customer payment patterns.",
+    "For accounts 120+ days, consider recommending machine pull-out to management.",
+    "Best time to call: 9-11 AM and 2-4 PM. Avoid lunch hours!",
+    "Always confirm the contact person and best time to reach them.",
+    "Send SMS reminders for customers who don't answer calls.",
+    "Accounts over 1 year have less than 10% recovery rate - focus on collectible accounts first!"
+];
+
+// Helper functions
 function getValue(field) {
     if (!field) return null;
     return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
 }
 
-// Firestore REST API fetch with pagination
 async function firestoreGet(collection, pageSize = 300, pageToken = null) {
     let url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
     if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
@@ -34,94 +45,77 @@ async function firestoreGet(collection, pageSize = 300, pageToken = null) {
     return response.json();
 }
 
-// Fetch ALL documents from a collection
 async function firestoreGetAll(collection, statusCallback = null) {
     let allDocs = [];
     let pageToken = null;
     let page = 0;
-    const maxPages = 100;
     
-    while (page < maxPages) {
+    while (page < 100) {
         page++;
         const data = await firestoreGet(collection, 300, pageToken);
-        
-        if (data.documents && data.documents.length > 0) {
-            allDocs = allDocs.concat(data.documents);
-        }
-        
-        if (statusCallback) {
-            statusCallback(`Loading ${collection}... ${allDocs.length} records (page ${page})`);
-        }
-        
+        if (data.documents) allDocs = allDocs.concat(data.documents);
+        if (statusCallback) statusCallback(`Loading ${collection}... ${allDocs.length} records`);
         if (!data.nextPageToken) break;
         pageToken = data.nextPageToken;
     }
-    
-    console.log(`${collection}: ${allDocs.length} total records in ${page} pages`);
     return allDocs;
 }
 
-// Convert month name to number
 function monthNameToNumber(monthName) {
-    const months = {
-        'january': 1, 'february': 2, 'march': 3, 'april': 4,
-        'may': 5, 'june': 6, 'july': 7, 'august': 8,
-        'september': 9, 'october': 10, 'november': 11, 'december': 12
-    };
+    const months = { 'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6, 'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12 };
     return months[String(monthName).toLowerCase()] || 0;
 }
 
-// Calculate invoice age in days from due_date
 function calculateAgeFromDueDate(dueDate) {
     if (!dueDate) return 0;
     try {
         const datePart = dueDate.split(' ')[0];
         const invoiceDate = new Date(datePart);
-        const today = new Date();
-        const diffTime = today - invoiceDate;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const diffDays = Math.ceil((new Date() - invoiceDate) / (1000 * 60 * 60 * 24));
         return Math.max(0, diffDays);
-    } catch (e) {
-        return 0;
-    }
+    } catch (e) { return 0; }
 }
 
-// Calculate age from month/year strings
 function calculateAgeFromMonthYear(month, year) {
     if (!month || !year) return 0;
     const monthNum = monthNameToNumber(month);
     if (!monthNum) return 0;
-    
     const invoiceDate = new Date(parseInt(year), monthNum - 1, 1);
-    const today = new Date();
-    const diffTime = today - invoiceDate;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
+    return Math.max(0, Math.ceil((new Date() - invoiceDate) / (1000 * 60 * 60 * 24)));
 }
 
-// Get age class for styling
+// Get priority based on age
+function getPriority(age) {
+    if (age >= 366) return { code: 'baddebt', label: 'Bad Debt', color: '#455a64' };
+    if (age >= 121) return { code: 'review', label: 'For Review', color: '#7b1fa2' };
+    if (age >= 91) return { code: 'urgent', label: 'Urgent', color: '#d32f2f' };
+    if (age >= 61) return { code: 'high', label: 'High', color: '#f57c00' };
+    if (age >= 31) return { code: 'medium', label: 'Medium', color: '#fbc02d' };
+    return { code: 'current', label: 'Current', color: '#66bb6a' };
+}
+
 function getAgeClass(days) {
-    if (days >= 240) return 'age-240';
+    if (days >= 366) return 'age-365';
     if (days >= 180) return 'age-180';
     if (days >= 120) return 'age-120';
     if (days >= 90) return 'age-90';
     if (days >= 60) return 'age-60';
     if (days >= 30) return 'age-30';
-    return '';
+    return 'age-current';
 }
 
-// Format currency
 function formatCurrency(amount) {
-    return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    });
+    return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Update loading status
+function formatCurrencyShort(amount) {
+    if (amount >= 1000000) return '₱' + (amount / 1000000).toFixed(1) + 'M';
+    if (amount >= 1000) return '₱' + (amount / 1000).toFixed(0) + 'K';
+    return '₱' + amount.toFixed(0);
+}
+
 function updateLoadingStatus(message) {
-    const container = document.getElementById('table-container');
-    container.innerHTML = `
+    document.getElementById('table-container').innerHTML = `
         <div class="loading-overlay">
             <div class="loading-spinner"></div>
             <span>${message}</span>
@@ -129,58 +123,57 @@ function updateLoadingStatus(message) {
     `;
 }
 
-// Load all required data
+// Welcome Modal
+function showWelcomeModal() {
+    document.getElementById('welcomeModal').classList.remove('hidden');
+}
+
+function closeWelcomeModal() {
+    document.getElementById('welcomeModal').classList.add('hidden');
+    if (document.getElementById('dontShowAgain').checked) {
+        localStorage.setItem('collections_hideWelcome', 'true');
+    }
+}
+
+function checkWelcomeModal() {
+    if (!localStorage.getItem('collections_hideWelcome')) {
+        showWelcomeModal();
+    }
+}
+
+// Tip Banner
+function showRandomTip() {
+    const tip = dailyTips[Math.floor(Math.random() * dailyTips.length)];
+    document.getElementById('tipText').textContent = tip;
+}
+
+function closeTip() {
+    document.getElementById('tipBanner').style.display = 'none';
+}
+
+// Load data
 async function loadUnpaidInvoices() {
     updateLoadingStatus('Starting data load...');
 
     try {
-        console.log('=== Starting data fetch ===');
-        
-        updateLoadingStatus('Loading companies...');
         const companyDocs = await firestoreGetAll('tbl_companylist', updateLoadingStatus);
-        
-        updateLoadingStatus('Loading branches...');
         const branchDocs = await firestoreGetAll('tbl_branchinfo', updateLoadingStatus);
-        
-        updateLoadingStatus('Loading contracts...');
         const contractDocs = await firestoreGetAll('tbl_contractmain', updateLoadingStatus);
-        
-        updateLoadingStatus('Loading payments...');
         const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus);
-        
-        updateLoadingStatus('Loading billing records...');
         const billingDocs = await firestoreGetAll('tbl_billing', updateLoadingStatus);
 
-        console.log('=== Data fetch complete ===');
-        console.log({ companies: companyDocs.length, branches: branchDocs.length, contracts: contractDocs.length, payments: paymentDocs.length, billing: billingDocs.length });
-
         // Build lookups
-        updateLoadingStatus('Building lookups...');
-        
         companyMap = {};
-        companyDocs.forEach(doc => {
-            const f = doc.fields;
-            companyMap[getValue(f.id)] = getValue(f.companyname) || 'Unknown';
-        });
+        companyDocs.forEach(doc => { companyMap[getValue(doc.fields.id)] = getValue(doc.fields.companyname) || 'Unknown'; });
 
         branchMap = {};
         branchDocs.forEach(doc => {
-            const f = doc.fields;
-            branchMap[getValue(f.id)] = {
-                name: getValue(f.branchname) || 'Main',
-                company_id: getValue(f.company_id)
-            };
+            branchMap[getValue(doc.fields.id)] = { name: getValue(doc.fields.branchname) || 'Main', company_id: getValue(doc.fields.company_id) };
         });
 
         contractMap = {};
         contractDocs.forEach(doc => {
-            const f = doc.fields;
-            contractMap[getValue(f.id)] = {
-                branch_id: getValue(f.contract_id),
-                mach_id: getValue(f.mach_id),
-                category_id: getValue(f.category_id),
-                status: getValue(f.status)
-            };
+            contractMap[getValue(doc.fields.id)] = { branch_id: getValue(doc.fields.contract_id), category_id: getValue(doc.fields.category_id) };
         });
 
         paidInvoiceIds = new Set();
@@ -189,94 +182,66 @@ async function loadUnpaidInvoices() {
             if (invId) paidInvoiceIds.add(String(invId));
         });
 
-        // Process billing records
+        // Process billing
         updateLoadingStatus('Processing invoices...');
         allInvoices = [];
         const years = new Set();
-        
+
         billingDocs.forEach(doc => {
             const f = doc.fields;
-            const billingId = getValue(f.id);
             const invoiceId = getValue(f.invoice_id);
-            
             if (paidInvoiceIds.has(String(invoiceId))) return;
 
-            const contractmainId = getValue(f.contractmain_id);
-            const contract = contractMap[contractmainId];
-            
-            let companyName = 'Unknown';
-            let branchName = 'Unknown';
-            let categoryId = null;
-            
-            if (contract) {
-                const branch = branchMap[contract.branch_id];
-                if (branch) {
-                    branchName = branch.name || 'Main';
-                    companyName = companyMap[branch.company_id] || 'Unknown';
-                }
-                categoryId = contract.category_id;
-            }
+            const contract = contractMap[getValue(f.contractmain_id)] || {};
+            const branch = branchMap[contract.branch_id] || {};
             
             const monthStr = getValue(f.month);
             const yearStr = getValue(f.year);
-            const dueDate = getValue(f.due_date);
-            
-            // Track years for filter
             if (yearStr) years.add(yearStr);
-            
-            let age = calculateAgeFromDueDate(dueDate);
-            if (age === 0 && monthStr && yearStr) {
-                age = calculateAgeFromMonthYear(monthStr, yearStr);
-            }
-            
+
+            let age = calculateAgeFromDueDate(getValue(f.due_date));
+            if (age === 0 && monthStr && yearStr) age = calculateAgeFromMonthYear(monthStr, yearStr);
+
             const totalAmount = parseFloat(getValue(f.totalamount) || getValue(f.amount) || 0);
             const vatAmount = parseFloat(getValue(f.vatamount) || 0);
-            const finalAmount = totalAmount + vatAmount;
-
-            let monthYear = '-';
-            if (monthStr && yearStr) {
-                monthYear = `${monthStr} ${yearStr}`;
-            }
 
             allInvoices.push({
-                id: billingId,
+                id: getValue(f.id),
                 invoiceId: invoiceId,
-                invoiceNo: invoiceId || billingId,
-                contractmainId: contractmainId,
-                amount: finalAmount,
+                invoiceNo: invoiceId || getValue(f.id),
+                amount: totalAmount + vatAmount,
                 month: monthStr,
                 year: yearStr,
-                monthYear: monthYear,
-                dueDate: dueDate,
+                monthYear: monthStr && yearStr ? `${monthStr} ${yearStr}` : '-',
+                dueDate: getValue(f.due_date),
                 age: age,
-                company: companyName,
-                branch: branchName,
-                category: getCategoryCode(categoryId),
-                receivedBy: getValue(f.receivedby),
-                dateReceived: getValue(f.date_received),
-                status: getValue(f.status)
+                priority: getPriority(age),
+                company: companyMap[branch.company_id] || 'Unknown',
+                branch: branch.name || 'Unknown',
+                category: getCategoryCode(contract.category_id),
+                receivedBy: getValue(f.receivedby)
             });
         });
 
-        console.log('Total unpaid:', allInvoices.length);
+        // Sort by priority (urgent first), then by amount
+        allInvoices.sort((a, b) => {
+            const priorityOrder = { 'urgent': 0, 'high': 1, 'medium': 2, 'current': 3, 'review': 4, 'baddebt': 5 };
+            if (priorityOrder[a.priority.code] !== priorityOrder[b.priority.code]) {
+                return priorityOrder[a.priority.code] - priorityOrder[b.priority.code];
+            }
+            return b.amount - a.amount;
+        });
 
-        // Sort by amount descending
-        allInvoices.sort((a, b) => b.amount - a.amount);
         filteredInvoices = [...allInvoices];
-        
-        // Populate year filter
         populateYearFilter(years);
-        
-        // Update UI
-        updateStats();
+        updateAllStats();
         currentPage = 1;
         renderTable();
 
-        document.getElementById('last-updated').textContent = 
-            'Last updated: ' + new Date().toLocaleTimeString();
+        document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
 
     } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('Error:', error);
         document.getElementById('table-container').innerHTML = `
             <div class="empty-state">
                 <h3>Error Loading Data</h3>
@@ -287,123 +252,158 @@ async function loadUnpaidInvoices() {
     }
 }
 
-// Get category code
 function getCategoryCode(categoryId) {
-    const categories = { 1: 'RTP', 2: 'RTF', 3: 'STP', 4: 'MAT', 5: 'RTC', 6: 'STC', 7: 'MAC', 8: 'MAP', 9: 'REF', 10: 'RD', 11: 'PI', 12: 'OTH' };
+    const categories = { 1: 'RTP', 2: 'RTF', 3: 'STP', 4: 'MAT', 5: 'RTC', 6: 'STC', 7: 'MAC', 8: 'MAP', 9: 'REF', 10: 'RD' };
     return categories[categoryId] || '-';
 }
 
-// Populate year filter
 function populateYearFilter(years) {
     const select = document.getElementById('filter-year');
     select.innerHTML = '<option value="">All Years</option>';
-    
-    const sortedYears = Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
-    sortedYears.forEach(year => {
-        const option = document.createElement('option');
-        option.value = year;
-        option.textContent = year;
-        select.appendChild(option);
+    Array.from(years).sort((a, b) => b - a).forEach(year => {
+        select.innerHTML += `<option value="${year}">${year}</option>`;
     });
 }
 
-// Update statistics
-function updateStats() {
+// Update all statistics
+function updateAllStats() {
+    // Priority counts
+    const priorities = { current: [], medium: [], high: [], urgent: [], review: [], baddebt: [] };
+    
+    allInvoices.forEach(inv => {
+        priorities[inv.priority.code].push(inv);
+    });
+
+    // Update priority cards
+    Object.keys(priorities).forEach(key => {
+        const invs = priorities[key];
+        const count = invs.length;
+        const amount = invs.reduce((sum, inv) => sum + inv.amount, 0);
+        
+        document.getElementById(`count-${key}`).textContent = count.toLocaleString();
+        document.getElementById(`amount-${key}`).textContent = formatCurrencyShort(amount);
+    });
+
+    // Update summary stats (based on filtered)
     const total = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0);
-    const count = filteredInvoices.length;
-    const age30 = filteredInvoices.filter(inv => inv.age >= 30).length;
-    const age60 = filteredInvoices.filter(inv => inv.age >= 60).length;
-    const age90 = filteredInvoices.filter(inv => inv.age >= 90).length;
-    const age120 = filteredInvoices.filter(inv => inv.age >= 120).length;
+    const activeCollection = filteredInvoices.filter(inv => inv.age <= 180).reduce((sum, inv) => sum + inv.amount, 0);
+    const collectibleCount = filteredInvoices.filter(inv => inv.age <= 180).length;
 
     document.getElementById('total-unpaid').textContent = formatCurrency(total);
-    document.getElementById('invoice-count').textContent = count.toLocaleString();
-    document.getElementById('age-30').textContent = age30.toLocaleString();
-    document.getElementById('age-60').textContent = age60.toLocaleString();
-    document.getElementById('age-90').textContent = age90.toLocaleString();
-    document.getElementById('age-120').textContent = age120.toLocaleString();
+    document.getElementById('total-active').textContent = formatCurrencyShort(activeCollection);
+    document.getElementById('invoice-count').textContent = filteredInvoices.length.toLocaleString();
+    document.getElementById('collectible-count').textContent = collectibleCount.toLocaleString();
+}
+
+// Filter by priority card click
+function filterByPriority(priority) {
+    // Remove active class from all cards
+    document.querySelectorAll('.priority-card').forEach(card => card.classList.remove('active'));
+    
+    // Clear other filters
+    document.getElementById('filter-year').value = '';
+    document.getElementById('filter-month').value = '';
+    document.getElementById('filter-age').value = '';
+    document.getElementById('filter-category').value = '';
+    document.getElementById('search-input').value = '';
+
+    if (currentPriorityFilter === priority) {
+        // Toggle off - show all
+        currentPriorityFilter = null;
+        filteredInvoices = [...allInvoices];
+    } else {
+        // Apply priority filter
+        currentPriorityFilter = priority;
+        filteredInvoices = allInvoices.filter(inv => inv.priority.code === priority);
+        
+        // Add active class
+        event.target.closest('.priority-card').classList.add('active');
+    }
+
+    currentPage = 1;
+    updateAllStats();
+    renderTable();
+    showActiveFilters();
 }
 
 // Apply filters
 function applyFilters() {
+    currentPriorityFilter = null;
+    document.querySelectorAll('.priority-card').forEach(card => card.classList.remove('active'));
+
     const yearFilter = document.getElementById('filter-year').value;
     const monthFilter = document.getElementById('filter-month').value;
     const ageFilter = document.getElementById('filter-age').value;
     const categoryFilter = document.getElementById('filter-category').value;
     const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
 
-    console.log('Applying filters:', { yearFilter, monthFilter, ageFilter, categoryFilter, searchTerm });
-
     filteredInvoices = allInvoices.filter(inv => {
-        // Year filter
         if (yearFilter && inv.year !== yearFilter) return false;
-        
-        // Month filter
         if (monthFilter && inv.month !== monthFilter) return false;
-        
-        // Age filter
-        if (ageFilter && inv.age < parseInt(ageFilter)) return false;
-        
-        // Category filter
         if (categoryFilter && inv.category !== categoryFilter) return false;
         
-        // Search filter
+        // Age range filter
+        if (ageFilter) {
+            const [min, max] = ageFilter.split('-').map(v => v === '+' ? Infinity : parseInt(v.replace('+', '')));
+            if (ageFilter.includes('+')) {
+                if (inv.age < parseInt(ageFilter)) return false;
+            } else {
+                if (inv.age < min || inv.age > max) return false;
+            }
+        }
+        
         if (searchTerm) {
-            const searchStr = `${inv.company} ${inv.branch} ${inv.invoiceNo} ${inv.invoiceId}`.toLowerCase();
+            const searchStr = `${inv.company} ${inv.branch} ${inv.invoiceNo}`.toLowerCase();
             if (!searchStr.includes(searchTerm)) return false;
         }
         
         return true;
     });
 
-    console.log('Filtered results:', filteredInvoices.length);
-
     currentPage = 1;
-    updateStats();
+    updateAllStats();
     renderTable();
     showActiveFilters();
 }
 
-// Show active filters
 function showActiveFilters() {
-    const container = document.getElementById('active-filters');
     const filters = [];
-    
     const yearFilter = document.getElementById('filter-year').value;
     const monthFilter = document.getElementById('filter-month').value;
     const ageFilter = document.getElementById('filter-age').value;
     const categoryFilter = document.getElementById('filter-category').value;
     const searchTerm = document.getElementById('search-input').value.trim();
-    
+
+    if (currentPriorityFilter) filters.push({ label: `Priority: ${currentPriorityFilter.toUpperCase()}`, field: 'priority' });
     if (yearFilter) filters.push({ label: `Year: ${yearFilter}`, field: 'filter-year' });
     if (monthFilter) filters.push({ label: `Month: ${monthFilter}`, field: 'filter-month' });
-    if (ageFilter) filters.push({ label: `Age: ${ageFilter}+ days`, field: 'filter-age' });
+    if (ageFilter) filters.push({ label: `Age: ${ageFilter}`, field: 'filter-age' });
     if (categoryFilter) filters.push({ label: `Category: ${categoryFilter}`, field: 'filter-category' });
     if (searchTerm) filters.push({ label: `Search: "${searchTerm}"`, field: 'search-input' });
-    
-    if (filters.length === 0) {
-        container.innerHTML = '';
+
+    document.getElementById('active-filters').innerHTML = filters.length === 0 ? '' :
+        filters.map(f => `<span class="filter-tag">${f.label} <span class="remove" onclick="removeFilter('${f.field}')">×</span></span>`).join('');
+}
+
+function removeFilter(fieldId) {
+    if (fieldId === 'priority') {
+        currentPriorityFilter = null;
+        document.querySelectorAll('.priority-card').forEach(card => card.classList.remove('active'));
+        filteredInvoices = [...allInvoices];
+    } else {
+        document.getElementById(fieldId).value = '';
+        applyFilters();
         return;
     }
-    
-    container.innerHTML = filters.map(f => 
-        `<span class="filter-tag">${f.label} <span class="remove" onclick="removeFilter('${f.field}')">×</span></span>`
-    ).join('');
+    currentPage = 1;
+    updateAllStats();
+    renderTable();
+    showActiveFilters();
 }
 
-// Remove specific filter
-function removeFilter(fieldId) {
-    const field = document.getElementById(fieldId);
-    if (field.tagName === 'SELECT') {
-        field.value = '';
-    } else {
-        field.value = '';
-    }
-    applyFilters();
-}
-
-// Clear all filters
 function clearFilters() {
+    currentPriorityFilter = null;
+    document.querySelectorAll('.priority-card').forEach(card => card.classList.remove('active'));
     document.getElementById('filter-year').value = '';
     document.getElementById('filter-month').value = '';
     document.getElementById('filter-age').value = '';
@@ -412,7 +412,7 @@ function clearFilters() {
     
     filteredInvoices = [...allInvoices];
     currentPage = 1;
-    updateStats();
+    updateAllStats();
     renderTable();
     document.getElementById('active-filters').innerHTML = '';
 }
@@ -421,15 +421,9 @@ function clearFilters() {
 function renderTable() {
     const container = document.getElementById('table-container');
     const pagination = document.getElementById('pagination');
-    
+
     if (filteredInvoices.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <h3>No Invoices Found</h3>
-                <p>No invoices match your current filters.</p>
-                <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
-            </div>
-        `;
+        container.innerHTML = `<div class="empty-state"><h3>No Invoices Found</h3><p>Try adjusting your filters</p></div>`;
         pagination.style.display = 'none';
         return;
     }
@@ -438,42 +432,21 @@ function renderTable() {
     const endIdx = Math.min(startIdx + pageSize, filteredInvoices.length);
     const pageInvoices = filteredInvoices.slice(startIdx, endIdx);
 
-    let html = `
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Invoice #</th>
-                    <th>Company / Branch</th>
-                    <th>Amount</th>
-                    <th>Month/Year</th>
-                    <th>Age</th>
-                    <th>Category</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
+    let html = `<table class="data-table"><thead><tr>
+        <th>Priority</th><th>Invoice #</th><th>Company / Branch</th><th>Amount</th><th>Month/Year</th><th>Age</th><th>Category</th><th>Action</th>
+    </tr></thead><tbody>`;
 
     pageInvoices.forEach(inv => {
-        const ageClass = getAgeClass(inv.age);
-        const ageDisplay = inv.age > 0 ? `${inv.age} days` : '-';
-        
-        html += `
-            <tr onclick="viewInvoice(${inv.id})" data-id="${inv.id}">
-                <td><strong>${inv.invoiceNo}</strong></td>
-                <td>
-                    <div class="company-name">${inv.company}</div>
-                    <div class="branch-name">${inv.branch}</div>
-                </td>
-                <td class="amount">${formatCurrency(inv.amount)}</td>
-                <td>${inv.monthYear}</td>
-                <td class="${ageClass}">${ageDisplay}</td>
-                <td><span class="badge badge-${(inv.category || 'rtp').toLowerCase()}">${inv.category}</span></td>
-                <td>
-                    <button class="btn btn-secondary" onclick="event.stopPropagation(); viewInvoice(${inv.id})">View</button>
-                </td>
-            </tr>
-        `;
+        html += `<tr onclick="viewInvoice(${inv.id})">
+            <td><span class="priority-badge ${inv.priority.code}">${inv.priority.label}</span></td>
+            <td><strong>${inv.invoiceNo}</strong></td>
+            <td><div class="company-name">${inv.company}</div><div class="branch-name">${inv.branch}</div></td>
+            <td class="amount">${formatCurrency(inv.amount)}</td>
+            <td>${inv.monthYear}</td>
+            <td class="${getAgeClass(inv.age)}">${inv.age} days</td>
+            <td><span class="badge badge-${inv.category.toLowerCase()}">${inv.category}</span></td>
+            <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoice(${inv.id})">View</button></td>
+        </tr>`;
     });
 
     html += '</tbody></table>';
@@ -487,74 +460,37 @@ function renderTable() {
     pagination.style.display = 'flex';
 }
 
-// Pagination
-function prevPage() {
-    if (currentPage > 1) {
-        currentPage--;
-        renderTable();
-        document.querySelector('.table-scroll').scrollTop = 0;
-    }
-}
+function prevPage() { if (currentPage > 1) { currentPage--; renderTable(); document.querySelector('.table-scroll').scrollTop = 0; } }
+function nextPage() { if (currentPage < Math.ceil(filteredInvoices.length / pageSize)) { currentPage++; renderTable(); document.querySelector('.table-scroll').scrollTop = 0; } }
 
-function nextPage() {
-    const maxPage = Math.ceil(filteredInvoices.length / pageSize);
-    if (currentPage < maxPage) {
-        currentPage++;
-        renderTable();
-        document.querySelector('.table-scroll').scrollTop = 0;
-    }
-}
-
-// View invoice details
 function viewInvoice(invoiceId) {
-    const invoice = allInvoices.find(inv => inv.id == invoiceId);
-    if (invoice) {
-        alert(`Invoice #${invoice.invoiceNo}\n\nCompany: ${invoice.company}\nBranch: ${invoice.branch}\nAmount: ${formatCurrency(invoice.amount)}\nMonth: ${invoice.monthYear}\nAge: ${invoice.age} days\nCategory: ${invoice.category}\n\n(Detail view coming in Phase 2)`);
+    const inv = allInvoices.find(i => i.id == invoiceId);
+    if (inv) {
+        alert(`Invoice #${inv.invoiceNo}\n\nCompany: ${inv.company}\nBranch: ${inv.branch}\nAmount: ${formatCurrency(inv.amount)}\nAge: ${inv.age} days\nPriority: ${inv.priority.label}\n\n(Detail view coming in Phase 2)`);
     }
 }
 
-// Export to Excel
 function exportToExcel() {
-    if (filteredInvoices.length === 0) {
-        alert('No data to export');
-        return;
-    }
-
-    const headers = ['Invoice #', 'Company', 'Branch', 'Amount', 'Month', 'Year', 'Age (Days)', 'Category'];
-    const rows = filteredInvoices.map(inv => [
-        inv.invoiceNo,
-        inv.company,
-        inv.branch,
-        inv.amount.toFixed(2),
-        inv.month || '',
-        inv.year || '',
-        inv.age,
-        inv.category
-    ]);
-
-    let csv = '\uFEFF';
-    csv += headers.join(',') + '\n';
-    rows.forEach(row => {
-        csv += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
+    if (filteredInvoices.length === 0) { alert('No data'); return; }
+    
+    let csv = '\uFEFF' + ['Priority', 'Invoice #', 'Company', 'Branch', 'Amount', 'Month', 'Year', 'Age', 'Category'].join(',') + '\n';
+    filteredInvoices.forEach(inv => {
+        csv += [inv.priority.label, inv.invoiceNo, `"${inv.company}"`, `"${inv.branch}"`, inv.amount.toFixed(2), inv.month || '', inv.year || '', inv.age, inv.category].join(',') + '\n';
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `unpaid-invoices-${new Date().toISOString().split('T')[0]}.csv`;
+    a.href = URL.createObjectURL(blob);
+    a.download = `collections-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
-    window.URL.revokeObjectURL(url);
 }
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    // Search on Enter
-    document.getElementById('search-input').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') applyFilters();
-    });
+    checkWelcomeModal();
+    showRandomTip();
     
-    // Auto-apply filters on change
+    document.getElementById('search-input').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
     ['filter-year', 'filter-month', 'filter-age', 'filter-category'].forEach(id => {
         document.getElementById(id).addEventListener('change', applyFilters);
     });
