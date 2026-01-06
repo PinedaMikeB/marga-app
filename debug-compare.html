@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Compare Head Office vs Branch Invoices</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 700px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+        .comparison { display: flex; gap: 20px; }
+        .column { flex: 1; }
+    </style>
+</head>
+<body>
+    <h1>Compare Head Office vs Branch - China Bank</h1>
+    <p><strong>Head Office:</strong> Invoice #125538 (Contract 5258, Branch 4292) - "CCAD - Consumer Securities"</p>
+    <p><strong>Branch:</strong> Invoice #125478 (Contract 5413, Branch 4447) - "Auto Loan 03120"</p>
+    <button onclick="compareInvoices()">Compare Both Invoices & Contracts</button>
+    <button onclick="checkContractCategories()">Check All Contract Categories</button>
+    <button onclick="findBranchPattern()">Find Pattern in Branch Names</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function compareInvoices() {
+            document.getElementById('log').textContent = '';
+            log('=== Comparing Head Office vs Branch Invoices ===\n');
+            
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            
+            // Find both invoices
+            const inv125538 = billingDocs.find(d => String(getValue(d.fields.invoice_id)) === '125538');
+            const inv125478 = billingDocs.find(d => String(getValue(d.fields.invoice_id)) === '125478');
+            
+            log('========================================');
+            log('HEAD OFFICE: Invoice #125538');
+            log('(China Bank Savings Inc- CCAD - Consumer Securities)');
+            log('========================================');
+            if (inv125538) {
+                const f = inv125538.fields;
+                Object.keys(f).sort().forEach(key => {
+                    const val = getValue(f[key]);
+                    if (val !== null && val !== 0 && val !== '' && val !== '0') {
+                        log(`  ${key}: ${val}`);
+                    }
+                });
+                
+                // Get contract
+                const contractId = String(getValue(f.contractmain_id));
+                const contract = contractDocs.find(d => String(getValue(d.fields.id)) === contractId);
+                if (contract) {
+                    log('\n  --- CONTRACT 5258 ---');
+                    const cf = contract.fields;
+                    Object.keys(cf).sort().forEach(key => {
+                        const val = getValue(cf[key]);
+                        if (val !== null && val !== 0 && val !== '' && val !== '0') {
+                            log(`    ${key}: ${val}`);
+                        }
+                    });
+                }
+            }
+            
+            log('\n\n========================================');
+            log('BRANCH: Invoice #125478');
+            log('(China Bank Savings Inc- Auto Loan 03120)');
+            log('========================================');
+            if (inv125478) {
+                const f = inv125478.fields;
+                Object.keys(f).sort().forEach(key => {
+                    const val = getValue(f[key]);
+                    if (val !== null && val !== 0 && val !== '' && val !== '0') {
+                        log(`  ${key}: ${val}`);
+                    }
+                });
+                
+                // Get contract
+                const contractId = String(getValue(f.contractmain_id));
+                const contract = contractDocs.find(d => String(getValue(d.fields.id)) === contractId);
+                if (contract) {
+                    log('\n  --- CONTRACT 5413 ---');
+                    const cf = contract.fields;
+                    Object.keys(cf).sort().forEach(key => {
+                        const val = getValue(cf[key]);
+                        if (val !== null && val !== 0 && val !== '' && val !== '0') {
+                            log(`    ${key}: ${val}`);
+                        }
+                    });
+                }
+            }
+            
+            log('\n\n========================================');
+            log('KEY DIFFERENCES TO LOOK FOR:');
+            log('========================================');
+            log('- category_id: Different category for HO vs Branch?');
+            log('- location: Different location code?');
+            log('- area_id: Different area?');
+            log('- Any field with "type" or "kind"');
+        }
+
+        async function checkContractCategories() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Contract Categories ===\n');
+            
+            const contractDocs = await fetchAll('tbl_contractmain');
+            
+            // Group by category_id
+            const categories = {};
+            contractDocs.forEach(d => {
+                const catId = getValue(d.fields.category_id) || 'null';
+                if (!categories[catId]) categories[catId] = 0;
+                categories[catId]++;
+            });
+            
+            log('Category distribution:');
+            Object.entries(categories).sort((a,b) => b[1] - a[1]).forEach(([cat, count]) => {
+                log(`  Category ${cat}: ${count} contracts`);
+            });
+            
+            // Check what category the China Bank contracts have
+            log('\n\nChina Bank contracts (5258 and 5413):');
+            const c5258 = contractDocs.find(d => String(getValue(d.fields.id)) === '5258');
+            const c5413 = contractDocs.find(d => String(getValue(d.fields.id)) === '5413');
+            
+            if (c5258) {
+                log(`\nContract 5258 (Head Office):`);
+                log(`  category_id: ${getValue(c5258.fields.category_id)}`);
+                log(`  contract_id (branch): ${getValue(c5258.fields.contract_id)}`);
+            }
+            
+            if (c5413) {
+                log(`\nContract 5413 (Branch):`);
+                log(`  category_id: ${getValue(c5413.fields.category_id)}`);
+                log(`  contract_id (branch): ${getValue(c5413.fields.contract_id)}`);
+            }
+            
+            // Check if there's a category table
+            log('\n\nChecking for category table...');
+            try {
+                const url = `${BASE_URL}/tbl_category?pageSize=20&key=${API_KEY}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents && data.documents.length > 0) {
+                    log('✅ tbl_category exists!');
+                    data.documents.forEach(d => {
+                        const f = d.fields;
+                        log(`  ${getValue(f.id)}: ${getValue(f.category_name) || getValue(f.name) || getValue(f.description) || JSON.stringify(f)}`);
+                    });
+                }
+            } catch (e) {
+                log('❌ tbl_category not found');
+            }
+        }
+
+        async function findBranchPattern() {
+            document.getElementById('log').textContent = '';
+            log('=== Finding Pattern in China Bank Branch Names ===\n');
+            
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            
+            // Find all China Bank branches
+            const chinaBankBranches = branchDocs.filter(d => {
+                const name = (getValue(d.fields.branchname) || '').toLowerCase();
+                return name.includes('china bank');
+            });
+            
+            log(`Found ${chinaBankBranches.length} China Bank branches in tbl_branchinfo\n`);
+            
+            // Look for patterns - Head Office vs Provincial
+            const headOffice = [];
+            const provincial = [];
+            const others = [];
+            
+            chinaBankBranches.forEach(d => {
+                const name = getValue(d.fields.branchname) || '';
+                const id = getValue(d.fields.id);
+                const lowerName = name.toLowerCase();
+                
+                if (lowerName.includes('head office') || lowerName.includes('ho ') || 
+                    lowerName.includes('main') || lowerName.includes('makati') ||
+                    lowerName.includes('ccad') || lowerName.includes('consumer') ||
+                    lowerName.includes('division') || lowerName.includes('department')) {
+                    headOffice.push({ id, name });
+                } else if (lowerName.includes('scan') || lowerName.includes('provincial') ||
+                           lowerName.includes('branch') || name.includes(' - ')) {
+                    provincial.push({ id, name });
+                } else {
+                    others.push({ id, name });
+                }
+            });
+            
+            log('=== HEAD OFFICE / DEPARTMENTS ===');
+            headOffice.forEach(b => log(`  ${b.id}: ${b.name}`));
+            
+            log('\n=== PROVINCIAL / BRANCHES ===');
+            provincial.slice(0, 30).forEach(b => log(`  ${b.id}: ${b.name}`));
+            if (provincial.length > 30) log(`  ... and ${provincial.length - 30} more`);
+            
+            log('\n=== OTHERS ===');
+            others.slice(0, 20).forEach(b => log(`  ${b.id}: ${b.name}`));
+            
+            // Check the highest branch ID
+            let maxId = 0;
+            branchDocs.forEach(d => {
+                const id = parseInt(getValue(d.fields.id)) || 0;
+                if (id > maxId) maxId = id;
+            });
+            
+            log(`\n\n=== BRANCH ID ANALYSIS ===`);
+            log(`Max branch ID in Firebase: ${maxId}`);
+            log(`Missing branch 4292 (Head Office): ${4292 > maxId ? 'NOT IN FIREBASE' : 'Should exist'}`);
+            log(`Missing branch 4447 (Branch): ${4447 > maxId ? 'NOT IN FIREBASE' : 'Should exist'}`);
+            
+            // Find recent branches (high IDs)
+            log('\n=== RECENT BRANCHES (ID > 3800) ===');
+            branchDocs
+                .filter(d => parseInt(getValue(d.fields.id)) > 3800)
+                .sort((a, b) => parseInt(getValue(a.fields.id)) - parseInt(getValue(b.fields.id)))
+                .forEach(d => {
+                    log(`  ${getValue(d.fields.id)}: ${getValue(d.fields.branchname)}`);
+                });
+        }
+    </script>
+</body>
+</html>

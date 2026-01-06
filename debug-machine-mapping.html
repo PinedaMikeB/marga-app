@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Build Machine-to-Branch Mapping</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+        .success { background: #c8e6c9; padding: 15px; border-radius: 8px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Build Machine → Branch Mapping</h1>
+    
+    <div class="success">
+        <h3>✅ Solution Found!</h3>
+        <p>The correct link is through <code>tbl_newmachinehistory</code>:</p>
+        <p><code>Contract.mach_id → MachineHistory.mach_id → MachineHistory.branch_id → Branch</code></p>
+        <p>We need to find the LATEST branch assignment for each machine.</p>
+    </div>
+
+    <button onclick="buildMachineMapping()">Build Machine → Branch Mapping</button>
+    <button onclick="testInvoice125538()">Test Invoice 125538</button>
+    <button onclick="countFixableInvoices()">Count How Many Invoices This Fixes</button>
+    
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        let machToBranchMap = {};
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function buildMachineMapping() {
+            document.getElementById('log').textContent = '';
+            log('=== Building Machine → Branch Mapping from tbl_newmachinehistory ===\n');
+            
+            log('Loading machine history...');
+            const historyDocs = await fetchAll('tbl_newmachinehistory');
+            log(`Loaded ${historyDocs.length} machine history records\n`);
+            
+            // Build mapping: for each machine, find the LATEST branch assignment
+            // status_id = 2 means "For Delivery" (deployed to client)
+            const machineDeliveries = {};
+            
+            historyDocs.forEach(d => {
+                const f = d.fields;
+                const machId = String(getValue(f.mach_id));
+                const branchId = getValue(f.branch_id);
+                const statusId = getValue(f.status_id);
+                const datex = getValue(f.datex);
+                
+                // Only consider deliveries (status 2) to actual branches (branch_id > 0)
+                if (statusId == 2 && branchId && branchId > 0) {
+                    if (!machineDeliveries[machId]) {
+                        machineDeliveries[machId] = [];
+                    }
+                    machineDeliveries[machId].push({
+                        branchId: branchId,
+                        date: datex
+                    });
+                }
+            });
+            
+            // For each machine, get the most recent delivery
+            machToBranchMap = {};
+            Object.entries(machineDeliveries).forEach(([machId, deliveries]) => {
+                // Sort by date descending
+                deliveries.sort((a, b) => new Date(b.date) - new Date(a.date));
+                machToBranchMap[machId] = deliveries[0].branchId;
+            });
+            
+            log(`Built mapping for ${Object.keys(machToBranchMap).length} machines\n`);
+            
+            // Test with machine 3101
+            log('=== Test: Machine 3101 ===');
+            log(`Machine 3101 → Branch ${machToBranchMap['3101']}`);
+            
+            // Load branch to verify
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const branchMap = {};
+            branchDocs.forEach(d => {
+                branchMap[String(getValue(d.fields.id))] = getValue(d.fields.branchname);
+            });
+            
+            const branchName = branchMap[String(machToBranchMap['3101'])];
+            log(`Branch name: ${branchName}`);
+            
+            if (branchName && branchName.includes('CCAD')) {
+                log('\n✅ SUCCESS! Machine 3101 correctly maps to CCAD - Consumer Securities!');
+            }
+        }
+
+        async function testInvoice125538() {
+            document.getElementById('log').textContent = '';
+            log('=== Testing Invoice 125538 with Machine History Mapping ===\n');
+            
+            // First build the mapping if not done
+            if (Object.keys(machToBranchMap).length === 0) {
+                log('Building machine mapping first...\n');
+                const historyDocs = await fetchAll('tbl_newmachinehistory');
+                
+                const machineDeliveries = {};
+                historyDocs.forEach(d => {
+                    const f = d.fields;
+                    const machId = String(getValue(f.mach_id));
+                    const branchId = getValue(f.branch_id);
+                    const statusId = getValue(f.status_id);
+                    const datex = getValue(f.datex);
+                    
+                    if (statusId == 2 && branchId && branchId > 0) {
+                        if (!machineDeliveries[machId]) machineDeliveries[machId] = [];
+                        machineDeliveries[machId].push({ branchId, date: datex });
+                    }
+                });
+                
+                Object.entries(machineDeliveries).forEach(([machId, deliveries]) => {
+                    deliveries.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    machToBranchMap[machId] = deliveries[0].branchId;
+                });
+            }
+            
+            // Load all needed data
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            
+            // Build lookups
+            const branchMap = {};
+            branchDocs.forEach(d => {
+                const id = String(getValue(d.fields.id));
+                branchMap[id] = {
+                    name: getValue(d.fields.branchname),
+                    company_id: String(getValue(d.fields.company_id))
+                };
+            });
+            
+            const companyMap = {};
+            companyDocs.forEach(d => {
+                companyMap[String(getValue(d.fields.id))] = getValue(d.fields.companyname);
+            });
+            
+            const contractMap = {};
+            contractDocs.forEach(d => {
+                contractMap[String(getValue(d.fields.id))] = {
+                    contract_id: String(getValue(d.fields.contract_id)),
+                    mach_id: String(getValue(d.fields.mach_id))
+                };
+            });
+            
+            // Find invoice 125538
+            const invoice = billingDocs.find(d => String(getValue(d.fields.invoice_id)) === '125538');
+            if (!invoice) {
+                log('❌ Invoice 125538 not found!');
+                return;
+            }
+            
+            const contractmainId = String(getValue(invoice.fields.contractmain_id));
+            const contract = contractMap[contractmainId];
+            
+            log('Invoice 125538:');
+            log(`  contractmain_id: ${contractmainId}`);
+            log(`  Contract's contract_id: ${contract?.contract_id} (OLD METHOD - wrong)`);
+            log(`  Contract's mach_id: ${contract?.mach_id}`);
+            
+            // OLD METHOD: Use contract_id as branch
+            const oldBranchId = contract?.contract_id;
+            const oldBranch = branchMap[oldBranchId];
+            log(`\nOLD METHOD (contract_id → branch):`);
+            log(`  Branch ID: ${oldBranchId}`);
+            log(`  Branch exists? ${oldBranch ? 'YES' : 'NO'}`);
+            if (oldBranch) {
+                log(`  Branch name: ${oldBranch.name}`);
+            }
+            
+            // NEW METHOD: Use mach_id → machine history → branch
+            const machId = contract?.mach_id;
+            const newBranchId = machToBranchMap[machId];
+            const newBranch = branchMap[String(newBranchId)];
+            
+            log(`\nNEW METHOD (mach_id → machine history → branch):`);
+            log(`  mach_id: ${machId}`);
+            log(`  Branch ID from history: ${newBranchId}`);
+            log(`  Branch exists? ${newBranch ? 'YES' : 'NO'}`);
+            if (newBranch) {
+                log(`  Branch name: ${newBranch.name}`);
+                log(`  Company ID: ${newBranch.company_id}`);
+                log(`  Company name: ${companyMap[newBranch.company_id]}`);
+            }
+            
+            if (newBranch && newBranch.name.includes('Consumer Securities')) {
+                log('\n✅ SUCCESS! New method finds the correct branch!');
+            }
+        }
+
+        async function countFixableInvoices() {
+            document.getElementById('log').textContent = '';
+            log('=== Counting How Many Unknown Invoices This Fix Will Resolve ===\n');
+            
+            // Build machine mapping
+            log('Building machine → branch mapping...');
+            const historyDocs = await fetchAll('tbl_newmachinehistory');
+            
+            const machineDeliveries = {};
+            historyDocs.forEach(d => {
+                const f = d.fields;
+                const machId = String(getValue(f.mach_id));
+                const branchId = getValue(f.branch_id);
+                const statusId = getValue(f.status_id);
+                const datex = getValue(f.datex);
+                
+                if (statusId == 2 && branchId && branchId > 0) {
+                    if (!machineDeliveries[machId]) machineDeliveries[machId] = [];
+                    machineDeliveries[machId].push({ branchId, date: datex });
+                }
+            });
+            
+            Object.entries(machineDeliveries).forEach(([machId, deliveries]) => {
+                deliveries.sort((a, b) => new Date(b.date) - new Date(a.date));
+                machToBranchMap[machId] = deliveries[0].branchId;
+            });
+            
+            log(`Mapped ${Object.keys(machToBranchMap).length} machines to branches\n`);
+            
+            // Load other data
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const paymentDocs = await fetchAll('tbl_paymentinfo');
+            
+            const paidIds = new Set(paymentDocs.map(d => String(getValue(d.fields.invoice_id))));
+            const branchIds = new Set(branchDocs.map(d => String(getValue(d.fields.id))));
+            
+            const contractMap = {};
+            contractDocs.forEach(d => {
+                contractMap[String(getValue(d.fields.id))] = {
+                    contract_id: String(getValue(d.fields.contract_id)),
+                    mach_id: String(getValue(d.fields.mach_id))
+                };
+            });
+            
+            // Count
+            let totalUnpaid = 0;
+            let unknownOldMethod = 0;
+            let fixedByNewMethod = 0;
+            let stillUnknown = 0;
+            
+            billingDocs.forEach(d => {
+                const invoiceId = String(getValue(d.fields.invoice_id));
+                if (paidIds.has(invoiceId)) return;
+                
+                totalUnpaid++;
+                
+                const contractmainId = String(getValue(d.fields.contractmain_id));
+                const contract = contractMap[contractmainId];
+                if (!contract) return;
+                
+                // Old method
+                const oldBranchId = contract.contract_id;
+                const oldFound = branchIds.has(oldBranchId);
+                
+                if (!oldFound) {
+                    unknownOldMethod++;
+                    
+                    // New method
+                    const newBranchId = machToBranchMap[contract.mach_id];
+                    if (newBranchId && branchIds.has(String(newBranchId))) {
+                        fixedByNewMethod++;
+                    } else {
+                        stillUnknown++;
+                    }
+                }
+            });
+            
+            log('=== RESULTS ===\n');
+            log(`Total unpaid invoices: ${totalUnpaid}`);
+            log(`Unknown with old method: ${unknownOldMethod}`);
+            log(`Fixed by new method: ${fixedByNewMethod} ✅`);
+            log(`Still unknown: ${stillUnknown}`);
+            log(`\nFix rate: ${(fixedByNewMethod / unknownOldMethod * 100).toFixed(1)}%`);
+        }
+    </script>
+</body>
+</html>

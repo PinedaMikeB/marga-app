@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Final Check - Company Lookup Strategy</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Final Check - Find Company for Missing Branch</h1>
+    <button onclick="checkContractIdAsCompany()">Check if contract_id 4292 is a Company</button>
+    <button onclick="findAllUnknownPattern()">Analyze All Unknown Invoices</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function checkContractIdAsCompany() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking if contract_id 4292 is a Company ID ===\n');
+            
+            const companyDocs = await fetchAll('tbl_companylist');
+            log(`Total companies: ${companyDocs.length}`);
+            
+            // Check if 4292 exists as company
+            const company4292 = companyDocs.find(d => String(getValue(d.fields.id)) === '4292');
+            if (company4292) {
+                log(`\n✅ YES! Company ID 4292 exists!`);
+                log(`   Company Name: "${getValue(company4292.fields.companyname)}"`);
+            } else {
+                log(`\n❌ Company ID 4292 does NOT exist`);
+                
+                // Find max company ID
+                let maxId = 0;
+                companyDocs.forEach(d => {
+                    const id = parseInt(getValue(d.fields.id)) || 0;
+                    if (id > maxId) maxId = id;
+                });
+                log(`   Max company ID: ${maxId}`);
+                log(`   4292 is ${4292 > maxId ? 'HIGHER' : 'within range'}`);
+            }
+            
+            // Check nearby IDs
+            log('\n\nCompanies with IDs near 4292:');
+            companyDocs
+                .filter(d => {
+                    const id = parseInt(getValue(d.fields.id)) || 0;
+                    return id >= 4280 && id <= 4300;
+                })
+                .forEach(d => {
+                    log(`  ${getValue(d.fields.id)}: "${getValue(d.fields.companyname)}"`);
+                });
+        }
+
+        async function findAllUnknownPattern() {
+            document.getElementById('log').textContent = '';
+            log('=== Analyzing Pattern of Unknown Invoices ===\n');
+            
+            log('Loading all data...');
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            const paymentDocs = await fetchAll('tbl_paymentinfo');
+            
+            // Build lookup sets
+            const paidIds = new Set(paymentDocs.map(d => String(getValue(d.fields.invoice_id))));
+            const branchIds = new Set(branchDocs.map(d => String(getValue(d.fields.id))));
+            const companyIds = new Set(companyDocs.map(d => String(getValue(d.fields.id))));
+            
+            // Build contract map
+            const contractMap = {};
+            contractDocs.forEach(d => {
+                contractMap[String(getValue(d.fields.id))] = {
+                    contract_id: String(getValue(d.fields.contract_id)),
+                    mach_id: getValue(d.fields.mach_id)
+                };
+            });
+            
+            // Build branch map
+            const branchMap = {};
+            branchDocs.forEach(d => {
+                branchMap[String(getValue(d.fields.id))] = {
+                    name: getValue(d.fields.branchname),
+                    company_id: String(getValue(d.fields.company_id))
+                };
+            });
+            
+            // Build company map
+            const companyMap = {};
+            companyDocs.forEach(d => {
+                companyMap[String(getValue(d.fields.id))] = getValue(d.fields.companyname);
+            });
+            
+            log(`Loaded: ${billingDocs.length} billing, ${contractDocs.length} contracts, ${branchDocs.length} branches, ${companyDocs.length} companies\n`);
+            
+            // Analyze unpaid invoices (0-180 days only for speed)
+            let totalUnpaid = 0;
+            let withCompany = 0;
+            let unknownReasons = {
+                noContract: 0,
+                noBranch: 0,
+                noCompanyInBranch: 0,
+                noCompanyRecord: 0
+            };
+            
+            const missingBranchSamples = [];
+            
+            billingDocs.forEach(d => {
+                const invoiceId = String(getValue(d.fields.invoice_id));
+                if (paidIds.has(invoiceId)) return;
+                
+                // Calculate age
+                const dueDate = getValue(d.fields.due_date);
+                let age = 0;
+                if (dueDate) {
+                    const datePart = dueDate.split(' ')[0];
+                    const dueDateObj = new Date(datePart);
+                    age = Math.ceil((new Date() - dueDateObj) / 86400000);
+                }
+                if (age > 180) return; // Skip old invoices
+                
+                totalUnpaid++;
+                
+                const contractmainId = String(getValue(d.fields.contractmain_id));
+                const contract = contractMap[contractmainId];
+                
+                if (!contract) {
+                    unknownReasons.noContract++;
+                    return;
+                }
+                
+                const branchId = contract.contract_id;
+                const branch = branchMap[branchId];
+                
+                if (!branch) {
+                    unknownReasons.noBranch++;
+                    if (missingBranchSamples.length < 5) {
+                        missingBranchSamples.push({
+                            invoiceId,
+                            contractmainId,
+                            branchId,
+                            // Check if branchId is actually a company
+                            isCompany: companyIds.has(branchId),
+                            companyName: companyMap[branchId] || null
+                        });
+                    }
+                    return;
+                }
+                
+                const companyId = branch.company_id;
+                if (!companyId || companyId === '0' || companyId === 'null') {
+                    unknownReasons.noCompanyInBranch++;
+                    return;
+                }
+                
+                const companyName = companyMap[companyId];
+                if (!companyName) {
+                    unknownReasons.noCompanyRecord++;
+                    return;
+                }
+                
+                withCompany++;
+            });
+            
+            log('=== RESULTS (Active 0-180 days) ===\n');
+            log(`Total unpaid invoices: ${totalUnpaid}`);
+            log(`With company name: ${withCompany} (${(withCompany/totalUnpaid*100).toFixed(1)}%)`);
+            log(`Unknown: ${totalUnpaid - withCompany} (${((totalUnpaid-withCompany)/totalUnpaid*100).toFixed(1)}%)\n`);
+            
+            log('Breakdown of Unknown reasons:');
+            log(`  No contract found: ${unknownReasons.noContract}`);
+            log(`  Branch not found: ${unknownReasons.noBranch}`);
+            log(`  Branch has no company_id: ${unknownReasons.noCompanyInBranch}`);
+            log(`  Company record not found: ${unknownReasons.noCompanyRecord}`);
+            
+            log('\n\n=== KEY INSIGHT: Missing Branch Samples ===');
+            missingBranchSamples.forEach(s => {
+                log(`\nInvoice ${s.invoiceId}:`);
+                log(`  Contract: ${s.contractmainId}`);
+                log(`  Branch ID (missing): ${s.branchId}`);
+                log(`  Is this a Company ID? ${s.isCompany ? '✅ YES → ' + s.companyName : '❌ NO'}`);
+            });
+            
+            // Final recommendation
+            log('\n\n=== SOLUTION ===');
+            if (missingBranchSamples.some(s => s.isCompany)) {
+                log('✅ Some "branch IDs" are actually COMPANY IDs!');
+                log('   We should check tbl_companylist if branch not found.');
+            } else {
+                log('❌ Missing branches are not company IDs.');
+                log('   These may be deleted/orphaned records.');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Find Recent Unknown Invoice</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Find Recent Unknown Invoice for Testing</h1>
+    <button onclick="findRecentUnknown()">Find Recent Unknown Invoices (2025)</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function findRecentUnknown() {
+            document.getElementById('log').textContent = '';
+            log('=== Finding Recent Unknown Invoices ===\n');
+            
+            log('Loading data...');
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            const paymentDocs = await fetchAll('tbl_paymentinfo');
+            
+            // Build lookups
+            const paidIds = new Set(paymentDocs.map(d => String(getValue(d.fields.invoice_id))));
+            const branchIds = new Set(branchDocs.map(d => String(getValue(d.fields.id))));
+            
+            const contractMap = {};
+            contractDocs.forEach(d => {
+                contractMap[String(getValue(d.fields.id))] = {
+                    contract_id: String(getValue(d.fields.contract_id))
+                };
+            });
+            
+            const branchMap = {};
+            branchDocs.forEach(d => {
+                branchMap[String(getValue(d.fields.id))] = {
+                    name: getValue(d.fields.branchname),
+                    company_id: String(getValue(d.fields.company_id))
+                };
+            });
+            
+            const companyMap = {};
+            companyDocs.forEach(d => {
+                companyMap[String(getValue(d.fields.id))] = getValue(d.fields.companyname);
+            });
+            
+            log('Finding recent Unknown invoices from 2025...\n');
+            
+            const unknownInvoices = [];
+            
+            billingDocs.forEach(d => {
+                const f = d.fields;
+                const invoiceId = String(getValue(f.invoice_id));
+                const year = getValue(f.year);
+                const month = getValue(f.month);
+                const amount = parseFloat(getValue(f.totalamount) || 0);
+                
+                // Only 2025 invoices
+                if (year !== '2025' && year !== 2025) return;
+                
+                // Only unpaid
+                if (paidIds.has(invoiceId)) return;
+                
+                // Check if Unknown
+                const contractmainId = String(getValue(f.contractmain_id));
+                const contract = contractMap[contractmainId];
+                
+                if (!contract) return;
+                
+                const branchId = contract.contract_id;
+                const branch = branchMap[branchId];
+                
+                // If branch not found = Unknown
+                if (!branch) {
+                    unknownInvoices.push({
+                        invoiceId,
+                        contractmainId,
+                        branchId,
+                        month,
+                        year,
+                        amount,
+                        dueDate: getValue(f.due_date)
+                    });
+                }
+            });
+            
+            // Sort by amount descending
+            unknownInvoices.sort((a, b) => b.amount - a.amount);
+            
+            log(`Found ${unknownInvoices.length} Unknown invoices from 2025\n`);
+            log('=== TOP 15 BY AMOUNT (look these up in your old app) ===\n');
+            
+            unknownInvoices.slice(0, 15).forEach((inv, i) => {
+                log(`${i + 1}. Invoice #${inv.invoiceId}`);
+                log(`   Amount: ₱${inv.amount.toLocaleString()}`);
+                log(`   Month/Year: ${inv.month} ${inv.year}`);
+                log(`   Due Date: ${inv.dueDate}`);
+                log(`   Contract ID: ${inv.contractmainId}`);
+                log(`   Missing Branch ID: ${inv.branchId}`);
+                log('');
+            });
+            
+            log('\n=== COPY ONE OF THESE INVOICE NUMBERS ===');
+            log('Look it up in your old VB.NET app to find the company name!');
+        }
+    </script>
+</body>
+</html>

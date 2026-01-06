@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Find Company via Machine</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Find Company via Machine or Branch Direct</h1>
+    <button onclick="checkMachine()">Check Machine 3101</button>
+    <button onclick="checkBranchDirect()">Check if Branch has Company Name</button>
+    <button onclick="findMissingBranches()">Find All Missing Branches</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function checkMachine() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Machine ID 3101 ===\n');
+            
+            // Check if there's a tbl_machines or similar
+            log('Trying to fetch tbl_machines...');
+            try {
+                const url = `${BASE_URL}/tbl_machines?pageSize=10&key=${API_KEY}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.documents && data.documents.length > 0) {
+                    log('✅ tbl_machines exists!');
+                    log(`Found ${data.documents.length} machines\n`);
+                    
+                    // Show fields
+                    const f = data.documents[0].fields;
+                    log('Machine fields:');
+                    Object.keys(f).sort().forEach(key => {
+                        log(`  ${key}: ${getValue(f[key])}`);
+                    });
+                    
+                    // Look for machine 3101
+                    const allMachines = await fetchAll('tbl_machines');
+                    const machine = allMachines.find(d => String(getValue(d.fields.id)) === '3101');
+                    if (machine) {
+                        log('\n\nMachine 3101:');
+                        Object.keys(machine.fields).sort().forEach(key => {
+                            const val = getValue(machine.fields[key]);
+                            if (val) log(`  ${key}: ${val}`);
+                        });
+                    }
+                } else {
+                    log('No documents in tbl_machines');
+                }
+            } catch (e) {
+                log('❌ tbl_machines not found or error: ' + e.message);
+            }
+            
+            // Try tbl_machlist
+            log('\n\nTrying tbl_machlist...');
+            try {
+                const url = `${BASE_URL}/tbl_machlist?pageSize=10&key=${API_KEY}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.documents && data.documents.length > 0) {
+                    log('✅ tbl_machlist exists!');
+                    const f = data.documents[0].fields;
+                    log('Fields:');
+                    Object.keys(f).sort().forEach(key => {
+                        log(`  ${key}: ${getValue(f[key])}`);
+                    });
+                }
+            } catch (e) {
+                log('❌ tbl_machlist error: ' + e.message);
+            }
+        }
+
+        async function checkBranchDirect() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Branch Fields ===\n');
+            
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            
+            // Show all fields of first branch
+            const f = branchDocs[0].fields;
+            log('All fields in tbl_branchinfo:');
+            Object.keys(f).sort().forEach(key => {
+                log(`  ${key}: ${getValue(f[key])}`);
+            });
+            
+            // Check highest branch ID
+            let maxId = 0;
+            branchDocs.forEach(d => {
+                const id = parseInt(getValue(d.fields.id)) || 0;
+                if (id > maxId) maxId = id;
+            });
+            log(`\nHighest branch ID: ${maxId}`);
+            log(`Total branches: ${branchDocs.length}`);
+            
+            // The missing branch 4292 is higher than max
+            log(`\nMissing branch 4292 is ${4292 > maxId ? 'HIGHER' : 'within range'} than max ID ${maxId}`);
+        }
+
+        async function findMissingBranches() {
+            document.getElementById('log').textContent = '';
+            log('=== Finding All Missing Branches ===\n');
+            
+            log('Loading data...');
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            
+            // Build branch set
+            const branchIds = new Set(branchDocs.map(d => String(getValue(d.fields.id))));
+            const companyIds = new Set(companyDocs.map(d => String(getValue(d.fields.id))));
+            
+            log(`Total branches in DB: ${branchIds.size}`);
+            log(`Total companies in DB: ${companyIds.size}`);
+            
+            // Build contract map
+            const contractMap = {};
+            contractDocs.forEach(d => {
+                contractMap[String(getValue(d.fields.id))] = {
+                    branch_id: String(getValue(d.fields.contract_id)),
+                    mach_id: getValue(d.fields.mach_id)
+                };
+            });
+            
+            // Count missing branches
+            const missingBranches = new Map();
+            let totalMissing = 0;
+            
+            billingDocs.forEach(d => {
+                const contractmainId = String(getValue(d.fields.contractmain_id));
+                const contract = contractMap[contractmainId];
+                
+                if (contract) {
+                    const branchId = contract.branch_id;
+                    if (!branchIds.has(branchId) && branchId && branchId !== 'null' && branchId !== 'undefined') {
+                        totalMissing++;
+                        missingBranches.set(branchId, (missingBranches.get(branchId) || 0) + 1);
+                    }
+                }
+            });
+            
+            log(`\nBilling records with missing branches: ${totalMissing} out of ${billingDocs.length}`);
+            log(`Unique missing branch IDs: ${missingBranches.size}\n`);
+            
+            // Show top missing branches
+            const sorted = [...missingBranches.entries()].sort((a, b) => b[1] - a[1]);
+            log('Top 20 missing branch IDs (by invoice count):');
+            sorted.slice(0, 20).forEach(([branchId, count]) => {
+                log(`  Branch ${branchId}: ${count} invoices`);
+            });
+            
+            // Check if these branch IDs might be company IDs instead
+            log('\n\nChecking if missing branch IDs are actually company IDs...');
+            let foundAsCompany = 0;
+            sorted.slice(0, 10).forEach(([branchId, count]) => {
+                if (companyIds.has(branchId)) {
+                    foundAsCompany++;
+                    const company = companyDocs.find(d => String(getValue(d.fields.id)) === branchId);
+                    log(`  ✅ Branch ${branchId} is Company: "${getValue(company.fields.companyname)}" (${count} invoices)`);
+                } else {
+                    log(`  ❌ Branch ${branchId} not found as company either`);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

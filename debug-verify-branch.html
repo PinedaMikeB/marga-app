@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verify Branch 2098 in Firebase</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+        .success { background: #c8e6c9; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .error { background: #ffcdd2; padding: 15px; border-radius: 8px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Verify Branch Mapping</h1>
+    
+    <div class="success">
+        <h3>✅ Discovery!</h3>
+        <p><strong>MySQL dump shows:</strong></p>
+        <p>Branch ID <strong>2098</strong> = "China Bank Savings Inc- CCAD - Consumer Securities"</p>
+        <p>Address: 6772 Ayala Avenue,, 7/F, , VGP Bldg, , Makati (matches your VB.NET app!)</p>
+    </div>
+    
+    <div class="error">
+        <h3>⚠️ The Problem</h3>
+        <p>Contract 5258 has <code>contract_id = 4292</code></p>
+        <p>But the branch is actually ID <strong>2098</strong>!</p>
+        <p>The <code>contract_id</code> field doesn't match the branch ID.</p>
+    </div>
+
+    <button onclick="verifyBranch()">Verify Branch 2098 in Firebase</button>
+    <button onclick="checkContractIdMeaning()">Investigate What contract_id Really Means</button>
+    
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function verifyBranch() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Branch 2098 in Firebase ===\n');
+            
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            
+            const branch2098 = branchDocs.find(d => String(getValue(d.fields.id)) === '2098');
+            
+            if (branch2098) {
+                log('✅ Branch 2098 EXISTS in Firebase!\n');
+                const f = branch2098.fields;
+                log('Branch details:');
+                log(`  ID: ${getValue(f.id)}`);
+                log(`  Name: ${getValue(f.branchname)}`);
+                log(`  Company ID: ${getValue(f.company_id)}`);
+                log(`  Address: ${getValue(f.branch_address)}`);
+            } else {
+                log('❌ Branch 2098 NOT FOUND in Firebase!');
+            }
+            
+            // Also check for "Consumer Securities" in branch names
+            log('\n\n=== Searching for "Consumer Securities" in all branches ===');
+            const matches = branchDocs.filter(d => {
+                const name = (getValue(d.fields.branchname) || '').toLowerCase();
+                return name.includes('consumer securities');
+            });
+            
+            log(`Found ${matches.length} matches:`);
+            matches.forEach(d => {
+                log(`  ID ${getValue(d.fields.id)}: ${getValue(d.fields.branchname)}`);
+            });
+        }
+
+        async function checkContractIdMeaning() {
+            document.getElementById('log').textContent = '';
+            log('=== Investigating What contract_id Really Means ===\n');
+            
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            
+            // Get contract 5258
+            const contract5258 = contractDocs.find(d => String(getValue(d.fields.id)) === '5258');
+            
+            if (contract5258) {
+                const f = contract5258.fields;
+                log('Contract 5258:');
+                log(`  contract_id: ${getValue(f.contract_id)} (we thought this was branch_id)`);
+                log(`  mach_id: ${getValue(f.mach_id)}`);
+                log(`  machine_id: ${getValue(f.machine_id)}`);
+                log(`  brand_id: ${getValue(f.brand_id)}`);
+                log(`  category_id: ${getValue(f.category_id)}`);
+            }
+            
+            // Theory: Maybe contract_id is an auto-generated contract number, not a branch reference
+            log('\n\n=== Theory: contract_id might be a contract number, not branch ID ===');
+            log('\nLet me check patterns...\n');
+            
+            // Check contract_id distribution
+            const contractIds = contractDocs.map(d => parseInt(getValue(d.fields.contract_id)) || 0).filter(x => x > 0);
+            contractIds.sort((a, b) => a - b);
+            
+            log(`contract_id range: ${contractIds[0]} to ${contractIds[contractIds.length - 1]}`);
+            log(`Total unique contract_ids: ${new Set(contractIds).size}`);
+            
+            // Check branch_id distribution  
+            const branchIds = branchDocs.map(d => parseInt(getValue(d.fields.id)) || 0);
+            branchIds.sort((a, b) => a - b);
+            
+            log(`\nbranch id range: ${branchIds[0]} to ${branchIds[branchIds.length - 1]}`);
+            log(`Total branches: ${branchIds.length}`);
+            
+            // How many contract_ids match actual branch IDs?
+            const branchIdSet = new Set(branchIds);
+            const matchingIds = contractIds.filter(id => branchIdSet.has(id));
+            
+            log(`\n=== KEY INSIGHT ===`);
+            log(`contract_ids that match real branch IDs: ${matchingIds.length} out of ${contractIds.length}`);
+            log(`Match rate: ${(matchingIds.length / contractIds.length * 100).toFixed(1)}%`);
+            
+            if (matchingIds.length / contractIds.length > 0.8) {
+                log('\n✅ Most contract_ids DO match branch IDs - the mapping should work!');
+                log('The issue is only with newer contracts that reference non-existent branches.');
+            } else {
+                log('\n❌ contract_id does NOT reliably reference branch IDs!');
+                log('We need to find another way to link contracts to branches.');
+            }
+        }
+    </script>
+</body>
+</html>

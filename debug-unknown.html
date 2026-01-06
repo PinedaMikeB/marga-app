@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Unknown - Check Main vs Branch</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+        input { padding: 10px; font-size: 14px; width: 150px; }
+    </style>
+</head>
+<body>
+    <h1>Debug Unknown - Main Company vs Branch</h1>
+    <p>Checking invoice 123784 (Unknown) to trace the full chain</p>
+    <button onclick="traceFullChain()">Trace Invoice 123784</button>
+    <button onclick="checkBranchStructure()">Check Branch/Company Structure</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+            console.log(msg);
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function traceFullChain() {
+            document.getElementById('log').textContent = '';
+            log('=== Tracing Invoice 123784 (Unknown) ===\n');
+            
+            // Get all data
+            log('Loading all tables...');
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            
+            log(`Loaded: ${billingDocs.length} billing, ${contractDocs.length} contracts, ${branchDocs.length} branches, ${companyDocs.length} companies\n`);
+            
+            // Find billing record
+            const billing = billingDocs.find(d => String(getValue(d.fields.invoice_id)) === '123784');
+            if (!billing) {
+                log('❌ Invoice 123784 not found in billing!');
+                return;
+            }
+            
+            const bf = billing.fields;
+            log('STEP 1: tbl_billing');
+            log(`  invoice_id: ${getValue(bf.invoice_id)}`);
+            log(`  contractmain_id: ${getValue(bf.contractmain_id)}`);
+            log(`  amount: ${getValue(bf.totalamount)}`);
+            
+            const contractmainId = String(getValue(bf.contractmain_id));
+            
+            // Find contract
+            log('\nSTEP 2: tbl_contractmain');
+            const contract = contractDocs.find(d => String(getValue(d.fields.id)) === contractmainId);
+            if (!contract) {
+                log(`  ❌ Contract ID ${contractmainId} NOT FOUND!`);
+                
+                // Check what IDs exist around this number
+                log('\n  Checking nearby contract IDs...');
+                const nearbyIds = contractDocs
+                    .map(d => parseInt(getValue(d.fields.id)))
+                    .filter(id => id >= parseInt(contractmainId) - 10 && id <= parseInt(contractmainId) + 10)
+                    .sort((a, b) => a - b);
+                log(`  Nearby IDs: ${nearbyIds.join(', ')}`);
+                return;
+            }
+            
+            const cf = contract.fields;
+            log(`  ✅ Found contract ID: ${getValue(cf.id)}`);
+            log(`  contract_id (this is branch_id): ${getValue(cf.contract_id)}`);
+            log(`  mach_id: ${getValue(cf.mach_id)}`);
+            log(`  category_id: ${getValue(cf.category_id)}`);
+            
+            // Show ALL fields in contract
+            log('\n  All contract fields:');
+            Object.keys(cf).sort().forEach(key => {
+                const val = getValue(cf[key]);
+                if (val !== null && val !== '' && val !== 0) {
+                    log(`    ${key}: ${val}`);
+                }
+            });
+            
+            const branchId = String(getValue(cf.contract_id));
+            
+            // Find branch
+            log('\nSTEP 3: tbl_branchinfo');
+            const branch = branchDocs.find(d => String(getValue(d.fields.id)) === branchId);
+            if (!branch) {
+                log(`  ❌ Branch ID ${branchId} NOT FOUND!`);
+                
+                // Maybe contract_id is not branch_id? Check other fields
+                log('\n  Trying to find branch by other means...');
+                
+                // Check if there's a branch_id field in contract
+                if (cf.branch_id) {
+                    const altBranchId = String(getValue(cf.branch_id));
+                    log(`  Found branch_id field: ${altBranchId}`);
+                    const altBranch = branchDocs.find(d => String(getValue(d.fields.id)) === altBranchId);
+                    if (altBranch) {
+                        log(`  ✅ Found branch via branch_id field!`);
+                    }
+                }
+                return;
+            }
+            
+            const brf = branch.fields;
+            log(`  ✅ Found branch ID: ${getValue(brf.id)}`);
+            log(`  branchname: ${getValue(brf.branchname)}`);
+            log(`  company_id: ${getValue(brf.company_id)}`);
+            
+            const companyId = String(getValue(brf.company_id));
+            
+            // Find company
+            log('\nSTEP 4: tbl_companylist');
+            const company = companyDocs.find(d => String(getValue(d.fields.id)) === companyId);
+            if (!company) {
+                log(`  ❌ Company ID ${companyId} NOT FOUND!`);
+                return;
+            }
+            
+            log(`  ✅ Found company ID: ${getValue(company.fields.id)}`);
+            log(`  companyname: ${getValue(company.fields.companyname)}`);
+            
+            log('\n=== RESULT ===');
+            log(`Company should be: ${getValue(company.fields.companyname)}`);
+        }
+
+        async function checkBranchStructure() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Branch/Company Structure ===\n');
+            
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            
+            log(`Total branches: ${branchDocs.length}`);
+            log(`Total companies: ${companyDocs.length}\n`);
+            
+            // Check a few branches
+            log('Sample branches:');
+            branchDocs.slice(0, 10).forEach(d => {
+                const f = d.fields;
+                log(`  Branch ID ${getValue(f.id)}: "${getValue(f.branchname)}" → Company ID: ${getValue(f.company_id)}`);
+            });
+            
+            // Check if some branches have company_id = 0 or null
+            log('\n\nBranches with missing company_id:');
+            let missingCount = 0;
+            branchDocs.forEach(d => {
+                const f = d.fields;
+                const companyId = getValue(f.company_id);
+                if (!companyId || companyId === '0' || companyId === 0) {
+                    missingCount++;
+                    if (missingCount <= 10) {
+                        log(`  Branch ID ${getValue(f.id)}: "${getValue(f.branchname)}" → company_id: ${companyId}`);
+                    }
+                }
+            });
+            log(`\nTotal branches with missing company_id: ${missingCount}`);
+            
+            // Check companies
+            log('\n\nSample companies:');
+            companyDocs.slice(0, 10).forEach(d => {
+                const f = d.fields;
+                log(`  Company ID ${getValue(f.id)}: "${getValue(f.companyname)}"`);
+            });
+        }
+    </script>
+</body>
+</html>

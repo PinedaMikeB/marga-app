@@ -1,8 +1,8 @@
 /**
- * MARGA Collections Module - FIXED
- * - Fixed STRING vs NUMBER key matching for contractmain_id
- * - Fixed follow-up to only show TODAY (not past dates)
- * - Optimized loading
+ * MARGA Collections Module - v3 FIXED
+ * - Uses Machine History to find correct branch (NOT contract_id)
+ * - Fixed STRING vs NUMBER key matching
+ * - Fixed follow-up to only show TODAY
  */
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
@@ -23,6 +23,7 @@ let contractMap = {};
 let branchMap = {};
 let companyMap = {};
 let paidInvoiceIds = new Set();
+let machToBranchMap = {};  // NEW: Machine to Branch mapping from history
 let lookupsLoaded = false;
 
 // Daily tips
@@ -35,8 +36,6 @@ const dailyTips = [
     "📊 <strong>Daily Focus:</strong> 0-120 days (highest recovery 50-95%)",
     "📋 <strong>Weekly Review:</strong> 121-180 days (needs escalation)",
     "📁 <strong>Monthly:</strong> 180+ days (management decision)",
-    "🔴 URGENT (91-120 days) have 50-60% recovery - don't let them slip!",
-    "🟠 HIGH priority (61-90 days) - recovery drops to 70-80%, act fast!"
 ];
 
 // Helpers
@@ -124,12 +123,11 @@ function formatDate(dateStr) {
     } catch (e) { return dateStr; }
 }
 
-// FIXED: Only check if date is TODAY (not past dates)
 function isToday(dateStr) {
     if (!dateStr) return false;
     try {
-        const datePart = dateStr.split(' ')[0]; // "2021-01-28"
-        const today = new Date().toISOString().split('T')[0]; // "2026-01-06"
+        const datePart = dateStr.split(' ')[0];
+        const today = new Date().toISOString().split('T')[0];
         return datePart === today;
     } catch (e) { return false; }
 }
@@ -159,7 +157,6 @@ function showRandomTip() {
 }
 function closeTip() { document.getElementById('tipBanner').style.display = 'none'; }
 
-// Today's Follow-ups - FIXED to only show TODAY
 function showTodayFollowups() {
     const modal = document.getElementById('followupModal');
     const list = document.getElementById('followupList');
@@ -187,14 +184,13 @@ function closeFollowupModal() {
     document.getElementById('followupModal').classList.add('hidden');
 }
 
-// Load collection history - FIXED to only count TODAY
 async function loadCollectionHistory() {
     try {
         const historyDocs = await firestoreGetAll('tbl_collectionhistory');
         collectionHistory = {};
         todayFollowups = [];
         
-        const todayStr = new Date().toISOString().split('T')[0]; // "2026-01-06"
+        const todayStr = new Date().toISOString().split('T')[0];
         
         historyDocs.forEach(doc => {
             const f = doc.fields;
@@ -204,32 +200,20 @@ async function loadCollectionHistory() {
             const contactPerson = getValue(f.contact_person);
             const timestamp = getValue(f.timestamp);
             
-            // Group by invoice
             if (!collectionHistory[invoiceNum]) {
                 collectionHistory[invoiceNum] = [];
             }
             collectionHistory[invoiceNum].push({
-                remarks: remarks,
-                followupDate: followupDate,
-                contactPerson: contactPerson,
-                timestamp: timestamp
+                remarks, followupDate, contactPerson, timestamp
             });
             
-            // FIXED: Only check if follow-up is scheduled for TODAY
             if (followupDate) {
                 const followupDatePart = followupDate.split(' ')[0];
                 if (followupDatePart === todayStr) {
-                    // Find company name from invoices (will be populated after billing loads)
-                    todayFollowups.push({
-                        invoiceNum: invoiceNum,
-                        company: 'Loading...' // Will update after billing loads
-                    });
+                    todayFollowups.push({ invoiceNum, company: 'Loading...' });
                 }
             }
         });
-        
-        console.log('Collection history loaded:', Object.keys(collectionHistory).length);
-        console.log('Today follow-ups (date = ' + todayStr + '):', todayFollowups.length);
         
     } catch (e) {
         console.error('Error loading collection history:', e);
@@ -246,20 +230,46 @@ function updateFollowupBadge() {
     }
 }
 
-// Update follow-up company names after invoices are loaded
 function updateFollowupCompanyNames() {
     todayFollowups.forEach(f => {
         const inv = allInvoices.find(i => String(i.invoiceNo) === String(f.invoiceNum) || String(i.invoiceId) === String(f.invoiceNum));
-        if (inv) {
-            f.company = inv.company;
-        } else {
-            f.company = 'Invoice #' + f.invoiceNum;
-        }
+        f.company = inv ? inv.company : 'Invoice #' + f.invoiceNum;
     });
     updateFollowupBadge();
 }
 
-// Load lookups - FIXED to store keys as STRINGS
+// NEW: Build Machine → Branch mapping from machine history
+async function buildMachineToBranchMap() {
+    updateLoadingStatus('Building machine location map...');
+    const historyDocs = await firestoreGetAll('tbl_newmachinehistory');
+    
+    // Group deliveries by machine
+    const machineDeliveries = {};
+    historyDocs.forEach(d => {
+        const f = d.fields;
+        const machId = String(getValue(f.mach_id));
+        const branchId = getValue(f.branch_id);
+        const statusId = getValue(f.status_id);
+        const datex = getValue(f.datex);
+        
+        // status_id = 2 means "For Delivery" (deployed to branch)
+        if (statusId == 2 && branchId && branchId > 0) {
+            if (!machineDeliveries[machId]) machineDeliveries[machId] = [];
+            machineDeliveries[machId].push({ branchId: String(branchId), date: datex });
+        }
+    });
+    
+    // For each machine, get the LATEST delivery location
+    machToBranchMap = {};
+    Object.entries(machineDeliveries).forEach(([machId, deliveries]) => {
+        deliveries.sort((a, b) => new Date(b.date) - new Date(a.date));
+        machToBranchMap[machId] = deliveries[0].branchId;
+    });
+    
+    console.log(`Built machine→branch map for ${Object.keys(machToBranchMap).length} machines`);
+}
+
+// Load lookups including machine history
 async function loadLookups() {
     if (lookupsLoaded) return;
     
@@ -267,35 +277,36 @@ async function loadLookups() {
     const companyDocs = await firestoreGetAll('tbl_companylist');
     companyMap = {};
     companyDocs.forEach(doc => { 
-        const id = String(getValue(doc.fields.id)); // Convert to STRING
+        const id = String(getValue(doc.fields.id));
         companyMap[id] = getValue(doc.fields.companyname) || 'Unknown'; 
     });
-    console.log('Companies loaded:', Object.keys(companyMap).length);
 
     updateLoadingStatus('Loading branch data...');
     const branchDocs = await firestoreGetAll('tbl_branchinfo');
     branchMap = {};
     branchDocs.forEach(doc => {
-        const id = String(getValue(doc.fields.id)); // Convert to STRING
+        const id = String(getValue(doc.fields.id));
+        const companyId = String(getValue(doc.fields.company_id));
         branchMap[id] = { 
             name: getValue(doc.fields.branchname) || 'Main', 
-            company_id: String(getValue(doc.fields.company_id)) // Convert to STRING
+            company_id: companyId 
         };
     });
-    console.log('Branches loaded:', Object.keys(branchMap).length);
 
     updateLoadingStatus('Loading contract data...');
     const contractDocs = await firestoreGetAll('tbl_contractmain');
     contractMap = {};
     contractDocs.forEach(doc => {
-        const id = String(getValue(doc.fields.id)); // Convert to STRING - KEY FIX!
+        const id = String(getValue(doc.fields.id));
         contractMap[id] = { 
-            branch_id: String(getValue(doc.fields.contract_id)), // contract_id = branch_id
+            contract_id: String(getValue(doc.fields.contract_id)),
+            mach_id: String(getValue(doc.fields.mach_id)),  // NEW: Include mach_id
             category_id: getValue(doc.fields.category_id) 
         };
     });
-    console.log('Contracts loaded:', Object.keys(contractMap).length);
-    console.log('Contract "5485" exists?', contractMap["5485"] ? 'YES' : 'NO');
+
+    // NEW: Build machine → branch mapping
+    await buildMachineToBranchMap();
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo');
@@ -304,32 +315,46 @@ async function loadLookups() {
         const invId = getValue(doc.fields.invoice_id);
         if (invId) paidInvoiceIds.add(String(invId));
     });
-    console.log('Payments loaded:', paidInvoiceIds.size);
 
-    // Load collection history
     updateLoadingStatus('Loading collection history...');
     await loadCollectionHistory();
 
     lookupsLoaded = true;
+    console.log('Lookups loaded:', { 
+        companies: Object.keys(companyMap).length, 
+        branches: Object.keys(branchMap).length, 
+        contracts: Object.keys(contractMap).length,
+        machineLocations: Object.keys(machToBranchMap).length 
+    });
 }
 
-// Process invoice - FIXED to use STRING keys
+// Process invoice with NEW machine history lookup
 function processInvoice(doc) {
     const f = doc.fields;
     const invoiceId = getValue(f.invoice_id);
     if (paidInvoiceIds.has(String(invoiceId))) return null;
 
-    // FIXED: Convert contractmain_id to STRING for lookup
     const contractmainId = String(getValue(f.contractmain_id));
     const contract = contractMap[contractmainId] || {};
     
-    // FIXED: Use STRING for branch lookup
-    const branchId = String(contract.branch_id);
-    const branch = branchMap[branchId] || {};
+    let companyName = 'Unknown';
+    let branchName = 'Main';
     
-    // FIXED: Use STRING for company lookup
-    const companyId = String(branch.company_id);
-    const companyName = companyMap[companyId] || 'Unknown';
+    // NEW METHOD: Use mach_id → machine history → branch
+    const machId = contract.mach_id;
+    let branchId = machToBranchMap[machId];  // Get branch from machine history
+    
+    // Fallback to old method if machine not in history
+    if (!branchId) {
+        branchId = contract.contract_id;
+    }
+    
+    const branch = branchMap[branchId];
+    
+    if (branch) {
+        branchName = branch.name || 'Main';
+        companyName = companyMap[branch.company_id] || 'Unknown';
+    }
     
     const monthStr = getValue(f.month);
     const yearStr = getValue(f.year);
@@ -337,7 +362,6 @@ function processInvoice(doc) {
     const totalAmount = parseFloat(getValue(f.totalamount) || getValue(f.amount) || 0);
     const vatAmount = parseFloat(getValue(f.vatamount) || 0);
     
-    // Get last follow-up info
     const history = collectionHistory[invoiceId] || collectionHistory[String(invoiceId)] || [];
     const lastHistory = history.length > 0 ? history[history.length - 1] : null;
 
@@ -353,7 +377,7 @@ function processInvoice(doc) {
         age: age,
         priority: getPriority(age),
         company: companyName,
-        branch: branch.name || 'Main',
+        branch: branchName,
         category: getCategoryCode(contract.category_id),
         lastRemarks: lastHistory ? lastHistory.remarks : null,
         nextFollowup: lastHistory ? lastHistory.followupDate : null,
@@ -381,7 +405,6 @@ async function loadActiveInvoices() {
         }
     });
 
-    // Sort by priority then amount
     allInvoices.sort((a, b) => {
         if (a.priority.order !== b.priority.order) return a.priority.order - b.priority.order;
         return b.amount - a.amount;
@@ -392,19 +415,17 @@ async function loadActiveInvoices() {
     updateAllStats();
     currentPage = 1;
     renderTable();
-    
-    // Update follow-up company names now that invoices are loaded
     updateFollowupCompanyNames();
     
     document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
     
-    // Show follow-ups if any for today
+    // Count unknowns for debugging
+    const unknownCount = allInvoices.filter(inv => inv.company === 'Unknown').length;
+    console.log(`Loaded ${allInvoices.length} invoices, ${unknownCount} still unknown`);
+    
     if (todayFollowups.length > 0) {
         setTimeout(showTodayFollowups, 500);
     }
-    
-    console.log('Active invoices loaded:', allInvoices.length);
-    console.log('Sample:', allInvoices[0]);
 }
 
 async function loadAllInvoices() {
@@ -584,136 +605,139 @@ function removeFilter(fieldId) {
         updateAllStats();
         renderTable();
         showActiveFilters();
-    } else {
-        document.getElementById(fieldId).value = '';
-        applyFilters();
+        return;
     }
+    document.getElementById(fieldId).value = '';
+    applyFilters();
 }
 
 function clearFilters() {
+    clearFilterInputs();
     currentPriorityFilter = null;
     document.querySelectorAll('.priority-card').forEach(card => card.classList.remove('active'));
-    clearFilterInputs();
     filteredInvoices = [...allInvoices];
     currentPage = 1;
     updateAllStats();
     renderTable();
-    document.getElementById('active-filters').innerHTML = '';
+    showActiveFilters();
 }
 
 function renderTable() {
-    const container = document.getElementById('table-container');
-    const pagination = document.getElementById('pagination');
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, filteredInvoices.length);
+    const pageInvoices = filteredInvoices.slice(startIndex, endIndex);
 
-    if (filteredInvoices.length === 0) {
-        container.innerHTML = `<div class="empty-state"><h3>No Invoices Found</h3><p>Try adjusting your filters</p></div>`;
-        pagination.style.display = 'none';
+    if (pageInvoices.length === 0) {
+        document.getElementById('table-container').innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">📋</div>
+                <h3>No invoices found</h3>
+                <p>Try adjusting your filters</p>
+            </div>
+        `;
+        document.getElementById('pagination').innerHTML = '';
         return;
     }
 
-    const startIdx = (currentPage - 1) * pageSize;
-    const endIdx = Math.min(startIdx + pageSize, filteredInvoices.length);
-    const pageInvoices = filteredInvoices.slice(startIdx, endIdx);
-
-    let html = `<table class="data-table"><thead><tr>
-        <th>Priority</th><th>Invoice #</th><th>Company / Branch</th><th>Amount</th><th>Month/Year</th><th>Age</th><th>Action</th>
-    </tr></thead><tbody>`;
+    let html = `
+        <table class="invoice-table">
+            <thead>
+                <tr>
+                    <th>Priority</th>
+                    <th>Company</th>
+                    <th>Invoice #</th>
+                    <th>Period</th>
+                    <th>Amount</th>
+                    <th>Age</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
 
     pageInvoices.forEach(inv => {
-        html += `<tr onclick="viewInvoiceDetail('${inv.invoiceNo}')">
-            <td><span class="priority-badge ${inv.priority.code}">${inv.priority.label}</span></td>
-            <td><strong>${inv.invoiceNo}</strong></td>
-            <td><div class="company-name">${inv.company}</div><div class="branch-name">${inv.branch}</div></td>
-            <td class="amount">${formatCurrency(inv.amount)}</td>
-            <td>${inv.monthYear}</td>
-            <td class="${getAgeClass(inv.age)}">${inv.age}d</td>
-            <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoiceDetail('${inv.invoiceNo}')">View</button></td>
-        </tr>`;
+        const hasHistory = inv.historyCount > 0;
+        const statusClass = hasHistory ? 'status-contacted' : 'status-new';
+        const statusText = hasHistory ? `${inv.historyCount} notes` : 'New';
+        
+        html += `
+            <tr class="invoice-row ${inv.priority.code}" onclick="viewInvoiceDetail('${inv.invoiceNo}')">
+                <td><span class="priority-badge ${inv.priority.code}">${inv.priority.label}</span></td>
+                <td>
+                    <div class="company-name">${inv.company}</div>
+                    <div class="branch-name">${inv.branch !== inv.company ? inv.branch : ''}</div>
+                </td>
+                <td><strong>#${inv.invoiceNo}</strong></td>
+                <td>${inv.monthYear}</td>
+                <td class="amount">${formatCurrency(inv.amount)}</td>
+                <td><span class="age-badge ${getAgeClass(inv.age)}">${inv.age}d</span></td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                <td>
+                    <button class="btn-action" onclick="event.stopPropagation(); viewInvoiceDetail('${inv.invoiceNo}')" title="View Details">
+                        👁️
+                    </button>
+                </td>
+            </tr>
+        `;
     });
 
     html += '</tbody></table>';
-    container.innerHTML = html;
+    document.getElementById('table-container').innerHTML = html;
 
-    document.getElementById('showing-start').textContent = startIdx + 1;
-    document.getElementById('showing-end').textContent = endIdx;
-    document.getElementById('total-records').textContent = filteredInvoices.length.toLocaleString();
-    document.getElementById('btn-prev').disabled = currentPage === 1;
-    document.getElementById('btn-next').disabled = endIdx >= filteredInvoices.length;
-    pagination.style.display = 'flex';
+    renderPagination();
 }
 
-function prevPage() { if (currentPage > 1) { currentPage--; renderTable(); document.querySelector('.table-scroll').scrollTop = 0; } }
-function nextPage() { if (currentPage < Math.ceil(filteredInvoices.length / pageSize)) { currentPage++; renderTable(); document.querySelector('.table-scroll').scrollTop = 0; } }
-
-// View invoice detail with history
-function viewInvoiceDetail(invoiceNo) {
-    const inv = allInvoices.find(i => String(i.invoiceNo) === String(invoiceNo) || String(i.invoiceId) === String(invoiceNo));
-    if (!inv) {
-        alert('Invoice not found in current view');
+function renderPagination() {
+    const totalPages = Math.ceil(filteredInvoices.length / pageSize);
+    if (totalPages <= 1) {
+        document.getElementById('pagination').innerHTML = '';
         return;
     }
+
+    let html = '<div class="pagination">';
     
-    const history = collectionHistory[invoiceNo] || collectionHistory[inv.invoiceId] || [];
+    html += `<button class="page-btn" onclick="goToPage(1)" ${currentPage === 1 ? 'disabled' : ''}>«</button>`;
+    html += `<button class="page-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹</button>`;
     
-    let historyHtml = '';
-    if (history.length > 0) {
-        history.slice().reverse().forEach(h => {
-            historyHtml += `
-                <div class="history-item">
-                    <div class="history-date">${formatDate(h.timestamp)} ${h.contactPerson ? '• ' + h.contactPerson : ''}</div>
-                    <div class="history-remarks">${h.remarks || 'No remarks'}</div>
-                    ${h.followupDate ? `<div class="history-followup">📅 Follow-up: ${formatDate(h.followupDate)}</div>` : ''}
-                </div>
-            `;
-        });
-    } else {
-        historyHtml = '<div class="no-history">No collection history yet</div>';
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + 4);
+    if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
     }
     
-    document.getElementById('detailInvoiceNo').textContent = inv.invoiceNo;
-    document.getElementById('detailContent').innerHTML = `
-        <div class="detail-grid">
-            <div class="detail-item"><label>Company</label><span>${inv.company}</span></div>
-            <div class="detail-item"><label>Branch</label><span>${inv.branch}</span></div>
-            <div class="detail-item"><label>Amount</label><span class="amount">${formatCurrency(inv.amount)}</span></div>
-            <div class="detail-item"><label>Age</label><span class="${getAgeClass(inv.age)}">${inv.age} days</span></div>
-            <div class="detail-item"><label>Month/Year</label><span>${inv.monthYear}</span></div>
-            <div class="detail-item"><label>Priority</label><span class="priority-badge ${inv.priority.code}">${inv.priority.label}</span></div>
-        </div>
-        <div class="history-section">
-            <h4>📋 Collection History (${history.length})</h4>
-            <div class="history-list">${historyHtml}</div>
-        </div>
-    `;
+    html += `<button class="page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>`;
+    html += `<button class="page-btn" onclick="goToPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>»</button>`;
     
-    document.getElementById('detailModal').classList.remove('hidden');
+    html += `<span class="page-info">Page ${currentPage} of ${totalPages} (${filteredInvoices.length} invoices)</span>`;
+    html += '</div>';
+    
+    document.getElementById('pagination').innerHTML = html;
 }
 
-function closeDetailModal() {
-    document.getElementById('detailModal').classList.add('hidden');
+function goToPage(page) {
+    const totalPages = Math.ceil(filteredInvoices.length / pageSize);
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    renderTable();
+    document.getElementById('table-container').scrollIntoView({ behavior: 'smooth' });
 }
 
-function exportToExcel() {
-    if (filteredInvoices.length === 0) { alert('No data'); return; }
-    let csv = '\uFEFF' + ['Priority', 'Invoice #', 'Company', 'Branch', 'Amount', 'Month', 'Year', 'Age', 'Category'].join(',') + '\n';
-    filteredInvoices.forEach(inv => {
-        csv += [inv.priority.label, inv.invoiceNo, `"${inv.company}"`, `"${inv.branch}"`, inv.amount.toFixed(2), inv.month || '', inv.year || '', inv.age, inv.category].join(',') + '\n';
-    });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = `collections-${dataMode}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+function viewInvoiceDetail(invoiceNo) {
+    // Navigate to detail page or open modal
+    window.location.href = `invoice-detail.html?invoice=${invoiceNo}`;
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', () => {
+    loadActiveInvoices();
     checkWelcomeModal();
     showRandomTip();
     
-    document.getElementById('search-input').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
-    ['filter-year', 'filter-month', 'filter-age', 'filter-category'].forEach(id => {
-        document.getElementById(id).addEventListener('change', applyFilters);
+    // Setup search
+    document.getElementById('search-input')?.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') applyFilters();
     });
-    
-    loadActiveInvoices();
 });

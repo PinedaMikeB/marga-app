@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check All Tables for Departments</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 700px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Search for Departments Table</h1>
+    <button onclick="searchDepartmentTables()">Search for Department Tables</button>
+    <button onclick="listAllTables()">List ALL Firebase Collections</button>
+    <button onclick="searchChinaBankEverywhere()">Search "Auto Loan 03120" Everywhere</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchSome(collection, count = 5) {
+            try {
+                const url = `${BASE_URL}/${collection}?pageSize=${count}&key=${API_KEY}`;
+                const response = await fetch(url);
+                return response.json();
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function searchDepartmentTables() {
+            document.getElementById('log').textContent = '';
+            log('=== Searching for Department-related Tables ===\n');
+            
+            const tablesToCheck = [
+                'tbl_department',
+                'tbl_departments',
+                'tbl_dept',
+                'tbl_deptinfo',
+                'tbl_departmentinfo',
+                'tbl_branch_department',
+                'tbl_branchdept',
+                'tbl_company_department',
+                'tbl_unit',
+                'tbl_units',
+                'tbl_section',
+                'tbl_sections',
+                'tbl_division',
+                'tbl_divisions',
+                'tbl_office',
+                'tbl_offices',
+                'tbl_location',
+                'tbl_locations',
+                'tbl_site',
+                'tbl_sites',
+                'tbl_area',
+                'tbl_areas',
+                'tbl_client',
+                'tbl_clients',
+                'tbl_customer',
+                'tbl_customers',
+                'tbl_account',
+                'tbl_accounts'
+            ];
+            
+            for (const table of tablesToCheck) {
+                const data = await fetchSome(table, 3);
+                if (data && data.documents && data.documents.length > 0) {
+                    log(`✅ ${table}: ${data.documents.length}+ records`);
+                    const f = data.documents[0].fields;
+                    log(`   Fields: ${Object.keys(f).join(', ')}`);
+                    log('');
+                } else if (data && data.documents) {
+                    log(`⚪ ${table}: exists but empty`);
+                } else {
+                    log(`❌ ${table}: not found`);
+                }
+            }
+        }
+
+        async function listAllTables() {
+            document.getElementById('log').textContent = '';
+            log('=== Listing All Firebase Collections ===\n');
+            log('Note: Firebase REST API does not have a "list collections" endpoint.');
+            log('We will check all tables that START with "tbl_" from your migration.\n');
+            
+            // Common Marga tables based on migration files
+            const knownTables = [
+                'tbl_adminreqdesc', 'tbl_adminreqtype', 'tbl_billing', 'tbl_bracket',
+                'tbl_branchinfo', 'tbl_cancelledinvoices', 'tbl_cartridge', 
+                'tbl_changeunitrequest', 'tbl_checkmachine', 'tbl_checkpayments',
+                'tbl_clientpaymentsummary', 'tbl_closedref', 'tbl_collectionhistory',
+                'tbl_collectioninfo', 'tbl_collections', 'tbl_collectionstatus',
+                'tbl_companylist', 'tbl_condition', 'tbl_contractdetails',
+                'tbl_contracthistory', 'tbl_contractmain', 'tbl_cstatus',
+                'tbl_deliveryinfo', 'tbl_department', 'tbl_departments',
+                'tbl_depositslip', 'tbl_depositsliptransaction', 'tbl_dr_itemtype',
+                'tbl_employee', 'tbl_empos', 'tbl_empstatus', 'tbl_finaldr',
+                'tbl_finaldrdetails', 'tbl_financereqdesc', 'tbl_financereqtype',
+                'tbl_fstatus', 'tbl_groupings', 'tbl_industry', 'tbl_invoiceage',
+                'tbl_invoicenum', 'tbl_irstatus', 'tbl_itemcat', 'tbl_itemrequest',
+                'tbl_itemrequestdetails', 'tbl_itemstat', 'tbl_machineinfo',
+                'tbl_machinelist', 'tbl_machlist', 'tbl_machinemonthlystatus',
+                'tbl_machinepickupreceipt', 'tbl_machinereading', 'tbl_machinerepair',
+                'tbl_machinerequest', 'tbl_mapinfo', 'tbl_maritalstatus', 'tbl_mstatus',
+                'tbl_mtype', 'tbl_nature', 'tbl_newcartridgehistory', 'tbl_newcartridgerepair',
+                'tbl_newcartridgestatus', 'tbl_newchecktype', 'tbl_newcheckvoucher',
+                'tbl_newcheckvoucherdetails', 'tbl_newdepositslip', 'tbl_newdepositslipdetails',
+                'tbl_newdr', 'tbl_newfordr', 'tbl_newmachinehistory', 'tbl_newmachinerepair',
+                'tbl_newmachinerepairuseditems', 'tbl_newotherrequest', 'tbl_newothershistory',
+                'tbl_newpartshistory', 'tbl_newpartsstatus', 'tbl_origin', 'tbl_ornumber',
+                'tbl_ownership', 'tbl_parts', 'tbl_partsstatus', 'tbl_partstaken',
+                'tbl_partstype', 'tbl_partsused', 'tbl_paymentinfo', 'tbl_paymentrequest',
+                'tbl_paymenttype', 'tbl_prrequest', 'tbl_prrequestdetails', 'tbl_pstatus',
+                'tbl_rdprocessrequest', 'tbl_repaircartridgecounter', 'tbl_request',
+                'tbl_schedule', 'tbl_serviceinfo', 'tbl_status', 'tbl_storage',
+                'tbl_supplier', 'tbl_techarea', 'tbl_tistatus', 'tbl_tonerink', 'tbl_trouble'
+            ];
+            
+            const found = [];
+            for (const table of knownTables) {
+                const data = await fetchSome(table, 1);
+                if (data && data.documents && data.documents.length > 0) {
+                    found.push(table);
+                    log(`✅ ${table}`);
+                }
+            }
+            
+            log(`\n\nTotal tables found: ${found.length}`);
+        }
+
+        async function searchChinaBankEverywhere() {
+            document.getElementById('log').textContent = '';
+            log('=== Searching "Auto Loan" or "4447" in All Tables ===\n');
+            
+            // Tables that might have the branch/department name
+            const searchTables = [
+                'tbl_branchinfo',
+                'tbl_companylist', 
+                'tbl_contractmain',
+                'tbl_groupings',
+                'tbl_department',
+                'tbl_departments'
+            ];
+            
+            for (const table of searchTables) {
+                log(`\nSearching ${table}...`);
+                try {
+                    const docs = await fetchAll(table);
+                    log(`  Total records: ${docs.length}`);
+                    
+                    // Search for "Auto Loan" or ID 4447
+                    const matches = docs.filter(d => {
+                        const f = d.fields;
+                        // Check all string fields for "auto loan"
+                        for (const key of Object.keys(f)) {
+                            const val = getValue(f[key]);
+                            if (typeof val === 'string' && val.toLowerCase().includes('auto loan')) {
+                                return true;
+                            }
+                        }
+                        // Check if ID is 4447
+                        if (getValue(f.id) == 4447) return true;
+                        if (getValue(f.branch_id) == 4447) return true;
+                        if (getValue(f.contract_id) == 4447) return true;
+                        return false;
+                    });
+                    
+                    if (matches.length > 0) {
+                        log(`  ✅ Found ${matches.length} matches!`);
+                        matches.slice(0, 5).forEach(d => {
+                            const f = d.fields;
+                            log(`    ID ${getValue(f.id)}: ${JSON.stringify(Object.fromEntries(Object.entries(f).map(([k,v]) => [k, getValue(v)])))}`);
+                        });
+                    } else {
+                        log(`  ❌ No matches found`);
+                    }
+                } catch (e) {
+                    log(`  ⚠️ Error or table not found: ${e.message}`);
+                }
+            }
+            
+            log('\n\n=== CONCLUSION ===');
+            log('If "Auto Loan 03120" is not found in any table, it means:');
+            log('1. The branch/department was never migrated to Firebase');
+            log('2. OR it exists in a different table we haven\'t checked');
+            log('3. OR the MySQL branch ID 4447 was created after the Firebase migration');
+        }
+    </script>
+</body>
+</html>

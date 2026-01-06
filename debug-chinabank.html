@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trace China Bank Invoice</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 700px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Trace China Bank Invoice #125478</h1>
+    <p>Looking for: "China Bank Savings Inc- Auto Loan 03120"</p>
+    <button onclick="traceInvoice()">Trace Invoice 125478</button>
+    <button onclick="searchChinaBank()">Search "China Bank" in All Tables</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function traceInvoice() {
+            document.getElementById('log').textContent = '';
+            log('=== Tracing Invoice #125478 (China Bank Savings Inc- Auto Loan 03120) ===\n');
+            
+            log('Loading all tables...');
+            const billingDocs = await fetchAll('tbl_billing');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const companyDocs = await fetchAll('tbl_companylist');
+            
+            // Find billing record
+            const billing = billingDocs.find(d => String(getValue(d.fields.invoice_id)) === '125478');
+            if (!billing) {
+                log('❌ Invoice not found!');
+                return;
+            }
+            
+            const bf = billing.fields;
+            log('STEP 1: tbl_billing');
+            log(`  invoice_id: ${getValue(bf.invoice_id)}`);
+            log(`  contractmain_id: ${getValue(bf.contractmain_id)}`);
+            log(`  amount: ${getValue(bf.totalamount)}`);
+            log(`  month/year: ${getValue(bf.month)} ${getValue(bf.year)}`);
+            
+            const contractmainId = String(getValue(bf.contractmain_id));
+            
+            // Find contract
+            log('\nSTEP 2: tbl_contractmain');
+            const contract = contractDocs.find(d => String(getValue(d.fields.id)) === contractmainId);
+            if (!contract) {
+                log(`❌ Contract ${contractmainId} not found!`);
+                return;
+            }
+            
+            const cf = contract.fields;
+            log(`  contract ID: ${getValue(cf.id)}`);
+            log(`  contract_id (branch?): ${getValue(cf.contract_id)}`);
+            log(`  mach_id: ${getValue(cf.mach_id)}`);
+            
+            const branchId = String(getValue(cf.contract_id));
+            
+            // Find branch
+            log('\nSTEP 3: tbl_branchinfo');
+            const branch = branchDocs.find(d => String(getValue(d.fields.id)) === branchId);
+            if (!branch) {
+                log(`❌ Branch ${branchId} NOT FOUND in tbl_branchinfo!`);
+                log(`\n   This is why it shows as "Unknown"`);
+                log(`   Branch ID ${branchId} doesn't exist in the branch table.`);
+                
+                // Check max branch ID
+                let maxBranchId = 0;
+                branchDocs.forEach(d => {
+                    const id = parseInt(getValue(d.fields.id)) || 0;
+                    if (id > maxBranchId) maxBranchId = id;
+                });
+                log(`\n   Max branch ID in DB: ${maxBranchId}`);
+                log(`   Missing branch ID: ${branchId} (${parseInt(branchId) > maxBranchId ? 'HIGHER than max' : 'within range but missing'})`);
+            } else {
+                const brf = branch.fields;
+                log(`  branch name: ${getValue(brf.branchname)}`);
+                log(`  company_id: ${getValue(brf.company_id)}`);
+            }
+            
+            // Search for "China Bank" in companies
+            log('\n\nSTEP 4: Searching for "China Bank" in tbl_companylist...');
+            const chinaBankCompanies = companyDocs.filter(d => {
+                const name = getValue(d.fields.companyname) || '';
+                return name.toLowerCase().includes('china bank');
+            });
+            
+            log(`Found ${chinaBankCompanies.length} companies with "China Bank":`);
+            chinaBankCompanies.forEach(d => {
+                log(`  ID ${getValue(d.fields.id)}: "${getValue(d.fields.companyname)}"`);
+            });
+            
+            // Search for "China Bank" in branches
+            log('\n\nSTEP 5: Searching for "China Bank" in tbl_branchinfo...');
+            const chinaBankBranches = branchDocs.filter(d => {
+                const name = getValue(d.fields.branchname) || '';
+                return name.toLowerCase().includes('china bank') || name.toLowerCase().includes('auto loan') || name.toLowerCase().includes('ccad');
+            });
+            
+            log(`Found ${chinaBankBranches.length} branches with "China Bank/Auto Loan/CCAD":`);
+            chinaBankBranches.slice(0, 20).forEach(d => {
+                log(`  Branch ID ${getValue(d.fields.id)}: "${getValue(d.fields.branchname)}" → Company ${getValue(d.fields.company_id)}`);
+            });
+        }
+
+        async function searchChinaBank() {
+            document.getElementById('log').textContent = '';
+            log('=== Searching for "China Bank Savings" across all tables ===\n');
+            
+            // Search companies
+            log('Searching tbl_companylist...');
+            const companyDocs = await fetchAll('tbl_companylist');
+            const chinaBankCompanies = companyDocs.filter(d => {
+                const name = (getValue(d.fields.companyname) || '').toLowerCase();
+                return name.includes('china bank');
+            });
+            
+            log(`\nFound ${chinaBankCompanies.length} companies:`);
+            chinaBankCompanies.forEach(d => {
+                const f = d.fields;
+                log(`  Company ID ${getValue(f.id)}: "${getValue(f.companyname)}"`);
+            });
+            
+            // Get the China Bank company ID
+            const chinaBankCompanyId = chinaBankCompanies.length > 0 ? String(getValue(chinaBankCompanies[0].fields.id)) : null;
+            
+            if (chinaBankCompanyId) {
+                log(`\n\nSearching branches for company_id = ${chinaBankCompanyId}...`);
+                const branchDocs = await fetchAll('tbl_branchinfo');
+                const chinaBankBranches = branchDocs.filter(d => 
+                    String(getValue(d.fields.company_id)) === chinaBankCompanyId
+                );
+                
+                log(`Found ${chinaBankBranches.length} branches for China Bank:`);
+                chinaBankBranches.forEach(d => {
+                    const f = d.fields;
+                    log(`  Branch ID ${getValue(f.id)}: "${getValue(f.branchname)}"`);
+                });
+                
+                // Check if "Auto Loan 03120" is in the list
+                const autoLoanBranch = chinaBankBranches.find(d => {
+                    const name = (getValue(d.fields.branchname) || '').toLowerCase();
+                    return name.includes('auto loan');
+                });
+                
+                if (autoLoanBranch) {
+                    log(`\n✅ Found "Auto Loan" branch: ID ${getValue(autoLoanBranch.fields.id)}`);
+                } else {
+                    log(`\n❌ "Auto Loan 03120" branch NOT found in existing branches!`);
+                    log(`   This branch was likely added AFTER the Firebase migration.`);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

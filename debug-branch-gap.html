@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Branch Data Completeness</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 700px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Check Branch Data - Firebase vs Missing</h1>
+    <p>Invoice #125478 needs Branch ID 4447, but max Branch ID in Firebase is 3812</p>
+    <button onclick="analyzeBranchGap()">Analyze Branch ID Gap</button>
+    <button onclick="checkContractBranchMapping()">Check Contract → Branch Mapping</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function analyzeBranchGap() {
+            document.getElementById('log').textContent = '';
+            log('=== Analyzing Branch ID Gap ===\n');
+            
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            const contractDocs = await fetchAll('tbl_contractmain');
+            
+            // Get all branch IDs in Firebase
+            const branchIds = new Set();
+            let minBranchId = Infinity, maxBranchId = 0;
+            
+            branchDocs.forEach(d => {
+                const id = parseInt(getValue(d.fields.id)) || 0;
+                branchIds.add(id);
+                if (id < minBranchId) minBranchId = id;
+                if (id > maxBranchId) maxBranchId = id;
+            });
+            
+            log(`Firebase tbl_branchinfo:`);
+            log(`  Total branches: ${branchDocs.length}`);
+            log(`  Min branch ID: ${minBranchId}`);
+            log(`  Max branch ID: ${maxBranchId}`);
+            
+            // Get all branch IDs referenced by contracts
+            const referencedBranchIds = new Set();
+            let minRef = Infinity, maxRef = 0;
+            
+            contractDocs.forEach(d => {
+                const branchId = parseInt(getValue(d.fields.contract_id)) || 0;
+                if (branchId > 0) {
+                    referencedBranchIds.add(branchId);
+                    if (branchId < minRef) minRef = branchId;
+                    if (branchId > maxRef) maxRef = branchId;
+                }
+            });
+            
+            log(`\nFirebase tbl_contractmain references:`);
+            log(`  Unique branch IDs referenced: ${referencedBranchIds.size}`);
+            log(`  Min referenced: ${minRef}`);
+            log(`  Max referenced: ${maxRef}`);
+            
+            // Find missing branches (referenced but not in branchinfo)
+            const missingBranches = [];
+            referencedBranchIds.forEach(id => {
+                if (!branchIds.has(id)) {
+                    missingBranches.push(id);
+                }
+            });
+            
+            missingBranches.sort((a, b) => a - b);
+            
+            log(`\n=== MISSING BRANCHES ===`);
+            log(`Total missing: ${missingBranches.length}`);
+            log(`\nMissing branch IDs (first 50):`);
+            missingBranches.slice(0, 50).forEach(id => {
+                log(`  ${id}`);
+            });
+            
+            if (missingBranches.length > 50) {
+                log(`  ... and ${missingBranches.length - 50} more`);
+            }
+            
+            // Check the range of missing IDs
+            if (missingBranches.length > 0) {
+                const minMissing = Math.min(...missingBranches);
+                const maxMissing = Math.max(...missingBranches);
+                log(`\nMissing ID range: ${minMissing} to ${maxMissing}`);
+                log(`\nMax branch in Firebase: ${maxBranchId}`);
+                log(`All missing IDs are > ${maxBranchId}? ${missingBranches.every(id => id > maxBranchId) ? 'YES - Data not migrated!' : 'NO - Some are within range'}`);
+            }
+        }
+
+        async function checkContractBranchMapping() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Contract to Branch Mapping ===\n');
+            log('This checks if contract_id in tbl_contractmain correctly maps to branch IDs\n');
+            
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const branchDocs = await fetchAll('tbl_branchinfo');
+            
+            // Show sample contracts
+            log('Sample contracts (first 10):');
+            contractDocs.slice(0, 10).forEach(d => {
+                const f = d.fields;
+                log(`  Contract ${getValue(f.id)}: contract_id=${getValue(f.contract_id)}, mach_id=${getValue(f.mach_id)}`);
+            });
+            
+            // Show sample branches
+            log('\n\nSample branches (first 10):');
+            branchDocs.slice(0, 10).forEach(d => {
+                const f = d.fields;
+                log(`  Branch ${getValue(f.id)}: "${getValue(f.branchname)}" → Company ${getValue(f.company_id)}`);
+            });
+            
+            // Show branches near the gap (around 3800)
+            log('\n\nBranches near max ID (3800+):');
+            branchDocs
+                .filter(d => parseInt(getValue(d.fields.id)) >= 3800)
+                .sort((a, b) => parseInt(getValue(a.fields.id)) - parseInt(getValue(b.fields.id)))
+                .forEach(d => {
+                    const f = d.fields;
+                    log(`  Branch ${getValue(f.id)}: "${getValue(f.branchname)}"`);
+                });
+        }
+    </script>
+</body>
+</html>

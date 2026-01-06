@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Groupings & Related Tables</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 12px 24px; font-size: 14px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Check Groupings & Related Tables</h1>
+    <button onclick="checkAllTables()">List All Firebase Collections</button>
+    <button onclick="checkGroupings()">Check Groupings Table</button>
+    <button onclick="checkBillingFields()">Check All Billing Fields</button>
+    <button onclick="checkContractFields()">Check Contract Fields for Company Link</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+        
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+        }
+        
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
+        }
+
+        async function fetchSome(collection, count = 10) {
+            const url = `${BASE_URL}/${collection}?pageSize=${count}&key=${API_KEY}`;
+            const response = await fetch(url);
+            return response.json();
+        }
+
+        async function fetchAll(collection) {
+            let allDocs = [], pageToken = null;
+            while (true) {
+                let url = `${BASE_URL}/${collection}?pageSize=300&key=${API_KEY}`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.documents) allDocs = allDocs.concat(data.documents);
+                if (!data.nextPageToken) break;
+                pageToken = data.nextPageToken;
+            }
+            return allDocs;
+        }
+
+        async function checkAllTables() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking for Group/Company Related Tables ===\n');
+            
+            const tablesToCheck = [
+                'tbl_groupings',
+                'tbl_groups',
+                'tbl_group',
+                'tbl_companygroup',
+                'tbl_company_group',
+                'tbl_billinggroup',
+                'tbl_branchgroup',
+                'tbl_contractgroup',
+                'tbl_maincompany',
+                'tbl_parentcompany'
+            ];
+            
+            for (const table of tablesToCheck) {
+                try {
+                    const data = await fetchSome(table, 5);
+                    if (data.documents && data.documents.length > 0) {
+                        log(`✅ ${table}: ${data.documents.length}+ records`);
+                        
+                        // Show fields
+                        const f = data.documents[0].fields;
+                        log('   Fields: ' + Object.keys(f).join(', '));
+                    } else {
+                        log(`⚪ ${table}: exists but empty`);
+                    }
+                } catch (e) {
+                    log(`❌ ${table}: not found`);
+                }
+            }
+        }
+
+        async function checkGroupings() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking tbl_groupings ===\n');
+            
+            try {
+                const data = await fetchSome('tbl_groupings', 20);
+                
+                if (data.documents && data.documents.length > 0) {
+                    log(`Found ${data.documents.length} records\n`);
+                    
+                    // Show all fields from first record
+                    log('All fields in tbl_groupings:');
+                    const f = data.documents[0].fields;
+                    Object.keys(f).sort().forEach(key => {
+                        log(`  ${key}: ${getValue(f[key])}`);
+                    });
+                    
+                    // Show sample records
+                    log('\n\nSample groupings:');
+                    data.documents.slice(0, 10).forEach(d => {
+                        const f = d.fields;
+                        log(`  ID ${getValue(f.id)}: "${getValue(f.groupname) || getValue(f.name) || getValue(f.description)}" → company_id: ${getValue(f.company_id)}`);
+                    });
+                } else {
+                    log('Table exists but is empty');
+                }
+            } catch (e) {
+                log('Error: ' + e.message);
+            }
+        }
+
+        async function checkBillingFields() {
+            document.getElementById('log').textContent = '';
+            log('=== All Fields in tbl_billing (for Unknown invoice 123784) ===\n');
+            
+            const billingDocs = await fetchAll('tbl_billing');
+            const billing = billingDocs.find(d => String(getValue(d.fields.invoice_id)) === '123784');
+            
+            if (billing) {
+                const f = billing.fields;
+                log('All fields with values:');
+                Object.keys(f).sort().forEach(key => {
+                    const val = getValue(f[key]);
+                    log(`  ${key}: ${val}`);
+                });
+                
+                // Highlight potential company/group links
+                log('\n\n=== Potential Company/Group Links ===');
+                const linkFields = ['company_id', 'branch_id', 'groupings_id', 'group_id', 'parent_id', 'main_id', 'contractmain_id'];
+                linkFields.forEach(key => {
+                    if (f[key]) {
+                        log(`  ${key}: ${getValue(f[key])}`);
+                    }
+                });
+            }
+        }
+
+        async function checkContractFields() {
+            document.getElementById('log').textContent = '';
+            log('=== Checking Contract 5258 for Direct Company Link ===\n');
+            
+            const contractDocs = await fetchAll('tbl_contractmain');
+            const contract = contractDocs.find(d => String(getValue(d.fields.id)) === '5258');
+            
+            if (contract) {
+                const f = contract.fields;
+                log('All fields with non-zero values:');
+                Object.keys(f).sort().forEach(key => {
+                    const val = getValue(f[key]);
+                    if (val && val !== 0 && val !== '0') {
+                        log(`  ${key}: ${val}`);
+                    }
+                });
+                
+                // Check if contract_id might be company_id
+                log('\n\n=== Key Analysis ===');
+                log(`contract_id: ${getValue(f.contract_id)} (we use this as branch_id)`);
+                log(`mach_id: ${getValue(f.mach_id)} (machine ID)`);
+                
+                // Check if there's any company or branch direct reference
+                const potentialLinks = ['company_id', 'branch_id', 'comp_id', 'branchinfo_id', 'group_id'];
+                potentialLinks.forEach(key => {
+                    if (f[key]) {
+                        log(`${key}: ${getValue(f[key])}`);
+                    }
+                });
+            }
+            
+            // Also check tbl_machlist for machine 3101
+            log('\n\n=== Checking Machine 3101 ===');
+            try {
+                const machDocs = await fetchAll('tbl_machlist');
+                log(`Total machines: ${machDocs.length}`);
+                
+                const machine = machDocs.find(d => String(getValue(d.fields.id)) === '3101');
+                if (machine) {
+                    log('\nMachine 3101 fields:');
+                    Object.keys(machine.fields).sort().forEach(key => {
+                        const val = getValue(machine.fields[key]);
+                        if (val && val !== 0 && val !== '0') {
+                            log(`  ${key}: ${val}`);
+                        }
+                    });
+                } else {
+                    log('Machine 3101 not found');
+                }
+            } catch (e) {
+                log('tbl_machlist error: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>
