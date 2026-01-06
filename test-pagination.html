@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Pagination</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .log { background: #1e1e1e; color: #0f0; padding: 15px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 600px; overflow-y: auto; }
+        button { background: #e91e8c; color: white; border: none; padding: 15px 30px; font-size: 16px; cursor: pointer; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Test Pagination - Why Only 300 Records?</h1>
+    <button onclick="testPagination()">Test Pagination on tbl_contractmain</button>
+    <div class="log" id="log"></div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script>
+        const API_KEY = FIREBASE_CONFIG.apiKey;
+        const BASE_URL = FIREBASE_CONFIG.baseUrl;
+
+        function log(msg) {
+            document.getElementById('log').textContent += msg + '\n';
+            console.log(msg);
+        }
+
+        async function testPagination() {
+            document.getElementById('log').textContent = '';
+            log('=== Testing Pagination on tbl_contractmain ===\n');
+            
+            let allDocs = [];
+            let pageToken = null;
+            let page = 0;
+            
+            while (page < 20) { // Max 20 pages for safety
+                page++;
+                
+                let url = `${BASE_URL}/tbl_contractmain?pageSize=500&key=${API_KEY}`;
+                if (pageToken) {
+                    url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                }
+                
+                log(`Page ${page}: Fetching...`);
+                log(`  URL: ${url.substring(0, 100)}...`);
+                
+                try {
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    
+                    const docCount = data.documents ? data.documents.length : 0;
+                    allDocs = allDocs.concat(data.documents || []);
+                    
+                    log(`  Documents received: ${docCount}`);
+                    log(`  Total so far: ${allDocs.length}`);
+                    log(`  nextPageToken: ${data.nextPageToken ? 'YES (' + data.nextPageToken.substring(0, 30) + '...)' : 'NO'}`);
+                    
+                    if (!data.nextPageToken) {
+                        log(`\n*** No more pages - pagination complete ***`);
+                        break;
+                    }
+                    
+                    if (docCount < 500) {
+                        log(`\n*** Less than 500 docs - this is the last page ***`);
+                        break;
+                    }
+                    
+                    pageToken = data.nextPageToken;
+                    log('');
+                    
+                } catch (e) {
+                    log(`  ERROR: ${e.message}`);
+                    break;
+                }
+            }
+            
+            log(`\n=== FINAL RESULT ===`);
+            log(`Total documents fetched: ${allDocs.length}`);
+            log(`Total pages: ${page}`);
+            
+            // Check max ID
+            let maxId = 0;
+            allDocs.forEach(doc => {
+                const id = parseInt(doc.fields.id?.integerValue || doc.fields.id?.stringValue || 0);
+                if (id > maxId) maxId = id;
+            });
+            log(`Highest contract ID found: ${maxId}`);
+            
+            // Check if 5485 exists
+            const has5485 = allDocs.some(doc => {
+                const id = doc.fields.id?.integerValue || doc.fields.id?.stringValue;
+                return id == '5485' || id == 5485;
+            });
+            log(`Contract ID 5485 exists: ${has5485 ? 'YES ✅' : 'NO ❌'}`);
+        }
+    </script>
+</body>
+</html>

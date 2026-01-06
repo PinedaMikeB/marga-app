@@ -1,7 +1,7 @@
 /**
  * MARGA Collections Module
  * Phase 1: View Unpaid Invoices
- * Fixed: Fetch ALL records from all tables
+ * FIXED: Pagination now continues while nextPageToken exists
  */
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
@@ -26,39 +26,42 @@ function getValue(field) {
 }
 
 // Firestore REST API fetch with pagination
-async function firestoreGet(collection, pageSize = 500, pageToken = null) {
+async function firestoreGet(collection, pageSize = 300, pageToken = null) {
     let url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
-    if (pageToken) url += `&pageToken=${pageToken}`;
+    if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch ${collection}`);
     return response.json();
 }
 
-// Fetch ALL documents from a collection (handles pagination)
+// Fetch ALL documents from a collection - FIXED pagination logic
 async function firestoreGetAll(collection, statusCallback = null) {
     let allDocs = [];
     let pageToken = null;
     let page = 0;
+    const maxPages = 100; // Safety limit
     
-    while (true) {
-        const data = await firestoreGet(collection, 500, pageToken);
-        if (data.documents) {
+    while (page < maxPages) {
+        page++;
+        const data = await firestoreGet(collection, 300, pageToken);
+        
+        if (data.documents && data.documents.length > 0) {
             allDocs = allDocs.concat(data.documents);
         }
-        page++;
         
         if (statusCallback) {
             statusCallback(`Loading ${collection}... ${allDocs.length} records (page ${page})`);
         }
         
-        // Check if there are more pages
-        if (!data.nextPageToken || !data.documents || data.documents.length < 500) {
+        // FIXED: Only stop if there's NO nextPageToken
+        if (!data.nextPageToken) {
             break;
         }
+        
         pageToken = data.nextPageToken;
     }
     
-    console.log(`${collection}: ${allDocs.length} total records`);
+    console.log(`${collection}: ${allDocs.length} total records in ${page} pages`);
     return allDocs;
 }
 
@@ -133,22 +136,22 @@ async function loadUnpaidInvoices() {
     updateLoadingStatus('Starting data load...');
 
     try {
-        console.log('=== Starting data fetch ===');
+        console.log('=== Starting data fetch (FIXED pagination) ===');
         
         // Fetch ALL data from each collection
-        updateLoadingStatus('Loading companies (1,143 records)...');
+        updateLoadingStatus('Loading companies...');
         const companyDocs = await firestoreGetAll('tbl_companylist', updateLoadingStatus);
         
-        updateLoadingStatus('Loading branches (3,336 records)...');
+        updateLoadingStatus('Loading branches...');
         const branchDocs = await firestoreGetAll('tbl_branchinfo', updateLoadingStatus);
         
-        updateLoadingStatus('Loading contracts (4,600 records)...');
+        updateLoadingStatus('Loading contracts...');
         const contractDocs = await firestoreGetAll('tbl_contractmain', updateLoadingStatus);
         
-        updateLoadingStatus('Loading payments (15,000+ records)...');
+        updateLoadingStatus('Loading payments...');
         const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus);
         
-        updateLoadingStatus('Loading billing records (15,000+ records)...');
+        updateLoadingStatus('Loading billing records...');
         const billingDocs = await firestoreGetAll('tbl_billing', updateLoadingStatus);
 
         console.log('=== Data fetch complete ===');
@@ -160,7 +163,7 @@ async function loadUnpaidInvoices() {
             billing: billingDocs.length
         });
 
-        // Build company lookup FIRST
+        // Build company lookup
         updateLoadingStatus('Building company lookup...');
         companyMap = {};
         companyDocs.forEach(doc => {
@@ -183,26 +186,21 @@ async function loadUnpaidInvoices() {
         });
         console.log('Branch map size:', Object.keys(branchMap).length);
 
-        // Build contract lookup - KEY FIX: Map by contract ID
+        // Build contract lookup
         updateLoadingStatus('Building contract lookup...');
         contractMap = {};
         contractDocs.forEach(doc => {
             const f = doc.fields;
-            const id = getValue(f.id); // This is the contractmain_id that billing references
+            const id = getValue(f.id);
             contractMap[id] = {
-                branch_id: getValue(f.contract_id), // contract_id in contractmain = branch_id in branchinfo
+                branch_id: getValue(f.contract_id),
                 mach_id: getValue(f.mach_id),
                 category_id: getValue(f.category_id),
                 status: getValue(f.status)
             };
         });
         console.log('Contract map size:', Object.keys(contractMap).length);
-        
-        // Debug: Check if contract 5485 exists now
         console.log('Contract 5485 exists?', contractMap[5485] ? 'YES' : 'NO');
-        if (contractMap[5485]) {
-            console.log('Contract 5485:', contractMap[5485]);
-        }
 
         // Build payment lookup
         updateLoadingStatus('Processing payment data...');
@@ -229,7 +227,7 @@ async function loadUnpaidInvoices() {
             
             // Check if this invoice is paid
             if (paidInvoiceIds.has(String(invoiceId))) {
-                return; // Skip paid invoices
+                return;
             }
 
             // Get contract info using contractmain_id
