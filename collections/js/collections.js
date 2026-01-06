@@ -1,6 +1,8 @@
 /**
- * MARGA Collections Module
- * With Follow-up System & Interactive Guide
+ * MARGA Collections Module - FIXED
+ * - Fixed STRING vs NUMBER key matching for contractmain_id
+ * - Fixed follow-up to only show TODAY (not past dates)
+ * - Optimized loading
  */
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
@@ -23,20 +25,18 @@ let companyMap = {};
 let paidInvoiceIds = new Set();
 let lookupsLoaded = false;
 
-// Daily tips - includes best practices guide
+// Daily tips
 const dailyTips = [
-    { type: 'tip', text: "🎯 Focus on URGENT (91-120 days) first - highest recovery potential!" },
-    { type: 'tip', text: "📞 Best call times: 9-11 AM and 2-4 PM. Avoid lunch hours!" },
-    { type: 'tip', text: "📝 Always log call attempts - helps track payment patterns." },
-    { type: 'tip', text: "⚡ Work URGENT → HIGH → MEDIUM for maximum efficiency." },
-    { type: 'tip', text: "💡 For 120+ days accounts, recommend machine pull-out to management." },
-    { type: 'tip', text: "📱 Send SMS for customers who don't answer calls." },
-    { type: 'guide', text: "📊 <strong>Daily Focus:</strong> 0-120 days (highest recovery rate 50-95%)" },
-    { type: 'guide', text: "📋 <strong>Weekly Review:</strong> 121-180 days (needs escalation to manager)" },
-    { type: 'guide', text: "📁 <strong>Monthly/Quarterly:</strong> 180+ days (management decision for write-off)" },
-    { type: 'tip', text: "🔴 URGENT accounts (91-120 days) have 50-60% recovery - don't let them slip!" },
-    { type: 'tip', text: "🟠 HIGH priority (61-90 days) - recovery drops to 70-80%, act fast!" },
-    { type: 'tip', text: "💰 Accounts over 180 days have less than 30% recovery - prioritize newer ones!" }
+    "🎯 Focus on URGENT (91-120 days) first - highest recovery potential!",
+    "📞 Best call times: 9-11 AM and 2-4 PM. Avoid lunch hours!",
+    "📝 Always log call attempts - helps track payment patterns.",
+    "⚡ Work URGENT → HIGH → MEDIUM for maximum efficiency.",
+    "💡 For 120+ days accounts, recommend machine pull-out to management.",
+    "📊 <strong>Daily Focus:</strong> 0-120 days (highest recovery 50-95%)",
+    "📋 <strong>Weekly Review:</strong> 121-180 days (needs escalation)",
+    "📁 <strong>Monthly:</strong> 180+ days (management decision)",
+    "🔴 URGENT (91-120 days) have 50-60% recovery - don't let them slip!",
+    "🟠 HIGH priority (61-90 days) - recovery drops to 70-80%, act fast!"
 ];
 
 // Helpers
@@ -124,22 +124,13 @@ function formatDate(dateStr) {
     } catch (e) { return dateStr; }
 }
 
+// FIXED: Only check if date is TODAY (not past dates)
 function isToday(dateStr) {
     if (!dateStr) return false;
     try {
-        const d = new Date(dateStr.split(' ')[0]);
-        const today = new Date();
-        return d.toDateString() === today.toDateString();
-    } catch (e) { return false; }
-}
-
-function isPastDue(dateStr) {
-    if (!dateStr) return false;
-    try {
-        const d = new Date(dateStr.split(' ')[0]);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return d < today;
+        const datePart = dateStr.split(' ')[0]; // "2021-01-28"
+        const today = new Date().toISOString().split('T')[0]; // "2026-01-06"
+        return datePart === today;
     } catch (e) { return false; }
 }
 
@@ -149,7 +140,7 @@ function updateLoadingStatus(message) {
     `;
 }
 
-// Welcome Modal with clickable priorities
+// Modals
 function showWelcomeModal() { document.getElementById('welcomeModal').classList.remove('hidden'); }
 function closeWelcomeModal() {
     document.getElementById('welcomeModal').classList.add('hidden');
@@ -157,20 +148,18 @@ function closeWelcomeModal() {
 }
 function checkWelcomeModal() { if (!localStorage.getItem('collections_hideWelcome')) showWelcomeModal(); }
 
-// Click from welcome modal to filter
 function goToPriority(priority) {
     closeWelcomeModal();
     filterByPriority(priority);
 }
 
-// Tips with guide rotation
 function showRandomTip() {
     const tip = dailyTips[Math.floor(Math.random() * dailyTips.length)];
-    document.getElementById('tipText').innerHTML = tip.text;
+    document.getElementById('tipText').innerHTML = tip;
 }
 function closeTip() { document.getElementById('tipBanner').style.display = 'none'; }
 
-// Today's Follow-ups Modal
+// Today's Follow-ups - FIXED to only show TODAY
 function showTodayFollowups() {
     const modal = document.getElementById('followupModal');
     const list = document.getElementById('followupList');
@@ -178,21 +167,16 @@ function showTodayFollowups() {
     if (todayFollowups.length === 0) {
         list.innerHTML = '<div class="empty-followup">✅ No scheduled follow-ups for today!</div>';
     } else {
-        let html = '';
+        let html = '<div class="followup-list">';
         todayFollowups.forEach(f => {
-            const inv = allInvoices.find(i => i.invoiceId == f.invoiceNum || i.invoiceNo == f.invoiceNum);
             html += `
-                <div class="followup-item" onclick="viewInvoiceDetail(${f.invoiceNum})">
-                    <div class="followup-header">
-                        <strong>Invoice #${f.invoiceNum}</strong>
-                        <span class="followup-time">${f.time || ''}</span>
-                    </div>
-                    <div class="followup-company">${inv ? inv.company : 'Unknown'}</div>
-                    <div class="followup-remarks">"${f.remarks || 'No remarks'}"</div>
-                    <div class="followup-contact">${f.contactPerson ? '👤 ' + f.contactPerson : ''}</div>
+                <div class="followup-item" onclick="viewInvoiceDetail('${f.invoiceNum}')">
+                    <div class="followup-company">${f.company}</div>
+                    <div class="followup-invoice">Invoice #${f.invoiceNum}</div>
                 </div>
             `;
         });
+        html += '</div>';
         list.innerHTML = html;
     }
     
@@ -203,12 +187,14 @@ function closeFollowupModal() {
     document.getElementById('followupModal').classList.add('hidden');
 }
 
-// Load collection history
+// Load collection history - FIXED to only count TODAY
 async function loadCollectionHistory() {
     try {
         const historyDocs = await firestoreGetAll('tbl_collectionhistory');
         collectionHistory = {};
         todayFollowups = [];
+        
+        const todayStr = new Date().toISOString().split('T')[0]; // "2026-01-06"
         
         historyDocs.forEach(doc => {
             const f = doc.fields;
@@ -229,22 +215,21 @@ async function loadCollectionHistory() {
                 timestamp: timestamp
             });
             
-            // Check for today's follow-ups
-            if (isToday(followupDate) || isPastDue(followupDate)) {
-                todayFollowups.push({
-                    invoiceNum: invoiceNum,
-                    remarks: remarks,
-                    contactPerson: contactPerson,
-                    time: followupDate ? followupDate.split(' ')[1] : ''
-                });
+            // FIXED: Only check if follow-up is scheduled for TODAY
+            if (followupDate) {
+                const followupDatePart = followupDate.split(' ')[0];
+                if (followupDatePart === todayStr) {
+                    // Find company name from invoices (will be populated after billing loads)
+                    todayFollowups.push({
+                        invoiceNum: invoiceNum,
+                        company: 'Loading...' // Will update after billing loads
+                    });
+                }
             }
         });
         
-        // Update follow-up badge
-        updateFollowupBadge();
-        
-        console.log('Collection history loaded:', Object.keys(collectionHistory).length, 'invoices');
-        console.log('Today follow-ups:', todayFollowups.length);
+        console.log('Collection history loaded:', Object.keys(collectionHistory).length);
+        console.log('Today follow-ups (date = ' + todayStr + '):', todayFollowups.length);
         
     } catch (e) {
         console.error('Error loading collection history:', e);
@@ -261,28 +246,56 @@ function updateFollowupBadge() {
     }
 }
 
-// Load lookups
+// Update follow-up company names after invoices are loaded
+function updateFollowupCompanyNames() {
+    todayFollowups.forEach(f => {
+        const inv = allInvoices.find(i => String(i.invoiceNo) === String(f.invoiceNum) || String(i.invoiceId) === String(f.invoiceNum));
+        if (inv) {
+            f.company = inv.company;
+        } else {
+            f.company = 'Invoice #' + f.invoiceNum;
+        }
+    });
+    updateFollowupBadge();
+}
+
+// Load lookups - FIXED to store keys as STRINGS
 async function loadLookups() {
     if (lookupsLoaded) return;
     
     updateLoadingStatus('Loading company data...');
     const companyDocs = await firestoreGetAll('tbl_companylist');
     companyMap = {};
-    companyDocs.forEach(doc => { companyMap[getValue(doc.fields.id)] = getValue(doc.fields.companyname) || 'Unknown'; });
+    companyDocs.forEach(doc => { 
+        const id = String(getValue(doc.fields.id)); // Convert to STRING
+        companyMap[id] = getValue(doc.fields.companyname) || 'Unknown'; 
+    });
+    console.log('Companies loaded:', Object.keys(companyMap).length);
 
     updateLoadingStatus('Loading branch data...');
     const branchDocs = await firestoreGetAll('tbl_branchinfo');
     branchMap = {};
     branchDocs.forEach(doc => {
-        branchMap[getValue(doc.fields.id)] = { name: getValue(doc.fields.branchname) || 'Main', company_id: getValue(doc.fields.company_id) };
+        const id = String(getValue(doc.fields.id)); // Convert to STRING
+        branchMap[id] = { 
+            name: getValue(doc.fields.branchname) || 'Main', 
+            company_id: String(getValue(doc.fields.company_id)) // Convert to STRING
+        };
     });
+    console.log('Branches loaded:', Object.keys(branchMap).length);
 
     updateLoadingStatus('Loading contract data...');
     const contractDocs = await firestoreGetAll('tbl_contractmain');
     contractMap = {};
     contractDocs.forEach(doc => {
-        contractMap[getValue(doc.fields.id)] = { branch_id: getValue(doc.fields.contract_id), category_id: getValue(doc.fields.category_id) };
+        const id = String(getValue(doc.fields.id)); // Convert to STRING - KEY FIX!
+        contractMap[id] = { 
+            branch_id: String(getValue(doc.fields.contract_id)), // contract_id = branch_id
+            category_id: getValue(doc.fields.category_id) 
+        };
     });
+    console.log('Contracts loaded:', Object.keys(contractMap).length);
+    console.log('Contract "5485" exists?', contractMap["5485"] ? 'YES' : 'NO');
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo');
@@ -291,6 +304,7 @@ async function loadLookups() {
         const invId = getValue(doc.fields.invoice_id);
         if (invId) paidInvoiceIds.add(String(invId));
     });
+    console.log('Payments loaded:', paidInvoiceIds.size);
 
     // Load collection history
     updateLoadingStatus('Loading collection history...');
@@ -299,13 +313,24 @@ async function loadLookups() {
     lookupsLoaded = true;
 }
 
+// Process invoice - FIXED to use STRING keys
 function processInvoice(doc) {
     const f = doc.fields;
     const invoiceId = getValue(f.invoice_id);
     if (paidInvoiceIds.has(String(invoiceId))) return null;
 
-    const contract = contractMap[getValue(f.contractmain_id)] || {};
-    const branch = branchMap[contract.branch_id] || {};
+    // FIXED: Convert contractmain_id to STRING for lookup
+    const contractmainId = String(getValue(f.contractmain_id));
+    const contract = contractMap[contractmainId] || {};
+    
+    // FIXED: Use STRING for branch lookup
+    const branchId = String(contract.branch_id);
+    const branch = branchMap[branchId] || {};
+    
+    // FIXED: Use STRING for company lookup
+    const companyId = String(branch.company_id);
+    const companyName = companyMap[companyId] || 'Unknown';
+    
     const monthStr = getValue(f.month);
     const yearStr = getValue(f.year);
     const age = calculateAge(getValue(f.due_date), monthStr, yearStr);
@@ -313,7 +338,7 @@ function processInvoice(doc) {
     const vatAmount = parseFloat(getValue(f.vatamount) || 0);
     
     // Get last follow-up info
-    const history = collectionHistory[invoiceId] || [];
+    const history = collectionHistory[invoiceId] || collectionHistory[String(invoiceId)] || [];
     const lastHistory = history.length > 0 ? history[history.length - 1] : null;
 
     return {
@@ -327,8 +352,8 @@ function processInvoice(doc) {
         dueDate: getValue(f.due_date),
         age: age,
         priority: getPriority(age),
-        company: companyMap[branch.company_id] || 'Unknown',
-        branch: branch.name || 'Unknown',
+        company: companyName,
+        branch: branch.name || 'Main',
         category: getCategoryCode(contract.category_id),
         lastRemarks: lastHistory ? lastHistory.remarks : null,
         nextFollowup: lastHistory ? lastHistory.followupDate : null,
@@ -342,7 +367,7 @@ async function loadActiveInvoices() {
     
     await loadLookups();
     
-    updateLoadingStatus('Loading active receivables (0-180 days)...');
+    updateLoadingStatus('Loading billing records...');
     const billingDocs = await firestoreGetAll('tbl_billing', updateLoadingStatus);
     
     allInvoices = [];
@@ -356,6 +381,7 @@ async function loadActiveInvoices() {
         }
     });
 
+    // Sort by priority then amount
     allInvoices.sort((a, b) => {
         if (a.priority.order !== b.priority.order) return a.priority.order - b.priority.order;
         return b.amount - a.amount;
@@ -366,12 +392,19 @@ async function loadActiveInvoices() {
     updateAllStats();
     currentPage = 1;
     renderTable();
+    
+    // Update follow-up company names now that invoices are loaded
+    updateFollowupCompanyNames();
+    
     document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
     
-    // Show today's follow-ups if any
+    // Show follow-ups if any for today
     if (todayFollowups.length > 0) {
         setTimeout(showTodayFollowups, 500);
     }
+    
+    console.log('Active invoices loaded:', allInvoices.length);
+    console.log('Sample:', allInvoices[0]);
 }
 
 async function loadAllInvoices() {
@@ -380,7 +413,7 @@ async function loadAllInvoices() {
     
     await loadLookups();
     
-    updateLoadingStatus('Loading ALL receivables...');
+    updateLoadingStatus('Loading ALL billing records...');
     const billingDocs = await firestoreGetAll('tbl_billing', updateLoadingStatus);
     
     allInvoices = [];
@@ -404,6 +437,7 @@ async function loadAllInvoices() {
     updateAllStats();
     currentPage = 1;
     renderTable();
+    updateFollowupCompanyNames();
     document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
 }
 
@@ -424,7 +458,7 @@ function getCategoryCode(categoryId) {
 
 function populateYearFilter(years) {
     const select = document.getElementById('filter-year');
-    select.innerHTML = '<option value="">All Years</option>';
+    select.innerHTML = '<option value="">All</option>';
     Array.from(years).sort((a, b) => b - a).forEach(year => {
         select.innerHTML += `<option value="${year}">${year}</option>`;
     });
@@ -582,22 +616,17 @@ function renderTable() {
     const pageInvoices = filteredInvoices.slice(startIdx, endIdx);
 
     let html = `<table class="data-table"><thead><tr>
-        <th>Priority</th><th>Invoice #</th><th>Company / Branch</th><th>Amount</th><th>Month/Year</th><th>Age</th><th>Last Remarks</th><th>Action</th>
+        <th>Priority</th><th>Invoice #</th><th>Company / Branch</th><th>Amount</th><th>Month/Year</th><th>Age</th><th>Action</th>
     </tr></thead><tbody>`;
 
     pageInvoices.forEach(inv => {
-        const hasFollowup = inv.nextFollowup && (isToday(inv.nextFollowup) || isPastDue(inv.nextFollowup));
-        const followupIcon = hasFollowup ? '🔔' : '';
-        const remarksPreview = inv.lastRemarks ? (inv.lastRemarks.length > 30 ? inv.lastRemarks.substring(0, 30) + '...' : inv.lastRemarks) : '-';
-        
-        html += `<tr onclick="viewInvoiceDetail('${inv.invoiceNo}')" class="${hasFollowup ? 'has-followup' : ''}">
+        html += `<tr onclick="viewInvoiceDetail('${inv.invoiceNo}')">
             <td><span class="priority-badge ${inv.priority.code}">${inv.priority.label}</span></td>
-            <td><strong>${followupIcon} ${inv.invoiceNo}</strong></td>
+            <td><strong>${inv.invoiceNo}</strong></td>
             <td><div class="company-name">${inv.company}</div><div class="branch-name">${inv.branch}</div></td>
             <td class="amount">${formatCurrency(inv.amount)}</td>
             <td>${inv.monthYear}</td>
             <td class="${getAgeClass(inv.age)}">${inv.age}d</td>
-            <td class="remarks-cell" title="${inv.lastRemarks || ''}">${remarksPreview}</td>
             <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoiceDetail('${inv.invoiceNo}')">View</button></td>
         </tr>`;
     });
@@ -618,8 +647,11 @@ function nextPage() { if (currentPage < Math.ceil(filteredInvoices.length / page
 
 // View invoice detail with history
 function viewInvoiceDetail(invoiceNo) {
-    const inv = allInvoices.find(i => i.invoiceNo == invoiceNo || i.invoiceId == invoiceNo);
-    if (!inv) return;
+    const inv = allInvoices.find(i => String(i.invoiceNo) === String(invoiceNo) || String(i.invoiceId) === String(invoiceNo));
+    if (!inv) {
+        alert('Invoice not found in current view');
+        return;
+    }
     
     const history = collectionHistory[invoiceNo] || collectionHistory[inv.invoiceId] || [];
     
@@ -649,7 +681,7 @@ function viewInvoiceDetail(invoiceNo) {
             <div class="detail-item"><label>Priority</label><span class="priority-badge ${inv.priority.code}">${inv.priority.label}</span></div>
         </div>
         <div class="history-section">
-            <h4>📋 Collection History (${history.length} records)</h4>
+            <h4>📋 Collection History (${history.length})</h4>
             <div class="history-list">${historyHtml}</div>
         </div>
     `;
@@ -661,15 +693,11 @@ function closeDetailModal() {
     document.getElementById('detailModal').classList.add('hidden');
 }
 
-function viewInvoice(invoiceId) {
-    viewInvoiceDetail(invoiceId);
-}
-
 function exportToExcel() {
     if (filteredInvoices.length === 0) { alert('No data'); return; }
-    let csv = '\uFEFF' + ['Priority', 'Invoice #', 'Company', 'Branch', 'Amount', 'Month', 'Year', 'Age', 'Category', 'Last Remarks'].join(',') + '\n';
+    let csv = '\uFEFF' + ['Priority', 'Invoice #', 'Company', 'Branch', 'Amount', 'Month', 'Year', 'Age', 'Category'].join(',') + '\n';
     filteredInvoices.forEach(inv => {
-        csv += [inv.priority.label, inv.invoiceNo, `"${inv.company}"`, `"${inv.branch}"`, inv.amount.toFixed(2), inv.month || '', inv.year || '', inv.age, inv.category, `"${(inv.lastRemarks || '').replace(/"/g, '""')}"`].join(',') + '\n';
+        csv += [inv.priority.label, inv.invoiceNo, `"${inv.company}"`, `"${inv.branch}"`, inv.amount.toFixed(2), inv.month || '', inv.year || '', inv.age, inv.category].join(',') + '\n';
     });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
