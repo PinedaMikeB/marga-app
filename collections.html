@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collections - Marga Enterprises</title>
+    <link rel="stylesheet" href="shared/css/styles.css">
+    <link rel="stylesheet" href="shared/css/dashboard.css">
+    <style>
+        /* Collections specific styles */
+        .collections-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .collections-header h1 {
+            margin: 0;
+            color: #333;
+        }
+        .stats-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            min-width: 150px;
+        }
+        .stat-card.primary {
+            background: linear-gradient(135deg, #e91e8c 0%, #c2185b 100%);
+            color: white;
+        }
+        .stat-card .label {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .stat-card.primary .value {
+            color: white;
+        }
+        
+        .filters-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filters-row select, .filters-row input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .filters-row select:focus, .filters-row input:focus {
+            border-color: #e91e8c;
+            outline: none;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #e91e8c;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #c2185b;
+        }
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        .btn-secondary:hover {
+            background: #eee;
+        }
+        
+        .data-table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .data-table th {
+            background: #f8f9fa;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #555;
+            border-bottom: 2px solid #eee;
+            position: sticky;
+            top: 0;
+        }
+        .data-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        .data-table tr:hover {
+            background: #fdf2f8;
+            cursor: pointer;
+        }
+        .data-table tr.selected {
+            background: #fce4ec;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .badge-unpaid { background: #ffebee; color: #c62828; }
+        .badge-rtp { background: #e3f2fd; color: #1565c0; }
+        .badge-rtf { background: #f3e5f5; color: #7b1fa2; }
+        .badge-overdue { background: #fff3e0; color: #e65100; }
+        
+        .amount { 
+            font-weight: 600; 
+            color: #c62828;
+        }
+        .company-name {
+            font-weight: 600;
+            color: #333;
+        }
+        .branch-name {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .loading-overlay {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+            color: #666;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #e91e8c;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #666;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-top: 1px solid #eee;
+        }
+        .pagination-info {
+            font-size: 13px;
+            color: #666;
+        }
+        .pagination-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .table-scroll {
+            max-height: calc(100vh - 350px);
+            overflow-y: auto;
+        }
+
+        /* Age coloring */
+        .age-30 { color: #f57c00; }
+        .age-60 { color: #e65100; }
+        .age-90 { color: #d32f2f; }
+        .age-120 { color: #b71c1c; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>MARGA</h2>
+                <span class="subtitle">Enterprise System</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="dashboard.html" class="nav-item">
+                    <span class="icon">📊</span> Dashboard
+                </a>
+                <a href="customers.html" class="nav-item">
+                    <span class="icon">👥</span> Customers
+                </a>
+                <a href="billing.html" class="nav-item">
+                    <span class="icon">📄</span> Billing
+                </a>
+                <a href="collections.html" class="nav-item active">
+                    <span class="icon">💰</span> Collections
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">🔧</span> Service
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">📈</span> Reports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span id="current-user">Collector</span>
+                <a href="index.html" class="logout-btn">Logout</a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="collections-header">
+                <h1>💰 Collections</h1>
+                <div>
+                    <span id="last-updated" style="font-size:12px; color:#666; margin-right:15px;"></span>
+                    <button class="btn btn-primary" onclick="loadUnpaidInvoices()">🔄 Refresh</button>
+                </div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="stats-row">
+                <div class="stat-card primary">
+                    <div class="label">Total Unpaid</div>
+                    <div class="value" id="total-unpaid">₱0.00</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Invoice Count</div>
+                    <div class="value" id="invoice-count">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">30+ Days</div>
+                    <div class="value" id="age-30">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">60+ Days</div>
+                    <div class="value" id="age-60">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">90+ Days</div>
+                    <div class="value" id="age-90">0</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters-row">
+                <select id="filter-month">
+                    <option value="">All Months</option>
+                </select>
+                <select id="filter-age">
+                    <option value="">All Ages</option>
+                    <option value="30">30+ Days</option>
+                    <option value="60">60+ Days</option>
+                    <option value="90">90+ Days</option>
+                    <option value="120">120+ Days</option>
+                </select>
+                <input type="text" id="search-input" placeholder="Search company/invoice..." style="width:250px;">
+                <button class="btn btn-secondary" onclick="applyFilters()">Apply Filters</button>
+                <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
+                <button class="btn btn-secondary" onclick="exportToExcel()">📥 Export to Excel</button>
+            </div>
+
+            <!-- Data Table -->
+            <div class="data-table-container">
+                <div class="table-scroll" id="table-container">
+                    <div class="loading-overlay" id="loading">
+                        <div class="loading-spinner"></div>
+                        <span>Loading unpaid invoices...</span>
+                    </div>
+                </div>
+                <div class="pagination" id="pagination" style="display:none;">
+                    <div class="pagination-info">
+                        Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-records">0</span>
+                    </div>
+                    <div class="pagination-buttons">
+                        <button class="btn btn-secondary" onclick="prevPage()" id="btn-prev">← Previous</button>
+                        <button class="btn btn-secondary" onclick="nextPage()" id="btn-next">Next →</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script src="collections/js/collections.js"></script>
+</body>
+</html>

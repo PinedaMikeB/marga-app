@@ -10,56 +10,56 @@
         h1 { color: #333; margin-bottom: 20px; }
         .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .card h2 { color: #e91e8c; margin-bottom: 15px; font-size: 18px; }
-        .stat { display: inline-block; background: #f0f0f0; padding: 10px 20px; border-radius: 4px; margin: 5px; }
-        .stat .count { font-size: 24px; font-weight: bold; color: #e91e8c; }
-        .stat .label { font-size: 12px; color: #666; }
-        pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 12px; max-height: 400px; overflow-y: auto; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 300px; overflow-y: auto; }
         .loading { color: #666; font-style: italic; }
         .error { color: #d32f2f; }
         .success { color: #388e3c; }
-        button { background: #e91e8c; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button { background: #e91e8c; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; font-size: 13px; }
         button:hover { background: #c2185b; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #f5f5f5; font-weight: 600; }
+        button.secondary { background: #666; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f5f5f5; font-weight: 600; position: sticky; top: 0; }
+        .table-wrapper { max-height: 400px; overflow-y: auto; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
         .badge-rtp { background: #e3f2fd; color: #1976d2; }
-        .badge-rtf { background: #f3e5f5; color: #7b1fa2; }
+        .badge-unpaid { background: #ffebee; color: #c62828; }
+        .badge-paid { background: #e8f5e9; color: #2e7d32; }
+        .total-box { background: #e91e8c; color: white; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .total-box .amount { font-size: 28px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>🔍 Collections Data Check</h1>
+    <h1>🔍 Collections Data Check v2</h1>
     
     <div class="card">
-        <h2>Firebase Collections Status</h2>
-        <div id="collections-status">
-            <p class="loading">Checking collections...</p>
-        </div>
+        <h2>tbl_billing (Main Invoice/Billing Table)</h2>
+        <button onclick="checkBillingTable()">Check tbl_billing Structure</button>
+        <button onclick="getBillingSamples()">Get Sample Bills</button>
+        <button class="secondary" onclick="countBillingRecords()">Count Total Records</button>
+        <div id="billing-result"></div>
     </div>
 
     <div class="card">
-        <h2>Billing Records (tbl_invoicenum)</h2>
-        <button onclick="checkBillingRecords()">Check Billing Records</button>
-        <button onclick="getSampleInvoices()">Get Sample Invoices</button>
-        <div id="billing-status"></div>
+        <h2>tbl_paymentinfo (Payment Records)</h2>
+        <button onclick="checkPaymentTable()">Check Payment Structure</button>
+        <button onclick="getPaymentSamples()">Get Sample Payments</button>
+        <div id="payment-result"></div>
     </div>
 
     <div class="card">
-        <h2>Payment Records (tbl_paymentinfo)</h2>
-        <button onclick="checkPaymentRecords()">Check Payment Records</button>
-        <div id="payment-status"></div>
+        <h2>🎯 Find UNPAID Invoices (Real Query)</h2>
+        <p style="color:#666; margin-bottom:10px;">This will find invoices from tbl_billing that have no matching payment in tbl_paymentinfo</p>
+        <button onclick="findRealUnpaid()">Find Unpaid Invoices</button>
+        <button class="secondary" onclick="findUnpaidWithDetails()">Find Unpaid + Customer Details</button>
+        <div id="unpaid-result"></div>
     </div>
 
     <div class="card">
-        <h2>Unpaid Invoices Query</h2>
-        <button onclick="findUnpaidInvoices()">Find Unpaid Invoices (Sample)</button>
-        <div id="unpaid-status"></div>
-    </div>
-
-    <div class="card">
-        <h2>Collection History (tbl_collectionhistory)</h2>
-        <button onclick="checkCollectionHistory()">Check Collection History</button>
-        <div id="collection-status"></div>
+        <h2>tbl_collectionhistory (Follow-up History)</h2>
+        <button onclick="checkCollectionHistory()">Check Structure</button>
+        <button onclick="getCollectionSamples()">Get Samples</button>
+        <div id="collection-result"></div>
     </div>
 
     <script src="shared/js/firebase-config.js"></script>
@@ -67,227 +67,365 @@
         const API_KEY = FIREBASE_CONFIG.apiKey;
         const BASE_URL = FIREBASE_CONFIG.baseUrl;
 
-        // Helper to fetch from Firestore
-        async function firestoreQuery(collection, pageSize = 10) {
+        async function firestoreGet(collection, pageSize = 10) {
             const url = `${BASE_URL}/${collection}?pageSize=${pageSize}&key=${API_KEY}`;
             const response = await fetch(url);
             return response.json();
         }
 
-        // Check what collections exist
-        async function checkCollections() {
-            const collections = [
-                'tbl_invoicenum',      // Billing/Invoices
-                'tbl_billing',          // Alternative billing table
-                'tbl_paymentinfo',      // Payments
-                'tbl_collectionhistory', // Collection follow-up history
-                'tbl_collectioninfo',   // Collection info
-                'tbl_schedule',         // Schedules
-                'tbl_companylist',      // Companies
-                'tbl_branchinfo',       // Branches
-                'tbl_contractmain',     // Contracts
-                'tbl_machine',          // Machines
-                'tbl_particulars'       // Categories (RTP, RTF, etc.)
-            ];
-
-            const status = document.getElementById('collections-status');
-            status.innerHTML = '<p class="loading">Checking collections...</p>';
-
-            let html = '<table><tr><th>Collection</th><th>Status</th><th>Sample Count</th></tr>';
-
-            for (const coll of collections) {
-                try {
-                    const data = await firestoreQuery(coll, 1);
-                    const count = data.documents ? data.documents.length : 0;
-                    const hasData = count > 0 ? '✅ Has Data' : '⚠️ Empty';
-                    html += `<tr><td>${coll}</td><td class="${count > 0 ? 'success' : 'error'}">${hasData}</td><td>${count > 0 ? 'Yes' : 'No'}</td></tr>`;
-                } catch (e) {
-                    html += `<tr><td>${coll}</td><td class="error">❌ Not Found</td><td>-</td></tr>`;
-                }
-            }
-
-            html += '</table>';
-            status.innerHTML = html;
+        // Helper to extract value from Firestore field
+        function getValue(field) {
+            if (!field) return null;
+            return field.integerValue || field.stringValue || field.doubleValue || field.booleanValue || null;
         }
 
-        // Check billing records
-        async function checkBillingRecords() {
-            const status = document.getElementById('billing-status');
-            status.innerHTML = '<p class="loading">Checking billing records...</p>';
-
+        // Check tbl_billing structure
+        async function checkBillingTable() {
+            const result = document.getElementById('billing-result');
+            result.innerHTML = '<p class="loading">Checking tbl_billing...</p>';
+            
             try {
-                // Try tbl_invoicenum first
-                const data = await firestoreQuery('tbl_invoicenum', 5);
-                
+                const data = await firestoreGet('tbl_billing', 1);
                 if (data.documents && data.documents.length > 0) {
-                    const sample = data.documents[0].fields;
-                    status.innerHTML = `
-                        <p class="success">✅ Found billing records in tbl_invoicenum</p>
-                        <p><strong>Sample record fields:</strong></p>
-                        <pre>${JSON.stringify(sample, null, 2)}</pre>
+                    const fields = data.documents[0].fields;
+                    result.innerHTML = `
+                        <p class="success">✅ tbl_billing has data!</p>
+                        <p><strong>Fields found:</strong></p>
+                        <pre>${JSON.stringify(fields, null, 2)}</pre>
                     `;
                 } else {
-                    // Try tbl_billing
-                    const billing = await firestoreQuery('tbl_billing', 5);
-                    if (billing.documents && billing.documents.length > 0) {
-                        const sample = billing.documents[0].fields;
-                        status.innerHTML = `
-                            <p class="success">✅ Found billing records in tbl_billing</p>
-                            <p><strong>Sample record fields:</strong></p>
-                            <pre>${JSON.stringify(sample, null, 2)}</pre>
-                        `;
-                    } else {
-                        status.innerHTML = '<p class="error">❌ No billing records found</p>';
-                    }
+                    result.innerHTML = '<p class="error">No data in tbl_billing</p>';
                 }
             } catch (e) {
-                status.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
             }
         }
 
-        // Get sample invoices with more details
-        async function getSampleInvoices() {
-            const status = document.getElementById('billing-status');
-            status.innerHTML = '<p class="loading">Fetching sample invoices...</p>';
-
+        // Get billing samples with key fields
+        async function getBillingSamples() {
+            const result = document.getElementById('billing-result');
+            result.innerHTML = '<p class="loading">Fetching billing samples...</p>';
+            
             try {
-                const data = await firestoreQuery('tbl_invoicenum', 20);
-                
+                const data = await firestoreGet('tbl_billing', 30);
                 if (data.documents && data.documents.length > 0) {
-                    let html = '<p class="success">✅ Sample Invoices:</p>';
-                    html += '<table><tr><th>Invoice #</th><th>Contract ID</th><th>Amount</th><th>Month/Year</th><th>Date</th></tr>';
+                    let html = `<p class="success">✅ Found ${data.documents.length} billing records (sample)</p>`;
+                    html += '<div class="table-wrapper"><table><tr><th>ID</th><th>Invoice#</th><th>Contract ID</th><th>Amount</th><th>Month/Year</th><th>Date Printed</th><th>Status</th></tr>';
                     
                     data.documents.forEach(doc => {
                         const f = doc.fields;
-                        const getValue = (field) => {
-                            if (!field) return '-';
-                            return field.integerValue || field.stringValue || field.doubleValue || '-';
-                        };
-                        
                         html += `<tr>
-                            <td>${getValue(f.id) || getValue(f.invoice_id) || getValue(f.invoiceno)}</td>
-                            <td>${getValue(f.contract_id) || getValue(f.contractid)}</td>
-                            <td>₱${getValue(f.amount) || getValue(f.total) || getValue(f.totalamount)}</td>
-                            <td>${getValue(f.invmonth) || getValue(f.month)}/${getValue(f.invyear) || getValue(f.year)}</td>
-                            <td>${getValue(f.invdate) || getValue(f.date) || getValue(f.dateprinted)}</td>
+                            <td>${getValue(f.id)}</td>
+                            <td>${getValue(f.invoiceno) || getValue(f.invoice_no) || getValue(f.invno) || '-'}</td>
+                            <td>${getValue(f.contract_id) || getValue(f.contractid) || '-'}</td>
+                            <td>₱${getValue(f.amount) || getValue(f.totalamount) || getValue(f.total) || '0'}</td>
+                            <td>${getValue(f.invmonth) || getValue(f.month) || '-'}/${getValue(f.invyear) || getValue(f.year) || '-'}</td>
+                            <td>${getValue(f.dateprinted) || getValue(f.date_printed) || getValue(f.invdate) || '-'}</td>
+                            <td>${getValue(f.status) || getValue(f.status_id) || '-'}</td>
                         </tr>`;
                     });
                     
-                    html += '</table>';
-                    status.innerHTML = html;
-                } else {
-                    status.innerHTML = '<p class="error">No invoices found</p>';
+                    html += '</table></div>';
+                    result.innerHTML = html;
                 }
             } catch (e) {
-                status.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
             }
         }
 
-        // Check payment records
-        async function checkPaymentRecords() {
-            const status = document.getElementById('payment-status');
-            status.innerHTML = '<p class="loading">Checking payment records...</p>';
-
+        // Count billing records
+        async function countBillingRecords() {
+            const result = document.getElementById('billing-result');
+            result.innerHTML = '<p class="loading">Counting records (fetching in batches)...</p>';
+            
             try {
-                const data = await firestoreQuery('tbl_paymentinfo', 5);
-                
+                // Firestore REST API doesn't have count, so we estimate
+                const data = await firestoreGet('tbl_billing', 500);
+                const count = data.documents ? data.documents.length : 0;
+                result.innerHTML = `<p class="success">Found at least ${count} billing records (limited query)</p>`;
+            } catch (e) {
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+            }
+        }
+
+        // Check payment structure
+        async function checkPaymentTable() {
+            const result = document.getElementById('payment-result');
+            result.innerHTML = '<p class="loading">Checking tbl_paymentinfo...</p>';
+            
+            try {
+                const data = await firestoreGet('tbl_paymentinfo', 1);
                 if (data.documents && data.documents.length > 0) {
-                    const sample = data.documents[0].fields;
-                    status.innerHTML = `
-                        <p class="success">✅ Found payment records</p>
-                        <p><strong>Sample record fields:</strong></p>
-                        <pre>${JSON.stringify(sample, null, 2)}</pre>
+                    result.innerHTML = `
+                        <p class="success">✅ tbl_paymentinfo has data!</p>
+                        <pre>${JSON.stringify(data.documents[0].fields, null, 2)}</pre>
                     `;
-                } else {
-                    status.innerHTML = '<p class="error">❌ No payment records found</p>';
                 }
             } catch (e) {
-                status.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
             }
         }
 
-        // Check collection history
-        async function checkCollectionHistory() {
-            const status = document.getElementById('collection-status');
-            status.innerHTML = '<p class="loading">Checking collection history...</p>';
-
+        // Get payment samples
+        async function getPaymentSamples() {
+            const result = document.getElementById('payment-result');
+            result.innerHTML = '<p class="loading">Fetching payment samples...</p>';
+            
             try {
-                const data = await firestoreQuery('tbl_collectionhistory', 5);
-                
+                const data = await firestoreGet('tbl_paymentinfo', 20);
                 if (data.documents && data.documents.length > 0) {
-                    const sample = data.documents[0].fields;
-                    status.innerHTML = `
-                        <p class="success">✅ Found collection history records</p>
-                        <p><strong>Sample record fields:</strong></p>
-                        <pre>${JSON.stringify(sample, null, 2)}</pre>
-                    `;
-                } else {
-                    status.innerHTML = '<p class="error">⚠️ No collection history found (might need to be created)</p>';
+                    let html = `<p class="success">✅ Found ${data.documents.length} payment records</p>`;
+                    html += '<div class="table-wrapper"><table><tr><th>ID</th><th>Invoice ID</th><th>Amount</th><th>OR#</th><th>Date Paid</th></tr>';
+                    
+                    data.documents.forEach(doc => {
+                        const f = doc.fields;
+                        html += `<tr>
+                            <td>${getValue(f.id)}</td>
+                            <td>${getValue(f.invoice_id) || getValue(f.invoiceid) || '-'}</td>
+                            <td>₱${getValue(f.payment_amt) || getValue(f.amount) || '0'}</td>
+                            <td>${getValue(f.ornum) || getValue(f.or_number) || '-'}</td>
+                            <td>${getValue(f.date_deposit) || getValue(f.datepaid) || '-'}</td>
+                        </tr>`;
+                    });
+                    
+                    html += '</table></div>';
+                    result.innerHTML = html;
                 }
             } catch (e) {
-                status.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
             }
         }
 
-        // Find unpaid invoices (invoices without payments)
-        async function findUnpaidInvoices() {
-            const status = document.getElementById('unpaid-status');
-            status.innerHTML = '<p class="loading">Finding unpaid invoices (this is a complex query)...</p>';
-
+        // Find REAL unpaid invoices
+        async function findRealUnpaid() {
+            const result = document.getElementById('unpaid-result');
+            result.innerHTML = '<p class="loading">Finding unpaid invoices... (this may take a moment)</p>';
+            
             try {
-                // Get some invoices
-                const invoices = await firestoreQuery('tbl_invoicenum', 50);
-                
-                if (!invoices.documents || invoices.documents.length === 0) {
-                    status.innerHTML = '<p class="error">No invoices found to check</p>';
+                // Get billing records
+                const billing = await firestoreGet('tbl_billing', 200);
+                if (!billing.documents) {
+                    result.innerHTML = '<p class="error">No billing records found</p>';
                     return;
                 }
 
-                // Get payments
-                const payments = await firestoreQuery('tbl_paymentinfo', 100);
+                // Get payment records and extract paid invoice IDs
+                const payments = await firestoreGet('tbl_paymentinfo', 500);
                 const paidInvoiceIds = new Set();
                 
                 if (payments.documents) {
                     payments.documents.forEach(doc => {
                         const f = doc.fields;
-                        const invoiceId = f.invoice_id?.integerValue || f.invoiceno?.integerValue || f.inv_id?.integerValue;
-                        if (invoiceId) paidInvoiceIds.add(invoiceId);
+                        const invId = getValue(f.invoice_id) || getValue(f.invoiceid);
+                        if (invId) paidInvoiceIds.add(String(invId));
                     });
                 }
 
-                // Find unpaid
-                const unpaid = invoices.documents.filter(doc => {
+                // Find unpaid (billing records not in payments)
+                const unpaid = billing.documents.filter(doc => {
                     const f = doc.fields;
-                    const id = f.id?.integerValue || f.invoice_id?.integerValue;
-                    return !paidInvoiceIds.has(id);
+                    const id = getValue(f.id);
+                    const invoiceNo = getValue(f.invoiceno) || getValue(f.invoice_no);
+                    // Check if either ID or invoice number is in paid set
+                    return !paidInvoiceIds.has(String(id)) && !paidInvoiceIds.has(String(invoiceNo));
                 });
 
-                let html = `<p class="success">Found ${unpaid.length} potentially unpaid invoices (from sample of ${invoices.documents.length})</p>`;
-                html += `<p><em>Note: ${paidInvoiceIds.size} paid invoice IDs found in payments sample</em></p>`;
-                
+                // Calculate total
+                let totalUnpaid = 0;
+                unpaid.forEach(doc => {
+                    const amt = parseFloat(getValue(doc.fields.amount) || getValue(doc.fields.totalamount) || 0);
+                    totalUnpaid += amt;
+                });
+
+                let html = `
+                    <div class="total-box">
+                        <div>Unpaid Invoices Found: <strong>${unpaid.length}</strong> (from ${billing.documents.length} sample)</div>
+                        <div class="amount">₱${totalUnpaid.toLocaleString('en-PH', {minimumFractionDigits: 2})}</div>
+                    </div>
+                    <p><em>${paidInvoiceIds.size} unique paid invoice IDs found in payments</em></p>
+                `;
+
                 if (unpaid.length > 0) {
-                    html += '<table><tr><th>Invoice #</th><th>Contract ID</th><th>Amount</th><th>Month/Year</th></tr>';
-                    unpaid.slice(0, 10).forEach(doc => {
+                    html += '<div class="table-wrapper"><table><tr><th>ID</th><th>Invoice#</th><th>Contract ID</th><th>Amount</th><th>Month/Year</th><th>Status</th></tr>';
+                    
+                    unpaid.slice(0, 50).forEach(doc => {
                         const f = doc.fields;
-                        const getValue = (field) => field?.integerValue || field?.stringValue || field?.doubleValue || '-';
                         html += `<tr>
                             <td>${getValue(f.id)}</td>
-                            <td>${getValue(f.contract_id)}</td>
-                            <td>₱${getValue(f.amount) || getValue(f.totalamount)}</td>
-                            <td>${getValue(f.invmonth)}/${getValue(f.invyear)}</td>
+                            <td>${getValue(f.invoiceno) || getValue(f.invoice_no) || '-'}</td>
+                            <td>${getValue(f.contract_id) || '-'}</td>
+                            <td>₱${getValue(f.amount) || getValue(f.totalamount) || '0'}</td>
+                            <td>${getValue(f.invmonth) || '-'}/${getValue(f.invyear) || '-'}</td>
+                            <td><span class="badge badge-unpaid">Unpaid</span></td>
                         </tr>`;
                     });
-                    html += '</table>';
+                    
+                    html += '</table></div>';
                 }
 
-                status.innerHTML = html;
+                result.innerHTML = html;
             } catch (e) {
-                status.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
             }
         }
 
-        // Run initial check
-        checkCollections();
+        // Find unpaid with customer details
+        async function findUnpaidWithDetails() {
+            const result = document.getElementById('unpaid-result');
+            result.innerHTML = '<p class="loading">Finding unpaid invoices with customer details... (this may take a moment)</p>';
+            
+            try {
+                // Get billing, payments, contracts, branches, companies
+                const [billing, payments, contracts, branches, companies] = await Promise.all([
+                    firestoreGet('tbl_billing', 100),
+                    firestoreGet('tbl_paymentinfo', 300),
+                    firestoreGet('tbl_contractmain', 500),
+                    firestoreGet('tbl_branchinfo', 500),
+                    firestoreGet('tbl_companylist', 300)
+                ]);
+
+                // Build lookup maps
+                const paidIds = new Set();
+                if (payments.documents) {
+                    payments.documents.forEach(doc => {
+                        const invId = getValue(doc.fields.invoice_id);
+                        if (invId) paidIds.add(String(invId));
+                    });
+                }
+
+                const contractMap = {};
+                if (contracts.documents) {
+                    contracts.documents.forEach(doc => {
+                        const f = doc.fields;
+                        contractMap[getValue(f.id)] = {
+                            branch_id: getValue(f.contract_id), // contract_id is actually branch_id
+                            mach_id: getValue(f.mach_id)
+                        };
+                    });
+                }
+
+                const branchMap = {};
+                if (branches.documents) {
+                    branches.documents.forEach(doc => {
+                        const f = doc.fields;
+                        branchMap[getValue(f.id)] = {
+                            name: getValue(f.branchname),
+                            company_id: getValue(f.company_id)
+                        };
+                    });
+                }
+
+                const companyMap = {};
+                if (companies.documents) {
+                    companies.documents.forEach(doc => {
+                        const f = doc.fields;
+                        companyMap[getValue(f.id)] = getValue(f.companyname);
+                    });
+                }
+
+                // Find unpaid and enrich with customer info
+                const unpaid = [];
+                let totalAmount = 0;
+
+                if (billing.documents) {
+                    billing.documents.forEach(doc => {
+                        const f = doc.fields;
+                        const id = getValue(f.id);
+                        if (!paidIds.has(String(id))) {
+                            const contractId = getValue(f.contract_id);
+                            const contract = contractMap[contractId] || {};
+                            const branch = branchMap[contract.branch_id] || {};
+                            const companyName = companyMap[branch.company_id] || 'Unknown';
+                            const amount = parseFloat(getValue(f.amount) || 0);
+                            totalAmount += amount;
+
+                            unpaid.push({
+                                id: id,
+                                invoiceNo: getValue(f.invoiceno),
+                                amount: amount,
+                                month: getValue(f.invmonth),
+                                year: getValue(f.invyear),
+                                company: companyName,
+                                branch: branch.name || 'Unknown'
+                            });
+                        }
+                    });
+                }
+
+                let html = `
+                    <div class="total-box">
+                        <div>Unpaid Invoices: <strong>${unpaid.length}</strong></div>
+                        <div class="amount">₱${totalAmount.toLocaleString('en-PH', {minimumFractionDigits: 2})}</div>
+                    </div>
+                `;
+
+                if (unpaid.length > 0) {
+                    html += '<div class="table-wrapper"><table><tr><th>Invoice#</th><th>Company</th><th>Branch</th><th>Amount</th><th>Month/Year</th></tr>';
+                    
+                    unpaid.slice(0, 30).forEach(inv => {
+                        html += `<tr>
+                            <td>${inv.invoiceNo || inv.id}</td>
+                            <td><strong>${inv.company}</strong></td>
+                            <td>${inv.branch}</td>
+                            <td>₱${inv.amount.toLocaleString()}</td>
+                            <td>${inv.month || '-'}/${inv.year || '-'}</td>
+                        </tr>`;
+                    });
+                    
+                    html += '</table></div>';
+                }
+
+                result.innerHTML = html;
+            } catch (e) {
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+            }
+        }
+
+        // Check collection history
+        async function checkCollectionHistory() {
+            const result = document.getElementById('collection-result');
+            result.innerHTML = '<p class="loading">Checking...</p>';
+            
+            try {
+                const data = await firestoreGet('tbl_collectionhistory', 1);
+                if (data.documents && data.documents.length > 0) {
+                    result.innerHTML = `
+                        <p class="success">✅ Collection history exists!</p>
+                        <pre>${JSON.stringify(data.documents[0].fields, null, 2)}</pre>
+                    `;
+                }
+            } catch (e) {
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+            }
+        }
+
+        // Get collection samples
+        async function getCollectionSamples() {
+            const result = document.getElementById('collection-result');
+            result.innerHTML = '<p class="loading">Fetching...</p>';
+            
+            try {
+                const data = await firestoreGet('tbl_collectionhistory', 10);
+                if (data.documents && data.documents.length > 0) {
+                    let html = '<div class="table-wrapper"><table><tr><th>Invoice#</th><th>Remarks</th><th>Follow-up Date</th><th>Status</th></tr>';
+                    
+                    data.documents.forEach(doc => {
+                        const f = doc.fields;
+                        html += `<tr>
+                            <td>${getValue(f.invoice_num) || '-'}</td>
+                            <td>${getValue(f.remarks) || '-'}</td>
+                            <td>${getValue(f.followup_datetime) || '-'}</td>
+                            <td>${getValue(f.schedule_status) || '-'}</td>
+                        </tr>`;
+                    });
+                    
+                    html += '</table></div>';
+                    result.innerHTML = html;
+                }
+            } catch (e) {
+                result.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+            }
+        }
     </script>
 </body>
 </html>
