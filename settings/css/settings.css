@@ -6,6 +6,68 @@
     flex-wrap: wrap;
 }
 
+.settings-filter {
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.settings-tabs {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.settings-tab {
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(255, 255, 255, 0.75);
+    color: #1a365d;
+    border-radius: 999px;
+    padding: 0.45rem 0.85rem;
+    font-weight: 800;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.settings-tab.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.35);
+}
+
+.settings-pane {
+    display: none;
+}
+
+.settings-pane.open {
+    display: block;
+}
+
+.settings-pane-header {
+    padding: 0 1.25rem 1rem;
+}
+
+.settings-divider {
+    margin-top: 0.75rem;
+    padding-top: 0.25rem;
+    border-top: 1px dashed rgba(148, 163, 184, 0.45);
+}
+
+.settings-inline-select {
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+
 .marga-modal {
     position: fixed;
     inset: 50% auto auto 50%;

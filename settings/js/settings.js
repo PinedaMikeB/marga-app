@@ -4,28 +4,55 @@ if (!MargaAuth.requireAccess('settings')) {
 
 const SETTINGS_STATE = {
     users: [],
-    filtered: [],
-    editingDocId: null
+    usersFiltered: [],
+    employees: [],
+    employeesFiltered: [],
+    positions: new Map(),
+    userByStaffId: new Map(),
+    editingDocId: null,
+    editingEmployeeId: null
 };
 
 document.addEventListener('DOMContentLoaded', () => {
     const user = MargaAuth.getUser();
+    const isAdmin = MargaAuth.isAdmin();
     if (user) {
         document.getElementById('userName').textContent = user.name;
         document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
         document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
     }
 
-    document.getElementById('refreshUsersBtn').addEventListener('click', () => loadUsers());
+    document.getElementById('tabEmployees').addEventListener('click', () => setActiveTab('employees'));
+    document.getElementById('tabAccounts').addEventListener('click', () => setActiveTab('accounts'));
+
+    document.getElementById('refreshUsersBtn').addEventListener('click', () => loadDirectory());
     document.getElementById('userSearch').addEventListener('input', () => applyUserFilter());
-    document.getElementById('newUserBtn').addEventListener('click', () => openUserModal(null));
+    document.getElementById('userStatusFilter').addEventListener('change', () => applyUserFilter());
+
+    document.getElementById('refreshEmployeesBtn').addEventListener('click', () => loadDirectory());
+    document.getElementById('employeeSearch').addEventListener('input', () => applyEmployeeFilter());
+    document.getElementById('employeeStatusFilter').addEventListener('change', () => applyEmployeeFilter());
+
+    const newUserBtn = document.getElementById('newUserBtn');
+    newUserBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    newUserBtn.addEventListener('click', () => openUserModal(null));
 
     document.getElementById('userModalOverlay').addEventListener('click', closeUserModal);
     document.getElementById('userModalCloseBtn').addEventListener('click', closeUserModal);
     document.getElementById('userModalCancelBtn').addEventListener('click', closeUserModal);
     document.getElementById('userModalSaveBtn').addEventListener('click', () => saveUser());
 
-    loadUsers();
+    document.getElementById('employeeModalOverlay').addEventListener('click', closeEmployeeModal);
+    document.getElementById('employeeModalCloseBtn').addEventListener('click', closeEmployeeModal);
+    document.getElementById('employeeModalCancelBtn').addEventListener('click', closeEmployeeModal);
+    document.getElementById('employeeModalSaveBtn').addEventListener('click', () => saveEmployee());
+
+    // Ensure admin-only password fields are hidden for HR/non-admin.
+    document.getElementById('userPasswordField').style.display = isAdmin ? 'flex' : 'none';
+    document.getElementById('employeePasswordField').style.display = isAdmin ? 'flex' : 'none';
+
+    setActiveTab('employees');
+    loadDirectory();
 });
 
 function toggleSidebar() {
@@ -36,6 +63,22 @@ window.toggleSidebar = toggleSidebar;
 
 function sanitize(text) {
     return MargaUtils.escapeHtml(String(text ?? ''));
+}
+
+function setActiveTab(tab) {
+    const next = tab === 'accounts' ? 'accounts' : 'employees';
+    const tabEmployees = document.getElementById('tabEmployees');
+    const tabAccounts = document.getElementById('tabAccounts');
+    const employeesPane = document.getElementById('employeesPane');
+    const accountsPane = document.getElementById('accountsPane');
+
+    tabEmployees.classList.toggle('active', next === 'employees');
+    tabAccounts.classList.toggle('active', next === 'accounts');
+    tabEmployees.setAttribute('aria-selected', next === 'employees' ? 'true' : 'false');
+    tabAccounts.setAttribute('aria-selected', next === 'accounts' ? 'true' : 'false');
+
+    employeesPane.classList.toggle('open', next === 'employees');
+    accountsPane.classList.toggle('open', next === 'accounts');
 }
 
 function parseFirestoreValue(value) {
@@ -168,20 +211,31 @@ function openUserModal(docId) {
 
 function applyUserFilter() {
     const q = String(document.getElementById('userSearch').value || '').trim().toLowerCase();
-    SETTINGS_STATE.filtered = q
-        ? SETTINGS_STATE.users.filter((u) =>
+    const statusFilter = String(document.getElementById('userStatusFilter').value || 'active');
+    const wantActive = statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : null;
+
+    const base = SETTINGS_STATE.users.filter((u) => {
+        if (wantActive === null) return true;
+        const active = u.active !== false;
+        return wantActive ? active : !active;
+    });
+
+    SETTINGS_STATE.usersFiltered = q
+        ? base.filter((u) =>
             String(u.email || '').toLowerCase().includes(q) ||
             String(u.name || '').toLowerCase().includes(q) ||
             String(u.role || '').toLowerCase().includes(q) ||
             String(u.staff_id || '').includes(q)
         )
-        : [...SETTINGS_STATE.users];
+        : base;
+
     renderUsers();
 }
 
 function renderUsers() {
     const tbody = document.querySelector('#usersTable tbody');
-    const rows = SETTINGS_STATE.filtered;
+    const rows = SETTINGS_STATE.usersFiltered;
+    const isAdmin = MargaAuth.isAdmin();
     if (!rows.length) {
         tbody.innerHTML = '<tr><td colspan="6" class="loading-cell">No users found.</td></tr>';
         return;
@@ -196,16 +250,26 @@ function renderUsers() {
 
     tbody.innerHTML = rows.map((u) => {
         const active = u.active !== false;
+        const id = sanitize(u._docId);
+        const statusSelect = `
+            <select class="settings-inline-select" data-action="user-status" data-id="${id}">
+                <option value="true" ${active ? 'selected' : ''}>Active</option>
+                <option value="false" ${!active ? 'selected' : ''}>Inactive</option>
+            </select>
+        `;
+        const resetBtn = isAdmin
+            ? `<button type="button" class="btn btn-secondary btn-sm" data-action="reset" data-id="${id}">Reset Password</button>`
+            : '';
         return `
             <tr>
                 <td data-label="Email">${sanitize(u.email || u.username || u._docId || '-')}</td>
                 <td data-label="Name">${sanitize(u.name || '-')}</td>
                 <td data-label="Role"><span class="ops-role-badge ${sanitize(roleClass(u.role))}">${sanitize(u.role || 'viewer')}</span></td>
                 <td data-label="Staff ID">${sanitize(u.staff_id || '-')}</td>
-                <td data-label="Status"><span class="status-pill ${active ? 'active' : 'inactive'}">${active ? 'Active' : 'Inactive'}</span></td>
+                <td data-label="Status">${statusSelect}</td>
                 <td data-label="Action" class="settings-row-actions">
-                    <button type="button" class="btn btn-secondary btn-sm" data-action="edit" data-id="${sanitize(u._docId)}">Edit</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-action="reset" data-id="${sanitize(u._docId)}">Reset Password</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="view" data-id="${id}">View</button>
+                    ${resetBtn}
                 </td>
             </tr>
         `;
@@ -216,14 +280,33 @@ function renderUsers() {
             const action = btn.dataset.action;
             const id = btn.dataset.id;
             if (!id) return;
-            if (action === 'edit') {
+            if (action === 'view') {
                 openUserModal(id);
                 return;
             }
             if (action === 'reset') {
+                if (!isAdmin) return;
                 const next = prompt('Set new temporary password:');
                 if (next === null) return;
                 await resetPassword(id, next);
+            }
+        });
+    });
+
+    tbody.querySelectorAll('select[data-action="user-status"]').forEach((sel) => {
+        sel.addEventListener('change', async () => {
+            const id = sel.dataset.id;
+            if (!id) return;
+            const next = sel.value === 'true';
+            sel.disabled = true;
+            try {
+                await patchDocument('marga_users', id, { active: next, updated_at: new Date().toISOString() });
+                await loadDirectory();
+            } catch (err) {
+                console.error('Update user status failed:', err);
+                alert(`Failed to update status: ${err.message || err}`);
+            } finally {
+                sel.disabled = false;
             }
         });
     });
@@ -231,8 +314,6 @@ function renderUsers() {
 
 async function loadUsers() {
     document.querySelector('#usersTable tbody').innerHTML = '<tr><td colspan="6" class="loading-cell">Loading...</td></tr>';
-    document.getElementById('usersMeta').textContent = 'Loading users from Firestore...';
-
     try {
         const docs = await runQuery({
             from: [{ collectionId: 'marga_users' }],
@@ -241,13 +322,276 @@ async function loadUsers() {
         });
         const users = docs.map(parseFirestoreDoc).filter(Boolean);
         SETTINGS_STATE.users = users;
-        SETTINGS_STATE.filtered = [...users];
-        document.getElementById('usersMeta').textContent = `${users.length} user(s) loaded.`;
-        applyUserFilter();
+        SETTINGS_STATE.userByStaffId = new Map();
+        users.forEach((u) => {
+            const staffId = u.staff_id ?? u.staffId ?? null;
+            if (staffId === null || staffId === undefined || staffId === '') return;
+            SETTINGS_STATE.userByStaffId.set(String(staffId), u);
+        });
     } catch (err) {
         console.error('Load users failed:', err);
-        document.getElementById('usersMeta').textContent = `Error: ${err.message || err}`;
         document.querySelector('#usersTable tbody').innerHTML = '<tr><td colspan="6" class="loading-cell">Unable to load users.</td></tr>';
+    }
+}
+
+function getRoleGuess(employee, positionName) {
+    const posId = Number(employee.position_id || 0);
+    const pn = String(positionName || '').toLowerCase();
+    if (posId === 5 || pn.includes('technician') || pn.includes('tech')) return 'Technician';
+    if (posId === 9 || pn.includes('messenger') || pn.includes('driver')) return 'Messenger';
+    return 'Staff';
+}
+
+function roleGuessToUserRole(roleGuess) {
+    const rg = String(roleGuess || '').toLowerCase();
+    if (rg === 'technician') return 'technician';
+    if (rg === 'messenger') return 'messenger';
+    return 'viewer';
+}
+
+function getEmployeeDisplayName(emp) {
+    const nickname = String(emp.nickname || '').trim();
+    const first = String(emp.firstname || '').trim();
+    const last = String(emp.lastname || '').trim();
+    if (nickname) return nickname;
+    return `${first} ${last}`.trim() || `ID ${emp.id || '-'}`;
+}
+
+function applyEmployeeFilter() {
+    const q = String(document.getElementById('employeeSearch').value || '').trim().toLowerCase();
+    const statusFilter = String(document.getElementById('employeeStatusFilter').value || 'active');
+    const wantActive = statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : null;
+
+    const base = SETTINGS_STATE.employees.filter((e) => {
+        if (wantActive === null) return true;
+        const active = e.marga_active !== false;
+        return wantActive ? active : !active;
+    });
+
+    SETTINGS_STATE.employeesFiltered = q
+        ? base.filter((e) => {
+            const positionName = SETTINGS_STATE.positions.get(String(e.position_id || 0)) || '';
+            const name = getEmployeeDisplayName(e);
+            return (
+                String(e.id || '').includes(q) ||
+                name.toLowerCase().includes(q) ||
+                String(positionName).toLowerCase().includes(q) ||
+                String(e.contact_number || '').toLowerCase().includes(q)
+            );
+        })
+        : base;
+
+    renderEmployees();
+}
+
+function renderEmployees() {
+    const tbody = document.querySelector('#employeesTable tbody');
+    const rows = SETTINGS_STATE.employeesFiltered;
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="loading-cell">No employees found.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map((e) => {
+        const empId = sanitize(e.id);
+        const positionName = SETTINGS_STATE.positions.get(String(e.position_id || 0)) || '-';
+        const roleGuess = getRoleGuess(e, positionName);
+        const active = e.marga_active !== false;
+        const linked = SETTINGS_STATE.userByStaffId.get(String(e.id || '')) || null;
+        return `
+            <tr>
+                <td data-label="ID">${empId}</td>
+                <td data-label="Name">${sanitize(getEmployeeDisplayName(e))}</td>
+                <td data-label="Position">${sanitize(positionName || '-')}</td>
+                <td data-label="Role"><span class="ops-role-badge ${roleGuess === 'Technician' ? 'role-tech' : roleGuess === 'Messenger' ? 'role-messenger' : 'role-unknown'}">${sanitize(roleGuess)}</span></td>
+                <td data-label="Status">
+                    <select class="settings-inline-select" data-action="emp-status" data-id="${empId}">
+                        <option value="true" ${active ? 'selected' : ''}>Active</option>
+                        <option value="false" ${!active ? 'selected' : ''}>Inactive</option>
+                    </select>
+                </td>
+                <td data-label="Account">${sanitize(linked?.email || '-')}</td>
+                <td data-label="Action" class="settings-row-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="emp-view" data-id="${empId}">View</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    tbody.querySelectorAll('button[data-action="emp-view"]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            if (!id) return;
+            openEmployeeModal(id);
+        });
+    });
+
+    tbody.querySelectorAll('select[data-action="emp-status"]').forEach((sel) => {
+        sel.addEventListener('change', async () => {
+            const id = sel.dataset.id;
+            if (!id) return;
+            const next = sel.value === 'true';
+            sel.disabled = true;
+            try {
+                await patchDocument('tbl_employee', id, { marga_active: next });
+                await loadDirectory();
+            } catch (err) {
+                console.error('Update employee status failed:', err);
+                alert(`Failed to update employee status: ${err.message || err}`);
+            } finally {
+                sel.disabled = false;
+            }
+        });
+    });
+}
+
+async function loadPositions() {
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'tbl_empos' }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+            limit: 2000
+        });
+        const positions = docs.map(parseFirestoreDoc).filter(Boolean);
+        SETTINGS_STATE.positions = new Map(positions.map((p) => [String(p.id || p._docId || ''), p.position || p.name || '']));
+    } catch (err) {
+        console.error('Load positions failed:', err);
+        SETTINGS_STATE.positions = new Map();
+    }
+}
+
+async function loadEmployees() {
+    document.querySelector('#employeesTable tbody').innerHTML = '<tr><td colspan="7" class="loading-cell">Loading...</td></tr>';
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'tbl_employee' }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+            limit: 5000
+        });
+        const employees = docs.map(parseFirestoreDoc).filter(Boolean);
+        SETTINGS_STATE.employees = employees;
+    } catch (err) {
+        console.error('Load employees failed:', err);
+        document.querySelector('#employeesTable tbody').innerHTML = '<tr><td colspan="7" class="loading-cell">Unable to load employees.</td></tr>';
+        SETTINGS_STATE.employees = [];
+    }
+}
+
+async function loadDirectory() {
+    document.getElementById('settingsMeta').textContent = 'Loading directory from Firestore...';
+    await Promise.all([loadPositions(), loadUsers(), loadEmployees()]);
+
+    document.getElementById('settingsMeta').textContent = `${SETTINGS_STATE.employees.length} employee(s), ${SETTINGS_STATE.users.length} account(s).`;
+
+    applyEmployeeFilter();
+    applyUserFilter();
+}
+
+function setEmployeeModalOpen(isOpen) {
+    const overlay = document.getElementById('employeeModalOverlay');
+    const modal = document.getElementById('employeeModal');
+    modal.classList.toggle('open', isOpen);
+    overlay.classList.toggle('visible', isOpen);
+    modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+}
+
+function closeEmployeeModal() {
+    SETTINGS_STATE.editingEmployeeId = null;
+    setEmployeeModalOpen(false);
+}
+
+function openEmployeeModal(employeeId) {
+    SETTINGS_STATE.editingEmployeeId = String(employeeId || '');
+    const emp = SETTINGS_STATE.employees.find((e) => String(e.id || '') === SETTINGS_STATE.editingEmployeeId) || null;
+    if (!emp) {
+        alert('Employee not found.');
+        return;
+    }
+
+    const positionName = SETTINGS_STATE.positions.get(String(emp.position_id || 0)) || '';
+    const linked = SETTINGS_STATE.userByStaffId.get(String(emp.id || '')) || null;
+    const roleGuess = getRoleGuess(emp, positionName);
+
+    document.getElementById('employeeModalTitle').textContent = `${getEmployeeDisplayName(emp)} (${emp.id})`;
+    document.getElementById('employeeId').value = String(emp.id || '');
+    document.getElementById('employeePosition').value = positionName || '-';
+    document.getElementById('employeeNickname').value = String(emp.nickname || '').trim();
+    document.getElementById('employeeContact').value = String(emp.contact_number || '').trim();
+    document.getElementById('employeeFullName').value = `${String(emp.firstname || '').trim()} ${String(emp.lastname || '').trim()}`.trim();
+
+    const empActive = emp.marga_active !== false;
+    document.getElementById('employeeActive').value = empActive ? 'true' : 'false';
+
+    document.getElementById('employeeEmail').value = String(linked?.email || '').trim();
+    document.getElementById('employeeRole').value = String(linked?.role || roleGuessToUserRole(roleGuess) || 'viewer').toLowerCase();
+    document.getElementById('employeeAccountActive').value = (linked?.active === false) ? 'false' : (empActive ? 'true' : 'false');
+    document.getElementById('employeePassword').value = '';
+
+    setEmployeeModalOpen(true);
+}
+
+async function saveEmployee() {
+    const saveBtn = document.getElementById('employeeModalSaveBtn');
+    saveBtn.disabled = true;
+    const isAdmin = MargaAuth.isAdmin();
+
+    try {
+        const employeeId = SETTINGS_STATE.editingEmployeeId;
+        if (!employeeId) return;
+
+        const empActive = document.getElementById('employeeActive').value === 'true';
+        await patchDocument('tbl_employee', employeeId, { marga_active: empActive });
+
+        const email = String(document.getElementById('employeeEmail').value || '').trim().toLowerCase();
+        const role = String(document.getElementById('employeeRole').value || 'viewer').trim();
+        const accountActive = document.getElementById('employeeAccountActive').value === 'true';
+        const password = String(document.getElementById('employeePassword').value || '');
+
+        if (email) {
+            const emp = SETTINGS_STATE.employees.find((e) => String(e.id || '') === String(employeeId)) || {};
+            const name = getEmployeeDisplayName(emp);
+            const linked = SETTINGS_STATE.userByStaffId.get(String(employeeId)) || null;
+
+            const baseFields = {
+                email,
+                username: email,
+                name,
+                role,
+                active: accountActive,
+                staff_id: Number(employeeId),
+                updated_at: new Date().toISOString()
+            };
+
+            // If an existing account is linked by staff_id but email changed, create the new docId and optionally disable the old one.
+            if (linked && String(linked._docId || '') !== email) {
+                const ok = confirm(`This employee is currently linked to ${linked.email || linked._docId}. Link to ${email} instead? The old account will be set to inactive.`);
+                if (!ok) return;
+                await patchDocument('marga_users', linked._docId, { active: false, updated_at: new Date().toISOString() });
+            }
+
+            if (password) {
+                if (!isAdmin) {
+                    alert('Only admin can set passwords.');
+                } else {
+                    const hashed = await hashPassword(password);
+                    await setDocument('marga_users', email, { ...baseFields, ...hashed });
+                }
+            } else {
+                if (!isAdmin) {
+                    alert('Account saved without a password. Ask admin to set a temporary password before the user can login.');
+                }
+                await setDocument('marga_users', email, baseFields);
+            }
+        }
+
+        closeEmployeeModal();
+        await loadDirectory();
+        alert('Employee saved.');
+    } catch (err) {
+        console.error('Save employee failed:', err);
+        alert(`Failed to save employee: ${err.message || err}`);
+    } finally {
+        saveBtn.disabled = false;
     }
 }
 
@@ -273,6 +617,7 @@ async function hashPassword(password) {
 async function saveUser() {
     const saveBtn = document.getElementById('userModalSaveBtn');
     saveBtn.disabled = true;
+    const isAdmin = MargaAuth.isAdmin();
 
     try {
         const email = String(document.getElementById('userEmail').value || '').trim().toLowerCase();
@@ -280,7 +625,7 @@ async function saveUser() {
         const role = String(document.getElementById('userRoleInput').value || 'viewer').trim();
         const staffIdRaw = String(document.getElementById('userStaffId').value || '').trim();
         const staff_id = staffIdRaw ? Number(staffIdRaw) : null;
-        const password = String(document.getElementById('userPassword').value || '');
+        const password = isAdmin ? String(document.getElementById('userPassword').value || '') : '';
         const active = document.getElementById('userActive').value === 'true';
 
         if (!email) {
@@ -323,7 +668,7 @@ async function saveUser() {
         }
 
         closeUserModal();
-        await loadUsers();
+        await loadDirectory();
         alert('User saved.');
     } catch (err) {
         console.error('Save user failed:', err);
@@ -334,6 +679,10 @@ async function saveUser() {
 }
 
 async function resetPassword(docId, newPassword) {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can reset passwords.');
+        return;
+    }
     const next = String(newPassword || '');
     if (!next) {
         alert('Password cannot be empty.');

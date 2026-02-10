@@ -133,36 +133,88 @@
             <section class="content-card">
                 <div class="card-header settings-header">
                     <div>
-                        <h3>Users</h3>
-                        <p class="ops-subtext" id="usersMeta">Loading...</p>
+                        <h3>Directory</h3>
+                        <p class="ops-subtext" id="settingsMeta">Loading...</p>
                     </div>
-                    <div class="card-actions settings-actions">
-                        <div class="search-input-wrapper">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <path d="M21 21l-4.35-4.35"/>
-                            </svg>
-                            <input class="search-input" id="userSearch" placeholder="Search email/name/role...">
-                        </div>
-                        <button type="button" class="btn btn-secondary btn-sm" id="refreshUsersBtn">Refresh</button>
+                    <div class="settings-tabs" role="tablist" aria-label="Settings views">
+                        <button type="button" class="settings-tab active" id="tabEmployees" data-tab="employees" role="tab" aria-selected="true">Employees</button>
+                        <button type="button" class="settings-tab" id="tabAccounts" data-tab="accounts" role="tab" aria-selected="false">Accounts</button>
                     </div>
                 </div>
-                <div class="table-container">
-                    <table class="table" id="usersTable">
-                        <thead>
-                            <tr>
-                                <th>Email</th>
-                                <th>Name</th>
-                                <th>Role</th>
-                                <th>Staff ID</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td colspan="6" class="loading-cell">Loading...</td></tr>
-                        </tbody>
-                    </table>
+
+                <div class="settings-pane open" id="employeesPane" role="tabpanel" aria-labelledby="tabEmployees">
+                    <div class="settings-pane-header">
+                        <div class="card-actions settings-actions">
+                            <div class="search-input-wrapper">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <path d="M21 21l-4.35-4.35"/>
+                                </svg>
+                                <input class="search-input" id="employeeSearch" placeholder="Search name/position/id...">
+                            </div>
+                            <select class="settings-filter" id="employeeStatusFilter" aria-label="Filter employees by status">
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="all">All</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" id="refreshEmployeesBtn">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="table" id="employeesTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Position</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Account</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="7" class="loading-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="settings-pane" id="accountsPane" role="tabpanel" aria-labelledby="tabAccounts">
+                    <div class="settings-pane-header">
+                        <div class="card-actions settings-actions">
+                            <div class="search-input-wrapper">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <path d="M21 21l-4.35-4.35"/>
+                                </svg>
+                                <input class="search-input" id="userSearch" placeholder="Search email/name/role...">
+                            </div>
+                            <select class="settings-filter" id="userStatusFilter" aria-label="Filter accounts by status">
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="all">All</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" id="refreshUsersBtn">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="table" id="usersTable">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Name</th>
+                                    <th>Role</th>
+                                    <th>Staff ID</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="6" class="loading-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
         </div>
@@ -198,6 +250,7 @@
                         <option value="service">Service</option>
                         <option value="billing">Billing</option>
                         <option value="collection">Collection</option>
+                        <option value="hr">HR</option>
                         <option value="technician">Technician</option>
                         <option value="messenger">Messenger</option>
                         <option value="admin">Admin</option>
@@ -207,7 +260,7 @@
                     <span>Staff ID (tbl_employee.id)</span>
                     <input type="number" id="userStaffId" placeholder="e.g. 253">
                 </label>
-                <label class="marga-field marga-field-full">
+                <label class="marga-field marga-field-full" id="userPasswordField">
                     <span>Temporary Password</span>
                     <input type="text" id="userPassword" placeholder="Admin assigns password">
                     <div class="ops-subtext">Passwords are stored as PBKDF2 hash in Firestore. Users cannot change password yet.</div>
@@ -227,10 +280,93 @@
         </div>
     </div>
 
+    <div class="overlay" id="employeeModalOverlay"></div>
+    <div class="marga-modal" id="employeeModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="marga-modal-header">
+            <div>
+                <h2 id="employeeModalTitle">Employee</h2>
+                <p id="employeeModalSubtitle">Mark staff active/inactive and link a login account.</p>
+            </div>
+            <button class="panel-close" id="employeeModalCloseBtn" type="button" aria-label="Close employee modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="marga-modal-body">
+            <div class="marga-form-grid">
+                <label class="marga-field">
+                    <span>Employee ID</span>
+                    <input type="text" id="employeeId" disabled>
+                </label>
+                <label class="marga-field">
+                    <span>Position</span>
+                    <input type="text" id="employeePosition" disabled>
+                </label>
+                <label class="marga-field">
+                    <span>Nickname</span>
+                    <input type="text" id="employeeNickname" disabled>
+                </label>
+                <label class="marga-field">
+                    <span>Contact #</span>
+                    <input type="text" id="employeeContact" disabled>
+                </label>
+                <label class="marga-field marga-field-full">
+                    <span>Full Name</span>
+                    <input type="text" id="employeeFullName" disabled>
+                </label>
+                <label class="marga-field marga-field-full">
+                    <span>Employee Status</span>
+                    <select id="employeeActive">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </label>
+
+                <div class="marga-field marga-field-full settings-divider">
+                    <span>Login Account</span>
+                    <div class="ops-subtext">Optional. Link this employee to an email login (used by dashboard / field app).</div>
+                </div>
+
+                <label class="marga-field marga-field-full">
+                    <span>Email</span>
+                    <input type="email" id="employeeEmail" placeholder="name@company.com">
+                </label>
+                <label class="marga-field">
+                    <span>Role</span>
+                    <select id="employeeRole">
+                        <option value="viewer">Viewer</option>
+                        <option value="service">Service</option>
+                        <option value="billing">Billing</option>
+                        <option value="collection">Collection</option>
+                        <option value="hr">HR</option>
+                        <option value="technician">Technician</option>
+                        <option value="messenger">Messenger</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </label>
+                <label class="marga-field">
+                    <span>Account Status</span>
+                    <select id="employeeAccountActive">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </label>
+                <label class="marga-field marga-field-full" id="employeePasswordField">
+                    <span>Temporary Password (Admin Only)</span>
+                    <input type="text" id="employeePassword" placeholder="Admin assigns password">
+                </label>
+            </div>
+        </div>
+        <div class="marga-modal-footer">
+            <button type="button" class="btn btn-secondary" id="employeeModalCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="employeeModalSaveBtn">Save</button>
+        </div>
+    </div>
+
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="js/settings.js"></script>
 </body>
 </html>
-

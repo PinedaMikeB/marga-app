@@ -10,6 +10,7 @@ const MargaAuth = {
         BILLING: 'billing',
         COLLECTION: 'collection',
         SERVICE: 'service',
+        HR: 'hr',
         TECHNICIAN: 'technician',
         MESSENGER: 'messenger',
         VIEWER: 'viewer'
@@ -21,6 +22,7 @@ const MargaAuth = {
         billing: ['customers', 'billing', 'reports'],
         collection: ['customers', 'collections', 'reports'],
         service: ['customers', 'service', 'inventory', 'field'],
+        hr: ['hr', 'settings'],
         technician: ['field'],
         messenger: ['field'],
         viewer: ['customers', 'reports']
