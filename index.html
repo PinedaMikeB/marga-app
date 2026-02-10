@@ -306,13 +306,13 @@
 
             <form id="loginForm" onsubmit="handleLogin(event)">
                 <div class="form-group">
-                    <label class="form-label">Username</label>
+                    <label class="form-label">Email</label>
                     <div class="input-icon-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
                             <circle cx="12" cy="7" r="4"/>
                         </svg>
-                        <input type="text" class="form-input" id="username" placeholder="Enter your username" required>
+                        <input type="text" class="form-input" id="username" placeholder="name@company.com" required>
                     </div>
                 </div>
 
@@ -370,8 +370,13 @@
                 const result = await MargaAuth.login(username, password, remember);
                 
                 if (result.success) {
-                    // Redirect to dashboard
-                    window.location.href = 'dashboard.html';
+                    // Redirect based on role
+                    const role = result.user?.role || 'viewer';
+                    if (role === 'technician' || role === 'messenger') {
+                        window.location.href = 'field/index.html';
+                    } else {
+                        window.location.href = 'dashboard.html';
+                    }
                 } else {
                     errorText.textContent = result.message || 'Invalid credentials';
                     errorDiv.classList.add('show');
@@ -389,7 +394,13 @@
         // Check if already logged in
         document.addEventListener('DOMContentLoaded', () => {
             if (MargaAuth.isLoggedIn()) {
-                window.location.href = 'dashboard.html';
+                const user = MargaAuth.getUser();
+                const role = user?.role || 'viewer';
+                if (role === 'technician' || role === 'messenger') {
+                    window.location.href = 'field/index.html';
+                } else {
+                    window.location.href = 'dashboard.html';
+                }
             }
         });
     </script>

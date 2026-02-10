@@ -10,15 +10,19 @@ const MargaAuth = {
         BILLING: 'billing',
         COLLECTION: 'collection',
         SERVICE: 'service',
+        TECHNICIAN: 'technician',
+        MESSENGER: 'messenger',
         VIEWER: 'viewer'
     },
 
     // Module permissions per role
     PERMISSIONS: {
-        admin: ['customers', 'billing', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings'],
+        admin: ['customers', 'billing', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field'],
         billing: ['customers', 'billing', 'reports'],
         collection: ['customers', 'collections', 'reports'],
-        service: ['customers', 'service', 'inventory'],
+        service: ['customers', 'service', 'inventory', 'field'],
+        technician: ['field'],
+        messenger: ['field'],
         viewer: ['customers', 'reports']
     },
 
@@ -46,38 +50,29 @@ const MargaAuth = {
      */
     async login(username, password, remember = false) {
         try {
-            // Fetch users from Firebase
-            const response = await fetch(
-                `${FIREBASE_CONFIG.baseUrl}/marga_users?key=${FIREBASE_CONFIG.apiKey}`
-            );
-            
-            if (!response.ok) {
-                // If marga_users collection doesn't exist, use default admin
-                console.log('Users collection not found, using default admin');
-                return this.checkDefaultAdmin(username, password, remember);
+            const ident = String(username || '').trim();
+            if (!ident) return { success: false, message: 'Email is required.' };
+
+            // Backward-compatible: allow default admin even if Firestore is misconfigured.
+            if (this.checkDefaultAdmin(ident, password, remember).success) {
+                return this.checkDefaultAdmin(ident, password, remember);
             }
 
-            const data = await response.json();
-            
-            if (!data.documents || data.documents.length === 0) {
-                return this.checkDefaultAdmin(username, password, remember);
-            }
+            const user = await this.findUserByEmailOrUsername(ident);
+            if (!user) return { success: false, message: 'Invalid email or password' };
+            if (user.active === false) return { success: false, message: 'Account is inactive' };
 
-            // Find matching user
-            for (const doc of data.documents) {
-                const user = this.parseFirestoreDoc(doc);
-                if (user.username === username && user.password === password && user.active !== false) {
-                    return this.setSession({
-                        id: user._docId,
-                        username: user.username,
-                        name: user.name || user.username,
-                        role: user.role || 'viewer',
-                        email: user.email || ''
-                    }, remember);
-                }
-            }
+            const ok = await this.verifyPassword(user, password);
+            if (!ok) return { success: false, message: 'Invalid email or password' };
 
-            return { success: false, message: 'Invalid username or password' };
+            return this.setSession({
+                id: user._docId,
+                username: user.username || user.email || ident,
+                name: user.name || user.username || user.email || ident,
+                role: user.role || 'viewer',
+                email: user.email || '',
+                staff_id: user.staff_id || user.staffId || null
+            }, remember);
 
         } catch (error) {
             console.error('Login error:', error);
@@ -120,7 +115,7 @@ const MargaAuth = {
         this.currentUser = null;
         localStorage.removeItem('marga_user');
         sessionStorage.removeItem('marga_user');
-        window.location.href = '/index.html';
+        window.location.href = this.buildAppUrl('index.html');
     },
 
     /**
@@ -172,7 +167,7 @@ const MargaAuth = {
      */
     requireAuth() {
         if (!this.isLoggedIn()) {
-            window.location.href = '/index.html';
+            window.location.href = this.buildAppUrl('index.html');
             return false;
         }
         return true;
@@ -185,7 +180,7 @@ const MargaAuth = {
         if (!this.requireAuth()) return false;
         if (!this.hasAccess(module)) {
             alert('You do not have permission to access this module.');
-            window.location.href = '/dashboard.html';
+            window.location.href = this.buildAppUrl('dashboard.html');
             return false;
         }
         return true;
@@ -208,6 +203,123 @@ const MargaAuth = {
         }
         return result;
     }
+};
+
+MargaAuth.getAppBasePath = function getAppBasePath() {
+    // Supports both file:// local testing and hosted environments.
+    const path = window.location.pathname || '/';
+    const marker = '/Marga-App/';
+    const idx = path.indexOf(marker);
+
+    if (window.location.protocol === 'file:' && idx !== -1) {
+        return path.slice(0, idx + marker.length);
+    }
+    if (window.location.protocol === 'file:') {
+        // Best-effort: use current directory.
+        return path.replace(/\/[^/]*$/, '/');
+    }
+    return '/';
+};
+
+MargaAuth.buildAppUrl = function buildAppUrl(relativePath) {
+    const base = this.getAppBasePath();
+    const rel = String(relativePath || '').replace(/^\/+/, '');
+    if (base.endsWith('/')) return base + rel;
+    return `${base}/${rel}`;
+};
+
+/**
+ * Password hashing helpers (PBKDF2-SHA256).
+ * This is not as strong as a server-side auth system, but it avoids storing plaintext passwords in Firestore.
+ */
+MargaAuth.pbkdf2 = async function pbkdf2(password, saltBytes, iterations) {
+    if (!crypto?.subtle) {
+        throw new Error('WebCrypto is unavailable in this context. Use HTTPS/localhost, or fallback to legacy plaintext passwords.');
+    }
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(password),
+        { name: 'PBKDF2' },
+        false,
+        ['deriveBits']
+    );
+    const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations },
+        keyMaterial,
+        256
+    );
+    return new Uint8Array(bits);
+};
+
+MargaAuth.bytesToBase64 = function bytesToBase64(bytes) {
+    let binary = '';
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
+    return btoa(binary);
+};
+
+MargaAuth.base64ToBytes = function base64ToBytes(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+};
+
+MargaAuth.canHashPasswords = function canHashPasswords() {
+    return Boolean(crypto?.subtle);
+};
+
+MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(ident) {
+    const email = String(ident || '').trim().toLowerCase();
+    const run = async (fieldPath, value) => {
+        const body = {
+            structuredQuery: {
+                from: [{ collectionId: 'marga_users' }],
+                where: {
+                    fieldFilter: {
+                        field: { fieldPath },
+                        op: 'EQUAL',
+                        value: { stringValue: String(value ?? '') }
+                    }
+                },
+                limit: 1
+            }
+        };
+
+        const response = await fetch(
+            `${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        );
+        const payload = await response.json();
+        if (!response.ok || (Array.isArray(payload) && payload[0]?.error)) return null;
+        const doc = Array.isArray(payload) ? payload.map((row) => row.document).filter(Boolean)[0] : null;
+        return doc ? this.parseFirestoreDoc(doc) : null;
+    };
+
+    return (await run('email', email)) || (await run('username', ident));
+};
+
+MargaAuth.verifyPassword = async function verifyPassword(user, password) {
+    const provided = String(password || '');
+
+    // Legacy fallback (plaintext). Prefer migrating to password_hash.
+    if (user.password && !user.password_hash) {
+        return String(user.password) === provided;
+    }
+
+    const hashB64 = String(user.password_hash || '').trim();
+    const saltB64 = String(user.password_salt || '').trim();
+    const iterations = Number(user.password_iterations || 120000);
+    if (!hashB64 || !saltB64 || !Number.isFinite(iterations) || iterations < 20000) return false;
+
+    if (!this.canHashPasswords()) {
+        // Cannot verify PBKDF2 on insecure contexts (e.g. file://). If legacy password exists, use it.
+        return Boolean(user.password) && String(user.password) === provided;
+    }
+
+    const derived = await this.pbkdf2(provided, this.base64ToBytes(saltB64), iterations);
+    const derivedB64 = this.bytesToBase64(derived);
+    return derivedB64 === hashB64;
 };
 
 // Auto-initialize

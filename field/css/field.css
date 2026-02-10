@@ -1,0 +1,182 @@
+.field-shell {
+    min-height: 100vh;
+    padding: 1rem 1rem 2rem;
+    max-width: 1080px;
+    margin: 0 auto;
+}
+
+.field-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.2rem;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 20px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.field-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.field-badge {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 800;
+    color: white;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+}
+
+.field-title h1 {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.25rem;
+    color: #1a365d;
+}
+
+.field-title p {
+    margin: 0.15rem 0 0;
+    font-size: 0.82rem;
+    color: #5a6f88;
+}
+
+.field-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.field-kpis {
+    margin-top: 1rem;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.field-kpi {
+    border-radius: 16px;
+    padding: 0.85rem 1rem;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.55));
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow: 0 4px 18px rgba(49, 130, 206, 0.07);
+}
+
+.field-kpi .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #587090;
+    font-weight: 800;
+}
+
+.field-kpi .value {
+    margin-top: 0.25rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #1a365d;
+}
+
+.field-card {
+    margin-top: 1rem;
+}
+
+.field-list {
+    padding: 0.75rem 1rem 1rem;
+    display: grid;
+    gap: 0.75rem;
+}
+
+.field-task {
+    border-radius: 18px;
+    border: 1px solid rgba(226, 232, 240, 0.7);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 10px 28px rgba(49, 130, 206, 0.08);
+    padding: 0.9rem 1rem;
+}
+
+.field-task-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.field-task h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #1a365d;
+}
+
+.field-task .meta {
+    margin-top: 0.25rem;
+    font-size: 0.82rem;
+    color: #4b5563;
+}
+
+.field-task .sub {
+    margin-top: 0.25rem;
+    font-size: 0.78rem;
+    color: #64748b;
+}
+
+.field-task-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.field-pill-row {
+    margin-top: 0.55rem;
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+
+.field-serial-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.field-serial-row input {
+    flex: 1;
+}
+
+@media (max-width: 980px) {
+    .field-shell {
+        padding: 0.85rem 0.85rem 1.5rem;
+    }
+
+    .field-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .field-actions {
+        justify-content: flex-start;
+    }
+
+    .field-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .field-kpis {
+        grid-template-columns: 1fr;
+    }
+}
+

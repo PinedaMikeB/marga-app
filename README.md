@@ -101,6 +101,11 @@ The app connects to Firebase Firestore. Configuration is in `shared/js/firebase-
 - [ ] Reports module
 - [ ] User management (admin)
 
+## 📚 Project Docs (Canonical)
+- `HANDOFF.md` - what changed recently + what to do next
+- `docs/MASTERPLAN.md` - vision, goals, constraints, migration strategy
+- `docs/CHANGELOG.md` - versioned release notes
+
 ## 📝 License
 
 Proprietary - Marga Enterprises © 2025

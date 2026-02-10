@@ -9,7 +9,6 @@
     <link rel="stylesheet" href="shared/css/dashboard.css">
 </head>
 <body>
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
@@ -30,7 +29,7 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <div class="nav-title">Main Menu</div>
-                
+
                 <a href="dashboard.html" class="nav-item active">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="7" height="7"/>
@@ -66,7 +65,7 @@
                     <span>Collections</span>
                 </a>
 
-                <a href="service/" class="nav-item" data-module="service">
+                <a href="service/index.html" class="nav-item" data-module="service">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
                     </svg>
@@ -105,12 +104,22 @@
             <div class="nav-section">
                 <div class="nav-title">System</div>
 
-                <a href="settings/" class="nav-item" data-module="settings">
+                <a href="settings/index.html" class="nav-item" data-module="settings">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"/>
                         <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
                     </svg>
                     <span>Settings</span>
+                </a>
+
+                <a href="sync/index.html" class="nav-item" data-module="sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.5 9a9 9 0 0114.13-3.36L23 10"/>
+                        <path d="M20.5 15a9 9 0 01-14.13 3.36L1 14"/>
+                    </svg>
+                    <span>Sync Updater</span>
                 </a>
             </div>
         </nav>
@@ -131,9 +140,7 @@
         </div>
     </aside>
 
-    <!-- Main Content -->
     <main class="main-content">
-        <!-- Header -->
         <header class="main-header">
             <button class="menu-toggle" onclick="toggleSidebar()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -141,8 +148,8 @@
                 </svg>
             </button>
             <div class="header-title">
-                <h1>Dashboard</h1>
-                <p>Welcome back! Here's your business overview.</p>
+                <h1 id="dashboardTitle">Dashboard</h1>
+                <p id="dashboardSubtitle">Welcome back! Here's your business overview.</p>
             </div>
             <div class="header-actions">
                 <div class="search-box">
@@ -155,134 +162,170 @@
             </div>
         </header>
 
-        <!-- Dashboard Content -->
         <div class="dashboard-content">
-            <!-- Stats Cards -->
-            <div class="stats-grid">
-                <div class="stat-card animate-in" style="animation-delay: 0.1s">
-                    <div class="stat-icon blue">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                            <circle cx="9" cy="7" r="4"/>
-                        </svg>
+            <section id="adminAnalyticsSection">
+                <div class="section-header">
+                    <h2>Admin Analytics</h2>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card animate-in" style="animation-delay: 0.1s">
+                        <div class="stat-icon blue">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statCustomers">-</div>
+                            <div class="stat-label">Total Customers</div>
+                        </div>
                     </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statCustomers">-</div>
-                        <div class="stat-label">Total Customers</div>
+                    <div class="stat-card animate-in" style="animation-delay: 0.2s">
+                        <div class="stat-icon green">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                                <path d="M8 21h8M12 17v4"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statMachines">-</div>
+                            <div class="stat-label">Machines Deployed</div>
+                        </div>
+                    </div>
+                    <div class="stat-card animate-in" style="animation-delay: 0.3s">
+                        <div class="stat-icon amber">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <path d="M14 2v6h6"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statContracts">-</div>
+                            <div class="stat-label">Active Contracts</div>
+                        </div>
+                    </div>
+                    <div class="stat-card animate-in" style="animation-delay: 0.4s">
+                        <div class="stat-icon cyan">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="1" y="4" width="22" height="16" rx="2"/>
+                                <path d="M1 10h22"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statPending">-</div>
+                            <div class="stat-label">Pending Collections</div>
+                        </div>
                     </div>
                 </div>
-
-                <div class="stat-card animate-in" style="animation-delay: 0.2s">
-                    <div class="stat-icon green">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="2" y="3" width="20" height="14" rx="2"/>
-                            <path d="M8 21h8M12 17v4"/>
-                        </svg>
-                    </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statMachines">-</div>
-                        <div class="stat-label">Machines Deployed</div>
+                <div class="content-card dashboard-admin-note">
+                    <div class="card-header">
+                        <h3>Operations Control Center</h3>
+                        <a href="service/index.html" class="btn btn-secondary btn-sm">Open Service Dispatch Board</a>
                     </div>
                 </div>
+            </section>
 
-                <div class="stat-card animate-in" style="animation-delay: 0.3s">
-                    <div class="stat-icon amber">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6"/>
-                        </svg>
+            <section id="workspaceSection">
+                <div class="section-header">
+                    <h2 id="workspaceTitle">Department Workspace</h2>
+                </div>
+                <div class="content-card">
+                    <div class="card-header">
+                        <h3 id="workspaceSubtitle">Choose your module to manage today's tasks.</h3>
                     </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statContracts">-</div>
-                        <div class="stat-label">Active Contracts</div>
+                    <div class="department-grid" id="departmentTiles"></div>
+                </div>
+            </section>
+
+            <section id="quickActionsSection">
+                <div class="section-header">
+                    <h2>Quick Actions</h2>
+                </div>
+                <div class="quick-actions" id="quickActionsGrid">
+                    <a href="customers.html" class="action-card" data-module="customers">
+                        <div class="action-icon blue">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                                <circle cx="8.5" cy="7" r="4"/>
+                                <path d="M20 8v6M23 11h-6"/>
+                            </svg>
+                        </div>
+                        <span>Add Customer</span>
+                    </a>
+
+                    <a href="billing/" class="action-card" data-module="billing">
+                        <div class="action-icon green">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <path d="M14 2v6h6M12 18v-6M9 15h6"/>
+                            </svg>
+                        </div>
+                        <span>New Invoice</span>
+                    </a>
+
+                    <a href="collections.html" class="action-card" data-module="collections">
+                        <div class="action-icon amber">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M2 12h20"/>
+                            </svg>
+                        </div>
+                        <span>Record Payment</span>
+                    </a>
+
+                    <a href="service/index.html" class="action-card" data-module="service">
+                        <div class="action-icon red">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                            </svg>
+                        </div>
+                        <span>Service Dispatch</span>
+                    </a>
+                </div>
+            </section>
+
+            <section id="recentActivitySection">
+                <div class="section-header">
+                    <h2>Recent Activity</h2>
+                    <a href="reports/" class="view-all">View All</a>
+                </div>
+                <div class="activity-card">
+                    <div class="activity-list" id="activityList">
+                        <div class="activity-loading">
+                            <div class="spinner"></div>
+                            <span>Loading recent activity...</span>
+                        </div>
                     </div>
                 </div>
-
-                <div class="stat-card animate-in" style="animation-delay: 0.4s">
-                    <div class="stat-icon cyan">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="1" y="4" width="22" height="16" rx="2"/>
-                            <path d="M1 10h22"/>
-                        </svg>
-                    </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statPending">-</div>
-                        <div class="stat-label">Pending Collections</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Actions -->
-            <div class="section-header">
-                <h2>Quick Actions</h2>
-            </div>
-            <div class="quick-actions">
-                <a href="customers.html" class="action-card" data-module="customers">
-                    <div class="action-icon blue">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                            <circle cx="8.5" cy="7" r="4"/>
-                            <path d="M20 8v6M23 11h-6"/>
-                        </svg>
-                    </div>
-                    <span>Add Customer</span>
-                </a>
-
-                <a href="billing/" class="action-card" data-module="billing">
-                    <div class="action-icon green">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6M12 18v-6M9 15h6"/>
-                        </svg>
-                    </div>
-                    <span>New Invoice</span>
-                </a>
-
-                <a href="collections.html" class="action-card" data-module="collections">
-                    <div class="action-icon amber">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2v20M2 12h20"/>
-                        </svg>
-                    </div>
-                    <span>Record Payment</span>
-                </a>
-
-                <a href="service/" class="action-card" data-module="service">
-                    <div class="action-icon red">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
-                        </svg>
-                    </div>
-                    <span>Service Request</span>
-                </a>
-            </div>
-
-            <!-- Recent Activity -->
-            <div class="section-header">
-                <h2>Recent Activity</h2>
-                <a href="reports/" class="view-all">View All</a>
-            </div>
-            <div class="activity-card">
-                <div class="activity-list" id="activityList">
-                    <div class="activity-loading">
-                        <div class="spinner"></div>
-                        <span>Loading recent activity...</span>
-                    </div>
-                </div>
-            </div>
+            </section>
         </div>
     </main>
 
-    <script src="shared/js/firebase-config.js"></script>
-    <script src="shared/js/auth.js"></script>
-    <script src="shared/js/utils.js"></script>
-    <script>
-        // Check authentication
-        if (!MargaAuth.requireAuth()) {
-            // Will redirect to login
-        }
+	    <script src="shared/js/firebase-config.js"></script>
+	    <script src="shared/js/auth.js"></script>
+	    <script src="shared/js/utils.js"></script>
+	    <script>
+	        if (!MargaAuth.requireAuth()) {}
 
-        // Update user info
+	        // Field-only roles should never land on the admin/department dashboard.
+	        // They are redirected to the Field App home.
+	        const bootUser = MargaAuth.getUser();
+	        const bootRole = bootUser?.role || 'viewer';
+	        if (bootRole === 'technician' || bootRole === 'messenger') {
+	            window.location.href = MargaAuth.buildAppUrl('field/index.html');
+	        }
+
+	        const MODULE_TILE_CONFIG = {
+	            customers: { label: 'Customers', href: 'customers.html', note: 'Profiles, branches, machines' },
+	            billing: { label: 'Billing', href: 'billing/', note: 'Invoices, billing runs, due schedules' },
+	            collections: { label: 'Collections', href: 'collections.html', note: 'Collections, ORs, check follow-up' },
+	            service: { label: 'Service Dispatch', href: 'service/index.html', note: 'Task queue, assignment, transfer' },
+	            inventory: { label: 'Inventory', href: 'inventory/', note: 'Parts, toner, stock movements' },
+	            hr: { label: 'Human Resource', href: 'hr/', note: 'Employees, position mapping' },
+	            reports: { label: 'Reports', href: 'reports/', note: 'Daily and historical reports' },
+	            settings: { label: 'Settings', href: 'settings/index.html', note: 'Users, permissions, app config' },
+	            sync: { label: 'Sync Updater', href: 'sync/index.html', note: 'SQL to Firebase updates' }
+	        };
+
         document.addEventListener('DOMContentLoaded', () => {
             const user = MargaAuth.getUser();
             if (user) {
@@ -291,10 +334,25 @@
                 document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
             }
 
-            // Check module access and disable unauthorized links
-            document.querySelectorAll('[data-module]').forEach(el => {
+            applyModulePermissions();
+            renderDepartmentTiles();
+            applyRoleLayout(user?.role || 'viewer');
+            loadDashboardData(user?.role || 'viewer');
+        });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+        function applyModulePermissions() {
+            document.querySelectorAll('[data-module]').forEach((el) => {
                 const module = el.dataset.module;
+                if (!module) return;
                 if (!MargaAuth.hasAccess(module)) {
+                    if (el.classList.contains('action-card') || el.classList.contains('department-tile')) {
+                        el.style.display = 'none';
+                        return;
+                    }
                     el.classList.add('disabled');
                     el.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -302,44 +360,41 @@
                     });
                 }
             });
-
-            // Load dashboard data
-            loadDashboardData();
-        });
-
-        // Toggle sidebar on mobile
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
         }
 
-        // Load dashboard statistics
-        async function loadDashboardData() {
-            try {
-                const baseUrl = FIREBASE_CONFIG.baseUrl;
-                const apiKey = FIREBASE_CONFIG.apiKey;
+        function applyRoleLayout(role) {
+            const isAdmin = role === 'admin';
+            const adminSection = document.getElementById('adminAnalyticsSection');
+            const recentActivity = document.getElementById('recentActivitySection');
+            const title = document.getElementById('dashboardTitle');
+            const subtitle = document.getElementById('dashboardSubtitle');
 
-                // Fetch counts (simplified - just get first page)
-                const [companies, machines, contracts] = await Promise.all([
-                    fetch(`${baseUrl}/tbl_companylist?pageSize=1&key=${apiKey}`).then(r => r.json()),
-                    fetch(`${baseUrl}/tbl_machine?pageSize=1&key=${apiKey}`).then(r => r.json()),
-                    fetch(`${baseUrl}/tbl_contractmain?pageSize=1&key=${apiKey}`).then(r => r.json())
-                ]);
+            adminSection.style.display = isAdmin ? '' : 'none';
+            recentActivity.style.display = isAdmin ? '' : 'none';
 
-                // For now, show placeholder counts (would need server-side aggregation for exact counts)
+            if (isAdmin) {
+                title.textContent = 'Dashboard';
+                subtitle.textContent = 'Administrator overview across all departments.';
+                document.getElementById('workspaceTitle').textContent = 'Department Workspace';
+                document.getElementById('workspaceSubtitle').textContent = 'Use role-based modules below. Admin can open all departments.';
+            } else {
+                title.textContent = 'Workspace';
+                subtitle.textContent = 'Department view only. Use your assigned module below.';
+                document.getElementById('workspaceTitle').textContent = 'My Department';
+                document.getElementById('workspaceSubtitle').textContent = 'You only see the modules allowed for your role.';
+            }
+        }
+
+        function loadDashboardData(role) {
+            if (role === 'admin') {
                 animateNumber('statCustomers', 1143);
                 animateNumber('statMachines', 3602);
                 animateNumber('statContracts', 4600);
                 animateNumber('statPending', 55);
-
-                // Load recent activity
-                loadRecentActivity();
-
-            } catch (error) {
-                console.error('Error loading dashboard data:', error);
             }
+            loadRecentActivity(role);
         }
 
-        // Animate number counting
         function animateNumber(elementId, targetValue) {
             const element = document.getElementById(elementId);
             if (!element) return;
@@ -359,50 +414,64 @@
             requestAnimationFrame(animate);
         }
 
-        // Load recent activity
-        function loadRecentActivity() {
+        function renderDepartmentTiles() {
+            const container = document.getElementById('departmentTiles');
+            const modules = MargaAuth.getAccessibleModules();
+
+            container.innerHTML = modules
+                .filter((module) => MODULE_TILE_CONFIG[module])
+                .map((module) => {
+                    const tile = MODULE_TILE_CONFIG[module];
+                    return `
+                        <a href="${tile.href}" class="department-tile" data-module="${module}">
+                            <div class="department-name">${MargaUtils.escapeHtml(tile.label)}</div>
+                            <div class="department-note">${MargaUtils.escapeHtml(tile.note)}</div>
+                        </a>
+                    `;
+                })
+                .join('');
+
+            if (!container.innerHTML.trim()) {
+                container.innerHTML = '<div class="department-empty">No department modules are assigned to your account.</div>';
+            }
+        }
+
+        function loadRecentActivity(role) {
             const activityList = document.getElementById('activityList');
-            
-            // Placeholder activity items
+            if (!activityList) return;
+
+            if (role !== 'admin') {
+                activityList.innerHTML = '';
+                return;
+            }
+
             activityList.innerHTML = `
                 <div class="activity-item">
                     <div class="activity-icon blue">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                            <circle cx="8.5" cy="7" r="4"/>
+                            <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
                         </svg>
                     </div>
                     <div class="activity-info">
-                        <div class="activity-text">New customer <strong>VVZ Prime Concepts Inc</strong> added</div>
-                        <div class="activity-time">2 hours ago</div>
+                        <div class="activity-text">Unified operations and task queue are now managed in <strong>Service Dispatch Board</strong>.</div>
+                        <div class="activity-time">Updated today</div>
                     </div>
                 </div>
                 <div class="activity-item">
                     <div class="activity-icon green">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="1" y="4" width="22" height="16" rx="2"/>
-                            <path d="M1 10h22"/>
+                            <path d="M12 2v20M2 12h20"/>
                         </svg>
                     </div>
                     <div class="activity-info">
-                        <div class="activity-text">Payment received from <strong>China Bank Savings</strong></div>
-                        <div class="activity-time">5 hours ago</div>
-                    </div>
-                </div>
-                <div class="activity-item">
-                    <div class="activity-icon amber">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6"/>
-                        </svg>
-                    </div>
-                    <div class="activity-info">
-                        <div class="activity-text">Invoice #127476 created for <strong>Manila RiverCity</strong></div>
-                        <div class="activity-time">Yesterday</div>
+                        <div class="activity-text">Non-admin accounts now see only their department workspace and allowed modules.</div>
+                        <div class="activity-time">Access policy applied</div>
                     </div>
                 </div>
             `;
         }
+
+        window.toggleSidebar = toggleSidebar;
     </script>
 </body>
 </html>

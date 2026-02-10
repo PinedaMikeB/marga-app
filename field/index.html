@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Field App</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/field.css">
+</head>
+<body>
+    <main class="field-shell">
+        <header class="field-header">
+            <div class="field-title">
+                <div class="field-brand">
+                    <div class="field-badge">M</div>
+                    <div>
+                        <h1>My Schedule</h1>
+                        <p id="fieldSubtitle">Loading...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="field-actions">
+                <input type="date" id="fieldDate" class="ops-date-input">
+                <label class="ops-toggle">
+                    <input type="checkbox" id="fieldCarryover" checked>
+                    <span>Carryover</span>
+                </label>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldRefresh">Refresh</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldLogout">Logout</button>
+            </div>
+        </header>
+
+        <section class="field-kpis" id="fieldKpis"></section>
+
+        <section class="content-card field-card">
+            <div class="card-header">
+                <h3>Tasks</h3>
+                <div class="card-actions">
+                    <select id="fieldStatusFilter" class="ops-purpose-filter" aria-label="Status filter">
+                        <option value="all">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="carryover">Carryover</option>
+                        <option value="ongoing">Ongoing (Parts)</option>
+                        <option value="closed">Closed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+            </div>
+            <div class="field-list" id="fieldList">
+                <div class="loading-cell">Loading...</div>
+            </div>
+        </section>
+    </main>
+
+    <div class="overlay" id="fieldOverlay"></div>
+    <div class="marga-modal" id="fieldModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="marga-modal-header">
+            <div>
+                <h2 id="fieldModalTitle">Task</h2>
+                <p id="fieldModalSubtitle">-</p>
+            </div>
+            <button class="panel-close" id="fieldModalClose" type="button" aria-label="Close modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="marga-modal-body">
+            <div class="marga-form-grid">
+                <label class="marga-field marga-field-full">
+                    <span>Notes</span>
+                    <textarea id="fieldCloseNotes" rows="3" placeholder="Work done, findings, parts needed, next steps..."></textarea>
+                </label>
+                <label class="marga-field">
+                    <span>Customer PIN (optional)</span>
+                    <input type="password" id="fieldClosePin" placeholder="Enter PIN">
+                </label>
+                <div class="marga-field">
+                    <span>Serial Correction</span>
+                    <div class="field-serial-row">
+                        <input type="text" id="fieldSerialInput" placeholder="Correct machine serial">
+                        <button type="button" class="btn btn-secondary btn-sm" id="fieldSaveSerialBtn">Save</button>
+                    </div>
+                    <div class="ops-subtext" id="fieldSerialHint"></div>
+                </div>
+            </div>
+        </div>
+        <div class="marga-modal-footer">
+            <button type="button" class="btn btn-secondary" id="fieldModalCancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="fieldModalCloseTask">Close Task</button>
+        </div>
+    </div>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="js/field.js"></script>
+</body>
+</html>
+

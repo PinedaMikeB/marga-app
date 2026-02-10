@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Sync Updater</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/sync.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                <a href="../dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../customers.html" class="nav-item" data-module="customers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    </svg>
+                    <span>Customers</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+                <a href="index.html" class="nav-item active" data-module="sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.5 9a9 9 0 0114.13-3.36L23 10"/>
+                        <path d="M20.5 15a9 9 0 01-14.13 3.36L1 14"/>
+                    </svg>
+                    <span>Sync Updater</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="main-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <h1>SQL to Firebase Sync Updater</h1>
+                <p>Load a new SQL dump and sync only records newer than your saved watermark.</p>
+            </div>
+            <div class="header-actions">
+                <div class="sync-hint">Runs in your browser. No server required.</div>
+            </div>
+        </header>
+
+        <div class="dashboard-content sync-content">
+            <section class="content-card">
+                <div class="card-header">
+                    <h3>1) Dump File</h3>
+                </div>
+                <div class="card-body grid-two">
+                    <div class="field-block">
+                        <label for="dumpFileInput">SQL Dump File</label>
+                        <input type="file" id="dumpFileInput" accept=".sql,.txt" />
+                        <div class="hint">Choose the latest Workbench export (example: Dump20260210.sql).</div>
+                    </div>
+                    <div class="field-block">
+                        <label for="dumpNoteInput">Optional Note</label>
+                        <input type="text" id="dumpNoteInput" placeholder="Office export by Tech John" />
+                        <div class="hint">Saved in sync state for audit trail.</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="content-card">
+                <div class="card-header">
+                    <h3>2) Modules and Tables</h3>
+                </div>
+                <div class="card-body">
+                    <div class="preset-grid" id="presetGrid"></div>
+                    <div class="field-block custom-block">
+                        <label for="customTablesInput">Custom Tables (comma-separated)</label>
+                        <input type="text" id="customTablesInput" placeholder="tbl_billout, tbl_collection, tbl_dispatchment" />
+                    </div>
+                    <div class="selected-wrap">
+                        <div class="selected-title">Tables to process</div>
+                        <div class="selected-list" id="selectedTablesList"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="content-card">
+                <div class="card-header">
+                    <h3>3) Run Mode</h3>
+                </div>
+                <div class="card-body run-grid">
+                    <label class="toggle">
+                        <input type="checkbox" id="dryRunCheckbox" checked>
+                        <span>Dry Run (analyze only, no write)</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="resetWatermarkCheckbox">
+                        <span>Ignore saved watermark and rescan selected tables</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="processAllTablesCheckbox">
+                        <span>Process all tables found in dump (auto-discover)</span>
+                    </label>
+                    <div class="actions">
+                        <button class="btn btn-primary" id="startSyncBtn">Start Sync</button>
+                        <button class="btn btn-secondary" id="initWatermarkBtn">Initialize Watermarks</button>
+                        <button class="btn btn-secondary" id="clearLogBtn">Clear Log</button>
+                    </div>
+                    <div class="hint">For first-time setup, choose your Dec 29 baseline dump, then click Initialize Watermarks.</div>
+                </div>
+            </section>
+
+            <section class="content-card">
+                <div class="card-header">
+                    <h3>Progress</h3>
+                    <span class="progress-text" id="progressText">Idle</span>
+                </div>
+                <div class="card-body">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-meta" id="progressMeta">No active sync.</div>
+                </div>
+            </section>
+
+            <section class="content-card">
+                <div class="card-header">
+                    <h3>Summary</h3>
+                </div>
+                <div class="table-container">
+                    <table class="table summary-table">
+                        <thead>
+                            <tr>
+                                <th>Table</th>
+                                <th>Last ID (state)</th>
+                                <th>Rows Seen</th>
+                                <th>New Rows</th>
+                                <th>Skipped</th>
+                                <th>Max ID (file)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summaryBody">
+                            <tr><td colspan="6" class="empty-row">Run a sync to view table summary.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="content-card">
+                <div class="card-header">
+                    <h3>Execution Log</h3>
+                </div>
+                <div class="card-body">
+                    <pre id="logOutput" class="log-output">Ready.</pre>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="js/sync.js"></script>
+</body>
+</html>

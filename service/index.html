@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Service Dispatch</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/service.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+
+                <a href="../dashboard.html" class="nav-item" data-module="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+
+                <a href="../customers.html" class="nav-item" data-module="customers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    </svg>
+                    <span>Customers</span>
+                </a>
+
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+
+                <a href="index.html" class="nav-item active" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Management</div>
+
+                <a href="../inventory/" class="nav-item" data-module="inventory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                        <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>
+                    </svg>
+                    <span>Inventory</span>
+                </a>
+
+                <a href="../hr/" class="nav-item" data-module="hr">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="8.5" cy="7" r="4"/>
+                        <path d="M20 8v6M23 11h-6"/>
+                    </svg>
+                    <span>Human Resource</span>
+                </a>
+
+                <a href="../reports/" class="nav-item" data-module="reports">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 20V10M12 20V4M6 20v-6"/>
+                    </svg>
+                    <span>Reports</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+
+                <a href="../sync/index.html" class="nav-item" data-module="sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.5 9a9 9 0 0114.13-3.36L23 10"/>
+                        <path d="M20.5 15a9 9 0 01-14.13 3.36L1 14"/>
+                    </svg>
+                    <span>Sync Updater</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="main-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <h1>Service Dispatch Board</h1>
+                <p id="dispatchHeaderNote">Unified daily schedules for service, collection, billing, delivery, and reading tasks.</p>
+            </div>
+            <div class="header-actions">
+                <div class="data-tag" id="snapshotTag">Live from Firestore</div>
+            </div>
+        </header>
+
+        <div class="dashboard-content service-dispatch-content">
+            <section class="content-card ops-board">
+                <div class="card-header ops-header">
+                    <div>
+                        <h3>Today's Operations</h3>
+                        <p id="opsSubtitle">Loading schedule, assignments, and execution logs...</p>
+                    </div>
+                    <div class="ops-controls">
+                        <select id="opsPurposeFilter" class="ops-purpose-filter">
+                            <option value="all">All Tasks</option>
+                            <option value="1">Billing</option>
+                            <option value="2">Collection</option>
+                            <option value="3">Deliver Ink / Toner</option>
+                            <option value="4">Deliver Cartridge</option>
+                            <option value="5">Service</option>
+                            <option value="6">Sales</option>
+                            <option value="7">Purchasing</option>
+                            <option value="8">Reading</option>
+                            <option value="9">Others</option>
+                        </select>
+                        <select id="opsStatusFilter" class="ops-purpose-filter" aria-label="Status filter">
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="ongoing">Ongoing (Parts)</option>
+                            <option value="carryover">Carryover / Overdue</option>
+                            <option value="closed">Closed</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                        <label class="ops-toggle">
+                            <input type="checkbox" id="opsCarryoverToggle" checked>
+                            <span>Include carryover</span>
+                        </label>
+                        <input type="date" id="opsDateInput" class="ops-date-input">
+                        <button type="button" class="btn btn-primary btn-sm" id="opsNewRequestBtn" style="display:none;">New Request</button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="opsRefreshBtn">Refresh</button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="opsCarryoverBtn" style="display:none;">Batch Carryover</button>
+                    </div>
+                </div>
+                <div class="ops-summary-grid" id="opsSummaryGrid">
+                    <div class="ops-kpi-card">
+                        <div class="ops-kpi-label">Scheduled Tasks</div>
+                        <div class="ops-kpi-value">-</div>
+                    </div>
+                    <div class="ops-kpi-card">
+                        <div class="ops-kpi-label">Assigned Staff</div>
+                        <div class="ops-kpi-value">-</div>
+                    </div>
+                    <div class="ops-kpi-card">
+                        <div class="ops-kpi-label">With Time Logs</div>
+                        <div class="ops-kpi-value">-</div>
+                    </div>
+                    <div class="ops-kpi-card">
+                        <div class="ops-kpi-label">Unmapped Staff IDs</div>
+                        <div class="ops-kpi-value">-</div>
+                    </div>
+                </div>
+                <div class="ops-meta" id="opsMeta">Loading...</div>
+
+                <div class="ops-table-wrap">
+                    <div class="ops-table-title">Staff Workload (Selected Date)</div>
+                    <div class="table-container">
+                        <table class="table" id="opsStaffTable">
+                            <thead>
+                                <tr>
+                                    <th>Assignee</th>
+                                    <th>Role</th>
+                                    <th>Scheduled</th>
+                                    <th>Time Logs</th>
+                                    <th>Main Tasks</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="6" class="loading-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="ops-table-wrap">
+                    <div class="ops-table-title">Task Queue (Selected Date)</div>
+                    <div class="table-container">
+                        <table class="table" id="opsTaskTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Task ID</th>
+                                    <th>Client / Branch</th>
+                                    <th>Area</th>
+                                    <th>Task</th>
+                                    <th>Assignee</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Logs</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="9" class="loading-cell">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div class="overlay" id="opsPanelOverlay"></div>
+    <aside class="slide-panel" id="opsStaffPanel">
+        <div class="panel-header">
+            <button class="panel-close" id="opsPanelCloseBtn" type="button" aria-label="Close panel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+            <h2 id="opsPanelTitle">Assignee Schedules</h2>
+            <p id="opsPanelSubtitle">Loading...</p>
+        </div>
+        <div class="panel-content">
+            <div class="ops-panel-meta" id="opsPanelMeta"></div>
+            <div class="ops-panel-toolbar">
+                <button type="button" class="btn btn-secondary btn-sm" id="opsPanelPrintAllBtn" style="display:none;">Print Day Sheet</button>
+            </div>
+            <div class="table-container ops-panel-table-wrap">
+                <table class="table ops-panel-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Task</th>
+                            <th>Client / Branch</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="opsPanelBody">
+                        <tr><td colspan="4" class="loading-cell">Select staff to view schedules.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </aside>
+
+    <div class="overlay" id="newReqOverlay"></div>
+    <div class="marga-modal" id="newReqModal" role="dialog" aria-modal="true" aria-labelledby="newReqTitle" aria-hidden="true">
+        <div class="marga-modal-header">
+            <div>
+                <h2 id="newReqTitle">New Service Request</h2>
+                <p id="newReqSubtitle">Customer service entry. Saves to dispatch schedule.</p>
+            </div>
+            <button class="panel-close" id="newReqCloseBtn" type="button" aria-label="Close new request">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="marga-modal-body">
+            <div class="marga-form-grid">
+                <label class="marga-field">
+                    <span>Request Origin</span>
+                    <select id="newReqOrigin">
+                        <option value="viber">Viber</option>
+                        <option value="call">Call</option>
+                        <option value="website_chat">Website Chat</option>
+                        <option value="tech_request">Tech Request</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+
+                <label class="marga-field">
+                    <span>Task Type</span>
+                    <select id="newReqPurpose">
+                        <option value="5">Service</option>
+                        <option value="3">Deliver Ink / Toner</option>
+                        <option value="4">Deliver Cartridge</option>
+                        <option value="1">Billing</option>
+                        <option value="2">Collection</option>
+                        <option value="8">Reading</option>
+                        <option value="9">Others</option>
+                    </select>
+                </label>
+
+                <label class="marga-field">
+                    <span>Schedule Date</span>
+                    <input type="date" id="newReqDate">
+                </label>
+
+                <label class="marga-field">
+                    <span>Schedule Time</span>
+                    <input type="time" id="newReqTime" value="08:00">
+                </label>
+
+                <label class="marga-field marga-field-full">
+                    <span>Company</span>
+                    <input type="text" id="newReqCompanySearch" placeholder="Search company...">
+                    <select id="newReqCompany"></select>
+                </label>
+
+                <label class="marga-field marga-field-full">
+                    <span>Branch</span>
+                    <input type="text" id="newReqBranchSearch" placeholder="Search branch...">
+                    <select id="newReqBranch"></select>
+                </label>
+
+                <label class="marga-field">
+                    <span>Caller / Contact</span>
+                    <input type="text" id="newReqCaller" placeholder="Name">
+                </label>
+
+                <label class="marga-field">
+                    <span>Phone</span>
+                    <input type="text" id="newReqPhone" placeholder="09xx...">
+                </label>
+
+                <label class="marga-field marga-field-full">
+                    <span>Trouble / Concern</span>
+                    <select id="newReqTrouble"></select>
+                </label>
+
+                <label class="marga-field marga-field-full">
+                    <span>Assign To (optional)</span>
+                    <select id="newReqAssignee"></select>
+                </label>
+
+                <label class="marga-field marga-field-full">
+                    <span>Remarks</span>
+                    <textarea id="newReqRemarks" rows="3" placeholder="Problem description, items, notes..."></textarea>
+                </label>
+            </div>
+        </div>
+        <div class="marga-modal-footer">
+            <button type="button" class="btn btn-secondary" id="newReqCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="newReqSaveBtn">Save Request</button>
+        </div>
+    </div>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="js/dispatch-board.js"></script>
+</body>
+</html>

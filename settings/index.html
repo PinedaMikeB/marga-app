@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Settings</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/settings.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                <a href="../dashboard.html" class="nav-item" data-module="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../customers.html" class="nav-item" data-module="customers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    </svg>
+                    <span>Customers</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+                <a href="../field/index.html" class="nav-item" data-module="field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z"/>
+                        <path d="M9 12l2 2 4-4"/>
+                    </svg>
+                    <span>Field App</span>
+                </a>
+                <a href="index.html" class="nav-item active" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+                <a href="../sync/index.html" class="nav-item" data-module="sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.5 9a9 9 0 0114.13-3.36L23 10"/>
+                        <path d="M20.5 15a9 9 0 01-14.13 3.36L1 14"/>
+                    </svg>
+                    <span>Sync Updater</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="main-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <h1>Settings</h1>
+                <p>User management, roles, and access control.</p>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="newUserBtn">New User</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content">
+            <section class="content-card">
+                <div class="card-header settings-header">
+                    <div>
+                        <h3>Users</h3>
+                        <p class="ops-subtext" id="usersMeta">Loading...</p>
+                    </div>
+                    <div class="card-actions settings-actions">
+                        <div class="search-input-wrapper">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="M21 21l-4.35-4.35"/>
+                            </svg>
+                            <input class="search-input" id="userSearch" placeholder="Search email/name/role...">
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="refreshUsersBtn">Refresh</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="table" id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>Staff ID</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="6" class="loading-cell">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div class="overlay" id="userModalOverlay"></div>
+    <div class="marga-modal" id="userModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="marga-modal-header">
+            <div>
+                <h2 id="userModalTitle">New User</h2>
+                <p id="userModalSubtitle">Create or update accounts. Passwords are admin-managed.</p>
+            </div>
+            <button class="panel-close" id="userModalCloseBtn" type="button" aria-label="Close user modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="marga-modal-body">
+            <div class="marga-form-grid">
+                <label class="marga-field marga-field-full">
+                    <span>Email</span>
+                    <input type="email" id="userEmail" placeholder="name@company.com">
+                </label>
+                <label class="marga-field marga-field-full">
+                    <span>Name</span>
+                    <input type="text" id="userNameInput" placeholder="Full name">
+                </label>
+                <label class="marga-field">
+                    <span>Role</span>
+                    <select id="userRoleInput">
+                        <option value="viewer">Viewer</option>
+                        <option value="service">Service</option>
+                        <option value="billing">Billing</option>
+                        <option value="collection">Collection</option>
+                        <option value="technician">Technician</option>
+                        <option value="messenger">Messenger</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </label>
+                <label class="marga-field">
+                    <span>Staff ID (tbl_employee.id)</span>
+                    <input type="number" id="userStaffId" placeholder="e.g. 253">
+                </label>
+                <label class="marga-field marga-field-full">
+                    <span>Temporary Password</span>
+                    <input type="text" id="userPassword" placeholder="Admin assigns password">
+                    <div class="ops-subtext">Passwords are stored as PBKDF2 hash in Firestore. Users cannot change password yet.</div>
+                </label>
+                <label class="marga-field marga-field-full">
+                    <span>Status</span>
+                    <select id="userActive">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+        <div class="marga-modal-footer">
+            <button type="button" class="btn btn-secondary" id="userModalCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="userModalSaveBtn">Save</button>
+        </div>
+    </div>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="js/settings.js"></script>
+</body>
+</html>
+

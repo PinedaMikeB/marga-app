@@ -452,6 +452,192 @@ body::after {
     font-weight: 500;
 }
 
+/* Operations Board */
+.ops-board {
+    margin-bottom: 1.75rem;
+    overflow: hidden;
+}
+
+.ops-header {
+    align-items: flex-start;
+}
+
+.ops-header p {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: #5a6f88;
+}
+
+.ops-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ops-date-input {
+    min-width: 160px;
+    border: 1px solid rgba(187, 212, 237, 0.8);
+    border-radius: 10px;
+    padding: 0.48rem 0.65rem;
+    font-size: 0.85rem;
+    color: #1f3657;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.ops-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.9rem;
+    padding: 0.95rem 1.1rem 0.5rem;
+}
+
+.ops-kpi-card {
+    border-radius: 14px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.5));
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 3px 14px rgba(49, 130, 206, 0.07);
+    padding: 0.75rem 0.95rem;
+}
+
+.ops-kpi-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #587090;
+    font-weight: 700;
+}
+
+.ops-kpi-value {
+    margin-top: 0.22rem;
+    font-size: 1.25rem;
+    color: #1a365d;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+}
+
+.ops-meta {
+    padding: 0.3rem 1.1rem 0.9rem;
+    font-size: 0.75rem;
+    color: #5f7490;
+}
+
+.ops-table-wrap {
+    border-top: 1px solid rgba(226, 232, 240, 0.42);
+}
+
+#opsStaffTable {
+    min-width: 980px;
+}
+
+#opsTaskTable {
+    min-width: 1180px;
+}
+
+#opsStaffTable th:nth-child(5),
+#opsStaffTable td:nth-child(5) {
+    min-width: 320px;
+}
+
+.ops-main-tasks-cell {
+    color: #344861;
+    font-size: 0.86rem;
+}
+
+.ops-staff-action-cell {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.ops-table-title {
+    padding: 0.75rem 1.1rem;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #1f4a7a;
+}
+
+.ops-subtext {
+    margin-top: 0.2rem;
+    font-size: 0.74rem;
+    color: #5f7490;
+}
+
+.ops-role-badge,
+.ops-status-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.2rem 0.58rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.ops-role-badge.role-tech {
+    color: #065f46;
+    background: rgba(16, 185, 129, 0.18);
+}
+
+.ops-role-badge.role-messenger {
+    color: #1e40af;
+    background: rgba(59, 130, 246, 0.18);
+}
+
+.ops-role-badge.role-unknown {
+    color: #7c2d12;
+    background: rgba(251, 191, 36, 0.22);
+}
+
+.ops-status-badge.status-active {
+    color: #065f46;
+    background: rgba(16, 185, 129, 0.18);
+}
+
+.ops-status-badge.status-inactive {
+    color: #9a3412;
+    background: rgba(251, 191, 36, 0.24);
+}
+
+#opsStaffPanel {
+    width: 760px;
+}
+
+.ops-panel-meta {
+    font-size: 0.78rem;
+    color: #5f7490;
+    margin-bottom: 0.45rem;
+}
+
+.ops-panel-toolbar {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 0.8rem;
+}
+
+.ops-panel-table-wrap {
+    border: 1px solid rgba(203, 213, 225, 0.6);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.ops-panel-table .ops-subtext {
+    margin-top: 0.14rem;
+}
+
+.ops-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+}
+
+.ops-row-actions .btn {
+    padding: 0.32rem 0.6rem;
+    font-size: 0.74rem;
+}
+
+.ops-view-btn {
+    white-space: nowrap;
+}
+
 
 /* Section Headers */
 .section-header {
@@ -482,6 +668,52 @@ body::after {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
+    margin-bottom: 1.75rem;
+}
+
+.department-grid {
+    padding: 1rem 1.25rem 1.3rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.department-tile {
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.52));
+    padding: 0.95rem 1rem;
+    color: #1f3657;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 16px rgba(49, 130, 206, 0.07);
+}
+
+.department-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(49, 130, 206, 0.12);
+    border-color: rgba(66, 153, 225, 0.35);
+}
+
+.department-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #1a365d;
+}
+
+.department-note {
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+    color: #4f6785;
+    line-height: 1.35;
+}
+
+.department-empty {
+    padding: 1.3rem;
+    color: #5f7490;
+    font-size: 0.86rem;
+}
+
+.dashboard-admin-note {
     margin-bottom: 1.75rem;
 }
 
@@ -900,7 +1132,7 @@ body::after {
 .slide-panel {
     position: fixed;
     top: 0;
-    right: -500px;
+    right: 0;
     width: 480px;
     max-width: 100%;
     height: 100vh;
@@ -914,11 +1146,12 @@ body::after {
     z-index: 200;
     display: flex;
     flex-direction: column;
-    transition: right 0.3s ease;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
 }
 
 .slide-panel.open {
-    right: 0;
+    transform: translateX(0);
 }
 
 .panel-header {
@@ -1032,6 +1265,14 @@ body::after {
     .quick-actions {
         grid-template-columns: repeat(2, 1fr);
     }
+
+    .department-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ops-summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 @media (max-width: 768px) {
@@ -1058,6 +1299,15 @@ body::after {
         grid-template-columns: 1fr;
     }
 
+    .department-grid {
+        grid-template-columns: 1fr;
+        padding: 0.9rem 1rem 1rem;
+    }
+
+    .ops-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
     .search-box {
         display: none;
     }
@@ -1068,5 +1318,26 @@ body::after {
     
     .main-header {
         padding: 1rem;
+    }
+
+    .ops-header {
+        flex-direction: column;
+        gap: 0.8rem;
+    }
+
+    .ops-controls {
+        width: 100%;
+    }
+
+    .ops-date-input {
+        flex: 1;
+    }
+
+    #opsStaffPanel {
+        width: 100%;
+    }
+
+    .ops-row-actions {
+        justify-content: flex-start;
     }
 }

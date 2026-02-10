@@ -1,9 +1,29 @@
 # MARGA App Development Handoff
 
-## 📅 Last Updated: December 31, 2025, 10:00 AM
+## 📅 Last Updated: February 10, 2026
 
 ## 🎯 Project Overview
 Building a modern web-based enterprise management system for **Marga Enterprises** to replace the legacy VB.NET desktop application. The app manages customers, billing, collections, service, and machine contracts for a printer rental business.
+
+---
+
+## Current Focus
+- User login + role management (email + password) for office + field use.
+- Service Dispatch Board: daily operations view, carryover, monitoring, CSR request entry.
+- Sync Updater: keep Firestore updated from MySQL dumps without re-uploading everything.
+
+## Next Actions
+- Sync missing support tables needed for CSR/dispatch UX (example: `tbl_branchcontact` for contact person/phone).
+- Prioritize user login + role management (admin-managed passwords; no self-service changes yet).
+- Make schedule creation collision-safe (avoid `max(id)+1` collisions when two CSRs create at the same time).
+- Expand “pending monitoring” metrics and drill-down lists (change unit, parts pending, machine delivery, overdue tickets).
+- Tighten role-based visibility so non-admins only see their department/module data.
+
+## Open Questions
+- Which legacy tables are the authoritative “daily sheet” source: `tbl_schedule` vs `tbl_savedscheds` vs `tbl_printedscheds`?
+- How should “customer PIN close” be stored (new Firestore-only fields vs mapped to an existing legacy column)?
+- What is the exact definition of “continuous service / parts pending” in the legacy workflow (which fields/tables represent it)?
+- Attendance module requirements (future): time-in/out, selfie photo, and geolocation validation for office vs client site.
 
 ---
 
@@ -258,6 +278,70 @@ Building a modern web-based enterprise management system for **Marga Enterprises
 | page_rate | float | B&W rate per page |
 | monthly_quota | int | Minimum pages |
 | monthly_rate | float | Fixed monthly fee |
+
+---
+
+## ✅ What's Been Completed (Newer Sessions)
+
+### Session: February 10, 2026
+
+#### 0. User Login + Role Management (Priority)
+- Login now uses **email + password** (see `index.html` + `shared/js/auth.js`).
+- Added roles: `technician` and `messenger` (redirect to Field App).
+- Passwords for `marga_users` are stored as **PBKDF2 hash** (`password_hash`, `password_salt`, `password_iterations`).
+- Admin UI:
+  - `settings/index.html` provides user CRUD (create/edit/activate/deactivate) and password reset.
+  - Users cannot change passwords yet (admin-managed temporary passwords).
+- Note: avoid shared passwords if possible; per-user accounts are required for reliable attendance/audit trails later.
+
+#### 1. Service Dispatch Board (Unified Daily Operations)
+- Page: `service/index.html`
+- Reads unified schedules (service/billing/collection/delivery/reading) from Firestore.
+- Uses **date-range Firestore queries** for accurate date switching (instead of scanning latest N and filtering).
+- Supports **carryover**: includes pending tasks from prior days into the selected date view.
+- Status model:
+  - `Closed` when `tbl_schedule.date_finished != "0000-00-00 00:00:00"`
+  - `Cancelled` when `tbl_schedule.iscancel == 1`
+  - `Ongoing (Parts)` when `tbl_schedule.isongoing == 1`
+  - `Carryover` when task date < selected date and not closed/cancelled
+  - Otherwise `Pending`
+- KPI cards are clickable to filter by status.
+- Admin/service action:
+  - Batch Carryover moves pending/ongoing schedules to next day.
+
+#### 2. Mobile-Friendly Dispatch Layout
+- Staff and Task Queue tables convert to card layout on mobile screens.
+- Sticky action columns on mid-sized screens to keep key buttons visible.
+
+#### 3. CSR Manual “New Service Request”
+- Modal form in `service/index.html` driven by `service/js/dispatch-board.js`.
+- Captures request origin (Viber/Call/Website Chat/Tech Request/etc).
+- Company/Branch search inputs filter dropdown options.
+- Branch selection attempts to prefill caller/contact + phone:
+  - Prefers `tbl_branchcontact` (if synced)
+  - Falls back to `tbl_branchinfo.signatory`
+
+#### 4. SQL-to-Firebase Sync Updater (Baseline + Incremental)
+- Page: `sync/index.html`
+- Goal: load a MySQL dump and add only new records into Firestore.
+- Supports initializing watermarks from a baseline dump.
+
+- Modal app: `field/index.html`
+- Goal: tech/messenger only sees their own schedule + can close tasks + correct machine serials.
+- Access: roles `technician` and `messenger` (requires `marga_users.staff_id` mapping).
+
+---
+
+## 🔧 Next Priorities (Short List)
+1. Sync missing supporting tables into Firestore as needed for UX:
+   - `tbl_branchcontact` (for caller/phone prefills)
+   - confirm `tbl_printedscheds`, `tbl_savedscheds` usage as “daily sheet” sources (if required)
+2. Improve “New Service Request” save safety:
+   - Replace `max(id)+1` with a collision-safe ID allocation strategy
+3. Role-based visibility:
+   - department home views (billing/collection/service) with restricted metrics
+4. Pending monitoring expansion:
+   - change unit / machine delivery / parts pending metrics and drill-down filters
 | page_rate2 | float | Color rate per page |
 | monthly_quota2 | int | Color minimum |
 | monthly_rate2 | float | Color monthly fee |

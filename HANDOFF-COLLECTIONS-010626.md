@@ -1,6 +1,8 @@
 # MARGA Collections Module - Handoff Document
 ## Date: January 6, 2026
 
+> Note: This is a module-specific historical handoff. The canonical running handoff is now `HANDOFF.md`.
+
 ---
 
 ## ✅ COMPLETED: Unknown Companies Fix
