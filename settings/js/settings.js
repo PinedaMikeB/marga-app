@@ -349,6 +349,31 @@ function roleGuessToUserRole(roleGuess) {
     return 'viewer';
 }
 
+function normalizeRole(value) {
+    const role = String(value || '').trim().toLowerCase();
+    const allowed = new Set(['admin', 'service', 'billing', 'collection', 'hr', 'technician', 'messenger', 'viewer']);
+    if (allowed.has(role)) return role;
+    return 'viewer';
+}
+
+function displayRoleLabel(role) {
+    const r = normalizeRole(role);
+    return r.charAt(0).toUpperCase() + r.slice(1);
+}
+
+function roleBadgeClass(role) {
+    const r = normalizeRole(role);
+    if (r === 'technician') return 'role-tech';
+    if (r === 'messenger') return 'role-messenger';
+    return 'role-unknown';
+}
+
+function getEmployeeEffectiveRole(employee, linked, positionName) {
+    if (linked?.role) return normalizeRole(linked.role);
+    if (employee?.marga_role) return normalizeRole(employee.marga_role);
+    return normalizeRole(roleGuessToUserRole(getRoleGuess(employee, positionName)));
+}
+
 function getEmployeeDisplayName(emp) {
     const nickname = String(emp.nickname || '').trim();
     const first = String(emp.firstname || '').trim();
@@ -395,15 +420,15 @@ function renderEmployees() {
     tbody.innerHTML = rows.map((e) => {
         const empId = sanitize(e.id);
         const positionName = SETTINGS_STATE.positions.get(String(e.position_id || 0)) || '-';
-        const roleGuess = getRoleGuess(e, positionName);
         const active = e.marga_active !== false;
         const linked = SETTINGS_STATE.userByStaffId.get(String(e.id || '')) || null;
+        const effectiveRole = getEmployeeEffectiveRole(e, linked, positionName);
         return `
             <tr>
                 <td data-label="ID">${empId}</td>
                 <td data-label="Name">${sanitize(getEmployeeDisplayName(e))}</td>
                 <td data-label="Position">${sanitize(positionName || '-')}</td>
-                <td data-label="Role"><span class="ops-role-badge ${roleGuess === 'Technician' ? 'role-tech' : roleGuess === 'Messenger' ? 'role-messenger' : 'role-unknown'}">${sanitize(roleGuess)}</span></td>
+                <td data-label="Role"><span class="ops-role-badge ${sanitize(roleBadgeClass(effectiveRole))}">${sanitize(displayRoleLabel(effectiveRole))}</span></td>
                 <td data-label="Status">
                     <select class="settings-inline-select" data-action="emp-status" data-id="${empId}">
                         <option value="true" ${active ? 'selected' : ''}>Active</option>
@@ -510,7 +535,7 @@ function openEmployeeModal(employeeId) {
 
     const positionName = SETTINGS_STATE.positions.get(String(emp.position_id || 0)) || '';
     const linked = SETTINGS_STATE.userByStaffId.get(String(emp.id || '')) || null;
-    const roleGuess = getRoleGuess(emp, positionName);
+    const effectiveRole = getEmployeeEffectiveRole(emp, linked, positionName);
 
     document.getElementById('employeeModalTitle').textContent = `${getEmployeeDisplayName(emp)} (${emp.id})`;
     document.getElementById('employeeId').value = String(emp.id || '');
@@ -523,7 +548,7 @@ function openEmployeeModal(employeeId) {
     document.getElementById('employeeActive').value = empActive ? 'true' : 'false';
 
     document.getElementById('employeeEmail').value = String(linked?.email || '').trim();
-    document.getElementById('employeeRole').value = String(linked?.role || roleGuessToUserRole(roleGuess) || 'viewer').toLowerCase();
+    document.getElementById('employeeRole').value = effectiveRole;
     document.getElementById('employeeAccountActive').value = (linked?.active === false) ? 'false' : (empActive ? 'true' : 'false');
     document.getElementById('employeePassword').value = '';
 
@@ -540,10 +565,14 @@ async function saveEmployee() {
         if (!employeeId) return;
 
         const empActive = document.getElementById('employeeActive').value === 'true';
-        await patchDocument('tbl_employee', employeeId, { marga_active: empActive });
+        const role = normalizeRole(document.getElementById('employeeRole').value || 'viewer');
+        await patchDocument('tbl_employee', employeeId, {
+            marga_active: empActive,
+            marga_role: role,
+            marga_role_updated_at: new Date().toISOString()
+        });
 
         const email = String(document.getElementById('employeeEmail').value || '').trim().toLowerCase();
-        const role = String(document.getElementById('employeeRole').value || 'viewer').trim();
         const accountActive = document.getElementById('employeeAccountActive').value === 'true';
         const password = String(document.getElementById('employeePassword').value || '');
 
