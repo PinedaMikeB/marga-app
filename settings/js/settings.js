@@ -57,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('userModalCloseBtn').addEventListener('click', closeUserModal);
     document.getElementById('userModalCancelBtn').addEventListener('click', closeUserModal);
     document.getElementById('userModalSaveBtn').addEventListener('click', () => saveUser());
+    document.getElementById('userEmployeeLookup').addEventListener('change', () => applyUserEmployeeLookup());
+    document.getElementById('userEmployeeLookup').addEventListener('input', () => applyUserEmployeeLookup());
     document.getElementById('applyRoleDefaultsBtn').addEventListener('click', () => {
         const role = document.getElementById('userRoleInput').value || 'viewer';
         renderUserModuleAccess(getRoleDefaultModules(role));
@@ -258,6 +260,7 @@ function setUserModalOpen(isOpen) {
 function closeUserModal() {
     setUserModalOpen(false);
     SETTINGS_STATE.editingDocId = null;
+    document.getElementById('userEmployeeLookup').value = '';
     renderUserModuleAccess([]);
 }
 
@@ -271,10 +274,12 @@ function openUserModal(docId) {
     const staffInput = document.getElementById('userStaffId');
     const passInput = document.getElementById('userPassword');
     const activeInput = document.getElementById('userActive');
+    const lookupInput = document.getElementById('userEmployeeLookup');
 
     const editing = docId ? SETTINGS_STATE.users.find((u) => u._docId === docId) : null;
     title.textContent = editing ? 'Edit User' : 'New User';
 
+    lookupInput.value = '';
     emailInput.value = editing?.email || '';
     nameInput.value = editing?.name || '';
     roleInput.value = normalizeRole(editing?.role || 'viewer');
@@ -286,6 +291,7 @@ function openUserModal(docId) {
 
     // Email is the key for docId. Editing email is not supported yet.
     emailInput.disabled = Boolean(editing);
+    lookupInput.disabled = Boolean(editing);
 
     setUserModalOpen(true);
 }
@@ -428,6 +434,61 @@ function roleGuessToUserRole(roleGuess) {
     if (rg === 'technician') return 'technician';
     if (rg === 'messenger') return 'messenger';
     return 'viewer';
+}
+
+function renderEmployeeLookupOptions() {
+    const list = document.getElementById('employeeLookupList');
+    if (!list) return;
+    const options = [...SETTINGS_STATE.employees]
+        .sort((a, b) => Number(a.id || 0) - Number(b.id || 0))
+        .map((emp) => {
+            const name = getEmployeeDisplayName(emp);
+            const full = `${String(emp.firstname || '').trim()} ${String(emp.lastname || '').trim()}`.trim();
+            const label = full && full.toLowerCase() !== name.toLowerCase() ? `${name} (${full})` : name;
+            return `<option value="${sanitize(`${emp.id} - ${label}`)}"></option>`;
+        });
+    list.innerHTML = options.join('');
+}
+
+function findEmployeeFromLookupValue(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const idMatch = raw.match(/^(\d+)\s*-/);
+    if (idMatch) {
+        const id = Number(idMatch[1]);
+        return SETTINGS_STATE.employees.find((e) => Number(e.id || 0) === id) || null;
+    }
+    const normalized = raw.toLowerCase();
+    return SETTINGS_STATE.employees.find((e) => {
+        const name = getEmployeeDisplayName(e).toLowerCase();
+        const full = `${String(e.firstname || '').trim()} ${String(e.lastname || '').trim()}`.trim().toLowerCase();
+        return name === normalized || full === normalized || `${e.id} - ${name}`.toLowerCase() === normalized;
+    }) || null;
+}
+
+function getSuggestedRoleFromEmployee(emp) {
+    if (emp?.marga_role) return normalizeRole(emp.marga_role);
+    const positionName = SETTINGS_STATE.positions.get(String(emp?.position_id || 0)) || '';
+    return normalizeRole(roleGuessToUserRole(getRoleGuess(emp, positionName)));
+}
+
+function applyUserEmployeeLookup() {
+    if (SETTINGS_STATE.editingDocId) return;
+    const lookup = document.getElementById('userEmployeeLookup');
+    const emp = findEmployeeFromLookupValue(lookup.value);
+    if (!emp) return;
+
+    const name = `${String(emp.firstname || '').trim()} ${String(emp.lastname || '').trim()}`.trim() || getEmployeeDisplayName(emp);
+    const suggestedRole = getSuggestedRoleFromEmployee(emp);
+    const emailCandidate = String(emp.email || '').trim();
+
+    document.getElementById('userNameInput').value = name;
+    document.getElementById('userStaffId').value = String(emp.id || '');
+    document.getElementById('userRoleInput').value = suggestedRole;
+    if (emailCandidate && !String(document.getElementById('userEmail').value || '').trim()) {
+        document.getElementById('userEmail').value = emailCandidate;
+    }
+    renderUserModuleAccess(getRoleDefaultModules(suggestedRole));
 }
 
 function displayRoleLabel(role) {
@@ -582,6 +643,7 @@ async function loadDirectory() {
 
     document.getElementById('settingsMeta').textContent = `${SETTINGS_STATE.employees.length} employee(s), ${SETTINGS_STATE.users.length} account(s).`;
 
+    renderEmployeeLookupOptions();
     applyEmployeeFilter();
     applyUserFilter();
 }

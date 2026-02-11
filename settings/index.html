@@ -236,6 +236,12 @@
         <div class="marga-modal-body">
             <div class="marga-form-grid">
                 <label class="marga-field marga-field-full">
+                    <span>Select Employee</span>
+                    <input type="text" id="userEmployeeLookup" list="employeeLookupList" placeholder="Search employee name...">
+                    <datalist id="employeeLookupList"></datalist>
+                    <div class="ops-subtext">Pick an employee to auto-fill Name, Staff ID, and role defaults.</div>
+                </label>
+                <label class="marga-field marga-field-full">
                     <span>Email</span>
                     <input type="email" id="userEmail" placeholder="name@company.com">
                 </label>
@@ -259,6 +265,7 @@
                 <label class="marga-field">
                     <span>Staff ID (tbl_employee.id)</span>
                     <input type="number" id="userStaffId" placeholder="e.g. 253">
+                    <div class="ops-subtext">Employee number only. This is not the login code.</div>
                 </label>
                 <div class="marga-field marga-field-full">
                     <span>Module Access</span>
@@ -269,7 +276,7 @@
                     <div class="ops-subtext">Check the modules this account can open.</div>
                 </div>
                 <label class="marga-field marga-field-full" id="userPasswordField">
-                    <span>Temporary Password</span>
+                    <span>Temporary Password (Login Code)</span>
                     <input type="text" id="userPassword" placeholder="Admin assigns password">
                     <div class="ops-subtext">Passwords are stored as PBKDF2 hash in Firestore. Users cannot change password yet.</div>
                 </label>
