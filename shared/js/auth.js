@@ -18,7 +18,7 @@ const MargaAuth = {
 
     // Module permissions per role
     PERMISSIONS: {
-        admin: ['customers', 'billing', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field'],
+        admin: ['customers', 'billing', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
         billing: ['customers', 'billing', 'reports'],
         collection: ['customers', 'collections', 'reports'],
         service: ['customers', 'service', 'inventory', 'field'],
@@ -73,7 +73,8 @@ const MargaAuth = {
                 name: user.name || user.username || user.email || ident,
                 role: user.role || 'viewer',
                 email: user.email || '',
-                staff_id: user.staff_id || user.staffId || null
+                staff_id: user.staff_id || user.staffId || null,
+                allowed_modules: this.normalizeModules(user.allowed_modules)
             }, remember);
 
         } catch (error) {
@@ -145,8 +146,8 @@ const MargaAuth = {
      */
     hasAccess(module) {
         if (!this.currentUser) return false;
-        const permissions = this.PERMISSIONS[this.currentUser.role] || [];
-        return permissions.includes(module);
+        if (this.currentUser.role === 'admin') return true;
+        return this.getAccessibleModules().includes(module);
     },
 
     /**
@@ -161,6 +162,9 @@ const MargaAuth = {
      */
     getAccessibleModules() {
         if (!this.currentUser) return [];
+        if (this.currentUser.role === 'admin') return [...new Set(this.PERMISSIONS.admin || [])];
+        const userModules = this.normalizeModules(this.currentUser.allowed_modules);
+        if (userModules.length) return userModules;
         return this.PERMISSIONS[this.currentUser.role] || [];
     },
 
@@ -194,17 +198,44 @@ const MargaAuth = {
     parseFirestoreDoc(doc) {
         const fields = doc.fields || {};
         const result = {};
+        const parseValue = (value) => {
+            if (!value || typeof value !== 'object') return null;
+            if (value.stringValue !== undefined) return value.stringValue;
+            if (value.integerValue !== undefined) return parseInt(value.integerValue, 10);
+            if (value.doubleValue !== undefined) return Number(value.doubleValue);
+            if (value.booleanValue !== undefined) return value.booleanValue;
+            if (value.timestampValue !== undefined) return value.timestampValue;
+            if (value.arrayValue !== undefined) {
+                const arr = value.arrayValue?.values || [];
+                return arr.map((entry) => parseValue(entry)).filter((entry) => entry !== null && entry !== undefined);
+            }
+            if (value.mapValue !== undefined) {
+                const obj = {};
+                Object.entries(value.mapValue?.fields || {}).forEach(([k, v]) => {
+                    obj[k] = parseValue(v);
+                });
+                return obj;
+            }
+            return null;
+        };
         for (const [key, value] of Object.entries(fields)) {
-            if (value.stringValue !== undefined) result[key] = value.stringValue;
-            else if (value.integerValue !== undefined) result[key] = parseInt(value.integerValue);
-            else if (value.booleanValue !== undefined) result[key] = value.booleanValue;
-            else result[key] = null;
+            result[key] = parseValue(value);
         }
         if (doc.name) {
             result._docId = doc.name.split('/').pop();
         }
         return result;
     }
+};
+
+MargaAuth.normalizeModules = function normalizeModules(modules) {
+    if (Array.isArray(modules)) {
+        return [...new Set(modules.map((m) => String(m || '').trim().toLowerCase()).filter(Boolean))];
+    }
+    if (typeof modules === 'string' && modules.trim()) {
+        return [...new Set(modules.split(',').map((m) => m.trim().toLowerCase()).filter(Boolean))];
+    }
+    return [];
 };
 
 MargaAuth.getAppBasePath = function getAppBasePath() {

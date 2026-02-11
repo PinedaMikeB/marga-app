@@ -185,8 +185,43 @@
     justify-content: flex-end;
 }
 
+.settings-module-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.45rem;
+}
+
+.module-access-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem 0.8rem;
+    padding: 0.7rem 0.75rem;
+    border: 1px solid rgba(187, 212, 237, 0.85);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.module-option {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: #1f3657;
+    font-weight: 600;
+}
+
+.module-option input {
+    width: 15px;
+    height: 15px;
+    accent-color: #3b82f6;
+}
+
 @media (max-width: 980px) {
     .marga-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .module-access-grid {
         grid-template-columns: 1fr;
     }
 }

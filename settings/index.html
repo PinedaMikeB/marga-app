@@ -260,6 +260,14 @@
                     <span>Staff ID (tbl_employee.id)</span>
                     <input type="number" id="userStaffId" placeholder="e.g. 253">
                 </label>
+                <div class="marga-field marga-field-full">
+                    <span>Module Access</span>
+                    <div class="settings-module-toolbar">
+                        <button type="button" class="btn btn-secondary btn-sm" id="applyRoleDefaultsBtn">Use Role Default</button>
+                    </div>
+                    <div class="module-access-grid" id="userModuleAccess"></div>
+                    <div class="ops-subtext">Check the modules this account can open.</div>
+                </div>
                 <label class="marga-field marga-field-full" id="userPasswordField">
                     <span>Temporary Password</span>
                     <input type="text" id="userPassword" placeholder="Admin assigns password">

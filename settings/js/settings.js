@@ -13,6 +13,22 @@ const SETTINGS_STATE = {
     editingEmployeeId: null
 };
 
+const MODULE_OPTIONS = [
+    { id: 'customers', label: 'Customers Module' },
+    { id: 'billing', label: 'Billing Module' },
+    { id: 'collections', label: 'Collections Module' },
+    { id: 'service', label: 'Customer Service Module' },
+    { id: 'field', label: 'Service Field App (Tech/Messenger)' },
+    { id: 'inventory', label: 'Inventory Module' },
+    { id: 'hr', label: 'Human Resource Module' },
+    { id: 'reports', label: 'Reports Module' },
+    { id: 'settings', label: 'Settings Module' },
+    { id: 'sync', label: 'Sync Updater Module' },
+    { id: 'purchasing', label: 'Purchasing Module' },
+    { id: 'pettycash', label: 'Petty Cash Module' },
+    { id: 'sales', label: 'Sales Module' }
+];
+
 document.addEventListener('DOMContentLoaded', () => {
     const user = MargaAuth.getUser();
     const isAdmin = MargaAuth.isAdmin();
@@ -41,6 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('userModalCloseBtn').addEventListener('click', closeUserModal);
     document.getElementById('userModalCancelBtn').addEventListener('click', closeUserModal);
     document.getElementById('userModalSaveBtn').addEventListener('click', () => saveUser());
+    document.getElementById('applyRoleDefaultsBtn').addEventListener('click', () => {
+        const role = document.getElementById('userRoleInput').value || 'viewer';
+        renderUserModuleAccess(getRoleDefaultModules(role));
+    });
 
     document.getElementById('employeeModalOverlay').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalCloseBtn').addEventListener('click', closeEmployeeModal);
@@ -50,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Ensure admin-only password fields are hidden for HR/non-admin.
     document.getElementById('userPasswordField').style.display = isAdmin ? 'flex' : 'none';
     document.getElementById('employeePasswordField').style.display = isAdmin ? 'flex' : 'none';
+    document.getElementById('applyRoleDefaultsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
 
     setActiveTab('employees');
     loadDirectory();
@@ -88,6 +109,17 @@ function parseFirestoreValue(value) {
     if (value.doubleValue !== undefined) return Number(value.doubleValue);
     if (value.booleanValue !== undefined) return value.booleanValue;
     if (value.timestampValue !== undefined) return value.timestampValue;
+    if (value.arrayValue !== undefined) {
+        const arr = value.arrayValue?.values || [];
+        return arr.map((entry) => parseFirestoreValue(entry)).filter((entry) => entry !== null && entry !== undefined);
+    }
+    if (value.mapValue !== undefined) {
+        const out = {};
+        Object.entries(value.mapValue?.fields || {}).forEach(([k, v]) => {
+            out[k] = parseFirestoreValue(v);
+        });
+        return out;
+    }
     return null;
 }
 
@@ -105,9 +137,55 @@ function parseFirestoreDoc(doc) {
 
 function toFirestoreFieldValue(value) {
     if (value === null) return { nullValue: null };
+    if (Array.isArray(value)) {
+        return { arrayValue: { values: value.map((entry) => toFirestoreFieldValue(entry)) } };
+    }
     if (typeof value === 'boolean') return { booleanValue: value };
     if (typeof value === 'number' && Number.isFinite(value)) return { integerValue: String(Math.trunc(value)) };
     return { stringValue: String(value ?? '') };
+}
+
+function normalizeRole(value) {
+    const role = String(value || '').trim().toLowerCase();
+    const allowed = new Set(['admin', 'service', 'billing', 'collection', 'hr', 'technician', 'messenger', 'viewer']);
+    if (allowed.has(role)) return role;
+    return 'viewer';
+}
+
+function normalizeModuleList(list) {
+    if (Array.isArray(list)) {
+        return [...new Set(list.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))];
+    }
+    if (typeof list === 'string' && list.trim()) {
+        return [...new Set(list.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean))];
+    }
+    return [];
+}
+
+function getRoleDefaultModules(role) {
+    const r = normalizeRole(role);
+    const defaults = MargaAuth.PERMISSIONS?.[r] || [];
+    return normalizeModuleList(defaults);
+}
+
+function renderUserModuleAccess(selectedModules = []) {
+    const host = document.getElementById('userModuleAccess');
+    if (!host) return;
+    const selected = new Set(normalizeModuleList(selectedModules));
+    const readOnly = !MargaAuth.isAdmin();
+    host.innerHTML = MODULE_OPTIONS.map((option) => `
+        <label class="module-option">
+            <input type="checkbox" value="${sanitize(option.id)}" ${selected.has(option.id) ? 'checked' : ''} ${readOnly ? 'disabled' : ''}>
+            <span>${sanitize(option.label)}</span>
+        </label>
+    `).join('');
+}
+
+function getSelectedUserModules() {
+    return [...document.querySelectorAll('#userModuleAccess input[type=\"checkbox\"]')]
+        .filter((el) => el.checked)
+        .map((el) => String(el.value || '').trim().toLowerCase())
+        .filter(Boolean);
 }
 
 async function runQuery(structuredQuery) {
@@ -180,6 +258,7 @@ function setUserModalOpen(isOpen) {
 function closeUserModal() {
     setUserModalOpen(false);
     SETTINGS_STATE.editingDocId = null;
+    renderUserModuleAccess([]);
 }
 
 function openUserModal(docId) {
@@ -198,10 +277,12 @@ function openUserModal(docId) {
 
     emailInput.value = editing?.email || '';
     nameInput.value = editing?.name || '';
-    roleInput.value = editing?.role || 'viewer';
+    roleInput.value = normalizeRole(editing?.role || 'viewer');
     staffInput.value = editing?.staff_id || '';
     passInput.value = '';
     activeInput.value = (editing?.active === false) ? 'false' : 'true';
+    const selectedModules = normalizeModuleList(editing?.allowed_modules);
+    renderUserModuleAccess(selectedModules.length ? selectedModules : getRoleDefaultModules(roleInput.value));
 
     // Email is the key for docId. Editing email is not supported yet.
     emailInput.disabled = Boolean(editing);
@@ -346,13 +427,6 @@ function roleGuessToUserRole(roleGuess) {
     const rg = String(roleGuess || '').toLowerCase();
     if (rg === 'technician') return 'technician';
     if (rg === 'messenger') return 'messenger';
-    return 'viewer';
-}
-
-function normalizeRole(value) {
-    const role = String(value || '').trim().toLowerCase();
-    const allowed = new Set(['admin', 'service', 'billing', 'collection', 'hr', 'technician', 'messenger', 'viewer']);
-    if (allowed.has(role)) return role;
     return 'viewer';
 }
 
@@ -588,6 +662,9 @@ async function saveEmployee() {
                 role,
                 active: accountActive,
                 staff_id: Number(employeeId),
+                allowed_modules: normalizeModuleList(linked?.allowed_modules).length
+                    ? normalizeModuleList(linked?.allowed_modules)
+                    : getRoleDefaultModules(role),
                 updated_at: new Date().toISOString()
             };
 
@@ -667,15 +744,26 @@ async function saveUser() {
             return;
         }
 
+        const normalizedRole = normalizeRole(role);
+        const editing = SETTINGS_STATE.editingDocId
+            ? SETTINGS_STATE.users.find((u) => u._docId === SETTINGS_STATE.editingDocId) || null
+            : null;
+        const allowedModules = isAdmin
+            ? getSelectedUserModules()
+            : (normalizeModuleList(editing?.allowed_modules).length
+                ? normalizeModuleList(editing?.allowed_modules)
+                : getRoleDefaultModules(normalizedRole));
+
         const docId = SETTINGS_STATE.editingDocId || email;
 
         const baseFields = {
             email,
             username: email,
             name,
-            role,
+            role: normalizedRole,
             active,
             staff_id: staff_id || null,
+            allowed_modules: allowedModules,
             updated_at: new Date().toISOString()
         };
 
