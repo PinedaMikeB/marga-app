@@ -7,7 +7,16 @@ This file records notable changes by version. Keep entries short and action-focu
 - When multiple releases happen in a day, suffix: `vYYYY.MM.DD.1`, `vYYYY.MM.DD.2`, etc.
 
 ## Unreleased
-- (Add items here while working; move to the next version on release.)
+### Added
+- Field App task modal now has explicit actions:
+  - `Mark Finished` (requires 4-digit customer PIN verification)
+  - `Mark Pending (Parts Needed)` (writes ongoing/pending flags and queues production request)
+- Field App KPI now includes `Ongoing (Parts)` count.
+- Field task cards now show a pending-parts note when applicable.
+
+### Changed
+- Finished action is blocked when branch PIN is not configured (`marga_branch_pins/{branch_id}.pin` or `tbl_branchinfo.service_pin`).
+- `Mark Finished` now clears pending flags and stores PIN verification audit fields on `tbl_schedule`.
 
 ## v2026.02.10
 ### Added

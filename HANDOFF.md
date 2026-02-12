@@ -18,6 +18,8 @@ Building a modern web-based enterprise management system for **Marga Enterprises
 - Make schedule creation collision-safe (avoid `max(id)+1` collisions when two CSRs create at the same time).
 - Expand “pending monitoring” metrics and drill-down lists (change unit, parts pending, machine delivery, overdue tickets).
 - Tighten role-based visibility so non-admins only see their department/module data.
+- Add admin/CSR UI to manage branch customer PINs (`marga_branch_pins`) so field staff can complete Finished validation flow.
+- Connect production queue (`marga_production_queue`) into a dedicated Production/Purchasing view.
 
 ## Open Questions
 - Which legacy tables are the authoritative “daily sheet” source: `tbl_schedule` vs `tbl_savedscheds` vs `tbl_printedscheds`?

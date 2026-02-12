@@ -35,7 +35,10 @@ const state = {
     staffId: null,
     rows: [],
     modalScheduleId: null,
-    modalMachineId: null
+    modalMachineId: null,
+    modalBranchId: null,
+    modalExpectedPin: '',
+    modalStatusKey: 'pending'
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldOverlay').addEventListener('click', closeModal);
     document.getElementById('fieldModalClose').addEventListener('click', closeModal);
     document.getElementById('fieldModalCancel').addEventListener('click', closeModal);
+    document.getElementById('fieldModalPendingTask').addEventListener('click', markPendingTask);
     document.getElementById('fieldModalCloseTask').addEventListener('click', closeTask);
     document.getElementById('fieldSaveSerialBtn').addEventListener('click', saveCorrectedSerial);
 
@@ -168,6 +172,35 @@ async function patchDocument(collection, docId, fields) {
         throw new Error(payload?.error?.message || `Failed to update ${collection}/${docId}`);
     }
     return payload;
+}
+
+async function setDocument(collection, docId, fields) {
+    const body = { fields: {} };
+    Object.entries(fields).forEach(([key, value]) => {
+        body.fields[key] = toFirestoreFieldValue(value);
+    });
+
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${docId}?key=${FIREBASE_CONFIG.apiKey}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to set ${collection}/${docId}`);
+    }
+    return payload;
+}
+
+function appendDevRemarks(previous, tag, notes) {
+    const base = String(previous || '').trim();
+    const next = String(notes || '').trim();
+    const stamp = new Date().toLocaleString('en-PH');
+    const line = [tag, next].filter(Boolean).join(' ');
+    return [base, `${stamp}: ${line}`].filter(Boolean).join(' | ').slice(0, 240);
 }
 
 async function queryByDateRange(collectionId, fieldPath, start, end, endOp = 'LESS_THAN_OR_EQUAL') {
@@ -289,6 +322,7 @@ function renderKpis(rows) {
         <div class="field-kpi"><div class="label">Today</div><div class="value">${rows.filter((r) => String(r.task_datetime || '').startsWith(state.selectedDate)).length}</div></div>
         <div class="field-kpi"><div class="label">Carryover</div><div class="value">${counts.carryover || 0}</div></div>
         <div class="field-kpi"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
+        <div class="field-kpi"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
         <div class="field-kpi"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
     `;
 }
@@ -326,6 +360,9 @@ function renderList() {
         const machineLine = brandName || modelName
             ? `${sanitize(brandName)} ${sanitize(modelName)}`.trim()
             : 'Machine';
+        const partsNote = Number(row.pending_parts || 0) === 1 || Number(row.isongoing || 0) === 1
+            ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
+            : '';
 
         return `
             <div class="field-task">
@@ -336,6 +373,7 @@ function renderList() {
                         <div class="sub">${sanitize(clientName)} · ${sanitize(branchName)} · ${sanitize(areaName)}</div>
                         <div class="sub">${machineLine} · Serial: <strong>${sanitize(machineSerial)}</strong></div>
                         <div class="sub">${sanitize(row.remarks || row.caller || '-')}</div>
+                        ${partsNote}
                     </div>
                     <div class="field-task-actions">
                         <button type="button" class="btn btn-secondary btn-sm" data-action="open" data-id="${row.id}">Update</button>
@@ -349,7 +387,10 @@ function renderList() {
         btn.addEventListener('click', () => {
             const scheduleId = Number(btn.dataset.id || 0);
             if (!scheduleId) return;
-            openModal(scheduleId);
+            openModal(scheduleId).catch((err) => {
+                console.error('Open modal failed:', err);
+                alert(`Unable to open task: ${err?.message || err}`);
+            });
         });
     });
 }
@@ -415,18 +456,44 @@ function closeModal() {
     setModalOpen(false);
     state.modalScheduleId = null;
     state.modalMachineId = null;
+    state.modalBranchId = null;
+    state.modalExpectedPin = '';
+    state.modalStatusKey = 'pending';
     document.getElementById('fieldCloseNotes').value = '';
     document.getElementById('fieldClosePin').value = '';
     document.getElementById('fieldSerialInput').value = '';
     document.getElementById('fieldSerialHint').textContent = '';
+    document.getElementById('fieldPinHint').textContent = 'Required to mark as Finished.';
+    document.getElementById('fieldCloseNotes').disabled = false;
+    document.getElementById('fieldClosePin').disabled = false;
+    document.getElementById('fieldSerialInput').disabled = false;
+    document.getElementById('fieldSaveSerialBtn').disabled = false;
+    document.getElementById('fieldModalPendingTask').disabled = false;
+    document.getElementById('fieldModalCloseTask').disabled = false;
 }
 
-function openModal(scheduleId) {
+async function resolveExpectedPin(branchId, row = null) {
+    const schedulePin = String(row?.customer_pin || '').trim();
+    if (schedulePin) return schedulePin;
+
+    const fromBranch = caches.branch.get(String(branchId || 0));
+    const inlinePin = String(fromBranch?.service_pin || '').trim();
+    if (inlinePin) return inlinePin;
+
+    if (!branchId) return '';
+    const pinDoc = await fetchDoc('marga_branch_pins', branchId);
+    const savedPin = String(pinDoc?.pin || '').trim();
+    return savedPin;
+}
+
+async function openModal(scheduleId) {
     const row = state.rows.find((r) => Number(r.id || 0) === Number(scheduleId));
     if (!row) return;
 
     state.modalScheduleId = scheduleId;
     state.modalMachineId = Number(row.serial || 0) || null;
+    state.modalBranchId = Number(row.branch_id || 0) || null;
+    state.modalStatusKey = getStatusKey(row);
 
     const branch = caches.branch.get(String(row.branch_id || 0));
     const company = caches.company.get(String(row.company_id || branch?.company_id || 0));
@@ -440,7 +507,78 @@ function openModal(scheduleId) {
     const machine = caches.machine.get(String(state.modalMachineId || 0));
     document.getElementById('fieldSerialInput').value = String(machine?.serial || '');
 
+    const pinHint = document.getElementById('fieldPinHint');
+    pinHint.textContent = 'Checking customer PIN setup...';
+    state.modalExpectedPin = await resolveExpectedPin(state.modalBranchId, row);
+    if (state.modalExpectedPin) {
+        pinHint.textContent = 'Customer PIN is configured. Enter 4-digit PIN to finish.';
+    } else {
+        pinHint.textContent = 'No branch PIN configured yet. Finished action is blocked. Use Pending and notify office.';
+    }
+
+    const isReadOnly = state.modalStatusKey === 'closed' || state.modalStatusKey === 'cancelled';
+    document.getElementById('fieldCloseNotes').disabled = isReadOnly;
+    document.getElementById('fieldClosePin').disabled = isReadOnly;
+    document.getElementById('fieldSerialInput').disabled = isReadOnly;
+    document.getElementById('fieldSaveSerialBtn').disabled = isReadOnly;
+    document.getElementById('fieldModalPendingTask').disabled = isReadOnly;
+    document.getElementById('fieldModalCloseTask').disabled = isReadOnly || !state.modalExpectedPin;
+
     setModalOpen(true);
+}
+
+async function markPendingTask() {
+    const scheduleId = Number(state.modalScheduleId || 0);
+    if (!scheduleId) return;
+    const row = state.rows.find((r) => Number(r.id || 0) === scheduleId);
+    if (!row) return;
+
+    const notes = (document.getElementById('fieldCloseNotes').value || '').trim();
+    if (notes.length < 6) {
+        alert('Please add parts-needed notes (at least 6 characters).');
+        return;
+    }
+
+    const staffId = Number(state.staffId || 0) || 0;
+    const nowIso = new Date().toISOString();
+    const queueDocId = `${scheduleId}_${Date.now()}`;
+
+    const btn = document.getElementById('fieldModalPendingTask');
+    btn.disabled = true;
+    try {
+        await patchDocument('tbl_schedule', scheduleId, {
+            isongoing: 1,
+            date_finished: ZERO_DATETIME,
+            pending_parts: 1,
+            pending_reason: 'parts_needed',
+            pending_updated_at: nowIso,
+            pending_updated_by: staffId,
+            dev_remarks: appendDevRemarks(row.dev_remarks, '[PENDING_PARTS]', notes)
+        });
+
+        await setDocument('marga_production_queue', queueDocId, {
+            schedule_id: scheduleId,
+            branch_id: Number(row.branch_id || 0) || null,
+            company_id: Number(row.company_id || 0) || null,
+            machine_id: Number(row.serial || 0) || null,
+            purpose_id: Number(row.purpose_id || 0) || null,
+            trouble_id: Number(row.trouble_id || 0) || null,
+            requested_by: staffId,
+            requested_at: nowIso,
+            notes,
+            status: 'pending',
+            source: 'field_app'
+        });
+
+        closeModal();
+        await loadMySchedule();
+        alert('Marked as Pending (Parts Needed). Production queue updated.');
+    } catch (err) {
+        console.error('Mark pending failed:', err);
+        alert(`Failed to mark pending: ${err?.message || err}`);
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 async function closeTask() {
@@ -451,15 +589,23 @@ async function closeTask() {
 
     const notes = (document.getElementById('fieldCloseNotes').value || '').trim();
     const pin = (document.getElementById('fieldClosePin').value || '').trim();
+    const expectedPin = String(state.modalExpectedPin || '').trim();
+    const pinPattern = /^\d{4}$/;
 
-    // Optional pin check if branch has a service_pin field in Firestore.
-    const branch = caches.branch.get(String(row.branch_id || 0)) || null;
-    const expectedPin = String(branch?.service_pin || '').trim();
-    if (expectedPin && pin !== expectedPin) {
+    if (!expectedPin) {
+        alert('This branch has no configured customer PIN yet. Please mark as Pending and ask office/admin to set branch PIN.');
+        return;
+    }
+    if (!pinPattern.test(pin)) {
+        alert('Customer PIN must be exactly 4 digits.');
+        return;
+    }
+    if (pin !== expectedPin) {
         alert('Invalid customer PIN.');
         return;
     }
 
+    const nowIso = new Date().toISOString();
     const now = new Date();
     const ymd = formatDateYmd(now);
     const hh = String(now.getHours()).padStart(2, '0');
@@ -468,7 +614,6 @@ async function closeTask() {
     const finished = `${ymd} ${hh}:${mm}:${ss}`;
 
     const staffId = Number(state.staffId || 0) || 0;
-    const nextDev = [String(row.dev_remarks || '').trim(), notes].filter(Boolean).join(' | ').slice(0, 250);
 
     const btn = document.getElementById('fieldModalCloseTask');
     btn.disabled = true;
@@ -476,11 +621,19 @@ async function closeTask() {
         await patchDocument('tbl_schedule', scheduleId, {
             date_finished: finished,
             closedby: staffId,
-            dev_remarks: nextDev
+            isongoing: 0,
+            pending_parts: 0,
+            pending_reason: '',
+            pending_updated_at: nowIso,
+            pending_updated_by: staffId,
+            customer_pin_verified: 1,
+            customer_pin_verified_at: nowIso,
+            customer_pin_verified_by: staffId,
+            dev_remarks: appendDevRemarks(row.dev_remarks, '[FINISHED]', notes)
         });
         closeModal();
         await loadMySchedule();
-        alert('Task closed.');
+        alert('Task marked as Finished.');
     } catch (err) {
         console.error('Close task failed:', err);
         alert(`Failed to close task: ${err?.message || err}`);
@@ -536,4 +689,3 @@ async function saveCorrectedSerial() {
         alert(`Failed to update serial: ${err?.message || err}`);
     }
 }
-
