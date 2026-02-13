@@ -13,10 +13,26 @@ This file records notable changes by version. Keep entries short and action-focu
   - `Mark Pending (Parts Needed)` (writes ongoing/pending flags and queues production request)
 - Field App KPI now includes `Ongoing (Parts)` count.
 - Field task cards now show a pending-parts note when applicable.
+- Field App Update modal now includes:
+  - searchable serial lookup from `tbl_machine`
+  - missing-serial flow with admin queue (`marga_serial_corrections`)
+  - model + brand autofill
+  - machine status dropdown from `tbl_mstatus` (with fallback options)
+  - parts-needed picker (database-driven catalog + quantity list)
+  - meter block (previous/present/total consumed auto-compute)
+  - time-in/time-out capture with log write to `tbl_schedtime`
+  - customer signer/contact + delivery details + final acknowledgement summary
+  - before/after photo capture inputs (metadata saved for now)
+- Added `Save Draft` action in Field modal to persist updates without closing task.
 
 ### Changed
 - Finished action is blocked when branch PIN is not configured (`marga_branch_pins/{branch_id}.pin` or `tbl_branchinfo.service_pin`).
 - `Mark Finished` now clears pending flags and stores PIN verification audit fields on `tbl_schedule`.
+- Field actions now save richer operational fields on `tbl_schedule` (`field_*` namespace) and keep legacy-compatible fields updated (`meter_reading`, `collocutor`, `phone_number`, `tl_status`, `tl_remarks`).
+- Serial correction behavior changed for field users:
+  - no free-text overwrite of machine master serial
+  - official serial remap updates schedule machine reference
+  - missing serial goes to admin-approval queue instead of direct master edit
 
 ## v2026.02.10
 ### Added

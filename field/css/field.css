@@ -151,7 +151,78 @@
     align-items: center;
 }
 
-.field-serial-row input {
+.field-serial-row .btn {
+    width: 100%;
+}
+
+.field-modal-section + .field-modal-section {
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px dashed rgba(148, 163, 184, 0.35);
+}
+
+.field-modal-section h3 {
+    margin: 0 0 0.65rem;
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #1a365d;
+}
+
+.field-checkbox-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.field-checkbox-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+}
+
+.field-parts-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 92px auto;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.field-parts-list {
+    margin-top: 0.45rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.field-part-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    border: 1px solid rgba(59, 130, 246, 0.24);
+    background: rgba(59, 130, 246, 0.08);
+    color: #1d4a8d;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.6rem;
+}
+
+.field-part-chip button {
+    border: none;
+    background: transparent;
+    color: #1d4a8d;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.field-time-row {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.field-time-row input {
     flex: 1;
 }
 
@@ -367,6 +438,15 @@
 
     .marga-modal-footer {
         padding: 0.75rem 0.85rem;
+    }
+
+    .field-parts-row {
+        grid-template-columns: 1fr;
+    }
+
+    .field-time-row {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .marga-modal-footer .btn {

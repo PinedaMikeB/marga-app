@@ -1,6 +1,6 @@
 # MARGA App Development Handoff
 
-## 📅 Last Updated: February 10, 2026
+## 📅 Last Updated: February 12, 2026
 
 ## 🎯 Project Overview
 Building a modern web-based enterprise management system for **Marga Enterprises** to replace the legacy VB.NET desktop application. The app manages customers, billing, collections, service, and machine contracts for a printer rental business.
@@ -11,21 +11,39 @@ Building a modern web-based enterprise management system for **Marga Enterprises
 - User login + role management (email + password) for office + field use.
 - Service Dispatch Board: daily operations view, carryover, monitoring, CSR request entry.
 - Sync Updater: keep Firestore updated from MySQL dumps without re-uploading everything.
+- Field App execution modal: complete technician/messenger workflow with serial validation, parts, meter, time logs, and customer PIN close.
 
 ## Next Actions
-- Sync missing support tables needed for CSR/dispatch UX (example: `tbl_branchcontact` for contact person/phone).
+- Sync missing support tables needed for CSR/dispatch UX (example: `tbl_branchcontact`, `tbl_inventoryparts`, `tbl_mstatus`).
 - Prioritize user login + role management (admin-managed passwords; no self-service changes yet).
 - Make schedule creation collision-safe (avoid `max(id)+1` collisions when two CSRs create at the same time).
 - Expand “pending monitoring” metrics and drill-down lists (change unit, parts pending, machine delivery, overdue tickets).
 - Tighten role-based visibility so non-admins only see their department/module data.
 - Add admin/CSR UI to manage branch customer PINs (`marga_branch_pins`) so field staff can complete Finished validation flow.
 - Connect production queue (`marga_production_queue`) into a dedicated Production/Purchasing view.
+- Add actual photo upload/storage flow (Firebase Storage) for before/after repair evidence; currently only file metadata is saved.
+- Build admin approval screen for `marga_serial_corrections` (approve/reject + apply serial mapping).
 
 ## Open Questions
 - Which legacy tables are the authoritative “daily sheet” source: `tbl_schedule` vs `tbl_savedscheds` vs `tbl_printedscheds`?
 - How should “customer PIN close” be stored (new Firestore-only fields vs mapped to an existing legacy column)?
 - What is the exact definition of “continuous service / parts pending” in the legacy workflow (which fields/tables represent it)?
 - Attendance module requirements (future): time-in/out, selfie photo, and geolocation validation for office vs client site.
+- Customer PIN policy: fixed branch-level PIN vs rotating codes per month/per request.
+
+## Latest Session (February 12, 2026)
+- Field App modal was expanded for real technician workflow:
+  - searchable serial database lookup
+  - missing serial checkbox + admin approval queue entry (`marga_serial_corrections`)
+  - model/brand auto-pull from selected serial
+  - machine status + parts needed list with quantity
+  - previous/present meter + auto total consumed
+  - time-in/time-out capture and `tbl_schedtime` upsert
+  - delivery details, empty pickup details, customer signer/contact, final acknowledgement
+  - save draft / pending / finished actions
+- `Mark Finished` still enforces branch customer PIN and writes close audit fields.
+- `Mark Pending` continues to create production queue entries and now includes richer context.
+- Photo fields are available in UI now; saved as metadata in schedule fields (full binary upload is still pending).
 
 ---
 

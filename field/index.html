@@ -14,9 +14,10 @@
         <header class="field-header">
             <div class="field-title">
                 <div class="field-brand">
-                    <div class="field-badge">M</div>
+                    <div class="field-badge" id="fieldUserBadge">M</div>
                     <div>
-                        <h1>My Schedule</h1>
+                        <h1 id="fieldHeaderTitle">My Schedule</h1>
+                        <p id="fieldUserLine">User: -</p>
                         <p id="fieldSubtitle">Loading...</p>
                     </div>
                 </div>
@@ -68,28 +69,138 @@
             </button>
         </div>
         <div class="marga-modal-body">
-            <div class="marga-form-grid">
-                <label class="marga-field marga-field-full">
-                    <span>Work Notes / Parts Needed</span>
-                    <textarea id="fieldCloseNotes" rows="3" placeholder="Work done, findings, parts needed, next steps..."></textarea>
-                </label>
-                <label class="marga-field">
-                    <span>Customer Secret PIN (4 digits)</span>
-                    <input type="password" id="fieldClosePin" inputmode="numeric" maxlength="4" placeholder="0000">
-                    <div class="ops-subtext" id="fieldPinHint">Required to mark as Finished.</div>
-                </label>
-                <div class="marga-field">
-                    <span>Serial Correction</span>
-                    <div class="field-serial-row">
-                        <input type="text" id="fieldSerialInput" placeholder="Correct machine serial">
-                        <button type="button" class="btn btn-secondary btn-sm" id="fieldSaveSerialBtn">Save</button>
+            <section class="field-modal-section">
+                <h3>Machine Identification</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field marga-field-full">
+                        <span>Serial Number (Searchable)</span>
+                        <input type="search" id="fieldSerialInput" list="fieldSerialOptions" placeholder="Search serial from official machine database">
+                        <datalist id="fieldSerialOptions"></datalist>
+                        <div class="ops-subtext" id="fieldSerialMatchHint">Type to search serial and select from list.</div>
+                    </label>
+                    <label class="marga-field marga-field-full">
+                        <span class="field-checkbox-row">
+                            <input type="checkbox" id="fieldSerialMissingCheck">
+                            Missing serial number in database
+                        </span>
+                        <input type="text" id="fieldMissingSerialInput" placeholder="Enter missing/correct serial for admin confirmation" disabled>
+                        <div class="ops-subtext">If checked, request goes to admin approval queue.</div>
+                    </label>
+                    <label class="marga-field">
+                        <span>Model</span>
+                        <input type="text" id="fieldModelInput" readonly>
+                    </label>
+                    <label class="marga-field">
+                        <span>Brand</span>
+                        <input type="text" id="fieldBrandInput" readonly>
+                    </label>
+                    <label class="marga-field">
+                        <span>Machine Status</span>
+                        <select id="fieldMachineStatus"></select>
+                    </label>
+                    <div class="marga-field">
+                        <span>Serial Mapping</span>
+                        <div class="field-serial-row">
+                            <button type="button" class="btn btn-secondary btn-sm" id="fieldSaveSerialBtn">Save Serial Mapping</button>
+                        </div>
+                        <div class="ops-subtext" id="fieldSerialHint"></div>
                     </div>
-                    <div class="ops-subtext" id="fieldSerialHint"></div>
                 </div>
-            </div>
+            </section>
+
+            <section class="field-modal-section">
+                <h3>Work Execution</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field marga-field-full">
+                        <span>Work Notes</span>
+                        <textarea id="fieldCloseNotes" rows="3" placeholder="Work done, findings, diagnostics, actions..."></textarea>
+                    </label>
+                    <div class="marga-field marga-field-full">
+                        <span>Parts Needed</span>
+                        <div class="field-parts-row">
+                            <input type="search" id="fieldPartInput" list="fieldPartOptions" placeholder="Search part/item">
+                            <datalist id="fieldPartOptions"></datalist>
+                            <input type="number" id="fieldPartQty" min="1" step="1" value="1" placeholder="Qty">
+                            <button type="button" class="btn btn-secondary btn-sm" id="fieldAddPartBtn">Add</button>
+                        </div>
+                        <div class="field-parts-list" id="fieldPartsList"></div>
+                    </div>
+                    <label class="marga-field">
+                        <span>Before Repair (Photo)</span>
+                        <input type="file" id="fieldBeforePhoto" accept="image/*" capture="environment">
+                        <div class="ops-subtext" id="fieldBeforePhotoHint">No file selected.</div>
+                    </label>
+                    <label class="marga-field">
+                        <span>After Repair (Photo)</span>
+                        <input type="file" id="fieldAfterPhoto" accept="image/*" capture="environment">
+                        <div class="ops-subtext" id="fieldAfterPhotoHint">No file selected.</div>
+                    </label>
+                </div>
+            </section>
+
+            <section class="field-modal-section">
+                <h3>Meter and Time</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field">
+                        <span>Previous Meter</span>
+                        <input type="number" id="fieldPreviousMeter" min="0" step="1" placeholder="0">
+                    </label>
+                    <label class="marga-field">
+                        <span>Present Meter</span>
+                        <input type="number" id="fieldPresentMeter" min="0" step="1" placeholder="0">
+                    </label>
+                    <label class="marga-field">
+                        <span>Total Consumed</span>
+                        <input type="number" id="fieldTotalConsumed" min="0" step="1" readonly>
+                    </label>
+                    <label class="marga-field">
+                        <span>Time In</span>
+                        <div class="field-time-row">
+                            <input type="datetime-local" id="fieldTimeIn">
+                            <button type="button" class="btn btn-secondary btn-sm" id="fieldTimeInNowBtn">Time In Now</button>
+                        </div>
+                    </label>
+                    <label class="marga-field">
+                        <span>Time Out</span>
+                        <input type="datetime-local" id="fieldTimeOut" readonly>
+                    </label>
+                </div>
+            </section>
+
+            <section class="field-modal-section">
+                <h3>Delivery and Customer Acknowledgement</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field marga-field-full">
+                        <span>Toner / Ink Delivery Details</span>
+                        <textarea id="fieldDeliveryDetails" rows="2" placeholder="Delivered toner/ink details, qty, color/model..."></textarea>
+                    </label>
+                    <label class="marga-field marga-field-full">
+                        <span>Empty Toner / Ink Picked Up</span>
+                        <textarea id="fieldEmptyPickupDetails" rows="2" placeholder="Empty items received from customer..."></textarea>
+                    </label>
+                    <label class="marga-field">
+                        <span>Customer Representative (Signer)</span>
+                        <input type="text" id="fieldCustomerSigner" placeholder="Full name">
+                    </label>
+                    <label class="marga-field">
+                        <span>Contact Number</span>
+                        <input type="text" id="fieldCustomerContact" placeholder="09xx... / landline">
+                    </label>
+                    <label class="marga-field marga-field-full">
+                        <span>Final Acknowledgement Summary</span>
+                        <textarea id="fieldFinalSummary" rows="3" placeholder="Short summary of work done, delivered, requested, and next action."></textarea>
+                    </label>
+                    <label class="marga-field">
+                        <span>Customer Secret PIN (4 digits)</span>
+                        <input type="password" id="fieldClosePin" inputmode="numeric" maxlength="4" placeholder="0000">
+                        <div class="ops-subtext" id="fieldPinHint">Required to mark as Finished.</div>
+                    </label>
+                </div>
+            </section>
         </div>
         <div class="marga-modal-footer">
             <button type="button" class="btn btn-secondary" id="fieldModalCancel">Cancel</button>
+            <button type="button" class="btn btn-secondary" id="fieldModalSaveDraft">Save Draft</button>
             <button type="button" class="btn btn-secondary" id="fieldModalPendingTask">Mark Pending (Parts Needed)</button>
             <button type="button" class="btn btn-primary" id="fieldModalCloseTask">Mark Finished</button>
         </div>
