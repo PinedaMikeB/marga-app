@@ -92,5 +92,5 @@ Security reminder:
   - client-side filtering for additional conditions
 
 ## References
-- Handoff (what changed + what to do next): `HANDOFF.md`
-- Changelog (versions/releases): `docs/CHANGELOG.md`
+- Handoff (what changed + what to do next): `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`
+- Changelog (versions/releases): `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/CHANGELOG.md`
