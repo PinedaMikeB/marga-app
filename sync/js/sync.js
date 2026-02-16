@@ -69,35 +69,6 @@ const TABLE_ID_HINTS = {
     tbl_billinfo: 'id'
 };
 
-const CORE_MASTER_TABLES = new Set([
-    'tbl_companylist',
-    'tbl_branchinfo',
-    'tbl_contractmain',
-    'tbl_machine',
-    'tbl_employee',
-    'tbl_empos',
-    'tbl_area',
-    'tbl_city',
-    'tbl_brand',
-    'tbl_model',
-    'tbl_cmodel',
-    'tbl_branchcontact'
-]);
-
-const SMART_REQUIRED_TABLES = {
-    tbl_schedule: ['tbl_schedtime', 'tbl_closedscheds', 'tbl_trouble', 'tbl_mstatus'],
-    tbl_schedtime: ['tbl_schedule', 'tbl_trouble'],
-    tbl_machinerequest: ['tbl_newmachinerepair', 'tbl_newmachinehistory', 'tbl_mstatus'],
-    tbl_newmachinerepair: ['tbl_machinerequest', 'tbl_newmachinehistory', 'tbl_mstatus'],
-    tbl_newmachinehistory: ['tbl_machinerequest', 'tbl_newmachinerepair'],
-    tbl_collection: ['tbl_collectiondetails', 'tbl_paymentinfo', 'tbl_or', 'tbl_check'],
-    tbl_collectiondetails: ['tbl_collection', 'tbl_paymentinfo'],
-    tbl_billing: ['tbl_billinfo', 'tbl_billout', 'tbl_billoutparticular', 'tbl_billoutparticulars'],
-    tbl_billinfo: ['tbl_billing', 'tbl_billout', 'tbl_billoutparticular', 'tbl_billoutparticulars'],
-    tbl_billout: ['tbl_billinfo', 'tbl_billoutparticular', 'tbl_billoutparticulars'],
-    tbl_dispatchment: ['tbl_delivery', 'tbl_pullout']
-};
-
 const syncState = {
     db: null,
     selectedPresets: new Set(PRESETS.filter((preset) => preset.defaultOn).map((preset) => preset.key)),
@@ -129,7 +100,6 @@ const els = {
     dumpFileInput: null,
     dumpNoteInput: null,
     smartScopeCheckbox: null,
-    includeCoreInSmartCheckbox: null,
     dryRunCheckbox: null,
     resetWatermarkCheckbox: null,
     processAllTablesCheckbox: null,
@@ -182,7 +152,6 @@ function cacheElements() {
     els.dumpFileInput = document.getElementById('dumpFileInput');
     els.dumpNoteInput = document.getElementById('dumpNoteInput');
     els.smartScopeCheckbox = document.getElementById('smartScopeCheckbox');
-    els.includeCoreInSmartCheckbox = document.getElementById('includeCoreInSmartCheckbox');
     els.dryRunCheckbox = document.getElementById('dryRunCheckbox');
     els.resetWatermarkCheckbox = document.getElementById('resetWatermarkCheckbox');
     els.processAllTablesCheckbox = document.getElementById('processAllTablesCheckbox');
@@ -246,10 +215,6 @@ function isSmartScopeEnabled() {
     return Boolean(els.smartScopeCheckbox?.checked);
 }
 
-function includeCoreInSmartScope() {
-    return Boolean(els.includeCoreInSmartCheckbox?.checked);
-}
-
 function getSelectedTables() {
     const presetTables = PRESETS
         .filter((preset) => syncState.selectedPresets.has(preset.key))
@@ -265,41 +230,8 @@ function isAllTablesMode() {
     return Boolean(els.processAllTablesCheckbox?.checked);
 }
 
-function isCoreMasterTable(table) {
-    return CORE_MASTER_TABLES.has(normalizeTableName(table));
-}
-
-function shouldSkipInSmartScope(table, includeCoreTables) {
-    const normalized = normalizeTableName(table);
-    if (!normalized) return true;
-    if (normalized === SYNC_STATE_COLLECTION) return true;
-    if (normalized === 'local_firebase_sync') return true;
-    if (normalized === 'system_rules') return true;
-    if (normalized.startsWith('sys_')) return true;
-    if (!includeCoreTables && isCoreMasterTable(normalized)) return true;
-    return false;
-}
-
-function expandSmartScopeTables(seedTables, includeCoreTables) {
-    const queue = [...new Set(seedTables.map((table) => normalizeTableName(table)).filter(Boolean))];
-    const seen = new Set();
-
-    while (queue.length) {
-        const table = queue.shift();
-        if (!table || seen.has(table)) continue;
-        if (shouldSkipInSmartScope(table, includeCoreTables)) continue;
-
-        seen.add(table);
-
-        const dependencies = SMART_REQUIRED_TABLES[table] || [];
-        dependencies.forEach((dep) => {
-            const normalizedDep = normalizeTableName(dep);
-            if (!normalizedDep) return;
-            if (!seen.has(normalizedDep)) queue.push(normalizedDep);
-        });
-    }
-
-    return [...seen].sort();
+function buildExhaustiveSmartScope(seedTables) {
+    return [...new Set(seedTables.map((table) => normalizeTableName(table)).filter(Boolean))].sort();
 }
 
 function detectModulesForTables(tables) {
@@ -361,7 +293,6 @@ function setRunState(running) {
     els.dryRunCheckbox.disabled = running;
     els.resetWatermarkCheckbox.disabled = running;
     if (els.smartScopeCheckbox) els.smartScopeCheckbox.disabled = running;
-    if (els.includeCoreInSmartCheckbox) els.includeCoreInSmartCheckbox.disabled = running;
 
     els.presetGrid.querySelectorAll('input[data-preset-key]').forEach((checkbox) => {
         checkbox.disabled = running;
@@ -376,9 +307,6 @@ function updateScopeControlStates() {
 
     els.customTablesInput.disabled = controlDisabled;
     els.processAllTablesCheckbox.disabled = controlDisabled;
-    if (els.includeCoreInSmartCheckbox) {
-        els.includeCoreInSmartCheckbox.disabled = syncState.running || !smartLocked;
-    }
 
     els.presetGrid.querySelectorAll('input[data-preset-key]').forEach((checkbox) => {
         checkbox.disabled = syncState.running || smartLocked;
@@ -1257,7 +1185,7 @@ function keepOnlySummariesForTables(tables) {
     );
 }
 
-async function discoverSmartScopeTables(file, resetWatermark, includeCoreTables) {
+async function discoverSmartScopeTables(file, resetWatermark) {
     resetSmartDiscovery();
     if (resetWatermark) {
         syncState.watermarks = new Map();
@@ -1268,10 +1196,7 @@ async function discoverSmartScopeTables(file, resetWatermark, includeCoreTables)
     resetRunContext([], resetWatermark);
     renderSummaryTable();
 
-    logLine(
-        `Smart scope scan started (include core: ${includeCoreTables ? 'Yes' : 'No'}). ` +
-        'Scanning full dump for changed tables...'
-    );
+    logLine('Smart scope scan started. Scanning full dump and checking all tables for new rows...');
 
     await scanSqlFile(
         file,
@@ -1287,7 +1212,7 @@ async function discoverSmartScopeTables(file, resetWatermark, includeCoreTables)
 
     const changedSummaries = [...syncState.tableSummaries.values()].filter((summary) => summary.newRows > 0);
     const changedTables = changedSummaries.map((summary) => summary.table);
-    const smartTables = expandSmartScopeTables(changedTables, includeCoreTables);
+    const smartTables = buildExhaustiveSmartScope(changedTables);
     const modules = detectModulesForTables(smartTables);
 
     syncState.smartDiscovery = {
@@ -1296,8 +1221,8 @@ async function discoverSmartScopeTables(file, resetWatermark, includeCoreTables)
         modules
     };
 
-    logLine(`Smart scan detected ${changedTables.length} changed table(s) in dump.`);
-    logLine(`Smart scope selected ${smartTables.length} operational table(s) for sync.`);
+    logLine(`Smart scan checked ${syncState.tableSummaries.size} table(s) in dump.`);
+    logLine(`Smart scope selected ${smartTables.length} changed table(s) for sync.`);
     if (modules.length) {
         logLine(`Module impact: ${modules.join(', ')}`);
     }
@@ -1454,7 +1379,6 @@ async function startSync() {
     }
 
     const smartScope = isSmartScopeEnabled();
-    const includeCoreInSmart = includeCoreInSmartScope();
     const allTablesMode = !smartScope && isAllTablesMode();
     let selectedTables = allTablesMode ? [] : getSelectedTables();
 
@@ -1472,7 +1396,7 @@ async function startSync() {
     clearSummaryTable();
 
     const tableModeText = smartScope
-        ? `Smart scope (include core: ${includeCoreInSmart ? 'Yes' : 'No'})`
+        ? 'Smart scope (all tables, changed rows only)'
         : allTablesMode
             ? 'All tables from dump (auto-discover)'
             : `Selected ${selectedTables.length} table(s)`;
@@ -1487,7 +1411,7 @@ async function startSync() {
 
     try {
         if (smartScope) {
-            const discoveredTables = await discoverSmartScopeTables(file, resetWatermark, includeCoreInSmart);
+            const discoveredTables = await discoverSmartScopeTables(file, resetWatermark);
             if (!discoveredTables.length) {
                 setProgress(100, 'Completed', 'No changed operational tables detected.');
                 logLine('No changed operational tables detected. Nothing to sync.');
@@ -1601,12 +1525,6 @@ function bindEvents() {
             resetSmartDiscovery();
             renderSelectedTables();
             updateScopeControlStates();
-        });
-    }
-    if (els.includeCoreInSmartCheckbox) {
-        els.includeCoreInSmartCheckbox.addEventListener('change', () => {
-            resetSmartDiscovery();
-            renderSelectedTables();
         });
     }
     els.resetWatermarkCheckbox.addEventListener('change', () => {
