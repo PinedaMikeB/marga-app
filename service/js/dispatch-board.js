@@ -966,9 +966,19 @@ function renderOpsStaffPanel(staffId) {
     const role = getRole(employee, position);
     const assigneeName = getEmployeeName(employee, staffId);
     const rows = getStaffRows(staffId);
+    const selectedDate = opsState.selectedDate || '';
+    const todayCount = rows.filter((row) => String(row.task_datetime || '').slice(0, 10) === selectedDate).length;
+    const carryCount = rows.filter((row) => {
+        const taskDate = String(row.task_datetime || '').slice(0, 10);
+        return taskDate && selectedDate && taskDate < selectedDate;
+    }).length;
 
     panelTitle.textContent = `${assigneeName} - ${role}`;
-    panelSubtitle.textContent = `${rows.length} schedule(s) on ${opsState.selectedDate || 'selected date'}`;
+    if (opsState.includeCarryover && carryCount > 0 && selectedDate) {
+        panelSubtitle.textContent = `${rows.length} schedule(s): ${todayCount} on ${selectedDate}, ${carryCount} carryover`;
+    } else {
+        panelSubtitle.textContent = `${rows.length} schedule(s) on ${selectedDate || 'selected date'}`;
+    }
     panelMeta.textContent = MargaAuth.isAdmin()
         ? 'Admin mode: Edit, Transfer, and Delete actions are enabled.'
         : 'View mode only.';
@@ -977,7 +987,7 @@ function renderOpsStaffPanel(staffId) {
     printAllBtn.style.display = rows.length ? 'inline-flex' : 'none';
 
     if (!rows.length) {
-        panelBody.innerHTML = '<tr><td colspan="4" class="loading-cell">No schedules assigned for this date.</td></tr>';
+        panelBody.innerHTML = '<tr><td colspan="4" class="loading-cell">No schedules assigned for selected date/filter.</td></tr>';
         return;
     }
 
