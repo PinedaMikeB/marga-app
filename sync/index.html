@@ -157,6 +157,14 @@
                 </div>
                 <div class="card-body run-grid">
                     <label class="toggle">
+                        <input type="checkbox" id="smartScopeCheckbox" checked>
+                        <span>Smart scope (scan full dump first, then sync changed operational tables)</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="includeCoreInSmartCheckbox">
+                        <span>Include core/master tables when smart scope is enabled</span>
+                    </label>
+                    <label class="toggle">
                         <input type="checkbox" id="dryRunCheckbox" checked>
                         <span>Dry Run (analyze only, no write)</span>
                     </label>
@@ -173,6 +181,7 @@
                         <button class="btn btn-secondary" id="initWatermarkBtn">Initialize Watermarks</button>
                         <button class="btn btn-secondary" id="clearLogBtn">Clear Log</button>
                     </div>
+                    <div class="hint">Smart scope ignores manual presets and custom tables; it scans the full dump and builds scope from detected changes.</div>
                     <div class="hint">For first-time setup, choose your Dec 29 baseline dump, then click Initialize Watermarks.</div>
                 </div>
             </section>

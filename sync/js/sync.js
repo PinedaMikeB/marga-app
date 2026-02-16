@@ -24,10 +24,19 @@ const PRESETS = [
     },
     {
         key: 'service',
-        label: 'Service',
-        description: 'Requests, repairs, and service history',
+        label: 'Service / Dispatch',
+        description: 'Dispatch schedules, execution logs, requests, and service history',
         defaultOn: true,
-        tables: ['tbl_machinerequest', 'tbl_newmachinerepair', 'tbl_newmachinehistory', 'tbl_mstatus']
+        tables: [
+            'tbl_schedule',
+            'tbl_schedtime',
+            'tbl_closedscheds',
+            'tbl_trouble',
+            'tbl_mstatus',
+            'tbl_machinerequest',
+            'tbl_newmachinerepair',
+            'tbl_newmachinehistory'
+        ]
     },
     {
         key: 'deliveries',
@@ -46,6 +55,10 @@ const PRESETS = [
 ];
 
 const TABLE_ID_HINTS = {
+    tbl_schedule: 'id',
+    tbl_schedtime: 'id',
+    tbl_closedscheds: 'id',
+    tbl_trouble: 'id',
     tbl_machinerequest: 'id',
     tbl_newmachinerepair: 'id',
     tbl_newmachinehistory: 'id',
@@ -54,6 +67,35 @@ const TABLE_ID_HINTS = {
     tbl_machine: 'id',
     tbl_contractmain: 'id',
     tbl_billinfo: 'id'
+};
+
+const CORE_MASTER_TABLES = new Set([
+    'tbl_companylist',
+    'tbl_branchinfo',
+    'tbl_contractmain',
+    'tbl_machine',
+    'tbl_employee',
+    'tbl_empos',
+    'tbl_area',
+    'tbl_city',
+    'tbl_brand',
+    'tbl_model',
+    'tbl_cmodel',
+    'tbl_branchcontact'
+]);
+
+const SMART_REQUIRED_TABLES = {
+    tbl_schedule: ['tbl_schedtime', 'tbl_closedscheds', 'tbl_trouble', 'tbl_mstatus'],
+    tbl_schedtime: ['tbl_schedule', 'tbl_trouble'],
+    tbl_machinerequest: ['tbl_newmachinerepair', 'tbl_newmachinehistory', 'tbl_mstatus'],
+    tbl_newmachinerepair: ['tbl_machinerequest', 'tbl_newmachinehistory', 'tbl_mstatus'],
+    tbl_newmachinehistory: ['tbl_machinerequest', 'tbl_newmachinerepair'],
+    tbl_collection: ['tbl_collectiondetails', 'tbl_paymentinfo', 'tbl_or', 'tbl_check'],
+    tbl_collectiondetails: ['tbl_collection', 'tbl_paymentinfo'],
+    tbl_billing: ['tbl_billinfo', 'tbl_billout', 'tbl_billoutparticular', 'tbl_billoutparticulars'],
+    tbl_billinfo: ['tbl_billing', 'tbl_billout', 'tbl_billoutparticular', 'tbl_billoutparticulars'],
+    tbl_billout: ['tbl_billinfo', 'tbl_billoutparticular', 'tbl_billoutparticulars'],
+    tbl_dispatchment: ['tbl_delivery', 'tbl_pullout']
 };
 
 const syncState = {
@@ -76,7 +118,8 @@ const syncState = {
         commitCount: 0
     },
     oneTimeWarnings: new Set(),
-    skipWatermarkLookup: false
+    skipWatermarkLookup: false,
+    smartDiscovery: null
 };
 
 const els = {
@@ -85,6 +128,8 @@ const els = {
     selectedTablesList: null,
     dumpFileInput: null,
     dumpNoteInput: null,
+    smartScopeCheckbox: null,
+    includeCoreInSmartCheckbox: null,
     dryRunCheckbox: null,
     resetWatermarkCheckbox: null,
     processAllTablesCheckbox: null,
@@ -136,6 +181,8 @@ function cacheElements() {
     els.selectedTablesList = document.getElementById('selectedTablesList');
     els.dumpFileInput = document.getElementById('dumpFileInput');
     els.dumpNoteInput = document.getElementById('dumpNoteInput');
+    els.smartScopeCheckbox = document.getElementById('smartScopeCheckbox');
+    els.includeCoreInSmartCheckbox = document.getElementById('includeCoreInSmartCheckbox');
     els.dryRunCheckbox = document.getElementById('dryRunCheckbox');
     els.resetWatermarkCheckbox = document.getElementById('resetWatermarkCheckbox');
     els.processAllTablesCheckbox = document.getElementById('processAllTablesCheckbox');
@@ -173,6 +220,7 @@ function renderPresets() {
             } else {
                 syncState.selectedPresets.delete(presetKey);
             }
+            resetSmartDiscovery();
             renderSelectedTables();
         });
     });
@@ -194,6 +242,14 @@ function parseCustomTables() {
         .filter(Boolean);
 }
 
+function isSmartScopeEnabled() {
+    return Boolean(els.smartScopeCheckbox?.checked);
+}
+
+function includeCoreInSmartScope() {
+    return Boolean(els.includeCoreInSmartCheckbox?.checked);
+}
+
 function getSelectedTables() {
     const presetTables = PRESETS
         .filter((preset) => syncState.selectedPresets.has(preset.key))
@@ -209,7 +265,77 @@ function isAllTablesMode() {
     return Boolean(els.processAllTablesCheckbox?.checked);
 }
 
+function isCoreMasterTable(table) {
+    return CORE_MASTER_TABLES.has(normalizeTableName(table));
+}
+
+function shouldSkipInSmartScope(table, includeCoreTables) {
+    const normalized = normalizeTableName(table);
+    if (!normalized) return true;
+    if (normalized === SYNC_STATE_COLLECTION) return true;
+    if (normalized === 'local_firebase_sync') return true;
+    if (normalized === 'system_rules') return true;
+    if (normalized.startsWith('sys_')) return true;
+    if (!includeCoreTables && isCoreMasterTable(normalized)) return true;
+    return false;
+}
+
+function expandSmartScopeTables(seedTables, includeCoreTables) {
+    const queue = [...new Set(seedTables.map((table) => normalizeTableName(table)).filter(Boolean))];
+    const seen = new Set();
+
+    while (queue.length) {
+        const table = queue.shift();
+        if (!table || seen.has(table)) continue;
+        if (shouldSkipInSmartScope(table, includeCoreTables)) continue;
+
+        seen.add(table);
+
+        const dependencies = SMART_REQUIRED_TABLES[table] || [];
+        dependencies.forEach((dep) => {
+            const normalizedDep = normalizeTableName(dep);
+            if (!normalizedDep) return;
+            if (!seen.has(normalizedDep)) queue.push(normalizedDep);
+        });
+    }
+
+    return [...seen].sort();
+}
+
+function detectModulesForTables(tables) {
+    const modules = new Set();
+    const normalizedTables = new Set(tables.map((table) => normalizeTableName(table)));
+
+    PRESETS.forEach((preset) => {
+        if (preset.tables.some((table) => normalizedTables.has(normalizeTableName(table)))) {
+            modules.add(preset.label);
+        }
+    });
+
+    return [...modules].sort();
+}
+
 function renderSelectedTables() {
+    if (isSmartScopeEnabled()) {
+        if (syncState.smartDiscovery?.tables?.length) {
+            const modules = syncState.smartDiscovery.modules?.length
+                ? `Modules: ${syncState.smartDiscovery.modules.join(', ')}`
+                : 'Modules: mixed';
+
+            els.selectedTablesList.innerHTML = [
+                `<span class="selected-chip">Smart scope: ${syncState.smartDiscovery.tables.length} table(s)</span>`,
+                `<span class="selected-chip">${MargaUtils.escapeHtml(modules)}</span>`,
+                ...syncState.smartDiscovery.tables
+                    .map((table) => `<span class="selected-chip">${MargaUtils.escapeHtml(table)}</span>`)
+            ].join('');
+            return;
+        }
+
+        els.selectedTablesList.innerHTML =
+            '<span class="selected-chip">Smart scope is enabled: table list will be discovered from dump changes.</span>';
+        return;
+    }
+
     if (isAllTablesMode()) {
         els.selectedTablesList.innerHTML = '<span class="selected-chip">All tables in dump (auto-discover)</span>';
         return;
@@ -232,14 +358,35 @@ function setRunState(running) {
     els.startSyncBtn.disabled = running;
     els.initWatermarkBtn.disabled = running;
     els.dumpFileInput.disabled = running;
-    els.customTablesInput.disabled = running;
     els.dryRunCheckbox.disabled = running;
     els.resetWatermarkCheckbox.disabled = running;
-    els.processAllTablesCheckbox.disabled = running;
+    if (els.smartScopeCheckbox) els.smartScopeCheckbox.disabled = running;
+    if (els.includeCoreInSmartCheckbox) els.includeCoreInSmartCheckbox.disabled = running;
 
     els.presetGrid.querySelectorAll('input[data-preset-key]').forEach((checkbox) => {
         checkbox.disabled = running;
     });
+
+    updateScopeControlStates();
+}
+
+function updateScopeControlStates() {
+    const smartLocked = isSmartScopeEnabled();
+    const controlDisabled = syncState.running || smartLocked;
+
+    els.customTablesInput.disabled = controlDisabled;
+    els.processAllTablesCheckbox.disabled = controlDisabled;
+    if (els.includeCoreInSmartCheckbox) {
+        els.includeCoreInSmartCheckbox.disabled = syncState.running || !smartLocked;
+    }
+
+    els.presetGrid.querySelectorAll('input[data-preset-key]').forEach((checkbox) => {
+        checkbox.disabled = syncState.running || smartLocked;
+    });
+}
+
+function resetSmartDiscovery() {
+    syncState.smartDiscovery = null;
 }
 
 function setProgress(percent, label, meta = '') {
@@ -1006,6 +1153,24 @@ async function loadWatermarks(selectedTables) {
     }));
 }
 
+async function preloadAllWatermarks() {
+    syncState.watermarks = new Map();
+    syncState.watermarkFetchPromises = new Map();
+
+    try {
+        const snapshot = await syncState.db.collection(SYNC_STATE_COLLECTION).get();
+        snapshot.forEach((doc) => {
+            const table = normalizeTableName(doc.id);
+            const data = doc.data() || {};
+            const lastId = Number(data.last_id || 0);
+            const safeLastId = Number.isFinite(lastId) ? Math.trunc(lastId) : 0;
+            syncState.watermarks.set(table, safeLastId);
+        });
+    } catch (error) {
+        logLine(`Failed preloading watermarks: ${error.message}`, 'warn');
+    }
+}
+
 async function updateSyncStates(file, note, dryRun) {
     if (dryRun) return;
 
@@ -1082,6 +1247,63 @@ function summarizeRun(dryRun, allTablesMode) {
             logLine(`Selected tables not found in dump: ${notFound.join(', ')}`, 'warn');
         }
     }
+}
+
+function keepOnlySummariesForTables(tables) {
+    if (!tables?.length) return;
+    const allowed = new Set(tables.map((table) => normalizeTableName(table)));
+    syncState.tableSummaries = new Map(
+        [...syncState.tableSummaries.entries()].filter(([table]) => allowed.has(normalizeTableName(table)))
+    );
+}
+
+async function discoverSmartScopeTables(file, resetWatermark, includeCoreTables) {
+    resetSmartDiscovery();
+    if (resetWatermark) {
+        syncState.watermarks = new Map();
+        syncState.watermarkFetchPromises = new Map();
+    } else {
+        await preloadAllWatermarks();
+    }
+    resetRunContext([], resetWatermark);
+    renderSummaryTable();
+
+    logLine(
+        `Smart scope scan started (include core: ${includeCoreTables ? 'Yes' : 'No'}). ` +
+        'Scanning full dump for changed tables...'
+    );
+
+    await scanSqlFile(
+        file,
+        async (statement) => {
+            await processSqlStatement(statement, null, true, resetWatermark);
+        },
+        (percent, bytesLoaded, totalBytes) => {
+            const mbLoaded = (bytesLoaded / (1024 * 1024)).toFixed(1);
+            const mbTotal = (totalBytes / (1024 * 1024)).toFixed(1);
+            setProgress(percent, 'Smart Scan', `${mbLoaded} MB / ${mbTotal} MB scanned`);
+        }
+    );
+
+    const changedSummaries = [...syncState.tableSummaries.values()].filter((summary) => summary.newRows > 0);
+    const changedTables = changedSummaries.map((summary) => summary.table);
+    const smartTables = expandSmartScopeTables(changedTables, includeCoreTables);
+    const modules = detectModulesForTables(smartTables);
+
+    syncState.smartDiscovery = {
+        changedTables,
+        tables: smartTables,
+        modules
+    };
+
+    logLine(`Smart scan detected ${changedTables.length} changed table(s) in dump.`);
+    logLine(`Smart scope selected ${smartTables.length} operational table(s) for sync.`);
+    if (modules.length) {
+        logLine(`Module impact: ${modules.join(', ')}`);
+    }
+
+    renderSelectedTables();
+    return smartTables;
 }
 
 async function commitBatchWithRetry(batch) {
@@ -1231,9 +1453,12 @@ async function startSync() {
         return;
     }
 
-    const allTablesMode = isAllTablesMode();
-    const selectedTables = allTablesMode ? [] : getSelectedTables();
-    if (!allTablesMode && !selectedTables.length) {
+    const smartScope = isSmartScopeEnabled();
+    const includeCoreInSmart = includeCoreInSmartScope();
+    const allTablesMode = !smartScope && isAllTablesMode();
+    let selectedTables = allTablesMode ? [] : getSelectedTables();
+
+    if (!smartScope && !allTablesMode && !selectedTables.length) {
         alert('Please select at least one table.');
         return;
     }
@@ -1246,22 +1471,77 @@ async function startSync() {
     clearLog();
     clearSummaryTable();
 
-    const tableModeText = allTablesMode
-        ? 'All tables from dump (auto-discover)'
-        : `Selected ${selectedTables.length} table(s)`;
+    const tableModeText = smartScope
+        ? `Smart scope (include core: ${includeCoreInSmart ? 'Yes' : 'No'})`
+        : allTablesMode
+            ? 'All tables from dump (auto-discover)'
+            : `Selected ${selectedTables.length} table(s)`;
 
     setProgress(0, 'Preparing', tableModeText);
     logLine(`File selected: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`);
     logLine(`Mode: ${dryRun ? 'DRY RUN' : 'WRITE'} | Reset watermark: ${resetWatermark ? 'Yes' : 'No'}`);
     logLine(`Table scope: ${tableModeText}`);
-    if (!allTablesMode) {
+    if (!smartScope && !allTablesMode) {
         logLine(`Tables: ${selectedTables.join(', ')}`);
     }
 
     try {
-        if (allTablesMode) {
+        if (smartScope) {
+            const discoveredTables = await discoverSmartScopeTables(file, resetWatermark, includeCoreInSmart);
+            if (!discoveredTables.length) {
+                setProgress(100, 'Completed', 'No changed operational tables detected.');
+                logLine('No changed operational tables detected. Nothing to sync.');
+                clearSummaryTable();
+                return;
+            }
+
+            selectedTables = discoveredTables;
+            keepOnlySummariesForTables(selectedTables);
+            renderSummaryTable();
+
+            if (dryRun) {
+                setProgress(100, 'Completed', 'Smart scope dry run complete.');
+                summarizeRun(true, false);
+                return;
+            }
+
             syncState.watermarks = new Map();
             syncState.watermarkFetchPromises = new Map();
+            await loadWatermarks(selectedTables);
+            resetRunContext(selectedTables, resetWatermark);
+            renderSummaryTable();
+
+            const selectedTableSet = new Set(selectedTables);
+            setProgress(3, 'Sync Pass', 'Re-reading dump for smart scope write...');
+
+            await scanSqlFile(
+                file,
+                async (statement) => {
+                    await processSqlStatement(statement, selectedTableSet, false, resetWatermark);
+                },
+                (percent, bytesLoaded, totalBytes) => {
+                    const mbLoaded = (bytesLoaded / (1024 * 1024)).toFixed(1);
+                    const mbTotal = (totalBytes / (1024 * 1024)).toFixed(1);
+                    setProgress(percent, 'Sync Pass', `${mbLoaded} MB / ${mbTotal} MB processed`);
+                }
+            );
+
+            setProgress(95, 'Writing data', 'Flushing Firestore batches...');
+            await flushBatch(true);
+            await updateSyncStates(file, note, false);
+
+            setProgress(100, 'Completed', 'Smart scope sync completed successfully.');
+            summarizeRun(false, false);
+            return;
+        }
+
+        if (allTablesMode) {
+            if (resetWatermark) {
+                syncState.watermarks = new Map();
+                syncState.watermarkFetchPromises = new Map();
+            } else {
+                await preloadAllWatermarks();
+            }
         } else {
             await loadWatermarks(selectedTables);
         }
@@ -1304,8 +1584,35 @@ async function startSync() {
 }
 
 function bindEvents() {
-    els.customTablesInput.addEventListener('input', MargaUtils.debounce(renderSelectedTables, 160));
-    els.processAllTablesCheckbox.addEventListener('change', renderSelectedTables);
+    els.customTablesInput.addEventListener('input', MargaUtils.debounce(() => {
+        resetSmartDiscovery();
+        renderSelectedTables();
+    }, 160));
+    els.processAllTablesCheckbox.addEventListener('change', () => {
+        resetSmartDiscovery();
+        renderSelectedTables();
+    });
+    els.dumpFileInput.addEventListener('change', () => {
+        resetSmartDiscovery();
+        renderSelectedTables();
+    });
+    if (els.smartScopeCheckbox) {
+        els.smartScopeCheckbox.addEventListener('change', () => {
+            resetSmartDiscovery();
+            renderSelectedTables();
+            updateScopeControlStates();
+        });
+    }
+    if (els.includeCoreInSmartCheckbox) {
+        els.includeCoreInSmartCheckbox.addEventListener('change', () => {
+            resetSmartDiscovery();
+            renderSelectedTables();
+        });
+    }
+    els.resetWatermarkCheckbox.addEventListener('change', () => {
+        resetSmartDiscovery();
+        renderSelectedTables();
+    });
     els.startSyncBtn.addEventListener('click', startSync);
     els.initWatermarkBtn.addEventListener('click', initializeWatermarksFromBaseline);
     els.clearLogBtn.addEventListener('click', clearLog);
@@ -1324,6 +1631,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initFirebase();
     bindEvents();
     renderPresets();
+    updateScopeControlStates();
     clearSummaryTable();
     setProgress(0, 'Idle', 'No active sync.');
 });
