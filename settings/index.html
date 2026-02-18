@@ -139,6 +139,7 @@
                     <div class="settings-tabs" role="tablist" aria-label="Settings views">
                         <button type="button" class="settings-tab active" id="tabEmployees" data-tab="employees" role="tab" aria-selected="true">Employees</button>
                         <button type="button" class="settings-tab" id="tabAccounts" data-tab="accounts" role="tab" aria-selected="false">Accounts</button>
+                        <button type="button" class="settings-tab" id="tabRoles" data-tab="roles" role="tab" aria-selected="false">Roles &amp; Permissions</button>
                     </div>
                 </div>
 
@@ -182,6 +183,17 @@
 
                 <div class="settings-pane" id="accountsPane" role="tabpanel" aria-labelledby="tabAccounts">
                     <div class="settings-pane-header">
+                        <div class="settings-sync-box">
+                            <div>
+                                <div class="settings-sync-title">Sync Final Marga Users</div>
+                                <div class="ops-subtext">Upload the final XLSX file to sync email, temporary password, role, and module access.</div>
+                            </div>
+                            <div class="settings-sync-actions">
+                                <input type="file" id="userSyncFileInput" accept=".xlsx,.xls" class="settings-file-input">
+                                <button type="button" class="btn btn-primary btn-sm" id="syncUsersBtn">Sync XLSX</button>
+                            </div>
+                            <div class="ops-subtext" id="syncUsersResult">No sync executed yet.</div>
+                        </div>
                         <div class="card-actions settings-actions">
                             <div class="search-input-wrapper">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -214,6 +226,28 @@
                                 <tr><td colspan="6" class="loading-cell">Loading...</td></tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <div class="settings-pane" id="rolesPane" role="tabpanel" aria-labelledby="tabRoles">
+                    <div class="settings-pane-header">
+                        <div class="role-builder">
+                            <div class="role-list" id="roleList"></div>
+                            <div class="role-editor">
+                                <div class="role-editor-header">
+                                    <div>
+                                        <h4 id="roleEditorTitle">Role</h4>
+                                        <p class="ops-subtext" id="roleEditorSubtitle">Define what this role can access.</p>
+                                    </div>
+                                    <div class="settings-module-toolbar">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="resetRolePermissionsBtn">Reset Default</button>
+                                        <button type="button" class="btn btn-primary btn-sm" id="saveRolePermissionsBtn">Save Role Permissions</button>
+                                    </div>
+                                </div>
+                                <div class="module-access-grid role-module-grid" id="roleModuleAccess"></div>
+                                <div class="ops-subtext" id="roleModuleMeta"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -382,6 +416,7 @@
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>
     <script src="../shared/js/utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="js/settings.js"></script>
 </body>
 </html>

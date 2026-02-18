@@ -39,6 +39,10 @@ const MargaAuth = {
         if (stored) {
             try {
                 this.currentUser = JSON.parse(stored);
+                this.currentUser.role = this.normalizeRole(this.currentUser.role || 'viewer');
+                this.currentUser.allowed_modules = this.normalizeModules(this.currentUser.allowed_modules);
+                this.currentUser.role_modules = this.normalizeModules(this.currentUser.role_modules);
+                this.currentUser.allowed_modules_configured = this.currentUser.allowed_modules_configured === true;
                 return true;
             } catch (e) {
                 this.logout();
@@ -67,14 +71,27 @@ const MargaAuth = {
             const ok = await this.verifyPassword(user, password);
             if (!ok) return { success: false, message: 'Invalid email or password' };
 
+            const role = this.normalizeRole(user.role || 'viewer');
+            const userModulesConfigured = user.allowed_modules_configured === true;
+            const allowedModules = userModulesConfigured ? this.normalizeModules(user.allowed_modules) : [];
+            let roleModules = null;
+            if (!userModulesConfigured && role !== 'admin') {
+                roleModules = await this.fetchRoleModules(role);
+            }
+            const resolvedRoleModules = Array.isArray(roleModules)
+                ? roleModules
+                : this.normalizeModules(this.PERMISSIONS[role] || []);
+
             return this.setSession({
                 id: user._docId,
                 username: user.username || user.email || ident,
                 name: user.name || user.username || user.email || ident,
-                role: user.role || 'viewer',
+                role,
                 email: user.email || '',
                 staff_id: user.staff_id || user.staffId || null,
-                allowed_modules: this.normalizeModules(user.allowed_modules)
+                allowed_modules: allowedModules,
+                role_modules: resolvedRoleModules,
+                allowed_modules_configured: userModulesConfigured
             }, remember);
 
         } catch (error) {
@@ -95,7 +112,10 @@ const MargaAuth = {
                 username: 'admin',
                 name: 'Administrator',
                 role: 'admin',
-                email: ''
+                email: '',
+                allowed_modules: [],
+                role_modules: this.normalizeModules(this.PERMISSIONS.admin || []),
+                allowed_modules_configured: false
             }, remember);
         }
         return { success: false, message: 'Invalid username or password' };
@@ -105,10 +125,16 @@ const MargaAuth = {
      * Set user session
      */
     setSession(user, remember) {
-        this.currentUser = user;
+        this.currentUser = {
+            ...user,
+            role: this.normalizeRole(user?.role || 'viewer'),
+            allowed_modules: this.normalizeModules(user?.allowed_modules),
+            role_modules: this.normalizeModules(user?.role_modules),
+            allowed_modules_configured: user?.allowed_modules_configured === true
+        };
         const storage = remember ? localStorage : sessionStorage;
-        storage.setItem('marga_user', JSON.stringify(user));
-        return { success: true, user };
+        storage.setItem('marga_user', JSON.stringify(this.currentUser));
+        return { success: true, user: this.currentUser };
     },
 
     /**
@@ -146,8 +172,10 @@ const MargaAuth = {
      */
     hasAccess(module) {
         if (!this.currentUser) return false;
+        const normalizedModule = String(module || '').trim().toLowerCase();
+        if (!normalizedModule || normalizedModule === 'dashboard') return true;
         if (this.currentUser.role === 'admin') return true;
-        return this.getAccessibleModules().includes(module);
+        return this.getAccessibleModules().includes(normalizedModule);
     },
 
     /**
@@ -163,8 +191,11 @@ const MargaAuth = {
     getAccessibleModules() {
         if (!this.currentUser) return [];
         if (this.currentUser.role === 'admin') return [...new Set(this.PERMISSIONS.admin || [])];
+        const hasUserOverride = this.currentUser.allowed_modules_configured === true;
         const userModules = this.normalizeModules(this.currentUser.allowed_modules);
-        if (userModules.length) return userModules;
+        if (hasUserOverride) return userModules;
+        const roleModules = this.normalizeModules(this.currentUser.role_modules);
+        if (roleModules.length) return roleModules;
         return this.PERMISSIONS[this.currentUser.role] || [];
     },
 
@@ -236,6 +267,80 @@ MargaAuth.normalizeModules = function normalizeModules(modules) {
         return [...new Set(modules.split(',').map((m) => m.trim().toLowerCase()).filter(Boolean))];
     }
     return [];
+};
+
+MargaAuth.normalizeRole = function normalizeRole(role) {
+    const value = String(role || '').trim().toLowerCase();
+    return this.PERMISSIONS[value] ? value : 'viewer';
+};
+
+MargaAuth.persistCurrentUser = function persistCurrentUser() {
+    if (!this.currentUser) return;
+    const value = JSON.stringify(this.currentUser);
+    if (localStorage.getItem('marga_user')) localStorage.setItem('marga_user', value);
+    if (sessionStorage.getItem('marga_user')) sessionStorage.setItem('marga_user', value);
+};
+
+MargaAuth.setRolePermissions = function setRolePermissions(role, modules) {
+    const normalizedRole = this.normalizeRole(role);
+    const normalizedModules = this.normalizeModules(modules);
+    this.PERMISSIONS[normalizedRole] = normalizedModules;
+
+    if (!this.currentUser) return;
+    if (this.normalizeRole(this.currentUser.role) !== normalizedRole) return;
+    if (this.currentUser.allowed_modules_configured === true) return;
+
+    this.currentUser.role_modules = normalizedModules;
+    this.persistCurrentUser();
+};
+
+MargaAuth.fetchRoleModules = async function fetchRoleModules(role) {
+    const normalizedRole = this.normalizeRole(role);
+    try {
+        const response = await fetch(
+            `${FIREBASE_CONFIG.baseUrl}/marga_role_permissions/${encodeURIComponent(normalizedRole)}?key=${FIREBASE_CONFIG.apiKey}`
+        );
+        const payload = await response.json();
+        if (!response.ok || payload?.error) return null;
+
+        const parsed = this.parseFirestoreDoc(payload);
+        if (!parsed || parsed.active === false) {
+            this.PERMISSIONS[normalizedRole] = [];
+            return [];
+        }
+        const modules = this.normalizeModules(parsed.allowed_modules);
+        this.PERMISSIONS[normalizedRole] = modules;
+        return modules;
+    } catch (error) {
+        console.warn('Role-permission lookup failed:', error);
+        return null;
+    }
+};
+
+MargaAuth.applyModulePermissions = function applyModulePermissions({ selector = '[data-module]', hideUnauthorized = false } = {}) {
+    if (!this.currentUser) this.init();
+    document.querySelectorAll(selector).forEach((el) => {
+        const module = String(el.dataset.module || '').trim().toLowerCase();
+        if (!module) return;
+        const canAccess = this.hasAccess(module);
+        if (canAccess) {
+            el.classList.remove('disabled');
+            if (hideUnauthorized) el.style.removeProperty('display');
+            return;
+        }
+        if (hideUnauthorized) {
+            el.style.display = 'none';
+            return;
+        }
+        el.classList.add('disabled');
+        if (!el.dataset.noAccessBound) {
+            el.addEventListener('click', (event) => {
+                event.preventDefault();
+                alert('You do not have permission to access this module.');
+            });
+            el.dataset.noAccessBound = '1';
+        }
+    });
 };
 
 MargaAuth.getAppBasePath = function getAppBasePath() {
