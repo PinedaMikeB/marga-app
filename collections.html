@@ -458,6 +458,15 @@
             background: rgba(239, 246, 255, 0.72);
         }
 
+        .report-panel-subtitle {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            font-size: 11px;
+            color: #4c6b89;
+            font-weight: 700;
+            background: rgba(248, 250, 252, 0.76);
+        }
+
         .data-table {
             width: 100%;
             border-collapse: collapse;
@@ -498,6 +507,10 @@
 
         .data-table tr.has-followup:hover {
             background: rgba(254, 243, 199, 0.82);
+        }
+
+        .data-table tr.clickable-row td {
+            cursor: pointer;
         }
 
         .mini-table th,
@@ -841,6 +854,79 @@
             font-weight: 700;
         }
 
+        .detail-call-log {
+            margin-bottom: 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(147, 197, 253, 0.5);
+            background: rgba(239, 246, 255, 0.85);
+            padding: 10px;
+        }
+
+        .detail-call-log h4 {
+            margin: 0 0 8px;
+            font-size: 11px;
+            color: #1e4d7b;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .detail-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .detail-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .detail-form-group.full {
+            grid-column: 1 / -1;
+        }
+
+        .detail-form-group label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #587291;
+            font-weight: 700;
+        }
+
+        .detail-form-group input,
+        .detail-form-group textarea,
+        .detail-form-group select {
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 8px;
+            padding: 7px 9px;
+            background: #fff;
+            color: #153b60;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .detail-form-group textarea {
+            min-height: 72px;
+            resize: vertical;
+        }
+
+        .detail-form-actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .detail-save-status {
+            font-size: 11px;
+            font-weight: 700;
+            color: #355879;
+        }
+
         .history-section h4 {
             margin: 0 0 8px;
             font-size: 12px;
@@ -915,7 +1001,8 @@
             .priority-cards,
             .stats-row,
             .brief-grid,
-            .detail-grid {
+            .detail-grid,
+            .detail-form-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -1166,8 +1253,9 @@
                 </div>
             </div>
 
-            <div class="data-table-container">
+            <div class="data-table-container" id="collector-work-queue">
                 <div class="report-panel-title">Collector Work Queue</div>
+                <div class="report-panel-subtitle" id="queue-context">Showing all invoices in current queue.</div>
                 <div class="table-scroll" id="table-container"><div class="loading-overlay"><div class="loading-spinner"></div><span>Loading...</span></div></div>
                 <div class="pagination" id="pagination" style="display:none;">
                     <div class="pagination-info">Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> of <span id="total-records">0</span></div>

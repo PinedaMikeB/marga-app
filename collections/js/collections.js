@@ -28,6 +28,8 @@ let machToBranchMap = {};
 let invoiceIndexMap = new Map();
 let lookupsLoaded = false;
 let lastLoadSucceeded = false;
+let currentDetailInvoice = null;
+let isSavingConversation = false;
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -113,6 +115,27 @@ function formatCurrencyShort(amount) {
     if (value >= 1000000) return '₱' + (value / 1000000).toFixed(2) + 'M';
     if (value >= 1000) return '₱' + (value / 1000).toFixed(0) + 'K';
     return '₱' + value.toFixed(0);
+}
+
+function getTodayInputValue(offsetDays = 0) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + offsetDays);
+    return toDateKey(d) || '';
+}
+
+function toTimestampString(date = new Date()) {
+    const yyyyMmDd = toDateKey(date) || getTodayInputValue();
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${yyyyMmDd} ${hh}:${mm}:${ss}`;
+}
+
+function normalizePhone(value) {
+    return String(value || '')
+        .replace(/[^\d+]/g, '')
+        .trim();
 }
 
 function escapeHtml(text) {
@@ -218,6 +241,22 @@ async function firestoreGetAll(collection, statusCallback = null, options = {}) 
     return allDocs;
 }
 
+async function firestoreCreate(collection, fields) {
+    const url = `${BASE_URL}/${collection}?key=${encodeURIComponent(API_KEY)}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+    });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Failed to write ${collection}: ${response.status} ${message.slice(0, 140)}`);
+    }
+
+    return response.json();
+}
+
 function monthNameToNumber(monthName) {
     const months = {
         january: 1,
@@ -312,6 +351,7 @@ function closeFollowupModal() {
 
 function closeDetailModal() {
     document.getElementById('detailModal')?.classList.add('hidden');
+    currentDetailInvoice = null;
 }
 
 function showTodayFollowups() {
@@ -382,6 +422,7 @@ async function loadCollectionHistory() {
             'schedule_status',
             'remarks',
             'contact_person',
+            'contact_number',
             'timestamp',
             'call_datetime',
             'created_at'
@@ -412,6 +453,7 @@ async function loadCollectionHistory() {
             docId: doc.name || String(Math.random()),
             remarks: getField(f, ['remarks']) || 'No remarks',
             contactPerson: getField(f, ['contact_person']) || '-',
+            contactNumber: getField(f, ['contact_number']) || '',
             scheduleStatus: getField(f, ['schedule_status']),
             followupDate,
             followupDateRaw,
@@ -608,6 +650,7 @@ function processInvoice(doc) {
     const dueDate = getField(f, ['due_date']);
     const invoiceDateRaw = getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex']);
     const invoiceDate = normalizeDate(invoiceDateRaw);
+    const billingContactNumber = getField(f, ['contact_number']) || '';
 
     const age = calculateAge(dueDate, month, year);
     const totalAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
@@ -615,6 +658,7 @@ function processInvoice(doc) {
 
     const history = getHistoryForInvoice(invoiceIdKey, invoiceNoKey);
     const lastHistory = history.length > 0 ? history[0] : null;
+    const historyContact = history.find((entry) => hasMeaningfulContact(entry.contactNumber))?.contactNumber || '';
     const lastContactDate = lastHistory ? lastHistory.callDate : null;
     const lastContactDays = lastContactDate ? Math.max(0, daysBetween(lastContactDate, new Date())) : null;
 
@@ -634,6 +678,7 @@ function processInvoice(doc) {
         priority: getPriority(age),
         company: companyName,
         branch: branchName,
+        contactNumber: billingContactNumber || historyContact || '',
         category: getCategoryCode(contract.categoryId),
         lastRemarks: lastHistory ? lastHistory.remarks : null,
         lastContactDate,
@@ -684,6 +729,7 @@ async function loadInvoices(mode) {
                 'totalamount',
                 'amount',
                 'vatamount',
+                'contact_number',
                 'dateprinted',
                 'date_printed',
                 'invdate',
@@ -847,6 +893,7 @@ function recomputeFilteredInvoices() {
     renderMissingContactTable();
     updateFollowupBadge();
     updateActionBrief();
+    updateQueueContext();
 }
 
 function applyFilters() {
@@ -896,6 +943,7 @@ function filterByPriority(priority) {
 
     currentPage = 1;
     recomputeFilteredInvoices();
+    scrollToWorkQueue();
 }
 
 function removeFilter(fieldId) {
@@ -961,6 +1009,20 @@ function showActiveFilters() {
                           )}')">x</span></span>`
                   )
                   .join('');
+}
+
+function updateQueueContext() {
+    const node = document.getElementById('queue-context');
+    if (!node) return;
+
+    const priorityText = currentPriorityFilter ? `Priority: ${currentPriorityFilter.toUpperCase()}` : 'All priorities';
+    node.textContent = `${priorityText} • ${filteredInvoices.length.toLocaleString()} account(s) in queue`;
+}
+
+function scrollToWorkQueue() {
+    const node = document.getElementById('collector-work-queue');
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function updateAllStats() {
@@ -1170,13 +1232,13 @@ function renderTodayScheduleTable() {
                     .slice(0, 25)
                     .map(
                         (inv) => `
-                    <tr>
+                    <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                         <td>#${escapeHtml(inv.invoiceNo)}</td>
                         <td>${escapeHtml(formatDate(inv.invoiceDate || inv.dueDate))}</td>
                         <td>${escapeHtml(inv.company)}</td>
                         <td>${escapeHtml(inv.branch)}</td>
                         <td class="amount">${escapeHtml(formatCurrency(inv.amount))}</td>
-                        <td><button class="btn btn-secondary btn-sm" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
+                        <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
                     </tr>
                 `
                     )
@@ -1213,12 +1275,12 @@ function renderPromiseDueTable() {
                     .slice(0, 25)
                     .map(
                         (inv) => `
-                    <tr>
+                    <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                         <td>#${escapeHtml(inv.invoiceNo)}</td>
                         <td>${escapeHtml(inv.company)}</td>
                         <td><span class="${escapeHtml(getAgeClass(inv.age))}">${escapeHtml(String(inv.age))}d</span></td>
                         <td class="amount">${escapeHtml(formatCurrency(inv.amount))}</td>
-                        <td><button class="btn btn-secondary btn-sm" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
+                        <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
                     </tr>
                 `
                     )
@@ -1262,14 +1324,14 @@ function renderUrgentStaleTable() {
                                 : `${inv.lastContactDays}d ago (${formatDate(inv.lastContactDate)})`;
 
                         return `
-                            <tr>
+                            <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                                 <td>#${escapeHtml(inv.invoiceNo)}</td>
                                 <td>${escapeHtml(inv.company)}</td>
                                 <td>${escapeHtml(inv.branch)}</td>
                                 <td><span class="${escapeHtml(getAgeClass(inv.age))}">${escapeHtml(String(inv.age))}d</span></td>
                                 <td>${escapeHtml(lastCall)}</td>
                                 <td class="amount">${escapeHtml(formatCurrency(inv.amount))}</td>
-                                <td><button class="btn btn-secondary btn-sm" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
+                                <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
                             </tr>
                         `;
                     })
@@ -1311,12 +1373,12 @@ function renderMissingContactTable() {
                                 : `${inv.lastContactDays}d ago (${formatDate(inv.lastContactDate)})`;
 
                         return `
-                            <tr>
+                            <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                                 <td>#${escapeHtml(inv.invoiceNo)}</td>
                                 <td>${escapeHtml(inv.company)}</td>
                                 <td><span class="${escapeHtml(getAgeClass(inv.age))}">${escapeHtml(String(inv.age))}d</span></td>
                                 <td>${escapeHtml(lastCall)}</td>
-                                <td><button class="btn btn-secondary btn-sm" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
+                                <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">View</button></td>
                             </tr>
                         `;
                     })
@@ -1450,6 +1512,7 @@ function viewInvoiceDetail(invoiceKey) {
 
     if (!detailModal || !detailInvoiceNo || !detailContent) return;
 
+    currentDetailInvoice = invoice;
     detailInvoiceNo.textContent = invoice.invoiceNo;
 
     const history = getHistoryForInvoice(invoice.invoiceNo, invoice.invoiceId);
@@ -1457,6 +1520,10 @@ function viewInvoiceDetail(invoiceKey) {
 
     const lastRemarks = lastHistory ? lastHistory.remarks : 'No conversation logged yet.';
     const lastFollowup = lastHistory && lastHistory.followupDate ? formatDate(lastHistory.followupDate) : '-';
+    const contactNumber = invoice.contactNumber || (lastHistory ? lastHistory.contactNumber : '') || '';
+    const contactPerson = (lastHistory && hasMeaningfulContact(lastHistory.contactPerson) ? lastHistory.contactPerson : '').trim();
+    const callHref = normalizePhone(contactNumber);
+    const defaultFollowup = getTodayInputValue(1);
 
     detailContent.innerHTML = `
         <div class="detail-grid">
@@ -1468,11 +1535,47 @@ function viewInvoiceDetail(invoiceKey) {
             <div class="detail-item"><label>Age</label><span>${escapeHtml(String(invoice.age))} days</span></div>
             <div class="detail-item"><label>Priority</label><span>${escapeHtml(invoice.priority.label)}</span></div>
             <div class="detail-item"><label>Next Follow-up</label><span>${escapeHtml(lastFollowup)}</span></div>
+            <div class="detail-item"><label>Contact Number</label><span>${escapeHtml(contactNumber || 'No contact number')}</span></div>
+            <div class="detail-item"><label>Quick Call</label><span>${callHref ? `<a href="tel:${escapeHtml(callHref)}">${escapeHtml(callHref)}</a>` : 'No dialable number'}</span></div>
         </div>
 
         <div class="detail-last-remark">
             <h4>Last Conversation Remark</h4>
             <p>${escapeHtml(lastRemarks)}</p>
+        </div>
+
+        <div class="detail-call-log">
+            <h4>Call Update and Follow-up</h4>
+            <div class="detail-form-grid">
+                <div class="detail-form-group">
+                    <label>Contact Number</label>
+                    <input id="detailContactNumber" type="text" value="${escapeHtml(contactNumber)}" placeholder="09xx / landline">
+                </div>
+                <div class="detail-form-group">
+                    <label>Contact Person</label>
+                    <input id="detailContactPerson" type="text" value="${escapeHtml(contactPerson)}" placeholder="Person spoken to">
+                </div>
+                <div class="detail-form-group full">
+                    <label>Conversation Remarks</label>
+                    <textarea id="detailRemarksInput" placeholder="Write what happened in the call..."></textarea>
+                </div>
+                <div class="detail-form-group">
+                    <label>Follow-up Date</label>
+                    <input id="detailFollowupInput" type="date" value="${escapeHtml(defaultFollowup)}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Schedule Type</label>
+                    <select id="detailScheduleType">
+                        <option value="0">Regular Follow-up</option>
+                        <option value="5">Promise Due</option>
+                        <option value="6">For Pickup</option>
+                    </select>
+                </div>
+            </div>
+            <div class="detail-form-actions">
+                <button class="btn btn-primary" onclick="saveCollectionConversation()">Save Call Log</button>
+                <span class="detail-save-status" id="detailSaveStatus">After saving, this history updates immediately.</span>
+            </div>
         </div>
 
         <div class="history-section">
@@ -1487,6 +1590,7 @@ function viewInvoiceDetail(invoiceKey) {
                                 <div class="history-item">
                                     <div class="history-date">Called: ${escapeHtml(formatDate(item.callDate))}</div>
                                     <div class="history-date">Contact: ${escapeHtml(item.contactPerson || '-')}</div>
+                                    <div class="history-date">Phone: ${escapeHtml(item.contactNumber || '-')}</div>
                                     <div class="history-remarks">${escapeHtml(item.remarks)}</div>
                                     <div class="history-followup">Next Follow-up: ${escapeHtml(formatDate(item.followupDate))}</div>
                                 </div>
@@ -1499,6 +1603,75 @@ function viewInvoiceDetail(invoiceKey) {
     `;
 
     detailModal.classList.remove('hidden');
+}
+
+async function saveCollectionConversation() {
+    if (!currentDetailInvoice) return;
+    if (isSavingConversation) return;
+
+    const contactNumberInput = document.getElementById('detailContactNumber');
+    const contactPersonInput = document.getElementById('detailContactPerson');
+    const remarksInput = document.getElementById('detailRemarksInput');
+    const followupInput = document.getElementById('detailFollowupInput');
+    const scheduleInput = document.getElementById('detailScheduleType');
+    const statusNode = document.getElementById('detailSaveStatus');
+
+    const contactNumber = String(contactNumberInput?.value || '').trim();
+    const contactPerson = String(contactPersonInput?.value || '').trim();
+    const remarks = String(remarksInput?.value || '').trim();
+    const followupDate = String(followupInput?.value || '').trim();
+    const scheduleStatus = Number(scheduleInput?.value || 0);
+
+    if (!remarks) {
+        if (statusNode) statusNode.textContent = 'Please enter conversation remarks before saving.';
+        return;
+    }
+
+    if (!followupDate) {
+        if (statusNode) statusNode.textContent = 'Please set a follow-up date.';
+        return;
+    }
+
+    isSavingConversation = true;
+    if (statusNode) statusNode.textContent = 'Saving call log...';
+
+    try {
+        await firestoreCreate('tbl_collectionhistory', {
+            invoice_num: { stringValue: String(currentDetailInvoice.invoiceNo || currentDetailInvoice.invoiceId || '') },
+            invoice_id: { stringValue: String(currentDetailInvoice.invoiceId || currentDetailInvoice.invoiceNo || '') },
+            remarks: { stringValue: remarks },
+            contact_person: { stringValue: contactPerson || '-' },
+            contact_number: { stringValue: contactNumber || '' },
+            followup_datetime: { stringValue: `${followupDate} 00:00:00` },
+            timestamp: { stringValue: toTimestampString(new Date()) },
+            schedule_status: { integerValue: String(scheduleStatus) }
+        });
+
+        await loadCollectionHistory();
+
+        const refreshedHistory = getHistoryForInvoice(currentDetailInvoice.invoiceNo, currentDetailInvoice.invoiceId);
+        const lastHistory = refreshedHistory.length > 0 ? refreshedHistory[0] : null;
+
+        currentDetailInvoice.history = refreshedHistory;
+        currentDetailInvoice.historyCount = refreshedHistory.length;
+        currentDetailInvoice.lastRemarks = lastHistory ? lastHistory.remarks : null;
+        currentDetailInvoice.lastContactDate = lastHistory ? lastHistory.callDate : null;
+        currentDetailInvoice.lastContactDays = currentDetailInvoice.lastContactDate
+            ? Math.max(0, daysBetween(currentDetailInvoice.lastContactDate, new Date()))
+            : null;
+        currentDetailInvoice.nextFollowup = lastHistory ? lastHistory.followupDate : null;
+        currentDetailInvoice.contactNumber = contactNumber || currentDetailInvoice.contactNumber || '';
+
+        recomputeFilteredInvoices();
+        viewInvoiceDetail(currentDetailInvoice.invoiceKey);
+        const refreshedStatusNode = document.getElementById('detailSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Call history updated.';
+    } catch (error) {
+        console.error('Failed to save collection conversation:', error);
+        if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
+    } finally {
+        isSavingConversation = false;
+    }
 }
 
 function exportToExcel() {
