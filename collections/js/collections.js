@@ -27,6 +27,7 @@ let paidInvoiceIds = new Set();
 let machToBranchMap = {};
 let invoiceIndexMap = new Map();
 let lookupsLoaded = false;
+let lastLoadSucceeded = false;
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -167,15 +168,22 @@ async function firestoreGet(collection, pageSize = 300, pageToken = null, fieldM
     }
 
     const url = `${BASE_URL}/${collection}?${params.toString()}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+    const maxAttempts = 2;
 
-    try {
-        const response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`Failed to fetch ${collection}: ${response.status}`);
-        return await response.json();
-    } finally {
-        clearTimeout(timeout);
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) throw new Error(`Failed to fetch ${collection}: ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            if (attempt === maxAttempts) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 400));
+        } finally {
+            clearTimeout(timeout);
+        }
     }
 }
 
@@ -653,6 +661,7 @@ function findInvoiceByKey(key) {
 async function loadInvoices(mode) {
     dataMode = mode;
     const isAllMode = mode === 'all';
+    lastLoadSucceeded = false;
 
     document.getElementById('btnShowBadDebt')?.classList.toggle('active', isAllMode);
     hideLoadError();
@@ -710,9 +719,12 @@ async function loadInvoices(mode) {
 
         const lastUpdated = document.getElementById('last-updated');
         if (lastUpdated) lastUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        lastLoadSucceeded = true;
+        return true;
     } catch (error) {
         console.error('Collections load failed:', error);
         showLoadError('Collection report loading failed. Please click Refresh and try again.');
+        return false;
     }
 }
 
@@ -1570,5 +1582,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     await loadActiveInvoices();
-    checkWelcomeModal();
+    if (lastLoadSucceeded) checkWelcomeModal();
 });
