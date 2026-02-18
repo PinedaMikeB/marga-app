@@ -449,8 +449,8 @@ function openUserModal(docId) {
     const selectedModules = normalizeModuleList(editing?.allowed_modules);
     renderUserModuleAccess(hasExplicitModuleOverride(editing) ? selectedModules : getRoleDefaultModules(roleInput.value));
 
-    // Email is the key for docId. Editing email is not supported yet.
-    emailInput.disabled = Boolean(editing);
+    // Employee ID is the key in tbl_employee; email can be edited anytime.
+    emailInput.disabled = false;
     lookupInput.disabled = Boolean(editing);
 
     setUserModalOpen(true);
@@ -547,7 +547,10 @@ function renderUsers() {
             const next = sel.value === 'true';
             sel.disabled = true;
             try {
-                await patchDocument('marga_users', id, { active: next, updated_at: new Date().toISOString() });
+                await patchDocument('tbl_employee', id, {
+                    marga_account_active: next,
+                    marga_updated_at: new Date().toISOString()
+                });
                 await loadDirectory();
             } catch (err) {
                 console.error('Update user status failed:', err);
@@ -562,12 +565,30 @@ function renderUsers() {
 async function loadUsers() {
     document.querySelector('#usersTable tbody').innerHTML = '<tr><td colspan="6" class="loading-cell">Loading...</td></tr>';
     try {
-        const docs = await runQuery({
-            from: [{ collectionId: 'marga_users' }],
-            orderBy: [{ field: { fieldPath: 'email' }, direction: 'ASCENDING' }],
-            limit: 2000
-        });
-        const users = docs.map(parseFirestoreDoc).filter(Boolean);
+        const users = [...SETTINGS_STATE.employees]
+            .sort((a, b) => Number(a.id || 0) - Number(b.id || 0))
+            .map((employee) => {
+                const first = String(employee.firstname || '').trim();
+                const last = String(employee.lastname || '').trim();
+                const name = `${first} ${last}`.trim() || String(employee.nickname || '').trim() || `ID ${employee.id || '-'}`;
+                const role = normalizeRole(employee.marga_role || roleGuessToUserRole(getRoleGuess(employee, SETTINGS_STATE.positions.get(String(employee.position_id || 0)) || '')));
+                const email = String(employee.email || employee.marga_login_email || '').trim().toLowerCase();
+                const hasLogin = Boolean(email || employee.password_hash || employee.password);
+                const accountActive = employee.marga_account_active !== false;
+                return {
+                    ...employee,
+                    _docId: String(employee.id || employee._docId || ''),
+                    email,
+                    name,
+                    role,
+                    staff_id: Number(employee.id || 0) || null,
+                    active: accountActive,
+                    allowed_modules: normalizeModuleList(employee.marga_allowed_modules || employee.allowed_modules),
+                    allowed_modules_configured: employee.allowed_modules_configured === true,
+                    has_login: hasLogin
+                };
+            })
+            .filter((row) => row.staff_id !== null);
         SETTINGS_STATE.users = users;
         SETTINGS_STATE.userByStaffId = new Map();
         users.forEach((u) => {
@@ -836,7 +857,8 @@ async function loadRoleConfigs() {
 
 async function loadDirectory() {
     document.getElementById('settingsMeta').textContent = 'Loading directory from Firestore...';
-    await Promise.all([loadPositions(), loadUsers(), loadEmployees(), loadRoleConfigs()]);
+    await Promise.all([loadPositions(), loadEmployees(), loadRoleConfigs()]);
+    await loadUsers();
 
     document.getElementById('settingsMeta').textContent = `${SETTINGS_STATE.employees.length} employee(s), ${SETTINGS_STATE.users.length} account(s), ${SETTINGS_STATE.roleConfigs.size} role policy set(s).`;
 
@@ -904,53 +926,41 @@ async function saveEmployee() {
         await patchDocument('tbl_employee', employeeId, {
             marga_active: empActive,
             marga_role: role,
-            marga_role_updated_at: new Date().toISOString()
+            marga_role_updated_at: new Date().toISOString(),
+            marga_updated_at: new Date().toISOString()
         });
 
         const email = String(document.getElementById('employeeEmail').value || '').trim().toLowerCase();
         const accountActive = document.getElementById('employeeAccountActive').value === 'true';
         const password = String(document.getElementById('employeePassword').value || '');
 
+        const linked = SETTINGS_STATE.userByStaffId.get(String(employeeId)) || null;
+        const baseFields = {
+            marga_account_active: accountActive,
+            marga_active: empActive && accountActive,
+            marga_role: role,
+            marga_allowed_modules: hasExplicitModuleOverride(linked)
+                ? normalizeModuleList(linked?.allowed_modules)
+                : getRoleDefaultModules(role),
+            allowed_modules_configured: hasExplicitModuleOverride(linked),
+            marga_updated_at: new Date().toISOString()
+        };
+
         if (email) {
-            const emp = SETTINGS_STATE.employees.find((e) => String(e.id || '') === String(employeeId)) || {};
-            const name = getEmployeeDisplayName(emp);
-            const linked = SETTINGS_STATE.userByStaffId.get(String(employeeId)) || null;
+            baseFields.email = email;
+            baseFields.marga_login_email = email;
+        }
 
-            const baseFields = {
-                email,
-                username: email,
-                name,
-                role,
-                active: accountActive,
-                staff_id: Number(employeeId),
-                allowed_modules: hasExplicitModuleOverride(linked)
-                    ? normalizeModuleList(linked?.allowed_modules)
-                    : getRoleDefaultModules(role),
-                allowed_modules_configured: hasExplicitModuleOverride(linked),
-                updated_at: new Date().toISOString()
-            };
-
-            // If an existing account is linked by staff_id but email changed, create the new docId and optionally disable the old one.
-            if (linked && String(linked._docId || '') !== email) {
-                const ok = confirm(`This employee is currently linked to ${linked.email || linked._docId}. Link to ${email} instead? The old account will be set to inactive.`);
-                if (!ok) return;
-                await patchDocument('marga_users', linked._docId, { active: false, updated_at: new Date().toISOString() });
-            }
-
-            if (password) {
-                if (!isAdmin) {
-                    alert('Only admin can set passwords.');
-                } else {
-                    const hashed = await hashPassword(password);
-                    await setDocument('marga_users', email, { ...baseFields, ...hashed });
-                }
+        if (password) {
+            if (!isAdmin) {
+                alert('Only admin can set passwords.');
             } else {
-                if (!isAdmin) {
-                    alert('Account saved without a password. Ask admin to set a temporary password before the user can login.');
-                }
-                await setDocument('marga_users', email, baseFields);
+                const hashed = await hashPassword(password);
+                Object.assign(baseFields, hashed, { marga_password_updated_at: new Date().toISOString() });
             }
         }
+
+        await patchDocument('tbl_employee', employeeId, baseFields);
 
         closeEmployeeModal();
         await loadDirectory();
@@ -1019,7 +1029,7 @@ function buildImportRecordsFromRows(rows) {
     });
 
     if (headerIdx < 0) {
-        throw new Error('Cannot detect XLSX headers. Required columns: Employee_Id, Password, Email.');
+        throw new Error('Cannot detect XLSX headers. Required columns: Employee_Id, Firstname, Lastname.');
     }
 
     const header = rows[headerIdx].map((cell) => normalizeSpreadsheetHeader(cell));
@@ -1034,8 +1044,8 @@ function buildImportRecordsFromRows(rows) {
         position: col('position'),
         email: col('email')
     };
-    if (cols.employee_id < 0 || cols.password < 0 || cols.email < 0) {
-        throw new Error('Missing required XLSX columns (Employee_Id, Password, Email).');
+    if (cols.employee_id < 0) {
+        throw new Error('Missing required XLSX column: Employee_Id.');
     }
 
     const records = [];
@@ -1063,17 +1073,8 @@ function buildImportRecordsFromRows(rows) {
             skipped.push({ row: rowNumber, reason: `Invalid employee ID: ${employeeIdRaw}` });
             continue;
         }
-        if (!isValidEmail(email)) {
-            skipped.push({ row: rowNumber, reason: `Invalid or missing email: ${email || '(blank)'}` });
-            continue;
-        }
-        if (!password) {
-            skipped.push({ row: rowNumber, reason: `Missing password for ${email}.` });
-            continue;
-        }
-
         const role = mapPositionToRole(position);
-        const fullName = `${firstname} ${lastname}`.trim() || nickname || email.split('@')[0];
+        const fullName = `${firstname} ${lastname}`.trim() || nickname || (email ? email.split('@')[0] : '');
         records.push({
             rowNumber,
             staff_id: staffId,
@@ -1083,6 +1084,8 @@ function buildImportRecordsFromRows(rows) {
             name: fullName,
             email,
             password,
+            has_valid_email: isValidEmail(email),
+            has_password: Boolean(password),
             position,
             contact_number: contactNumber,
             role,
@@ -1091,6 +1094,69 @@ function buildImportRecordsFromRows(rows) {
     }
 
     return { records, skipped };
+}
+
+function normalizeNameKey(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function sanitizeUsername(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '')
+        .replace(/^[._-]+|[._-]+$/g, '')
+        .slice(0, 48);
+}
+
+function buildUsernameCandidates(record, employeeId) {
+    const out = [];
+    const email = String(record.email || '').trim().toLowerCase();
+    if (email.includes('@')) out.push(email.split('@')[0]);
+    if (record.nickname) out.push(record.nickname);
+    if (record.firstname && record.lastname) out.push(`${record.firstname}.${record.lastname}`);
+    if (record.firstname) out.push(record.firstname);
+    out.push(`emp${employeeId}`);
+    return out;
+}
+
+function pickUniqueUsername(record, employeeId, usedUsernames, currentUsername = '') {
+    const current = sanitizeUsername(currentUsername);
+    if (current) usedUsernames.delete(current);
+
+    for (const raw of buildUsernameCandidates(record, employeeId)) {
+        const base = sanitizeUsername(raw);
+        if (!base) continue;
+        let candidate = base;
+        let idx = 2;
+        while (usedUsernames.has(candidate)) {
+            candidate = `${base}${idx}`;
+            idx += 1;
+        }
+        usedUsernames.add(candidate);
+        return candidate;
+    }
+
+    const fallback = `emp${employeeId}`;
+    usedUsernames.add(fallback);
+    return fallback;
+}
+
+function getImportMatchCandidates(record, indexes) {
+    const candidates = new Set();
+    const direct = indexes.byId.get(Number(record.staff_id || 0));
+    if (direct) candidates.add(direct);
+
+    const firstLast = `${normalizeNameKey(record.firstname)}|${normalizeNameKey(record.lastname)}`;
+    (indexes.byFirstLast.get(firstLast) || []).forEach((id) => candidates.add(id));
+
+    const nickLast = `${normalizeNameKey(record.nickname)}|${normalizeNameKey(record.lastname)}`;
+    (indexes.byNickLast.get(nickLast) || []).forEach((id) => candidates.add(id));
+
+    const full = normalizeNameKey(record.name);
+    (indexes.byFullName.get(full) || []).forEach((id) => candidates.add(id));
+
+    return [...candidates];
 }
 
 async function syncUsersFromSpreadsheet() {
@@ -1122,46 +1188,107 @@ async function syncUsersFromSpreadsheet() {
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
         const { records, skipped } = buildImportRecordsFromRows(rows);
         if (!records.length) {
-            resultEl.textContent = `No valid rows found. Skipped: ${skipped.length}.`;
+            resultEl.textContent = `No rows found. Skipped: ${skipped.length}.`;
             return;
         }
 
+        const employeesById = new Map();
+        const byFirstLast = new Map();
+        const byNickLast = new Map();
+        const byFullName = new Map();
+
+        const addToMap = (map, key, id) => {
+            if (!key || key === '|') return;
+            if (!map.has(key)) map.set(key, []);
+            if (!map.get(key).includes(id)) map.get(key).push(id);
+        };
+
+        SETTINGS_STATE.employees.forEach((employee) => {
+            const id = Number(employee.id || 0);
+            if (!id) return;
+            employeesById.set(id, employee);
+            const first = normalizeNameKey(employee.firstname);
+            const last = normalizeNameKey(employee.lastname);
+            const nick = normalizeNameKey(employee.nickname);
+            const full = normalizeNameKey(`${String(employee.firstname || '').trim()} ${String(employee.lastname || '').trim()}`.trim() || employee.nickname || '');
+            addToMap(byFirstLast, `${first}|${last}`, id);
+            addToMap(byNickLast, `${nick}|${last}`, id);
+            addToMap(byFullName, full, id);
+        });
+
+        const indexes = { byId: employeesById, byFirstLast, byNickLast, byFullName };
+        const matchedIds = new Set();
         let synced = 0;
         const failed = [];
+        const nowIso = new Date().toISOString();
+        const usedUsernames = new Set();
+        SETTINGS_STATE.employees.forEach((employee) => {
+            const username = sanitizeUsername(employee.username);
+            if (username) usedUsernames.add(username);
+        });
+
         for (const record of records) {
             try {
-                const hashed = await hashPassword(record.password);
-                await setDocument('marga_users', record.email, {
-                    email: record.email,
-                    username: record.email,
-                    name: record.name,
-                    role: record.role,
-                    active: true,
-                    staff_id: record.staff_id,
-                    allowed_modules: record.allowed_modules,
+                const candidates = getImportMatchCandidates(record, indexes);
+                if (!candidates.length) {
+                    failed.push({ row: record.rowNumber, reason: `No employee match for ${record.name || 'row'}` });
+                    continue;
+                }
+                let employeeId = candidates[0];
+                if (candidates.length > 1) {
+                    const activeCandidate = candidates.find((id) => Number(employeesById.get(id)?.estatus || 0) === 1);
+                    employeeId = activeCandidate || candidates[0];
+                }
+
+                const updateFields = {
+                    marga_active: true,
+                    marga_account_active: true,
+                    marga_role: record.role,
+                    marga_role_updated_at: nowIso,
+                    marga_allowed_modules: record.allowed_modules,
                     allowed_modules_configured: false,
-                    nickname: record.nickname,
-                    firstname: record.firstname,
-                    lastname: record.lastname,
-                    position: record.position,
-                    contact_number: record.contact_number,
-                    source_file: file.name,
-                    source_row: record.rowNumber,
-                    imported_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                    ...hashed
-                });
+                    marga_source_file: file.name,
+                    marga_source_row: record.rowNumber,
+                    marga_updated_at: nowIso
+                };
+
+                if (record.contact_number) updateFields.contact_number = record.contact_number;
+                if (record.has_valid_email) {
+                    updateFields.email = record.email;
+                    updateFields.marga_login_email = record.email;
+                }
+                const currentUsername = sanitizeUsername(employeesById.get(employeeId)?.username || '');
+                const nextUsername = pickUniqueUsername(record, employeeId, usedUsernames, currentUsername);
+                if (nextUsername) updateFields.username = nextUsername;
+                if (record.has_password) {
+                    const hashed = await hashPassword(record.password);
+                    Object.assign(updateFields, hashed, { marga_password_updated_at: nowIso });
+                }
+
+                await patchDocument('tbl_employee', String(employeeId), updateFields);
+                matchedIds.add(Number(employeeId));
                 synced += 1;
             } catch (err) {
                 failed.push({ row: record.rowNumber, reason: err.message || String(err) });
             }
         }
 
+        // Canonical policy: employees not present in the confirmed final list become inactive.
+        for (const employee of SETTINGS_STATE.employees) {
+            const id = Number(employee.id || 0);
+            if (!id || matchedIds.has(id)) continue;
+            await patchDocument('tbl_employee', String(id), {
+                marga_active: false,
+                marga_account_active: false,
+                marga_updated_at: nowIso
+            });
+        }
+
         await loadDirectory();
         const skippedAll = [...skipped, ...failed];
         const skipPreview = skippedAll.slice(0, 4).map((item) => `row ${item.row}: ${item.reason}`).join(' | ');
-        resultEl.textContent = `Synced ${synced}/${records.length} account(s) from ${file.name}. Skipped ${skippedAll.length}.${skipPreview ? ` ${skipPreview}` : ''}`;
-        alert(`User sync complete. Synced ${synced}, skipped ${skippedAll.length}.`);
+        resultEl.textContent = `Synced ${synced}/${records.length} rows to tbl_employee. Skipped ${skippedAll.length}.${skipPreview ? ` ${skipPreview}` : ''}`;
+        alert(`User sync complete. Synced ${synced} employee account(s), skipped ${skippedAll.length}.`);
     } catch (err) {
         console.error('XLSX sync failed:', err);
         resultEl.textContent = `Sync failed: ${err.message || err}`;
@@ -1208,18 +1335,27 @@ async function saveUser() {
             ? !moduleListsEqual(allowedModules, getRoleDefaultModules(normalizedRole))
             : hasExplicitModuleOverride(editing);
 
-        const docId = SETTINGS_STATE.editingDocId || email;
+        const docId = SETTINGS_STATE.editingDocId || (staff_id ? String(staff_id) : '');
+        if (!docId) {
+            alert('Select an employee first (Staff ID is required).');
+            return;
+        }
+
+        const targetEmployee = SETTINGS_STATE.employees.find((emp) => String(emp.id || '') === String(docId));
+        if (!targetEmployee) {
+            alert('Selected employee does not exist in tbl_employee.');
+            return;
+        }
 
         const baseFields = {
             email,
-            username: email,
-            name,
-            role: normalizedRole,
-            active,
-            staff_id: staff_id || null,
-            allowed_modules: allowedModules,
+            marga_login_email: email,
+            marga_fullname: name || `${String(targetEmployee.firstname || '').trim()} ${String(targetEmployee.lastname || '').trim()}`.trim(),
+            marga_role: normalizedRole,
+            marga_account_active: active,
+            marga_allowed_modules: allowedModules,
             allowed_modules_configured: allowedModulesConfigured,
-            updated_at: new Date().toISOString()
+            marga_updated_at: new Date().toISOString()
         };
 
         if (!SETTINGS_STATE.editingDocId) {
@@ -1228,14 +1364,14 @@ async function saveUser() {
                 return;
             }
             const hashed = await hashPassword(password);
-            await setDocument('marga_users', docId, { ...baseFields, ...hashed });
+            await patchDocument('tbl_employee', docId, { ...baseFields, ...hashed, marga_password_updated_at: new Date().toISOString() });
         } else {
             // Update existing. If password provided, reset it.
             if (password) {
                 const hashed = await hashPassword(password);
-                await patchDocument('marga_users', docId, { ...baseFields, ...hashed });
+                await patchDocument('tbl_employee', docId, { ...baseFields, ...hashed, marga_password_updated_at: new Date().toISOString() });
             } else {
-                await patchDocument('marga_users', docId, baseFields);
+                await patchDocument('tbl_employee', docId, baseFields);
             }
         }
 
@@ -1262,7 +1398,7 @@ async function resetPassword(docId, newPassword) {
     }
     try {
         const hashed = await hashPassword(next);
-        await patchDocument('marga_users', docId, { ...hashed, updated_at: new Date().toISOString() });
+        await patchDocument('tbl_employee', docId, { ...hashed, marga_password_updated_at: new Date().toISOString(), marga_updated_at: new Date().toISOString() });
         alert('Password reset.');
     } catch (err) {
         console.error('Reset password failed:', err);

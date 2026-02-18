@@ -66,14 +66,16 @@ const MargaAuth = {
 
             const user = await this.findUserByEmailOrUsername(ident);
             if (!user) return { success: false, message: 'Invalid email or password' };
-            if (user.active === false) return { success: false, message: 'Account is inactive' };
+            if (!this.isEmployeeActive(user)) return { success: false, message: 'Account is inactive' };
 
             const ok = await this.verifyPassword(user, password);
             if (!ok) return { success: false, message: 'Invalid email or password' };
 
-            const role = this.normalizeRole(user.role || 'viewer');
+            const role = this.normalizeRole(user.marga_role || user.role || this.inferRole(user));
             const userModulesConfigured = user.allowed_modules_configured === true;
-            const allowedModules = userModulesConfigured ? this.normalizeModules(user.allowed_modules) : [];
+            const allowedModules = userModulesConfigured
+                ? this.normalizeModules(user.marga_allowed_modules || user.allowed_modules)
+                : [];
             let roleModules = null;
             if (!userModulesConfigured && role !== 'admin') {
                 roleModules = await this.fetchRoleModules(role);
@@ -82,13 +84,26 @@ const MargaAuth = {
                 ? roleModules
                 : this.normalizeModules(this.PERMISSIONS[role] || []);
 
+            const sessionName = String(
+                user.marga_fullname
+                || user.name
+                || `${String(user.firstname || '').trim()} ${String(user.lastname || '').trim()}`.trim()
+                || user.nickname
+                || user.username
+                || user.email
+                || ident
+            ).trim();
+
+            const sessionEmail = String(user.email || user.marga_login_email || '').trim().toLowerCase();
+            const sessionStaffId = user.id || user.staff_id || user.staffId || null;
+
             return this.setSession({
                 id: user._docId,
-                username: user.username || user.email || ident,
-                name: user.name || user.username || user.email || ident,
+                username: user.username || sessionEmail || ident,
+                name: sessionName,
                 role,
-                email: user.email || '',
-                staff_id: user.staff_id || user.staffId || null,
+                email: sessionEmail,
+                staff_id: sessionStaffId,
                 allowed_modules: allowedModules,
                 role_modules: resolvedRoleModules,
                 allowed_modules_configured: userModulesConfigured
@@ -176,6 +191,30 @@ const MargaAuth = {
         if (!normalizedModule || normalizedModule === 'dashboard') return true;
         if (this.currentUser.role === 'admin') return true;
         return this.getAccessibleModules().includes(normalizedModule);
+    },
+
+    isEmployeeActive(user) {
+        if (!user || typeof user !== 'object') return false;
+        if (user.marga_active === false) return false;
+        if (user.marga_account_active === false) return false;
+        if (user.active === false) return false;
+        if (user.marga_active === true || user.marga_account_active === true || user.active === true) return true;
+        const estatus = Number(user.estatus);
+        if (Number.isFinite(estatus)) return estatus === 1;
+        return true;
+    },
+
+    inferRole(user) {
+        const positionName = String(user?.position || user?.position_name || user?.position_label || '').toLowerCase();
+        const positionId = Number(user?.position_id || 0);
+        if (positionId === 5 || positionName.includes('technician') || positionName.includes('tech')) return 'technician';
+        if (positionId === 9 || positionName.includes('messenger') || positionName.includes('driver')) return 'messenger';
+        if (positionName.includes('collection')) return 'collection';
+        if (positionName.includes('billing') || positionName.includes('account') || positionName.includes('finance') || positionName.includes('cashier')) return 'billing';
+        if (positionName.includes('service') || positionName.includes('csr') || positionName.includes('sales')) return 'service';
+        if (positionName.includes('hr')) return 'hr';
+        if (positionName.includes('admin') || positionName.includes('manager')) return 'admin';
+        return 'viewer';
     },
 
     /**
@@ -408,11 +447,13 @@ MargaAuth.canHashPasswords = function canHashPasswords() {
 };
 
 MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(ident) {
-    const email = String(ident || '').trim().toLowerCase();
-    const run = async (fieldPath, value) => {
+    const rawIdent = String(ident || '').trim();
+    const email = rawIdent.toLowerCase();
+    const username = rawIdent.toLowerCase();
+    const run = async (collectionId, fieldPath, value) => {
         const body = {
             structuredQuery: {
-                from: [{ collectionId: 'marga_users' }],
+                from: [{ collectionId }],
                 where: {
                     fieldFilter: {
                         field: { fieldPath },
@@ -434,7 +475,16 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
         return doc ? this.parseFirestoreDoc(doc) : null;
     };
 
-    return (await run('email', email)) || (await run('username', ident));
+    const employeeByEmail = await run('tbl_employee', 'email', email);
+    if (employeeByEmail) return employeeByEmail;
+
+    const employeeByUsername = await run('tbl_employee', 'username', username);
+    if (employeeByUsername) return employeeByUsername;
+
+    // Backward compatibility during transition.
+    return (await run('marga_users', 'email', email))
+        || (await run('marga_users', 'username', rawIdent))
+        || (await run('marga_users', 'username', username));
 };
 
 MargaAuth.verifyPassword = async function verifyPassword(user, password) {
