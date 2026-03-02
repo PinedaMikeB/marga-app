@@ -447,6 +447,56 @@
             margin-bottom: 14px;
         }
 
+        .duration-summary {
+            display: grid;
+            grid-template-columns: 1.3fr repeat(3, minmax(160px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .duration-card {
+            border-radius: 12px;
+            padding: 12px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            box-shadow: var(--panel-shadow-soft);
+        }
+
+        .duration-card .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #5c7290;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .duration-card .value {
+            font-size: 26px;
+            font-weight: 800;
+            line-height: 1.05;
+            color: #173d63;
+        }
+
+        .duration-card .subvalue {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #4f6f8f;
+            font-weight: 700;
+        }
+
+        .duration-card.collections {
+            border-left: 3px solid #2563eb;
+        }
+
+        .duration-card.need {
+            border-left: 3px solid #ef4444;
+        }
+
+        .duration-card.bill {
+            border-left: 3px solid #0ea5a1;
+        }
+
         .report-panel-title {
             padding: 10px 12px;
             border-bottom: 1px solid rgba(148, 163, 184, 0.24);
@@ -981,6 +1031,10 @@
             .stats-row {
                 grid-template-columns: repeat(3, minmax(140px, 1fr));
             }
+
+            .duration-summary {
+                grid-template-columns: repeat(2, minmax(180px, 1fr));
+            }
         }
 
         @media (max-width: 1024px) {
@@ -1002,7 +1056,8 @@
             .stats-row,
             .brief-grid,
             .detail-grid,
-            .detail-form-grid {
+            .detail-form-grid,
+            .duration-summary {
                 grid-template-columns: 1fr;
             }
 
@@ -1232,6 +1287,29 @@
                     <button class="btn btn-success btn-sm" onclick="exportToExcel()">Export</button>
                 </div>
                 <div class="active-filters" id="active-filters"></div>
+            </div>
+
+            <div class="duration-summary" id="duration-summary">
+                <div class="duration-card">
+                    <div class="label">Duration Analysis</div>
+                    <div class="value" id="duration-range-label">All Dates</div>
+                    <div class="subvalue" id="duration-range-help">Set from/to date to analyze billing and collection totals.</div>
+                </div>
+                <div class="duration-card bill">
+                    <div class="label">Total Bill</div>
+                    <div class="value" id="duration-total-bill">₱0.00</div>
+                    <div class="subvalue" id="duration-total-bill-count">0 invoice(s)</div>
+                </div>
+                <div class="duration-card collections">
+                    <div class="label">Total Collections</div>
+                    <div class="value" id="duration-total-collections">₱0.00</div>
+                    <div class="subvalue" id="duration-total-collections-count">0 payment(s)</div>
+                </div>
+                <div class="duration-card need">
+                    <div class="label">Need To Collect</div>
+                    <div class="value" id="duration-need-collect">₱0.00</div>
+                    <div class="subvalue" id="duration-need-collect-count">0 unpaid invoice(s)</div>
+                </div>
             </div>
 
             <div class="report-grid">

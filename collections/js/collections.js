@@ -30,6 +30,8 @@ let lookupsLoaded = false;
 let lastLoadSucceeded = false;
 let currentDetailInvoice = null;
 let isSavingConversation = false;
+let paymentEntries = [];
+let billingEntriesForDuration = [];
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -136,6 +138,24 @@ function normalizePhone(value) {
     return String(value || '')
         .replace(/[^\d+]/g, '')
         .trim();
+}
+
+function formatRangeLabel(fromDate, toDate) {
+    if (fromDate && toDate) return `${formatDate(fromDate)} to ${formatDate(toDate)}`;
+    if (fromDate) return `${formatDate(fromDate)} onward`;
+    if (toDate) return `Up to ${formatDate(toDate)}`;
+    return 'All Dates';
+}
+
+function isDateWithinRange(date, fromDate, toDate) {
+    if (!date) return false;
+    if (fromDate && date < fromDate) return false;
+    if (toDate) {
+        const inclusiveEnd = new Date(toDate.getTime());
+        inclusiveEnd.setHours(23, 59, 59, 999);
+        if (date > inclusiveEnd) return false;
+    }
+    return true;
 }
 
 function escapeHtml(text) {
@@ -600,15 +620,26 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['invoice_id'],
+        fieldMask: ['invoice_id', 'payment_amt', 'date_deposit', 'date_paid', 'tax_date_paid'],
         maxPages: 260
     });
 
     paidInvoiceIds = new Set();
+    paymentEntries = [];
     paymentDocs.forEach((doc) => {
-        const invoiceId = getField(doc.fields || {}, ['invoice_id']);
+        const f = doc.fields || {};
+        const invoiceId = getField(f, ['invoice_id']);
         if (invoiceId !== null && invoiceId !== undefined && invoiceId !== '') {
             paidInvoiceIds.add(String(invoiceId).trim());
+        }
+
+        const amount = Number(getField(f, ['payment_amt']) || 0);
+        const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
+        if (amount > 0 && paymentDate) {
+            paymentEntries.push({
+                amount,
+                paymentDate
+            });
         }
     });
 
@@ -740,9 +771,23 @@ async function loadInvoices(mode) {
         });
 
         allInvoices = [];
+        billingEntriesForDuration = [];
         const years = new Set();
 
         billingDocs.forEach((doc) => {
+            const f = doc.fields || {};
+            const invoiceIdRaw = getField(f, ['invoice_id', 'invoiceid']);
+            const invoiceId = invoiceIdRaw !== null && invoiceIdRaw !== undefined ? String(invoiceIdRaw).trim() : '';
+            const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
+            const amount = Number(getField(f, ['totalamount', 'amount']) || 0) + Number(getField(f, ['vatamount']) || 0);
+            if (invoiceDate && amount > 0) {
+                billingEntriesForDuration.push({
+                    invoiceDate,
+                    amount,
+                    isPaid: invoiceId ? paidInvoiceIds.has(invoiceId) : false
+                });
+            }
+
             const invoice = processInvoice(doc);
             if (!invoice) return;
             if (!isAllMode && invoice.age > 180) return;
@@ -885,6 +930,7 @@ function recomputeFilteredInvoices() {
     });
 
     updateAllStats();
+    updateDurationSummary();
     renderTable();
     showActiveFilters();
     renderTodayScheduleTable();
@@ -1070,6 +1116,61 @@ function updateAllStats() {
 
     document.getElementById('stale-urgent-count').textContent = staleUrgent.length.toLocaleString();
     document.getElementById('stale-urgent-amount').textContent = formatCurrencyShort(staleUrgentTotal);
+}
+
+function updateDurationSummary() {
+    const rangeLabelNode = document.getElementById('duration-range-label');
+    const rangeHelpNode = document.getElementById('duration-range-help');
+    const totalBillNode = document.getElementById('duration-total-bill');
+    const totalBillCountNode = document.getElementById('duration-total-bill-count');
+    const totalCollectionsNode = document.getElementById('duration-total-collections');
+    const totalCollectionsCountNode = document.getElementById('duration-total-collections-count');
+    const needCollectNode = document.getElementById('duration-need-collect');
+    const needCollectCountNode = document.getElementById('duration-need-collect-count');
+
+    if (!rangeLabelNode || !rangeHelpNode || !totalBillNode || !totalBillCountNode || !totalCollectionsNode || !totalCollectionsCountNode || !needCollectNode || !needCollectCountNode) {
+        return;
+    }
+
+    const fromDate = normalizeDate(document.getElementById('filter-from-date')?.value);
+    const toDate = normalizeDate(document.getElementById('filter-to-date')?.value);
+
+    let totalBill = 0;
+    let totalBillCount = 0;
+    let needCollect = 0;
+    let needCollectCount = 0;
+
+    billingEntriesForDuration.forEach((entry) => {
+        if (!isDateWithinRange(entry.invoiceDate, fromDate, toDate)) return;
+        totalBill += entry.amount;
+        totalBillCount += 1;
+        if (!entry.isPaid) {
+            needCollect += entry.amount;
+            needCollectCount += 1;
+        }
+    });
+
+    let totalCollections = 0;
+    let totalCollectionsCount = 0;
+    paymentEntries.forEach((entry) => {
+        if (!isDateWithinRange(entry.paymentDate, fromDate, toDate)) return;
+        totalCollections += entry.amount;
+        totalCollectionsCount += 1;
+    });
+
+    rangeLabelNode.textContent = formatRangeLabel(fromDate, toDate);
+    rangeHelpNode.textContent = fromDate || toDate
+        ? 'Duration based on date picker. Totals update when you Filter or change dates.'
+        : 'Showing all available records. Set from/to date for focused analysis.';
+
+    totalBillNode.textContent = formatCurrency(totalBill);
+    totalBillCountNode.textContent = `${totalBillCount.toLocaleString()} invoice(s)`;
+
+    totalCollectionsNode.textContent = formatCurrency(totalCollections);
+    totalCollectionsCountNode.textContent = `${totalCollectionsCount.toLocaleString()} payment(s)`;
+
+    needCollectNode.textContent = formatCurrency(needCollect);
+    needCollectCountNode.textContent = `${needCollectCount.toLocaleString()} unpaid invoice(s)`;
 }
 
 function getTodayScheduledInvoices() {
@@ -1752,6 +1853,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('search-input')?.addEventListener('keyup', (event) => {
         if (event.key === 'Enter') applyFilters();
+    });
+
+    ['filter-from-date', 'filter-to-date'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            applyFilters();
+        });
     });
 
     await loadActiveInvoices();
