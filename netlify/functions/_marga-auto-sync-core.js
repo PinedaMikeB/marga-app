@@ -1006,18 +1006,21 @@ async function runAutoSync(mode = "manual", opts = {}) {
   };
 
   if (writeEnabled) {
+    const runTs = toIsoNow();
     await db.patchDoc(SYNC_STATE_COLLECTION, SYNC_STATE_DOC_ID, {
-      last_success_at: toIsoNow(),
+      last_run_at: runTs,
       last_success_target_date: targetDate,
       last_success_file_id: selected.id,
       last_success_file_name: selected.name,
       last_success_file_modified_time: selected.modifiedTime,
+      last_success_at: runTs,
       last_run_mode: mode,
       last_run_ok: true,
+      last_run_error: "",
       last_run_summary: buildSummaryText(result),
       last_inserted_rows: stats.insertedRows,
       last_skipped_rows: stats.skippedRows,
-      updated_at: toIsoNow(),
+      updated_at: runTs,
     });
   }
 
