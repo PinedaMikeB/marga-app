@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { Readable } = require("stream");
 const zlib = require("zlib");
 
 const SYNC_STATE_COLLECTION = "sys_sync_state";
@@ -184,7 +185,10 @@ function withApiKey(url, apiKey) {
 
 function createFirestoreClient({ apiKey, baseUrl }) {
   const { projectId, databaseId } = parseProjectAndDb(baseUrl);
-  const docRoot = `projects/${projectId}/databases/${databaseId}/documents`;
+  const dbSegment = String(databaseId || "").startsWith("(")
+    ? String(databaseId)
+    : `(${databaseId})`;
+  const docRoot = `projects/${projectId}/databases/${dbSegment}/documents`;
   const preferServiceAccount = parseBool(process.env.FIRESTORE_USE_SERVICE_ACCOUNT, true);
   const useServiceAccount = preferServiceAccount && hasGoogleServiceAccountCredentials();
 
@@ -237,7 +241,7 @@ function createFirestoreClient({ apiKey, baseUrl }) {
 
   async function commitWrites(writes) {
     if (!Array.isArray(writes) || !writes.length) return;
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:commit`;
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbSegment}/documents:commit`;
     const response = await firestoreFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -448,7 +452,7 @@ function toRecord(columns, tuple) {
   return record;
 }
 
-async function parseSqlStatements(sqlText, onStatement) {
+function createSqlStatementParser(onStatement) {
   let buffer = "";
   let inSingleQuote = false;
   let inDoubleQuote = false;
@@ -457,92 +461,148 @@ async function parseSqlStatements(sqlText, onStatement) {
   let inBlockComment = false;
   let singleEscape = false;
   let doubleEscape = false;
+  let carryChar = "";
+  let skipCurrent = false;
 
-  for (let i = 0; i < sqlText.length; i += 1) {
-    const ch = sqlText[i];
-    const next = sqlText[i + 1];
-    buffer += ch;
+  async function consumeChunk(sqlText, { final = false } = {}) {
+    const text = `${carryChar}${String(sqlText || "")}`;
+    carryChar = "";
+    if (!text.length && !final) return;
 
-    if (inLineComment) {
-      if (ch === "\n") inLineComment = false;
-      continue;
-    }
-    if (inBlockComment) {
-      if (ch === "*" && next === "/") {
-        buffer += "/";
-        i += 1;
-        inBlockComment = false;
-      }
-      continue;
-    }
-    if (inSingleQuote) {
-      if (ch === "\\") {
-        singleEscape = !singleEscape;
+    for (let i = 0; i < text.length; i += 1) {
+      if (skipCurrent) {
+        skipCurrent = false;
         continue;
       }
-      if (ch === "'" && !singleEscape) {
-        if (next === "'") {
-          buffer += next;
-          i += 1;
+
+      const isLast = i === text.length - 1;
+      if (!final && isLast) {
+        carryChar = text[i];
+        break;
+      }
+
+      const ch = text[i];
+      const next = isLast ? "" : text[i + 1];
+      buffer += ch;
+
+      if (inLineComment) {
+        if (ch === "\n") inLineComment = false;
+        continue;
+      }
+      if (inBlockComment) {
+        if (ch === "*" && next === "/") {
+          buffer += "/";
+          skipCurrent = true;
+          inBlockComment = false;
+        }
+        continue;
+      }
+      if (inSingleQuote) {
+        if (ch === "\\") {
+          singleEscape = !singleEscape;
           continue;
         }
-        inSingleQuote = false;
-      } else {
-        singleEscape = false;
-      }
-      continue;
-    }
-    if (inDoubleQuote) {
-      if (ch === "\\") {
-        doubleEscape = !doubleEscape;
+        if (ch === "'" && !singleEscape) {
+          if (next === "'") {
+            buffer += next;
+            skipCurrent = true;
+            continue;
+          }
+          inSingleQuote = false;
+        } else {
+          singleEscape = false;
+        }
         continue;
       }
-      if (ch === '"' && !doubleEscape) {
-        inDoubleQuote = false;
-      } else {
-        doubleEscape = false;
+      if (inDoubleQuote) {
+        if (ch === "\\") {
+          doubleEscape = !doubleEscape;
+          continue;
+        }
+        if (ch === '"' && !doubleEscape) {
+          inDoubleQuote = false;
+        } else {
+          doubleEscape = false;
+        }
+        continue;
       }
-      continue;
-    }
-    if (inBacktick) {
-      if (ch === "`") inBacktick = false;
-      continue;
+      if (inBacktick) {
+        if (ch === "`") inBacktick = false;
+        continue;
+      }
+
+      if (ch === "-" && next === "-") {
+        inLineComment = true;
+        continue;
+      }
+      if (ch === "#") {
+        inLineComment = true;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        inBlockComment = true;
+        continue;
+      }
+      if (ch === "'") {
+        inSingleQuote = true;
+        continue;
+      }
+      if (ch === '"') {
+        inDoubleQuote = true;
+        continue;
+      }
+      if (ch === "`") {
+        inBacktick = true;
+        continue;
+      }
+      if (ch === ";") {
+        const statement = buffer.trim();
+        buffer = "";
+        if (statement) await onStatement(statement);
+      }
     }
 
-    if (ch === "-" && next === "-") {
-      inLineComment = true;
-      continue;
-    }
-    if (ch === "#") {
-      inLineComment = true;
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      inBlockComment = true;
-      continue;
-    }
-    if (ch === "'") {
-      inSingleQuote = true;
-      continue;
-    }
-    if (ch === '"') {
-      inDoubleQuote = true;
-      continue;
-    }
-    if (ch === "`") {
-      inBacktick = true;
-      continue;
-    }
-    if (ch === ";") {
+    if (final) {
+      if (carryChar) {
+        buffer += carryChar;
+        carryChar = "";
+      }
       const statement = buffer.trim();
-      buffer = "";
-      if (statement) await onStatement(statement);
+      if (statement) {
+        await onStatement(statement);
+        buffer = "";
+      }
     }
   }
 
-  if (buffer.trim()) {
-    await onStatement(buffer.trim());
+  return {
+    consumeChunk,
+  };
+}
+
+async function parseSqlStatements(sqlText, onStatement) {
+  const parser = createSqlStatementParser(onStatement);
+  await parser.consumeChunk(sqlText, { final: true });
+}
+
+async function parseSqlStatementsFromStream(sqlStream, onStatement, onChunk) {
+  const parser = createSqlStatementParser(onStatement);
+  const decoder = new TextDecoder("utf-8");
+
+  for await (const chunk of sqlStream) {
+    const asBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (onChunk) await onChunk(asBuffer.length);
+    const text = decoder.decode(asBuffer, { stream: true });
+    if (text) {
+      await parser.consumeChunk(text, { final: false });
+    }
   }
+
+  const tail = decoder.decode();
+  if (tail) {
+    await parser.consumeChunk(tail, { final: false });
+  }
+  await parser.consumeChunk("", { final: true });
 }
 
 function sanitizePrivateKey(key) {
@@ -665,7 +725,7 @@ function pickDriveFile(files, targetDate, mode) {
   return normalized[0];
 }
 
-async function downloadDriveFileText(token, file) {
+async function downloadDriveFileStream(token, file) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -673,15 +733,18 @@ async function downloadDriveFileText(token, file) {
     const text = await response.text().catch(() => "");
     throw new Error(`Failed downloading Drive file ${file.name}: ${response.status} ${text}`);
   }
-  const raw = Buffer.from(await response.arrayBuffer());
+  if (!response.body) {
+    throw new Error(`No response body when downloading Drive file ${file.name}.`);
+  }
+  const nodeStream = Readable.fromWeb(response.body);
   const lowerName = String(file.name || "").toLowerCase();
   if (lowerName.endsWith(".gz")) {
-    return zlib.gunzipSync(raw).toString("utf8");
+    return nodeStream.pipe(zlib.createGunzip());
   }
   if (lowerName.endsWith(".zip")) {
     throw new Error("ZIP SQL dumps are not supported yet. Please upload .sql or .sql.gz.");
   }
-  return raw.toString("utf8");
+  return nodeStream;
 }
 
 async function sendWebhookNotification(payload) {
@@ -813,8 +876,8 @@ async function runAutoSync(mode = "manual", opts = {}) {
     };
   }
 
-  const sqlText = await downloadDriveFileText(token, selected);
-  log.push(`Downloaded SQL bytes=${sqlText.length}`);
+  const sqlStream = await downloadDriveFileStream(token, selected);
+  let downloadedBytes = 0;
 
   const tableSchemas = new Map();
   const watermarkMap = await getWatermarkMap(db, tables);
@@ -851,7 +914,7 @@ async function runAutoSync(mode = "manual", opts = {}) {
     pendingWrites.push(write);
   }
 
-  await parseSqlStatements(sqlText, async (statement) => {
+  await parseSqlStatementsFromStream(sqlStream, async (statement) => {
     stats.parsedStatements += 1;
     const createInfo = parseCreateTableStatement(statement);
     if (createInfo) {
@@ -903,7 +966,11 @@ async function runAutoSync(mode = "manual", opts = {}) {
         await flushWrites();
       }
     }
+  }, async (chunkBytes) => {
+    downloadedBytes += Number(chunkBytes || 0);
   });
+
+  log.push(`Downloaded SQL bytes=${downloadedBytes}`);
 
   await flushWrites();
 
