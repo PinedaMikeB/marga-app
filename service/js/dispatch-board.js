@@ -6,6 +6,16 @@ const OPS_MAX_TASK_ROWS = 300;
 const OPS_QUERY_LIMIT = 5000;
 const OPS_CARRYOVER_DAYS = 14;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
+const LEGACY_EMPTY_DATETIME_VALUES = new Set([
+    '',
+    ZERO_DATETIME,
+    'undefined',
+    'undefined 00:00:00',
+    'null',
+    'null 00:00:00',
+    'invalid date',
+    'nan'
+]);
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const PURPOSE_LABELS = {
@@ -541,15 +551,15 @@ function getOpsStatusKey(row, selectedDate) {
     if (scheduleId > 0 && opsCache.closedScheduleIds.has(scheduleId)) return 'closed';
     if (Number(row.iscancel || 0) === 1) return 'cancelled';
 
-    const routeFinished = String(row.route_date_finished || '').trim();
-    if (routeFinished && routeFinished !== ZERO_DATETIME) return 'closed';
+    const routeFinished = normalizeLegacyDateTime(row.route_date_finished);
+    if (routeFinished) return 'closed';
     const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
         ? null
         : Number(row.route_status);
     if (routeStatus === 0) return 'closed';
 
-    const finished = String(row.date_finished || '').trim();
-    if (finished && finished !== ZERO_DATETIME) return 'closed';
+    const finished = normalizeLegacyDateTime(row.date_finished);
+    if (finished) return 'closed';
 
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
 
@@ -573,11 +583,22 @@ function getPurposeLabel(id) {
     return PURPOSE_LABELS[id] || `Purpose ${id}`;
 }
 
+function normalizeLegacyDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const compact = text.replace(/[T]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (LEGACY_EMPTY_DATETIME_VALUES.has(compact)) return '';
+    if (compact.startsWith('undefined ')) return '';
+    if (compact.startsWith('null ')) return '';
+    return text;
+}
+
 function formatTaskDateTime(value) {
-    if (!value) return '-';
-    const normalized = String(value).replace(' ', 'T');
+    const safeValue = normalizeLegacyDateTime(value);
+    if (!safeValue) return '-';
+    const normalized = String(safeValue).replace(' ', 'T');
     const parsed = new Date(normalized);
-    if (Number.isNaN(parsed.getTime())) return value;
+    if (Number.isNaN(parsed.getTime())) return safeValue;
     return parsed.toLocaleString('en-PH', {
         month: 'short',
         day: '2-digit',

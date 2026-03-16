@@ -5,6 +5,16 @@ if (!MargaAuth.requireAccess('field')) {
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 14;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
+const LEGACY_EMPTY_DATETIME_VALUES = new Set([
+    '',
+    ZERO_DATETIME,
+    'undefined',
+    'undefined 00:00:00',
+    'null',
+    'null 00:00:00',
+    'invalid date',
+    'nan'
+]);
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
@@ -315,17 +325,27 @@ async function queryCollection(collectionId, limit = 1000) {
     return runQuery(structuredQuery);
 }
 
+function normalizeLegacyDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const compact = text.replace(/[T]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (LEGACY_EMPTY_DATETIME_VALUES.has(compact)) return '';
+    if (compact.startsWith('undefined ')) return '';
+    if (compact.startsWith('null ')) return '';
+    return text;
+}
+
 function getStatusKey(row) {
     if (Number(row.route_iscancelled || 0) === 1) return 'cancelled';
     if (Number(row.iscancel || 0) === 1) return 'cancelled';
-    const routeFinished = String(row.route_date_finished || '').trim();
-    if (routeFinished && routeFinished !== ZERO_DATETIME) return 'closed';
+    const routeFinished = normalizeLegacyDateTime(row.route_date_finished);
+    if (routeFinished) return 'closed';
     const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
         ? null
         : Number(row.route_status);
     if (routeStatus === 0) return 'closed';
-    const finished = String(row.date_finished || '').trim();
-    if (finished && finished !== ZERO_DATETIME) return 'closed';
+    const finished = normalizeLegacyDateTime(row.date_finished);
+    if (finished) return 'closed';
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
     const taskDate = getRouteTaskDateTime(row).slice(0, 10);
     if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
@@ -343,10 +363,11 @@ function getStatusMeta(row) {
 }
 
 function formatTaskDateTime(value) {
-    if (!value) return '-';
-    const normalized = String(value).replace(' ', 'T');
+    const safeValue = normalizeLegacyDateTime(value);
+    if (!safeValue) return '-';
+    const normalized = String(safeValue).replace(' ', 'T');
     const parsed = new Date(normalized);
-    if (Number.isNaN(parsed.getTime())) return value;
+    if (Number.isNaN(parsed.getTime())) return safeValue;
     return parsed.toLocaleString('en-PH', {
         month: 'short',
         day: '2-digit',
@@ -437,8 +458,8 @@ function toDbDateTimeFromLocal(localValue) {
 }
 
 function toLocalInputDateTime(dbValue) {
-    const value = String(dbValue || '').trim();
-    if (!value || value === ZERO_DATETIME) return '';
+    const value = normalizeLegacyDateTime(dbValue);
+    if (!value) return '';
     const normalized = value.replace(' ', 'T');
     const parsed = new Date(normalized);
     if (Number.isNaN(parsed.getTime())) {
@@ -1119,8 +1140,8 @@ async function resolvePreviousMeter(machineId, scheduleId, taskDateTime, fallbac
 
         const referenceTs = new Date(String(taskDateTime || '').replace(' ', 'T')).getTime();
         const candidates = rows.filter((row) => {
-            const finished = String(row.date_finished || '').trim();
-            const basis = finished && finished !== ZERO_DATETIME ? finished : String(row.task_datetime || '').trim();
+            const finished = normalizeLegacyDateTime(row.date_finished);
+            const basis = finished || String(row.task_datetime || '').trim();
             const ts = new Date(basis.replace(' ', 'T')).getTime();
             if (!Number.isFinite(ts)) return true;
             if (!Number.isFinite(referenceTs)) return true;
@@ -1128,8 +1149,8 @@ async function resolvePreviousMeter(machineId, scheduleId, taskDateTime, fallbac
         });
 
         candidates.sort((a, b) => {
-            const left = String(a.date_finished && a.date_finished !== ZERO_DATETIME ? a.date_finished : a.task_datetime || '');
-            const right = String(b.date_finished && b.date_finished !== ZERO_DATETIME ? b.date_finished : b.task_datetime || '');
+            const left = normalizeLegacyDateTime(a.date_finished) || String(a.task_datetime || '');
+            const right = normalizeLegacyDateTime(b.date_finished) || String(b.task_datetime || '');
             if (left !== right) return right.localeCompare(left);
             return Number(b.id || 0) - Number(a.id || 0);
         });
@@ -1261,8 +1282,8 @@ async function openModal(scheduleId) {
     const logTimeIn = String(log?.time_in || '').trim();
     const logTimeOut = String(log?.time_out || '').trim();
 
-    document.getElementById('fieldTimeIn').value = toLocalInputDateTime(rowTimeIn && rowTimeIn !== ZERO_DATETIME ? rowTimeIn : logTimeIn);
-    document.getElementById('fieldTimeOut').value = toLocalInputDateTime(rowTimeOut && rowTimeOut !== ZERO_DATETIME ? rowTimeOut : logTimeOut);
+    document.getElementById('fieldTimeIn').value = toLocalInputDateTime(normalizeLegacyDateTime(rowTimeIn) || logTimeIn);
+    document.getElementById('fieldTimeOut').value = toLocalInputDateTime(normalizeLegacyDateTime(rowTimeOut) || logTimeOut);
 
     const pinHint = document.getElementById('fieldPinHint');
     pinHint.textContent = 'Checking customer PIN setup...';
