@@ -245,6 +245,21 @@ function resolveManifestMutableDateColumn(table, columns) {
   return resolveMutableDateColumn(columns);
 }
 
+function getManifestFullResyncIntervalMinutes(table) {
+  const entry = getManifestEntry(table);
+  return Number(entry?.mysqlToFirebase?.fullResyncIntervalMinutes || 0) || 0;
+}
+
+function shouldRunFullResyncForTable(table, stateSnapshot) {
+  const intervalMinutes = getManifestFullResyncIntervalMinutes(table);
+  if (intervalMinutes <= 0) return false;
+  const lastRun = String(stateSnapshot?.fullResyncAtByTable?.[table] || "").trim();
+  if (!lastRun) return true;
+  const lastTs = new Date(lastRun).getTime();
+  if (!Number.isFinite(lastTs)) return true;
+  return (Date.now() - lastTs) >= (intervalMinutes * 60 * 1000);
+}
+
 function guessIdColumn(table, columns) {
   const hint = TABLE_ID_HINTS[table];
   if (hint && columns.some((column) => column.name === hint)) return hint;
@@ -314,6 +329,19 @@ async function fetchRowsByIds(pool, table, idColumn, ids) {
   return rows;
 }
 
+async function fetchAllRowsForFullResync(pool, table, idColumn, batchSize) {
+  const rows = [];
+  let cursor = 0;
+  while (true) {
+    const batch = await fetchRowsAfter(pool, table, idColumn, cursor, Math.max(1, Math.trunc(batchSize || DEFAULT_BATCH_SIZE) * 4));
+    if (!batch.length) break;
+    rows.push(...batch);
+    cursor = Number(batch[batch.length - 1]?.[idColumn] || cursor) || cursor;
+    if (!cursor) break;
+  }
+  return rows;
+}
+
 function summarizeReport(stats, reportPath) {
   return {
     generatedAt: toIsoNow(),
@@ -376,6 +404,9 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
     ...stateBefore,
     lastAttemptAt: toIsoNow(),
     lastDirection: "live_mysql_to_firebase",
+    fullResyncAtByTable: {
+      ...(stateBefore.fullResyncAtByTable || {}),
+    },
   };
 
   async function flushWrites() {
@@ -407,11 +438,51 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
       tableStats.idColumn = idColumn;
 
       const watermarkInfo = watermarkMap.get(table) || { exists: false, lastId: 0 };
+      const fullResyncDue = shouldRunFullResyncForTable(table, stateBefore);
       if (!watermarkInfo.exists) {
         const maxId = await fetchMaxId(pool, table, idColumn);
         const bootstrapDateColumn = bootstrapTables.has(table) ? resolveBootstrapDateColumn(columns) : "";
         const bootstrapStartDateTime = bootstrapDateColumn ? buildBootstrapStartDateTime(config.bootstrapDays) : "";
-        if (bootstrapDateColumn && maxId > 0) {
+        if (fullResyncDue && maxId > 0) {
+          const fullRows = await fetchAllRowsForFullResync(pool, table, idColumn, config.batchSize);
+          emit("info", `${table} watermark missing. Running manifest full refresh.`, {
+            rowsFound: fullRows.length,
+            maxId,
+          });
+
+          for (const row of fullRows) {
+            const rowId = Number(row[idColumn] || 0) || 0;
+            if (rowId <= 0) continue;
+
+            const payload = sanitizeMysqlRecord(table, row);
+            if (!config.dryRun) {
+              pendingWrites.push(db.makeUpsertWrite(table, rowId, payload));
+            }
+            tableStats.pushed += 1;
+            stats.insertedRows += 1;
+            tableStats.watermarkAfter = Math.max(tableStats.watermarkAfter, rowId);
+
+            if (tableStats.examples.length < 5) {
+              const example = { id: rowId, fullRefresh: true };
+              tableStats.examples.push(example);
+              pendingActivityRows.push({
+                table,
+                id: rowId,
+                meta: example,
+              });
+            }
+
+            if (pendingWrites.length >= config.batchSize) {
+              await flushWrites();
+            }
+          }
+
+          await flushWrites();
+          tableStats.watermarkAfter = maxId;
+          if (!config.dryRun) {
+            nextState.fullResyncAtByTable[table] = toIsoNow();
+          }
+        } else if (bootstrapDateColumn && maxId > 0) {
           const bootstrapRows = await fetchRowsForBootstrap(pool, table, idColumn, bootstrapDateColumn, bootstrapStartDateTime, config.batchSize);
           emit("info", `${table} watermark missing. Bootstrapping recent live MySQL rows.`, {
             dateColumn: bootstrapDateColumn,
@@ -526,6 +597,45 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
       }
 
       await flushWrites();
+
+      if (fullResyncDue) {
+        const fullRows = await fetchAllRowsForFullResync(pool, table, idColumn, config.batchSize);
+        let fullRefreshCount = 0;
+
+        for (const row of fullRows) {
+          const rowId = Number(row[idColumn] || 0) || 0;
+          if (rowId <= 0 || processedRowIds.has(rowId)) continue;
+
+          const payload = sanitizeMysqlRecord(table, row);
+          if (!config.dryRun) {
+            pendingWrites.push(db.makeUpsertWrite(table, rowId, payload));
+          }
+          processedRowIds.add(rowId);
+          fullRefreshCount += 1;
+          tableStats.pushed += 1;
+          stats.insertedRows += 1;
+
+          if (tableStats.examples.length < 5) {
+            const example = { id: rowId, fullRefresh: true };
+            tableStats.examples.push(example);
+          }
+
+          if (pendingWrites.length >= config.batchSize) {
+            await flushWrites();
+          }
+        }
+
+        await flushWrites();
+        if (!config.dryRun) {
+          nextState.fullResyncAtByTable[table] = toIsoNow();
+        }
+
+        if (fullRefreshCount > 0) {
+          emit("info", `${table} full refresh applied from manifest.`, {
+            refreshedRows: fullRefreshCount,
+          });
+        }
+      }
 
       const mutableDateColumn = mutableTables.has(table) ? resolveManifestMutableDateColumn(table, columns) : "";
       if (mutableDateColumn) {
