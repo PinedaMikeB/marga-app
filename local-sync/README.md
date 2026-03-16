@@ -98,6 +98,8 @@ For the live MySQL to Firebase runner, keep these in `.env` so route rows sync a
 MYSQL_TO_FIREBASE_TABLES=tbl_schedule,tbl_printedscheds,tbl_savedscheds,tbl_schedtime,tbl_closedscheds
 MYSQL_TO_FIREBASE_BOOTSTRAP_TABLES=tbl_printedscheds,tbl_savedscheds
 MYSQL_TO_FIREBASE_BOOTSTRAP_DAYS=31
+MYSQL_TO_FIREBASE_MUTABLE_TABLES=tbl_printedscheds,tbl_savedscheds
+MYSQL_TO_FIREBASE_MUTABLE_LOOKBACK_HOURS=72
 MYSQL_TO_FIREBASE_WRITE_ENABLED=1
 ```
 
@@ -105,6 +107,8 @@ Bootstrap behavior:
 
 - if `tbl_printedscheds` or `tbl_savedscheds` has no watermark yet in Firebase, the syncer now imports recent route rows automatically
 - after bootstrap, the watermark advances to the live MySQL max id and normal incremental sync continues
+- route tables are mutable, so the syncer also rescans recent rows by `timestmp` and overwrites Firebase docs when an existing printed/saved row changes from open to closed
+- when a route row changes, the linked `tbl_schedule` row is refreshed in Firebase too, so field status cards stay aligned with the legacy board
 
 Backfill one route day from live MySQL into Firebase:
 

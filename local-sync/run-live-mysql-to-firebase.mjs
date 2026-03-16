@@ -27,6 +27,8 @@ const DEFAULT_TABLES = ["tbl_schedule", "tbl_printedscheds", "tbl_savedscheds", 
 const DEFAULT_BOOTSTRAP_TABLES = ["tbl_printedscheds", "tbl_savedscheds"];
 const DEFAULT_BATCH_SIZE = 250;
 const DEFAULT_BOOTSTRAP_DAYS = 31;
+const DEFAULT_MUTABLE_TABLES = ["tbl_printedscheds", "tbl_savedscheds"];
+const DEFAULT_MUTABLE_LOOKBACK_HOURS = 72;
 const TABLE_ID_HINTS = {
   tbl_schedule: "id",
   tbl_printedscheds: "id",
@@ -75,7 +77,9 @@ function parseArgs(argv) {
     stateFile: null,
     tables: null,
     bootstrapTables: null,
+    mutableTables: null,
     bootstrapDays: null,
+    mutableLookbackHours: null,
     batchSize: null,
     dryRun: undefined,
   };
@@ -119,6 +123,16 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (token === "--mutable-tables") {
+      config.mutableTables = parseTableList(next);
+      index += 1;
+      continue;
+    }
+    if (token === "--mutable-lookback-hours") {
+      config.mutableLookbackHours = Number(next || 0) || null;
+      index += 1;
+      continue;
+    }
     if (token === "--dry-run") {
       config.dryRun = true;
       continue;
@@ -141,6 +155,9 @@ export function loadLiveMysqlSyncConfig(overrides = {}) {
   const bootstrapTables = overrides.bootstrapTables?.length
     ? overrides.bootstrapTables
     : parseTableList(env.MYSQL_TO_FIREBASE_BOOTSTRAP_TABLES) || DEFAULT_BOOTSTRAP_TABLES;
+  const mutableTables = overrides.mutableTables?.length
+    ? overrides.mutableTables
+    : parseTableList(env.MYSQL_TO_FIREBASE_MUTABLE_TABLES) || DEFAULT_MUTABLE_TABLES;
 
   return {
     firebaseConfigPath: resolveMaybeRelative(__dirname, overrides.firebaseConfigPath, env.FIREBASE_CONFIG_PATH || paths.firebaseConfigPath),
@@ -151,6 +168,8 @@ export function loadLiveMysqlSyncConfig(overrides = {}) {
     tables: tables.length ? tables : DEFAULT_TABLES,
     bootstrapTables: bootstrapTables.length ? bootstrapTables : DEFAULT_BOOTSTRAP_TABLES,
     bootstrapDays: Number(overrides.bootstrapDays || env.MYSQL_TO_FIREBASE_BOOTSTRAP_DAYS || DEFAULT_BOOTSTRAP_DAYS) || DEFAULT_BOOTSTRAP_DAYS,
+    mutableTables: mutableTables.length ? mutableTables : DEFAULT_MUTABLE_TABLES,
+    mutableLookbackHours: Number(overrides.mutableLookbackHours || env.MYSQL_TO_FIREBASE_MUTABLE_LOOKBACK_HOURS || DEFAULT_MUTABLE_LOOKBACK_HOURS) || DEFAULT_MUTABLE_LOOKBACK_HOURS,
     batchSize: Number(overrides.batchSize || env.MYSQL_TO_FIREBASE_BATCH_SIZE || DEFAULT_BATCH_SIZE) || DEFAULT_BATCH_SIZE,
     dryRun: overrides.dryRun !== undefined
       ? Boolean(overrides.dryRun)
@@ -196,6 +215,12 @@ function buildBootstrapStartDateTime(days) {
   return formatDbDateTime(date);
 }
 
+function buildMutableLookbackDateTime(hours) {
+  const lookbackHours = Math.max(1, Math.trunc(hours || DEFAULT_MUTABLE_LOOKBACK_HOURS));
+  const date = new Date(Date.now() - (lookbackHours * 60 * 60 * 1000));
+  return formatDbDateTime(date);
+}
+
 async function describeTable(pool, table) {
   const [rows] = await pool.query(`SHOW COLUMNS FROM \`${table}\``);
   return rows.map((row) => ({
@@ -204,6 +229,11 @@ async function describeTable(pool, table) {
     extra: String(row.Extra || ""),
     type: String(row.Type || "").toLowerCase(),
   }));
+}
+
+function resolveMutableDateColumn(columns) {
+  const preferred = ["timestmp", "updated_at"];
+  return preferred.find((columnName) => columns.some((column) => column.name === columnName)) || "";
 }
 
 function guessIdColumn(table, columns) {
@@ -247,6 +277,34 @@ async function fetchRowsForBootstrap(pool, table, idColumn, dateColumn, startDat
   return Array.isArray(rows) ? rows : [];
 }
 
+async function fetchRowsForMutableScan(pool, table, idColumn, dateColumn, startDateTime, batchSize) {
+  const sql = [
+    `SELECT * FROM \`${table}\``,
+    `WHERE \`${dateColumn}\` >= ?`,
+    `ORDER BY \`${dateColumn}\` ASC, \`${idColumn}\` ASC`,
+    `LIMIT ${Math.max(1, Math.trunc(batchSize || DEFAULT_BATCH_SIZE) * 20)}`,
+  ].join(" ");
+  const [rows] = await pool.execute(sql, [startDateTime]);
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function fetchRowsByIds(pool, table, idColumn, ids) {
+  if (!ids.length) return [];
+  const sortedIds = [...new Set(ids.map((value) => Number(value || 0)).filter((value) => value > 0))].sort((left, right) => left - right);
+  const rows = [];
+  const chunkSize = 200;
+  for (let index = 0; index < sortedIds.length; index += chunkSize) {
+    const chunk = sortedIds.slice(index, index + chunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const [result] = await pool.execute(
+      `SELECT * FROM \`${table}\` WHERE \`${idColumn}\` IN (${placeholders}) ORDER BY \`${idColumn}\` ASC`,
+      chunk,
+    );
+    if (Array.isArray(result)) rows.push(...result);
+  }
+  return rows;
+}
+
 function summarizeReport(stats, reportPath) {
   return {
     generatedAt: toIsoNow(),
@@ -282,9 +340,12 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
   const pool = await createMysqlPool(config.mysql);
   const tables = [...new Set((config.tables || DEFAULT_TABLES).map((table) => String(table).trim().toLowerCase()).filter(Boolean))];
   const bootstrapTables = new Set((config.bootstrapTables || DEFAULT_BOOTSTRAP_TABLES).map((table) => String(table).trim().toLowerCase()).filter(Boolean));
+  const mutableTables = new Set((config.mutableTables || DEFAULT_MUTABLE_TABLES).map((table) => String(table).trim().toLowerCase()).filter(Boolean));
   const watermarkMap = await getWatermarkMap(db, tables);
   const pendingWrites = [];
   const pendingActivityRows = [];
+  const processedRowIdsByTable = new Map(tables.map((table) => [table, new Set()]));
+  const linkedScheduleIdsToRefresh = new Set();
   const stats = {
     dryRun: Boolean(config.dryRun),
     insertedRows: 0,
@@ -405,6 +466,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
       }
 
       let currentWatermark = watermarkInfo.lastId || 0;
+      const processedRowIds = processedRowIdsByTable.get(table) || new Set();
       while (true) {
         const rows = await fetchRowsAfter(pool, table, idColumn, currentWatermark, config.batchSize);
         if (!rows.length) break;
@@ -416,6 +478,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
             stats.skippedRows += 1;
             continue;
           }
+          processedRowIds.add(rowId);
 
           const payload = sanitizeMysqlRecord(table, row);
           if (!config.dryRun) {
@@ -443,6 +506,10 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
             });
           }
 
+          if ((table === "tbl_printedscheds" || table === "tbl_savedscheds") && Number(payload.schedule_id || 0) > 0) {
+            linkedScheduleIdsToRefresh.add(Number(payload.schedule_id || 0));
+          }
+
           if (pendingWrites.length >= config.batchSize) {
             await flushWrites();
           }
@@ -450,6 +517,52 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
       }
 
       await flushWrites();
+
+      const mutableDateColumn = mutableTables.has(table) ? resolveMutableDateColumn(columns) : "";
+      if (mutableDateColumn) {
+        const mutableStartDateTime = buildMutableLookbackDateTime(config.mutableLookbackHours);
+        const mutableRows = await fetchRowsForMutableScan(pool, table, idColumn, mutableDateColumn, mutableStartDateTime, config.batchSize);
+        let mutableRefreshCount = 0;
+
+        for (const row of mutableRows) {
+          const rowId = Number(row[idColumn] || 0) || 0;
+          if (rowId <= 0 || processedRowIds.has(rowId)) continue;
+
+          const payload = sanitizeMysqlRecord(table, row);
+          if (!config.dryRun) {
+            pendingWrites.push(db.makeUpsertWrite(table, rowId, payload));
+          }
+          processedRowIds.add(rowId);
+          mutableRefreshCount += 1;
+          tableStats.pushed += 1;
+          stats.insertedRows += 1;
+
+          if (tableStats.examples.length < 5) {
+            const example = { id: rowId, mutableRefresh: true };
+            if (payload.schedule_id !== undefined) example.schedule_id = payload.schedule_id;
+            if (payload.task_datetime !== undefined) example.task_datetime = payload.task_datetime;
+            tableStats.examples.push(example);
+          }
+
+          if ((table === "tbl_printedscheds" || table === "tbl_savedscheds") && Number(payload.schedule_id || 0) > 0) {
+            linkedScheduleIdsToRefresh.add(Number(payload.schedule_id || 0));
+          }
+
+          if (pendingWrites.length >= config.batchSize) {
+            await flushWrites();
+          }
+        }
+
+        await flushWrites();
+
+        if (mutableRefreshCount > 0) {
+          emit("info", `${table} mutable refresh applied.`, {
+            dateColumn: mutableDateColumn,
+            startDateTime: mutableStartDateTime,
+            refreshedRows: mutableRefreshCount,
+          });
+        }
+      }
 
       if (!config.dryRun && tableStats.watermarkAfter > tableStats.watermarkBefore) {
         await db.patchDoc(SYNC_STATE_COLLECTION, table, {
@@ -464,6 +577,32 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
           after: tableStats.watermarkAfter,
         });
       }
+    }
+
+    if (linkedScheduleIdsToRefresh.size && tables.includes("tbl_schedule")) {
+      const scheduleStats = stats.tables.tbl_schedule;
+      const scheduleColumns = await describeTable(pool, "tbl_schedule");
+      const scheduleIdColumn = guessIdColumn("tbl_schedule", scheduleColumns);
+      const scheduleRows = await fetchRowsByIds(pool, "tbl_schedule", scheduleIdColumn, [...linkedScheduleIdsToRefresh]);
+
+      for (const row of scheduleRows) {
+        const rowId = Number(row[scheduleIdColumn] || 0) || 0;
+        if (rowId <= 0) continue;
+        const payload = sanitizeMysqlRecord("tbl_schedule", row);
+        if (!config.dryRun) {
+          pendingWrites.push(db.makeUpsertWrite("tbl_schedule", rowId, payload));
+        }
+        scheduleStats.pushed += 1;
+        stats.insertedRows += 1;
+        if (pendingWrites.length >= config.batchSize) {
+          await flushWrites();
+        }
+      }
+
+      await flushWrites();
+      emit("info", "Linked tbl_schedule rows refreshed from route updates.", {
+        rows: scheduleRows.length,
+      });
     }
   } finally {
     await pool.end();

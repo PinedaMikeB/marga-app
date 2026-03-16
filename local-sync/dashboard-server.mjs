@@ -200,6 +200,8 @@ function loadDashboardConfig() {
   runtimeConfig.liveMysqlBatchSize = liveMysqlConfig.batchSize;
   runtimeConfig.liveMysqlBootstrapTables = liveMysqlConfig.bootstrapTables;
   runtimeConfig.liveMysqlBootstrapDays = liveMysqlConfig.bootstrapDays;
+  runtimeConfig.liveMysqlMutableTables = liveMysqlConfig.mutableTables;
+  runtimeConfig.liveMysqlMutableLookbackHours = liveMysqlConfig.mutableLookbackHours;
 
   if (runtimeConfig.direction === "mysql_to_firebase") {
     runtimeConfig.baseline = "live";
