@@ -8,6 +8,17 @@ This folder is the office-side sync runner and local status dashboard.
 - staff can view the dashboard at `http://127.0.0.1:4310`
 - if live MySQL is not reachable from this PC, the dashboard falls back to dump-only monitoring
 
+The executable table map now lives in:
+
+- [sync-manifest.mjs](/D:/Codex/Github/marga-app/local-sync/sync-manifest.mjs)
+
+That manifest defines:
+
+- which tables are enabled for `MySQL -> Firebase`
+- which tables are enabled for `Firebase -> MySQL`
+- which tables are mutable and need timestamp rescans
+- which schedule fields are allowed for safe reverse writeback
+
 ## What It Does
 
 Current sync scope:
@@ -24,6 +35,11 @@ Current sync scope:
   - inserts or updates field execution rows
 - `tbl_closedscheds`
   - optional closure marker inserts when enabled
+
+Manifest-driven defaults:
+
+- live MySQL -> Firebase uses enabled `mysqlToFirebase` tables from `sync-manifest.mjs`
+- reverse bridge safe fields use enabled `firebaseToMysql` rules from `sync-manifest.mjs`
 
 ## Setup
 

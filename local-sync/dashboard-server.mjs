@@ -17,6 +17,7 @@ import {
 } from "./run-local-sync.mjs";
 import { describeDumpSource, runDumpToFirebase } from "./run-dump-to-firebase.mjs";
 import { loadLiveMysqlSyncConfig, runLiveMysqlToFirebase } from "./run-live-mysql-to-firebase.mjs";
+import { OFFICE_SYNC_MANIFEST_VERSION, getFirebaseToMysqlEntries, getMysqlToFirebaseEntries } from "./sync-manifest.mjs";
 import { fileURLToPath } from "node:url";
 
 const LOCAL_SYNC_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -196,12 +197,17 @@ function loadDashboardConfig() {
     },
   };
   const liveMysqlConfig = loadLiveMysqlSyncConfig();
+  const mysqlToFirebaseEntries = getMysqlToFirebaseEntries({ enabledOnly: false });
+  const firebaseToMysqlEntries = getFirebaseToMysqlEntries({ enabledOnly: false });
   runtimeConfig.liveMysqlTables = liveMysqlConfig.tables;
   runtimeConfig.liveMysqlBatchSize = liveMysqlConfig.batchSize;
   runtimeConfig.liveMysqlBootstrapTables = liveMysqlConfig.bootstrapTables;
   runtimeConfig.liveMysqlBootstrapDays = liveMysqlConfig.bootstrapDays;
   runtimeConfig.liveMysqlMutableTables = liveMysqlConfig.mutableTables;
   runtimeConfig.liveMysqlMutableLookbackHours = liveMysqlConfig.mutableLookbackHours;
+  runtimeConfig.syncManifestVersion = OFFICE_SYNC_MANIFEST_VERSION;
+  runtimeConfig.syncManifestMysqlToFirebaseEnabled = mysqlToFirebaseEntries.filter((entry) => entry.mysqlToFirebase?.enabled).map((entry) => entry.table);
+  runtimeConfig.syncManifestFirebaseToMysqlEnabled = firebaseToMysqlEntries.filter((entry) => entry.firebaseToMysql?.enabled).map((entry) => entry.table);
 
   if (runtimeConfig.direction === "mysql_to_firebase") {
     runtimeConfig.baseline = "live";

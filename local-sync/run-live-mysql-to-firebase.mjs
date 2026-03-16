@@ -17,18 +17,20 @@ import {
   getWatermarkMap,
   parseFirebaseConfig,
 } from "./run-dump-to-firebase.mjs";
+import { getManifestEntry, getMysqlToFirebaseDefaultConfig } from "./sync-manifest.mjs";
 import { ensureDir } from "../tools/build-hybrid-bridge.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const MANIFEST_DEFAULTS = getMysqlToFirebaseDefaultConfig();
 
 const SYNC_STATE_COLLECTION = "sys_sync_state";
-const DEFAULT_TABLES = ["tbl_schedule", "tbl_printedscheds", "tbl_savedscheds", "tbl_schedtime", "tbl_closedscheds"];
-const DEFAULT_BOOTSTRAP_TABLES = ["tbl_printedscheds", "tbl_savedscheds"];
+const DEFAULT_TABLES = MANIFEST_DEFAULTS.tables;
+const DEFAULT_BOOTSTRAP_TABLES = MANIFEST_DEFAULTS.bootstrapTables;
 const DEFAULT_BATCH_SIZE = 250;
 const DEFAULT_BOOTSTRAP_DAYS = 31;
-const DEFAULT_MUTABLE_TABLES = ["tbl_printedscheds", "tbl_savedscheds"];
-const DEFAULT_MUTABLE_LOOKBACK_HOURS = 72;
+const DEFAULT_MUTABLE_TABLES = MANIFEST_DEFAULTS.mutableTables;
+const DEFAULT_MUTABLE_LOOKBACK_HOURS = MANIFEST_DEFAULTS.mutableLookbackHours;
 const TABLE_ID_HINTS = {
   tbl_schedule: "id",
   tbl_printedscheds: "id",
@@ -234,6 +236,13 @@ async function describeTable(pool, table) {
 function resolveMutableDateColumn(columns) {
   const preferred = ["timestmp", "updated_at"];
   return preferred.find((columnName) => columns.some((column) => column.name === columnName)) || "";
+}
+
+function resolveManifestMutableDateColumn(table, columns) {
+  const entry = getManifestEntry(table);
+  const configured = String(entry?.mysqlToFirebase?.mutableDateColumn || "").trim();
+  if (configured && columns.some((column) => column.name === configured)) return configured;
+  return resolveMutableDateColumn(columns);
 }
 
 function guessIdColumn(table, columns) {
@@ -518,7 +527,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
 
       await flushWrites();
 
-      const mutableDateColumn = mutableTables.has(table) ? resolveMutableDateColumn(columns) : "";
+      const mutableDateColumn = mutableTables.has(table) ? resolveManifestMutableDateColumn(table, columns) : "";
       if (mutableDateColumn) {
         const mutableStartDateTime = buildMutableLookbackDateTime(config.mutableLookbackHours);
         const mutableRows = await fetchRowsForMutableScan(pool, table, idColumn, mutableDateColumn, mutableStartDateTime, config.batchSize);

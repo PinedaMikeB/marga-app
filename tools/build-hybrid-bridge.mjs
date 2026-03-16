@@ -3,35 +3,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { getReverseBridgeConfig } from "../local-sync/sync-manifest.mjs";
 
 const ZERO_DATETIME = "0000-00-00 00:00:00";
 const MAX_MYSQL_INT32 = 2147483647;
+const REVERSE_BRIDGE_CONFIG = getReverseBridgeConfig();
 export const DEFAULTS = {
   collectionHistoryLimit: 5000,
   scheduleLimit: 3000,
   schedtimePerSchedule: 3,
 };
 
-export const SYNCABLE_SCHEDULE_COLUMNS = [
-  "serial",
-  "isongoing",
-  "date_finished",
-  "closedby",
-  "phone_number",
-  "meter_reading",
-  "tl_status",
-  "tl_remarks",
-  "customer_request",
-  "collocutor",
-  "dev_remarks",
-];
+export const SYNCABLE_SCHEDULE_COLUMNS = REVERSE_BRIDGE_CONFIG.scheduleSafeFields;
 
-const TRACKED_TABLES = new Set([
-  "tbl_collectionhistory",
-  "tbl_schedule",
-  "tbl_schedtime",
-  "tbl_closedscheds",
-]);
+const TRACKED_TABLES = new Set(REVERSE_BRIDGE_CONFIG.trackedTables);
 
 function printUsage() {
   console.log(
