@@ -6,6 +6,8 @@ const OPS_MAX_TASK_ROWS = 300;
 const OPS_QUERY_LIMIT = 5000;
 const OPS_CARRYOVER_DAYS = 14;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
+const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
+const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const PURPOSE_LABELS = {
     1: 'Billing',
     2: 'Collection',
@@ -50,7 +52,8 @@ const opsState = {
     panelStaffId: null,
     purposeFilter: 'all',
     statusFilter: 'all',
-    includeCarryover: true
+    includeCarryover: false,
+    routeSourceLabel: 'Printed'
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -96,10 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderOperationsBoard();
     });
 
-    carryoverToggle.addEventListener('change', () => {
-        opsState.includeCarryover = carryoverToggle.checked;
-        loadOperationsBoard();
-    });
+    carryoverToggle.checked = false;
+    carryoverToggle.disabled = true;
+    carryoverToggle.closest('.ops-toggle')?.setAttribute('title', 'Printed route view only');
 
     document.getElementById('opsRefreshBtn').addEventListener('click', () => loadOperationsBoard());
     document.getElementById('opsPanelCloseBtn').addEventListener('click', closeOpsStaffPanel);
@@ -108,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!opsState.panelStaffId) return;
         printStaffScheduleRows(opsState.panelStaffId);
     });
-    carryoverBtn.addEventListener('click', () => batchCarryoverPending());
+    carryoverBtn.style.display = 'none';
 
     const newReqBtn = document.getElementById('opsNewRequestBtn');
     const canCreate = MargaAuth.isAdmin() || user?.role === 'service';
@@ -125,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     opsState.purposeFilter = purposeFilter.value;
     opsState.statusFilter = statusFilter.value;
-    opsState.includeCarryover = carryoverToggle.checked;
+    opsState.includeCarryover = false;
     loadOperationsBoard();
 });
 
@@ -141,15 +143,15 @@ function getDefaultPurposeFilter(role) {
 
 function getRoleDispatchNote(role) {
     if (role === 'billing') {
-        return 'Billing view: default filter is Billing. You can switch to other task types as needed.';
+        return 'Billing printed route view: default filter is Billing. You can switch to other task types as needed.';
     }
     if (role === 'collection') {
-        return 'Collection view: default filter is Collection. You can switch to other task types as needed.';
+        return 'Collection printed route view: default filter is Collection. You can switch to other task types as needed.';
     }
     if (role === 'service') {
-        return 'Service view: monitor technicians, messengers, and dispatch queue for today.';
+        return 'Service printed route view: monitor the same technician and messenger day sheet used by the legacy app.';
     }
-    return 'Unified daily schedules for service, collection, billing, delivery, and reading tasks.';
+    return 'Unified printed route view for service, collection, billing, delivery, and reading tasks.';
 }
 
 function formatDateYmd(date) {
@@ -462,17 +464,96 @@ function getRoleClass(role) {
     return 'role-unknown';
 }
 
+function getRouteTaskDateTime(row) {
+    const routeValue = String(row?.route_task_datetime || '').trim();
+    if (routeValue) return routeValue;
+    return String(row?.task_datetime || '').trim();
+}
+
+function getAssignedStaffId(row) {
+    return Number(row?.route_tech_id || row?.tech_id || 0);
+}
+
+function getRouteNotes(row) {
+    return String(row?.route_remarks || row?.remarks || row?.caller || '').trim();
+}
+
+function pickLatestRouteRows(rows, selectedDate) {
+    const latestBySchedule = new Map();
+
+    rows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId <= 0) return;
+        if (selectedDate && String(row.task_datetime || '').slice(0, 10) !== selectedDate) return;
+        const current = latestBySchedule.get(scheduleId);
+        if (!current || Number(row.id || 0) > Number(current.id || 0)) {
+            latestBySchedule.set(scheduleId, row);
+        }
+    });
+
+    return [...latestBySchedule.values()];
+}
+
+async function fetchScheduleDocsByIds(ids) {
+    const uniqueIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
+    if (!uniqueIds.length) return new Map();
+
+    const docs = await Promise.all(uniqueIds.map((id) => fetchDocById('tbl_schedule', String(id))));
+    return new Map(
+        docs
+            .filter(Boolean)
+            .map((doc) => [String(doc.id || doc._docId || ''), doc])
+            .filter(([key]) => key)
+    );
+}
+
+async function buildRouteBoundScheduleRows(routeRows, routeSourceLabel) {
+    const scheduleIds = routeRows.map((row) => Number(row.schedule_id || 0)).filter((id) => id > 0);
+    const scheduleMap = await fetchScheduleDocsByIds(scheduleIds);
+
+    return routeRows
+        .map((routeRow) => {
+            const scheduleId = Number(routeRow.schedule_id || 0);
+            const schedule = scheduleMap.get(String(scheduleId));
+            if (!schedule) return null;
+
+            return {
+                ...schedule,
+                task_datetime: String(routeRow.task_datetime || schedule.task_datetime || ''),
+                tech_id: Number(routeRow.tech_id || schedule.tech_id || 0) || 0,
+                route_id: Number(routeRow.id || 0) || 0,
+                route_doc_id: routeRow._docId || String(routeRow.id || ''),
+                route_source: routeSourceLabel,
+                route_tech_id: Number(routeRow.tech_id || 0) || 0,
+                route_task_datetime: String(routeRow.task_datetime || ''),
+                route_status: routeRow.status ?? '',
+                route_iscancelled: Number(routeRow.iscancelled || routeRow.iscancel || 0) || 0,
+                route_date_finished: String(routeRow.date_finished || ''),
+                route_remarks: String(routeRow.remarks || '').trim()
+            };
+        })
+        .filter(Boolean);
+}
+
 function getOpsStatusKey(row, selectedDate) {
     const scheduleId = Number(row.id || 0);
+    if (Number(row.route_iscancelled || 0) === 1) return 'cancelled';
     if (scheduleId > 0 && opsCache.closedScheduleIds.has(scheduleId)) return 'closed';
     if (Number(row.iscancel || 0) === 1) return 'cancelled';
+
+    const routeFinished = String(row.route_date_finished || '').trim();
+    if (routeFinished && routeFinished !== ZERO_DATETIME) return 'closed';
+    const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
+        ? null
+        : Number(row.route_status);
+    if (routeStatus === 0) return 'closed';
 
     const finished = String(row.date_finished || '').trim();
     if (finished && finished !== ZERO_DATETIME) return 'closed';
 
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
 
-    const taskDate = String(row.task_datetime || '').slice(0, 10);
+    const taskDate = getRouteTaskDateTime(row).slice(0, 10);
     if (taskDate && selectedDate && taskDate < selectedDate) return 'carryover';
 
     return 'pending';
@@ -517,17 +598,12 @@ function renderOpsStatusKpis(rows, selectedDate) {
         return acc;
     }, {});
 
-    const todayCount = rows.filter((row) => String(row.task_datetime || '').startsWith(selectedDate)).length;
-    const carryCount = counts.carryover || 0;
+    const todayCount = rows.filter((row) => getRouteTaskDateTime(row).startsWith(selectedDate)).length;
 
     grid.innerHTML = `
         <div class="ops-kpi-card">
             <div class="ops-kpi-label">Scheduled Today</div>
             <div class="ops-kpi-value">${todayCount}</div>
-        </div>
-        <div class="ops-kpi-card" data-filter="carryover">
-            <div class="ops-kpi-label">Carryover</div>
-            <div class="ops-kpi-value">${carryCount}</div>
         </div>
         <div class="ops-kpi-card" data-filter="pending">
             <div class="ops-kpi-label">Pending</div>
@@ -567,7 +643,7 @@ function renderOpsStaffTable(rows, logsByStaff, employeeMap, positionMap) {
 
     const grouped = new Map();
     rows.forEach((row) => {
-        const staffId = Number(row.tech_id || 0);
+        const staffId = getAssignedStaffId(row);
         if (!grouped.has(staffId)) {
             grouped.set(staffId, { rows: [], purposeCounts: new Map() });
         }
@@ -636,10 +712,10 @@ function getScheduleById(scheduleId) {
 
 function getStaffRows(staffId) {
     return opsState.selectedRows
-        .filter((row) => Number(row.tech_id || 0) === Number(staffId))
+        .filter((row) => getAssignedStaffId(row) === Number(staffId))
         .sort((a, b) => {
-            const left = String(a.task_datetime || '');
-            const right = String(b.task_datetime || '');
+            const left = getRouteTaskDateTime(a);
+            const right = getRouteTaskDateTime(b);
             if (left !== right) return left.localeCompare(right);
             return Number(a.id || 0) - Number(b.id || 0);
         });
@@ -652,7 +728,7 @@ function getScheduleLookups(row) {
     const branchId = Number(row.branch_id || 0) > 0 ? Number(row.branch_id) : Number(branchIdFromLog || 0);
     const companyId = Number(row.company_id || 0);
 
-    const employee = opsCache.employees.get(String(row.tech_id || 0)) || null;
+    const employee = opsCache.employees.get(String(getAssignedStaffId(row) || 0)) || null;
     const position = employee ? opsCache.positions.get(String(employee.position_id || 0)) : null;
     const trouble = opsCache.troubles.get(String(row.trouble_id || 0)) || null;
     const branch = opsCache.branches.get(String(branchId || 0)) || null;
@@ -869,6 +945,8 @@ async function saveNewServiceRequest() {
 
     const branch = opsCache.branches.get(String(branchId)) || null;
     const areaId = Number(branch?.area_id || 0);
+    const bridgeUpdatedAt = new Date().toISOString();
+    const bridgeUpdatedBy = Number(user?.staff_id || 0) || 0;
 
     const base = {
         id: nextId,
@@ -891,7 +969,9 @@ async function saveNewServiceRequest() {
         scheduled: 1,
         // App-specific tracking (safe in Firestore, doesn't break legacy)
         request_origin: origin,
-        from_mobileapp: 1
+        from_mobileapp: 1,
+        bridge_updated_at: bridgeUpdatedAt,
+        bridge_updated_by: bridgeUpdatedBy
     };
 
     // Fill other legacy fields with safe defaults to keep downstream code stable.
@@ -967,21 +1047,13 @@ function renderOpsStaffPanel(staffId) {
     const assigneeName = getEmployeeName(employee, staffId);
     const rows = getStaffRows(staffId);
     const selectedDate = opsState.selectedDate || '';
-    const todayCount = rows.filter((row) => String(row.task_datetime || '').slice(0, 10) === selectedDate).length;
-    const carryCount = rows.filter((row) => {
-        const taskDate = String(row.task_datetime || '').slice(0, 10);
-        return taskDate && selectedDate && taskDate < selectedDate;
-    }).length;
+    const todayCount = rows.filter((row) => getRouteTaskDateTime(row).slice(0, 10) === selectedDate).length;
 
     panelTitle.textContent = `${assigneeName} - ${role}`;
-    if (opsState.includeCarryover && carryCount > 0 && selectedDate) {
-        panelSubtitle.textContent = `${rows.length} schedule(s): ${todayCount} on ${selectedDate}, ${carryCount} carryover`;
-    } else {
-        panelSubtitle.textContent = `${rows.length} schedule(s) on ${selectedDate || 'selected date'}`;
-    }
-    panelMeta.textContent = MargaAuth.isAdmin()
-        ? 'Admin mode: Edit, Transfer, and Delete actions are enabled.'
-        : 'View mode only.';
+    panelSubtitle.textContent = selectedDate
+        ? `${rows.length} ${opsState.routeSourceLabel.toLowerCase()} schedule(s): ${todayCount} on ${selectedDate}`
+        : `${rows.length} ${opsState.routeSourceLabel.toLowerCase()} schedule(s)`;
+    panelMeta.textContent = `${opsState.routeSourceLabel} route view only. Field staff update the master ticket from the field app.`;
 
     const printAllBtn = document.getElementById('opsPanelPrintAllBtn');
     printAllBtn.style.display = rows.length ? 'inline-flex' : 'none';
@@ -999,54 +1071,23 @@ function renderOpsStaffPanel(staffId) {
         const branchName = branch?.branchname || `Branch #${branchId || row.branch_id || 0}`;
         const statusMeta = getOpsStatusMeta(row, opsState.selectedDate);
 
-        const actions = [
-            `<button type="button" class="btn btn-secondary btn-sm ops-row-action" data-action="edit" data-schedule-id="${row.id}">Edit</button>`,
-            `<button type="button" class="btn btn-secondary btn-sm ops-row-action" data-action="transfer" data-schedule-id="${row.id}">Transfer</button>`
-        ];
-
-        if (MargaAuth.isAdmin()) {
-            actions.push(
-                `<button type="button" class="btn btn-danger btn-sm ops-row-action" data-action="delete" data-schedule-id="${row.id}">Delete</button>`
-            );
-        }
+        const actions = [];
 
         return `
             <tr>
-                <td data-label="Time">${sanitize(formatTaskDateTime(row.task_datetime))}</td>
+                <td data-label="Time">${sanitize(formatTaskDateTime(getRouteTaskDateTime(row)))}</td>
                 <td data-label="Task">
                     <div>#${sanitize(row.id)} - ${sanitize(purposeLabel)} / ${sanitize(troubleLabel)} <span class="ops-status-pill ${sanitize(statusMeta.className)}">${sanitize(statusMeta.label)}</span></div>
-                    <div class="ops-subtext">${sanitize(row.remarks || row.caller || '-')}</div>
+                    <div class="ops-subtext">${sanitize(getRouteNotes(row) || '-')}</div>
                 </td>
                 <td data-label="Client / Branch">
                     <div>${sanitize(clientName)}</div>
                     <div class="ops-subtext">${sanitize(branchName)}</div>
                 </td>
-                <td data-label="Action"><div class="ops-row-actions">${actions.join('')}</div></td>
+                <td data-label="Action"><div class="ops-row-actions">Printed Route</div></td>
             </tr>
         `;
     }).join('');
-
-    panelBody.querySelectorAll('.ops-row-action').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const scheduleId = Number(button.dataset.scheduleId || 0);
-            const action = button.dataset.action;
-            const row = getScheduleById(scheduleId);
-            if (!row) return;
-
-            button.disabled = true;
-            try {
-                if (action === 'edit') {
-                    await editScheduleRow(row);
-                } else if (action === 'transfer') {
-                    await transferScheduleRow(row);
-                } else if (action === 'delete') {
-                    await deleteScheduleRow(row);
-                }
-            } finally {
-                button.disabled = false;
-            }
-        });
-    });
 }
 
 async function editScheduleRow(row) {
@@ -1075,7 +1116,9 @@ async function editScheduleRow(row) {
 
     await patchDocument('tbl_schedule', row.id, {
         task_datetime: nextDateTime,
-        remarks: nextRemarks.trim()
+        remarks: nextRemarks.trim(),
+        bridge_updated_at: new Date().toISOString(),
+        bridge_updated_by: Number(MargaAuth.getUser()?.staff_id || 0) || 0
     });
 
     await loadOperationsBoard();
@@ -1115,7 +1158,11 @@ async function transferScheduleRow(row) {
         return;
     }
 
-    await patchDocument('tbl_schedule', row.id, { tech_id: nextStaffId });
+    await patchDocument('tbl_schedule', row.id, {
+        tech_id: nextStaffId,
+        bridge_updated_at: new Date().toISOString(),
+        bridge_updated_by: Number(MargaAuth.getUser()?.staff_id || 0) || 0
+    });
 
     await loadOperationsBoard();
     if (opsState.panelStaffId) renderOpsStaffPanel(opsState.panelStaffId);
@@ -1151,12 +1198,12 @@ function printStaffScheduleRows(staffId) {
         return `
             <tr>
                 <td>${index + 1}</td>
-                <td>${sanitize(formatTaskDateTime(row.task_datetime))}</td>
+                <td>${sanitize(formatTaskDateTime(getRouteTaskDateTime(row)))}</td>
                 <td>#${sanitize(row.id)}</td>
                 <td>${sanitize(clientName)}<div class="sub">${sanitize(branchName)}</div></td>
                 <td>${sanitize(areaName)}</td>
                 <td>${sanitize(purposeLabel)} / ${sanitize(troubleLabel)}</td>
-                <td>${sanitize(notes)}</td>
+                <td>${sanitize(getRouteNotes(row) || notes)}</td>
             </tr>
         `;
     }).join('');
@@ -1237,10 +1284,11 @@ function renderOpsTaskTable(rows, logsBySchedule, lookups) {
     }
 
     tbody.innerHTML = rows.map((row) => {
-        const employee = employeeMap.get(String(row.tech_id || 0)) || null;
+        const staffId = getAssignedStaffId(row);
+        const employee = employeeMap.get(String(staffId || 0)) || null;
         const position = employee ? positionMap.get(String(employee.position_id || 0)) : null;
         const role = getRole(employee, position);
-        const assignee = getEmployeeName(employee, row.tech_id || 0);
+        const assignee = getEmployeeName(employee, staffId || 0);
         const trouble = troubleMap.get(String(row.trouble_id || 0));
         const troubleLabel = trouble?.trouble || (row.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
         const purposeLabel = getPurposeLabel(row.purpose_id);
@@ -1265,7 +1313,7 @@ function renderOpsTaskTable(rows, logsBySchedule, lookups) {
 
         return `
             <tr>
-                <td data-label="Time">${sanitize(formatTaskDateTime(row.task_datetime))}</td>
+                <td data-label="Time">${sanitize(formatTaskDateTime(getRouteTaskDateTime(row)))}</td>
                 <td data-label="Task ID">#${sanitize(row.id)}</td>
                 <td data-label="Client / Branch">
                     <div>${sanitize(clientName)}</div>
@@ -1274,7 +1322,7 @@ function renderOpsTaskTable(rows, logsBySchedule, lookups) {
                 <td data-label="Area">${sanitize(areaName)}</td>
                 <td data-label="Task">
                     <div>${sanitize(taskText)}</div>
-                    <div class="ops-subtext">${sanitize(row.remarks || row.caller || '-')}</div>
+                    <div class="ops-subtext">${sanitize(getRouteNotes(row) || '-')}</div>
                 </td>
                 <td data-label="Assignee">${sanitize(assignee)}</td>
                 <td data-label="Role"><span class="ops-role-badge ${getRoleClass(role)}">${sanitize(role)}</span></td>
@@ -1335,20 +1383,16 @@ function renderOperationsBoard() {
         areaMap: opsCache.areas
     });
 
-    const assigneeCount = [...new Set(filtered.map((row) => Number(row.tech_id || 0)).filter((id) => id > 0))].length;
+    const assigneeCount = [...new Set(filtered.map((row) => getAssignedStaffId(row)).filter((id) => id > 0))].length;
     const withLogsCount = [...selectedScheduleIds].filter((id) => logsBySchedule.has(id)).length;
-    const unmappedCount = [...new Set(filtered.map((row) => Number(row.tech_id || 0)).filter((id) => id > 0))]
+    const unmappedCount = [...new Set(filtered.map((row) => getAssignedStaffId(row)).filter((id) => id > 0))]
         .filter((id) => !opsCache.employees.get(String(id))).length;
 
     const meta = document.getElementById('opsMeta');
     meta.textContent = `Showing ${filtered.length} task(s) after filters. Assigned staff: ${assigneeCount}. With time logs: ${withLogsCount}. Unmapped staff IDs: ${unmappedCount}.`;
 
     const carryoverBtn = document.getElementById('opsCarryoverBtn');
-    const canCarry = MargaAuth.isAdmin() || (MargaAuth.getUser()?.role === 'service');
-    const pendingToday = byPurpose
-        .filter((row) => String(row.task_datetime || '').startsWith(selectedDate))
-        .filter((row) => ['pending', 'ongoing'].includes(getOpsStatusKey(row, selectedDate))).length;
-    carryoverBtn.style.display = canCarry && pendingToday > 0 ? 'inline-flex' : 'none';
+    carryoverBtn.style.display = 'none';
 
     if (document.getElementById('opsStaffPanel').classList.contains('open') && opsState.panelStaffId) {
         renderOpsStaffPanel(opsState.panelStaffId);
@@ -1361,11 +1405,11 @@ async function loadOperationsBoard() {
     const subtitle = document.getElementById('opsSubtitle');
     const meta = document.getElementById('opsMeta');
     const panelVisible = document.getElementById('opsStaffPanel').classList.contains('open');
-    const includeCarryover = document.getElementById('opsCarryoverToggle').checked;
+    const includeCarryover = false;
 
     const purposeLabel = purposeFilter === 'all' ? 'All Tasks' : getPurposeLabel(Number(purposeFilter));
-    subtitle.textContent = `Loading ${purposeLabel} dispatch data for ${selectedDate}...`;
-    meta.textContent = 'Querying Firestore by date range...';
+    subtitle.textContent = `Loading ${purposeLabel} printed route for ${selectedDate}...`;
+    meta.textContent = 'Querying Firestore printed schedule tables...';
 
     document.querySelector('#opsStaffTable tbody').innerHTML =
         '<tr><td colspan="6" class="loading-cell">Loading...</td></tr>';
@@ -1375,45 +1419,24 @@ async function loadOperationsBoard() {
     try {
         const start = `${selectedDate} 00:00:00`;
         const end = `${selectedDate} 23:59:59`;
-        const lookbackStartDate = addDaysYmd(selectedDate, -OPS_CARRYOVER_DAYS);
-        const carryStart = `${lookbackStartDate} 00:00:00`;
 
-        const [scheduleDocs, carryoverDocs, schedtimeDocs] = await Promise.all([
-            queryByDateRange('tbl_schedule', 'task_datetime', { start, end }),
-            includeCarryover
-                ? queryByDateRange('tbl_schedule', 'task_datetime', {
-                    start: carryStart,
-                    end: start,
-                    endOp: 'LESS_THAN'
-                })
-                : Promise.resolve([]),
+        const [printedDocs, savedDocs, schedtimeDocs] = await Promise.all([
+            queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', { start, end }).catch(() => []),
+            queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange('tbl_schedtime', 'schedule_date', { start, end })
         ]);
 
         await ensureClosedScheduleIdsLoaded();
 
-        const dayRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
-        const carryRows = carryoverDocs
-            .map(parseFirestoreDoc)
-            .filter(Boolean)
-            // Avoid Firestore composite-index requirements by filtering these client-side.
-            .filter((row) => String(row.date_finished || '').trim() === ZERO_DATETIME)
-            .filter((row) => Number(row.iscancel || 0) === 0);
-        // If this legacy table is present, exclude carryover tasks already marked closed elsewhere.
-        const carryRowsFiltered = carryRows.filter((row) => !opsCache.closedScheduleIds.has(Number(row.id || 0)));
+        const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), selectedDate);
+        const savedRows = pickLatestRouteRows(savedDocs.map(parseFirestoreDoc).filter(Boolean), selectedDate);
+        const routeRows = printedRows.length ? printedRows : savedRows;
+        const routeSourceLabel = printedRows.length ? 'Printed' : 'Saved';
 
-        const merged = new Map();
-        dayRows.forEach((row) => merged.set(Number(row.id || 0), row));
-        carryRowsFiltered.forEach((row) => {
-            const id = Number(row.id || 0);
-            if (!merged.has(id)) merged.set(id, row);
-        });
-
-        const mergedRows = [...merged.values()]
-            .filter((row) => Number(row.id || 0) > 0)
+        const mergedRows = (await buildRouteBoundScheduleRows(routeRows, routeSourceLabel.toLowerCase()))
             .sort((a, b) => {
-                const left = String(a.task_datetime || '');
-                const right = String(b.task_datetime || '');
+                const left = getRouteTaskDateTime(a);
+                const right = getRouteTaskDateTime(b);
                 if (left !== right) return left.localeCompare(right);
                 return Number(a.id || 0) - Number(b.id || 0);
             });
@@ -1425,9 +1448,10 @@ async function loadOperationsBoard() {
         opsState.schedtimeRows = schedtimeRows;
         opsState.purposeFilter = purposeFilter;
         opsState.includeCarryover = includeCarryover;
+        opsState.routeSourceLabel = routeSourceLabel;
 
         const byPurpose = filterRowsByPurpose(mergedRows, purposeFilter);
-        const assigneeIds = byPurpose.map((row) => Number(row.tech_id || 0));
+        const assigneeIds = byPurpose.map((row) => getAssignedStaffId(row));
         const troubleIds = byPurpose.map((row) => Number(row.trouble_id || 0));
         const branchIds = byPurpose.map((row) => Number(row.branch_id || 0)).filter((id) => id > 0);
         schedtimeRows.forEach((log) => {
@@ -1461,8 +1485,8 @@ async function loadOperationsBoard() {
             fetchManyDocs('tbl_area', areaIds, opsCache.areas)
         ]);
 
-        subtitle.textContent = `Operations for ${selectedDate} (${purposeLabel}): ${byPurpose.length} task(s), ${schedtimeRows.length} execution log(s).`;
-        meta.textContent = `Loaded ${dayRows.length} schedule(s) for ${selectedDate}. ${includeCarryover ? `Carryover: pending from last ${OPS_CARRYOVER_DAYS} day(s).` : 'Carryover disabled.'}`;
+        subtitle.textContent = `Operations for ${selectedDate} (${purposeLabel}): ${byPurpose.length} ${routeSourceLabel.toLowerCase()} task(s), ${schedtimeRows.length} execution log(s).`;
+        meta.textContent = `${routeSourceLabel} route view is active. Only legacy printed/saved day-sheet rows are shown.`;
 
         if (panelVisible && opsState.panelStaffId) {
             renderOpsStaffPanel(opsState.panelStaffId);
@@ -1481,6 +1505,9 @@ async function loadOperationsBoard() {
 }
 
 async function batchCarryoverPending() {
+    alert('Batch carryover is disabled in printed route mode.');
+    return;
+
     const selectedDate = opsState.selectedDate || formatDateYmd(new Date());
     const canCarry = MargaAuth.isAdmin() || (MargaAuth.getUser()?.role === 'service');
     if (!canCarry) {
@@ -1513,7 +1540,11 @@ async function batchCarryoverPending() {
             const timePart = String(current.task_datetime || '').slice(11) || '00:00:00';
             const nextDateTime = `${nextDate} ${timePart}`;
             try {
-                await patchDocument('tbl_schedule', current.id, { task_datetime: nextDateTime });
+                await patchDocument('tbl_schedule', current.id, {
+                    task_datetime: nextDateTime,
+                    bridge_updated_at: new Date().toISOString(),
+                    bridge_updated_by: Number(MargaAuth.getUser()?.staff_id || 0) || 0
+                });
             } catch (err) {
                 failures.push({ id: current.id, message: err?.message || String(err) });
             }

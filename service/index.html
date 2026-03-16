@@ -150,7 +150,7 @@
             </button>
             <div class="header-title">
                 <h1>Service Dispatch Board</h1>
-                <p id="dispatchHeaderNote">Unified daily schedules for service, collection, billing, delivery, and reading tasks.</p>
+                <p id="dispatchHeaderNote">Legacy printed route view with live field updates on the master ticket.</p>
             </div>
             <div class="header-actions">
                 <div class="data-tag" id="snapshotTag">Live from Firestore</div>
@@ -181,13 +181,12 @@
                             <option value="all">All Status</option>
                             <option value="pending">Pending</option>
                             <option value="ongoing">Ongoing (Parts)</option>
-                            <option value="carryover">Carryover / Overdue</option>
                             <option value="closed">Closed</option>
                             <option value="cancelled">Cancelled</option>
                         </select>
                         <label class="ops-toggle">
-                            <input type="checkbox" id="opsCarryoverToggle" checked>
-                            <span>Include carryover</span>
+                            <input type="checkbox" id="opsCarryoverToggle">
+                            <span>Printed route only</span>
                         </label>
                         <input type="date" id="opsDateInput" class="ops-date-input">
                         <button type="button" class="btn btn-primary btn-sm" id="opsNewRequestBtn" style="display:none;">New Request</button>

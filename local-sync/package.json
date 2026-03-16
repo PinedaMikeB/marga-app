@@ -1,0 +1,16 @@
+{
+  "name": "marga-local-sync",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local office sync runner for Firebase to legacy MySQL.",
+  "scripts": {
+    "plan": "node run-local-sync.mjs --baseline dump",
+    "apply": "node run-local-sync.mjs --baseline live --apply",
+    "watch": "node run-local-sync.mjs --baseline live --apply --loop-seconds 30",
+    "dashboard": "node dashboard-server.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.15.1"
+  }
+}

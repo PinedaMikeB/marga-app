@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marga Live Sync Board</title>
+  <style>
+    :root{--bg:linear-gradient(145deg,#eef4f7,#e4edf2 45%,#eef6e7);--card:rgba(255,255,255,.92);--line:rgba(20,45,56,.1);--text:#17313a;--muted:#5c7279;--ok:#1d7b4e;--warn:#b7831f;--bad:#b63f32;--live:#136ca6;--sched:#1965a9;--pay:#a36513;--serial:#247561;--sync:#5d6972;--shadow:0 18px 44px rgba(20,45,56,.12);--mono:Consolas,monospace;--sans:"Segoe UI",Aptos,sans-serif}
+    *{box-sizing:border-box} body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text)} .wrap{max-width:1380px;margin:0 auto;padding:28px}
+    .hero,.main{display:grid;gap:18px}.hero{grid-template-columns:1.25fr .95fr;margin-bottom:18px}.main{grid-template-columns:1.15fr .85fr}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:22px}
+    h1{margin:0;font-size:clamp(32px,5vw,52px);line-height:.92;letter-spacing:-.05em} h2{margin:0 0 14px;font-size:18px;letter-spacing:-.03em}
+    .sub,.note,.tiny{color:var(--muted)} .sub{margin:12px 0 0;max-width:56ch;line-height:1.6}.note,.tiny{font-size:13px}.tiny{margin-top:12px}
+    .chips,.actions,.tags{display:flex;flex-wrap:wrap;gap:10px}.chips,.actions{margin-top:18px}
+    .chip,.tag{border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.75);font-size:12px;font-weight:800}
+    .chip{padding:10px 14px;letter-spacing:.06em;text-transform:uppercase}.tag{padding:6px 10px}
+    .ok{color:var(--ok)}.warning{color:var(--warn)}.error{color:var(--bad)}.running{color:var(--live)}
+    button{border:0;border-radius:14px;padding:12px 16px;background:#156b88;color:#fff;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 12px 24px rgba(21,107,136,.2)}
+    button.secondary{background:#6f8791;box-shadow:none} button:disabled{opacity:.55;cursor:wait}
+    .mini,.stats,.events{display:grid;gap:12px}.mini{grid-template-columns:repeat(2,minmax(0,1fr))}.stats{grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:18px}.events{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .tile,.stat,.event,.feed-item{border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.96)} .tile,.stat,.event{padding:16px}.feed-item{padding:14px 16px}
+    .label{color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.value{margin-top:8px;font-size:26px;font-weight:900;letter-spacing:-.04em}.meta{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.45}
+    .pairlist,.feed{display:grid;gap:10px}.pair{display:grid;grid-template-columns:160px 1fr;gap:12px;padding:10px 0;border-top:1px solid var(--line)} .pair:first-child{border-top:0;padding-top:0}
+    .pair .k{color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.pair .v{font-weight:600;word-break:break-word}
+    .event-top,.feed-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.pill{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(20,45,56,.06);font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .schedule{color:var(--sched)} .payment,.invoice{color:var(--pay)} .serial{color:var(--serial)} .sync,.live{color:var(--sync)} .danger{color:var(--bad)}
+    .event h3,.feed-title{margin:0;font-size:16px;font-weight:800;letter-spacing:-.02em}.event p,.feed-body{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+    .time{font-size:12px;color:var(--muted)} .feed{max-height:720px;overflow:auto;padding-right:4px}.log{margin:0;padding:16px;min-height:160px;background:#112127;color:#e8f5f7;border-radius:18px;font:12px/1.55 var(--mono);overflow:auto}
+    .progress{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:20px;background:rgba(20,45,56,.04)} .bar{height:16px;margin-top:8px;border-radius:999px;background:rgba(20,45,56,.12);overflow:hidden} .fill{height:100%;width:0;background:linear-gradient(90deg,#195f76,#2f9dad 60%,#83cfbb);transition:width .3s}
+    .path input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#fff;font:inherit;color:var(--text)}
+    .empty{padding:14px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);font-size:14px}
+    @media (max-width:1180px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.main{grid-template-columns:1fr}}
+    @media (max-width:900px){.hero,.mini,.stats,.events{grid-template-columns:1fr}.pair{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="card">
+        <h1>Marga Live Sync<br>Control Board</h1>
+        <p class="sub">This screen tells your staff if the office is really live, whether MySQL and Firebase are connected, and which new records were just synced into the web app.</p>
+        <div class="chips" id="chips"></div>
+        <div class="actions">
+          <button id="runNow">Run Sync Now</button>
+          <button id="startFullMirror">Start Full Mirror</button>
+          <button class="secondary" id="refresh">Refresh</button>
+        </div>
+        <div class="progress">
+          <strong>Full Mirror Progress</strong>
+          <div class="bar"><div class="fill" id="mirrorFill"></div></div>
+          <div class="tiny" id="mirrorMeta">No full mirror running.</div>
+        </div>
+        <div class="tiny" id="refreshMeta">Loading status...</div>
+      </div>
+      <div class="card">
+        <h2>Live Pulse</h2>
+        <div class="mini">
+          <div class="tile"><div class="label">Connection</div><div class="value" id="pConn">-</div><div class="meta" id="pConnMeta">Checking...</div></div>
+          <div class="tile"><div class="label">Direction</div><div class="value" id="pDir">-</div><div class="meta" id="pDirMeta">Waiting...</div></div>
+          <div class="tile"><div class="label">Latest Activity</div><div class="value" id="pLatest">-</div><div class="meta" id="pLatestMeta">No recent event.</div></div>
+          <div class="tile"><div class="label">Office Source</div><div class="value" id="pSource">-</div><div class="meta" id="pSourceMeta">Waiting...</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats">
+      <div class="stat"><div class="label">Schedules Synced</div><div class="value" id="mSched">-</div><div class="meta">Latest schedule rows pushed.</div></div>
+      <div class="stat"><div class="label">Tech Logs Synced</div><div class="value" id="mTime">-</div><div class="meta">Latest `tbl_schedtime` rows pushed.</div></div>
+      <div class="stat"><div class="label">Payment Events</div><div class="value" id="mPay">-</div><div class="meta">Recent payment or collection events seen.</div></div>
+      <div class="stat"><div class="label">Invoice Events</div><div class="value" id="mInv">-</div><div class="meta">Recent invoice or billing events seen.</div></div>
+      <div class="stat"><div class="label">Serial Events</div><div class="value" id="mSerial">-</div><div class="meta">Recent serial or machine mapping events.</div></div>
+      <div class="stat"><div class="label">Freshness</div><div class="value" id="mFresh">-</div><div class="meta" id="mFreshMeta">Waiting for last successful sync.</div></div>
+    </section>
+
+    <section class="main">
+      <div style="display:grid;gap:18px">
+        <div class="card">
+          <h2>Recent Highlights</h2>
+          <p class="note">Fast human-readable events for the most recent sync actions.</p>
+          <div class="events" id="highlights"></div>
+        </div>
+        <div class="card">
+          <h2>Live Event Timeline</h2>
+          <p class="note">Newest activity first. Leave this open so staff can see new schedules coming in.</p>
+          <div class="feed" id="feed"></div>
+        </div>
+        <div class="card">
+          <h2>Latest Report JSON</h2>
+          <pre class="log" id="reportBox">Loading...</pre>
+        </div>
+      </div>
+      <div style="display:grid;gap:18px">
+        <div class="card"><h2>Current Run</h2><div class="pairlist" id="runDetails"></div></div>
+        <div class="card"><h2>Connections</h2><div class="pairlist" id="connectionDetails"></div></div>
+        <div class="card"><h2>Runtime</h2><div class="pairlist" id="runtimeDetails"></div></div>
+        <div class="card"><h2>Last Sync State</h2><div class="pairlist" id="stateDetails"></div></div>
+        <div class="card path"><h2>Fallback Dump Path</h2><p class="note">Emergency backup only. Live mode does not depend on this.</p><input id="dumpPathInput" type="text" placeholder="C:\Users\pc\Documents\dumps"><div class="actions"><button id="savePath">Save Path</button><button class="secondary" id="browsePath">Browse Local File</button></div><div class="tiny" id="pathMeta">No dump path selected yet.</div></div>
+        <div class="card"><h2>Raw Activity Log</h2><pre class="log" id="activityBox">Loading...</pre></div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const $=id=>document.getElementById(id);
+    const fmt=v=>v===null||v===undefined||v===""?"-":typeof v==="number"?v.toLocaleString():String(v);
+    const esc=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+    const local=v=>{if(!v)return"-";const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString()};
+    const age=v=>{if(!v)return"-";const d=new Date(v);if(Number.isNaN(d.getTime()))return String(v);const s=Math.max(0,Math.floor((Date.now()-d.getTime())/1000));if(s<60)return`${s}s ago`;const m=Math.floor(s/60);if(m<60)return`${m}m ago`;const h=Math.floor(m/60);if(h<24)return`${h}h ago`;return`${Math.floor(h/24)}d ago`};
+    const pair=(k,v)=>`<div class="pair"><div class="k">${esc(k)}</div><div class="v">${esc(fmt(v))}</div></div>`;
+    const chip=(k,v,c)=>`<span class="chip ${c}">${esc(k)}: ${esc(v)}</span>`;
+    async function getStatus(){const r=await fetch("/api/status",{cache:"no-store"});if(!r.ok)throw new Error(`Status request failed (${r.status})`);return r.json()}
+    async function post(url,body){const r=await fetch(url,{method:"POST",headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});const p=await r.json();if(!r.ok&&!p.skipped&&!p.ok)throw new Error(p.message||"Request failed");return p}
+    function classify(entry){
+      const msg=String(entry?.message||""), low=msg.toLowerCase(), meta=entry?.meta||{}; let cat="sync", title=msg, body=msg;
+      if(low.includes("tbl_schedule")){cat="schedule";title=low.includes("pushed to firebase")?"New schedule synced":low.includes("found in live mysql")?"New live schedule found":"Schedule sync update";body=low.includes("watermark updated")?`Schedule watermark moved from ${fmt(meta.before)} to ${fmt(meta.after)}.`:`Schedule #${fmt(meta.id)} ${low.includes("pushed")?"reached Firebase":"was detected from live MySQL"}.`}
+      else if(low.includes("tbl_schedtime")){cat="schedule";title=low.includes("pushed to firebase")?"Tech log synced":"Tech log update";body=low.includes("watermark updated")?`Schedtime watermark moved from ${fmt(meta.before)} to ${fmt(meta.after)}.`:`Schedtime #${fmt(meta.id)} for schedule #${fmt(meta.schedule_id)} ${low.includes("pushed")?"reached Firebase":"was detected"}.`}
+      else if(/payment|collection|check|^or\b|\bor\b/.test(low)){cat="payment";title="Payment activity";body=msg}
+      else if(/invoice|bill|billing/.test(low)){cat="invoice";title="Invoice or billing activity";body=msg}
+      else if(low.includes("serial")){cat="serial";title="Serial update";body=msg}
+      else if(low.includes("live mysql sync completed")){cat="live";title="Live MySQL sync finished";body=`Rows pushed: ${fmt(meta.insertedRows||0)} | Schedules: ${fmt(meta.schedulePushed||0)} | Tech logs: ${fmt(meta.schedtimePushed||0)}`}
+      else if(low.includes("sync started")){cat="sync";title="Sync cycle started";body=`Direction: ${fmt(meta.direction)} | MySQL host: ${fmt(meta.mysqlHost)}`}
+      else if(low.includes("sync completed successfully")){cat="sync";title="Sync cycle completed";body=`Summary: schedules ${fmt(meta.summary?.schedulePushed||meta.summary?.scheduleUpdates||0)}, tech logs ${fmt(meta.summary?.schedtimePushed||meta.summary?.schedtimeInserts||0)}`}
+      else if(entry?.level==="error"||entry?.level==="warn"){cat="danger";title=entry.level==="error"?"Sync error":"Warning";body=msg}
+      const tags=[]; if(meta.id)tags.push(`ID ${meta.id}`); if(meta.schedule_id)tags.push(`Schedule ${meta.schedule_id}`); if(meta.branch_id)tags.push(`Branch ${meta.branch_id}`); if(meta.serial)tags.push(`Serial ${meta.serial}`); if(meta.task_datetime)tags.push(meta.task_datetime); if(meta.time_in)tags.push(`IN ${meta.time_in}`); if(meta.time_out)tags.push(`OUT ${meta.time_out}`);
+      return{at:entry?.at,cat,title,body,tags}
+    }
+    function renderEvents(list,target,limit,card){
+      const items=list.slice(0,limit); if(!items.length){target.innerHTML=`<div class="empty">No recent sync events yet.</div>`; return;}
+      target.innerHTML=items.map(e=>card(e)).join("");
+    }
+    function counts(events){return events.reduce((a,e)=>((a[e.cat]=(a[e.cat]||0)+1),a),{})}
+    async function refresh(){
+      $("refresh").disabled=true;
+      try{
+        const s=await getStatus(), liveMode=s.sync.direction==="mysql_to_firebase", ev=(s.activity||[]).slice().reverse().map(classify), c=counts(ev.slice(0,40));
+        $("chips").innerHTML=[
+          chip("System",s.app.health.toUpperCase(),s.sync.active?"running":s.app.health),
+          chip("Firebase",s.connections.firebase.ok?"CONNECTED":"OFFLINE",s.connections.firebase.ok?"ok":"error"),
+          chip("MySQL",s.connections.mysql.ok?"CONNECTED":"OFFLINE",s.connections.mysql.ok?"ok":"error"),
+          chip("Direction",liveMode?"LIVE MYSQL -> FIREBASE":fmt(s.sync.direction||"OTHER"),liveMode?"running":"warning"),
+          chip("Loop",`EVERY ${fmt(s.sync.loopSeconds)}S`,"ok"),
+          chip("Setup",s.configIssues?.length?"NEEDS ATTENTION":"READY",s.configIssues?.length?"warning":"ok")
+        ].join("");
+        $("runDetails").innerHTML=[["Status",s.sync.currentRun.status],["Reason",s.sync.currentRun.reason],["Started",local(s.sync.currentRun.startedAt)],["Finished",local(s.sync.currentRun.finishedAt)],["Direction",s.sync.direction],["Message",s.sync.currentRun.message]].map(x=>pair(...x)).join("");
+        $("connectionDetails").innerHTML=[["Firebase",s.connections.firebase.message],["Firebase Checked",local(s.connections.firebase.checkedAt)],["MySQL",s.connections.mysql.message],["MySQL Checked",local(s.connections.mysql.checkedAt)]].map(x=>pair(...x)).join("");
+        $("runtimeDetails").innerHTML=[["Dashboard URL",s.app.url],["Started",local(s.app.startedAt)],["PID",s.app.pid],["Loop Every",`${s.sync.loopSeconds} seconds`],["MySQL Host",s.source?.mysqlHost],["Database",s.source?.mysqlDatabase],["Mode Notes",(s.modeNotes||[]).join(" ")||"Normal"],["Setup Notes",(s.configIssues||[]).join(" ")||"Ready"]].map(x=>pair(...x)).join("");
+        $("stateDetails").innerHTML=[["Last Attempt",local(s.lastKnownState?.lastAttemptAt)],["Last Success",local(s.lastKnownState?.lastSuccessAt)],["Last Error",local(s.lastKnownState?.lastErrorAt)],["Error Message",s.lastKnownState?.lastErrorMessage],["Last Direction",s.lastKnownState?.lastDirection],["Report JSON",s.lastKnownState?.lastOutputs?.reportPath]].map(x=>pair(...x)).join("");
+        $("dumpPathInput").value=s.source?.configuredDumpPath||s.source?.dumpPath||""; $("pathMeta").textContent=liveMode?`Live mode is active. Fallback dump path: ${s.source?.configuredDumpPath||s.source?.dumpPath||"-"}`:(s.source?.dumpPath?`${s.source.dumpExists?"Found":"Missing"}: ${s.source.dumpPath}`:"No dump path selected yet.");
+        $("mSched").textContent=fmt(s.latestReport?.summary?.schedulePushed??s.latestReport?.summary?.scheduleUpdates??0);
+        $("mTime").textContent=fmt(s.latestReport?.summary?.schedtimePushed??s.latestReport?.summary?.schedtimeInserts??0);
+        $("mPay").textContent=fmt(c.payment||0); $("mInv").textContent=fmt(c.invoice||0); $("mSerial").textContent=fmt(c.serial||0); $("mFresh").textContent=age(s.lastKnownState?.lastSuccessAt); $("mFreshMeta").textContent=s.lastKnownState?.lastSuccessAt?`Last successful sync was ${local(s.lastKnownState.lastSuccessAt)}`:"No successful sync recorded yet.";
+        $("pConn").textContent=s.connections.firebase.ok&&s.connections.mysql.ok?"Live":"Attention"; $("pConnMeta").textContent=s.connections.firebase.ok&&s.connections.mysql.ok?"Firebase and office MySQL are both reachable.":"One or more required connections are down.";
+        $("pDir").textContent=liveMode?"MySQL -> Firebase":fmt(s.sync.direction||s.sync.baseline); $("pDirMeta").textContent=`Loop every ${fmt(s.sync.loopSeconds)} seconds`;
+        $("pLatest").textContent=ev[0]?.title||"Waiting"; $("pLatestMeta").textContent=ev[0]?`${age(ev[0].at)} | ${ev[0].body}`:"No recent event.";
+        $("pSource").textContent=fmt(s.source?.mysqlHost||s.source?.dumpPath||"-"); $("pSourceMeta").textContent=s.source?.mysqlDatabase?`Database: ${s.source.mysqlDatabase}`:"Fallback dump path only.";
+        renderEvents(ev,$("highlights"),6,e=>`<article class="event"><div class="event-top"><span class="pill ${esc(e.cat)}">${esc(e.cat)}</span><span class="time">${esc(age(e.at))}</span></div><h3>${esc(e.title)}</h3><p>${esc(e.body)}</p><div class="tags">${e.tags.slice(0,4).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div></article>`);
+        renderEvents(ev,$("feed"),18,e=>`<article class="feed-item"><div class="feed-top"><span class="pill ${esc(e.cat)}">${esc(e.cat)}</span><span class="time">${esc(local(e.at))}</span></div><div class="feed-title">${esc(e.title)}</div><div class="feed-body">${esc(e.body)}</div><div class="tags">${e.tags.slice(0,5).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div></article>`);
+        const mp=s.fullMirror?.progress, pct=Number(mp?.progress?.percent??0); $("mirrorFill").style.width=`${Math.max(0,Math.min(100,pct))}%`; $("mirrorMeta").innerHTML=mp?[`Status: ${fmt(mp.status)}`,`Shards: ${fmt(mp.activeShards||0)}/${fmt(mp.shardCount||1)} active`,`Progress: ${fmt(pct.toFixed?pct.toFixed(2):pct)}%`,`Current Table: ${fmt(mp.progress?.currentTable)}`,`Rows Committed: ${fmt(mp.progress?.rowsCommitted)}`,`Rows Failed: ${fmt(mp.progress?.rowsFailed)}`,`Batches: ${fmt(mp.progress?.batchCommits)}`,`Message: ${fmt(mp.message)}`].join("<br>"):"No full mirror running.";
+        $("startFullMirror").disabled=Boolean(s.fullMirror?.active); $("reportBox").textContent=JSON.stringify(s.latestReport||s.lastKnownState||{},null,2); $("activityBox").textContent=(s.activity||[]).slice(-20).reverse().map(a=>`[${local(a.at)}] ${String(a.level||"info").toUpperCase()} ${a.message}${a.meta?`\n${JSON.stringify(a.meta,null,2)}`:""}`).join("\n\n")||"No activity yet."; $("refreshMeta").textContent=`Last refreshed ${new Date().toLocaleTimeString()}`;
+      }catch(err){$("refreshMeta").textContent=err.message||String(err)}finally{$("refresh").disabled=false}
+    }
+    $("runNow").onclick=()=>post("/api/run-now").then(refresh); $("startFullMirror").onclick=()=>post("/api/full-mirror/start").then(refresh); $("refresh").onclick=refresh; $("savePath").onclick=()=>post("/api/config/dump-path",{dumpPath:$("dumpPathInput").value.trim()}).then(refresh); $("browsePath").onclick=()=>post("/api/config/select-dump-path").then(refresh);
+    refresh(); setInterval(refresh,5000);
+  </script>
+</body>
+</html>

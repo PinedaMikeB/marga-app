@@ -48,9 +48,9 @@ const PRESETS = [
     {
         key: 'core',
         label: 'Core Master Data',
-        description: 'Companies, branches, contracts, machines',
+        description: 'Companies, branches, contracts, machines, models, brands',
         defaultOn: false,
-        tables: ['tbl_companylist', 'tbl_branchinfo', 'tbl_contractmain', 'tbl_machine']
+        tables: ['tbl_companylist', 'tbl_branchinfo', 'tbl_contractmain', 'tbl_machine', 'tbl_model', 'tbl_brand']
     }
 ];
 
@@ -65,6 +65,8 @@ const TABLE_ID_HINTS = {
     tbl_companylist: 'id',
     tbl_branchinfo: 'id',
     tbl_machine: 'id',
+    tbl_model: 'id',
+    tbl_brand: 'id',
     tbl_contractmain: 'id',
     tbl_billinfo: 'id'
 };
@@ -720,6 +722,28 @@ function getSummary(table) {
     return syncState.tableSummaries.get(table);
 }
 
+function isPermissionDeniedError(error) {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+
+    return code.includes('permission-denied')
+        || message.includes('missing or insufficient permissions')
+        || message.includes('insufficient permissions');
+}
+
+function createWatermarkReadError(scope, error) {
+    const detail = error?.message ? ` ${error.message}` : '';
+
+    if (isPermissionDeniedError(error)) {
+        return new Error(
+            `Cannot safely continue: Firestore denied access to sync watermark state for ${scope}. `
+            + 'The updater stops here to avoid treating the saved watermark as 0 and reprocessing old rows.'
+        );
+    }
+
+    return new Error(`Failed reading sync watermark state for ${scope}.${detail}`);
+}
+
 async function loadWatermarkForTable(table) {
     if (syncState.skipWatermarkLookup) {
         syncState.watermarks.set(table, 0);
@@ -748,9 +772,7 @@ async function loadWatermarkForTable(table) {
             syncState.watermarks.set(table, safeLastId);
             return safeLastId;
         } catch (error) {
-            syncState.watermarks.set(table, 0);
-            logLine(`Failed reading watermark for ${table}: ${error.message}`, 'warn');
-            return 0;
+            throw createWatermarkReadError(table, error);
         } finally {
             syncState.watermarkFetchPromises.delete(table);
         }
@@ -778,15 +800,16 @@ async function flushBatch(force = false) {
     if (!syncState.writeContext.batch || syncState.writeContext.batchOps === 0) return;
     if (!force && syncState.writeContext.batchOps < WRITE_BATCH_LIMIT) return;
 
+    const batchToCommit = syncState.writeContext.batch;
     const pendingOps = syncState.writeContext.batchOps;
+    syncState.writeContext.batch = null;
+    syncState.writeContext.batchOps = 0;
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
-            await syncState.writeContext.batch.commit();
+            await batchToCommit.commit();
             syncState.writeContext.committedRows += pendingOps;
             syncState.writeContext.commitCount += 1;
-            syncState.writeContext.batch = syncState.db.batch();
-            syncState.writeContext.batchOps = 0;
             return;
         } catch (error) {
             if (attempt === 3) throw error;
@@ -1075,8 +1098,7 @@ async function loadWatermarks(selectedTables) {
             const lastId = Number(data.last_id || 0);
             syncState.watermarks.set(table, Number.isFinite(lastId) ? Math.trunc(lastId) : 0);
         } catch (error) {
-            syncState.watermarks.set(table, 0);
-            logLine(`Failed reading watermark for ${table}: ${error.message}`, 'warn');
+            throw createWatermarkReadError(table, error);
         }
     }));
 }
@@ -1095,7 +1117,7 @@ async function preloadAllWatermarks() {
             syncState.watermarks.set(table, safeLastId);
         });
     } catch (error) {
-        logLine(`Failed preloading watermarks: ${error.message}`, 'warn');
+        throw createWatermarkReadError('all tables', error);
     }
 }
 

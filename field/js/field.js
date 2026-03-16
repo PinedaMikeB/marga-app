@@ -5,6 +5,8 @@ if (!MargaAuth.requireAccess('field')) {
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 14;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
+const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
+const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
 
@@ -47,9 +49,10 @@ const caches = {
 
 const state = {
     selectedDate: '',
-    includeCarryover: true,
+    includeCarryover: false,
     statusFilter: 'all',
     staffId: null,
+    routeSourceLabel: 'Printed',
     rows: [],
     modalScheduleId: null,
     modalMachineId: null,
@@ -74,17 +77,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerTitle = document.getElementById('fieldHeaderTitle');
     const userLine = document.getElementById('fieldUserLine');
     if (badge) badge.textContent = (displayName.charAt(0) || 'U').toUpperCase();
-    if (headerTitle) headerTitle.textContent = `${displayName} - Schedule`;
+    if (headerTitle) headerTitle.textContent = `${displayName} - Printed Route`;
     if (userLine) userLine.textContent = displayRole ? `Role: ${displayRole}` : 'Role: field';
 
     const dateInput = document.getElementById('fieldDate');
     dateInput.value = formatDateYmd(new Date());
 
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule());
-    document.getElementById('fieldCarryover').addEventListener('change', () => {
-        state.includeCarryover = document.getElementById('fieldCarryover').checked;
-        loadMySchedule();
-    });
+    const carryoverToggle = document.getElementById('fieldCarryover');
+    if (carryoverToggle) {
+        carryoverToggle.checked = false;
+        carryoverToggle.disabled = true;
+        carryoverToggle.closest('.ops-toggle')?.setAttribute('title', 'Printed route view only');
+    }
     document.getElementById('fieldStatusFilter').addEventListener('change', () => {
         state.statusFilter = document.getElementById('fieldStatusFilter').value;
         renderList();
@@ -311,11 +316,18 @@ async function queryCollection(collectionId, limit = 1000) {
 }
 
 function getStatusKey(row) {
+    if (Number(row.route_iscancelled || 0) === 1) return 'cancelled';
     if (Number(row.iscancel || 0) === 1) return 'cancelled';
+    const routeFinished = String(row.route_date_finished || '').trim();
+    if (routeFinished && routeFinished !== ZERO_DATETIME) return 'closed';
+    const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
+        ? null
+        : Number(row.route_status);
+    if (routeStatus === 0) return 'closed';
     const finished = String(row.date_finished || '').trim();
     if (finished && finished !== ZERO_DATETIME) return 'closed';
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
-    const taskDate = String(row.task_datetime || '').slice(0, 10);
+    const taskDate = getRouteTaskDateTime(row).slice(0, 10);
     if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
     return 'pending';
 }
@@ -341,6 +353,73 @@ function formatTaskDateTime(value) {
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+function getRouteTaskDateTime(row) {
+    const routeValue = String(row?.route_task_datetime || '').trim();
+    if (routeValue) return routeValue;
+    return String(row?.task_datetime || '').trim();
+}
+
+function getAssignedStaffId(row) {
+    return Number(row?.route_tech_id || row?.tech_id || 0);
+}
+
+function pickLatestRouteRows(rows, selectedDate) {
+    const latestBySchedule = new Map();
+
+    rows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId <= 0) return;
+        if (selectedDate && String(row.task_datetime || '').slice(0, 10) !== selectedDate) return;
+        const current = latestBySchedule.get(scheduleId);
+        if (!current || Number(row.id || 0) > Number(current.id || 0)) {
+            latestBySchedule.set(scheduleId, row);
+        }
+    });
+
+    return [...latestBySchedule.values()];
+}
+
+async function fetchDocsByIdList(collection, ids) {
+    const uniqueIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
+    if (!uniqueIds.length) return new Map();
+
+    const docs = await Promise.all(uniqueIds.map((id) => fetchDoc(collection, String(id))));
+    return new Map(
+        docs
+            .filter(Boolean)
+            .map((doc) => [String(doc.id || doc._docId || ''), doc])
+            .filter(([key]) => key)
+    );
+}
+
+async function buildRouteBoundRows(routeRows, routeSourceLabel) {
+    const scheduleIds = routeRows.map((row) => Number(row.schedule_id || 0)).filter((id) => id > 0);
+    const scheduleMap = await fetchDocsByIdList('tbl_schedule', scheduleIds);
+
+    return routeRows
+        .map((routeRow) => {
+            const scheduleId = Number(routeRow.schedule_id || 0);
+            const schedule = scheduleMap.get(String(scheduleId));
+            if (!schedule) return null;
+
+            return {
+                ...schedule,
+                task_datetime: String(routeRow.task_datetime || schedule.task_datetime || ''),
+                tech_id: Number(routeRow.tech_id || schedule.tech_id || 0) || 0,
+                route_id: Number(routeRow.id || 0) || 0,
+                route_doc_id: routeRow._docId || String(routeRow.id || ''),
+                route_source: routeSourceLabel,
+                route_tech_id: Number(routeRow.tech_id || 0) || 0,
+                route_task_datetime: String(routeRow.task_datetime || ''),
+                route_status: routeRow.status ?? '',
+                route_iscancelled: Number(routeRow.iscancelled || routeRow.iscancel || 0) || 0,
+                route_date_finished: String(routeRow.date_finished || ''),
+                route_remarks: String(routeRow.remarks || '').trim()
+            };
+        })
+        .filter(Boolean);
 }
 
 function toDbDateTimeFromLocal(localValue) {
@@ -451,11 +530,11 @@ function renderKpis(rows) {
     }, {});
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi"><div class="label">Today</div><div class="value">${rows.filter((r) => String(r.task_datetime || '').startsWith(state.selectedDate)).length}</div></div>
-        <div class="field-kpi"><div class="label">Carryover</div><div class="value">${counts.carryover || 0}</div></div>
+        <div class="field-kpi"><div class="label">Printed Today</div><div class="value">${rows.filter((r) => getRouteTaskDateTime(r).startsWith(state.selectedDate)).length}</div></div>
         <div class="field-kpi"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
         <div class="field-kpi"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
         <div class="field-kpi"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
+        <div class="field-kpi"><div class="label">Cancelled</div><div class="value">${counts.cancelled || 0}</div></div>
     `;
 }
 
@@ -487,14 +566,15 @@ function renderList() {
         const branchName = branch?.branchname || `Branch #${row.branch_id || 0}`;
         const areaName = area?.area_name || '-';
         const machineSerial = machine?.serial || row.field_serial_selected || '-';
-        const modelName = model?.model || model?.model_name || '';
-        const brandName = brand?.brand || '';
+        const modelName = getModelLabel(model, machine);
+        const brandName = getBrandLabel(brand);
         const machineLine = brandName || modelName
             ? `${sanitize(brandName)} ${sanitize(modelName)}`.trim()
             : 'Machine';
         const partsNote = Number(row.pending_parts || 0) === 1 || Number(row.isongoing || 0) === 1
             ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
             : '';
+        const taskNotes = row.route_remarks || row.remarks || row.caller || '-';
 
         return `
             <div class="field-task">
@@ -504,7 +584,7 @@ function renderList() {
                         <div class="meta">${sanitize(formatTaskDateTime(row.task_datetime))} · <span class="ops-status-badge ${sanitize(status.className)}">${sanitize(status.label)}</span></div>
                         <div class="sub">${sanitize(clientName)} · ${sanitize(branchName)} · ${sanitize(areaName)}</div>
                         <div class="sub">${machineLine} · Serial: <strong>${sanitize(machineSerial)}</strong></div>
-                        <div class="sub">${sanitize(row.remarks || row.caller || '-')}</div>
+                        <div class="sub">${sanitize(taskNotes)}</div>
                         ${partsNote}
                     </div>
                     <div class="field-task-actions">
@@ -531,44 +611,34 @@ async function loadMySchedule() {
     const date = document.getElementById('fieldDate').value || formatDateYmd(new Date());
     state.selectedDate = date;
     const subtitle = document.getElementById('fieldSubtitle');
-    subtitle.textContent = 'Loading tasks...';
+    subtitle.textContent = 'Loading printed route...';
 
     document.getElementById('fieldList').innerHTML = '<div class="loading-cell">Loading...</div>';
 
     try {
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const carryStart = `${addDaysYmd(date, -FIELD_CARRYOVER_DAYS)} 00:00:00`;
-
-        const [dayDocs, carryDocs] = await Promise.all([
-            queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd),
-            state.includeCarryover ? queryByDateRange('tbl_schedule', 'task_datetime', carryStart, dayStart, 'LESS_THAN') : Promise.resolve([])
+        const [printedDocs, savedDocs] = await Promise.all([
+            queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
+            queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => [])
         ]);
 
-        const dayRows = dayDocs.map(parseFirestoreDoc).filter(Boolean);
-        const carryRows = carryDocs
-            .map(parseFirestoreDoc)
-            .filter(Boolean)
-            .filter((row) => String(row.date_finished || '').trim() === ZERO_DATETIME)
-            .filter((row) => Number(row.iscancel || 0) === 0);
+        const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), date);
+        const savedRows = pickLatestRouteRows(savedDocs.map(parseFirestoreDoc).filter(Boolean), date);
+        const routeRows = printedRows.length ? printedRows : savedRows;
+        const routeSourceLabel = printedRows.length ? 'Printed' : 'Saved';
 
-        const merged = new Map();
-        dayRows.forEach((row) => merged.set(Number(row.id || 0), row));
-        carryRows.forEach((row) => {
-            const id = Number(row.id || 0);
-            if (!merged.has(id)) merged.set(id, row);
-        });
+        const all = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
+            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+            .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
 
-        const all = [...merged.values()]
-            .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
-            .sort((a, b) => String(a.task_datetime || '').localeCompare(String(b.task_datetime || '')) || (Number(a.id || 0) - Number(b.id || 0)));
-
+        state.routeSourceLabel = routeSourceLabel;
         state.rows = all;
         await hydrateLookups(all);
         renderKpis(all);
         renderList();
 
-        subtitle.textContent = `${all.length} task(s) for ${date}.`;
+        subtitle.textContent = `${all.length} ${routeSourceLabel.toLowerCase()} task(s) for ${date}.`;
     } catch (err) {
         console.error('Field load failed:', err);
         subtitle.textContent = 'Failed to load tasks.';
@@ -673,7 +743,8 @@ async function loadSerialCatalog() {
                 serial: String(row.serial || '').trim(),
                 model_id: Number(row.model_id || 0),
                 brand_id: Number(row.brand_id || 0),
-                bmeter: Number(row.bmeter || 0)
+                bmeter: Number(row.bmeter || 0),
+                description: String(row.description || '').trim()
             }))
             .filter((row) => row.id > 0 && row.serial);
     } catch (err) {
@@ -707,6 +778,25 @@ function resolveMachineFromSerial(serialText) {
     return matches.find((row) => Number(row.id || 0) === currentMachineId) || matches[0];
 }
 
+function getModelLabel(model, machine = null) {
+    return String(
+        model?.modelname ||
+        model?.model ||
+        model?.model_name ||
+        machine?.description ||
+        ''
+    ).trim();
+}
+
+function getBrandLabel(brand) {
+    return String(
+        brand?.brandname ||
+        brand?.brand_name ||
+        brand?.brand ||
+        ''
+    ).trim();
+}
+
 async function setModalMachineDetails(machine) {
     const modelInput = document.getElementById('fieldModelInput');
     const brandInput = document.getElementById('fieldBrandInput');
@@ -723,8 +813,8 @@ async function setModalMachineDetails(machine) {
 
     const model = await ensureLookup('tbl_model', machine.model_id, caches.model);
     const brand = await ensureLookup('tbl_brand', machine.brand_id, caches.brand);
-    modelInput.value = model?.model || model?.model_name || '';
-    brandInput.value = brand?.brand || '';
+    modelInput.value = getModelLabel(model, machine);
+    brandInput.value = getBrandLabel(brand);
 }
 
 async function handleSerialInputChange() {
@@ -1211,7 +1301,8 @@ function getSelectedMachine() {
         serial: String(cached.serial || '').trim(),
         model_id: Number(cached.model_id || 0),
         brand_id: Number(cached.brand_id || 0),
-        bmeter: Number(cached.bmeter || 0)
+        bmeter: Number(cached.bmeter || 0),
+        description: String(cached.description || '').trim()
     };
 }
 
@@ -1297,7 +1388,9 @@ function buildSchedulePayload(row, form, tag) {
         field_serial_missing: form.serialMissing ? 1 : 0,
         field_serial_missing_value: form.missingSerial || '',
         field_updated_by: staffId,
-        field_updated_at: nowIso
+        field_updated_at: nowIso,
+        bridge_updated_by: staffId,
+        bridge_updated_at: nowIso
     };
 
     if (Number.isFinite(form.presentMeter)) payload.meter_reading = form.presentMeter;
@@ -1571,7 +1664,9 @@ async function saveSerialMapping() {
                 serial_correction_requested_at: nowIso,
                 serial_correction_requested_by: staffId,
                 field_serial_missing: 1,
-                field_serial_missing_value: missingSerial
+                field_serial_missing_value: missingSerial,
+                bridge_updated_by: staffId,
+                bridge_updated_at: nowIso
             };
             await patchDocument('tbl_schedule', row.id, patch);
             applyRowPatch(row.id, patch);
@@ -1595,7 +1690,9 @@ async function saveSerialMapping() {
             field_serial_missing: 0,
             field_serial_missing_value: '',
             field_updated_by: staffId,
-            field_updated_at: nowIso
+            field_updated_at: nowIso,
+            bridge_updated_by: staffId,
+            bridge_updated_at: nowIso
         };
 
         await patchDocument('tbl_schedule', row.id, patch);
@@ -1627,7 +1724,9 @@ async function markTimeInNow() {
     const patch = {
         field_time_in: form.timeInDb,
         field_updated_at: new Date().toISOString(),
-        field_updated_by: Number(state.staffId || 0) || 0
+        field_updated_by: Number(state.staffId || 0) || 0,
+        bridge_updated_by: Number(state.staffId || 0) || 0,
+        bridge_updated_at: new Date().toISOString()
     };
 
     const button = document.getElementById('fieldTimeInNowBtn');
