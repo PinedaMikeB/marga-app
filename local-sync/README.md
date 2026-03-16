@@ -16,6 +16,10 @@ Current sync scope:
   - inserts follow-up rows created in Firebase
 - `tbl_schedule`
   - updates a safe whitelist of schedule fields already present in legacy MySQL
+- `tbl_printedscheds`
+  - printed day-sheet routing rows used by the legacy dispatch board
+- `tbl_savedscheds`
+  - saved day-sheet routing rows used as fallback when no printed route exists
 - `tbl_schedtime`
   - inserts or updates field execution rows
 - `tbl_closedscheds`
@@ -86,6 +90,12 @@ Run continuously every 30 seconds:
 
 ```powershell
 node run-local-sync.mjs --baseline live --apply --loop-seconds 30
+```
+
+Backfill one route day from live MySQL into Firebase:
+
+```powershell
+node backfill-route-day-to-firebase.mjs --date 2026-03-16
 ```
 
 Run the local dashboard:

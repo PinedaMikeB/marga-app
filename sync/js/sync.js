@@ -29,6 +29,8 @@ const PRESETS = [
         defaultOn: true,
         tables: [
             'tbl_schedule',
+            'tbl_printedscheds',
+            'tbl_savedscheds',
             'tbl_schedtime',
             'tbl_closedscheds',
             'tbl_trouble',
@@ -56,6 +58,8 @@ const PRESETS = [
 
 const TABLE_ID_HINTS = {
     tbl_schedule: 'id',
+    tbl_printedscheds: 'id',
+    tbl_savedscheds: 'id',
     tbl_schedtime: 'id',
     tbl_closedscheds: 'id',
     tbl_trouble: 'id',
