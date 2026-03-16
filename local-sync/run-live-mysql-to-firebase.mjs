@@ -23,10 +23,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SYNC_STATE_COLLECTION = "sys_sync_state";
-const DEFAULT_TABLES = ["tbl_schedule", "tbl_schedtime", "tbl_closedscheds"];
+const DEFAULT_TABLES = ["tbl_schedule", "tbl_printedscheds", "tbl_savedscheds", "tbl_schedtime", "tbl_closedscheds"];
+const DEFAULT_BOOTSTRAP_TABLES = ["tbl_printedscheds", "tbl_savedscheds"];
 const DEFAULT_BATCH_SIZE = 250;
+const DEFAULT_BOOTSTRAP_DAYS = 31;
 const TABLE_ID_HINTS = {
   tbl_schedule: "id",
+  tbl_printedscheds: "id",
+  tbl_savedscheds: "id",
   tbl_schedtime: "id",
   tbl_closedscheds: "id",
   tbl_billinfo: "id",
@@ -40,6 +44,7 @@ const TABLE_ID_HINTS = {
   tbl_or: "id",
   tbl_check: "id",
 };
+const DATE_COLUMN_CANDIDATES = ["task_datetime", "schedule_date", "timestmp", "updated_at", "original_sched"];
 
 function toIsoNow() {
   return new Date().toISOString();
@@ -69,6 +74,8 @@ function parseArgs(argv) {
     outDir: null,
     stateFile: null,
     tables: null,
+    bootstrapTables: null,
+    bootstrapDays: null,
     batchSize: null,
     dryRun: undefined,
   };
@@ -102,6 +109,16 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (token === "--bootstrap-tables") {
+      config.bootstrapTables = parseTableList(next);
+      index += 1;
+      continue;
+    }
+    if (token === "--bootstrap-days") {
+      config.bootstrapDays = Number(next || 0) || null;
+      index += 1;
+      continue;
+    }
     if (token === "--dry-run") {
       config.dryRun = true;
       continue;
@@ -121,6 +138,9 @@ export function loadLiveMysqlSyncConfig(overrides = {}) {
   const tables = overrides.tables?.length
     ? overrides.tables
     : parseTableList(env.MYSQL_TO_FIREBASE_TABLES) || DEFAULT_TABLES;
+  const bootstrapTables = overrides.bootstrapTables?.length
+    ? overrides.bootstrapTables
+    : parseTableList(env.MYSQL_TO_FIREBASE_BOOTSTRAP_TABLES) || DEFAULT_BOOTSTRAP_TABLES;
 
   return {
     firebaseConfigPath: resolveMaybeRelative(__dirname, overrides.firebaseConfigPath, env.FIREBASE_CONFIG_PATH || paths.firebaseConfigPath),
@@ -129,6 +149,8 @@ export function loadLiveMysqlSyncConfig(overrides = {}) {
     serviceAccountEmail: overrides.serviceAccountEmail || env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "",
     serviceAccountPrivateKey: overrides.serviceAccountPrivateKey || env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "",
     tables: tables.length ? tables : DEFAULT_TABLES,
+    bootstrapTables: bootstrapTables.length ? bootstrapTables : DEFAULT_BOOTSTRAP_TABLES,
+    bootstrapDays: Number(overrides.bootstrapDays || env.MYSQL_TO_FIREBASE_BOOTSTRAP_DAYS || DEFAULT_BOOTSTRAP_DAYS) || DEFAULT_BOOTSTRAP_DAYS,
     batchSize: Number(overrides.batchSize || env.MYSQL_TO_FIREBASE_BATCH_SIZE || DEFAULT_BATCH_SIZE) || DEFAULT_BATCH_SIZE,
     dryRun: overrides.dryRun !== undefined
       ? Boolean(overrides.dryRun)
@@ -145,11 +167,33 @@ export function loadLiveMysqlSyncConfig(overrides = {}) {
 
 function sanitizeMysqlRecord(table, row) {
   const out = { ...row };
-  if (table === "tbl_schedule" || table === "tbl_schedtime" || table === "tbl_closedscheds") {
+  if (table === "tbl_schedule" || table === "tbl_printedscheds" || table === "tbl_savedscheds" || table === "tbl_schedtime" || table === "tbl_closedscheds") {
     out.bridge_source = "live_mysql";
     out.bridge_pushed_at = toIsoNow();
   }
   return out;
+}
+
+function formatDbDateTime(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function resolveBootstrapDateColumn(columns) {
+  return DATE_COLUMN_CANDIDATES.find((columnName) => columns.some((column) => column.name === columnName)) || "";
+}
+
+function buildBootstrapStartDateTime(days) {
+  const lookbackDays = Math.max(1, Math.trunc(days || DEFAULT_BOOTSTRAP_DAYS));
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - lookbackDays);
+  return formatDbDateTime(date);
 }
 
 async function describeTable(pool, table) {
@@ -192,6 +236,17 @@ async function fetchRowsAfter(pool, table, idColumn, lastId, batchSize) {
   return Array.isArray(rows) ? rows : [];
 }
 
+async function fetchRowsForBootstrap(pool, table, idColumn, dateColumn, startDateTime, batchSize) {
+  const sql = [
+    `SELECT * FROM \`${table}\``,
+    `WHERE \`${dateColumn}\` >= ?`,
+    `ORDER BY \`${idColumn}\` ASC`,
+    `LIMIT ${Math.max(1, Math.trunc(batchSize || DEFAULT_BATCH_SIZE) * 20)}`,
+  ].join(" ");
+  const [rows] = await pool.execute(sql, [startDateTime]);
+  return Array.isArray(rows) ? rows : [];
+}
+
 function summarizeReport(stats, reportPath) {
   return {
     generatedAt: toIsoNow(),
@@ -203,6 +258,8 @@ function summarizeReport(stats, reportPath) {
       skippedRows: stats.skippedRows,
       baselineInitializedTables: Object.values(stats.tables).filter((table) => table.baselineInitialized).map((table) => table.table),
       schedulePushed: stats.tables.tbl_schedule?.pushed || 0,
+      printedschedPushed: stats.tables.tbl_printedscheds?.pushed || 0,
+      savedschedPushed: stats.tables.tbl_savedscheds?.pushed || 0,
       schedtimePushed: stats.tables.tbl_schedtime?.pushed || 0,
       closedschedPushed: stats.tables.tbl_closedscheds?.pushed || 0,
     },
@@ -224,6 +281,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
   });
   const pool = await createMysqlPool(config.mysql);
   const tables = [...new Set((config.tables || DEFAULT_TABLES).map((table) => String(table).trim().toLowerCase()).filter(Boolean))];
+  const bootstrapTables = new Set((config.bootstrapTables || DEFAULT_BOOTSTRAP_TABLES).map((table) => String(table).trim().toLowerCase()).filter(Boolean));
   const watermarkMap = await getWatermarkMap(db, tables);
   const pendingWrites = [];
   const pendingActivityRows = [];
@@ -280,21 +338,68 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
 
       const watermarkInfo = watermarkMap.get(table) || { exists: false, lastId: 0 };
       if (!watermarkInfo.exists) {
-        tableStats.watermarkAfter = await fetchMaxId(pool, table, idColumn);
-        tableStats.skipped = tableStats.watermarkAfter;
-        stats.skippedRows += tableStats.watermarkAfter;
+        const maxId = await fetchMaxId(pool, table, idColumn);
+        const bootstrapDateColumn = bootstrapTables.has(table) ? resolveBootstrapDateColumn(columns) : "";
+        const bootstrapStartDateTime = bootstrapDateColumn ? buildBootstrapStartDateTime(config.bootstrapDays) : "";
+        if (bootstrapDateColumn && maxId > 0) {
+          const bootstrapRows = await fetchRowsForBootstrap(pool, table, idColumn, bootstrapDateColumn, bootstrapStartDateTime, config.batchSize);
+          emit("info", `${table} watermark missing. Bootstrapping recent live MySQL rows.`, {
+            dateColumn: bootstrapDateColumn,
+            startDateTime: bootstrapStartDateTime,
+            rowsFound: bootstrapRows.length,
+            maxId,
+          });
+
+          for (const row of bootstrapRows) {
+            const rowId = Number(row[idColumn] || 0) || 0;
+            if (rowId <= 0) continue;
+
+            const payload = sanitizeMysqlRecord(table, row);
+            if (!config.dryRun) {
+              pendingWrites.push(db.makeUpsertWrite(table, rowId, payload));
+            }
+            tableStats.pushed += 1;
+            stats.insertedRows += 1;
+            tableStats.watermarkAfter = Math.max(tableStats.watermarkAfter, rowId);
+
+            if (tableStats.examples.length < 5) {
+              const example = { id: rowId };
+              if (payload.task_datetime !== undefined) example.task_datetime = payload.task_datetime;
+              if (payload.schedule_id !== undefined) example.schedule_id = payload.schedule_id;
+              tableStats.examples.push(example);
+              pendingActivityRows.push({
+                table,
+                id: rowId,
+                meta: example,
+              });
+            }
+
+            if (pendingWrites.length >= config.batchSize) {
+              await flushWrites();
+            }
+          }
+
+          await flushWrites();
+          tableStats.watermarkAfter = maxId;
+        } else {
+          tableStats.watermarkAfter = maxId;
+          tableStats.skipped = tableStats.watermarkAfter;
+          stats.skippedRows += tableStats.watermarkAfter;
+        }
+
         if (!config.dryRun) {
           await db.patchDoc(SYNC_STATE_COLLECTION, table, {
             table,
             id_column: idColumn,
             last_id: tableStats.watermarkAfter,
             updated_at: toIsoNow(),
-            source: "live-mysql-sync-baseline",
+            source: bootstrapDateColumn ? "live-mysql-sync-bootstrap" : "live-mysql-sync-baseline",
           });
         }
-        emit("info", `${table} baseline initialized from live MySQL.`, {
+        emit("info", `${table} watermark initialized from live MySQL.`, {
           lastId: tableStats.watermarkAfter,
           idColumn,
+          bootstrapDateColumn: bootstrapDateColumn || null,
         });
         continue;
       }

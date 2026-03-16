@@ -198,6 +198,18 @@ function loadDashboardConfig() {
   const liveMysqlConfig = loadLiveMysqlSyncConfig();
   runtimeConfig.liveMysqlTables = liveMysqlConfig.tables;
   runtimeConfig.liveMysqlBatchSize = liveMysqlConfig.batchSize;
+  runtimeConfig.liveMysqlBootstrapTables = liveMysqlConfig.bootstrapTables;
+  runtimeConfig.liveMysqlBootstrapDays = liveMysqlConfig.bootstrapDays;
+
+  if (runtimeConfig.direction === "mysql_to_firebase") {
+    runtimeConfig.baseline = "live";
+    runtimeConfig.apply = !liveMysqlConfig.dryRun;
+    runtimeConfig.firebaseConfigPath = liveMysqlConfig.firebaseConfigPath;
+    runtimeConfig.outDir = liveMysqlConfig.outDir;
+    runtimeConfig.stateFile = liveMysqlConfig.stateFile;
+    runtimeConfig.serviceAccountEmail = liveMysqlConfig.serviceAccountEmail;
+    runtimeConfig.serviceAccountPrivateKey = liveMysqlConfig.serviceAccountPrivateKey;
+  }
 
   const configIssues = [];
   const modeNotes = [];
