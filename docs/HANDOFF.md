@@ -1,6 +1,6 @@
 # MARGA Handoff (Single Source of Truth)
 
-Last Updated: 2026-02-16  
+Last Updated: 2026-03-16  
 Owner: Marga App Team
 
 This file is the canonical session-to-session handoff.
@@ -15,14 +15,14 @@ Each thread should only update the relevant module section plus `Current Focus`,
 
 ## Current Focus
 - Stabilize field execution flow (tech/messenger) with complete update modal and PIN-based close.
-- Keep sync updater reliable for incremental imports from latest SQL dump.
+- Keep sync updater reliable for live MySQL -> Firebase and limited Firebase -> MySQL writeback.
 - Continue role/module access hardening before broader staff rollout.
 
 ## Next Actions
 - Add Firebase Storage upload flow for before/after repair photos (currently metadata only).
 - Build admin queue UI for serial correction approvals (`marga_serial_corrections`).
 - Add module-level access toggles in Settings UI and enforce via auth + page guards.
-- Extend sync presets to include required support tables (`tbl_branchcontact`, `tbl_inventoryparts`, `tbl_mstatus`).
+- Turn the master sync coverage manifest into an executable office-side sync table manifest.
 - Add production/purchasing dashboard for parts-needed queue (`marga_production_queue`).
 
 ## Open Questions
@@ -43,6 +43,12 @@ Each thread should only update the relevant module section plus `Current Focus`,
 | Sync Updater | In Progress | Incremental SQL-to-Firestore sync works. | Add safer operator workflow and expanded table coverage. |
 
 ## Session Log (Top First)
+### 2026-03-16 - Sync Direction Rules And Live Coverage
+- Added `/docs/MASTER-SYNC-COVERAGE.md` based on the live MySQL schema.
+- Fixed live MySQL -> Firebase service route sync to catch updates to existing printed/saved route rows, not only new IDs.
+- Confirmed service route close counts now align between MySQL and Firebase after mutable-row refresh.
+- Defined business-direction rules below so handoff is clear on what should be `MySQL -> Firebase` versus limited `Firebase -> MySQL`.
+
 ### 2026-02-16 - Documentation Standardization
 - Established canonical handoff in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`.
 - Converted handoff model to module-based updates for thread-specific focus.
@@ -125,10 +131,124 @@ Risks:
 ### Sync Updater
 Done:
 - Incremental watermark-based syncing from SQL dump.
+- Live MySQL -> Firebase sync for service route tables (`tbl_schedule`, `tbl_printedscheds`, `tbl_savedscheds`, `tbl_schedtime`, `tbl_closedscheds`).
+- Mutable route refresh now rescans recent `tbl_printedscheds` and `tbl_savedscheds` rows by timestamp and refreshes linked `tbl_schedule` docs.
 
 In Progress:
-- Broader preset coverage and safer operator controls.
+- Convert the master sync coverage doc into an executable per-table manifest.
+- Expand live MySQL -> Firebase coverage to Tier 1 customer, machine, contract, billing, collection, payment, delivery, petty cash, and refill tables.
 
 Risks:
 - Missing table sync leads to incomplete operational context in modules.
+- A generic `id > last_id` rule is not enough for mutable operational tables.
+
+## Transaction Direction Rules
+
+These are business-flow rules for the hybrid phase. They describe which side should originate the transaction.
+
+### MySQL -> Firebase Only
+
+These should originate in legacy SQL/VB.NET and be mirrored into Firebase/web:
+
+- new customer / company creation
+- branch creation
+- customer active / inactive tagging
+- branch inactive tagging
+- new machine creation
+- machine master updates
+- contract creation
+- contract changes / renewal / termination / shutdown
+- new invoice creation
+- unpaid invoice / aging status
+- collection queue creation from office workflows
+- payment posting from office/accounting workflows
+- OR / check / deposit records
+- delivery receipt creation
+- final DR processing
+- pullout / machine pickup receipt creation
+- petty cash transactions
+- toner refill production records
+- purchasing / receiving / release records
+
+Reason:
+
+- these are core office and finance transactions
+- MySQL remains source of truth
+- Firebase should receive them as mirrored operational data
+
+### Firebase -> MySQL Only (Safe Reverse Bridge)
+
+These may originate from the web app and write back to existing MySQL columns:
+
+- field staff work notes
+- field staff close / pending service status
+- field `schedtime` logs
+- meter readings captured in field
+- customer signer / contact captured during field visit
+- approved collection follow-up logs written from web
+
+Reason:
+
+- these are field-side operational updates
+- they fit the current safe reverse-bridge model
+- they do not require new SQL schema
+
+### Firebase First, Then Controlled Writeback
+
+These may start in Firebase/web, but only with explicit safe mapping and approval:
+
+- serial correction requests
+- parts-needed queue writes
+- customer contact corrections
+- admin-request style workflows
+
+Reason:
+
+- these are operational workflow items or staging records
+- they may need review before touching legacy SQL
+
+### Never Treat As Full Two-Way Free Edit
+
+Do not allow unrestricted bidirectional editing for:
+
+- customer master records
+- machine master records
+- contracts
+- invoices
+- payments
+- collections principal records
+- delivery / DR headers
+- petty cash
+
+Reason:
+
+- these can create conflicts between VB.NET and web if both sides freely edit the same business object
+
+### Field Staff Input Rules
+
+Allowed from field app:
+
+- close ticket
+- mark pending / parts needed
+- enter time in / time out
+- enter meter reading
+- update signer / contact actually met in field
+- request serial correction
+- add execution notes
+
+Not allowed as direct master overwrite from field app:
+
+- create new customer
+- inactivate customer
+- add new machine directly into master machine table
+- create contract
+- create invoice
+- post payment
+- issue DR / OR
+- create petty cash record
+
+Those should remain:
+
+- office-side SQL transactions
+- then mirrored to Firebase
 
