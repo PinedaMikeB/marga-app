@@ -132,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldPresentMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
+    document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
 
     void loadMachineStatusOptions();
 
@@ -1062,6 +1063,7 @@ function setFormDisabled(isReadOnly) {
         'fieldPresentMeter',
         'fieldTimeIn',
         'fieldTimeInNowBtn',
+        'fieldTimeOutNowBtn',
         'fieldDeliveryDetails',
         'fieldEmptyPickupDetails',
         'fieldCustomerSigner',
@@ -1291,14 +1293,11 @@ async function openModal(scheduleId) {
     if (state.modalExpectedPin) {
         pinHint.textContent = 'Customer PIN is configured. Enter 4-digit PIN to finish.';
     } else {
-        pinHint.textContent = 'No branch PIN configured yet. Finished action is blocked. Use Pending and notify office.';
+        pinHint.textContent = 'No branch PIN configured yet. Finish is allowed without PIN for now.';
     }
 
     const isReadOnly = state.modalStatusKey === 'closed' || state.modalStatusKey === 'cancelled';
     setFormDisabled(isReadOnly);
-    if (!isReadOnly && !state.modalExpectedPin) {
-        document.getElementById('fieldModalCloseTask').disabled = true;
-    }
 
     setModalOpen(true);
 }
@@ -1581,17 +1580,15 @@ async function closeTask() {
     const expectedPin = String(state.modalExpectedPin || '').trim();
     const pinPattern = /^\d{4}$/;
 
-    if (!expectedPin) {
-        alert('This branch has no configured customer PIN yet. Please mark as Pending and ask office/admin to set branch PIN.');
-        return;
-    }
-    if (!pinPattern.test(form.pin)) {
-        alert('Customer PIN must be exactly 4 digits.');
-        return;
-    }
-    if (form.pin !== expectedPin) {
-        alert('Invalid customer PIN.');
-        return;
+    if (expectedPin) {
+        if (!pinPattern.test(form.pin)) {
+            alert('Customer PIN must be exactly 4 digits.');
+            return;
+        }
+        if (form.pin !== expectedPin) {
+            alert('Invalid customer PIN.');
+            return;
+        }
     }
     if (!form.customerSigner) {
         alert('Please enter customer representative full name before finish.');
@@ -1622,9 +1619,9 @@ async function closeTask() {
         pending_reason: '',
         pending_updated_at: nowIso,
         pending_updated_by: staffId,
-        customer_pin_verified: 1,
-        customer_pin_verified_at: nowIso,
-        customer_pin_verified_by: staffId
+        customer_pin_verified: expectedPin ? 1 : 0,
+        customer_pin_verified_at: expectedPin ? nowIso : '',
+        customer_pin_verified_by: expectedPin ? staffId : 0
     };
 
     const button = document.getElementById('fieldModalCloseTask');
@@ -1760,6 +1757,38 @@ async function markTimeInNow() {
     } catch (err) {
         console.error('Time in failed:', err);
         alert(`Failed to capture time in: ${err?.message || err}`);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function markTimeOutNow() {
+    if (state.modalReadOnly) return;
+    const row = getCurrentRow();
+    if (!row) return;
+
+    const nowLocal = toLocalInputDateTime(new Date().toISOString());
+    document.getElementById('fieldTimeOut').value = nowLocal;
+
+    const form = collectModalFormData();
+    const patch = {
+        field_time_out: form.timeOutDb,
+        field_updated_at: new Date().toISOString(),
+        field_updated_by: Number(state.staffId || 0) || 0,
+        bridge_updated_by: Number(state.staffId || 0) || 0,
+        bridge_updated_at: new Date().toISOString()
+    };
+
+    const button = document.getElementById('fieldTimeOutNowBtn');
+    button.disabled = true;
+    try {
+        await patchDocument('tbl_schedule', row.id, patch);
+        await upsertSchedtimeLog(row, form, 'draft');
+        applyRowPatch(row.id, patch);
+        alert('Time out captured.');
+    } catch (err) {
+        console.error('Time out failed:', err);
+        alert(`Failed to capture time out: ${err?.message || err}`);
     } finally {
         button.disabled = false;
     }
