@@ -1,10 +1,12 @@
 # Local Sync
 
-This folder is the office-side sync runner and local status dashboard.
+This folder is the office-side sync runner and local supervisor dashboard.
 
 - `marga-app` online still runs in the browser and writes to Firebase
 - `local-sync` runs on the office PC or office server
-- `local-sync` reads Firebase and writes selected changes back to local MySQL
+- `local-sync` runs both sync lanes from one supervisor:
+  - `MySQL -> Firebase`
+  - `Firebase -> MySQL`
 - staff can view the dashboard at `http://127.0.0.1:4310`
 - if live MySQL is not reachable from this PC, the dashboard falls back to dump-only monitoring
 
@@ -132,7 +134,7 @@ Backfill one route day from live MySQL into Firebase:
 node backfill-route-day-to-firebase.mjs --date 2026-03-16
 ```
 
-Run the local dashboard:
+Run the local supervisor:
 
 ```powershell
 node dashboard-server.mjs
@@ -144,9 +146,11 @@ Then open:
 http://127.0.0.1:4310
 ```
 
-The dashboard shows:
+The supervisor shows:
 
-- whether the sync service is alive
+- whether the supervisor is alive
+- whether lane 1 `MySQL -> Firebase` is healthy
+- whether lane 2 `Firebase -> MySQL` is healthy
 - Firebase connection status
 - MySQL connection status
 - last successful run
@@ -156,7 +160,12 @@ The dashboard shows:
 - an activity feed for startup, path changes, and sync runs
 - if Firebase server writes are blocked, the error will appear in the activity feed and current run message
 
-You can also trigger a manual sync from the page.
+You can also trigger:
+
+- both lanes together
+- lane 1 only
+- lane 2 only
+- full mirror
 
 ## Start On Boot
 
@@ -166,7 +175,15 @@ To install a Windows startup task:
 powershell -ExecutionPolicy Bypass -File .\install-startup-task.ps1
 ```
 
-That creates a scheduled task that starts the dashboard and sync loop when the PC boots.
+That creates or refreshes a scheduled task that starts the supervisor when the PC boots, keeps the working directory correct, and restarts it if it crashes.
+
+Important for 24/7 behavior:
+
+- the office PC must stay powered on
+- Windows must remain logged in or allow the task to run at startup
+- the supervisor keeps both lanes looping on its own once started
+- the scheduled task is what brings it back after reboot or crash
+- the `start-dashboard.cmd` launcher also restarts `dashboard-server.mjs` if Node exits
 
 ## Notes
 

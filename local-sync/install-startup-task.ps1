@@ -1,7 +1,6 @@
 $taskName = "Marga Local Sync Dashboard"
 $localSyncDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$nodeCommand = (Get-Command node -ErrorAction Stop).Source
-$dashboardScript = Join-Path $localSyncDir "dashboard-server.mjs"
+$starterScript = Join-Path $localSyncDir "start-dashboard.cmd"
 $startupFolder = [Environment]::GetFolderPath("Startup")
 $startupShortcut = Join-Path $startupFolder "Marga Local Sync Dashboard.lnk"
 $viewerShortcut = Join-Path $startupFolder "Open Marga Sync Dashboard.lnk"
@@ -23,9 +22,15 @@ function Set-Shortcut {
   $shortcut.Save()
 }
 
-$action = New-ScheduledTaskAction -Execute $nodeCommand -Argument "`"$dashboardScript`""
+$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$starterScript`""
 $trigger = New-ScheduledTaskTrigger -AtStartup
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$settings = New-ScheduledTaskSettingsSet `
+  -AllowStartIfOnBatteries `
+  -DontStopIfGoingOnBatteries `
+  -StartWhenAvailable `
+  -RestartCount 999 `
+  -RestartInterval (New-TimeSpan -Minutes 1) `
+  -MultipleInstances IgnoreNew
 
 try {
   Register-ScheduledTask `
@@ -43,13 +48,15 @@ try {
     -WorkingDirectory $localSyncDir `
     -Description "Opens the Marga live sync dashboard on sign-in."
 
+  Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+
   Write-Host "Installed scheduled task: $taskName"
   Write-Host "Startup viewer shortcut: $viewerShortcut"
   Write-Host "Dashboard URL: http://127.0.0.1:4310"
 } catch {
   Set-Shortcut `
     -Path $startupShortcut `
-    -TargetPath (Join-Path $localSyncDir "start-dashboard.cmd") `
+    -TargetPath $starterScript `
     -WorkingDirectory $localSyncDir `
     -Description "Starts the Marga local sync dashboard and sync loop on sign-in."
 
