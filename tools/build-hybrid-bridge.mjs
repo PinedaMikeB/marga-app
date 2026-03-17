@@ -466,6 +466,11 @@ function normalizeForCompare(value) {
   return String(value).trim();
 }
 
+function isLegacyEmptyDateValue(value) {
+  const text = normalizeForCompare(value).toLowerCase();
+  return !text || text === ZERO_DATETIME || text === "undefined 00:00:00" || text === "null 00:00:00";
+}
+
 function buildSchedtimeFingerprint(row) {
   return [
     Number(row.schedule_id || 0) || 0,
@@ -756,9 +761,11 @@ export function buildScheduleUpdateRows(scheduleDocs, baseline) {
     const changed = {};
     SYNCABLE_SCHEDULE_COLUMNS.forEach((column) => {
       if (!(column in doc)) return;
+      const nextValue = doc[column];
+      if (column === "date_finished" && isLegacyEmptyDateValue(nextValue)) return;
       const before = normalizeForCompare(existing[column]);
-      const after = normalizeForCompare(doc[column]);
-      if (before !== after) changed[column] = doc[column];
+      const after = normalizeForCompare(nextValue);
+      if (before !== after) changed[column] = nextValue;
     });
 
     if (Object.keys(changed).length) {

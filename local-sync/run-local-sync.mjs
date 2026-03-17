@@ -544,10 +544,32 @@ export async function applySchedtime(connection, changes) {
   const fullInsertSql = `INSERT INTO \`tbl_schedtime\` (${SCHEDTIME_COLUMNS.map((column) => `\`${column}\``).join(", ")}) VALUES (${SCHEDTIME_COLUMNS.map(() => "?").join(", ")})`;
   const autoIdColumns = SCHEDTIME_COLUMNS.filter((column) => column !== "id");
   const autoIdInsertSql = `INSERT INTO \`tbl_schedtime\` (${autoIdColumns.map((column) => `\`${column}\``).join(", ")}) VALUES (${autoIdColumns.map(() => "?").join(", ")})`;
+  const allocateGapId = async () => {
+    const [rows] = await connection.query(
+      [
+        "SELECT t1.id - 1 AS availableId",
+        "FROM `tbl_schedtime` t1",
+        "LEFT JOIN `tbl_schedtime` t2 ON t2.id = t1.id - 1",
+        "WHERE t1.id > 1 AND t1.id <= ? AND t2.id IS NULL",
+        "ORDER BY t1.id DESC",
+        "LIMIT 1",
+      ].join(" "),
+      [MAX_MYSQL_INT32],
+    );
+    const availableId = Number(rows[0]?.availableId || 0) || 0;
+    if (!availableId) {
+      throw new Error("tbl_schedtime has no remaining INT id gap for Firebase writeback.");
+    }
+    return availableId;
+  };
 
   for (const row of changes.inserts) {
-    if ((Number(row.id || 0) || 0) > MAX_MYSQL_INT32) {
-      await connection.execute(autoIdInsertSql, autoIdColumns.map((column) => row[column] ?? null));
+    if ((Number(row.id || 0) || 0) >= MAX_MYSQL_INT32) {
+      const fallbackId = await allocateGapId();
+      await connection.execute(
+        fullInsertSql,
+        SCHEDTIME_COLUMNS.map((column) => (column === "id" ? fallbackId : (row[column] ?? null))),
+      );
     } else {
       await connection.execute(fullInsertSql, SCHEDTIME_COLUMNS.map((column) => row[column] ?? null));
     }
