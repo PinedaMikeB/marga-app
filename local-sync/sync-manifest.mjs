@@ -30,7 +30,7 @@ export const OFFICE_SYNC_MANIFEST = {
       table: "tbl_schedule",
       domain: "service",
       sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp" },
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 60 },
       firebaseToMysql: { enabled: true, mode: "safe_fields", safeFields: SCHEDULE_SAFE_REVERSE_FIELDS },
     },
     {
@@ -65,7 +65,12 @@ export const OFFICE_SYNC_MANIFEST = {
       table: "tbl_schedtime",
       domain: "service",
       sourceOfTruth: "hybrid",
-      mysqlToFirebase: { enabled: true, mode: "append_only" },
+      mysqlToFirebase: {
+        enabled: true,
+        mode: "mutable_with_timestamp",
+        mutableDateColumn: "timestmp",
+        mutableLookbackHours: 72,
+      },
       firebaseToMysql: { enabled: true, mode: "append_or_update" },
     },
     {

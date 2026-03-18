@@ -242,6 +242,9 @@ export function buildRuntimeConfig(argv) {
     collectionHistoryLimit: cli.collectionHistoryLimit || Number(envFile.COLLECTION_HISTORY_LIMIT || DEFAULTS.collectionHistoryLimit),
     scheduleLimit: cli.scheduleLimit || Number(envFile.SCHEDULE_LIMIT || DEFAULTS.scheduleLimit),
     schedtimePerSchedule: cli.schedtimePerSchedule || Number(envFile.SCHEDTIME_PER_SCHEDULE || DEFAULTS.schedtimePerSchedule),
+    recoveryLookbackHours: Number(envFile.FIREBASE_TO_MYSQL_RECOVERY_LOOKBACK_HOURS || DEFAULTS.recoveryLookbackHours) || DEFAULTS.recoveryLookbackHours,
+    recoveryOverlapMinutes: Number(envFile.FIREBASE_TO_MYSQL_RECOVERY_OVERLAP_MINUTES || DEFAULTS.recoveryOverlapMinutes) || DEFAULTS.recoveryOverlapMinutes,
+    queryPageSize: Number(envFile.FIREBASE_TO_MYSQL_QUERY_PAGE_SIZE || DEFAULTS.queryPageSize) || DEFAULTS.queryPageSize,
     mysql: {
       host: envFile.MYSQL_HOST || process.env.MYSQL_HOST || "",
       port: Number(envFile.MYSQL_PORT || process.env.MYSQL_PORT || 3306),
@@ -641,6 +644,16 @@ export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function computeRecoverySinceIso(lastSuccessAt, recoveryLookbackHours, recoveryOverlapMinutes) {
+  const lastSuccessMs = Date.parse(String(lastSuccessAt || "").trim());
+  const overlapMs = (Number(recoveryOverlapMinutes || 0) || DEFAULTS.recoveryOverlapMinutes) * 60 * 1000;
+  const lookbackMs = (Number(recoveryLookbackHours || 0) || DEFAULTS.recoveryLookbackHours) * 60 * 60 * 1000;
+  const sinceMs = Number.isFinite(lastSuccessMs)
+    ? Math.max(0, lastSuccessMs - overlapMs)
+    : (Date.now() - lookbackMs);
+  return new Date(sinceMs).toISOString();
+}
+
 export async function runOnce(config) {
   let pool = null;
   const currentState = readState(config.stateFile);
@@ -650,6 +663,12 @@ export async function runOnce(config) {
   };
 
   try {
+    config.recoverySinceIso = computeRecoverySinceIso(
+      currentState.lastSuccessAt,
+      config.recoveryLookbackHours,
+      config.recoveryOverlapMinutes,
+    );
+
     if ((config.baseline === "live" || config.apply) && hasMysqlConfig(config.mysql)) {
       pool = await createMysqlPool(config.mysql);
     }

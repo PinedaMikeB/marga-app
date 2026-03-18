@@ -12,6 +12,9 @@ export const DEFAULTS = {
   collectionHistoryLimit: 5000,
   scheduleLimit: 3000,
   schedtimePerSchedule: 3,
+  recoveryLookbackHours: 72,
+  recoveryOverlapMinutes: 10,
+  queryPageSize: 500,
 };
 
 export const SYNCABLE_SCHEDULE_COLUMNS = REVERSE_BRIDGE_CONFIG.scheduleSafeFields;
@@ -533,6 +536,73 @@ function parseFirestoreDoc(doc) {
   return parsed;
 }
 
+function normalizePositiveNumber(value, fallback) {
+  const numeric = Number(value || 0) || 0;
+  return numeric > 0 ? numeric : fallback;
+}
+
+function buildRecoverySinceIso(lastSuccessAt, lookbackHours, overlapMinutes) {
+  const overlapMs = normalizePositiveNumber(overlapMinutes, DEFAULTS.recoveryOverlapMinutes) * 60 * 1000;
+  const lookbackMs = normalizePositiveNumber(lookbackHours, DEFAULTS.recoveryLookbackHours) * 60 * 60 * 1000;
+  const lastSuccessMs = Date.parse(String(lastSuccessAt || "").trim());
+  const sinceMs = Number.isFinite(lastSuccessMs)
+    ? Math.max(0, lastSuccessMs - overlapMs)
+    : (Date.now() - lookbackMs);
+  return new Date(sinceMs).toISOString();
+}
+
+async function runPagedQuery(db, structuredQuery, pageSize, overallLimit) {
+  const rows = [];
+  const limit = normalizePositiveNumber(overallLimit, pageSize);
+  const batchSize = Math.min(normalizePositiveNumber(pageSize, DEFAULTS.queryPageSize), limit);
+  let offset = 0;
+
+  while (rows.length < limit) {
+    const page = await db.runQuery({
+      ...structuredQuery,
+      offset,
+      limit: Math.min(batchSize, limit - rows.length),
+    });
+    if (!Array.isArray(page) || !page.length) break;
+    rows.push(...page);
+    if (page.length < batchSize) break;
+    offset += page.length;
+  }
+
+  return rows;
+}
+
+async function queryRecentDocs(db, {
+  collectionId,
+  orderField,
+  sinceIso = "",
+  overallLimit = 0,
+  pageSize = DEFAULTS.queryPageSize,
+}) {
+  const normalizedLimit = normalizePositiveNumber(overallLimit, pageSize);
+  const normalizedPageSize = Math.min(normalizePositiveNumber(pageSize, DEFAULTS.queryPageSize), normalizedLimit);
+
+  if (!sinceIso) {
+    return db.runQuery({
+      from: [{ collectionId }],
+      orderBy: [{ field: { fieldPath: orderField }, direction: "DESCENDING" }],
+      limit: normalizedLimit,
+    });
+  }
+
+  return runPagedQuery(db, {
+    from: [{ collectionId }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: orderField },
+        op: "GREATER_THAN_OR_EQUAL",
+        value: { stringValue: sinceIso },
+      },
+    },
+    orderBy: [{ field: { fieldPath: orderField }, direction: "ASCENDING" }],
+  }, normalizedPageSize, normalizedLimit);
+}
+
 export function createFirestoreClient({ apiKey, baseUrl }) {
   async function runQuery(structuredQuery) {
     const url = `${baseUrl}:runQuery?key=${encodeURIComponent(apiKey)}`;
@@ -662,22 +732,33 @@ export async function buildDumpBaseline(dumpPath) {
 }
 
 export async function loadFirebaseOperationalState(db, options) {
-  const collectionHistoryDocs = await db.runQuery({
-    from: [{ collectionId: "tbl_collectionhistory" }],
-    orderBy: [{ field: { fieldPath: "timestamp" }, direction: "DESCENDING" }],
-    limit: options.collectionHistoryLimit,
+  const recoverySinceIso = String(
+    options.recoverySinceIso
+    || buildRecoverySinceIso(options.lastSuccessAt, options.recoveryLookbackHours, options.recoveryOverlapMinutes),
+  ).trim();
+  const queryPageSize = normalizePositiveNumber(options.queryPageSize, DEFAULTS.queryPageSize);
+  const collectionHistoryDocs = await queryRecentDocs(db, {
+    collectionId: "tbl_collectionhistory",
+    orderField: "timestamp",
+    sinceIso: recoverySinceIso,
+    overallLimit: normalizePositiveNumber(options.collectionHistoryLimit, DEFAULTS.collectionHistoryLimit),
+    pageSize: queryPageSize,
   });
 
-  const bridgeUpdatedScheduleDocs = await db.runQuery({
-    from: [{ collectionId: "tbl_schedule" }],
-    orderBy: [{ field: { fieldPath: "bridge_updated_at" }, direction: "DESCENDING" }],
-    limit: options.scheduleLimit,
+  const bridgeUpdatedScheduleDocs = await queryRecentDocs(db, {
+    collectionId: "tbl_schedule",
+    orderField: "bridge_updated_at",
+    sinceIso: recoverySinceIso,
+    overallLimit: normalizePositiveNumber(options.scheduleLimit, DEFAULTS.scheduleLimit),
+    pageSize: queryPageSize,
   }).catch(() => []);
 
-  const fieldUpdatedScheduleDocs = await db.runQuery({
-    from: [{ collectionId: "tbl_schedule" }],
-    orderBy: [{ field: { fieldPath: "field_updated_at" }, direction: "DESCENDING" }],
-    limit: options.scheduleLimit,
+  const fieldUpdatedScheduleDocs = await queryRecentDocs(db, {
+    collectionId: "tbl_schedule",
+    orderField: "field_updated_at",
+    sinceIso: recoverySinceIso,
+    overallLimit: normalizePositiveNumber(options.scheduleLimit, DEFAULTS.scheduleLimit),
+    pageSize: queryPageSize,
   }).catch(() => []);
 
   const scheduleDocs = new Map();
