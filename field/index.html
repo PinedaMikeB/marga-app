@@ -68,8 +68,12 @@
             </button>
         </div>
         <div class="marga-modal-body">
-            <section class="field-modal-section">
-                <h3>Machine Identification</h3>
+            <section class="field-modal-section field-collapsible-section is-collapsed" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
+                    <span>Machine Identification</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
                 <div class="marga-form-grid">
                     <label class="marga-field marga-field-full">
                         <span>Serial Number (Searchable)</span>
@@ -105,10 +109,15 @@
                         <div class="ops-subtext" id="fieldSerialHint"></div>
                     </div>
                 </div>
+                </div>
             </section>
 
-            <section class="field-modal-section">
-                <h3>Work Execution</h3>
+            <section class="field-modal-section field-collapsible-section" data-default-collapsed="false">
+                <button type="button" class="field-section-toggle" aria-expanded="true">
+                    <span>Work Execution</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
                 <div class="marga-form-grid">
                     <label class="marga-field marga-field-full">
                         <span>Work Notes</span>
@@ -135,10 +144,15 @@
                         <div class="ops-subtext" id="fieldAfterPhotoHint">No file selected.</div>
                     </label>
                 </div>
+                </div>
             </section>
 
-            <section class="field-modal-section">
-                <h3>Meter and Time</h3>
+            <section class="field-modal-section field-collapsible-section" data-default-collapsed="false">
+                <button type="button" class="field-section-toggle" aria-expanded="true">
+                    <span>Meter and Time</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
                 <div class="marga-form-grid">
                     <label class="marga-field">
                         <span>Previous Meter</span>
@@ -167,10 +181,15 @@
                         </div>
                     </label>
                 </div>
+                </div>
             </section>
 
-            <section class="field-modal-section">
-                <h3>Delivery and Customer Acknowledgement</h3>
+            <section class="field-modal-section field-collapsible-section" data-default-collapsed="false">
+                <button type="button" class="field-section-toggle" aria-expanded="true">
+                    <span>Delivery and Customer Acknowledgement</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
                 <div class="marga-form-grid">
                     <label class="marga-field marga-field-full">
                         <span>Toner / Ink Delivery Details</span>
@@ -197,6 +216,7 @@
                         <input type="password" id="fieldClosePin" inputmode="numeric" maxlength="4" placeholder="0000">
                         <div class="ops-subtext" id="fieldPinHint">Required to mark as Finished.</div>
                     </label>
+                </div>
                 </div>
             </section>
         </div>

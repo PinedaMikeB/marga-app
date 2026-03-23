@@ -61,7 +61,9 @@ const caches = {
     partsCatalogLoaded: false,
     partsCatalog: [],
     partsByKey: new Map(),
-    branchContacts: new Map()
+    branchContacts: new Map(),
+    deliveryInfoByBranch: new Map(),
+    deliveryReceiptBySchedule: new Map()
 };
 
 const state = {
@@ -135,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('fieldBeforePhoto').addEventListener('change', () => updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name'));
     document.getElementById('fieldAfterPhoto').addEventListener('change', () => updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name'));
+    document.getElementById('fieldModal').addEventListener('click', toggleModalSection);
 
     document.getElementById('fieldPresentMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
@@ -142,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
 
     applyTemporaryFieldMode();
+    resetModalSectionState();
     void loadMachineStatusOptions();
 
     loadMySchedule();
@@ -195,6 +199,28 @@ function applyTemporaryFieldMode() {
         pinInput.disabled = true;
         if (pinHint) pinHint.textContent = 'Temporarily disabled. Finish is allowed without PIN.';
     }
+}
+
+function setSectionCollapsed(section, isCollapsed) {
+    if (!section) return;
+    section.classList.toggle('is-collapsed', isCollapsed);
+    const toggle = section.querySelector('.field-section-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+}
+
+function resetModalSectionState() {
+    document.querySelectorAll('.field-collapsible-section').forEach((section) => {
+        const isCollapsed = String(section.dataset.defaultCollapsed || 'false').trim() === 'true';
+        setSectionCollapsed(section, isCollapsed);
+    });
+}
+
+function toggleModalSection(event) {
+    const button = event.target.closest('.field-section-toggle');
+    if (!button) return;
+    const section = button.closest('.field-collapsible-section');
+    if (!section) return;
+    setSectionCollapsed(section, !section.classList.contains('is-collapsed'));
 }
 
 function sanitize(text) {
@@ -382,6 +408,10 @@ async function queryCollection(collectionId, limit = 1000) {
         limit
     };
     return runQuery(structuredQuery);
+}
+
+function normalizeInlineText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 function normalizeLegacyDateTime(value) {
@@ -1103,6 +1133,7 @@ function resetModalFields() {
         : 'Required to mark as Finished.';
     renderPartsList();
     applyTemporaryFieldMode();
+    resetModalSectionState();
     toggleMissingSerialMode();
 }
 
@@ -1311,13 +1342,38 @@ async function openModal(scheduleId) {
     setMachineStatusFromRow(row);
 
     document.getElementById('fieldCloseNotes').value = String(row.field_work_notes || '').trim();
-    document.getElementById('fieldDeliveryDetails').value = String(row.field_delivery_details || '').trim();
-    document.getElementById('fieldEmptyPickupDetails').value = String(row.field_empty_pickup_details || '').trim();
     document.getElementById('fieldFinalSummary').value = String(row.field_final_summary || '').trim();
 
-    const branchContact = await resolveBranchContact(row.branch_id, row);
-    document.getElementById('fieldCustomerSigner').value = String(row.field_customer_signer || row.collocutor || branchContact.contact_name || row.caller || '').trim();
-    document.getElementById('fieldCustomerContact').value = String(row.field_customer_contact || row.phone_number || branchContact.contact_phone || '').trim();
+    const [branchContact, deliveryInfo, deliveryReceipt] = await Promise.all([
+        resolveBranchContact(row.branch_id, row),
+        resolveDeliveryInfo(row.branch_id),
+        resolveDeliveryReceipt(row.id)
+    ]);
+
+    const savedDeliveryDetails = String(row.field_delivery_details || '').trim();
+    const savedEmptyPickupDetails = String(row.field_empty_pickup_details || '').trim();
+    const autoDeliveryDetails = buildDeliveryDetailsDefault(row, deliveryReceipt, deliveryInfo);
+    const autoEmptyPickupDetails = buildEmptyPickupDefault(deliveryReceipt);
+
+    document.getElementById('fieldDeliveryDetails').value = savedDeliveryDetails || autoDeliveryDetails;
+    document.getElementById('fieldEmptyPickupDetails').value = savedEmptyPickupDetails || autoEmptyPickupDetails;
+    document.getElementById('fieldCustomerSigner').value = String(
+        row.field_customer_signer ||
+        row.collocutor ||
+        deliveryInfo?.tcontact_person ||
+        deliveryInfo?.mcontact_person ||
+        branchContact.contact_name ||
+        row.caller ||
+        ''
+    ).trim();
+    document.getElementById('fieldCustomerContact').value = String(
+        row.field_customer_contact ||
+        row.phone_number ||
+        deliveryInfo?.tcontact_num ||
+        deliveryInfo?.mcontact_num ||
+        branchContact.contact_phone ||
+        ''
+    ).trim();
 
     const beforeSaved = String(row.field_before_photo_name || '').trim();
     const afterSaved = String(row.field_after_photo_name || '').trim();
@@ -1847,6 +1903,79 @@ async function markTimeInNow() {
     } finally {
         button.disabled = false;
     }
+}
+
+async function resolveDeliveryInfo(branchId) {
+    const cacheKey = String(branchId || 0);
+    if (caches.deliveryInfoByBranch.has(cacheKey)) {
+        return caches.deliveryInfoByBranch.get(cacheKey);
+    }
+
+    if (!branchId) {
+        caches.deliveryInfoByBranch.set(cacheKey, null);
+        return null;
+    }
+
+    try {
+        const docs = await queryEquals('tbl_deliveryinfo', 'branch_id', Number(branchId), 'integer', 10);
+        const rows = docs.map(parseFirestoreDoc).filter(Boolean);
+        rows.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+        const result = rows[0] || null;
+        caches.deliveryInfoByBranch.set(cacheKey, result);
+        return result;
+    } catch (err) {
+        console.warn('Delivery info lookup failed:', err);
+        caches.deliveryInfoByBranch.set(cacheKey, null);
+        return null;
+    }
+}
+
+async function resolveDeliveryReceipt(scheduleId) {
+    const cacheKey = String(scheduleId || 0);
+    if (caches.deliveryReceiptBySchedule.has(cacheKey)) {
+        return caches.deliveryReceiptBySchedule.get(cacheKey);
+    }
+
+    if (!scheduleId) {
+        caches.deliveryReceiptBySchedule.set(cacheKey, null);
+        return null;
+    }
+
+    try {
+        const docs = await queryEquals('tbl_finaldr', 'reference_id', Number(scheduleId), 'integer', 20);
+        const rows = docs.map(parseFirestoreDoc).filter(Boolean);
+        rows.sort((a, b) => {
+            const left = normalizeInlineText(b.tmstmp || b.timestmp || '');
+            const right = normalizeInlineText(a.tmstmp || a.timestmp || '');
+            if (left !== right) return left.localeCompare(right);
+            return Number(b.id || 0) - Number(a.id || 0);
+        });
+        const result = rows[0] || null;
+        caches.deliveryReceiptBySchedule.set(cacheKey, result);
+        return result;
+    } catch (err) {
+        console.warn('Delivery receipt lookup failed:', err);
+        caches.deliveryReceiptBySchedule.set(cacheKey, null);
+        return null;
+    }
+}
+
+function buildDeliveryDetailsDefault(row, receipt, deliveryInfo) {
+    const lines = [];
+    const drNumber = normalizeInlineText(receipt?.dr_number);
+    const deliveryRemark = normalizeInlineText(row?.remarks);
+    const deliveryAddress = normalizeInlineText(deliveryInfo?.tdelivery_add || deliveryInfo?.mdelivery_add);
+
+    if (drNumber) lines.push(`DR #${drNumber}`);
+    if (deliveryRemark) lines.push(deliveryRemark);
+    if (deliveryAddress) lines.push(`Deliver to: ${deliveryAddress}`);
+
+    return lines.join('\n').trim();
+}
+
+function buildEmptyPickupDefault(receipt) {
+    const returnStatus = normalizeInlineText(receipt?.cartridge_return_status);
+    return returnStatus ? `Return status: ${returnStatus}` : '';
 }
 
 async function markTimeOutNow() {
