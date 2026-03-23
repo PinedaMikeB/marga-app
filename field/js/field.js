@@ -41,6 +41,9 @@ const PURPOSE_LABELS = {
     9: 'Others'
 };
 
+const BILLING_PURPOSE_ID = 1;
+const COLLECTION_PURPOSE_ID = 2;
+
 const FALLBACK_MACHINE_STATUSES = [
     { id: 1, label: 'Running / Print OK' },
     { id: 2, label: 'Running / Print Problem' },
@@ -140,7 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('fieldBeforePhoto').addEventListener('change', () => updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name'));
     document.getElementById('fieldAfterPhoto').addEventListener('change', () => updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name'));
+    document.getElementById('fieldCollectionVoucherImage').addEventListener('change', () => updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name'));
+    document.getElementById('fieldCollectionCheckImage').addEventListener('change', () => updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name'));
     document.getElementById('fieldModal').addEventListener('click', toggleModalSection);
+    document.getElementById('fieldModal').addEventListener('input', updateActionButtons);
+    document.getElementById('fieldModal').addEventListener('change', updateActionButtons);
 
     document.getElementById('fieldPresentMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
@@ -221,6 +228,7 @@ function resetModalSectionState() {
 function toggleModalSection(event) {
     const button = event.target.closest('.field-section-toggle');
     if (!button) return;
+    if (button.disabled) return;
     const section = button.closest('.field-collapsible-section');
     if (!section) return;
     setSectionCollapsed(section, !section.classList.contains('is-collapsed'));
@@ -1077,6 +1085,7 @@ function addPartEntry() {
     partInput.value = '';
     qtyInput.value = '1';
     renderPartsList();
+    updateActionButtons();
 }
 
 function removePartEntry(event) {
@@ -1086,6 +1095,7 @@ function removePartEntry(event) {
     if (index < 0) return;
     state.modalPartsNeeded.splice(index, 1);
     renderPartsList();
+    updateActionButtons();
 }
 
 function updatePhotoHint(inputId, hintId, fallbackField = '') {
@@ -1113,6 +1123,28 @@ function getFileMeta(inputId) {
         type: String(file.type || '').slice(0, 80),
         modified: Math.trunc(Number(file.lastModified || 0))
     };
+}
+
+function normalizeTicketPurpose(row) {
+    return Number(row?.purpose_id || 0) || 0;
+}
+
+function isBillingTicket(row) {
+    return normalizeTicketPurpose(row) === BILLING_PURPOSE_ID;
+}
+
+function isCollectionTicket(row) {
+    return normalizeTicketPurpose(row) === COLLECTION_PURPOSE_ID;
+}
+
+function isPendingReplacementState(row, form = null) {
+    const pendingReason = String(row?.pending_reason || '').trim().toLowerCase();
+    const hasLocalParts = Array.isArray(form?.partsNeeded) && form.partsNeeded.length > 0;
+    return Number(row?.pending_parts || 0) === 1
+        || hasLocalParts
+        || pendingReason.includes('part')
+        || pendingReason.includes('machine')
+        || pendingReason.includes('replacement');
 }
 
 function setModalOpen(isOpen) {
@@ -1150,6 +1182,13 @@ function resetModalFields() {
     document.getElementById('fieldCustomerSigner').value = '';
     document.getElementById('fieldCustomerContact').value = '';
     document.getElementById('fieldFinalSummary').value = '';
+    document.getElementById('fieldBillingReceivedBy').value = '';
+    document.getElementById('fieldBillingDate').value = '';
+    document.getElementById('fieldBillingTime').value = '';
+    document.getElementById('fieldCollectionReceiptRefs').value = '';
+    document.getElementById('fieldCollectionInvoiceRefs').value = '';
+    document.getElementById('fieldCollectionCheckNumber').value = '';
+    document.getElementById('fieldCollectionAmount').value = '';
     document.getElementById('fieldPreviousMeter').value = '';
     document.getElementById('fieldPresentMeter').value = '';
     document.getElementById('fieldTotalConsumed').value = '0';
@@ -1158,12 +1197,20 @@ function resetModalFields() {
 
     const before = document.getElementById('fieldBeforePhoto');
     const after = document.getElementById('fieldAfterPhoto');
+    const collectionVoucher = document.getElementById('fieldCollectionVoucherImage');
+    const collectionCheck = document.getElementById('fieldCollectionCheckImage');
     before.value = '';
     after.value = '';
+    collectionVoucher.value = '';
+    collectionCheck.value = '';
     before.dataset.savedName = '';
     after.dataset.savedName = '';
+    collectionVoucher.dataset.savedName = '';
+    collectionCheck.dataset.savedName = '';
     document.getElementById('fieldBeforePhotoHint').textContent = 'No file selected.';
     document.getElementById('fieldAfterPhotoHint').textContent = 'No file selected.';
+    document.getElementById('fieldCollectionVoucherHint').textContent = 'No file selected.';
+    document.getElementById('fieldCollectionCheckHint').textContent = 'No file selected.';
 
     document.getElementById('fieldPinHint').textContent = TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin
         ? 'Temporarily disabled. Finish is allowed without PIN.'
@@ -1172,6 +1219,7 @@ function resetModalFields() {
     applyTemporaryFieldMode();
     resetModalSectionState();
     toggleMissingSerialMode();
+    updateActionButtons();
 }
 
 function closeModal() {
@@ -1203,6 +1251,15 @@ function setFormDisabled(isReadOnly) {
         'fieldCustomerSigner',
         'fieldCustomerContact',
         'fieldFinalSummary',
+        'fieldBillingReceivedBy',
+        'fieldBillingDate',
+        'fieldBillingTime',
+        'fieldCollectionVoucherImage',
+        'fieldCollectionCheckImage',
+        'fieldCollectionReceiptRefs',
+        'fieldCollectionInvoiceRefs',
+        'fieldCollectionCheckNumber',
+        'fieldCollectionAmount',
         'fieldClosePin',
         'fieldModalSaveDraft',
         'fieldModalPendingTask',
@@ -1217,6 +1274,37 @@ function setFormDisabled(isReadOnly) {
     document.getElementById('fieldTimeOut').disabled = true;
     applyTemporaryFieldMode();
     toggleMissingSerialMode();
+    applyModalWorkflowState();
+    updateActionButtons();
+}
+
+function applyModalWorkflowState() {
+    const machineSection = document.getElementById('fieldMachineSection');
+    const machineToggle = machineSection?.querySelector('.field-section-toggle');
+    if (machineSection) machineSection.classList.add('is-disabled');
+    if (machineToggle) {
+        machineToggle.disabled = true;
+        machineToggle.setAttribute('aria-disabled', 'true');
+    }
+
+    if (state.modalReadOnly) return;
+
+    [
+        'fieldSerialInput',
+        'fieldMissingSerialInput',
+        'fieldModelInput',
+        'fieldBrandInput',
+        'fieldMachineStatus',
+        'fieldSaveSerialBtn',
+        'fieldDeliveryDetails',
+        'fieldCustomerSigner',
+        'fieldCustomerContact',
+        'fieldFinalSummary',
+        'fieldClosePin'
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = true;
+    });
 }
 
 async function resolveExpectedPin(branchId, row = null) {
@@ -1412,15 +1500,30 @@ async function openModal(scheduleId) {
         branchContact.contact_phone ||
         ''
     ).trim();
+    document.getElementById('fieldBillingReceivedBy').value = String(row.field_billing_received_by || '').trim();
+    document.getElementById('fieldBillingDate').value = String(row.field_billing_date || '').trim();
+    document.getElementById('fieldBillingTime').value = String(row.field_billing_time || '').trim();
+    document.getElementById('fieldCollectionReceiptRefs').value = String(row.field_collection_receipt_refs || '').trim();
+    document.getElementById('fieldCollectionInvoiceRefs').value = String(row.field_collection_invoice_refs || '').trim();
+    document.getElementById('fieldCollectionCheckNumber').value = String(row.field_collection_check_number || '').trim();
+    document.getElementById('fieldCollectionAmount').value = String(row.field_collection_payment_amount || '').trim();
 
     const beforeSaved = String(row.field_before_photo_name || '').trim();
     const afterSaved = String(row.field_after_photo_name || '').trim();
+    const collectionVoucherSaved = String(row.field_collection_voucher_name || '').trim();
+    const collectionCheckSaved = String(row.field_collection_check_name || '').trim();
     const beforeInput = document.getElementById('fieldBeforePhoto');
     const afterInput = document.getElementById('fieldAfterPhoto');
+    const collectionVoucherInput = document.getElementById('fieldCollectionVoucherImage');
+    const collectionCheckInput = document.getElementById('fieldCollectionCheckImage');
     beforeInput.dataset.savedName = beforeSaved;
     afterInput.dataset.savedName = afterSaved;
+    collectionVoucherInput.dataset.savedName = collectionVoucherSaved;
+    collectionCheckInput.dataset.savedName = collectionCheckSaved;
     updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name');
     updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name');
+    updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name');
+    updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
 
     const previousMeter = parseIntegerInput(row.field_previous_meter);
     const presentMeter = parseIntegerInput(row.field_present_meter) ?? parseIntegerInput(row.meter_reading);
@@ -1459,6 +1562,7 @@ async function openModal(scheduleId) {
 
     const isReadOnly = state.modalStatusKey === 'closed' || state.modalStatusKey === 'cancelled';
     setFormDisabled(isReadOnly);
+    updateActionButtons();
 
     setModalOpen(true);
 }
@@ -1514,6 +1618,7 @@ function collectModalFormData() {
 
     const timeInLocal = String(document.getElementById('fieldTimeIn').value || '').trim();
     const timeOutLocal = String(document.getElementById('fieldTimeOut').value || '').trim();
+    const collectionAmount = String(document.getElementById('fieldCollectionAmount').value || '').trim();
 
     return {
         notes: String(document.getElementById('fieldCloseNotes').value || '').trim(),
@@ -1522,6 +1627,14 @@ function collectModalFormData() {
         emptyPickupDetails: String(document.getElementById('fieldEmptyPickupDetails').value || '').trim(),
         customerSigner: String(document.getElementById('fieldCustomerSigner').value || '').trim(),
         customerContact: String(document.getElementById('fieldCustomerContact').value || '').trim(),
+        billingReceivedBy: String(document.getElementById('fieldBillingReceivedBy').value || '').trim(),
+        billingDate: String(document.getElementById('fieldBillingDate').value || '').trim(),
+        billingTime: String(document.getElementById('fieldBillingTime').value || '').trim(),
+        collectionReceiptRefs: String(document.getElementById('fieldCollectionReceiptRefs').value || '').trim(),
+        collectionInvoiceRefs: String(document.getElementById('fieldCollectionInvoiceRefs').value || '').trim(),
+        collectionCheckNumber: String(document.getElementById('fieldCollectionCheckNumber').value || '').trim(),
+        collectionAmount,
+        collectionAmountNumber: Number(collectionAmount || 0),
         pin: TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin
             ? ''
             : String(document.getElementById('fieldClosePin').value || '').trim(),
@@ -1546,7 +1659,9 @@ function collectModalFormData() {
             source: String(item.source || '')
         })),
         beforePhoto: getFileMeta('fieldBeforePhoto'),
-        afterPhoto: getFileMeta('fieldAfterPhoto')
+        afterPhoto: getFileMeta('fieldAfterPhoto'),
+        collectionVoucherImage: getFileMeta('fieldCollectionVoucherImage'),
+        collectionCheckImage: getFileMeta('fieldCollectionCheckImage')
     };
 }
 
@@ -1560,6 +1675,13 @@ function buildSchedulePayload(row, form, tag) {
         field_empty_pickup_details: form.emptyPickupDetails,
         field_customer_signer: form.customerSigner,
         field_customer_contact: form.customerContact,
+        field_billing_received_by: form.billingReceivedBy,
+        field_billing_date: form.billingDate,
+        field_billing_time: form.billingTime,
+        field_collection_receipt_refs: form.collectionReceiptRefs,
+        field_collection_invoice_refs: form.collectionInvoiceRefs,
+        field_collection_check_number: form.collectionCheckNumber,
+        field_collection_payment_amount: form.collectionAmount,
         field_previous_meter: form.previousMeter ?? 0,
         field_present_meter: form.presentMeter ?? 0,
         field_total_consumed: form.totalConsumed ?? 0,
@@ -1572,6 +1694,12 @@ function buildSchedulePayload(row, form, tag) {
         field_after_photo_name: form.afterPhoto?.name || '',
         field_after_photo_size: Number(form.afterPhoto?.size || 0) || 0,
         field_after_photo_type: form.afterPhoto?.type || '',
+        field_collection_voucher_name: form.collectionVoucherImage?.name || '',
+        field_collection_voucher_size: Number(form.collectionVoucherImage?.size || 0) || 0,
+        field_collection_voucher_type: form.collectionVoucherImage?.type || '',
+        field_collection_check_name: form.collectionCheckImage?.name || '',
+        field_collection_check_size: Number(form.collectionCheckImage?.size || 0) || 0,
+        field_collection_check_type: form.collectionCheckImage?.type || '',
         field_serial_selected: form.selectedMachineSerial || form.serialInput || '',
         field_serial_selected_machine_id: form.selectedMachineId || 0,
         field_updated_by: staffId,
@@ -1609,6 +1737,68 @@ function applyRowPatch(scheduleId, patch) {
     const row = state.rows.find((item) => Number(item.id || 0) === Number(scheduleId || 0));
     if (!row) return;
     Object.assign(row, patch);
+}
+
+function getCloseTaskIssues(row, form) {
+    const issues = [];
+
+    if (isPendingReplacementState(row, form)) {
+        issues.push('Pending machine or parts replacement detected. Use Mark Pending (Parts Needed).');
+    }
+
+    if (!form.emptyPickupDetails) {
+        issues.push('Fill out Empty Toner / Ink Picked Up before marking this task finished.');
+    }
+
+    if (isBillingTicket(row)) {
+        if (!form.billingReceivedBy) issues.push('Fill out Billing Received By before marking this billing task finished.');
+        if (!form.billingDate) issues.push('Fill out Billing Date before marking this billing task finished.');
+        if (!form.billingTime) issues.push('Fill out Billing Time before marking this billing task finished.');
+    }
+
+    if (isCollectionTicket(row)) {
+        if (!form.collectionVoucherImage && !String(row.field_collection_voucher_name || '').trim()) {
+            issues.push('Upload the check voucher image before marking this collection task finished.');
+        }
+        if (!form.collectionCheckImage && !String(row.field_collection_check_name || '').trim()) {
+            issues.push('Upload the check image before marking this collection task finished.');
+        }
+        if (!form.collectionReceiptRefs) issues.push('Fill out Official Receipt / Invoice Number before marking this collection task finished.');
+        if (!form.collectionInvoiceRefs) issues.push('Fill out Payment For Invoice Number(s) before marking this collection task finished.');
+        if (!form.collectionCheckNumber) issues.push('Fill out Check Number before marking this collection task finished.');
+        if (!Number.isFinite(form.collectionAmountNumber) || form.collectionAmountNumber <= 0) {
+            issues.push('Fill out a valid Amount of Payment before marking this collection task finished.');
+        }
+    }
+
+    return issues;
+}
+
+function updateActionButtons() {
+    const closeButton = document.getElementById('fieldModalCloseTask');
+    const pendingButton = document.getElementById('fieldModalPendingTask');
+    if (!closeButton || !pendingButton) return;
+
+    if (state.modalReadOnly) {
+        closeButton.disabled = true;
+        pendingButton.disabled = true;
+        closeButton.title = '';
+        return;
+    }
+
+    const row = getCurrentRow();
+    if (!row) {
+        closeButton.disabled = true;
+        pendingButton.disabled = false;
+        closeButton.title = '';
+        return;
+    }
+
+    const form = collectModalFormData();
+    const issues = getCloseTaskIssues(row, form);
+    closeButton.disabled = issues.length > 0;
+    closeButton.title = issues[0] || '';
+    pendingButton.disabled = false;
 }
 
 async function upsertSchedtimeLog(row, form, mode = 'draft') {
@@ -1754,8 +1944,14 @@ async function closeTask() {
     const row = getCurrentRow();
     if (!row) return;
     const form = collectModalFormData();
+    const closeIssues = getCloseTaskIssues(row, form);
     const expectedPin = String(state.modalExpectedPin || '').trim();
     const pinPattern = /^\d{4}$/;
+
+    if (closeIssues.length) {
+        alert(closeIssues[0]);
+        return;
+    }
 
     if (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) {
         if (!pinPattern.test(form.pin)) {
@@ -1766,10 +1962,6 @@ async function closeTask() {
             alert('Invalid customer PIN.');
             return;
         }
-    }
-    if (!form.customerSigner) {
-        alert('Please enter customer representative full name before finish.');
-        return;
     }
 
     if (!form.timeInLocal) {

@@ -178,6 +178,23 @@
     cursor: pointer;
 }
 
+.field-section-toggle:disabled {
+    cursor: not-allowed;
+}
+
+.field-collapsible-section.is-disabled {
+    opacity: 0.72;
+}
+
+.field-collapsible-section.is-disabled .field-section-toggle {
+    color: #7b8da7;
+}
+
+.field-collapsible-section.is-disabled .field-section-toggle-icon {
+    border-right-color: #7b8da7;
+    border-bottom-color: #7b8da7;
+}
+
 .field-section-toggle-icon {
     width: 0.9rem;
     height: 0.9rem;
@@ -341,6 +358,14 @@
     font-size: 0.95rem;
     color: #1f3657;
     background: rgba(255, 255, 255, 0.95);
+}
+
+.marga-field input:disabled,
+.marga-field textarea:disabled,
+.marga-field select:disabled {
+    color: #5b6f88;
+    background: rgba(235, 242, 250, 0.88);
+    cursor: not-allowed;
 }
 
 .marga-field textarea {

@@ -68,8 +68,8 @@
             </button>
         </div>
         <div class="marga-modal-body">
-            <section class="field-modal-section field-collapsible-section is-collapsed" data-default-collapsed="true">
-                <button type="button" class="field-section-toggle" aria-expanded="false">
+            <section class="field-modal-section field-collapsible-section is-collapsed is-disabled" id="fieldMachineSection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false" disabled aria-disabled="true">
                     <span>Machine Identification</span>
                     <span class="field-section-toggle-icon" aria-hidden="true"></span>
                 </button>
@@ -112,8 +112,8 @@
                 </div>
             </section>
 
-            <section class="field-modal-section field-collapsible-section" data-default-collapsed="false">
-                <button type="button" class="field-section-toggle" aria-expanded="true">
+            <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldWorkSection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
                     <span>Work Execution</span>
                     <span class="field-section-toggle-icon" aria-hidden="true"></span>
                 </button>
@@ -147,8 +147,8 @@
                 </div>
             </section>
 
-            <section class="field-modal-section field-collapsible-section" data-default-collapsed="false">
-                <button type="button" class="field-section-toggle" aria-expanded="true">
+            <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldMeterSection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
                     <span>Meter and Time</span>
                     <span class="field-section-toggle-icon" aria-hidden="true"></span>
                 </button>
@@ -184,8 +184,8 @@
                 </div>
             </section>
 
-            <section class="field-modal-section field-collapsible-section" data-default-collapsed="false">
-                <button type="button" class="field-section-toggle" aria-expanded="true">
+            <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldDeliverySection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
                     <span>Delivery and Customer Acknowledgement</span>
                     <span class="field-section-toggle-icon" aria-hidden="true"></span>
                 </button>
@@ -194,6 +194,7 @@
                     <label class="marga-field marga-field-full">
                         <span>Toner / Ink Delivery Details</span>
                         <textarea id="fieldDeliveryDetails" rows="2" placeholder="Delivered toner/ink details, qty, color/model..."></textarea>
+                        <div class="ops-subtext">Display-only. Pulled from delivery receipt records when available.</div>
                     </label>
                     <label class="marga-field marga-field-full">
                         <span>Empty Toner / Ink Picked Up</span>
@@ -215,6 +216,69 @@
                         <span>Customer Secret PIN (4 digits)</span>
                         <input type="password" id="fieldClosePin" inputmode="numeric" maxlength="4" placeholder="0000">
                         <div class="ops-subtext" id="fieldPinHint">Required to mark as Finished.</div>
+                    </label>
+                </div>
+                </div>
+            </section>
+
+            <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldBillingSection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
+                    <span>Billing Submission</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
+                <div class="marga-form-grid">
+                    <label class="marga-field">
+                        <span>Billing Received By</span>
+                        <input type="text" id="fieldBillingReceivedBy" placeholder="Name of receiver">
+                    </label>
+                    <label class="marga-field">
+                        <span>Billing Date</span>
+                        <input type="date" id="fieldBillingDate">
+                    </label>
+                    <label class="marga-field">
+                        <span>Billing Time</span>
+                        <input type="time" id="fieldBillingTime">
+                    </label>
+                    <div class="marga-field marga-field-full">
+                        <div class="ops-subtext">Use this when the ticket includes billing handoff or billing submission.</div>
+                    </div>
+                </div>
+                </div>
+            </section>
+
+            <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldCollectionSection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
+                    <span>Collection</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
+                <div class="marga-form-grid">
+                    <label class="marga-field">
+                        <span>Check Voucher Image</span>
+                        <input type="file" id="fieldCollectionVoucherImage" accept="image/*" capture="environment">
+                        <div class="ops-subtext" id="fieldCollectionVoucherHint">No file selected.</div>
+                    </label>
+                    <label class="marga-field">
+                        <span>Check Image</span>
+                        <input type="file" id="fieldCollectionCheckImage" accept="image/*" capture="environment">
+                        <div class="ops-subtext" id="fieldCollectionCheckHint">No file selected.</div>
+                    </label>
+                    <label class="marga-field marga-field-full">
+                        <span>Official Receipt / Invoice Number</span>
+                        <textarea id="fieldCollectionReceiptRefs" rows="2" placeholder="OR number, invoice number, or both"></textarea>
+                    </label>
+                    <label class="marga-field marga-field-full">
+                        <span>Payment For Invoice Number(s)</span>
+                        <textarea id="fieldCollectionInvoiceRefs" rows="2" placeholder="Invoice numbers covered by this payment"></textarea>
+                    </label>
+                    <label class="marga-field">
+                        <span>Check Number</span>
+                        <input type="text" id="fieldCollectionCheckNumber" placeholder="Check number">
+                    </label>
+                    <label class="marga-field">
+                        <span>Amount of Payment</span>
+                        <input type="number" id="fieldCollectionAmount" min="0" step="0.01" placeholder="0.00">
                     </label>
                 </div>
                 </div>
