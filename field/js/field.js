@@ -225,13 +225,26 @@ function resetModalSectionState() {
     });
 }
 
+function collapseOtherSections(activeSection) {
+    document.querySelectorAll('.field-collapsible-section').forEach((section) => {
+        if (section === activeSection) return;
+        setSectionCollapsed(section, true);
+    });
+}
+
 function toggleModalSection(event) {
     const button = event.target.closest('.field-section-toggle');
     if (!button) return;
     if (button.disabled) return;
     const section = button.closest('.field-collapsible-section');
     if (!section) return;
-    setSectionCollapsed(section, !section.classList.contains('is-collapsed'));
+    const willExpand = section.classList.contains('is-collapsed');
+    if (willExpand) {
+        collapseOtherSections(section);
+        setSectionCollapsed(section, false);
+        return;
+    }
+    setSectionCollapsed(section, true);
 }
 
 function sanitize(text) {
