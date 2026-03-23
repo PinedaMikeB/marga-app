@@ -19,6 +19,13 @@ const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
+const TEMPORARILY_DISABLED_FIELD_GROUPS = {
+    missingSerial: true,
+    modelBrand: true,
+    machineStatus: true,
+    serialMapping: true,
+    customerPin: true
+};
 
 const PURPOSE_LABELS = {
     1: 'Billing',
@@ -134,10 +141,61 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
 
+    applyTemporaryFieldMode();
     void loadMachineStatusOptions();
 
     loadMySchedule();
 });
+
+function getFieldWrapper(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    return el.closest('.marga-field') || el.closest('.field-modal-section') || el.parentElement;
+}
+
+function setFieldGroupVisible(id, isVisible) {
+    const wrapper = getFieldWrapper(id);
+    if (!wrapper) return;
+    wrapper.hidden = !isVisible;
+}
+
+function applyTemporaryFieldMode() {
+    setFieldGroupVisible('fieldSerialMissingCheck', !TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial);
+    setFieldGroupVisible('fieldModelInput', !TEMPORARILY_DISABLED_FIELD_GROUPS.modelBrand);
+    setFieldGroupVisible('fieldBrandInput', !TEMPORARILY_DISABLED_FIELD_GROUPS.modelBrand);
+    setFieldGroupVisible('fieldMachineStatus', !TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus);
+    setFieldGroupVisible('fieldSaveSerialBtn', !TEMPORARILY_DISABLED_FIELD_GROUPS.serialMapping);
+    setFieldGroupVisible('fieldClosePin', !TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin);
+
+    const serialMissingCheck = document.getElementById('fieldSerialMissingCheck');
+    const missingSerialInput = document.getElementById('fieldMissingSerialInput');
+    const machineStatus = document.getElementById('fieldMachineStatus');
+    const saveSerialBtn = document.getElementById('fieldSaveSerialBtn');
+    const pinInput = document.getElementById('fieldClosePin');
+    const pinHint = document.getElementById('fieldPinHint');
+
+    if (TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial) {
+        serialMissingCheck.checked = false;
+        serialMissingCheck.disabled = true;
+        missingSerialInput.value = '';
+        missingSerialInput.disabled = true;
+    }
+
+    if (TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus) {
+        machineStatus.disabled = true;
+        machineStatus.value = '';
+    }
+
+    if (TEMPORARILY_DISABLED_FIELD_GROUPS.serialMapping) {
+        saveSerialBtn.disabled = true;
+    }
+
+    if (TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin) {
+        pinInput.value = '';
+        pinInput.disabled = true;
+        if (pinHint) pinHint.textContent = 'Temporarily disabled. Finish is allowed without PIN.';
+    }
+}
 
 function sanitize(text) {
     return MargaUtils.escapeHtml(String(text ?? ''));
@@ -856,6 +914,11 @@ async function handleSerialInputChange() {
 }
 
 function toggleMissingSerialMode() {
+    if (TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial) {
+        document.getElementById('fieldSerialMissingCheck').checked = false;
+        document.getElementById('fieldMissingSerialInput').disabled = true;
+        return;
+    }
     const isMissing = document.getElementById('fieldSerialMissingCheck').checked;
     const serialInput = document.getElementById('fieldSerialInput');
     const missingInput = document.getElementById('fieldMissingSerialInput');
@@ -1035,8 +1098,11 @@ function resetModalFields() {
     document.getElementById('fieldBeforePhotoHint').textContent = 'No file selected.';
     document.getElementById('fieldAfterPhotoHint').textContent = 'No file selected.';
 
-    document.getElementById('fieldPinHint').textContent = 'Required to mark as Finished.';
+    document.getElementById('fieldPinHint').textContent = TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin
+        ? 'Temporarily disabled. Finish is allowed without PIN.'
+        : 'Required to mark as Finished.';
     renderPartsList();
+    applyTemporaryFieldMode();
     toggleMissingSerialMode();
 }
 
@@ -1081,6 +1147,7 @@ function setFormDisabled(isReadOnly) {
         el.disabled = isReadOnly;
     });
     document.getElementById('fieldTimeOut').disabled = true;
+    applyTemporaryFieldMode();
     toggleMissingSerialMode();
 }
 
@@ -1329,13 +1396,21 @@ function getSelectedMachine() {
 function collectModalFormData() {
     const machineSelect = document.getElementById('fieldMachineStatus');
     const statusOption = machineSelect.selectedOptions?.[0] || null;
-    const statusLabel = String(statusOption?.dataset?.label || statusOption?.textContent || '').trim();
-    const statusId = parseIntegerInput(machineSelect.value) || 0;
+    const statusLabel = TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus
+        ? ''
+        : String(statusOption?.dataset?.label || statusOption?.textContent || '').trim();
+    const statusId = TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus
+        ? 0
+        : (parseIntegerInput(machineSelect.value) || 0);
 
     const selectedMachine = getSelectedMachine();
     const serialInput = String(document.getElementById('fieldSerialInput').value || '').trim();
-    const missingSerial = String(document.getElementById('fieldMissingSerialInput').value || '').trim().toUpperCase();
-    const serialMissing = document.getElementById('fieldSerialMissingCheck').checked;
+    const missingSerial = TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial
+        ? ''
+        : String(document.getElementById('fieldMissingSerialInput').value || '').trim().toUpperCase();
+    const serialMissing = TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial
+        ? false
+        : document.getElementById('fieldSerialMissingCheck').checked;
 
     const previousMeter = parseIntegerInput(document.getElementById('fieldPreviousMeter').value);
     const presentMeter = parseIntegerInput(document.getElementById('fieldPresentMeter').value);
@@ -1353,7 +1428,9 @@ function collectModalFormData() {
         emptyPickupDetails: String(document.getElementById('fieldEmptyPickupDetails').value || '').trim(),
         customerSigner: String(document.getElementById('fieldCustomerSigner').value || '').trim(),
         customerContact: String(document.getElementById('fieldCustomerContact').value || '').trim(),
-        pin: String(document.getElementById('fieldClosePin').value || '').trim(),
+        pin: TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin
+            ? ''
+            : String(document.getElementById('fieldClosePin').value || '').trim(),
         machineStatusId: statusId,
         machineStatusLabel: statusLabel,
         serialInput,
@@ -1389,8 +1466,6 @@ function buildSchedulePayload(row, form, tag) {
         field_empty_pickup_details: form.emptyPickupDetails,
         field_customer_signer: form.customerSigner,
         field_customer_contact: form.customerContact,
-        field_machine_status: form.machineStatusLabel,
-        field_machine_status_id: form.machineStatusId,
         field_previous_meter: form.previousMeter ?? 0,
         field_present_meter: form.presentMeter ?? 0,
         field_total_consumed: form.totalConsumed ?? 0,
@@ -1405,19 +1480,27 @@ function buildSchedulePayload(row, form, tag) {
         field_after_photo_type: form.afterPhoto?.type || '',
         field_serial_selected: form.selectedMachineSerial || form.serialInput || '',
         field_serial_selected_machine_id: form.selectedMachineId || 0,
-        field_serial_missing: form.serialMissing ? 1 : 0,
-        field_serial_missing_value: form.missingSerial || '',
         field_updated_by: staffId,
         field_updated_at: nowIso,
         bridge_updated_by: staffId,
         bridge_updated_at: nowIso
     };
 
+    if (!TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus) {
+        payload.field_machine_status = form.machineStatusLabel;
+        payload.field_machine_status_id = form.machineStatusId;
+    }
+
+    if (!TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial) {
+        payload.field_serial_missing = form.serialMissing ? 1 : 0;
+        payload.field_serial_missing_value = form.missingSerial || '';
+    }
+
     if (Number.isFinite(form.presentMeter)) payload.meter_reading = form.presentMeter;
     if (form.customerSigner) payload.collocutor = clampText(form.customerSigner, 255);
     if (form.customerContact) payload.phone_number = clampText(form.customerContact, 255);
-    if (form.machineStatusId > 0) payload.tl_status = form.machineStatusId;
-    if (form.machineStatusLabel) payload.tl_remarks = clampText(form.machineStatusLabel, 255);
+    if (!TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus && form.machineStatusId > 0) payload.tl_status = form.machineStatusId;
+    if (!TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus && form.machineStatusLabel) payload.tl_remarks = clampText(form.machineStatusLabel, 255);
     if (form.finalSummary) payload.customer_request = clampText(form.finalSummary, 255);
 
     const notesForLog = form.notes || form.finalSummary || '';
@@ -1555,7 +1638,7 @@ async function markPendingTask() {
             source: 'field_app',
             parts_needed_json: jsonString(form.partsNeeded, '[]'),
             final_summary: clampText(form.finalSummary, 255),
-            machine_status: clampText(form.machineStatusLabel, 120),
+            machine_status: TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus ? '' : clampText(form.machineStatusLabel, 120),
             present_meter: form.presentMeter ?? 0,
             previous_meter: form.previousMeter ?? 0,
             total_consumed: form.totalConsumed ?? 0
@@ -1580,7 +1663,7 @@ async function closeTask() {
     const expectedPin = String(state.modalExpectedPin || '').trim();
     const pinPattern = /^\d{4}$/;
 
-    if (expectedPin) {
+    if (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) {
         if (!pinPattern.test(form.pin)) {
             alert('Customer PIN must be exactly 4 digits.');
             return;
@@ -1619,9 +1702,9 @@ async function closeTask() {
         pending_reason: '',
         pending_updated_at: nowIso,
         pending_updated_by: staffId,
-        customer_pin_verified: expectedPin ? 1 : 0,
-        customer_pin_verified_at: expectedPin ? nowIso : '',
-        customer_pin_verified_by: expectedPin ? staffId : 0
+        customer_pin_verified: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? 1 : 0,
+        customer_pin_verified_at: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? nowIso : '',
+        customer_pin_verified_by: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? staffId : 0
     };
 
     const button = document.getElementById('fieldModalCloseTask');
@@ -1642,6 +1725,10 @@ async function closeTask() {
 }
 
 async function saveSerialMapping() {
+    if (TEMPORARILY_DISABLED_FIELD_GROUPS.serialMapping || TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial) {
+        alert('Serial mapping is temporarily disabled.');
+        return;
+    }
     const row = getCurrentRow();
     if (!row) return;
 
