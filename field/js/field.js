@@ -4,6 +4,8 @@ if (!MargaAuth.requireAccess('field')) {
 
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 14;
+const PARTS_CATALOG_QUERY_LIMIT = 12000;
+const DELIVERY_RECEIPT_LINE_LIMIT = 100;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -63,7 +65,8 @@ const caches = {
     partsByKey: new Map(),
     branchContacts: new Map(),
     deliveryInfoByBranch: new Map(),
-    deliveryReceiptBySchedule: new Map()
+    deliveryReceiptBySchedule: new Map(),
+    deliveryReceiptItemsBySchedule: new Map()
 };
 
 const state = {
@@ -787,49 +790,83 @@ async function loadPartsCatalog() {
     if (caches.partsCatalogLoaded) return;
     let rows = [];
     try {
+        const docs = await queryCollection('tbl_newfordr', PARTS_CATALOG_QUERY_LIMIT);
+        rows.push(
+            ...docs
+                .map(parseFirestoreDoc)
+                .filter(Boolean)
+                .map((row) => {
+                    const rawDescription = normalizeInlineText(row.description);
+                    const rawRemarks = normalizeInlineText(row.remarks);
+                    const numericDescription = /^\d+$/.test(rawDescription);
+                    const name = numericDescription ? (rawRemarks || rawDescription) : (rawDescription || rawRemarks);
+                    const code = numericDescription ? rawDescription : '';
+                    if (!name) return null;
+                    return {
+                        key: `dr_${row.id}`,
+                        id: Number(row.id || 0),
+                        name,
+                        code,
+                        source: 'delivery_request'
+                    };
+                })
+                .filter((row) => row && row.id > 0 && row.name)
+        );
+    } catch (err) {
+        console.warn('tbl_newfordr load failed:', err);
+    }
+
+    try {
         const docs = await queryCollection('tbl_inventoryparts', 3000);
-        rows = docs
-            .map(parseFirestoreDoc)
-            .filter(Boolean)
-            .map((row) => ({
-                key: `inv_${row.id}`,
-                id: Number(row.id || 0),
-                name: String(row.item_name || '').trim(),
-                code: String(row.item_code || '').trim(),
-                source: 'inventory'
-            }))
-            .filter((row) => row.id > 0 && row.name);
+        rows.push(
+            ...docs
+                .map(parseFirestoreDoc)
+                .filter(Boolean)
+                .map((row) => ({
+                    key: `inv_${row.id}`,
+                    id: Number(row.id || 0),
+                    name: normalizeInlineText(row.item_name || row.description),
+                    code: normalizeInlineText(row.item_code),
+                    source: 'inventory'
+                }))
+                .filter((row) => row.id > 0 && row.name)
+        );
     } catch (err) {
         console.warn('tbl_inventoryparts load failed:', err);
     }
 
-    if (!rows.length) {
-        try {
-            const docs = await queryCollection('tbl_partstype', 400);
-            rows = docs
+    try {
+        const docs = await queryCollection('tbl_partstype', 400);
+        rows.push(
+            ...docs
                 .map(parseFirestoreDoc)
                 .filter(Boolean)
                 .map((row) => ({
                     key: `ptype_${row.id}`,
                     id: Number(row.id || 0),
-                    name: String(row.type || '').trim(),
+                    name: normalizeInlineText(row.type),
                     code: '',
                     source: 'partstype'
                 }))
-                .filter((row) => row.id > 0 && row.name);
-        } catch (err) {
-            console.warn('tbl_partstype load failed:', err);
-        }
+                .filter((row) => row.id > 0 && row.name)
+        );
+    } catch (err) {
+        console.warn('tbl_partstype load failed:', err);
     }
 
     const uniqueByName = new Map();
     rows.forEach((row) => {
-        const uniqueKey = `${row.name.toUpperCase()}__${row.code.toUpperCase()}`;
+        const label = row.code ? `${row.name} (${row.code})` : row.name;
+        const uniqueKey = label.toUpperCase();
         if (!uniqueByName.has(uniqueKey)) uniqueByName.set(uniqueKey, row);
     });
 
     caches.partsCatalog = [...uniqueByName.values()]
-        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        .sort((a, b) => {
+            const left = a.code ? `${a.name} (${a.code})` : a.name;
+            const right = b.code ? `${b.name} (${b.code})` : b.name;
+            return left.localeCompare(right);
+        });
     caches.partsByKey = new Map(caches.partsCatalog.map((row) => [row.key, row]));
     caches.partsCatalogLoaded = true;
 
@@ -1349,10 +1386,11 @@ async function openModal(scheduleId) {
         resolveDeliveryInfo(row.branch_id),
         resolveDeliveryReceipt(row.id)
     ]);
+    const deliveryReceiptItems = await resolveDeliveryReceiptItems(row.id, deliveryReceipt);
 
     const savedDeliveryDetails = String(row.field_delivery_details || '').trim();
     const savedEmptyPickupDetails = String(row.field_empty_pickup_details || '').trim();
-    const autoDeliveryDetails = buildDeliveryDetailsDefault(row, deliveryReceipt, deliveryInfo);
+    const autoDeliveryDetails = buildDeliveryDetailsDefault(row, deliveryReceipt, deliveryInfo, deliveryReceiptItems);
     const autoEmptyPickupDetails = buildEmptyPickupDefault(deliveryReceipt);
 
     document.getElementById('fieldDeliveryDetails').value = savedDeliveryDetails || autoDeliveryDetails;
@@ -1960,13 +1998,143 @@ async function resolveDeliveryReceipt(scheduleId) {
     }
 }
 
-function buildDeliveryDetailsDefault(row, receipt, deliveryInfo) {
+async function resolveDeliveryReceiptItems(scheduleId, receipt) {
+    const cacheKey = `${Number(scheduleId || 0)}:${Number(receipt?.id || 0)}`;
+    if (caches.deliveryReceiptItemsBySchedule.has(cacheKey)) {
+        return caches.deliveryReceiptItemsBySchedule.get(cacheKey);
+    }
+
+    if (!scheduleId) {
+        caches.deliveryReceiptItemsBySchedule.set(cacheKey, []);
+        return [];
+    }
+
+    try {
+        let rows = [];
+
+        if (Number(receipt?.id || 0) > 0) {
+            const detailDocs = await queryEquals(
+                'tbl_finaldrdetails',
+                'finaldr_id',
+                Number(receipt.id),
+                'integer',
+                DELIVERY_RECEIPT_LINE_LIMIT
+            );
+            const detailRows = detailDocs.map(parseFirestoreDoc).filter(Boolean);
+            const newdrMap = await fetchDocsByIdList(
+                'tbl_newdr',
+                detailRows.map((detail) => Number(detail.newdr_id || 0))
+            );
+            const newfordrMap = await fetchDocsByIdList(
+                'tbl_newfordr',
+                [...new Set(
+                    detailRows
+                        .map((detail) => newdrMap.get(String(detail.newdr_id || '')))
+                        .filter(Boolean)
+                        .map((linked) => Number(linked.newfordr_id || 0))
+                )]
+            );
+
+            rows = detailRows
+                .map((detail) => newdrMap.get(String(detail.newdr_id || '')))
+                .filter(Boolean)
+                .map((linked) => newfordrMap.get(String(linked.newfordr_id || '')))
+                .filter(Boolean);
+        }
+
+        if (!rows.length) {
+            const docs = await queryEquals(
+                'tbl_newfordr',
+                'reference_id',
+                Number(scheduleId),
+                'integer',
+                DELIVERY_RECEIPT_LINE_LIMIT
+            );
+            rows = docs.map(parseFirestoreDoc).filter(Boolean);
+        }
+
+        rows.sort((a, b) => {
+            const left = normalizeInlineText(a.tmestmp || a.timestmp || '');
+            const right = normalizeInlineText(b.tmestmp || b.timestmp || '');
+            if (left !== right) return left.localeCompare(right);
+            return Number(a.id || 0) - Number(b.id || 0);
+        });
+
+        caches.deliveryReceiptItemsBySchedule.set(cacheKey, rows);
+        return rows;
+    } catch (err) {
+        console.warn('Delivery receipt item lookup failed:', err);
+        caches.deliveryReceiptItemsBySchedule.set(cacheKey, []);
+        return [];
+    }
+}
+
+function formatReceiptDate(value) {
+    const safeValue = normalizeLegacyDateTime(value);
+    if (!safeValue) return '';
+    const normalized = String(safeValue).replace(' ', 'T');
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return safeValue;
+    return parsed.toLocaleString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit'
+    });
+}
+
+function formatPesoAmount(value) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount) || amount <= 0) return '';
+    return new Intl.NumberFormat('en-PH', {
+        style: 'currency',
+        currency: 'PHP',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(amount);
+}
+
+function getReceiptLineAmount(item) {
+    const candidates = [
+        item?.amount,
+        item?.totalamount,
+        item?.total_amount,
+        item?.price,
+        item?.cost
+    ];
+    for (const value of candidates) {
+        const numeric = Number(value || 0);
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    }
+    return 0;
+}
+
+function getReceiptLineDescription(item) {
+    const description = normalizeInlineText(item?.description);
+    const remarks = normalizeInlineText(item?.remarks);
+    if (description && remarks && description.toUpperCase() !== remarks.toUpperCase()) {
+        return `${description} - ${remarks}`;
+    }
+    return description || remarks;
+}
+
+function buildDeliveryDetailsDefault(row, receipt, deliveryInfo, receiptItems = []) {
     const lines = [];
     const drNumber = normalizeInlineText(receipt?.dr_number);
+    const receiptDate = formatReceiptDate(receipt?.date_received) || formatReceiptDate(receipt?.tmstmp);
     const deliveryRemark = normalizeInlineText(row?.remarks);
     const deliveryAddress = normalizeInlineText(deliveryInfo?.tdelivery_add || deliveryInfo?.mdelivery_add);
 
     if (drNumber) lines.push(`DR #${drNumber}`);
+    if (receiptDate) lines.push(`Date: ${receiptDate}`);
+    if (receiptItems.length) {
+        receiptItems.forEach((item, index) => {
+            const description = getReceiptLineDescription(item);
+            if (!description) return;
+            const qty = Math.max(1, Number(item.qty || 0) || 1);
+            const amount = formatPesoAmount(getReceiptLineAmount(item));
+            lines.push(`${index + 1}. Qty ${qty} - ${description}${amount ? ` - ${amount}` : ''}`);
+        });
+    }
     if (deliveryRemark) lines.push(deliveryRemark);
     if (deliveryAddress) lines.push(`Deliver to: ${deliveryAddress}`);
 
