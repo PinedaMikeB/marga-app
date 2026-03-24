@@ -127,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldModalCancel').addEventListener('click', closeModal);
     document.getElementById('fieldModalSaveDraft').addEventListener('click', saveDraftUpdate);
     document.getElementById('fieldModalPendingTask').addEventListener('click', markPendingTask);
+    document.getElementById('fieldModalReopenTask').addEventListener('click', reopenTask);
     document.getElementById('fieldModalCloseTask').addEventListener('click', closeTask);
     document.getElementById('fieldSaveSerialBtn').addEventListener('click', saveSerialMapping);
 
@@ -457,6 +458,13 @@ function getStatusKey(row) {
         ? null
         : Number(row.route_status);
     if (routeStatus === 0) return 'closed';
+    const hasActiveRouteRow = Boolean(getRouteTaskDateTime(row)) && routeStatus !== 0;
+    if (hasActiveRouteRow) {
+        if (Number(row.isongoing || 0) === 1) return 'ongoing';
+        const taskDate = getRouteTaskDateTime(row).slice(0, 10);
+        if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
+        return 'pending';
+    }
     const finished = normalizeLegacyDateTime(row.date_finished);
     if (finished) return 'closed';
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
@@ -1232,6 +1240,7 @@ function resetModalFields() {
     applyTemporaryFieldMode();
     resetModalSectionState();
     toggleMissingSerialMode();
+    updateModalFooterState();
     updateActionButtons();
 }
 
@@ -1276,6 +1285,7 @@ function setFormDisabled(isReadOnly) {
         'fieldClosePin',
         'fieldModalSaveDraft',
         'fieldModalPendingTask',
+        'fieldModalReopenTask',
         'fieldModalCloseTask'
     ];
 
@@ -1288,7 +1298,25 @@ function setFormDisabled(isReadOnly) {
     applyTemporaryFieldMode();
     toggleMissingSerialMode();
     applyModalWorkflowState();
+    updateModalFooterState();
     updateActionButtons();
+}
+
+function updateModalFooterState() {
+    const saveDraftBtn = document.getElementById('fieldModalSaveDraft');
+    const pendingBtn = document.getElementById('fieldModalPendingTask');
+    const reopenBtn = document.getElementById('fieldModalReopenTask');
+    const closeBtn = document.getElementById('fieldModalCloseTask');
+
+    const isClosed = state.modalStatusKey === 'closed';
+    const isCancelled = state.modalStatusKey === 'cancelled';
+    const isReadOnly = state.modalReadOnly;
+
+    saveDraftBtn.hidden = isClosed || isCancelled;
+    pendingBtn.hidden = isClosed || isCancelled;
+    closeBtn.hidden = isClosed || isCancelled;
+    reopenBtn.hidden = !(isClosed && isReadOnly);
+    reopenBtn.disabled = !(isClosed && isReadOnly);
 }
 
 function applyModalWorkflowState() {
@@ -2018,6 +2046,44 @@ async function closeTask() {
     } catch (err) {
         console.error('Close task failed:', err);
         alert(`Failed to close task: ${err?.message || err}`);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function reopenTask() {
+    const row = getCurrentRow();
+    if (!row) return;
+    const form = collectModalFormData();
+    const nowIso = new Date().toISOString();
+
+    const payload = {
+        ...buildSchedulePayload(row, form, '[REOPENED]'),
+        date_finished: ZERO_DATETIME,
+        field_time_in: ZERO_DATETIME,
+        field_time_out: ZERO_DATETIME,
+        closedby: 0,
+        isongoing: 0,
+        pending_parts: 0,
+        pending_reason: '',
+        pending_updated_at: nowIso,
+        pending_updated_by: Number(state.staffId || 0) || 0,
+        customer_pin_verified: 0,
+        customer_pin_verified_at: '',
+        customer_pin_verified_by: 0
+    };
+
+    const button = document.getElementById('fieldModalReopenTask');
+    button.disabled = true;
+    try {
+        await patchDocument('tbl_schedule', row.id, payload);
+        applyRowPatch(row.id, payload);
+        closeModal();
+        await loadMySchedule();
+        alert('Task reopened.');
+    } catch (err) {
+        console.error('Reopen task failed:', err);
+        alert(`Failed to reopen task: ${err?.message || err}`);
     } finally {
         button.disabled = false;
     }
