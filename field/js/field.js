@@ -449,9 +449,43 @@ function normalizeLegacyDateTime(value) {
     return text;
 }
 
+function parseComparableTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return NaN;
+    const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+    return Date.parse(normalized);
+}
+
+function shouldPreferScheduleState(row) {
+    const scheduleSignals = [
+        row?.field_updated_at,
+        row?.bridge_updated_at,
+        row?.bridge_pushed_at
+    ];
+    const routeSignals = [
+        row?.route_bridge_pushed_at,
+        row?.route_timestmp
+    ];
+
+    const scheduleTime = Math.max(...scheduleSignals.map(parseComparableTime).filter(Number.isFinite), NaN);
+    const routeTime = Math.max(...routeSignals.map(parseComparableTime).filter(Number.isFinite), NaN);
+
+    if (!Number.isFinite(scheduleTime)) return false;
+    if (!Number.isFinite(routeTime)) return true;
+    return scheduleTime >= routeTime;
+}
+
 function getStatusKey(row) {
     if (Number(row.route_iscancelled || 0) === 1) return 'cancelled';
     if (Number(row.iscancel || 0) === 1) return 'cancelled';
+
+    const preferScheduleState = shouldPreferScheduleState(row);
+    const finished = normalizeLegacyDateTime(row.date_finished);
+    if (preferScheduleState) {
+        if (finished) return 'closed';
+        if (Number(row.isongoing || 0) === 1) return 'ongoing';
+    }
+
     const routeFinished = normalizeLegacyDateTime(row.route_date_finished);
     if (routeFinished) return 'closed';
     const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
@@ -465,7 +499,6 @@ function getStatusKey(row) {
         if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
         return 'pending';
     }
-    const finished = normalizeLegacyDateTime(row.date_finished);
     if (finished) return 'closed';
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
     const taskDate = getRouteTaskDateTime(row).slice(0, 10);
@@ -558,7 +591,9 @@ async function buildRouteBoundRows(routeRows, routeSourceLabel) {
                 route_status: routeRow.status ?? '',
                 route_iscancelled: Number(routeRow.iscancelled || routeRow.iscancel || 0) || 0,
                 route_date_finished: String(routeRow.date_finished || ''),
-                route_remarks: String(routeRow.remarks || '').trim()
+                route_remarks: String(routeRow.remarks || '').trim(),
+                route_bridge_pushed_at: String(routeRow.bridge_pushed_at || ''),
+                route_timestmp: String(routeRow.timestmp || '')
             };
         })
         .filter(Boolean);
