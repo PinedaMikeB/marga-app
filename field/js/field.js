@@ -467,8 +467,10 @@ function shouldPreferScheduleState(row) {
         row?.route_timestmp
     ];
 
-    const scheduleTime = Math.max(...scheduleSignals.map(parseComparableTime).filter(Number.isFinite), NaN);
-    const routeTime = Math.max(...routeSignals.map(parseComparableTime).filter(Number.isFinite), NaN);
+    const scheduleTimes = scheduleSignals.map(parseComparableTime).filter(Number.isFinite);
+    const routeTimes = routeSignals.map(parseComparableTime).filter(Number.isFinite);
+    const scheduleTime = scheduleTimes.length ? Math.max(...scheduleTimes) : NaN;
+    const routeTime = routeTimes.length ? Math.max(...routeTimes) : NaN;
 
     if (!Number.isFinite(scheduleTime)) return false;
     if (!Number.isFinite(routeTime)) return true;
