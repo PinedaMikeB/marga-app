@@ -2,9 +2,9 @@
 setlocal
 cd /d "%~dp0"
 
-:restart
-node dashboard-server.mjs
-set "exitcode=%errorlevel%"
-echo [%date% %time%] dashboard-server.mjs exited with code %exitcode%. Restarting in 5 seconds...
-timeout /t 5 /nobreak >nul
-goto restart
+if exist "%SystemRoot%\System32\wscript.exe" if exist "%~dp0start-dashboard-hidden.vbs" (
+  "%SystemRoot%\System32\wscript.exe" "%~dp0start-dashboard-hidden.vbs"
+  exit /b 0
+)
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0start-dashboard.ps1"

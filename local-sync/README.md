@@ -183,7 +183,8 @@ Important for 24/7 behavior:
 - Windows must remain logged in or allow the task to run at startup
 - the supervisor keeps both lanes looping on its own once started
 - the scheduled task is what brings it back after reboot or crash
-- the `start-dashboard.cmd` launcher also restarts `dashboard-server.mjs` if Node exits
+- normal startup now uses the hidden launcher path (`start-dashboard-hidden.vbs` -> `start-dashboard.ps1`) so no recurring command window stays on screen
+- `start-dashboard.cmd` remains only as a compatibility wrapper and immediately hands off to the hidden launcher
 
 ## Notes
 

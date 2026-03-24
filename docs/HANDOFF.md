@@ -86,6 +86,8 @@ Each thread should update only the relevant module sections plus `Current Focus`
 ### Supervisor
 - Local URL: `http://127.0.0.1:4310`
 - Launcher files:
+  - `D:\Codex\Github\marga-app\local-sync\start-dashboard-hidden.vbs`
+  - `D:\Codex\Github\marga-app\local-sync\start-dashboard.ps1`
   - `D:\Codex\Github\marga-app\local-sync\start-dashboard.cmd`
   - `D:\Codex\Github\marga-app\local-sync\open-dashboard.cmd`
 - Desktop shortcuts:
