@@ -474,6 +474,13 @@ function isLegacyEmptyDateValue(value) {
   return !text || text === ZERO_DATETIME || text === "undefined 00:00:00" || text === "null 00:00:00";
 }
 
+function normalizeScheduleWriteValue(column, value) {
+  if (column === "date_finished" && isLegacyEmptyDateValue(value)) {
+    return ZERO_DATETIME;
+  }
+  return value;
+}
+
 function buildSchedtimeFingerprint(row) {
   return [
     Number(row.schedule_id || 0) || 0,
@@ -842,8 +849,7 @@ export function buildScheduleUpdateRows(scheduleDocs, baseline) {
     const changed = {};
     SYNCABLE_SCHEDULE_COLUMNS.forEach((column) => {
       if (!(column in doc)) return;
-      const nextValue = doc[column];
-      if (column === "date_finished" && isLegacyEmptyDateValue(nextValue)) return;
+      const nextValue = normalizeScheduleWriteValue(column, doc[column]);
       const before = normalizeForCompare(existing[column]);
       const after = normalizeForCompare(nextValue);
       if (before !== after) changed[column] = nextValue;
@@ -920,7 +926,7 @@ export function buildClosedScheduleCandidates(scheduleUpdates, scheduleDocs, bas
   scheduleUpdates.forEach((update) => {
     const doc = scheduleDocs.get(String(update.id));
     const finished = toKey(doc?.date_finished);
-    if (!finished || finished === ZERO_DATETIME) return;
+    if (isLegacyEmptyDateValue(finished)) return;
     if (baseline.closedscheds.scheduleIds.has(String(update.id))) return;
     baseline.closedscheds.scheduleIds.add(String(update.id));
     candidates.push({ id: ++nextId, sched_id: update.id });
