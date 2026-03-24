@@ -1782,12 +1782,13 @@ function applyRowPatch(scheduleId, patch) {
 
 function getCloseTaskIssues(row, form) {
     const issues = [];
+    const isCollectionPurpose = isCollectionTicket(row);
 
     if (isPendingReplacementState(row, form)) {
         issues.push('Pending machine or parts replacement detected. Use Mark Pending (Parts Needed).');
     }
 
-    if (!form.emptyPickupDetails) {
+    if (!isCollectionPurpose && !form.emptyPickupDetails) {
         issues.push('Fill out Empty Toner / Ink Picked Up before marking this task finished.');
     }
 
@@ -1797,7 +1798,7 @@ function getCloseTaskIssues(row, form) {
         if (!form.billingTime) issues.push('Fill out Billing Time before marking this billing task finished.');
     }
 
-    if (isCollectionTicket(row)) {
+    if (isCollectionPurpose) {
         if (!form.collectionVoucherImage && !String(row.field_collection_voucher_name || '').trim()) {
             issues.push('Upload the check voucher image before marking this collection task finished.');
         }
