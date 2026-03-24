@@ -1,5 +1,6 @@
 $dashboardArgs = @(
-  "dashboard-server.mjs"
+  "dashboard-server.mjs",
+  "--foreground-supervisor"
 )
 
 $stateDir = Join-Path $PSScriptRoot "state"

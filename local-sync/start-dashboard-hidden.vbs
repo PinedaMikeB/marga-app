@@ -22,7 +22,7 @@ For Each process In wmi.ExecQuery("SELECT CommandLine FROM Win32_Process WHERE N
   End If
 Next
 
-command = "cmd.exe /c cd /d """ & scriptDir & """ && node dashboard-server.mjs >> """ & stdoutLog & """ 2>> """ & stderrLog & """"
+command = "cmd.exe /c cd /d """ & scriptDir & """ && node dashboard-server.mjs --foreground-supervisor >> """ & stdoutLog & """ 2>> """ & stderrLog & """"
 
 Do
   shell.Run command, 0, True

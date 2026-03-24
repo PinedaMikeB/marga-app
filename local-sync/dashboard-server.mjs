@@ -28,6 +28,7 @@ const DASHBOARD_HTML = path.join(LOCAL_SYNC_DIR, "ui", "index.html");
 const DASHBOARD_CONFIG_PATH = path.join(LOCAL_SYNC_DIR, "state", "dashboard-config.json");
 const DASHBOARD_ACTIVITY_PATH = path.join(LOCAL_SYNC_DIR, "state", "dashboard-activity.json");
 const FULL_MIRROR_SHARD_COUNT = 4;
+const FOREGROUND_FLAG = "--foreground-supervisor";
 
 const SYNC_KEYS = {
   mysqlToFirebase: "mysql_to_firebase",
@@ -38,6 +39,21 @@ const SYNC_LABELS = {
   [SYNC_KEYS.mysqlToFirebase]: "MySQL -> Firebase",
   [SYNC_KEYS.firebaseToMysql]: "Firebase -> MySQL",
 };
+
+function ensureWindowsBackgroundChild() {
+  if (process.platform !== "win32") return;
+  if (process.argv.includes(FOREGROUND_FLAG)) return;
+
+  const childArgs = process.argv.slice(2).concat(FOREGROUND_FLAG);
+  const child = spawn(process.execPath, [__filename, ...childArgs], {
+    cwd: LOCAL_SYNC_DIR,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+  process.exit(0);
+}
 
 function fullMirrorProgressPathForShard(shardIndex, shardCount = FULL_MIRROR_SHARD_COUNT) {
   return path.join(LOCAL_SYNC_DIR, "output", `full-mirror-progress-shard-${shardIndex + 1}-of-${shardCount}.json`);
@@ -810,6 +826,8 @@ async function startServer() {
     performSync(state, SYNC_KEYS.firebaseToMysql, "startup").catch(() => {});
   });
 }
+
+ensureWindowsBackgroundChild();
 
 startServer().catch((error) => {
   console.error(`Supervisor failed to start: ${error.message || String(error)}`);
