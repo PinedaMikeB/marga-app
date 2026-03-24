@@ -5,13 +5,16 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   DEFAULTS,
+  PAYMENTINFO_COLUMNS,
   SYNCABLE_SCHEDULE_COLUMNS,
   buildClosedScheduleCandidates,
   buildCollectionHistoryFingerprint,
   buildDumpBaseline,
   buildSchedtimeRows,
   buildScheduleUpdateRows,
+  choosePaymentInfoChanges,
   chooseCollectionHistoryRows,
+  collectPaymentSyncTargets,
   createBaselineState,
   createFirestoreClient,
   ensureDir,
@@ -20,6 +23,7 @@ import {
   pickScheduleSubset,
   renderClosedScheduleCandidates,
   renderCollectionHistoryInserts,
+  renderPaymentInfoChanges,
   renderSchedtimeChanges,
   renderScheduleUpdates,
   summarizePlan,
@@ -30,6 +34,8 @@ export { createFirestoreClient, parseFirebaseConfig } from "../tools/build-hybri
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
+const FIRESTORE_INT64_MAX = 9223372036854775807;
+const FIRESTORE_INT64_MIN = -9223372036854775808;
 
 const COLLECTION_HISTORY_COLUMNS = [
   "id",
@@ -51,6 +57,80 @@ const COLLECTION_HISTORY_COLUMNS = [
   "multipleinvoicecall_id",
   "return_call",
 ];
+
+function parseProjectAndDb(baseUrl) {
+  const match = String(baseUrl || "").match(/projects\/([^/]+)\/databases\/\(([^)]+)\)\/documents/);
+  if (!match) throw new Error("Invalid Firestore base URL.");
+  return { projectId: match[1], databaseId: match[2] };
+}
+
+function toFirestoreField(value) {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (Number.isInteger(value)) {
+      if (
+        Number.isSafeInteger(value)
+        && value >= FIRESTORE_INT64_MIN
+        && value <= FIRESTORE_INT64_MAX
+      ) {
+        return { integerValue: String(value) };
+      }
+      return { stringValue: String(value) };
+    }
+    return { doubleValue: value };
+  }
+  return { stringValue: String(value) };
+}
+
+function createFirebaseCommitClient({ apiKey, baseUrl }) {
+  const { projectId, databaseId } = parseProjectAndDb(baseUrl);
+  const dbSegment = `(${databaseId})`;
+  const docRoot = `projects/${projectId}/databases/${dbSegment}/documents`;
+  const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbSegment}/documents:commit?key=${encodeURIComponent(apiKey)}`;
+
+  async function commitWrites(writes) {
+    if (!Array.isArray(writes) || !writes.length) return;
+    const response = await fetch(commitUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ writes }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+      throw new Error(payload?.error?.message || `Firestore commit failed (${response.status})`);
+    }
+    return payload;
+  }
+
+  function makeUpsertWrite(collection, docId, fields) {
+    const firestoreFields = {};
+    Object.entries(fields || {}).forEach(([key, value]) => {
+      firestoreFields[key] = toFirestoreField(value);
+    });
+    return {
+      update: {
+        name: `${docRoot}/${collection}/${encodeURIComponent(String(docId))}`,
+        fields: firestoreFields,
+      },
+      updateMask: {
+        fieldPaths: Object.keys(firestoreFields),
+      },
+    };
+  }
+
+  function makeDeleteWrite(collection, docId) {
+    return {
+      delete: `${docRoot}/${collection}/${encodeURIComponent(String(docId))}`,
+    };
+  }
+
+  return {
+    commitWrites,
+    makeUpsertWrite,
+    makeDeleteWrite,
+  };
+}
 
 const SCHEDTIME_COLUMNS = [
   "id",
@@ -342,6 +422,10 @@ export async function queryInChunks(pool, values, makeSql, mapRow, chunkSize = 5
   return rows;
 }
 
+function buildPaymentComposite(invoiceId, ornum) {
+  return `${String(invoiceId || "").trim().toLowerCase()}|${String(ornum || "").trim().toLowerCase()}`;
+}
+
 export async function buildLiveBaseline(pool, firebaseState) {
   const baseline = createBaselineState();
 
@@ -364,6 +448,58 @@ export async function buildLiveBaseline(pool, firebaseState) {
 
     existingRows.forEach((row) => {
       baseline.collectionhistory.fingerprints.add(buildCollectionHistoryFingerprint(row));
+    });
+  }
+
+  const paymentTargets = collectPaymentSyncTargets(firebaseState.scheduleDocs);
+  const paymentComposites = [...new Set(paymentTargets.map((row) => buildPaymentComposite(row.invoice_id, row.ornum)).filter((value) => value !== "|"))];
+  const [syncOwnedPaymentRows] = await pool.query(
+    "SELECT * FROM `tbl_paymentinfo` WHERE `remarks` LIKE ?",
+    [`${"[MARGA_SYNC_TEST_PAYMENT]"}%`],
+  );
+  syncOwnedPaymentRows.forEach((row) => {
+    const scheduleMatch = String(row.remarks || "").match(/\[MARGA_SYNC_TEST_PAYMENT\]\s+schedule:(\d+)/i);
+    const scheduleId = Number(scheduleMatch?.[1] || 0) || 0;
+    if (!scheduleId) return;
+    const key = String(scheduleId);
+    if (!baseline.paymentinfo.syncRowsBySchedule.has(key)) baseline.paymentinfo.syncRowsBySchedule.set(key, []);
+    baseline.paymentinfo.syncRowsBySchedule.get(key).push({
+      id: Number(row.id || 0) || 0,
+      invoice_id: String(row.invoice_id || "").trim(),
+      ornum: String(row.ornum || "").trim(),
+      ds: String(row.ds || "").trim(),
+      payment_amt: Number(row.payment_amt || 0) || 0,
+      balance_amt: Number(row.balance_amt || 0) || 0,
+      tax_2307: Number(row.tax_2307 || 0) || 0,
+      tax_status: Number(row.tax_status || 0) || 0,
+      date_paid: String(row.date_paid || "").slice(0, 10),
+      date_deposit: String(row.date_deposit || "").slice(0, 10),
+      timestamp: String(row.timestamp || "").trim(),
+      remarks: String(row.remarks || "").trim(),
+      payment_type: String(row.payment_type || "").trim(),
+      checkpayment_id: Number(row.checkpayment_id || 0) || 0,
+      tax_date_paid: String(row.tax_date_paid || "").slice(0, 10),
+      quarter: Number(row.quarter || 0) || 0,
+      _scheduleId: scheduleId,
+      _composite: buildPaymentComposite(row.invoice_id, row.ornum),
+    });
+    baseline.paymentinfo.existingComposites.add(buildPaymentComposite(row.invoice_id, row.ornum));
+  });
+
+  if (paymentComposites.length) {
+    const existingPaymentRows = await queryInChunks(
+      pool,
+      paymentComposites,
+      (chunk) => {
+        const conditions = chunk.map(() => "CONCAT(LOWER(TRIM(COALESCE(`invoice_id`, ''))), '|', LOWER(TRIM(COALESCE(`ornum`, '')))) = ?").join(" OR ");
+        return `SELECT \`id\`, \`invoice_id\`, \`ornum\` FROM \`tbl_paymentinfo\` WHERE ${conditions}`;
+      },
+      null,
+      80,
+    );
+
+    existingPaymentRows.forEach((row) => {
+      baseline.paymentinfo.existingComposites.add(buildPaymentComposite(row.invoice_id, row.ornum));
     });
   }
 
@@ -449,6 +585,7 @@ export function buildPatchSql(plan, config) {
     "START TRANSACTION;",
     "",
     renderCollectionHistoryInserts(plan.collectionHistoryInserts),
+    renderPaymentInfoChanges(plan.paymentinfoChanges),
     renderScheduleUpdates(plan.scheduleUpdates),
     renderSchedtimeChanges(plan.schedtimeChanges),
     "COMMIT;",
@@ -485,6 +622,7 @@ export async function buildPlan(config, pool) {
   }
 
   const collectionHistoryInserts = chooseCollectionHistoryRows(firebaseState.collectionHistoryDocs, baseline);
+  const paymentinfoChanges = choosePaymentInfoChanges(firebaseState.scheduleDocs, baseline);
   const scheduleUpdates = buildScheduleUpdateRows(firebaseState.scheduleDocs, baseline);
   const schedtimeChanges = buildSchedtimeRows(firebaseState.schedtimeDocs, baseline);
   const closedScheduleCandidates = buildClosedScheduleCandidates(scheduleUpdates, firebaseState.scheduleDocs, baseline);
@@ -493,6 +631,7 @@ export async function buildPlan(config, pool) {
     baseline,
     baselineMode,
     collectionHistoryInserts,
+    paymentinfoChanges,
     scheduleUpdates,
     schedtimeChanges,
     closedScheduleCandidates,
@@ -519,6 +658,43 @@ export async function applyCollectionHistory(connection, rows) {
   }
 
   return rows.length;
+}
+
+export async function applyPaymentInfo(connection, changes) {
+  const insertedRows = [];
+  const deletedRows = [];
+  let deletedCount = 0;
+
+  for (const row of changes.deletes || []) {
+    const [result] = await connection.execute(
+      "DELETE FROM `tbl_paymentinfo` WHERE `id` = ?",
+      [Number(row.id || 0) || 0],
+    );
+    if (Number(result.affectedRows || 0) > 0) {
+      deletedCount += 1;
+      deletedRows.push(row);
+    }
+  }
+
+  if ((changes.inserts || []).length) {
+    const placeholders = PAYMENTINFO_COLUMNS.map(() => "?").join(", ");
+    const sql = `INSERT INTO \`tbl_paymentinfo\` (${PAYMENTINFO_COLUMNS.map((column) => `\`${column}\``).join(", ")}) VALUES (${placeholders})`;
+    for (const row of changes.inserts) {
+      const params = PAYMENTINFO_COLUMNS.map((column) => row[column] ?? null);
+      const [result] = await connection.execute(sql, params);
+      insertedRows.push({
+        ...row,
+        id: Number(result.insertId || 0) || 0,
+      });
+    }
+  }
+
+  return {
+    insertedRows,
+    insertedCount: insertedRows.length,
+    deletedRows,
+    deletedCount,
+  };
 }
 
 export async function applyScheduleUpdates(connection, rows) {
@@ -611,12 +787,37 @@ export async function applyClosedSchedules(connection, rows) {
   return count;
 }
 
+async function syncPaymentInfoToFirebase(config, paymentinfoApplied) {
+  const writes = [];
+  if (!(paymentinfoApplied?.insertedRows?.length || paymentinfoApplied?.deletedRows?.length)) return;
+
+  const db = createFirebaseCommitClient(parseFirebaseConfig(config.firebaseConfigPath));
+  paymentinfoApplied.insertedRows.forEach((row) => {
+    if (!row.id) return;
+    const fields = {};
+    PAYMENTINFO_COLUMNS.forEach((column) => {
+      fields[column] = row[column] ?? null;
+    });
+    writes.push(db.makeUpsertWrite("tbl_paymentinfo", row.id, fields));
+  });
+  paymentinfoApplied.deletedRows.forEach((row) => {
+    if (!row.id) return;
+    writes.push(db.makeDeleteWrite("tbl_paymentinfo", row.id));
+  });
+
+  if (writes.length) {
+    await db.commitWrites(writes);
+  }
+}
+
 export async function applyPlan(pool, plan, config) {
   const connection = await pool.getConnection();
+  let paymentinfoApplied = { insertedRows: [], insertedCount: 0, deletedRows: [], deletedCount: 0 };
   try {
     await connection.beginTransaction();
 
     const collectionHistoryApplied = await applyCollectionHistory(connection, plan.collectionHistoryInserts);
+    paymentinfoApplied = await applyPaymentInfo(connection, plan.paymentinfoChanges);
     const scheduleApplied = await applyScheduleUpdates(connection, plan.scheduleUpdates);
     const schedtimeApplied = await applySchedtime(connection, plan.schedtimeChanges);
     const closedSchedsApplied = config.applyClosedscheds
@@ -625,8 +826,12 @@ export async function applyPlan(pool, plan, config) {
 
     await connection.commit();
 
+    await syncPaymentInfoToFirebase(config, paymentinfoApplied);
+
     return {
       collectionHistoryApplied,
+      paymentinfoInsertsApplied: paymentinfoApplied.insertedCount,
+      paymentinfoDeletesApplied: paymentinfoApplied.deletedCount,
       scheduleApplied,
       schedtimeInsertsApplied: schedtimeApplied.insertCount,
       schedtimeUpdatesApplied: schedtimeApplied.updateCount,
@@ -704,12 +909,16 @@ export async function runOnce(config) {
     console.log(`- Baseline: ${plan.baselineMode}`);
     console.log(`- Mode: ${config.apply ? "apply" : "dry-run"}`);
     console.log(`- Collection history inserts: ${report.summary.collectionhistoryInserts}`);
+    console.log(`- Paymentinfo inserts: ${report.summary.paymentinfoInserts}`);
+    console.log(`- Paymentinfo deletes: ${report.summary.paymentinfoDeletes}`);
     console.log(`- Schedule updates: ${report.summary.scheduleUpdates}`);
     console.log(`- Schedtime inserts: ${report.summary.schedtimeInserts}`);
     console.log(`- Schedtime updates: ${report.summary.schedtimeUpdates}`);
     console.log(`- Optional closedsched candidates: ${report.summary.optionalClosedSchedInserts}`);
     if (config.apply && applied) {
       console.log(`- Applied collection history inserts: ${applied.collectionHistoryApplied}`);
+      console.log(`- Applied paymentinfo inserts: ${applied.paymentinfoInsertsApplied}`);
+      console.log(`- Applied paymentinfo deletes: ${applied.paymentinfoDeletesApplied}`);
       console.log(`- Applied schedule updates: ${applied.scheduleApplied}`);
       console.log(`- Applied schedtime inserts: ${applied.schedtimeInsertsApplied}`);
       console.log(`- Applied schedtime updates: ${applied.schedtimeUpdatesApplied}`);

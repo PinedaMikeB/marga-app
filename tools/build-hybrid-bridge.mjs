@@ -7,6 +7,25 @@ import { getReverseBridgeConfig } from "../local-sync/sync-manifest.mjs";
 
 const ZERO_DATETIME = "0000-00-00 00:00:00";
 const MAX_MYSQL_INT32 = 2147483647;
+const COLLECTION_PURPOSE_ID = 2;
+export const SYNC_TEST_PAYMENT_MARKER = "[MARGA_SYNC_TEST_PAYMENT]";
+export const PAYMENTINFO_COLUMNS = [
+  "invoice_id",
+  "ornum",
+  "ds",
+  "payment_amt",
+  "balance_amt",
+  "tax_2307",
+  "tax_status",
+  "date_paid",
+  "date_deposit",
+  "timestamp",
+  "remarks",
+  "payment_type",
+  "checkpayment_id",
+  "tax_date_paid",
+  "quarter",
+];
 const REVERSE_BRIDGE_CONFIG = getReverseBridgeConfig();
 export const DEFAULTS = {
   collectionHistoryLimit: 5000,
@@ -494,6 +513,160 @@ function buildSchedtimeFingerprint(row) {
   ].join("|");
 }
 
+function toDbDateTime(value, fallback = ZERO_DATETIME) {
+  const text = toKey(value);
+  if (!text) return fallback;
+
+  const dbMatch = text.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}))?/);
+  if (dbMatch) {
+    return `${dbMatch[1]} ${dbMatch[2] || "00:00:00"}`;
+  }
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const hh = String(parsed.getHours()).padStart(2, "0");
+  const mi = String(parsed.getMinutes()).padStart(2, "0");
+  const ss = String(parsed.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function toDbDate(value, fallback = "") {
+  const dateTime = toDbDateTime(value, "");
+  return dateTime ? dateTime.slice(0, 10) : fallback;
+}
+
+function buildPaymentQuarter(value) {
+  const dateText = toDbDate(value, "");
+  const month = Number(dateText.slice(5, 7) || 0) || 0;
+  if (!month) return 0;
+  return Math.floor((month - 1) / 3) + 1;
+}
+
+function buildPaymentComposite(invoiceId, ornum) {
+  return `${toKey(invoiceId).toLowerCase()}|${toKey(ornum).toLowerCase()}`;
+}
+
+function parseSyncTestPaymentRemarks(remarks) {
+  const text = toKey(remarks);
+  const match = text.match(/\[MARGA_SYNC_TEST_PAYMENT\]\s+schedule:(\d+)/i);
+  if (!match) return null;
+  return { scheduleId: Number(match[1] || 0) || 0 };
+}
+
+function buildSyncTestPaymentRemarks(scheduleId, invoiceId) {
+  return `${SYNC_TEST_PAYMENT_MARKER} schedule:${scheduleId} invoice:${toKey(invoiceId)}`;
+}
+
+function buildPaymentFingerprint(row) {
+  return [
+    buildPaymentComposite(row.invoice_id, row.ornum),
+    normalizeForCompare(row.payment_amt),
+    normalizeForCompare(row.balance_amt),
+    normalizeForCompare(row.date_paid),
+    normalizeForCompare(row.date_deposit),
+    normalizeForCompare(row.payment_type),
+    normalizeForCompare(row.remarks),
+  ].join("|");
+}
+
+function parseReferenceTokens(value) {
+  return [...new Set(
+    toKey(value)
+      .split(/[\s,;\n\r]+/)
+      .map((token) => token.trim())
+      .filter(Boolean),
+  )];
+}
+
+function normalizeSchedulePaymentType(doc) {
+  return toKey(doc.field_collection_check_number) ? "CHECK" : "CASH";
+}
+
+function normalizeBaselinePaymentRow(row, scheduleId = 0) {
+  return {
+    id: Number(row.id || 0) || 0,
+    invoice_id: toKey(row.invoice_id),
+    ornum: toKey(row.ornum),
+    ds: toKey(row.ds),
+    payment_amt: Number(row.payment_amt || 0) || 0,
+    balance_amt: Number(row.balance_amt || 0) || 0,
+    tax_2307: Number(row.tax_2307 || 0) || 0,
+    tax_status: Number(row.tax_status || 0) || 0,
+    date_paid: toDbDate(row.date_paid),
+    date_deposit: toDbDate(row.date_deposit),
+    timestamp: toDbDateTime(row.timestamp, nowDbDateTime()),
+    remarks: toKey(row.remarks),
+    payment_type: toKey(row.payment_type),
+    checkpayment_id: Number(row.checkpayment_id || 0) || 0,
+    tax_date_paid: toDbDate(row.tax_date_paid),
+    quarter: Number(row.quarter || 0) || 0,
+    _scheduleId: Number(scheduleId || 0) || 0,
+    _composite: buildPaymentComposite(row.invoice_id, row.ornum),
+  };
+}
+
+function registerPaymentBaselineRow(baseline, row) {
+  const composite = buildPaymentComposite(row.invoice_id, row.ornum);
+  if (composite !== "|") baseline.paymentinfo.existingComposites.add(composite);
+
+  const marker = parseSyncTestPaymentRemarks(row.remarks);
+  if (!marker?.scheduleId) return;
+
+  const normalized = normalizeBaselinePaymentRow(row, marker.scheduleId);
+  if (!baseline.paymentinfo.syncRowsBySchedule.has(String(marker.scheduleId))) {
+    baseline.paymentinfo.syncRowsBySchedule.set(String(marker.scheduleId), []);
+  }
+  baseline.paymentinfo.syncRowsBySchedule.get(String(marker.scheduleId)).push(normalized);
+}
+
+function buildDesiredSchedulePaymentRows(scheduleId, doc) {
+  if ((Number(doc.purpose_id || 0) || 0) !== COLLECTION_PURPOSE_ID) return [];
+  if (isLegacyEmptyDateValue(doc.date_finished)) return [];
+
+  const ornum = toKey(doc.field_collection_receipt_refs);
+  const invoiceRefs = parseReferenceTokens(doc.field_collection_invoice_refs);
+  const amount = Number(doc.field_collection_payment_amount || 0) || 0;
+  if (!ornum || amount <= 0 || invoiceRefs.length !== 1) return [];
+
+  const invoiceId = invoiceRefs[0];
+  const timestamp = toDbDateTime(
+    doc.date_finished || doc.field_updated_at || doc.bridge_updated_at,
+    nowDbDateTime(),
+  );
+  const paymentDate = toDbDate(timestamp, nowDbDateTime().slice(0, 10));
+
+  return [{
+    invoice_id: invoiceId,
+    ornum,
+    ds: "",
+    payment_amt: amount,
+    balance_amt: 0,
+    tax_2307: 0,
+    tax_status: 0,
+    date_paid: paymentDate,
+    date_deposit: paymentDate,
+    timestamp,
+    remarks: buildSyncTestPaymentRemarks(scheduleId, invoiceId),
+    payment_type: normalizeSchedulePaymentType(doc),
+    checkpayment_id: 0,
+    tax_date_paid: paymentDate,
+    quarter: buildPaymentQuarter(paymentDate),
+    _scheduleId: Number(scheduleId || 0) || 0,
+    _composite: buildPaymentComposite(invoiceId, ornum),
+  }];
+}
+
+export function collectPaymentSyncTargets(scheduleDocs) {
+  const rows = [];
+  scheduleDocs.forEach((doc, scheduleId) => {
+    buildDesiredSchedulePaymentRows(scheduleId, doc).forEach((row) => rows.push(row));
+  });
+  return rows;
+}
+
 function sqlValue(value) {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -635,6 +808,7 @@ export function createBaselineState() {
     meta: { analyzedAt: new Date().toISOString() },
     schemas: {},
     collectionhistory: { maxId: 0, fingerprints: new Set() },
+    paymentinfo: { existingComposites: new Set(), syncRowsBySchedule: new Map() },
     schedule: { maxId: 0, rows: new Map() },
     schedtime: { maxId: 0, rows: new Map() },
     closedscheds: { maxId: 0, scheduleIds: new Set() },
@@ -690,6 +864,10 @@ export async function buildDumpBaseline(dumpPath) {
       if (insertInfo.table === "tbl_collectionhistory") {
         baseline.collectionhistory.maxId = Math.max(baseline.collectionhistory.maxId, Number(row.id || 0) || 0);
         baseline.collectionhistory.fingerprints.add(buildCollectionHistoryFingerprint(row));
+      }
+
+      if (insertInfo.table === "tbl_paymentinfo") {
+        registerPaymentBaselineRow(baseline, row);
       }
 
       if (insertInfo.table === "tbl_schedule") {
@@ -839,6 +1017,43 @@ export function chooseCollectionHistoryRows(firebaseDocs, baseline) {
   return nextRows;
 }
 
+export function choosePaymentInfoChanges(scheduleDocs, baseline) {
+  const inserts = [];
+  const deletes = [];
+
+  scheduleDocs.forEach((doc, scheduleId) => {
+    const existingRows = [...(baseline.paymentinfo.syncRowsBySchedule.get(String(scheduleId)) || [])];
+    const desiredRows = buildDesiredSchedulePaymentRows(scheduleId, doc);
+
+    if (!desiredRows.length) {
+      existingRows.forEach((row) => deletes.push(row));
+      return;
+    }
+
+    const existingSyncComposites = new Set(existingRows.map((row) => row._composite));
+    const blockedByOfficeRow = desiredRows.some((row) => (
+      baseline.paymentinfo.existingComposites.has(row._composite)
+      && !existingSyncComposites.has(row._composite)
+    ));
+
+    if (blockedByOfficeRow) {
+      existingRows.forEach((row) => deletes.push(row));
+      return;
+    }
+
+    const before = existingRows.map(buildPaymentFingerprint).sort();
+    const after = desiredRows.map(buildPaymentFingerprint).sort();
+    if (before.length === after.length && before.every((value, index) => value === after[index])) {
+      return;
+    }
+
+    existingRows.forEach((row) => deletes.push(row));
+    desiredRows.forEach((row) => inserts.push(row));
+  });
+
+  return { inserts, deletes };
+}
+
 export function buildScheduleUpdateRows(scheduleDocs, baseline) {
   const rows = [];
 
@@ -968,6 +1183,32 @@ export function renderCollectionHistoryInserts(rows) {
   ].join("\n");
 }
 
+export function renderPaymentInfoChanges(changes) {
+  const lines = [];
+
+  if (changes.inserts.length) {
+    lines.push("-- tbl_paymentinfo inserts");
+    changes.inserts.forEach((row) => {
+      const values = PAYMENTINFO_COLUMNS.map((column) => sqlValue(row[column]));
+      lines.push(
+        `INSERT INTO \`tbl_paymentinfo\` (${PAYMENTINFO_COLUMNS.map((column) => `\`${column}\``).join(", ")}) VALUES (${values.join(", ")}); -- Schedule ${row._scheduleId}`,
+      );
+    });
+    lines.push("");
+  }
+
+  if (changes.deletes.length) {
+    lines.push("-- tbl_paymentinfo deletes");
+    changes.deletes.forEach((row) => {
+      lines.push(`DELETE FROM \`tbl_paymentinfo\` WHERE \`id\` = ${Number(row.id || 0) || 0}; -- Schedule ${row._scheduleId}`);
+    });
+    lines.push("");
+  }
+
+  if (!lines.length) return "-- No tbl_paymentinfo changes required.\n";
+  return lines.join("\n");
+}
+
 export function renderScheduleUpdates(rows) {
   if (!rows.length) return "-- No tbl_schedule updates required.\n";
 
@@ -1054,6 +1295,8 @@ export function summarizePlan(plan) {
     generatedAt: new Date().toISOString(),
     summary: {
       collectionhistoryInserts: plan.collectionHistoryInserts.length,
+      paymentinfoInserts: plan.paymentinfoChanges.inserts.length,
+      paymentinfoDeletes: plan.paymentinfoChanges.deletes.length,
       scheduleUpdates: plan.scheduleUpdates.length,
       schedtimeInserts: plan.schedtimeChanges.inserts.length,
       schedtimeUpdates: plan.schedtimeChanges.updates.length,
@@ -1064,6 +1307,18 @@ export function summarizePlan(plan) {
       invoice_num: row.invoice_num,
       timestamp: row.timestamp,
       remarks: row.remarks,
+    })),
+    samplePaymentinfoInserts: plan.paymentinfoChanges.inserts.slice(0, 5).map((row) => ({
+      schedule_id: row._scheduleId,
+      invoice_id: row.invoice_id,
+      ornum: row.ornum,
+      payment_amt: row.payment_amt,
+    })),
+    samplePaymentinfoDeletes: plan.paymentinfoChanges.deletes.slice(0, 5).map((row) => ({
+      id: row.id,
+      schedule_id: row._scheduleId,
+      invoice_id: row.invoice_id,
+      ornum: row.ornum,
     })),
     sampleScheduleUpdates: plan.scheduleUpdates.slice(0, 5),
     sampleSchedtimeInserts: plan.schedtimeChanges.inserts.slice(0, 5).map((row) => ({
@@ -1087,6 +1342,7 @@ export async function buildBridge(config) {
   const firebaseState = await loadFirebaseOperationalState(db, config);
 
   const collectionHistoryInserts = chooseCollectionHistoryRows(firebaseState.collectionHistoryDocs, baseline);
+  const paymentinfoChanges = choosePaymentInfoChanges(firebaseState.scheduleDocs, baseline);
   const scheduleUpdates = buildScheduleUpdateRows(firebaseState.scheduleDocs, baseline);
   const schedtimeChanges = buildSchedtimeRows(firebaseState.schedtimeDocs, baseline);
   const closedScheduleCandidates = buildClosedScheduleCandidates(scheduleUpdates, firebaseState.scheduleDocs, baseline);
@@ -1094,6 +1350,7 @@ export async function buildBridge(config) {
   return {
     baseline,
     collectionHistoryInserts,
+    paymentinfoChanges,
     scheduleUpdates,
     schedtimeChanges,
     closedScheduleCandidates,
@@ -1119,6 +1376,7 @@ async function main() {
       "START TRANSACTION;",
       "",
       renderCollectionHistoryInserts(plan.collectionHistoryInserts),
+      renderPaymentInfoChanges(plan.paymentinfoChanges),
       renderScheduleUpdates(plan.scheduleUpdates),
       renderSchedtimeChanges(plan.schedtimeChanges),
       "COMMIT;",
@@ -1153,6 +1411,8 @@ async function main() {
     console.log("");
     console.log("Summary:");
     console.log(`- tbl_collectionhistory inserts: ${report.summary.collectionhistoryInserts}`);
+    console.log(`- tbl_paymentinfo inserts: ${report.summary.paymentinfoInserts}`);
+    console.log(`- tbl_paymentinfo deletes: ${report.summary.paymentinfoDeletes}`);
     console.log(`- tbl_schedule updates: ${report.summary.scheduleUpdates}`);
     console.log(`- tbl_schedtime inserts: ${report.summary.schedtimeInserts}`);
     console.log(`- tbl_schedtime updates: ${report.summary.schedtimeUpdates}`);

@@ -329,12 +329,19 @@ export function createWritableFirestoreClient({ apiKey, baseUrl, serviceAccountE
     };
   }
 
+  function makeDeleteWrite(collection, docId) {
+    return {
+      delete: `${docRoot}/${collection}/${encodeURIComponent(String(docId))}`,
+    };
+  }
+
   return {
     getDoc,
     listDocuments,
     patchDoc,
     commitWrites,
     makeUpsertWrite,
+    makeDeleteWrite,
   };
 }
 

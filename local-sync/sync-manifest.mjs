@@ -12,13 +12,14 @@ const SCHEDULE_SAFE_REVERSE_FIELDS = [
   "dev_remarks",
 ];
 
-export const OFFICE_SYNC_MANIFEST_VERSION = "2026-03-16";
+export const OFFICE_SYNC_MANIFEST_VERSION = "2026-03-24";
 
 export const OFFICE_SYNC_MANIFEST = {
   version: OFFICE_SYNC_MANIFEST_VERSION,
   reverseBridge: {
     trackedTables: [
       "tbl_collectionhistory",
+      "tbl_paymentinfo",
       "tbl_schedule",
       "tbl_schedtime",
       "tbl_closedscheds",
@@ -286,14 +287,15 @@ export const OFFICE_SYNC_MANIFEST = {
     {
       table: "tbl_paymentinfo",
       domain: "payments",
-      sourceOfTruth: "mysql",
+      sourceOfTruth: "hybrid",
       mysqlToFirebase: {
-        enabled: false,
+        enabled: true,
         mode: "mutable_with_timestamp",
         mutableDateColumn: "timestamp",
         mutableLookbackHours: 168,
+        fullResyncIntervalMinutes: 60,
       },
-      firebaseToMysql: { enabled: false, mode: "none" },
+      firebaseToMysql: { enabled: true, mode: "schedule_payment_test_bridge" },
     },
     {
       table: "tbl_payments",
