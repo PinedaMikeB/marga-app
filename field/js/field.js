@@ -1799,12 +1799,6 @@ function getCloseTaskIssues(row, form) {
     }
 
     if (isCollectionPurpose) {
-        if (!form.collectionVoucherImage && !String(row.field_collection_voucher_name || '').trim()) {
-            issues.push('Upload the check voucher image before marking this collection task finished.');
-        }
-        if (!form.collectionCheckImage && !String(row.field_collection_check_name || '').trim()) {
-            issues.push('Upload the check image before marking this collection task finished.');
-        }
         if (!form.collectionReceiptRefs) issues.push('Fill out Official Receipt / Invoice Number before marking this collection task finished.');
         if (!form.collectionInvoiceRefs) issues.push('Fill out Payment For Invoice Number(s) before marking this collection task finished.');
         if (!form.collectionCheckNumber) issues.push('Fill out Check Number before marking this collection task finished.');
