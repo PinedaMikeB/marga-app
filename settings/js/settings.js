@@ -325,9 +325,11 @@ function renderRoleSelectionGrid(hostId, selectedRoles = [], { readOnly = false 
 function renderRoleBadgeStack(roles = []) {
     const list = normalizeRoleList(roles);
     if (!list.length) {
-        return '<span class="role-listing-text">Viewer</span>';
+        return '<div class="role-listing"><span class="ops-role-badge role-unknown">Viewer</span></div>';
     }
-    return `<span class="role-listing-text">${sanitize(list.map((role) => getRoleOption(role).label).join(', '))}</span>`;
+    return `<div class="role-listing">${list.map((role) => `
+        <span class="ops-role-badge ${sanitize(roleBadgeClass(role))}">${sanitize(getRoleOption(role).label)}</span>
+    `).join('')}</div>`;
 }
 
 function handleUserRoleSelectionChange() {
