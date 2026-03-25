@@ -168,7 +168,7 @@
                                     <th>ID</th>
                                     <th>Name</th>
                                     <th>Position</th>
-                                    <th>Role</th>
+                                    <th>Roles</th>
                                     <th>Status</th>
                                     <th>Account</th>
                                     <th>Action</th>
@@ -216,7 +216,7 @@
                                 <tr>
                                     <th>Email</th>
                                     <th>Name</th>
-                                    <th>Role</th>
+                                    <th>Roles</th>
                                     <th>Staff ID</th>
                                     <th>Status</th>
                                     <th>Action</th>
@@ -237,12 +237,27 @@
                                 <div class="role-editor-header">
                                     <div>
                                         <h4 id="roleEditorTitle">Role</h4>
-                                        <p class="ops-subtext" id="roleEditorSubtitle">Define what this role can access.</p>
+                                        <p class="ops-subtext" id="roleEditorSubtitle">Define the role identity and the modules it can access.</p>
                                     </div>
                                     <div class="settings-module-toolbar">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="newRoleBtn">New Role</button>
                                         <button type="button" class="btn btn-secondary btn-sm" id="resetRolePermissionsBtn">Reset Default</button>
                                         <button type="button" class="btn btn-primary btn-sm" id="saveRolePermissionsBtn">Save Role Permissions</button>
                                     </div>
+                                </div>
+                                <div class="marga-form-grid role-meta-grid">
+                                    <label class="marga-field">
+                                        <span>Role Key</span>
+                                        <input type="text" id="roleIdInput" placeholder="e.g. service-in-house">
+                                    </label>
+                                    <label class="marga-field">
+                                        <span>Display Name</span>
+                                        <input type="text" id="roleLabelInput" placeholder="e.g. Service In House">
+                                    </label>
+                                    <label class="marga-field marga-field-full">
+                                        <span>Description</span>
+                                        <input type="text" id="roleDescriptionInput" placeholder="Short description of this role">
+                                    </label>
                                 </div>
                                 <div class="module-access-grid role-module-grid" id="roleModuleAccess"></div>
                                 <div class="ops-subtext" id="roleModuleMeta"></div>
@@ -250,6 +265,7 @@
                         </div>
                     </div>
                 </div>
+
             </section>
         </div>
     </main>
@@ -283,19 +299,11 @@
                     <span>Name</span>
                     <input type="text" id="userNameInput" placeholder="Full name">
                 </label>
-                <label class="marga-field">
-                    <span>Role</span>
-                    <select id="userRoleInput">
-                        <option value="viewer">Viewer</option>
-                        <option value="service">Service</option>
-                        <option value="billing">Billing</option>
-                        <option value="collection">Collection</option>
-                        <option value="hr">HR</option>
-                        <option value="technician">Technician</option>
-                        <option value="messenger">Messenger</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </label>
+                <div class="marga-field marga-field-full">
+                    <span>Roles</span>
+                    <div class="role-selection-grid" id="userRolesInput"></div>
+                    <div class="ops-subtext" id="userRolesMeta">Select one or more roles for this account.</div>
+                </div>
                 <label class="marga-field">
                     <span>Staff ID (tbl_employee.id)</span>
                     <input type="number" id="userStaffId" placeholder="e.g. 253">
@@ -381,19 +389,11 @@
                     <span>Email</span>
                     <input type="email" id="employeeEmail" placeholder="name@company.com">
                 </label>
-                <label class="marga-field">
-                    <span>Role</span>
-                    <select id="employeeRole">
-                        <option value="viewer">Viewer</option>
-                        <option value="service">Service</option>
-                        <option value="billing">Billing</option>
-                        <option value="collection">Collection</option>
-                        <option value="hr">HR</option>
-                        <option value="technician">Technician</option>
-                        <option value="messenger">Messenger</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </label>
+                <div class="marga-field marga-field-full">
+                    <span>Roles</span>
+                    <div class="role-selection-grid" id="employeeRolesInput"></div>
+                    <div class="ops-subtext" id="employeeRolesMeta">Assign one or more roles to this employee.</div>
+                </div>
                 <label class="marga-field">
                     <span>Account Status</span>
                     <select id="employeeAccountActive">

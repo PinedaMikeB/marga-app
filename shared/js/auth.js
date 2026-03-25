@@ -39,7 +39,8 @@ const MargaAuth = {
         if (stored) {
             try {
                 this.currentUser = JSON.parse(stored);
-                this.currentUser.role = this.normalizeRole(this.currentUser.role || 'viewer');
+                this.currentUser.roles = this.normalizeRoles(this.currentUser.roles || this.currentUser.role || 'viewer');
+                this.currentUser.role = this.normalizeRole(this.currentUser.role || this.currentUser.roles[0] || 'viewer');
                 this.currentUser.allowed_modules = this.normalizeModules(this.currentUser.allowed_modules);
                 this.currentUser.role_modules = this.normalizeModules(this.currentUser.role_modules);
                 this.currentUser.allowed_modules_configured = this.currentUser.allowed_modules_configured === true;
@@ -71,18 +72,19 @@ const MargaAuth = {
             const ok = await this.verifyPassword(user, password);
             if (!ok) return { success: false, message: 'Invalid email or password' };
 
-            const role = this.normalizeRole(user.marga_role || user.role || this.inferRole(user));
+            const roles = this.normalizeRoles(user.marga_roles || user.roles || user.marga_role || user.role || this.inferRole(user));
+            const role = roles[0] || 'viewer';
             const userModulesConfigured = user.allowed_modules_configured === true;
             const allowedModules = userModulesConfigured
                 ? this.normalizeModules(user.marga_allowed_modules || user.allowed_modules)
                 : [];
             let roleModules = null;
-            if (!userModulesConfigured && role !== 'admin') {
-                roleModules = await this.fetchRoleModules(role);
+            if (!userModulesConfigured && !roles.includes('admin')) {
+                roleModules = await this.fetchRoleModulesForRoles(roles);
             }
             const resolvedRoleModules = Array.isArray(roleModules)
                 ? roleModules
-                : this.normalizeModules(this.PERMISSIONS[role] || []);
+                : this.getRoleModulesFromPermissions(roles);
 
             const sessionName = String(
                 user.marga_fullname
@@ -102,6 +104,7 @@ const MargaAuth = {
                 username: user.username || sessionEmail || ident,
                 name: sessionName,
                 role,
+                roles,
                 email: sessionEmail,
                 staff_id: sessionStaffId,
                 allowed_modules: allowedModules,
@@ -127,6 +130,7 @@ const MargaAuth = {
                 username: 'admin',
                 name: 'Administrator',
                 role: 'admin',
+                roles: ['admin'],
                 email: '',
                 allowed_modules: [],
                 role_modules: this.normalizeModules(this.PERMISSIONS.admin || []),
@@ -142,11 +146,16 @@ const MargaAuth = {
     setSession(user, remember) {
         this.currentUser = {
             ...user,
-            role: this.normalizeRole(user?.role || 'viewer'),
+            roles: this.normalizeRoles(user?.roles || user?.role || 'viewer'),
+            role: this.normalizeRole(user?.role || user?.roles?.[0] || 'viewer'),
             allowed_modules: this.normalizeModules(user?.allowed_modules),
             role_modules: this.normalizeModules(user?.role_modules),
             allowed_modules_configured: user?.allowed_modules_configured === true
         };
+        if (!this.currentUser.roles.length) {
+            this.currentUser.roles = [this.currentUser.role];
+        }
+        this.currentUser.role = this.currentUser.roles[0] || 'viewer';
         const storage = remember ? localStorage : sessionStorage;
         storage.setItem('marga_user', JSON.stringify(this.currentUser));
         return { success: true, user: this.currentUser };
@@ -189,7 +198,7 @@ const MargaAuth = {
         if (!this.currentUser) return false;
         const normalizedModule = String(module || '').trim().toLowerCase();
         if (!normalizedModule || normalizedModule === 'dashboard') return true;
-        if (this.currentUser.role === 'admin') return true;
+        if (this.isAdmin()) return true;
         return this.getAccessibleModules().includes(normalizedModule);
     },
 
@@ -221,7 +230,7 @@ const MargaAuth = {
      * Check if user is admin
      */
     isAdmin() {
-        return this.currentUser?.role === 'admin';
+        return this.hasRole('admin');
     },
 
     /**
@@ -229,13 +238,13 @@ const MargaAuth = {
      */
     getAccessibleModules() {
         if (!this.currentUser) return [];
-        if (this.currentUser.role === 'admin') return [...new Set(this.PERMISSIONS.admin || [])];
+        if (this.isAdmin()) return [...new Set(this.PERMISSIONS.admin || [])];
         const hasUserOverride = this.currentUser.allowed_modules_configured === true;
         const userModules = this.normalizeModules(this.currentUser.allowed_modules);
         if (hasUserOverride) return userModules;
         const roleModules = this.normalizeModules(this.currentUser.role_modules);
         if (roleModules.length) return roleModules;
-        return this.PERMISSIONS[this.currentUser.role] || [];
+        return this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role);
     },
 
     /**
@@ -309,8 +318,52 @@ MargaAuth.normalizeModules = function normalizeModules(modules) {
 };
 
 MargaAuth.normalizeRole = function normalizeRole(role) {
-    const value = String(role || '').trim().toLowerCase();
-    return this.PERMISSIONS[value] ? value : 'viewer';
+    const value = String(role || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return value || 'viewer';
+};
+
+MargaAuth.normalizeRoles = function normalizeRoles(roles) {
+    if (Array.isArray(roles)) {
+        return [...new Set(roles.map((role) => this.normalizeRole(role)).filter(Boolean))];
+    }
+    if (typeof roles === 'string' && roles.trim()) {
+        return [...new Set(roles.split(',').map((role) => this.normalizeRole(role)).filter(Boolean))];
+    }
+    return [];
+};
+
+MargaAuth.getRoles = function getRoles(user = this.currentUser) {
+    const roles = this.normalizeRoles(user?.roles || user?.role || []);
+    if (roles.length) return roles;
+    return ['viewer'];
+};
+
+MargaAuth.hasRole = function hasRole(role, user = this.currentUser) {
+    const normalizedRole = this.normalizeRole(role);
+    return this.getRoles(user).includes(normalizedRole);
+};
+
+MargaAuth.formatRoleLabel = function formatRoleLabel(role) {
+    return String(role || '')
+        .trim()
+        .split(/[-_\s]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ') || 'Viewer';
+};
+
+MargaAuth.getDisplayRoles = function getDisplayRoles(user = this.currentUser) {
+    return this.getRoles(user).map((role) => this.formatRoleLabel(role)).join(', ');
+};
+
+MargaAuth.getRoleModulesFromPermissions = function getRoleModulesFromPermissions(roles) {
+    return [...new Set(
+        this.normalizeRoles(roles).flatMap((role) => this.normalizeModules(this.PERMISSIONS[role] || []))
+    )];
 };
 
 MargaAuth.persistCurrentUser = function persistCurrentUser() {
@@ -326,10 +379,10 @@ MargaAuth.setRolePermissions = function setRolePermissions(role, modules) {
     this.PERMISSIONS[normalizedRole] = normalizedModules;
 
     if (!this.currentUser) return;
-    if (this.normalizeRole(this.currentUser.role) !== normalizedRole) return;
+    if (!this.hasRole(normalizedRole)) return;
     if (this.currentUser.allowed_modules_configured === true) return;
 
-    this.currentUser.role_modules = normalizedModules;
+    this.currentUser.role_modules = this.getRoleModulesFromPermissions(this.currentUser.roles);
     this.persistCurrentUser();
 };
 
@@ -354,6 +407,17 @@ MargaAuth.fetchRoleModules = async function fetchRoleModules(role) {
         console.warn('Role-permission lookup failed:', error);
         return null;
     }
+};
+
+MargaAuth.fetchRoleModulesForRoles = async function fetchRoleModulesForRoles(roles) {
+    const normalizedRoles = this.normalizeRoles(roles);
+    if (!normalizedRoles.length) return this.getRoleModulesFromPermissions(['viewer']);
+    const results = await Promise.all(normalizedRoles.map((role) => this.fetchRoleModules(role)));
+    const resolved = [...new Set(results.flatMap((modules, index) => {
+        if (Array.isArray(modules)) return modules;
+        return this.normalizeModules(this.PERMISSIONS[normalizedRoles[index]] || []);
+    }))];
+    return resolved;
 };
 
 MargaAuth.applyModulePermissions = function applyModulePermissions({ selector = '[data-module]', hideUnauthorized = false } = {}) {
@@ -478,13 +542,7 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
     const employeeByEmail = await run('tbl_employee', 'email', email);
     if (employeeByEmail) return employeeByEmail;
 
-    const employeeByUsername = await run('tbl_employee', 'username', username);
-    if (employeeByUsername) return employeeByUsername;
-
-    // Backward compatibility during transition.
-    return (await run('marga_users', 'email', email))
-        || (await run('marga_users', 'username', rawIdent))
-        || (await run('marga_users', 'username', username));
+    return await run('tbl_employee', 'username', username);
 };
 
 MargaAuth.verifyPassword = async function verifyPassword(user, password) {

@@ -94,16 +94,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const user = MargaAuth.getUser();
     state.staffId = Number(user?.staff_id || 0) || null;
     if (!state.staffId) {
-        alert('This account has no staff_id mapped. Please update marga_users with staff_id.');
+        alert('This account has no active tbl_employee ID mapped.');
     }
     const displayName = String(user?.name || user?.username || user?.email || 'User').trim();
-    const displayRole = String(user?.role || '').trim();
+    const displayRole = MargaAuth.getDisplayRoles(user);
     const badge = document.getElementById('fieldUserBadge');
     const headerTitle = document.getElementById('fieldHeaderTitle');
     const userLine = document.getElementById('fieldUserLine');
     if (badge) badge.textContent = (displayName.charAt(0) || 'U').toUpperCase();
     if (headerTitle) headerTitle.textContent = `${displayName} - Printed Route`;
-    if (userLine) userLine.textContent = displayRole ? `Role: ${displayRole}` : 'Role: field';
+    if (userLine) userLine.textContent = displayRole ? `Roles: ${displayRole}` : 'Roles: field';
 
     const dateInput = document.getElementById('fieldDate');
     dateInput.value = formatDateYmd(new Date());

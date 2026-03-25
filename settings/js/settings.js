@@ -32,7 +32,7 @@ const MODULE_OPTIONS = [
     { id: 'sales', label: 'Sales Module' }
 ];
 
-const ROLE_OPTIONS = [
+const BASE_ROLE_OPTIONS = [
     { id: 'admin', label: 'Admin', description: 'Full system control and user administration.' },
     { id: 'service', label: 'Service', description: 'Customer service and dispatch operations.' },
     { id: 'billing', label: 'Billing', description: 'Billing, collections reporting, and finance operations.' },
@@ -42,6 +42,8 @@ const ROLE_OPTIONS = [
     { id: 'messenger', label: 'Messenger', description: 'Field app access for messengers/drivers.' },
     { id: 'viewer', label: 'Viewer', description: 'Read-focused access only.' }
 ];
+
+let ROLE_OPTIONS = BASE_ROLE_OPTIONS.map((role) => ({ ...role }));
 
 const BASE_ROLE_DEFAULTS = {
     admin: ['customers', 'billing', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
@@ -60,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     if (user) {
         document.getElementById('userName').textContent = user.name;
-        document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+        document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
         document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
     }
 
@@ -87,31 +89,40 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('userModalSaveBtn').addEventListener('click', () => saveUser());
     document.getElementById('userEmployeeLookup').addEventListener('change', () => applyUserEmployeeLookup());
     document.getElementById('userEmployeeLookup').addEventListener('input', () => applyUserEmployeeLookup());
-    document.getElementById('userRoleInput').addEventListener('change', () => {
-        if (SETTINGS_STATE.editingDocId) return;
-        const role = document.getElementById('userRoleInput').value || 'viewer';
-        renderUserModuleAccess(getRoleDefaultModules(role));
-    });
     document.getElementById('applyRoleDefaultsBtn').addEventListener('click', () => {
-        const role = document.getElementById('userRoleInput').value || 'viewer';
-        renderUserModuleAccess(getRoleDefaultModules(role));
+        renderUserModuleAccess(getRoleDefaultModules(getSelectedRoleValues('userRolesInput')));
     });
+    document.getElementById('userRolesInput').addEventListener('change', () => handleUserRoleSelectionChange());
     document.getElementById('saveRolePermissionsBtn').addEventListener('click', () => saveRolePermissions());
     document.getElementById('resetRolePermissionsBtn').addEventListener('click', () => resetRolePermissions());
+    document.getElementById('newRoleBtn').addEventListener('click', () => openNewRoleEditor());
+    document.getElementById('roleLabelInput').addEventListener('input', () => {
+        const roleIdInput = document.getElementById('roleIdInput');
+        if (roleIdInput.dataset.manual === 'true') return;
+        roleIdInput.value = slugifyRoleKey(document.getElementById('roleLabelInput').value || '');
+    });
+    document.getElementById('roleIdInput').addEventListener('input', () => {
+        document.getElementById('roleIdInput').dataset.manual = 'true';
+    });
 
     document.getElementById('employeeModalOverlay').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalCloseBtn').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalCancelBtn').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalSaveBtn').addEventListener('click', () => saveEmployee());
+    document.getElementById('employeeRolesInput').addEventListener('change', () => updateRoleSelectionMeta('employeeRolesMeta', getSelectedRoleValues('employeeRolesInput')));
 
     // Ensure admin-only password fields are hidden for HR/non-admin.
     document.getElementById('userPasswordField').style.display = isAdmin ? 'flex' : 'none';
     document.getElementById('employeePasswordField').style.display = isAdmin ? 'flex' : 'none';
     document.getElementById('applyRoleDefaultsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
+    document.getElementById('newRoleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('saveRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('resetRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('syncUsersBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('userSyncFileInput').disabled = !isAdmin;
+    document.getElementById('roleIdInput').disabled = !isAdmin;
+    document.getElementById('roleLabelInput').disabled = !isAdmin;
+    document.getElementById('roleDescriptionInput').disabled = !isAdmin;
     if (!isAdmin) {
         document.getElementById('syncUsersResult').textContent = 'Only admin can sync XLSX user data.';
     }
@@ -195,10 +206,26 @@ function toFirestoreFieldValue(value) {
 }
 
 function normalizeRole(value) {
-    const role = String(value || '').trim().toLowerCase();
-    const allowed = new Set(ROLE_OPTIONS.map((option) => option.id));
-    if (allowed.has(role)) return role;
-    return 'viewer';
+    const role = slugifyRoleKey(value);
+    return role || 'viewer';
+}
+
+function slugifyRoleKey(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function normalizeRoleList(list) {
+    if (Array.isArray(list)) {
+        return [...new Set(list.map((item) => normalizeRole(item)).filter(Boolean))];
+    }
+    if (typeof list === 'string' && list.trim()) {
+        return [...new Set(list.split(',').map((item) => normalizeRole(item)).filter(Boolean))];
+    }
+    return [];
 }
 
 function normalizeModuleList(list) {
@@ -226,16 +253,93 @@ function hasExplicitModuleOverride(userLike) {
     return normalizeModuleList(userLike.allowed_modules).length > 0;
 }
 
-function getRoleDefaultModules(role) {
-    const r = normalizeRole(role);
-    if (SETTINGS_STATE.roleConfigs.has(r)) return normalizeModuleList(SETTINGS_STATE.roleConfigs.get(r));
-    const defaults = BASE_ROLE_DEFAULTS[r] || MargaAuth.PERMISSIONS?.[r] || [];
-    return normalizeModuleList(defaults);
+function roleListsEqual(left, right) {
+    const a = normalizeRoleList(left);
+    const b = normalizeRoleList(right);
+    if (a.length !== b.length) return false;
+    const leftSet = new Set(a);
+    return b.every((item) => leftSet.has(item));
+}
+
+function getRoleDefaultModules(roles) {
+    const roleList = normalizeRoleList(roles);
+    return [...new Set(roleList.flatMap((role) => {
+        if (SETTINGS_STATE.roleConfigs.has(role)) return normalizeModuleList(SETTINGS_STATE.roleConfigs.get(role));
+        const defaults = BASE_ROLE_DEFAULTS[role] || MargaAuth.PERMISSIONS?.[role] || [];
+        return normalizeModuleList(defaults);
+    }))];
 }
 
 function getRoleOption(role) {
     const normalized = normalizeRole(role);
-    return ROLE_OPTIONS.find((option) => option.id === normalized) || ROLE_OPTIONS.find((option) => option.id === 'viewer');
+    return ROLE_OPTIONS.find((option) => option.id === normalized) || {
+        id: normalized,
+        label: MargaAuth.formatRoleLabel(normalized),
+        description: 'Custom role configuration.'
+    };
+}
+
+function getSelectedRoleValues(hostId) {
+    return [...document.querySelectorAll(`#${hostId} input[type="checkbox"]`)]
+        .filter((el) => el.checked)
+        .map((el) => normalizeRole(el.value))
+        .filter(Boolean);
+}
+
+function getPrimaryRole(roles) {
+    const list = normalizeRoleList(roles);
+    if (list.includes('admin')) return 'admin';
+    return list[0] || 'viewer';
+}
+
+function getEffectiveRoles(entity, fallbackRole = 'viewer') {
+    const direct = normalizeRoleList(entity?.roles || entity?.marga_roles || entity?.role || entity?.marga_role || []);
+    if (direct.length) return direct;
+    return normalizeRoleList([fallbackRole]);
+}
+
+function updateRoleSelectionMeta(metaId, roles) {
+    const meta = document.getElementById(metaId);
+    if (!meta) return;
+    const list = normalizeRoleList(roles);
+    if (!list.length) {
+        meta.textContent = 'Select at least one role. You can add more than one role to the same person.';
+        return;
+    }
+    meta.textContent = `Selected roles: ${list.map((role) => getRoleOption(role).label).join(', ')}. Check more cards to add more roles.`;
+}
+
+function renderRoleSelectionGrid(hostId, selectedRoles = [], { readOnly = false } = {}) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const selected = new Set(normalizeRoleList(selectedRoles));
+    host.innerHTML = ROLE_OPTIONS.map((role) => `
+        <label class="role-pill-option">
+            <input type="checkbox" value="${sanitize(role.id)}" ${selected.has(role.id) ? 'checked' : ''} ${readOnly ? 'disabled' : ''}>
+            <strong>${sanitize(role.label)}</strong>
+            <span>${sanitize(role.description || 'No description yet.')}</span>
+        </label>
+    `).join('');
+}
+
+function renderRoleBadgeStack(roles = []) {
+    const list = normalizeRoleList(roles);
+    if (!list.length) {
+        return '<span class="role-listing-text">Viewer</span>';
+    }
+    return `<div class="role-listing">${list.map((role) => `
+        <span class="ops-role-badge ${sanitize(roleBadgeClass(role))}">${sanitize(getRoleOption(role).label)}</span>
+    `).join('')}<span class="role-listing-text">${sanitize(list.map((role) => getRoleOption(role).label).join(', '))}</span></div>`;
+}
+
+function handleUserRoleSelectionChange() {
+    const roles = getSelectedRoleValues('userRolesInput');
+    updateRoleSelectionMeta('userRolesMeta', roles);
+    const editing = SETTINGS_STATE.editingDocId
+        ? SETTINGS_STATE.users.find((u) => u._docId === SETTINGS_STATE.editingDocId) || null
+        : null;
+    if (editing && hasExplicitModuleOverride(editing)) return;
+    renderUserModuleAccess(getRoleDefaultModules(roles));
 }
 
 function renderUserModuleAccess(selectedModules = []) {
@@ -298,17 +402,32 @@ function getSelectedRoleModules() {
 }
 
 function renderRoleEditor() {
-    const roleId = normalizeRole(SETTINGS_STATE.activeRoleEditor || 'viewer');
+    const roleId = SETTINGS_STATE.activeRoleEditor === 'new'
+        ? 'new'
+        : normalizeRole(SETTINGS_STATE.activeRoleEditor || 'viewer');
     const role = getRoleOption(roleId);
-    const modules = getRoleDefaultModules(roleId);
+    const modules = roleId === 'new' ? [] : getRoleDefaultModules(roleId);
     const title = document.getElementById('roleEditorTitle');
     const subtitle = document.getElementById('roleEditorSubtitle');
     const meta = document.getElementById('roleModuleMeta');
+    const roleIdInput = document.getElementById('roleIdInput');
+    const roleLabelInput = document.getElementById('roleLabelInput');
+    const roleDescriptionInput = document.getElementById('roleDescriptionInput');
+    const isNew = roleId === 'new';
     if (title) title.textContent = role.label;
     if (subtitle) subtitle.textContent = role.description;
+    if (roleIdInput) {
+        roleIdInput.value = isNew ? '' : role.id;
+        roleIdInput.disabled = !MargaAuth.isAdmin() || !isNew;
+        roleIdInput.dataset.manual = 'false';
+    }
+    if (roleLabelInput) roleLabelInput.value = isNew ? '' : role.label;
+    if (roleDescriptionInput) roleDescriptionInput.value = isNew ? '' : (role.description || '');
     renderRoleModuleAccess(modules);
     if (meta) {
-        meta.textContent = `${modules.length} module(s) allowed for ${role.label}. Users with custom module overrides are not changed automatically.`;
+        meta.textContent = isNew
+            ? 'Create a new role and choose the modules it can access.'
+            : `${modules.length} module(s) allowed for ${role.label}. Users with custom module overrides are not changed automatically.`;
     }
 }
 
@@ -317,13 +436,29 @@ async function saveRolePermissions() {
         alert('Only admin can edit role permissions.');
         return;
     }
-    const roleId = normalizeRole(SETTINGS_STATE.activeRoleEditor || 'viewer');
+    const isNew = SETTINGS_STATE.activeRoleEditor === 'new';
+    const roleId = normalizeRole(document.getElementById('roleIdInput').value || SETTINGS_STATE.activeRoleEditor || 'viewer');
     const modules = getSelectedRoleModules();
-    const role = getRoleOption(roleId);
+    const label = String(document.getElementById('roleLabelInput').value || '').trim();
+    const description = String(document.getElementById('roleDescriptionInput').value || '').trim();
+    const role = {
+        id: roleId,
+        label: label || MargaAuth.formatRoleLabel(roleId),
+        description: description || 'Custom role permissions.'
+    };
+    if (!roleId) {
+        alert('Role key is required.');
+        return;
+    }
+    if (isNew && SETTINGS_STATE.roleConfigs.has(roleId)) {
+        alert('That role key already exists. Open it from the list to edit it, or choose a different key.');
+        return;
+    }
     try {
         await setDocument('marga_role_permissions', roleId, {
             role: roleId,
             label: role.label,
+            description: role.description,
             allowed_modules: modules,
             active: true,
             updated_at: new Date().toISOString(),
@@ -332,9 +467,21 @@ async function saveRolePermissions() {
         SETTINGS_STATE.roleConfigs.set(roleId, modules);
         SETTINGS_STATE.roleDocIds.set(roleId, roleId);
         MargaAuth.setRolePermissions(roleId, modules);
+        if (!ROLE_OPTIONS.some((option) => option.id === roleId)) {
+            ROLE_OPTIONS = [...ROLE_OPTIONS, role].sort((a, b) => a.label.localeCompare(b.label));
+        } else {
+            ROLE_OPTIONS = ROLE_OPTIONS.map((option) => option.id === roleId ? { ...option, ...role } : option);
+        }
+        SETTINGS_STATE.activeRoleEditor = roleId;
+        const selectedUserRoles = getSelectedRoleValues('userRolesInput');
+        const selectedEmployeeRoles = getSelectedRoleValues('employeeRolesInput');
+        renderRoleSelectionGrid('userRolesInput', selectedUserRoles, { readOnly: !MargaAuth.isAdmin() });
+        updateRoleSelectionMeta('userRolesMeta', selectedUserRoles);
+        renderRoleSelectionGrid('employeeRolesInput', selectedEmployeeRoles, { readOnly: !MargaAuth.isAdmin() });
+        updateRoleSelectionMeta('employeeRolesMeta', selectedEmployeeRoles);
         renderRoleList();
         renderRoleEditor();
-        alert(`Saved role permissions for ${role.label}.`);
+        alert(`${isNew ? 'Created' : 'Saved'} role permissions for ${role.label}.`);
     } catch (err) {
         console.error('Save role permissions failed:', err);
         alert(`Failed to save role permissions: ${err.message || err}`);
@@ -342,12 +489,27 @@ async function saveRolePermissions() {
 }
 
 function resetRolePermissions() {
+    if (SETTINGS_STATE.activeRoleEditor === 'new') {
+        renderRoleEditor();
+        return;
+    }
     const roleId = normalizeRole(SETTINGS_STATE.activeRoleEditor || 'viewer');
     const modules = normalizeModuleList(BASE_ROLE_DEFAULTS[roleId] || []);
     if (!confirm(`Reset ${getRoleOption(roleId).label} to current system defaults?`)) return;
     SETTINGS_STATE.roleConfigs.set(roleId, modules);
     renderRoleList();
     renderRoleEditor();
+}
+
+function openNewRoleEditor() {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can create roles.');
+        return;
+    }
+    SETTINGS_STATE.activeRoleEditor = 'new';
+    renderRoleList();
+    renderRoleEditor();
+    document.getElementById('roleLabelInput')?.focus();
 }
 
 async function runQuery(structuredQuery) {
@@ -421,6 +583,8 @@ function closeUserModal() {
     setUserModalOpen(false);
     SETTINGS_STATE.editingDocId = null;
     document.getElementById('userEmployeeLookup').value = '';
+    renderRoleSelectionGrid('userRolesInput', ['viewer'], { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('userRolesMeta', ['viewer']);
     renderUserModuleAccess([]);
 }
 
@@ -430,7 +594,6 @@ function openUserModal(docId) {
     const title = document.getElementById('userModalTitle');
     const emailInput = document.getElementById('userEmail');
     const nameInput = document.getElementById('userNameInput');
-    const roleInput = document.getElementById('userRoleInput');
     const staffInput = document.getElementById('userStaffId');
     const passInput = document.getElementById('userPassword');
     const activeInput = document.getElementById('userActive');
@@ -438,16 +601,18 @@ function openUserModal(docId) {
 
     const editing = docId ? SETTINGS_STATE.users.find((u) => u._docId === docId) : null;
     title.textContent = editing ? 'Edit User' : 'New User';
+    const roles = editing ? getEffectiveRoles(editing, 'viewer') : ['viewer'];
 
     lookupInput.value = '';
     emailInput.value = editing?.email || '';
     nameInput.value = editing?.name || '';
-    roleInput.value = normalizeRole(editing?.role || 'viewer');
     staffInput.value = editing?.staff_id || '';
     passInput.value = '';
     activeInput.value = (editing?.active === false) ? 'false' : 'true';
+    renderRoleSelectionGrid('userRolesInput', roles, { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('userRolesMeta', roles);
     const selectedModules = normalizeModuleList(editing?.allowed_modules);
-    renderUserModuleAccess(hasExplicitModuleOverride(editing) ? selectedModules : getRoleDefaultModules(roleInput.value));
+    renderUserModuleAccess(hasExplicitModuleOverride(editing) ? selectedModules : getRoleDefaultModules(roles));
 
     // Employee ID is the key in tbl_employee; email can be edited anytime.
     emailInput.disabled = false;
@@ -471,7 +636,10 @@ function applyUserFilter() {
         ? base.filter((u) =>
             String(u.email || '').toLowerCase().includes(q) ||
             String(u.name || '').toLowerCase().includes(q) ||
-            String(u.role || '').toLowerCase().includes(q) ||
+            normalizeRoleList(u.roles).some((role) => (
+                role.includes(q) ||
+                getRoleOption(role).label.toLowerCase().includes(q)
+            )) ||
             String(u.staff_id || '').includes(q)
         )
         : base;
@@ -487,13 +655,6 @@ function renderUsers() {
         tbody.innerHTML = '<tr><td colspan="6" class="loading-cell">No users found.</td></tr>';
         return;
     }
-
-    const roleClass = (role) => {
-        const r = String(role || '').toLowerCase();
-        if (r === 'technician') return 'role-tech';
-        if (r === 'messenger') return 'role-messenger';
-        return 'role-unknown';
-    };
 
     tbody.innerHTML = rows.map((u) => {
         const active = u.active !== false;
@@ -511,7 +672,7 @@ function renderUsers() {
             <tr>
                 <td data-label="Email">${sanitize(u.email || u.username || u._docId || '-')}</td>
                 <td data-label="Name">${sanitize(u.name || '-')}</td>
-                <td data-label="Role"><span class="ops-role-badge ${sanitize(roleClass(u.role))}">${sanitize(u.role || 'viewer')}</span></td>
+                <td data-label="Roles">${renderRoleBadgeStack(u.roles)}</td>
                 <td data-label="Staff ID">${sanitize(u.staff_id || '-')}</td>
                 <td data-label="Status">${statusSelect}</td>
                 <td data-label="Action" class="settings-row-actions">
@@ -571,7 +732,9 @@ async function loadUsers() {
                 const first = String(employee.firstname || '').trim();
                 const last = String(employee.lastname || '').trim();
                 const name = `${first} ${last}`.trim() || String(employee.nickname || '').trim() || `ID ${employee.id || '-'}`;
-                const role = normalizeRole(employee.marga_role || roleGuessToUserRole(getRoleGuess(employee, SETTINGS_STATE.positions.get(String(employee.position_id || 0)) || '')));
+                const fallbackRole = roleGuessToUserRole(getRoleGuess(employee, SETTINGS_STATE.positions.get(String(employee.position_id || 0)) || ''));
+                const roles = getEffectiveRoles(employee, fallbackRole);
+                const role = getPrimaryRole(roles);
                 const email = String(employee.email || employee.marga_login_email || '').trim().toLowerCase();
                 const hasLogin = Boolean(email || employee.password_hash || employee.password);
                 const accountActive = employee.marga_account_active !== false;
@@ -581,6 +744,7 @@ async function loadUsers() {
                     email,
                     name,
                     role,
+                    roles,
                     staff_id: Number(employee.id || 0) || null,
                     active: accountActive,
                     allowed_modules: normalizeModuleList(employee.marga_allowed_modules || employee.allowed_modules),
@@ -624,8 +788,8 @@ function renderEmployeeLookupOptions() {
         .sort((a, b) => Number(a.id || 0) - Number(b.id || 0))
         .map((emp) => {
             const name = getEmployeeDisplayName(emp);
-            const full = `${String(emp.firstname || '').trim()} ${String(emp.lastname || '').trim()}`.trim();
-            const label = full && full.toLowerCase() !== name.toLowerCase() ? `${name} (${full})` : name;
+            const alias = getEmployeeAlias(emp);
+            const label = alias && alias.toLowerCase() !== name.toLowerCase() ? `${name} (${alias})` : name;
             return `<option value="${sanitize(`${emp.id} - ${label}`)}"></option>`;
         });
     list.innerHTML = options.join('');
@@ -642,15 +806,19 @@ function findEmployeeFromLookupValue(value) {
     const normalized = raw.toLowerCase();
     return SETTINGS_STATE.employees.find((e) => {
         const name = getEmployeeDisplayName(e).toLowerCase();
-        const full = `${String(e.firstname || '').trim()} ${String(e.lastname || '').trim()}`.trim().toLowerCase();
-        return name === normalized || full === normalized || `${e.id} - ${name}`.toLowerCase() === normalized;
+        const alias = getEmployeeAlias(e).toLowerCase();
+        return name === normalized
+            || alias === normalized
+            || `${e.id} - ${name}`.toLowerCase() === normalized
+            || `${e.id} - ${name} (${alias})`.toLowerCase() === normalized;
     }) || null;
 }
 
-function getSuggestedRoleFromEmployee(emp) {
-    if (emp?.marga_role) return normalizeRole(emp.marga_role);
+function getSuggestedRolesFromEmployee(emp) {
+    const direct = normalizeRoleList(emp?.marga_roles || emp?.marga_role || []);
+    if (direct.length) return direct;
     const positionName = SETTINGS_STATE.positions.get(String(emp?.position_id || 0)) || '';
-    return normalizeRole(roleGuessToUserRole(getRoleGuess(emp, positionName)));
+    return normalizeRoleList([roleGuessToUserRole(getRoleGuess(emp, positionName))]);
 }
 
 function applyUserEmployeeLookup() {
@@ -660,16 +828,17 @@ function applyUserEmployeeLookup() {
     if (!emp) return;
 
     const name = `${String(emp.firstname || '').trim()} ${String(emp.lastname || '').trim()}`.trim() || getEmployeeDisplayName(emp);
-    const suggestedRole = getSuggestedRoleFromEmployee(emp);
+    const suggestedRoles = getSuggestedRolesFromEmployee(emp);
     const emailCandidate = String(emp.email || '').trim();
 
     document.getElementById('userNameInput').value = name;
     document.getElementById('userStaffId').value = String(emp.id || '');
-    document.getElementById('userRoleInput').value = suggestedRole;
+    renderRoleSelectionGrid('userRolesInput', suggestedRoles, { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('userRolesMeta', suggestedRoles);
     if (emailCandidate && !String(document.getElementById('userEmail').value || '').trim()) {
         document.getElementById('userEmail').value = emailCandidate;
     }
-    renderUserModuleAccess(getRoleDefaultModules(suggestedRole));
+    renderUserModuleAccess(getRoleDefaultModules(suggestedRoles));
 }
 
 function displayRoleLabel(role) {
@@ -683,18 +852,34 @@ function roleBadgeClass(role) {
     return 'role-unknown';
 }
 
-function getEmployeeEffectiveRole(employee, linked, positionName) {
-    if (linked?.role) return normalizeRole(linked.role);
-    if (employee?.marga_role) return normalizeRole(employee.marga_role);
-    return normalizeRole(roleGuessToUserRole(getRoleGuess(employee, positionName)));
+function getEmployeeEffectiveRoles(employee, linked, positionName) {
+    const linkedRoles = normalizeRoleList(linked?.roles || linked?.marga_roles || linked?.role || []);
+    if (linkedRoles.length) return linkedRoles;
+    const employeeRoles = normalizeRoleList(employee?.marga_roles || employee?.marga_role || []);
+    if (employeeRoles.length) return employeeRoles;
+    return normalizeRoleList([roleGuessToUserRole(getRoleGuess(employee, positionName))]);
+}
+
+function getEmployeeFullName(emp) {
+    const explicit = String(emp?.marga_fullname || emp?.name || '').trim();
+    if (explicit) return explicit;
+    const first = String(emp?.firstname || '').trim();
+    const last = String(emp?.lastname || '').trim();
+    return `${first} ${last}`.trim();
+}
+
+function getEmployeeAlias(emp) {
+    return String(emp?.nickname || '').trim();
 }
 
 function getEmployeeDisplayName(emp) {
-    const nickname = String(emp.nickname || '').trim();
-    const first = String(emp.firstname || '').trim();
-    const last = String(emp.lastname || '').trim();
-    if (nickname) return nickname;
-    return `${first} ${last}`.trim() || `ID ${emp.id || '-'}`;
+    return getEmployeeFullName(emp) || getEmployeeAlias(emp) || `ID ${emp.id || '-'}`;
+}
+
+function getEmployeePositionName(emp) {
+    const inline = String(emp?.position_label || emp?.position || '').trim();
+    if (inline) return inline;
+    return SETTINGS_STATE.positions.get(String(emp?.position_id || 0)) || '-';
 }
 
 function applyEmployeeFilter() {
@@ -710,11 +895,13 @@ function applyEmployeeFilter() {
 
     SETTINGS_STATE.employeesFiltered = q
         ? base.filter((e) => {
-            const positionName = SETTINGS_STATE.positions.get(String(e.position_id || 0)) || '';
+            const positionName = getEmployeePositionName(e);
             const name = getEmployeeDisplayName(e);
+            const alias = getEmployeeAlias(e);
             return (
                 String(e.id || '').includes(q) ||
                 name.toLowerCase().includes(q) ||
+                alias.toLowerCase().includes(q) ||
                 String(positionName).toLowerCase().includes(q) ||
                 String(e.contact_number || '').toLowerCase().includes(q)
             );
@@ -734,16 +921,16 @@ function renderEmployees() {
 
     tbody.innerHTML = rows.map((e) => {
         const empId = sanitize(e.id);
-        const positionName = SETTINGS_STATE.positions.get(String(e.position_id || 0)) || '-';
+        const positionName = getEmployeePositionName(e);
         const active = e.marga_active !== false;
         const linked = SETTINGS_STATE.userByStaffId.get(String(e.id || '')) || null;
-        const effectiveRole = getEmployeeEffectiveRole(e, linked, positionName);
+        const effectiveRoles = getEmployeeEffectiveRoles(e, linked, positionName);
         return `
             <tr>
                 <td data-label="ID">${empId}</td>
                 <td data-label="Name">${sanitize(getEmployeeDisplayName(e))}</td>
                 <td data-label="Position">${sanitize(positionName || '-')}</td>
-                <td data-label="Role"><span class="ops-role-badge ${sanitize(roleBadgeClass(effectiveRole))}">${sanitize(displayRoleLabel(effectiveRole))}</span></td>
+                <td data-label="Roles">${renderRoleBadgeStack(effectiveRoles)}</td>
                 <td data-label="Status">
                     <select class="settings-inline-select" data-action="emp-status" data-id="${empId}">
                         <option value="true" ${active ? 'selected' : ''}>Active</option>
@@ -827,29 +1014,44 @@ async function loadRoleConfigs() {
         const roleDocs = docs.map(parseFirestoreDoc).filter(Boolean);
         const roleConfigs = new Map();
         const roleDocIds = new Map();
+        const roleOptions = new Map(BASE_ROLE_OPTIONS.map((role) => [role.id, { ...role }]));
 
-        ROLE_OPTIONS.forEach((role) => {
+        BASE_ROLE_OPTIONS.forEach((role) => {
             roleConfigs.set(role.id, normalizeModuleList(BASE_ROLE_DEFAULTS[role.id] || []));
         });
 
         roleDocs.forEach((doc) => {
-            const roleId = normalizeRole(doc.role || doc._docId);
+            const roleId = normalizeRole(doc.role || doc._docId || doc.label);
             const modules = normalizeModuleList(doc.allowed_modules);
+            if (!roleId) return;
             roleConfigs.set(roleId, modules);
             roleDocIds.set(roleId, doc._docId || roleId);
+            roleOptions.set(roleId, {
+                id: roleId,
+                label: String(doc.label || roleOptions.get(roleId)?.label || MargaAuth.formatRoleLabel(roleId)).trim(),
+                description: String(doc.description || roleOptions.get(roleId)?.description || 'Custom role permissions.').trim()
+            });
         });
 
+        const baseOrder = new Map(BASE_ROLE_OPTIONS.map((role, index) => [role.id, index]));
+        ROLE_OPTIONS = [...roleOptions.values()].sort((a, b) => {
+            const aIndex = baseOrder.has(a.id) ? baseOrder.get(a.id) : Number.MAX_SAFE_INTEGER;
+            const bIndex = baseOrder.has(b.id) ? baseOrder.get(b.id) : Number.MAX_SAFE_INTEGER;
+            if (aIndex !== bIndex) return aIndex - bIndex;
+            return a.label.localeCompare(b.label);
+        });
         SETTINGS_STATE.roleConfigs = roleConfigs;
         SETTINGS_STATE.roleDocIds = roleDocIds;
         SETTINGS_STATE.activeRoleEditor = ROLE_OPTIONS.some((role) => role.id === SETTINGS_STATE.activeRoleEditor)
             ? SETTINGS_STATE.activeRoleEditor
-            : 'collection';
+            : (ROLE_OPTIONS[0]?.id || 'viewer');
 
         ROLE_OPTIONS.forEach((role) => {
             MargaAuth.setRolePermissions(role.id, roleConfigs.get(role.id) || []);
         });
     } catch (err) {
         console.error('Load role configs failed:', err);
+        ROLE_OPTIONS = BASE_ROLE_OPTIONS.map((role) => ({ ...role }));
         SETTINGS_STATE.roleConfigs = new Map(ROLE_OPTIONS.map((role) => [role.id, normalizeModuleList(BASE_ROLE_DEFAULTS[role.id] || [])]));
         SETTINGS_STATE.roleDocIds = new Map();
     }
@@ -860,13 +1062,19 @@ async function loadDirectory() {
     await Promise.all([loadPositions(), loadEmployees(), loadRoleConfigs()]);
     await loadUsers();
 
-    document.getElementById('settingsMeta').textContent = `${SETTINGS_STATE.employees.length} employee(s), ${SETTINGS_STATE.users.length} account(s), ${SETTINGS_STATE.roleConfigs.size} role policy set(s).`;
+    const activeEmployees = SETTINGS_STATE.employees.filter((employee) => employee.marga_active !== false).length;
+    const activeUsers = SETTINGS_STATE.users.filter((user) => user.active !== false).length;
+    document.getElementById('settingsMeta').textContent = `${activeEmployees} active employee(s), ${activeUsers} active account(s), ${SETTINGS_STATE.roleConfigs.size} role policy set(s).`;
 
     renderEmployeeLookupOptions();
     applyEmployeeFilter();
     applyUserFilter();
     renderRoleList();
     renderRoleEditor();
+    renderRoleSelectionGrid('userRolesInput', ['viewer'], { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('userRolesMeta', ['viewer']);
+    renderRoleSelectionGrid('employeeRolesInput', ['viewer'], { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('employeeRolesMeta', ['viewer']);
 }
 
 function setEmployeeModalOpen(isOpen) {
@@ -879,6 +1087,8 @@ function setEmployeeModalOpen(isOpen) {
 
 function closeEmployeeModal() {
     SETTINGS_STATE.editingEmployeeId = null;
+    renderRoleSelectionGrid('employeeRolesInput', ['viewer'], { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('employeeRolesMeta', ['viewer']);
     setEmployeeModalOpen(false);
 }
 
@@ -890,9 +1100,9 @@ function openEmployeeModal(employeeId) {
         return;
     }
 
-    const positionName = SETTINGS_STATE.positions.get(String(emp.position_id || 0)) || '';
+    const positionName = getEmployeePositionName(emp);
     const linked = SETTINGS_STATE.userByStaffId.get(String(emp.id || '')) || null;
-    const effectiveRole = getEmployeeEffectiveRole(emp, linked, positionName);
+    const effectiveRoles = getEmployeeEffectiveRoles(emp, linked, positionName);
 
     document.getElementById('employeeModalTitle').textContent = `${getEmployeeDisplayName(emp)} (${emp.id})`;
     document.getElementById('employeeId').value = String(emp.id || '');
@@ -905,7 +1115,8 @@ function openEmployeeModal(employeeId) {
     document.getElementById('employeeActive').value = empActive ? 'true' : 'false';
 
     document.getElementById('employeeEmail').value = String(linked?.email || '').trim();
-    document.getElementById('employeeRole').value = effectiveRole;
+    renderRoleSelectionGrid('employeeRolesInput', effectiveRoles, { readOnly: !MargaAuth.isAdmin() });
+    updateRoleSelectionMeta('employeeRolesMeta', effectiveRoles);
     document.getElementById('employeeAccountActive').value = (linked?.active === false) ? 'false' : (empActive ? 'true' : 'false');
     document.getElementById('employeePassword').value = '';
 
@@ -922,10 +1133,16 @@ async function saveEmployee() {
         if (!employeeId) return;
 
         const empActive = document.getElementById('employeeActive').value === 'true';
-        const role = normalizeRole(document.getElementById('employeeRole').value || 'viewer');
+        const roles = getSelectedRoleValues('employeeRolesInput');
+        if (!roles.length) {
+            alert('Select at least one role.');
+            return;
+        }
+        const role = getPrimaryRole(roles);
         await patchDocument('tbl_employee', employeeId, {
             marga_active: empActive,
             marga_role: role,
+            marga_roles: roles,
             marga_role_updated_at: new Date().toISOString(),
             marga_updated_at: new Date().toISOString()
         });
@@ -939,9 +1156,10 @@ async function saveEmployee() {
             marga_account_active: accountActive,
             marga_active: empActive && accountActive,
             marga_role: role,
+            marga_roles: roles,
             marga_allowed_modules: hasExplicitModuleOverride(linked)
                 ? normalizeModuleList(linked?.allowed_modules)
-                : getRoleDefaultModules(role),
+                : getRoleDefaultModules(roles),
             allowed_modules_configured: hasExplicitModuleOverride(linked),
             marga_updated_at: new Date().toISOString()
         };
@@ -1074,6 +1292,7 @@ function buildImportRecordsFromRows(rows) {
             continue;
         }
         const role = mapPositionToRole(position);
+        const roles = normalizeRoleList([role]);
         const fullName = `${firstname} ${lastname}`.trim() || nickname || (email ? email.split('@')[0] : '');
         records.push({
             rowNumber,
@@ -1089,7 +1308,8 @@ function buildImportRecordsFromRows(rows) {
             position,
             contact_number: contactNumber,
             role,
-            allowed_modules: getRoleDefaultModules(role)
+            roles,
+            allowed_modules: getRoleDefaultModules(roles)
         });
     }
 
@@ -1244,6 +1464,7 @@ async function syncUsersFromSpreadsheet() {
                     marga_active: true,
                     marga_account_active: true,
                     marga_role: record.role,
+                    marga_roles: record.roles,
                     marga_role_updated_at: nowIso,
                     marga_allowed_modules: record.allowed_modules,
                     allowed_modules_configured: false,
@@ -1306,7 +1527,7 @@ async function saveUser() {
     try {
         const email = String(document.getElementById('userEmail').value || '').trim().toLowerCase();
         const name = String(document.getElementById('userNameInput').value || '').trim();
-        const role = String(document.getElementById('userRoleInput').value || 'viewer').trim();
+        const roles = getSelectedRoleValues('userRolesInput');
         const staffIdRaw = String(document.getElementById('userStaffId').value || '').trim();
         const staff_id = staffIdRaw ? Number(staffIdRaw) : null;
         const password = isAdmin ? String(document.getElementById('userPassword').value || '') : '';
@@ -1317,12 +1538,12 @@ async function saveUser() {
             return;
         }
 
-        if (!role) {
-            alert('Role is required.');
+        if (!roles.length) {
+            alert('Select at least one role.');
             return;
         }
 
-        const normalizedRole = normalizeRole(role);
+        const normalizedRole = getPrimaryRole(roles);
         const editing = SETTINGS_STATE.editingDocId
             ? SETTINGS_STATE.users.find((u) => u._docId === SETTINGS_STATE.editingDocId) || null
             : null;
@@ -1330,9 +1551,9 @@ async function saveUser() {
             ? getSelectedUserModules()
             : (hasExplicitModuleOverride(editing)
                 ? normalizeModuleList(editing?.allowed_modules)
-                : getRoleDefaultModules(normalizedRole));
+                : getRoleDefaultModules(roles));
         const allowedModulesConfigured = isAdmin
-            ? !moduleListsEqual(allowedModules, getRoleDefaultModules(normalizedRole))
+            ? !moduleListsEqual(allowedModules, getRoleDefaultModules(roles))
             : hasExplicitModuleOverride(editing);
 
         const docId = SETTINGS_STATE.editingDocId || (staff_id ? String(staff_id) : '');
@@ -1352,6 +1573,7 @@ async function saveUser() {
             marga_login_email: email,
             marga_fullname: name || `${String(targetEmployee.firstname || '').trim()} ${String(targetEmployee.lastname || '').trim()}`.trim(),
             marga_role: normalizedRole,
+            marga_roles: roles,
             marga_account_active: active,
             marga_allowed_modules: allowedModules,
             allowed_modules_configured: allowedModulesConfigured,
