@@ -240,7 +240,7 @@
                                         <p class="ops-subtext" id="roleEditorSubtitle">Define the role identity and the modules it can access.</p>
                                     </div>
                                     <div class="settings-module-toolbar">
-                                        <button type="button" class="btn btn-secondary btn-sm" id="newRoleBtn">New Role</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" id="newRoleBtn">Create Role</button>
                                         <button type="button" class="btn btn-secondary btn-sm" id="resetRolePermissionsBtn">Reset Default</button>
                                         <button type="button" class="btn btn-primary btn-sm" id="saveRolePermissionsBtn">Save Role Permissions</button>
                                     </div>
@@ -249,6 +249,7 @@
                                     <label class="marga-field">
                                         <span>Role Key</span>
                                         <input type="text" id="roleIdInput" placeholder="e.g. service-in-house">
+                                        <div class="ops-subtext" id="roleIdMeta">Existing roles keep the same key. Change Display Name to rename the role.</div>
                                     </label>
                                     <label class="marga-field">
                                         <span>Display Name</span>
@@ -392,10 +393,10 @@
                 <div class="marga-field marga-field-full">
                     <div class="marga-field-heading">
                         <span>Roles</span>
-                        <button type="button" class="btn btn-secondary btn-sm" id="employeeAddRoleBtn">Add Role</button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="employeeAddRoleBtn">New Role</button>
                     </div>
                     <div class="role-selection-grid" id="employeeRolesInput"></div>
-                    <div class="ops-subtext" id="employeeRolesMeta">Assign one or more roles to this employee. Use Add Role to create a new role name and description.</div>
+                    <div class="ops-subtext" id="employeeRolesMeta">Assign one or more roles to this employee. Use New Role to create a separate role name and description.</div>
                 </div>
                 <label class="marga-field">
                     <span>Account Status</span>

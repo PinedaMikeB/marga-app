@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('newRoleBtn').addEventListener('click', () => openNewRoleEditor());
     document.getElementById('roleLabelInput').addEventListener('input', () => {
         const roleIdInput = document.getElementById('roleIdInput');
+        if (SETTINGS_STATE.activeRoleEditor !== 'new') return;
         if (roleIdInput.dataset.manual === 'true') return;
         roleIdInput.value = slugifyRoleKey(document.getElementById('roleLabelInput').value || '');
     });
@@ -414,15 +415,25 @@ function renderRoleEditor() {
     const subtitle = document.getElementById('roleEditorSubtitle');
     const meta = document.getElementById('roleModuleMeta');
     const roleIdInput = document.getElementById('roleIdInput');
+    const roleIdMeta = document.getElementById('roleIdMeta');
     const roleLabelInput = document.getElementById('roleLabelInput');
     const roleDescriptionInput = document.getElementById('roleDescriptionInput');
     const isNew = roleId === 'new';
     if (title) title.textContent = role.label;
-    if (subtitle) subtitle.textContent = role.description;
+    if (subtitle) {
+        subtitle.textContent = isNew
+            ? 'Create a separate role with its own name, description, and module access.'
+            : `Editing ${role.label}. Change Display Name to rename this role without creating a duplicate.`;
+    }
     if (roleIdInput) {
         roleIdInput.value = isNew ? '' : role.id;
         roleIdInput.disabled = !MargaAuth.isAdmin() || !isNew;
         roleIdInput.dataset.manual = 'false';
+    }
+    if (roleIdMeta) {
+        roleIdMeta.textContent = isNew
+            ? 'This becomes the saved role key. Use lowercase words with hyphens.'
+            : `This key stays locked to ${role.id}. Use Create Role if you want a separate role instead.`;
     }
     if (roleLabelInput) roleLabelInput.value = isNew ? '' : role.label;
     if (roleDescriptionInput) roleDescriptionInput.value = isNew ? '' : (role.description || '');
@@ -440,10 +451,12 @@ async function saveRolePermissions() {
         return;
     }
     const isNew = SETTINGS_STATE.activeRoleEditor === 'new';
-    const roleId = normalizeRole(document.getElementById('roleIdInput').value || SETTINGS_STATE.activeRoleEditor || 'viewer');
-    const modules = getSelectedRoleModules();
     const label = String(document.getElementById('roleLabelInput').value || '').trim();
     const description = String(document.getElementById('roleDescriptionInput').value || '').trim();
+    const typedRoleId = normalizeRole(document.getElementById('roleIdInput').value || '');
+    const activeRoleId = normalizeRole(SETTINGS_STATE.activeRoleEditor || 'viewer');
+    const roleId = isNew ? (typedRoleId || slugifyRoleKey(label)) : activeRoleId;
+    const modules = getSelectedRoleModules();
     const role = {
         id: roleId,
         label: label || MargaAuth.formatRoleLabel(roleId),
