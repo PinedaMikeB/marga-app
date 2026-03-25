@@ -327,9 +327,7 @@ function renderRoleBadgeStack(roles = []) {
     if (!list.length) {
         return '<span class="role-listing-text">Viewer</span>';
     }
-    return `<div class="role-listing">${list.map((role) => `
-        <span class="ops-role-badge ${sanitize(roleBadgeClass(role))}">${sanitize(getRoleOption(role).label)}</span>
-    `).join('')}<span class="role-listing-text">${sanitize(list.map((role) => getRoleOption(role).label).join(', '))}</span></div>`;
+    return `<span class="role-listing-text">${sanitize(list.map((role) => getRoleOption(role).label).join(', '))}</span>`;
 }
 
 function handleUserRoleSelectionChange() {
