@@ -1,0 +1,281 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(profilePath());
+    }
+
+    function me() {
+      return get(profilePath()).data;
+    }
+
+    function role() {
+      return hasProfile() ? me().role : null;
+    }
+
+    function isCorporateAdmin() {
+      return role() == 'corporate_admin';
+    }
+
+    function isBranchManager() {
+      return role() == 'branch_manager';
+    }
+
+    function isEndUser() {
+      return role() == 'end_user';
+    }
+
+    function isTech() {
+      return role() == 'tech';
+    }
+
+    function sameCompany(companyId) {
+      return hasProfile() && me().companyId == companyId;
+    }
+
+    function sameBranch(branchId) {
+      return hasProfile() && me().branchId == branchId;
+    }
+
+    function companyScopedRead(companyId, branchId) {
+      return isTech()
+        ? true
+        : (
+          sameCompany(companyId)
+            && (isCorporateAdmin() || (branchId != null && sameBranch(branchId)))
+        );
+    }
+
+    function signerValidForCompletion(ticket, completion) {
+      let signer = get(/databases/$(database)/documents/authorized_signers/$(completion.acknowledgedByUserId)).data;
+      return completion.ackMethod == 'PIN'
+        && completion.ackPinHash is string
+        && signer.active == true
+        && signer.companyId == ticket.companyId
+        && signer.branchId == ticket.branchId
+        && signer.pinHash == completion.ackPinHash
+        && (signer.lockedUntil == null || signer.lockedUntil <= request.time);
+    }
+
+    function ticketCoreUnchanged() {
+      return request.resource.data.companyId == resource.data.companyId
+        && request.resource.data.branchId == resource.data.branchId
+        && request.resource.data.deviceId == resource.data.deviceId
+        && request.resource.data.requesterUserId == resource.data.requesterUserId
+        && request.resource.data.ticketNo == resource.data.ticketNo
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function techCanUpdateTicketStatus() {
+      return isTech()
+        && ticketCoreUnchanged()
+        && request.resource.data.completion == resource.data.completion
+        && request.resource.data.status in ['Assigned', 'In Progress', 'Pending Parts', 'Pending Sync']
+        && (
+          request.resource.data.assignedTechId == request.auth.uid
+          || resource.data.assignedTechId == request.auth.uid
+          || resource.data.assignedTechId == null
+        );
+    }
+
+    function techCanCompleteTicket() {
+      return isTech()
+        && ticketCoreUnchanged()
+        && request.resource.data.status in ['Completed', 'Pending Follow Up']
+        && request.resource.data.assignedTechId == request.auth.uid
+        && request.resource.data.completion != null
+        && request.resource.data.completion.completedByTechId == request.auth.uid
+        && signerValidForCompletion(resource.data, request.resource.data.completion);
+    }
+
+    function managerCanUpdateTicket() {
+      return isBranchManager()
+        && sameCompany(resource.data.companyId)
+        && resource.data.branchId == me().branchId
+        && request.resource.data.completion == resource.data.completion
+        && ticketCoreUnchanged();
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (
+        request.auth.uid == userId
+        || (isCorporateAdmin() && resource.data.companyId == me().companyId)
+      );
+
+      allow create: if isCorporateAdmin() && request.resource.data.companyId == me().companyId;
+
+      allow update: if signedIn() && (
+        (isCorporateAdmin() && resource.data.companyId == me().companyId)
+        || (
+          request.auth.uid == userId
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.branchId == resource.data.branchId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone', 'lastLogin', 'email'])
+        )
+      );
+
+      allow delete: if isCorporateAdmin() && resource.data.companyId == me().companyId;
+    }
+
+    match /companies/{companyId} {
+      allow read: if signedIn() && (sameCompany(companyId) || isTech());
+      allow create, update, delete: if isCorporateAdmin() && companyId == me().companyId;
+    }
+
+    match /branches/{branchId} {
+      allow read: if signedIn() && companyScopedRead(resource.data.companyId, branchId);
+      allow create: if isCorporateAdmin() && request.resource.data.companyId == me().companyId;
+      allow update, delete: if isCorporateAdmin() && resource.data.companyId == me().companyId;
+    }
+
+    match /devices/{deviceId} {
+      allow read: if signedIn() && companyScopedRead(resource.data.companyId, resource.data.branchId);
+      allow create: if isCorporateAdmin() && request.resource.data.companyId == me().companyId;
+      allow update, delete: if isCorporateAdmin() && resource.data.companyId == me().companyId;
+    }
+
+    match /tickets/{ticketId} {
+      allow read: if signedIn() && (
+        isTech()
+        || (isCorporateAdmin() && sameCompany(resource.data.companyId))
+        || (isBranchManager() && sameCompany(resource.data.companyId) && resource.data.branchId == me().branchId)
+        || (isEndUser() && sameCompany(resource.data.companyId) && resource.data.requesterUserId == request.auth.uid)
+      );
+
+      allow create: if signedIn()
+        && (isCorporateAdmin() || isBranchManager() || isEndUser())
+        && request.resource.data.companyId == me().companyId
+        && (
+          isCorporateAdmin()
+          || request.resource.data.branchId == me().branchId
+        )
+        && request.resource.data.requesterUserId == request.auth.uid
+        && request.resource.data.status == 'Open'
+        && request.resource.data.completion == null;
+
+      allow update: if signedIn() && (
+        techCanUpdateTicketStatus()
+        || techCanCompleteTicket()
+        || (isCorporateAdmin() && sameCompany(resource.data.companyId) && ticketCoreUnchanged())
+        || managerCanUpdateTicket()
+      );
+
+      allow delete: if isCorporateAdmin() && sameCompany(resource.data.companyId);
+    }
+
+    match /toner_requests/{requestId} {
+      allow read: if signedIn() && (
+        (isCorporateAdmin() && sameCompany(resource.data.companyId))
+        || (isBranchManager() && sameCompany(resource.data.companyId) && resource.data.branchId == me().branchId)
+        || (isEndUser() && sameCompany(resource.data.companyId) && resource.data.requesterUserId == request.auth.uid)
+      );
+
+      allow create: if signedIn()
+        && (isCorporateAdmin() || isBranchManager() || isEndUser())
+        && request.resource.data.companyId == me().companyId
+        && (
+          isCorporateAdmin()
+          || request.resource.data.branchId == me().branchId
+        )
+        && request.resource.data.requesterUserId == request.auth.uid;
+
+      allow update: if signedIn() && (
+        (isCorporateAdmin() && sameCompany(resource.data.companyId))
+        || (isBranchManager() && sameCompany(resource.data.companyId) && resource.data.branchId == me().branchId)
+        || isTech()
+      );
+
+      allow delete: if isCorporateAdmin() && sameCompany(resource.data.companyId);
+    }
+
+    match /invoices/{invoiceId} {
+      allow read: if signedIn() && (
+        (isCorporateAdmin() && sameCompany(resource.data.companyId))
+        || (
+          isBranchManager()
+          && sameCompany(resource.data.companyId)
+          && (resource.data.branchId == me().branchId || resource.data.branchId == null)
+        )
+      );
+
+      allow create: if isCorporateAdmin() && request.resource.data.companyId == me().companyId;
+      allow update, delete: if isCorporateAdmin() && resource.data.companyId == me().companyId;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if signedIn() && (
+        (isCorporateAdmin() && sameCompany(resource.data.companyId))
+        || (isBranchManager() && sameCompany(resource.data.companyId) && resource.data.branchId == me().branchId)
+      );
+
+      allow create: if isCorporateAdmin() && request.resource.data.companyId == me().companyId;
+      allow update, delete: if isCorporateAdmin() && resource.data.companyId == me().companyId;
+    }
+
+    match /authorized_signers/{signerId} {
+      allow read: if signedIn() && (
+        (isCorporateAdmin() && sameCompany(resource.data.companyId))
+        || (isBranchManager() && sameCompany(resource.data.companyId) && resource.data.branchId == me().branchId)
+        || (isTech() && resource.data.active == true)
+      );
+
+      allow create: if isCorporateAdmin() && request.resource.data.companyId == me().companyId;
+      allow delete: if isCorporateAdmin() && resource.data.companyId == me().companyId;
+
+      allow update: if signedIn() && (
+        (isCorporateAdmin() && resource.data.companyId == me().companyId)
+        || (
+          isTech()
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.branchId == resource.data.branchId
+          && request.resource.data.pinHash == resource.data.pinHash
+          && request.resource.data.pinLastResetAt == resource.data.pinLastResetAt
+          && request.resource.data.name == resource.data.name
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.phone == resource.data.phone
+          && request.resource.data.active == resource.data.active
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['failedAttempts', 'lockedUntil', 'lastFailedAttemptAt', 'updatedAt'])
+        )
+      );
+
+      match /pin_attempts/{attemptId} {
+        allow read: if isCorporateAdmin() && sameCompany(get(/databases/$(database)/documents/authorized_signers/$(signerId)).data.companyId);
+        allow create: if signedIn() && (
+          (isTech() && request.resource.data.techUserId == request.auth.uid)
+          || (isCorporateAdmin() && request.resource.data.companyId == me().companyId)
+        )
+        && request.resource.data.signerId == signerId;
+        allow update, delete: if false;
+      }
+    }
+
+    // Legacy Marga app compatibility (REST API-key access).
+    // This keeps current production modules working while MSP collections above remain RBAC-protected.
+    match /{legacyCollection}/{docId} {
+      allow read, write: if legacyCollection.matches('tbl_.*');
+    }
+
+    match /marga_users/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /marga_role_permissions/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
