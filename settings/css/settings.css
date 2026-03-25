@@ -167,6 +167,14 @@
     gap: 0.35rem;
 }
 
+.marga-field-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
 .marga-field span {
     font-size: 0.72rem;
     text-transform: uppercase;

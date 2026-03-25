@@ -110,12 +110,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('employeeModalCancelBtn').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalSaveBtn').addEventListener('click', () => saveEmployee());
     document.getElementById('employeeRolesInput').addEventListener('change', () => updateRoleSelectionMeta('employeeRolesMeta', getSelectedRoleValues('employeeRolesInput')));
+    document.getElementById('employeeAddRoleBtn').addEventListener('click', () => openNewRoleFromEmployeeModal());
 
     // Ensure admin-only password fields are hidden for HR/non-admin.
     document.getElementById('userPasswordField').style.display = isAdmin ? 'flex' : 'none';
+    document.getElementById('employeeCurrentPasswordField').style.display = isAdmin ? 'flex' : 'none';
     document.getElementById('employeePasswordField').style.display = isAdmin ? 'flex' : 'none';
     document.getElementById('applyRoleDefaultsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('newRoleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
+    document.getElementById('employeeAddRoleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('saveRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('resetRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('syncUsersBtn').style.display = isAdmin ? 'inline-flex' : 'none';
@@ -510,6 +513,12 @@ function openNewRoleEditor() {
     renderRoleList();
     renderRoleEditor();
     document.getElementById('roleLabelInput')?.focus();
+}
+
+function openNewRoleFromEmployeeModal() {
+    closeEmployeeModal();
+    setActiveTab('roles');
+    openNewRoleEditor();
 }
 
 async function runQuery(structuredQuery) {
@@ -1118,6 +1127,11 @@ function openEmployeeModal(employeeId) {
     renderRoleSelectionGrid('employeeRolesInput', effectiveRoles, { readOnly: !MargaAuth.isAdmin() });
     updateRoleSelectionMeta('employeeRolesMeta', effectiveRoles);
     document.getElementById('employeeAccountActive').value = (linked?.active === false) ? 'false' : (empActive ? 'true' : 'false');
+    const currentPassword = String(emp.password || linked?.password || '').trim();
+    document.getElementById('employeeCurrentPassword').value = currentPassword;
+    document.getElementById('employeeCurrentPasswordMeta').textContent = currentPassword
+        ? 'This is the current login password saved for this account.'
+        : 'No readable password is stored. Set a new login password below to reset it.';
     document.getElementById('employeePassword').value = '';
 
     setEmployeeModalOpen(true);
@@ -1174,7 +1188,7 @@ async function saveEmployee() {
                 alert('Only admin can set passwords.');
             } else {
                 const hashed = await hashPassword(password);
-                Object.assign(baseFields, hashed, { marga_password_updated_at: new Date().toISOString() });
+                Object.assign(baseFields, hashed, { password, marga_password_updated_at: new Date().toISOString() });
             }
         }
 
@@ -1586,12 +1600,12 @@ async function saveUser() {
                 return;
             }
             const hashed = await hashPassword(password);
-            await patchDocument('tbl_employee', docId, { ...baseFields, ...hashed, marga_password_updated_at: new Date().toISOString() });
+            await patchDocument('tbl_employee', docId, { ...baseFields, ...hashed, password, marga_password_updated_at: new Date().toISOString() });
         } else {
             // Update existing. If password provided, reset it.
             if (password) {
                 const hashed = await hashPassword(password);
-                await patchDocument('tbl_employee', docId, { ...baseFields, ...hashed, marga_password_updated_at: new Date().toISOString() });
+                await patchDocument('tbl_employee', docId, { ...baseFields, ...hashed, password, marga_password_updated_at: new Date().toISOString() });
             } else {
                 await patchDocument('tbl_employee', docId, baseFields);
             }

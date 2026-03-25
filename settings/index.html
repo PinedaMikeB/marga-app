@@ -390,9 +390,12 @@
                     <input type="email" id="employeeEmail" placeholder="name@company.com">
                 </label>
                 <div class="marga-field marga-field-full">
-                    <span>Roles</span>
+                    <div class="marga-field-heading">
+                        <span>Roles</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="employeeAddRoleBtn">Add Role</button>
+                    </div>
                     <div class="role-selection-grid" id="employeeRolesInput"></div>
-                    <div class="ops-subtext" id="employeeRolesMeta">Assign one or more roles to this employee.</div>
+                    <div class="ops-subtext" id="employeeRolesMeta">Assign one or more roles to this employee. Use Add Role to create a new role name and description.</div>
                 </div>
                 <label class="marga-field">
                     <span>Account Status</span>
@@ -401,9 +404,15 @@
                         <option value="false">Inactive</option>
                     </select>
                 </label>
+                <label class="marga-field marga-field-full" id="employeeCurrentPasswordField">
+                    <span>Current Login Password (Admin Only)</span>
+                    <input type="text" id="employeeCurrentPassword" readonly>
+                    <div class="ops-subtext" id="employeeCurrentPasswordMeta">This is the current login password saved for this account.</div>
+                </label>
                 <label class="marga-field marga-field-full" id="employeePasswordField">
-                    <span>Temporary Password (Admin Only)</span>
-                    <input type="text" id="employeePassword" placeholder="Admin assigns password">
+                    <span>Set New Login Password (Admin Only)</span>
+                    <input type="text" id="employeePassword" placeholder="Leave blank to keep current password">
+                    <div class="ops-subtext">Leave blank to keep the current password unchanged.</div>
                 </label>
             </div>
         </div>
