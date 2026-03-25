@@ -274,6 +274,11 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    match /marga_module_registry/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

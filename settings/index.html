@@ -260,6 +260,13 @@
                                         <input type="text" id="roleDescriptionInput" placeholder="Short description of this role">
                                     </label>
                                 </div>
+                                <div class="module-composer">
+                                    <div class="module-composer-copy">
+                                        <div class="module-composer-title">Module Access</div>
+                                        <p class="ops-subtext" id="moduleComposerMeta">Choose the modules this role can open. Add Module creates new modules for future pages and department tiles.</p>
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="addModuleBtn">Add Module</button>
+                                </div>
                                 <div class="module-access-grid role-module-grid" id="roleModuleAccess"></div>
                                 <div class="ops-subtext" id="roleModuleMeta"></div>
                             </div>
@@ -420,6 +427,51 @@
         <div class="marga-modal-footer">
             <button type="button" class="btn btn-secondary" id="employeeModalCancelBtn">Cancel</button>
             <button type="button" class="btn btn-primary" id="employeeModalSaveBtn">Save</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="moduleModalOverlay"></div>
+    <div class="marga-modal" id="moduleModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="marga-modal-header">
+            <div>
+                <h2 id="moduleModalTitle">New Module</h2>
+                <p id="moduleModalSubtitle">Create a reusable module permission for roles and dashboard tiles.</p>
+            </div>
+            <button class="panel-close" id="moduleModalCloseBtn" type="button" aria-label="Close module modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="marga-modal-body">
+            <div class="marga-form-grid">
+                <label class="marga-field">
+                    <span>Module Key</span>
+                    <input type="text" id="moduleIdInput" placeholder="e.g. account-payables">
+                    <div class="ops-subtext">Used in permissions and links. Lowercase words with hyphens only.</div>
+                </label>
+                <label class="marga-field">
+                    <span>Module Label</span>
+                    <input type="text" id="moduleLabelInput" placeholder="e.g. Account Payables Module">
+                </label>
+                <label class="marga-field">
+                    <span>Dashboard Label</span>
+                    <input type="text" id="moduleDashboardLabelInput" placeholder="e.g. Account Payables">
+                </label>
+                <label class="marga-field">
+                    <span>Route</span>
+                    <input type="text" id="moduleRouteInput" placeholder="e.g. payables/">
+                    <div class="ops-subtext">Optional. Leave blank if the page is still being built.</div>
+                </label>
+                <label class="marga-field marga-field-full">
+                    <span>Dashboard Note</span>
+                    <textarea id="moduleNoteInput" rows="3" placeholder="Short note for the dashboard tile"></textarea>
+                </label>
+            </div>
+        </div>
+        <div class="marga-modal-footer">
+            <button type="button" class="btn btn-secondary" id="moduleModalCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="moduleModalSaveBtn">Save Module</button>
         </div>
     </div>
 

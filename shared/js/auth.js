@@ -308,11 +308,16 @@ const MargaAuth = {
 };
 
 MargaAuth.normalizeModules = function normalizeModules(modules) {
+    const normalizeModule = (module) => String(module || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
     if (Array.isArray(modules)) {
-        return [...new Set(modules.map((m) => String(m || '').trim().toLowerCase()).filter(Boolean))];
+        return [...new Set(modules.map((m) => normalizeModule(m)).filter(Boolean))];
     }
     if (typeof modules === 'string' && modules.trim()) {
-        return [...new Set(modules.split(',').map((m) => m.trim().toLowerCase()).filter(Boolean))];
+        return [...new Set(modules.split(',').map((m) => normalizeModule(m)).filter(Boolean))];
     }
     return [];
 };
@@ -371,6 +376,22 @@ MargaAuth.persistCurrentUser = function persistCurrentUser() {
     const value = JSON.stringify(this.currentUser);
     if (localStorage.getItem('marga_user')) localStorage.setItem('marga_user', value);
     if (sessionStorage.getItem('marga_user')) sessionStorage.setItem('marga_user', value);
+};
+
+MargaAuth.registerModules = function registerModules(modules) {
+    const normalizedModules = this.normalizeModules(
+        Array.isArray(modules)
+            ? modules.map((module) => typeof module === 'string' ? module : module?.id)
+            : modules
+    );
+    if (!normalizedModules.length) return;
+    this.PERMISSIONS.admin = [...new Set([
+        ...this.normalizeModules(this.PERMISSIONS.admin || []),
+        ...normalizedModules
+    ])];
+    if (!this.currentUser || !this.isAdmin() || this.currentUser.allowed_modules_configured === true) return;
+    this.currentUser.role_modules = this.normalizeModules(this.PERMISSIONS.admin);
+    this.persistCurrentUser();
 };
 
 MargaAuth.setRolePermissions = function setRolePermissions(role, modules) {

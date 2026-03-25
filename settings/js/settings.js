@@ -11,26 +11,28 @@ const SETTINGS_STATE = {
     userByStaffId: new Map(),
     editingDocId: null,
     editingEmployeeId: null,
+    moduleDocIds: new Map(),
     roleConfigs: new Map(),
     roleDocIds: new Map(),
     activeRoleEditor: 'collection'
 };
 
-const MODULE_OPTIONS = [
-    { id: 'customers', label: 'Customers Module' },
-    { id: 'billing', label: 'Billing Module' },
-    { id: 'collections', label: 'Collections Module' },
-    { id: 'service', label: 'Customer Service Module' },
-    { id: 'field', label: 'Service Field App (Tech/Messenger)' },
-    { id: 'inventory', label: 'Inventory Module' },
-    { id: 'hr', label: 'Human Resource Module' },
-    { id: 'reports', label: 'Reports Module' },
-    { id: 'settings', label: 'Settings Module' },
-    { id: 'sync', label: 'Sync Updater Module' },
-    { id: 'purchasing', label: 'Purchasing Module' },
-    { id: 'pettycash', label: 'Petty Cash Module' },
-    { id: 'sales', label: 'Sales Module' }
+const BASE_MODULE_OPTIONS = [
+    { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
+    { id: 'billing', label: 'Billing Module', dashboardLabel: 'Billing', route: 'billing/', note: 'Invoices, billing runs, due schedules' },
+    { id: 'collections', label: 'Collections Module', dashboardLabel: 'Collections', route: 'collections.html', note: 'Collections, ORs, check follow-up' },
+    { id: 'service', label: 'Customer Service Module', dashboardLabel: 'Service Dispatch', route: 'service/index.html', note: 'Task queue, assignment, transfer' },
+    { id: 'field', label: 'Service Field App (Tech/Messenger)', dashboardLabel: 'Field App', route: 'field/index.html', note: 'Tech and messenger daily tasks' },
+    { id: 'inventory', label: 'Inventory Module', dashboardLabel: 'Inventory', route: 'inventory/', note: 'Parts, toner, stock movements' },
+    { id: 'hr', label: 'Human Resource Module', dashboardLabel: 'Human Resource', route: 'hr/', note: 'Employees, position mapping' },
+    { id: 'reports', label: 'Reports Module', dashboardLabel: 'Reports', route: 'reports/', note: 'Daily and historical reports' },
+    { id: 'settings', label: 'Settings Module', dashboardLabel: 'Settings', route: 'settings/index.html', note: 'Users, permissions, app config' },
+    { id: 'sync', label: 'Sync Updater Module', dashboardLabel: 'Sync Updater', route: 'sync/index.html', note: 'SQL to Firebase updates' },
+    { id: 'purchasing', label: 'Purchasing Module', dashboardLabel: 'Purchasing', route: '', note: 'Purchase requests, vendors, and approval flow' },
+    { id: 'pettycash', label: 'Petty Cash Module', dashboardLabel: 'Petty Cash', route: '', note: 'Petty cash releases, replenishment, and liquidation' },
+    { id: 'sales', label: 'Sales Module', dashboardLabel: 'Sales', route: '', note: 'Sales pipeline, quotations, and account follow-up' }
 ];
+let MODULE_OPTIONS = BASE_MODULE_OPTIONS.map((module) => ({ ...module, builtIn: true }));
 
 const BASE_ROLE_OPTIONS = [
     { id: 'admin', label: 'Admin', description: 'Full system control and user administration.' },
@@ -96,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('saveRolePermissionsBtn').addEventListener('click', () => saveRolePermissions());
     document.getElementById('resetRolePermissionsBtn').addEventListener('click', () => resetRolePermissions());
     document.getElementById('newRoleBtn').addEventListener('click', () => openNewRoleEditor());
+    document.getElementById('addModuleBtn').addEventListener('click', () => openModuleModal());
     document.getElementById('roleLabelInput').addEventListener('input', () => {
         const roleIdInput = document.getElementById('roleIdInput');
         if (SETTINGS_STATE.activeRoleEditor !== 'new') return;
@@ -112,6 +115,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('employeeModalSaveBtn').addEventListener('click', () => saveEmployee());
     document.getElementById('employeeRolesInput').addEventListener('change', () => updateRoleSelectionMeta('employeeRolesMeta', getSelectedRoleValues('employeeRolesInput')));
     document.getElementById('employeeAddRoleBtn').addEventListener('click', () => openNewRoleFromEmployeeModal());
+    document.getElementById('moduleModalOverlay').addEventListener('click', closeModuleModal);
+    document.getElementById('moduleModalCloseBtn').addEventListener('click', closeModuleModal);
+    document.getElementById('moduleModalCancelBtn').addEventListener('click', closeModuleModal);
+    document.getElementById('moduleModalSaveBtn').addEventListener('click', () => saveModule());
+    document.getElementById('moduleLabelInput').addEventListener('input', () => {
+        const moduleIdInput = document.getElementById('moduleIdInput');
+        if (moduleIdInput.dataset.manual === 'true') return;
+        moduleIdInput.value = normalizeModuleId(document.getElementById('moduleLabelInput').value || '');
+    });
+    document.getElementById('moduleIdInput').addEventListener('input', () => {
+        document.getElementById('moduleIdInput').dataset.manual = 'true';
+    });
 
     // Ensure admin-only password fields are hidden for HR/non-admin.
     document.getElementById('userPasswordField').style.display = isAdmin ? 'flex' : 'none';
@@ -119,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('employeePasswordField').style.display = isAdmin ? 'flex' : 'none';
     document.getElementById('applyRoleDefaultsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('newRoleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
+    document.getElementById('addModuleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('employeeAddRoleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('saveRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('resetRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
@@ -127,6 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('roleIdInput').disabled = !isAdmin;
     document.getElementById('roleLabelInput').disabled = !isAdmin;
     document.getElementById('roleDescriptionInput').disabled = !isAdmin;
+    document.getElementById('moduleIdInput').disabled = !isAdmin;
+    document.getElementById('moduleLabelInput').disabled = !isAdmin;
+    document.getElementById('moduleDashboardLabelInput').disabled = !isAdmin;
+    document.getElementById('moduleRouteInput').disabled = !isAdmin;
+    document.getElementById('moduleNoteInput').disabled = !isAdmin;
     if (!isAdmin) {
         document.getElementById('syncUsersResult').textContent = 'Only admin can sync XLSX user data.';
     }
@@ -222,6 +243,10 @@ function slugifyRoleKey(value) {
         .replace(/^-+|-+$/g, '');
 }
 
+function normalizeModuleId(value) {
+    return slugifyRoleKey(value);
+}
+
 function normalizeRoleList(list) {
     if (Array.isArray(list)) {
         return [...new Set(list.map((item) => normalizeRole(item)).filter(Boolean))];
@@ -234,10 +259,10 @@ function normalizeRoleList(list) {
 
 function normalizeModuleList(list) {
     if (Array.isArray(list)) {
-        return [...new Set(list.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))];
+        return [...new Set(list.map((item) => normalizeModuleId(item)).filter(Boolean))];
     }
     if (typeof list === 'string' && list.trim()) {
-        return [...new Set(list.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean))];
+        return [...new Set(list.split(',').map((item) => normalizeModuleId(item)).filter(Boolean))];
     }
     return [];
 }
@@ -267,11 +292,15 @@ function roleListsEqual(left, right) {
 
 function getRoleDefaultModules(roles) {
     const roleList = normalizeRoleList(roles);
-    return [...new Set(roleList.flatMap((role) => {
+    const resolved = [...new Set(roleList.flatMap((role) => {
         if (SETTINGS_STATE.roleConfigs.has(role)) return normalizeModuleList(SETTINGS_STATE.roleConfigs.get(role));
         const defaults = BASE_ROLE_DEFAULTS[role] || MargaAuth.PERMISSIONS?.[role] || [];
         return normalizeModuleList(defaults);
     }))];
+    if (roleList.includes('admin')) {
+        return [...new Set([...resolved, ...MODULE_OPTIONS.map((module) => module.id)])];
+    }
+    return resolved;
 }
 
 function getRoleOption(role) {
@@ -280,6 +309,17 @@ function getRoleOption(role) {
         id: normalized,
         label: MargaAuth.formatRoleLabel(normalized),
         description: 'Custom role configuration.'
+    };
+}
+
+function getModuleOption(module) {
+    const normalized = normalizeModuleId(module);
+    return MODULE_OPTIONS.find((option) => option.id === normalized) || {
+        id: normalized,
+        label: `${MargaAuth.formatRoleLabel(normalized)} Module`,
+        dashboardLabel: MargaAuth.formatRoleLabel(normalized),
+        route: '',
+        note: 'Module setup is ready for role assignment.'
     };
 }
 
@@ -534,6 +574,50 @@ function openNewRoleFromEmployeeModal() {
     openNewRoleEditor();
 }
 
+async function loadModuleConfigs() {
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'marga_module_registry' }],
+            orderBy: [{ field: { fieldPath: 'module' }, direction: 'ASCENDING' }],
+            limit: 300
+        });
+        const moduleDocs = docs.map(parseFirestoreDoc).filter(Boolean).filter((doc) => doc.active !== false);
+        const baseOrder = new Map(BASE_MODULE_OPTIONS.map((module, index) => [module.id, index]));
+        const moduleOptions = new Map(BASE_MODULE_OPTIONS.map((module) => [module.id, { ...module, builtIn: true }]));
+        const moduleDocIds = new Map();
+
+        moduleDocs.forEach((doc) => {
+            const moduleId = normalizeModuleId(doc.module || doc._docId || doc.label);
+            if (!moduleId) return;
+            const existing = moduleOptions.get(moduleId) || {};
+            moduleOptions.set(moduleId, {
+                ...existing,
+                id: moduleId,
+                label: String(doc.label || existing.label || `${MargaAuth.formatRoleLabel(moduleId)} Module`).trim(),
+                dashboardLabel: String(doc.dashboard_label || doc.nav_label || existing.dashboardLabel || doc.label || MargaAuth.formatRoleLabel(moduleId)).trim(),
+                route: String(doc.route || doc.href || existing.route || '').trim(),
+                note: String(doc.note || existing.note || 'Module setup is ready for role assignment.').trim(),
+                builtIn: existing.builtIn === true
+            });
+            moduleDocIds.set(moduleId, doc._docId || moduleId);
+        });
+
+        MODULE_OPTIONS = [...moduleOptions.values()].sort((left, right) => {
+            const leftIndex = baseOrder.has(left.id) ? baseOrder.get(left.id) : Number.MAX_SAFE_INTEGER;
+            const rightIndex = baseOrder.has(right.id) ? baseOrder.get(right.id) : Number.MAX_SAFE_INTEGER;
+            if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+            return left.dashboardLabel.localeCompare(right.dashboardLabel);
+        });
+        SETTINGS_STATE.moduleDocIds = moduleDocIds;
+    } catch (err) {
+        console.error('Load module configs failed:', err);
+        MODULE_OPTIONS = BASE_MODULE_OPTIONS.map((module) => ({ ...module, builtIn: true }));
+        SETTINGS_STATE.moduleDocIds = new Map();
+    }
+
+    MargaAuth.registerModules(MODULE_OPTIONS.map((module) => module.id));
+}
+
 async function runQuery(structuredQuery) {
     const response = await fetch(
         `${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`,
@@ -591,6 +675,90 @@ async function setDocument(collection, docId, fields) {
         throw new Error(payload?.error?.message || `Failed to set ${collection}/${docId}`);
     }
     return payload;
+}
+
+function setModuleModalOpen(isOpen) {
+    const overlay = document.getElementById('moduleModalOverlay');
+    const modal = document.getElementById('moduleModal');
+    modal.classList.toggle('open', isOpen);
+    overlay.classList.toggle('visible', isOpen);
+    modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+}
+
+function closeModuleModal() {
+    setModuleModalOpen(false);
+    document.getElementById('moduleIdInput').value = '';
+    document.getElementById('moduleIdInput').dataset.manual = 'false';
+    document.getElementById('moduleLabelInput').value = '';
+    document.getElementById('moduleDashboardLabelInput').value = '';
+    document.getElementById('moduleRouteInput').value = '';
+    document.getElementById('moduleNoteInput').value = '';
+}
+
+function openModuleModal(prefill = {}) {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can add modules.');
+        return;
+    }
+    document.getElementById('moduleModalTitle').textContent = 'New Module';
+    document.getElementById('moduleModalSubtitle').textContent = 'Create a reusable module permission for roles and dashboard tiles.';
+    document.getElementById('moduleIdInput').value = String(prefill.id || '').trim();
+    document.getElementById('moduleIdInput').dataset.manual = prefill.id ? 'true' : 'false';
+    document.getElementById('moduleLabelInput').value = String(prefill.label || '').trim();
+    document.getElementById('moduleDashboardLabelInput').value = String(prefill.dashboardLabel || '').trim();
+    document.getElementById('moduleRouteInput').value = String(prefill.route || '').trim();
+    document.getElementById('moduleNoteInput').value = String(prefill.note || '').trim();
+    setModuleModalOpen(true);
+    document.getElementById('moduleLabelInput').focus();
+}
+
+async function saveModule() {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can add modules.');
+        return;
+    }
+
+    const moduleLabel = String(document.getElementById('moduleLabelInput').value || '').trim();
+    const moduleId = normalizeModuleId(document.getElementById('moduleIdInput').value || moduleLabel);
+    const dashboardLabel = String(document.getElementById('moduleDashboardLabelInput').value || moduleLabel || MargaAuth.formatRoleLabel(moduleId)).trim();
+    const route = String(document.getElementById('moduleRouteInput').value || '').trim();
+    const note = String(document.getElementById('moduleNoteInput').value || '').trim();
+
+    if (!moduleId) {
+        alert('Module key is required.');
+        return;
+    }
+    if (!moduleLabel) {
+        alert('Module label is required.');
+        return;
+    }
+    if (MODULE_OPTIONS.some((option) => option.id === moduleId)) {
+        alert('That module key already exists. Use a different key for a new module.');
+        return;
+    }
+
+    const selectedRoleModules = getSelectedRoleModules();
+    const selectedUserModules = getSelectedUserModules();
+    try {
+        await setDocument('marga_module_registry', moduleId, {
+            module: moduleId,
+            label: moduleLabel,
+            dashboard_label: dashboardLabel,
+            route,
+            note: note || 'Module setup is ready for role assignment.',
+            active: true,
+            updated_at: new Date().toISOString(),
+            updated_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.username || 'unknown'
+        });
+        await loadModuleConfigs();
+        renderRoleModuleAccess(selectedRoleModules);
+        renderUserModuleAccess(selectedUserModules);
+        closeModuleModal();
+        alert(`Added module ${dashboardLabel}.`);
+    } catch (err) {
+        console.error('Save module failed:', err);
+        alert(`Failed to save module: ${err.message || err}`);
+    }
 }
 
 function setUserModalOpen(isOpen) {
@@ -1081,7 +1249,7 @@ async function loadRoleConfigs() {
 
 async function loadDirectory() {
     document.getElementById('settingsMeta').textContent = 'Loading directory from Firestore...';
-    await Promise.all([loadPositions(), loadEmployees(), loadRoleConfigs()]);
+    await Promise.all([loadPositions(), loadEmployees(), loadModuleConfigs(), loadRoleConfigs()]);
     await loadUsers();
 
     const activeEmployees = SETTINGS_STATE.employees.filter((employee) => employee.marga_active !== false).length;

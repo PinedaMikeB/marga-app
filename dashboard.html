@@ -317,8 +317,8 @@
 	        // Field-only roles should never land on the admin/department dashboard.
 	        // They are redirected to the Field App home.
 	        const bootUser = MargaAuth.getUser();
-	        const bootRole = bootUser?.role || 'viewer';
-	        if (bootRole === 'technician' || bootRole === 'messenger') {
+	        const bootModules = MargaAuth.getAccessibleModules();
+	        if (bootModules.length === 1 && bootModules[0] === 'field') {
 	            window.location.href = MargaAuth.buildAppUrl('field/index.html');
 	        }
 
@@ -335,19 +335,20 @@
 	            sync: { label: 'Sync Updater', href: 'sync/index.html', note: 'SQL to Firebase updates' }
 	        };
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const user = MargaAuth.getUser();
-            if (user) {
-                document.getElementById('userName').textContent = user.name;
-                document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
-                document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
-            }
+        document.addEventListener('DOMContentLoaded', async () => {
+	            const user = MargaAuth.getUser();
+	            if (user) {
+	                document.getElementById('userName').textContent = user.name;
+	                document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
+	                document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
+	            }
 
-            applyModulePermissions();
-            renderDepartmentTiles();
-            applyRoleLayout(user?.role || 'viewer');
-            loadDashboardData(user?.role || 'viewer');
-        });
+	            await loadModuleRegistry();
+	            applyModulePermissions();
+	            renderDepartmentTiles();
+	            applyRoleLayout();
+	            loadDashboardData();
+	        });
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('open');
@@ -371,9 +372,9 @@
             });
         }
 
-        function applyRoleLayout(role) {
-            const isAdmin = role === 'admin';
-            const adminSection = document.getElementById('adminAnalyticsSection');
+	        function applyRoleLayout() {
+	            const isAdmin = MargaAuth.isAdmin();
+	            const adminSection = document.getElementById('adminAnalyticsSection');
             const recentActivity = document.getElementById('recentActivitySection');
             const title = document.getElementById('dashboardTitle');
             const subtitle = document.getElementById('dashboardSubtitle');
@@ -394,15 +395,15 @@
             }
         }
 
-        function loadDashboardData(role) {
-            if (role === 'admin') {
-                animateNumber('statCustomers', 1143);
+	        function loadDashboardData() {
+	            if (MargaAuth.isAdmin()) {
+	                animateNumber('statCustomers', 1143);
                 animateNumber('statMachines', 3602);
                 animateNumber('statContracts', 4600);
                 animateNumber('statPending', 55);
             }
-            loadRecentActivity(role);
-        }
+	            loadRecentActivity();
+	        }
 
         function animateNumber(elementId, targetValue) {
             const element = document.getElementById(elementId);
@@ -423,18 +424,49 @@
             requestAnimationFrame(animate);
         }
 
+        async function loadModuleRegistry() {
+            try {
+                const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/marga_module_registry?pageSize=200&key=${FIREBASE_CONFIG.apiKey}`);
+                const payload = await response.json();
+                if (!response.ok || payload?.error) return;
+                const docs = Array.isArray(payload.documents) ? payload.documents.map((doc) => MargaAuth.parseFirestoreDoc(doc)).filter(Boolean) : [];
+                const activeDocs = docs.filter((doc) => doc.active !== false);
+                activeDocs.forEach((doc) => {
+                    const moduleId = MargaAuth.normalizeModules([doc.module || doc._docId || doc.label])[0];
+                    if (!moduleId) return;
+                    MODULE_TILE_CONFIG[moduleId] = {
+                        label: String(doc.dashboard_label || doc.nav_label || doc.label || MargaAuth.formatRoleLabel(moduleId)).trim(),
+                        href: String(doc.route || doc.href || '').trim(),
+                        note: String(doc.note || 'Module page is ready for role assignment.').trim(),
+                        pending: !String(doc.route || doc.href || '').trim()
+                    };
+                });
+                MargaAuth.registerModules(Object.keys(MODULE_TILE_CONFIG));
+            } catch (error) {
+                console.warn('Module registry lookup failed:', error);
+            }
+        }
+
         function renderDepartmentTiles() {
             const container = document.getElementById('departmentTiles');
             const modules = MargaAuth.getAccessibleModules();
 
             container.innerHTML = modules
-                .filter((module) => MODULE_TILE_CONFIG[module])
                 .map((module) => {
-                    const tile = MODULE_TILE_CONFIG[module];
+                    const tile = MODULE_TILE_CONFIG[module] || {
+                        label: MargaAuth.formatRoleLabel(module),
+                        href: '',
+                        note: 'Module page is still being linked.',
+                        pending: true
+                    };
+                    const href = tile.href ? MargaAuth.buildAppUrl(tile.href) : '#';
+                    const pendingClass = tile.pending ? ' department-tile-pending' : '';
+                    const pendingBadge = tile.pending ? '<div class="department-pending">Setup Pending</div>' : '';
                     return `
-                        <a href="${tile.href}" class="department-tile" data-module="${module}">
+                        <a href="${href}" class="department-tile${pendingClass}" data-module="${module}" ${tile.pending ? 'data-pending="1"' : ''}>
                             <div class="department-name">${MargaUtils.escapeHtml(tile.label)}</div>
                             <div class="department-note">${MargaUtils.escapeHtml(tile.note)}</div>
+                            ${pendingBadge}
                         </a>
                     `;
                 })
@@ -442,15 +474,23 @@
 
             if (!container.innerHTML.trim()) {
                 container.innerHTML = '<div class="department-empty">No department modules are assigned to your account.</div>';
+                return;
             }
+
+            container.querySelectorAll('[data-pending="1"]').forEach((tile) => {
+                tile.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    alert('This module is assigned, but its page route has not been linked yet.');
+                });
+            });
         }
 
-        function loadRecentActivity(role) {
-            const activityList = document.getElementById('activityList');
-            if (!activityList) return;
+	        function loadRecentActivity() {
+	            const activityList = document.getElementById('activityList');
+	            if (!activityList) return;
 
-            if (role !== 'admin') {
-                activityList.innerHTML = '';
+	            if (!MargaAuth.isAdmin()) {
+	                activityList.innerHTML = '';
                 return;
             }
 

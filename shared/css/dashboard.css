@@ -694,6 +694,24 @@ body::after {
     border-color: rgba(66, 153, 225, 0.35);
 }
 
+.department-tile-pending {
+    position: relative;
+}
+
+.department-pending {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0.55rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(30, 64, 175, 0.1);
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 .department-name {
     font-weight: 700;
     font-size: 0.9rem;

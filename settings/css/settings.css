@@ -325,6 +325,33 @@
     margin-bottom: 0.7rem;
 }
 
+.module-composer {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 0.85rem 0.95rem;
+    margin-bottom: 0.55rem;
+    border: 1px solid rgba(187, 212, 237, 0.75);
+    border-radius: 14px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 247, 255, 0.9)),
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 50%);
+}
+
+.module-composer-copy {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.module-composer-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #1a365d;
+}
+
 .role-module-grid {
     min-height: 130px;
 }
@@ -429,6 +456,11 @@
 
     .role-builder {
         grid-template-columns: 1fr;
+    }
+
+    .module-composer {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .module-access-grid {
