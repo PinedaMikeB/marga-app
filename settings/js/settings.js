@@ -1072,6 +1072,26 @@ function getEmployeePositionName(emp) {
     return SETTINGS_STATE.positions.get(String(emp?.position_id || 0)) || '-';
 }
 
+function findPositionIdByName(label) {
+    const wanted = normalizeNameKey(label);
+    if (!wanted) return null;
+    for (const [id, name] of SETTINGS_STATE.positions.entries()) {
+        if (normalizeNameKey(name) === wanted) {
+            const numericId = Number(id);
+            return Number.isFinite(numericId) ? numericId : id;
+        }
+    }
+    return null;
+}
+
+function renderPositionOptions() {
+    const list = document.getElementById('employeePositionList');
+    if (!list) return;
+    const labels = [...new Set([...SETTINGS_STATE.positions.values()].map((value) => String(value || '').trim()).filter(Boolean))]
+        .sort((left, right) => left.localeCompare(right));
+    list.innerHTML = labels.map((label) => `<option value="${sanitize(label)}"></option>`).join('');
+}
+
 function applyEmployeeFilter() {
     const q = String(document.getElementById('employeeSearch').value || '').trim().toLowerCase();
     const statusFilter = String(document.getElementById('employeeStatusFilter').value || 'active');
@@ -1257,6 +1277,7 @@ async function loadDirectory() {
     document.getElementById('settingsMeta').textContent = `${activeEmployees} active employee(s), ${activeUsers} active account(s), ${SETTINGS_STATE.roleConfigs.size} role policy set(s).`;
 
     renderEmployeeLookupOptions();
+    renderPositionOptions();
     applyEmployeeFilter();
     applyUserFilter();
     renderRoleList();
@@ -1296,10 +1317,10 @@ function openEmployeeModal(employeeId) {
 
     document.getElementById('employeeModalTitle').textContent = `${getEmployeeDisplayName(emp)} (${emp.id})`;
     document.getElementById('employeeId').value = String(emp.id || '');
-    document.getElementById('employeePosition').value = positionName || '-';
+    document.getElementById('employeePosition').value = positionName === '-' ? '' : (positionName || '');
     document.getElementById('employeeNickname').value = String(emp.nickname || '').trim();
     document.getElementById('employeeContact').value = String(emp.contact_number || '').trim();
-    document.getElementById('employeeFullName').value = `${String(emp.firstname || '').trim()} ${String(emp.lastname || '').trim()}`.trim();
+    document.getElementById('employeeFullName').value = getEmployeeFullName(emp);
 
     const empActive = emp.marga_active !== false;
     document.getElementById('employeeActive').value = empActive ? 'true' : 'false';
@@ -1329,12 +1350,28 @@ async function saveEmployee() {
 
         const empActive = document.getElementById('employeeActive').value === 'true';
         const roles = getSelectedRoleValues('employeeRolesInput');
+        const fullName = String(document.getElementById('employeeFullName').value || '').trim();
+        const nickname = String(document.getElementById('employeeNickname').value || '').trim();
+        const contactNumber = String(document.getElementById('employeeContact').value || '').trim();
+        const positionName = String(document.getElementById('employeePosition').value || '').trim();
+        const positionId = findPositionIdByName(positionName);
         if (!roles.length) {
             alert('Select at least one role.');
             return;
         }
+        if (!fullName) {
+            alert('Full name is required.');
+            return;
+        }
         const role = getPrimaryRole(roles);
         await patchDocument('tbl_employee', employeeId, {
+            nickname,
+            contact_number: contactNumber,
+            marga_fullname: fullName,
+            name: fullName,
+            position: positionName || null,
+            position_label: positionName || null,
+            position_id: positionId,
             marga_active: empActive,
             marga_role: role,
             marga_roles: roles,

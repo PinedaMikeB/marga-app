@@ -366,19 +366,22 @@
                 </label>
                 <label class="marga-field">
                     <span>Position</span>
-                    <input type="text" id="employeePosition" disabled>
+                    <input type="text" id="employeePosition" list="employeePositionList" placeholder="Enter or choose a position">
+                    <datalist id="employeePositionList"></datalist>
+                    <div class="ops-subtext">Choose an existing position or type a new one. The employee record will be updated in Firebase.</div>
                 </label>
                 <label class="marga-field">
                     <span>Nickname</span>
-                    <input type="text" id="employeeNickname" disabled>
+                    <input type="text" id="employeeNickname" placeholder="Nickname">
                 </label>
                 <label class="marga-field">
                     <span>Contact #</span>
-                    <input type="text" id="employeeContact" disabled>
+                    <input type="text" id="employeeContact" placeholder="09xxxxxxxxx">
                 </label>
                 <label class="marga-field marga-field-full">
                     <span>Full Name</span>
-                    <input type="text" id="employeeFullName" disabled>
+                    <input type="text" id="employeeFullName" placeholder="Full name">
+                    <div class="ops-subtext">This updates the employee name stored in Firebase and used across the directory.</div>
                 </label>
                 <label class="marga-field marga-field-full">
                     <span>Employee Status</span>
