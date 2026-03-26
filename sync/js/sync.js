@@ -146,7 +146,7 @@ function applyUserContext() {
 
     if (avatar) avatar.textContent = (user.name || user.username || 'U').charAt(0).toUpperCase();
     if (userName) userName.textContent = user.name || user.username || 'User';
-    if (userRole) userRole.textContent = user.role || 'user';
+    if (userRole) userRole.textContent = MargaAuth.getDisplayRoles(user);
 
     return true;
 }
@@ -1166,12 +1166,7 @@ function summarizeRun(dryRun, allTablesMode) {
     renderSummaryTable();
 
     const tableCount = syncState.tableSummaries.size;
-    const totals = [...syncState.tableSummaries.values()].reduce((acc, summary) => {
-        acc.rowsSeen += summary.rowsSeen;
-        acc.newRows += summary.newRows;
-        acc.skippedRows += summary.skippedRows;
-        return acc;
-    }, { rowsSeen: 0, newRows: 0, skippedRows: 0 });
+    const totals = getRunTotals();
 
     const mode = dryRun ? 'Dry run complete' : 'Sync complete';
 
@@ -1201,6 +1196,52 @@ function summarizeRun(dryRun, allTablesMode) {
             logLine(`Selected tables not found in dump: ${notFound.join(', ')}`, 'warn');
         }
     }
+}
+
+function getRunTotals() {
+    return [...syncState.tableSummaries.values()].reduce((acc, summary) => {
+        acc.rowsSeen += summary.rowsSeen;
+        acc.newRows += summary.newRows;
+        acc.skippedRows += summary.skippedRows;
+        return acc;
+    }, { rowsSeen: 0, newRows: 0, skippedRows: 0 });
+}
+
+async function refreshOpenClawCachesAfterSync() {
+    const totals = getRunTotals();
+    if (totals.newRows <= 0) {
+        logLine('OpenClaw cache refresh skipped (no new rows synced).');
+        return;
+    }
+
+    if (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null') {
+        logLine('OpenClaw cache refresh skipped on local file protocol.', 'warn');
+        return;
+    }
+
+    const targets = [
+        '/.netlify/functions/openclaw-billing?refresh_cache=true&include_billed_customers=false',
+        '/.netlify/functions/openclaw-billing-cohort?refresh_cache=true&include_rows=false&latest_limit=25',
+        '/.netlify/functions/openclaw-customers?refresh_cache=true&include_inactive_customers=false&include_active_customers=false',
+        '/.netlify/functions/openclaw-billing-compare?refresh_cache=true&include_lists=false&include_latest_entries=false'
+    ];
+    const openclawApiKey = String(localStorage.getItem('openclaw_api_key') || '').trim();
+    const headers = openclawApiKey ? { 'x-api-key': openclawApiKey } : {};
+
+    logLine('Refreshing OpenClaw API caches...');
+    await Promise.all(targets.map(async (path) => {
+        try {
+            const url = new URL(path, window.location.origin).toString();
+            const response = await fetch(url, { method: 'GET', headers });
+            if (!response.ok) {
+                logLine(`OpenClaw cache refresh failed (${path}): HTTP ${response.status}`, 'warn');
+                return;
+            }
+            logLine(`OpenClaw cache refreshed: ${path}`);
+        } catch (error) {
+            logLine(`OpenClaw cache refresh error (${path}): ${error.message}`, 'warn');
+        }
+    }));
 }
 
 function keepOnlySummariesForTables(tables) {
@@ -1482,6 +1523,7 @@ async function startSync() {
 
             setProgress(100, 'Completed', 'Smart scope sync completed successfully.');
             summarizeRun(false, false);
+            await refreshOpenClawCachesAfterSync();
             return;
         }
 
@@ -1522,6 +1564,9 @@ async function startSync() {
 
         setProgress(100, 'Completed', dryRun ? 'Dry run complete.' : 'Sync completed successfully.');
         summarizeRun(dryRun, allTablesMode);
+        if (!dryRun) {
+            await refreshOpenClawCachesAfterSync();
+        }
     } catch (error) {
         console.error(error);
         setProgress(100, 'Failed', 'Sync failed. Check log for details.');
