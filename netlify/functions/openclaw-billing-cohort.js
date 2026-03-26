@@ -376,16 +376,32 @@ function createMonthCell(monthKey) {
     };
 }
 
-function ensureCompanyRow(companyRows, companyId, companyName, months) {
-    let row = companyRows.get(companyId);
+function buildAccountLabel(companyName, branchName) {
+    const company = String(companyName || '').trim();
+    const branch = String(branchName || '').trim();
+    if (!branch || branch.toLowerCase() === 'main') return company || 'Unknown';
+    if (!company) return branch;
+    const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const companyLower = normalize(company);
+    const branchLower = normalize(branch);
+    if (branchLower.includes(companyLower) || companyLower.includes(branchLower)) return branch;
+    return `${company} - ${branch}`;
+}
+
+function ensureCompanyRow(companyRows, rowId, companyId, companyName, branchId, branchName, months) {
+    let row = companyRows.get(rowId);
     if (!row) {
         const monthMap = {};
         months.forEach((monthKey) => {
             monthMap[monthKey] = createMonthCell(monthKey);
         });
         row = {
+            row_id: rowId,
             company_id: companyId,
+            branch_id: branchId,
             company_name: companyName || 'Unknown',
+            branch_name: branchName || 'Main',
+            account_name: buildAccountLabel(companyName || 'Unknown', branchName || 'Main'),
             months: monthMap,
             billed_months_count: 0,
             pending_months_count: 0,
@@ -395,7 +411,7 @@ function ensureCompanyRow(companyRows, companyId, companyName, months) {
             reading_day: null,
             reading_day_source: null
         };
-        companyRows.set(companyId, row);
+        companyRows.set(rowId, row);
     }
     return row;
 }
@@ -445,14 +461,17 @@ function hasFutureBilling(companyMonthsMap, companyId, monthKey) {
     return false;
 }
 
-function resolveReadingDay(companyId, readingSignals, billingSignals, branchFallbackSignals) {
-    const readingDay = chooseModeDay(readingSignals.get(companyId));
+function resolveReadingDay(rowId, invoiceDaySignals, readingSignals, billingSignals, branchFallbackSignals) {
+    const invoiceDay = chooseModeDay(invoiceDaySignals.get(rowId));
+    if (invoiceDay) return { day: Number(invoiceDay), source: 'invoice_date_day' };
+
+    const readingDay = chooseModeDay(readingSignals.get(rowId));
     if (readingDay) return { day: Number(readingDay), source: 'reading_schedule' };
 
-    const billingDay = chooseModeDay(billingSignals.get(companyId));
+    const billingDay = chooseModeDay(billingSignals.get(rowId));
     if (billingDay) return { day: Number(billingDay), source: 'billing_schedule' };
 
-    const branchDay = chooseModeDay(branchFallbackSignals.get(companyId));
+    const branchDay = chooseModeDay(branchFallbackSignals.get(rowId));
     if (branchDay) return { day: Number(branchDay), source: 'branch_earliest' };
 
     return { day: null, source: null };
@@ -463,25 +482,23 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
     const companyRows = new Map();
     const billedByMonth = new Map(months.map((monthKey) => [monthKey, new Set()]));
     const billedMonthsByCompany = new Map();
+    const invoiceDaySignals = new Map();
     const readingSignals = new Map();
     const billingSignals = new Map();
     const branchFallbackSignals = new Map();
     const activeNowSet = new Set();
 
     Object.values(cache.branchMap).forEach((branch) => {
-        const companyId = String(branch.companyId || '').trim();
-        if (!companyId) return;
         const earliest = Number(branch.earliest);
         const normalizedDay = Number.isFinite(earliest) ? Math.abs(Math.trunc(earliest)) : 0;
-        if (normalizedDay >= 1 && normalizedDay <= 31) addNestedCount(branchFallbackSignals, companyId, normalizedDay, 1);
+        if (normalizedDay >= 1 && normalizedDay <= 31) addNestedCount(branchFallbackSignals, branch.id, normalizedDay, 1);
     });
 
     Object.values(cache.contractMap).forEach((contract) => {
         if (Number(contract.status || 0) !== 1) return;
         const branch = cache.branchMap[String(contract.branchId || '').trim()];
         if (!branch || Number(branch.inactive || 0) === 1) return;
-        const companyId = String(branch.companyId || '').trim();
-        if (companyId) activeNowSet.add(companyId);
+        activeNowSet.add(branch.id);
     });
 
     cache.billingDocs.forEach((doc) => {
@@ -492,13 +509,22 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         if (!contract) return;
         const branch = cache.branchMap[String(contract.branchId || '').trim()];
         if (!branch) return;
+        const rowId = String(branch.id || '').trim();
         const companyId = String(branch.companyId || '').trim();
-        if (!companyId) return;
+        if (!companyId || !rowId) return;
 
         const { monthKey, invoiceDate } = extractBillingMonth(f);
         if (!monthKey || monthKey < startKey || monthKey > endKey) return;
 
-        const row = ensureCompanyRow(companyRows, companyId, cache.companyMap[companyId], months);
+        const row = ensureCompanyRow(
+            companyRows,
+            rowId,
+            companyId,
+            cache.companyMap[companyId],
+            rowId,
+            branch.name,
+            months
+        );
         const cell = row.months[monthKey];
         cell.billed = true;
         cell.invoice_count += 1;
@@ -509,9 +535,12 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         }
         row.latest_billed_month = !row.latest_billed_month || monthKey > row.latest_billed_month ? monthKey : row.latest_billed_month;
 
-        billedByMonth.get(monthKey)?.add(companyId);
-        if (!billedMonthsByCompany.has(companyId)) billedMonthsByCompany.set(companyId, new Set());
-        billedMonthsByCompany.get(companyId).add(monthKey);
+        const invoiceDay = invoiceDate ? invoiceDate.getDate() : null;
+        if (invoiceDay && invoiceDay >= 1 && invoiceDay <= 31) addNestedCount(invoiceDaySignals, rowId, invoiceDay, 1);
+
+        billedByMonth.get(monthKey)?.add(rowId);
+        if (!billedMonthsByCompany.has(rowId)) billedMonthsByCompany.set(rowId, new Set());
+        billedMonthsByCompany.get(rowId).add(monthKey);
     });
 
     cache.scheduleDocs.forEach((doc) => {
@@ -519,26 +548,37 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         const monthKey = extractScheduleMonthKey(f);
         if (!monthKey || monthKey < startKey || monthKey > endKey) return;
 
-        let companyId = String(getField(f, ['company_id']) || '').trim();
         const branchId = String(getField(f, ['branch_id']) || '').trim();
-        if (!companyId && branchId) companyId = String(cache.branchMap[branchId]?.companyId || '').trim();
+        if (!branchId) return;
+        const branch = cache.branchMap[branchId];
+        if (!branch) return;
+        const rowId = branchId;
+        const companyId = String(branch.companyId || '').trim();
         if (!companyId) return;
 
         const purposeId = Number(getField(f, ['purpose_id']) || 0);
         const taskDay = extractDayOfMonth(getField(f, ['task_datetime']));
-        if (purposeId === READING_PURPOSE_ID && taskDay) addNestedCount(readingSignals, companyId, taskDay, 1);
-        if (purposeId === BILLING_PURPOSE_ID && taskDay) addNestedCount(billingSignals, companyId, taskDay, 1);
+        if (purposeId === READING_PURPOSE_ID && taskDay) addNestedCount(readingSignals, rowId, taskDay, 1);
+        if (purposeId === BILLING_PURPOSE_ID && taskDay) addNestedCount(billingSignals, rowId, taskDay, 1);
 
         if (purposeId !== BILLING_PURPOSE_ID) return;
 
-        const row = ensureCompanyRow(companyRows, companyId, cache.companyMap[companyId], months);
+        const row = ensureCompanyRow(
+            companyRows,
+            rowId,
+            companyId,
+            cache.companyMap[companyId],
+            rowId,
+            branch.name,
+            months
+        );
         const cell = row.months[monthKey];
         cell.billing_task_count += 1;
         const receiver = String(getField(f, ['field_billing_received_by']) || '').trim();
         if (receiver) {
             cell.received_task_count += 1;
             cell.received_by_names.add(receiver);
-            if (branchId) cell.received_branch_ids.add(branchId);
+            cell.received_branch_ids.add(branchId);
         }
     });
 
@@ -573,10 +613,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         const inactiveSet = index === 0
             ? new Set()
             : new Set(
-                [...currentTargetSet].filter((companyId) => (
-                    !billedSet.has(companyId)
-                    && !activeNowSet.has(companyId)
-                    && !hasFutureBilling(billedMonthsByCompany, companyId, monthKey)
+                [...currentTargetSet].filter((rowId) => (
+                    !billedSet.has(rowId)
+                    && !activeNowSet.has(rowId)
+                    && !hasFutureBilling(billedMonthsByCompany, rowId, monthKey)
                 ))
             );
         const toBillSet = index === 0
@@ -585,8 +625,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         const billedTargetSet = setIntersect(toBillSet, billedSet);
         const pendingSet = setDiff(toBillSet, billedSet);
 
-        toBillSet.forEach((companyId) => matrixCompanyIds.add(companyId));
-        additionalSet.forEach((companyId) => matrixCompanyIds.add(companyId));
+        toBillSet.forEach((rowId) => matrixCompanyIds.add(rowId));
+        additionalSet.forEach((rowId) => matrixCompanyIds.add(rowId));
 
         const summary = summaryByMonth.get(monthKey);
         summary.balance_customers_total = currentTargetSet.size;
@@ -617,9 +657,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
     const skippedRows = [];
     const receiptGapRows = [];
 
-    matrixCompanyIds.forEach((companyId) => {
-        const row = ensureCompanyRow(companyRows, companyId, cache.companyMap[companyId], months);
-        const rd = resolveReadingDay(companyId, readingSignals, billingSignals, branchFallbackSignals);
+    matrixCompanyIds.forEach((rowId) => {
+        const row = companyRows.get(rowId);
+        if (!row) return;
+        const rd = resolveReadingDay(rowId, invoiceDaySignals, readingSignals, billingSignals, branchFallbackSignals);
         row.reading_day = rd.day;
         row.reading_day_source = rd.source;
         row.billed_months_count = 0;
@@ -634,17 +675,11 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         months.forEach((monthKey) => {
             const cell = row.months[monthKey];
             const summary = summaryByMonth.get(monthKey);
-            const monthHeader = topSummaryRows.find((entry) => entry.month_key === monthKey);
-            const isTarget = monthHeader ? (
-                (monthHeader.balance_customers_total > 0 || monthHeader.additional_customers_total > 0)
-                && (matrixCompanyIds.has(companyId))
-                && (cell.billed || row.latest_billed_month >= monthKey || row.billed_months_count > 0)
-            ) : false;
 
             if (!cell.billed) {
                 const monthIndex = months.indexOf(monthKey);
                 const wasSeenBefore = months.slice(0, monthIndex).some((priorKey) => row.months[priorKey].billed || row.months[priorKey].pending);
-                const isPending = wasSeenBefore && (activeNowSet.has(companyId) || hasFutureBilling(billedMonthsByCompany, companyId, monthKey));
+                const isPending = wasSeenBefore && (activeNowSet.has(rowId) || hasFutureBilling(billedMonthsByCompany, rowId, monthKey));
                 cell.pending = isPending;
                 cell.skipped = isPending;
             }
@@ -655,7 +690,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             if (cell.pending) {
                 row.pending_months_count += 1;
                 pendingLabels.push(monthLabelFromKey(monthKey));
-                summary.skipped_companies.push({ company_id: companyId, company_name: row.company_name });
+                summary.skipped_companies.push({ row_id: rowId, company_id: row.company_id, company_name: row.company_name, branch_name: row.branch_name, account_name: row.account_name });
             }
             if (cell.receipt_status === 'received') row.confirmed_received_months_count += 1;
             if (cell.receipt_status === 'partial' || cell.receipt_status === 'not_confirmed') {
@@ -667,7 +702,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
                     invoice_count: cell.invoice_count,
                     amount_total: Number(cell.amount_total.toFixed(2))
                 });
-                if (cell.billed) summary.receipt_gap_companies.push({ company_id: companyId, company_name: row.company_name, receipt_status: cell.receipt_status });
+                if (cell.billed) summary.receipt_gap_companies.push({ row_id: rowId, company_id: row.company_id, company_name: row.company_name, branch_name: row.branch_name, account_name: row.account_name, receipt_status: cell.receipt_status });
             }
 
             if (cell.billed) {
@@ -697,23 +732,35 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
 
         if (pendingLabels.length) {
             skippedRows.push({
-                company_id: companyId,
+                row_id: rowId,
+                company_id: row.company_id,
+                branch_id: row.branch_id,
                 company_name: row.company_name,
+                branch_name: row.branch_name,
+                account_name: row.account_name,
                 skipped_months: pendingLabels
             });
         }
 
         if (receiptStatuses.length) {
             receiptGapRows.push({
-                company_id: companyId,
+                row_id: rowId,
+                company_id: row.company_id,
+                branch_id: row.branch_id,
                 company_name: row.company_name,
+                branch_name: row.branch_name,
+                account_name: row.account_name,
                 month_statuses: receiptStatuses
             });
         }
 
         matrixRows.push({
-            company_id: companyId,
+            row_id: rowId,
+            company_id: row.company_id,
+            branch_id: row.branch_id,
             company_name: row.company_name,
+            branch_name: row.branch_name,
+            account_name: row.account_name,
             reading_day: row.reading_day,
             reading_day_source: row.reading_day_source,
             billed_months_count: row.billed_months_count,
@@ -734,7 +781,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         const leftRd = Number(a.reading_day || 99);
         const rightRd = Number(b.reading_day || 99);
         if (leftRd !== rightRd) return leftRd - rightRd;
-        return a.company_name.localeCompare(b.company_name);
+        return (a.account_name || a.company_name).localeCompare(b.account_name || b.company_name);
     });
 
     const monthTotals = months.map((monthKey) => ({
@@ -747,7 +794,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
     const latestBilledRows = matrixRows
         .flatMap((row) => months.map((monthKey) => ({
             company_id: row.company_id,
+            branch_id: row.branch_id,
             company_name: row.company_name,
+            branch_name: row.branch_name,
+            account_name: row.account_name,
             month_key: monthKey,
             month_label: monthLabelFromKey(monthKey),
             latest_invoice_date: row.months[monthKey].latest_invoice_date,

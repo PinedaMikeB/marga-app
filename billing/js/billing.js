@@ -130,29 +130,28 @@ function receiptDot(status) {
 
 function pendingHref(companyId, monthKey) {
     const url = new URL(MargaAuth.buildAppUrl('billing/index.html'), window.location.origin);
-    url.searchParams.set('company_id', companyId);
+    url.searchParams.set('row_id', companyId);
     url.searchParams.set('month', monthKey);
     url.searchParams.set('action', 'create');
     return `${url.pathname}${url.search}`;
 }
 
 function renderSelectionCard(payload) {
-    const selectedCompanyId = MargaUtils.getUrlParam('company_id');
+    const selectedRowId = MargaUtils.getUrlParam('row_id');
     const selectedMonth = MargaUtils.getUrlParam('month');
     const selectedAction = MargaUtils.getUrlParam('action');
 
-    if (!selectedCompanyId || !selectedMonth || selectedAction !== 'create') {
+    if (!selectedRowId || !selectedMonth || selectedAction !== 'create') {
         els.selectionCard.classList.add('hidden');
         els.selectionCopy.textContent = 'No cell selected.';
         return;
     }
 
-    const row = (payload?.month_matrix?.rows || []).find((entry) => String(entry.company_id) === String(selectedCompanyId));
-    const monthCell = row?.months?.[selectedMonth];
+    const row = (payload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(selectedRowId));
     const readingDay = row?.reading_day ? `Reading day ${row.reading_day}` : 'Reading day not available';
     const message = row
-        ? `${row.company_name} is selected for ${selectedMonth}. ${readingDay}. This came from a pending billing cell.`
-        : `Pending billing context selected for company ${selectedCompanyId} in ${selectedMonth}.`;
+        ? `${row.account_name || row.company_name} is selected for ${selectedMonth}. ${readingDay}. This came from a pending billing cell.`
+        : `Pending billing context selected for account ${selectedRowId} in ${selectedMonth}.`;
 
     els.selectionCopy.textContent = message;
     els.selectionCard.classList.remove('hidden');
@@ -208,7 +207,7 @@ function renderMatrixTable(payload) {
     const months = matrix.months || [];
     const rows = matrix.rows || [];
     const totals = matrix.totals || [];
-    const selectedCompanyId = MargaUtils.getUrlParam('company_id');
+    const selectedRowId = MargaUtils.getUrlParam('row_id');
     const selectedMonth = MargaUtils.getUrlParam('month');
 
     if (!months.length || !rows.length) {
@@ -223,10 +222,11 @@ function renderMatrixTable(payload) {
     }).join('');
 
     const body = rows.map((row, index) => {
-        const trClass = String(row.company_id) === String(selectedCompanyId) ? 'selected-row' : '';
+        const rowId = row.row_id || row.company_id;
+        const trClass = String(rowId) === String(selectedRowId) ? 'selected-row' : '';
         const monthCells = months.map((monthKey) => {
             const cell = row.months?.[monthKey] || {};
-            const isSelected = String(row.company_id) === String(selectedCompanyId) && monthKey === selectedMonth;
+            const isSelected = String(rowId) === String(selectedRowId) && monthKey === selectedMonth;
             if (cell.billed) {
                 return `
                     <td class="month-cell billed-cell ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(receiptLabel(cell.receipt_status))}">
@@ -238,7 +238,7 @@ function renderMatrixTable(payload) {
             if (cell.pending) {
                 return `
                     <td class="month-cell pending-cell ${isSelected ? 'selected-cell' : ''}">
-                        <a class="pending-link" href="${escapeHtml(pendingHref(row.company_id, monthKey))}" title="Pending reading or billing. Open billing context."></a>
+                        <a class="pending-link" href="${escapeHtml(pendingHref(rowId, monthKey))}" title="Pending reading or billing. Open billing context."></a>
                     </td>
                 `;
             }
@@ -248,7 +248,7 @@ function renderMatrixTable(payload) {
         return `
             <tr class="${trClass}">
                 <td class="rd-col">${row.reading_day ? escapeHtml(String(row.reading_day)) : '-'}</td>
-                <td class="customer-col">${escapeHtml(row.company_name)}</td>
+                <td class="customer-col">${escapeHtml(row.account_name || row.company_name)}</td>
                 ${monthCells}
             </tr>
         `;
