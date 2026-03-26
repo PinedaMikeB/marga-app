@@ -32,6 +32,10 @@ let currentDetailInvoice = null;
 let isSavingConversation = false;
 let paymentEntries = [];
 let billingEntriesForDuration = [];
+let billingMetaByInvoiceKey = new Map();
+let collectorBillingRecords = [];
+let collectorCellMap = new Map();
+let analyticsDashboardVisible = false;
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -42,6 +46,10 @@ const dailyTips = [
 ];
 
 const PROMISE_REMARK_PATTERN = /\b(ok na|for signing|check|pickup|ready|release|promise|ptp|payment|paid)\b/i;
+const COLLECTOR_DASHBOARD_START = new Date(2025, 9, 1);
+COLLECTOR_DASHBOARD_START.setHours(0, 0, 0, 0);
+const MONTHLY_TREND_START = new Date(2025, 10, 1);
+MONTHLY_TREND_START.setHours(0, 0, 0, 0);
 
 function getValue(field) {
     if (!field || typeof field !== 'object') return null;
@@ -119,6 +127,24 @@ function formatCurrencyShort(amount) {
     return '₱' + value.toFixed(0);
 }
 
+function formatPlainNumber(amount) {
+    return Number(amount || 0).toLocaleString('en-PH', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    });
+}
+
+function formatSignedCurrencyShort(amount) {
+    const value = Number(amount || 0);
+    if (value === 0) return '₱0';
+    return `${value > 0 ? '+' : '-'}${formatCurrencyShort(Math.abs(value))}`;
+}
+
+function formatPercent(value, digits = 1) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+    return `${Number(value).toFixed(digits)}%`;
+}
+
 function getTodayInputValue(offsetDays = 0) {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -145,6 +171,54 @@ function formatRangeLabel(fromDate, toDate) {
     if (fromDate) return `${formatDate(fromDate)} onward`;
     if (toDate) return `Up to ${formatDate(toDate)}`;
     return 'All Dates';
+}
+
+function startOfMonth(value) {
+    const d = normalizeDate(value);
+    if (!d) return null;
+    const normalized = new Date(d.getTime());
+    normalized.setDate(1);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+}
+
+function addMonths(value, months) {
+    const d = startOfMonth(value);
+    if (!d) return null;
+    d.setMonth(d.getMonth() + months);
+    return d;
+}
+
+function getMonthKey(value) {
+    const d = startOfMonth(value);
+    if (!d) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthLabel(value, longLabel = false) {
+    const d = startOfMonth(value);
+    if (!d) return '-';
+    return d.toLocaleDateString('en-PH', {
+        month: longLabel ? 'long' : 'short',
+        year: 'numeric'
+    });
+}
+
+function formatMonthLabelCompact(value) {
+    const d = startOfMonth(value);
+    if (!d) return '-';
+    return d.toLocaleDateString('en-PH', {
+        month: 'short',
+        year: '2-digit'
+    });
+}
+
+function addDays(value, days) {
+    const d = normalizeDate(value);
+    if (!d) return null;
+    const next = new Date(d.getTime());
+    next.setDate(next.getDate() + days);
+    return next;
 }
 
 function isDateWithinRange(date, fromDate, toDate) {
@@ -637,6 +711,7 @@ async function loadLookups() {
         const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
         if (amount > 0 && paymentDate) {
             paymentEntries.push({
+                invoiceId: invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '',
                 amount,
                 paymentDate
             });
@@ -647,6 +722,28 @@ async function loadLookups() {
     await loadCollectionHistory();
 
     lookupsLoaded = true;
+}
+
+function getBillingLocation(contractmainId) {
+    const contract = contractMap[String(contractmainId || '').trim()] || {};
+
+    let companyName = 'Unknown';
+    let branchName = 'Main';
+
+    let branchId = machToBranchMap[contract.machId];
+    if (!branchId && contract.contractId) branchId = contract.contractId;
+
+    const branch = branchMap[String(branchId || '').trim()];
+    if (branch) {
+        branchName = branch.name || 'Main';
+        companyName = companyMap[branch.companyId] || 'Unknown';
+    }
+
+    return {
+        companyName,
+        branchName,
+        categoryCode: getCategoryCode(contract.categoryId)
+    };
 }
 
 function processInvoice(doc) {
@@ -662,19 +759,7 @@ function processInvoice(doc) {
     if (paidInvoiceIds.has(invoiceIdKey) || paidInvoiceIds.has(invoiceNoKey)) return null;
 
     const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
-    const contract = contractMap[contractmainId] || {};
-
-    let companyName = 'Unknown';
-    let branchName = 'Main';
-
-    let branchId = machToBranchMap[contract.machId];
-    if (!branchId && contract.contractId) branchId = contract.contractId;
-
-    const branch = branchMap[String(branchId || '').trim()];
-    if (branch) {
-        branchName = branch.name || 'Main';
-        companyName = companyMap[branch.companyId] || 'Unknown';
-    }
+    const location = getBillingLocation(contractmainId);
 
     const month = getField(f, ['month']);
     const year = getField(f, ['year']);
@@ -707,10 +792,10 @@ function processInvoice(doc) {
         dueDate,
         age,
         priority: getPriority(age),
-        company: companyName,
-        branch: branchName,
+        company: location.companyName,
+        branch: location.branchName,
         contactNumber: billingContactNumber || historyContact || '',
-        category: getCategoryCode(contract.categoryId),
+        category: location.categoryCode,
         lastRemarks: lastHistory ? lastHistory.remarks : null,
         lastContactDate,
         lastContactDays,
@@ -772,15 +857,47 @@ async function loadInvoices(mode) {
 
         allInvoices = [];
         billingEntriesForDuration = [];
+        billingMetaByInvoiceKey = new Map();
+        collectorBillingRecords = [];
         const years = new Set();
 
         billingDocs.forEach((doc) => {
             const f = doc.fields || {};
             const invoiceIdRaw = getField(f, ['invoice_id', 'invoiceid']);
             const invoiceId = invoiceIdRaw !== null && invoiceIdRaw !== undefined ? String(invoiceIdRaw).trim() : '';
+            const invoiceNoRaw = getField(f, ['invoiceno', 'invoice_no', 'invoice_id', 'id']);
+            const invoiceNo = invoiceNoRaw !== null && invoiceNoRaw !== undefined ? String(invoiceNoRaw).trim() : '';
             const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
+            const dueDate = normalizeDate(getField(f, ['due_date']));
             const amount = Number(getField(f, ['totalamount', 'amount']) || 0) + Number(getField(f, ['vatamount']) || 0);
+            const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
+            const location = getBillingLocation(contractmainId);
+            const billingMeta = {
+                company: location.companyName,
+                branch: location.branchName,
+                invoiceDate,
+                dueDate,
+                month: getField(f, ['month']),
+                year: getField(f, ['year'])
+            };
+
+            if (invoiceId) billingMetaByInvoiceKey.set(invoiceId, billingMeta);
+            if (invoiceNo) billingMetaByInvoiceKey.set(invoiceNo, billingMeta);
+
             if (invoiceDate && amount > 0) {
+                collectorBillingRecords.push({
+                    invoiceId,
+                    invoiceNo: invoiceNo || invoiceId,
+                    invoiceKey: invoiceNo || invoiceId,
+                    company: location.companyName,
+                    branch: location.branchName,
+                    invoiceDate,
+                    dueDate,
+                    amount,
+                    rd: invoiceDate.getDate(),
+                    monthKey: getMonthKey(invoiceDate)
+                });
+
                 billingEntriesForDuration.push({
                     invoiceDate,
                     amount,
@@ -931,6 +1048,8 @@ function recomputeFilteredInvoices() {
 
     updateAllStats();
     updateDurationSummary();
+    renderCollectorDashboard();
+    renderTrendDashboard();
     renderTable();
     showActiveFilters();
     renderTodayScheduleTable();
@@ -1171,6 +1290,910 @@ function updateDurationSummary() {
 
     needCollectNode.textContent = formatCurrency(needCollect);
     needCollectCountNode.textContent = `${needCollectCount.toLocaleString()} unpaid invoice(s)`;
+}
+
+function computeMonthlyTrendData() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const windowStart = new Date(MONTHLY_TREND_START.getTime());
+    const windowEnd = today < windowStart ? windowStart : today;
+    const monthRows = [];
+
+    let cursor = startOfMonth(windowStart);
+    const lastMonth = startOfMonth(windowEnd);
+
+    while (cursor && lastMonth && cursor <= lastMonth) {
+        monthRows.push({
+            key: getMonthKey(cursor),
+            monthStart: new Date(cursor.getTime()),
+            label: formatMonthLabel(cursor),
+            fullLabel: formatMonthLabel(cursor, true),
+            billed: 0,
+            billedCount: 0,
+            collected: 0,
+            paymentCount: 0,
+            needCollect: 0,
+            needCollectCount: 0,
+            variance: 0,
+            recoveryRate: null,
+            momAmount: null,
+            momPercent: null,
+            isCurrentMonth: false
+        });
+        cursor = addMonths(cursor, 1);
+    }
+
+    const rowMap = new Map(monthRows.map((row) => [row.key, row]));
+
+    billingEntriesForDuration.forEach((entry) => {
+        const invoiceDate = normalizeDate(entry.invoiceDate);
+        const amount = Number(entry.amount || 0);
+        if (!invoiceDate || amount <= 0) return;
+        if (invoiceDate < windowStart || invoiceDate > windowEnd) return;
+
+        const row = rowMap.get(getMonthKey(invoiceDate));
+        if (!row) return;
+
+        row.billed += amount;
+        row.billedCount += 1;
+
+        if (!entry.isPaid) {
+            row.needCollect += amount;
+            row.needCollectCount += 1;
+        }
+    });
+
+    paymentEntries.forEach((entry) => {
+        const paymentDate = normalizeDate(entry.paymentDate);
+        const amount = Number(entry.amount || 0);
+        if (!paymentDate || amount <= 0) return;
+        if (paymentDate < windowStart || paymentDate > windowEnd) return;
+
+        const row = rowMap.get(getMonthKey(paymentDate));
+        if (!row) return;
+
+        row.collected += amount;
+        row.paymentCount += 1;
+    });
+
+    const currentMonthKey = getMonthKey(today);
+    monthRows.forEach((row, index) => {
+        row.variance = row.collected - row.billed;
+        row.recoveryRate = row.billed > 0 ? (row.collected / row.billed) * 100 : null;
+        row.isCurrentMonth = row.key === currentMonthKey;
+
+        if (index === 0) return;
+
+        const prev = monthRows[index - 1];
+        row.momAmount = row.collected - prev.collected;
+        if (prev.collected > 0) {
+            row.momPercent = (row.momAmount / prev.collected) * 100;
+        }
+    });
+
+    const activeRows = monthRows.filter((row) => row.billed > 0 || row.collected > 0 || row.needCollect > 0);
+    const rowsForSummary = activeRows.length ? activeRows : monthRows;
+    const maxAmount = Math.max(
+        1,
+        ...rowsForSummary.flatMap((row) => [row.billed, row.collected, row.needCollect])
+    );
+
+    const totals = rowsForSummary.reduce(
+        (acc, row) => {
+            acc.billed += row.billed;
+            acc.billedCount += row.billedCount;
+            acc.collected += row.collected;
+            acc.paymentCount += row.paymentCount;
+            acc.needCollect += row.needCollect;
+            acc.needCollectCount += row.needCollectCount;
+            return acc;
+        },
+        {
+            billed: 0,
+            billedCount: 0,
+            collected: 0,
+            paymentCount: 0,
+            needCollect: 0,
+            needCollectCount: 0
+        }
+    );
+
+    totals.recoveryRate = totals.billed > 0 ? (totals.collected / totals.billed) * 100 : null;
+
+    return {
+        monthRows,
+        rowsForSummary,
+        activeRows,
+        totals,
+        maxAmount,
+        windowStart,
+        windowEnd
+    };
+}
+
+function buildTrendInsights(rows) {
+    if (!rows.length || rows.every((row) => row.billed === 0 && row.collected === 0 && row.needCollect === 0)) {
+        return [
+            {
+                label: 'Trend Insight',
+                text: 'No billing or collection activity is available yet for the selected trend window.'
+            }
+        ];
+    }
+
+    const comparisons = rows.filter((row) => row.momAmount !== null);
+    const bestMonth = rows.reduce((best, row) => (row.collected > best.collected ? row : best), rows[0]);
+    const largestShortfall = rows.reduce((worst, row) => (row.variance < worst.variance ? row : worst), rows[0]);
+    const largestSurplus = rows.reduce((best, row) => (row.variance > best.variance ? row : best), rows[0]);
+    const strongestLift = comparisons.length
+        ? comparisons.reduce((best, row) => (row.momAmount > best.momAmount ? row : best), comparisons[0])
+        : null;
+
+    const improvedCount = comparisons.filter((row) => row.momAmount > 0).length;
+    const outperformedBillingCount = rows.filter((row) => row.variance >= 0).length;
+
+    return [
+        {
+            label: 'Best Collection Month',
+            text: `${bestMonth.fullLabel} led the window with ${formatCurrency(bestMonth.collected)} collected across ${bestMonth.paymentCount.toLocaleString()} payment(s).`
+        },
+        {
+            label: 'Momentum',
+            text: comparisons.length
+                ? `${improvedCount} of ${comparisons.length} month-to-month comparisons improved. Sharpest lift was ${strongestLift.fullLabel} at ${formatSignedCurrencyShort(
+                      strongestLift.momAmount
+                  )} versus the previous month.`
+                : 'Only one month is currently in the trend window, so month-over-month momentum starts after the next month closes.'
+        },
+        {
+            label: 'Billing vs Collections',
+            text:
+                largestShortfall.variance === 0 && largestSurplus.variance === 0
+                    ? 'Billing and collections are currently balanced month by month in this window.'
+                    : `Collections matched or beat new billing in ${outperformedBillingCount} of ${rows.length} month(s). Largest shortfall was ${largestShortfall.fullLabel} at ${formatSignedCurrencyShort(
+                          largestShortfall.variance
+                      )}, while the strongest catch-up month was ${largestSurplus.fullLabel} at ${formatSignedCurrencyShort(largestSurplus.variance)}.`
+        }
+    ];
+}
+
+function renderTrendSummaryCards(trendData) {
+    const { rowsForSummary, totals, windowStart, windowEnd } = trendData;
+    const grid = document.getElementById('trend-summary-grid');
+    const subtitle = document.getElementById('trend-window-subtitle');
+    if (!grid || !subtitle) return;
+
+    subtitle.textContent = `Month-by-month comparison from ${formatMonthLabel(windowStart, true)} to ${formatMonthLabel(
+        windowEnd,
+        true
+    )}. Uses invoice posting month for billing and payment posting month for collections. This dashboard stays portfolio-wide even when work queue filters change.`;
+
+    grid.innerHTML = `
+        <article class="trend-card primary">
+            <span class="eyebrow">Trend Window</span>
+            <div class="value">${rowsForSummary.length.toLocaleString()}</div>
+            <div class="meta">${formatMonthLabel(windowStart, true)} to ${formatMonthLabel(windowEnd, true)}${getMonthKey(windowEnd) === getMonthKey(new Date()) ? ' • current month is partial' : ''}</div>
+        </article>
+        <article class="trend-card">
+            <span class="eyebrow">Total Billed</span>
+            <div class="value">${formatCurrencyShort(totals.billed)}</div>
+            <div class="meta">${formatCurrency(totals.billed)} across ${totals.billedCount.toLocaleString()} invoice(s).</div>
+        </article>
+        <article class="trend-card">
+            <span class="eyebrow">Total Collected</span>
+            <div class="value">${formatCurrencyShort(totals.collected)}</div>
+            <div class="meta">${formatCurrency(totals.collected)} across ${totals.paymentCount.toLocaleString()} payment(s).</div>
+        </article>
+        <article class="trend-card">
+            <span class="eyebrow">Recovery Rate</span>
+            <div class="value">${formatPercent(totals.recoveryRate)}</div>
+            <div class="meta">${formatCurrency(totals.needCollect)} from this billing window still appears unpaid (${totals.needCollectCount.toLocaleString()} invoice(s)).</div>
+        </article>
+    `;
+}
+
+function renderTrendInsights(trendData) {
+    const container = document.getElementById('trend-insights');
+    if (!container) return;
+
+    const insights = buildTrendInsights(trendData.rowsForSummary);
+    container.innerHTML = insights
+        .map(
+            (item) => `
+                <article class="trend-insight">
+                    <span class="label">${escapeHtml(item.label)}</span>
+                    <div class="text">${escapeHtml(item.text)}</div>
+                </article>
+            `
+        )
+        .join('');
+}
+
+function renderTrendStrip(trendData) {
+    const container = document.getElementById('trend-strip');
+    if (!container) return;
+
+    if (!trendData.rowsForSummary.length) {
+        container.innerHTML = '<div class="empty-followup">No month-by-month activity found yet for this trend window.</div>';
+        return;
+    }
+
+    container.innerHTML = trendData.rowsForSummary
+        .map((row, index) => {
+            const billedWidth = row.billed > 0 ? `${Math.max(4, (row.billed / trendData.maxAmount) * 100)}%` : '0%';
+            const collectedWidth = row.collected > 0 ? `${Math.max(4, (row.collected / trendData.maxAmount) * 100)}%` : '0%';
+            const varianceClass = row.variance > 0 ? 'positive' : row.variance < 0 ? 'negative' : 'neutral';
+            let momHtml = '<span class="neutral">Baseline month</span>';
+
+            if (index > 0) {
+                if (row.momPercent === null && row.momAmount > 0) {
+                    momHtml = `<span class="positive">New inflow ${formatSignedCurrencyShort(row.momAmount)}</span>`;
+                } else if (row.momPercent === null && row.momAmount < 0) {
+                    momHtml = `<span class="negative">${formatSignedCurrencyShort(row.momAmount)}</span>`;
+                } else if (row.momAmount > 0) {
+                    momHtml = `<span class="positive">${formatPercent(row.momPercent)} MoM</span>`;
+                } else if (row.momAmount < 0) {
+                    momHtml = `<span class="negative">${formatPercent(row.momPercent)} MoM</span>`;
+                } else {
+                    momHtml = '<span class="neutral">Flat vs prior month</span>';
+                }
+            }
+
+            return `
+                <article class="trend-month-card${row.isCurrentMonth ? ' current' : ''}">
+                    <div class="trend-month-head">
+                        <div class="trend-month">${escapeHtml(row.label)}</div>
+                        ${row.isCurrentMonth ? '<div class="trend-month-tag">MTD</div>' : ''}
+                    </div>
+                    <div class="trend-metric-row">
+                        <span class="name">Billed</span>
+                        <span class="amount">${escapeHtml(formatCurrencyShort(row.billed))}</span>
+                    </div>
+                    <div class="trend-metric-row">
+                        <span class="name">Collected</span>
+                        <span class="amount">${escapeHtml(formatCurrencyShort(row.collected))}</span>
+                    </div>
+                    <div class="trend-bar-stack">
+                        <div class="trend-bar-line">
+                            <span class="bar-label">Bill</span>
+                            <div class="trend-bar-track"><div class="trend-bar-fill billed" style="--bar-width:${billedWidth}"></div></div>
+                        </div>
+                        <div class="trend-bar-line">
+                            <span class="bar-label">Collect</span>
+                            <div class="trend-bar-track"><div class="trend-bar-fill collected" style="--bar-width:${collectedWidth}"></div></div>
+                        </div>
+                    </div>
+                    <div class="trend-foot">
+                        <span class="${varianceClass}">${escapeHtml(formatSignedCurrencyShort(row.variance))}</span>
+                        <span class="neutral">${escapeHtml(formatPercent(row.recoveryRate))} recovery</span>
+                    </div>
+                    <div class="trend-foot">
+                        ${momHtml}
+                        <span class="neutral">${row.paymentCount.toLocaleString()} pay</span>
+                    </div>
+                </article>
+            `;
+        })
+        .join('');
+}
+
+function buildCustomerCollectionComparison(trendData) {
+    const monthColumns = trendData.monthRows.map((row) => ({
+        key: row.key,
+        label: row.label,
+        isCurrentMonth: row.isCurrentMonth
+    }));
+
+    const customerMap = new Map();
+    const monthTotals = {};
+    monthColumns.forEach((column) => {
+        monthTotals[column.key] = 0;
+    });
+
+    paymentEntries.forEach((entry) => {
+        const paymentMonthKey = getMonthKey(entry.paymentDate);
+        if (!paymentMonthKey || !monthTotals.hasOwnProperty(paymentMonthKey)) return;
+
+        const billingMeta = billingMetaByInvoiceKey.get(String(entry.invoiceId || '').trim()) || {};
+        const customer = String(billingMeta.company || 'Unknown').trim() || 'Unknown';
+
+        if (!customerMap.has(customer)) {
+            customerMap.set(customer, {
+                customer,
+                total: 0,
+                months: {}
+            });
+        }
+
+        const row = customerMap.get(customer);
+        row.months[paymentMonthKey] = (row.months[paymentMonthKey] || 0) + Number(entry.amount || 0);
+        row.total += Number(entry.amount || 0);
+        monthTotals[paymentMonthKey] += Number(entry.amount || 0);
+    });
+
+    const customerRows = Array.from(customerMap.values()).sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        return a.customer.localeCompare(b.customer);
+    });
+
+    const unpaidMap = new Map();
+    allInvoices.forEach((invoice) => {
+        const customer = String(invoice.company || 'Unknown').trim() || 'Unknown';
+        if (!unpaidMap.has(customer)) {
+            unpaidMap.set(customer, {
+                customer,
+                count: 0,
+                oldestDate: null
+            });
+        }
+
+        const row = unpaidMap.get(customer);
+        row.count += 1;
+
+        const invoiceDate = invoice.invoiceDate || normalizeDate(invoice.dueDate);
+        if (invoiceDate && (!row.oldestDate || invoiceDate < row.oldestDate)) {
+            row.oldestDate = invoiceDate;
+        }
+    });
+
+    const unpaidRows = Array.from(unpaidMap.values()).sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        const aTime = a.oldestDate ? a.oldestDate.getTime() : Number.MAX_SAFE_INTEGER;
+        const bTime = b.oldestDate ? b.oldestDate.getTime() : Number.MAX_SAFE_INTEGER;
+        if (aTime !== bTime) return aTime - bTime;
+        return a.customer.localeCompare(b.customer);
+    });
+
+    return {
+        monthColumns,
+        customerRows,
+        monthTotals,
+        grandTotal: customerRows.reduce((sum, row) => sum + row.total, 0),
+        unpaidRows
+    };
+}
+
+function renderTrendComparisonTable(trendData) {
+    const container = document.getElementById('trend-comparison-table');
+    if (!container) return;
+
+    const comparison = buildCustomerCollectionComparison(trendData);
+    if (!comparison.customerRows.length && !comparison.unpaidRows.length) {
+        container.innerHTML = '<div class="empty-followup">No month-by-month comparison is available yet.</div>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="comparison-layout">
+            <section class="comparison-panel">
+                <div class="comparison-panel-head">
+                    <div>
+                        <div class="comparison-title">Collection Comparison</div>
+                        <div class="comparison-subtitle">Customer by month, matching the spreadsheet-style view.</div>
+                    </div>
+                    <div class="comparison-total-chip">${escapeHtml(formatCurrency(comparison.grandTotal))}</div>
+                </div>
+                <div class="comparison-sheet-scroll">
+                    <table class="comparison-sheet">
+                        <thead>
+                            <tr>
+                                <th>Customer</th>
+                                ${comparison.monthColumns
+                                    .map(
+                                        (column) => `<th>${escapeHtml(column.label)}${column.isCurrentMonth ? ' <span class="trend-recovery-chip">MTD</span>' : ''}</th>`
+                                    )
+                                    .join('')}
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${comparison.customerRows
+                                .map(
+                                    (row) => `
+                                        <tr>
+                                            <td class="customer-cell">${escapeHtml(row.customer)}</td>
+                                            ${comparison.monthColumns
+                                                .map((column) => {
+                                                    const value = Number(row.months[column.key] || 0);
+                                                    return `<td class="amount-cell${value ? '' : ' empty'}">${value ? escapeHtml(formatCurrencyShort(value)) : ''}</td>`;
+                                                })
+                                                .join('')}
+                                            <td class="amount-cell total">${escapeHtml(formatCurrencyShort(row.total))}</td>
+                                        </tr>
+                                    `
+                                )
+                                .join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td class="customer-cell total-label">Total</td>
+                                ${comparison.monthColumns
+                                    .map((column) => `<td class="amount-cell total">${escapeHtml(formatCurrencyShort(comparison.monthTotals[column.key] || 0))}</td>`)
+                                    .join('')}
+                                <td class="amount-cell total">${escapeHtml(formatCurrencyShort(comparison.grandTotal))}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </section>
+            <section class="comparison-panel unpaid">
+                <div class="comparison-panel-head">
+                    <div>
+                        <div class="comparison-title">Unpaid</div>
+                        <div class="comparison-subtitle">Customer, open invoice count, and oldest unpaid month.</div>
+                    </div>
+                </div>
+                <div class="comparison-sheet-scroll compact">
+                    <table class="comparison-sheet unpaid-sheet">
+                        <thead>
+                            <tr>
+                                <th>Customer</th>
+                                <th>No</th>
+                                <th>Month</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${
+                                comparison.unpaidRows.length
+                                    ? comparison.unpaidRows
+                                          .map(
+                                              (row) => `
+                                                <tr>
+                                                    <td class="customer-cell">${escapeHtml(row.customer)}</td>
+                                                    <td class="amount-cell">${row.count.toLocaleString()}</td>
+                                                    <td>${row.oldestDate ? escapeHtml(formatMonthLabel(row.oldestDate)) : '-'}</td>
+                                                </tr>
+                                            `
+                                          )
+                                          .join('')
+                                    : '<tr><td colspan="3" class="empty-followup">No unpaid invoices in the current queue.</td></tr>'
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function computeCollectorDashboardData() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const windowStart = new Date(COLLECTOR_DASHBOARD_START.getTime());
+    const monthColumns = [];
+    let cursor = startOfMonth(windowStart);
+    const endMonth = startOfMonth(today);
+
+    while (cursor && endMonth && cursor <= endMonth) {
+        monthColumns.push({
+            key: getMonthKey(cursor),
+            label: formatMonthLabelCompact(cursor),
+            fullLabel: formatMonthLabel(cursor, true),
+            monthStart: new Date(cursor.getTime()),
+            isCurrentMonth: getMonthKey(cursor) === getMonthKey(today)
+        });
+        cursor = addMonths(cursor, 1);
+    }
+
+    const previousMonthStart = addMonths(windowStart, -1);
+    const monthColumnKeys = new Set(monthColumns.map((column) => column.key));
+
+    const paymentMap = new Map();
+    paymentEntries.forEach((entry) => {
+        const invoiceKey = String(entry.invoiceId || '').trim();
+        if (!invoiceKey) return;
+
+        if (!paymentMap.has(invoiceKey)) {
+            paymentMap.set(invoiceKey, {
+                amount: 0,
+                firstPaymentDate: null,
+                lastPaymentDate: null
+            });
+        }
+
+        const summary = paymentMap.get(invoiceKey);
+        const paymentDate = normalizeDate(entry.paymentDate);
+        summary.amount += Number(entry.amount || 0);
+
+        if (paymentDate && (!summary.firstPaymentDate || paymentDate < summary.firstPaymentDate)) {
+            summary.firstPaymentDate = paymentDate;
+        }
+
+        if (paymentDate && (!summary.lastPaymentDate || paymentDate > summary.lastPaymentDate)) {
+            summary.lastPaymentDate = paymentDate;
+        }
+    });
+
+    const customerSetByMonth = new Map();
+    const customerRowsMap = new Map();
+    const monthTotals = {};
+    const pendingCountsByMonth = {};
+    collectorCellMap = new Map();
+
+    monthColumns.forEach((column) => {
+        monthTotals[column.key] = 0;
+        pendingCountsByMonth[column.key] = 0;
+    });
+
+    collectorBillingRecords.forEach((record) => {
+        if (!record.invoiceDate || record.invoiceDate < previousMonthStart || record.invoiceDate > today) return;
+
+        if (!customerSetByMonth.has(record.monthKey)) {
+            customerSetByMonth.set(record.monthKey, new Set());
+        }
+        customerSetByMonth.get(record.monthKey).add(record.company);
+
+        if (!monthColumnKeys.has(record.monthKey)) return;
+
+        const paymentSummary =
+            paymentMap.get(String(record.invoiceId || '').trim()) ||
+            paymentMap.get(String(record.invoiceNo || '').trim()) || {
+                amount: 0,
+                firstPaymentDate: null,
+                lastPaymentDate: null
+            };
+
+        const cellId = `${record.company}__${record.monthKey}`;
+        if (!collectorCellMap.has(cellId)) {
+            collectorCellMap.set(cellId, {
+                id: cellId,
+                customer: record.company,
+                monthKey: record.monthKey,
+                label: monthColumns.find((column) => column.key === record.monthKey)?.fullLabel || record.monthKey,
+                rdValues: [],
+                billedTotal: 0,
+                collectedTotal: 0,
+                records: []
+            });
+        }
+
+        const cell = collectorCellMap.get(cellId);
+        cell.rdValues.push(record.rd);
+        cell.billedTotal += Number(record.amount || 0);
+        cell.collectedTotal += Number(paymentSummary.amount || 0);
+        cell.records.push({
+            ...record,
+            collectedAmount: Number(paymentSummary.amount || 0),
+            firstPaymentDate: paymentSummary.firstPaymentDate,
+            lastPaymentDate: paymentSummary.lastPaymentDate,
+            expectedCollectionDate: addDays(record.invoiceDate, 30)
+        });
+
+        if (!customerRowsMap.has(record.company)) {
+            customerRowsMap.set(record.company, {
+                customer: record.company,
+                rdCounts: new Map(),
+                months: {},
+                totalCollected: 0
+            });
+        }
+
+        const customerRow = customerRowsMap.get(record.company);
+        customerRow.rdCounts.set(record.rd, (customerRow.rdCounts.get(record.rd) || 0) + 1);
+        customerRow.months[record.monthKey] = cellId;
+    });
+
+    const customerRows = Array.from(customerRowsMap.values())
+        .map((row) => {
+            let rd = null;
+            Array.from(row.rdCounts.entries())
+                .sort((a, b) => {
+                    if (b[1] !== a[1]) return b[1] - a[1];
+                    return a[0] - b[0];
+                })
+                .slice(0, 1)
+                .forEach(([rdValue]) => {
+                    rd = rdValue;
+                });
+
+            monthColumns.forEach((column) => {
+                const cell = collectorCellMap.get(row.months[column.key] || '');
+                if (cell) {
+                    row.totalCollected += cell.collectedTotal;
+                    monthTotals[column.key] += cell.collectedTotal;
+                    if (cell.billedTotal > 0 && cell.collectedTotal <= 0) {
+                        pendingCountsByMonth[column.key] += 1;
+                    }
+                }
+            });
+
+            return {
+                customer: row.customer,
+                rd,
+                months: row.months,
+                totalCollected: row.totalCollected
+            };
+        })
+        .sort((a, b) => {
+            const rdA = a.rd === null || a.rd === undefined ? Number.MAX_SAFE_INTEGER : a.rd;
+            const rdB = b.rd === null || b.rd === undefined ? Number.MAX_SAFE_INTEGER : b.rd;
+            if (rdA !== rdB) return rdA - rdB;
+            return a.customer.localeCompare(b.customer);
+        });
+
+    const monthlySummaryRows = monthColumns
+        .map((column) => {
+            const previousCustomers = customerSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
+            const currentCustomers = customerSetByMonth.get(column.key) || new Set();
+
+            const additional = Array.from(currentCustomers).filter((customer) => !previousCustomers.has(customer)).length;
+            const inactive = Array.from(previousCustomers).filter((customer) => !currentCustomers.has(customer)).length;
+            const toCollect = currentCustomers.size;
+            const collected = customerRows.filter((row) => {
+                const cell = collectorCellMap.get(row.months[column.key] || '');
+                return cell && cell.collectedTotal > 0;
+            }).length;
+
+            return {
+                monthKey: column.key,
+                monthLabel: column.label,
+                balance: previousCustomers.size,
+                additional,
+                inactive,
+                toCollect,
+                collected,
+                pending: Math.max(0, toCollect - collected)
+            };
+        })
+        .reverse();
+
+    const pendingCellCount = Array.from(collectorCellMap.values()).filter((cell) => cell.billedTotal > 0 && cell.collectedTotal <= 0).length;
+
+    return {
+        monthColumns,
+        customerRows,
+        monthlySummaryRows,
+        monthTotals,
+        pendingCountsByMonth,
+        pendingCellCount,
+        windowStart,
+        windowEnd: today
+    };
+}
+
+function renderCollectorSummaryTable(data) {
+    const container = document.getElementById('collector-summary-table');
+    if (!container) return;
+
+    container.innerHTML = `
+        <table class="collector-sheet">
+            <thead>
+                <tr>
+                    <th class="text-left">Month</th>
+                    <th>Balance</th>
+                    <th>Additional</th>
+                    <th>Inactive</th>
+                    <th>To Collect</th>
+                    <th>Collected</th>
+                    <th>Pending</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.monthlySummaryRows
+                    .map(
+                        (row) => `
+                            <tr>
+                                <td class="text-left">${escapeHtml(row.monthLabel)}</td>
+                                <td>${row.balance.toLocaleString()}</td>
+                                <td>${row.additional.toLocaleString()}</td>
+                                <td>${row.inactive.toLocaleString()}</td>
+                                <td>${row.toCollect.toLocaleString()}</td>
+                                <td>${row.collected.toLocaleString()}</td>
+                                <td>${row.pending.toLocaleString()}</td>
+                            </tr>
+                        `
+                    )
+                    .join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderCollectorMatrixTable(data) {
+    const container = document.getElementById('collector-matrix-table');
+    if (!container) return;
+
+    container.innerHTML = `
+        <table class="collector-sheet">
+            <thead>
+                <tr>
+                    <th class="sticky-col rd">RD</th>
+                    <th class="sticky-col secondary customer text-left">Customer</th>
+                    ${data.monthColumns
+                        .map((column) => `<th>${escapeHtml(column.label)}${column.isCurrentMonth ? ' <span class="trend-recovery-chip">MTD</span>' : ''}</th>`)
+                        .join('')}
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.customerRows
+                    .map((row) => {
+                        const cells = data.monthColumns
+                            .map((column) => {
+                                const cell = collectorCellMap.get(row.months[column.key] || '');
+                                if (!cell) {
+                                    return '<td class="month-cell no-bill"></td>';
+                                }
+
+                                let cellClass = 'month-cell pending';
+                                let cellText = '<span class="collector-empty-dot"></span>';
+                                if (cell.collectedTotal > 0 && cell.collectedTotal < cell.billedTotal) {
+                                    cellClass = 'month-cell partial';
+                                    cellText = escapeHtml(formatPlainNumber(cell.collectedTotal));
+                                } else if (cell.collectedTotal >= cell.billedTotal && cell.collectedTotal > 0) {
+                                    cellClass = 'month-cell collected';
+                                    cellText = escapeHtml(formatPlainNumber(cell.collectedTotal));
+                                }
+
+                                return `<td class="${cellClass}" onclick="openCollectorCellByToken('${encodeURIComponent(cell.id)}')">${cellText}</td>`;
+                            })
+                            .join('');
+
+                        return `
+                            <tr>
+                                <td class="sticky-col rd">${row.rd !== null && row.rd !== undefined ? escapeHtml(String(row.rd)) : '-'}</td>
+                                <td class="sticky-col secondary customer text-left">${escapeHtml(row.customer)}</td>
+                                ${cells}
+                                <td class="total-cell text-right">${escapeHtml(formatPlainNumber(row.totalCollected))}</td>
+                            </tr>
+                        `;
+                    })
+                    .join('')}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="sticky-col rd total-cell"></td>
+                    <td class="sticky-col secondary customer total-cell text-left">Total</td>
+                    ${data.monthColumns
+                        .map((column) => `<td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.monthTotals[column.key] || 0))}</td>`)
+                        .join('')}
+                    <td class="total-cell text-right">${escapeHtml(
+                        formatPlainNumber(data.customerRows.reduce((sum, row) => sum + row.totalCollected, 0))
+                    )}</td>
+                </tr>
+            </tfoot>
+        </table>
+    `;
+}
+
+function renderCollectorDashboard() {
+    const data = computeCollectorDashboardData();
+    renderCollectorSummaryTable(data);
+    renderCollectorMatrixTable(data);
+
+    const noteNode = document.getElementById('collector-dashboard-note');
+    if (noteNode) {
+        noteNode.textContent = `${data.customerRows.length.toLocaleString()} customer(s) across ${data.monthColumns.length.toLocaleString()} month(s). Click beige cells to review unpaid invoices and continue collection remarks.`;
+    }
+
+    const rangeNode = document.getElementById('collector-dashboard-range');
+    if (rangeNode) {
+        rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.windowEnd, true)}`;
+    }
+
+    const pendingNode = document.getElementById('collector-dashboard-pending');
+    if (pendingNode) {
+        pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
+    }
+}
+
+function openCollectorCell(cellId) {
+    const cell = collectorCellMap.get(String(cellId || '').trim());
+    if (!cell) return;
+
+    const modal = document.getElementById('collectorCellModal');
+    const title = document.getElementById('collectorCellTitle');
+    const subtitle = document.getElementById('collectorCellSubtitle');
+    const content = document.getElementById('collectorCellContent');
+    if (!modal || !title || !subtitle || !content) return;
+
+    title.textContent = `${cell.customer} • ${cell.label}`;
+    subtitle.textContent = cell.collectedTotal > 0
+        ? 'Invoice worklist for this customer-month slot. Use Open Call Log to continue the collector notes.'
+        : 'No payment posted yet for this customer-month slot. Review invoices and continue the collection follow-up.';
+
+    const pendingAmount = Math.max(0, cell.billedTotal - cell.collectedTotal);
+
+    content.innerHTML = `
+        <div class="cell-modal-summary">
+            <div class="cell-modal-card">
+                <div class="label">RD</div>
+                <div class="value">${escapeHtml(String(cell.rdValues.filter(Boolean).sort((a, b) => a - b)[0] || '-'))}</div>
+            </div>
+            <div class="cell-modal-card">
+                <div class="label">Billed</div>
+                <div class="value">${escapeHtml(formatCurrency(cell.billedTotal))}</div>
+            </div>
+            <div class="cell-modal-card">
+                <div class="label">Collected</div>
+                <div class="value">${escapeHtml(formatCurrency(cell.collectedTotal))}</div>
+            </div>
+            <div class="cell-modal-card">
+                <div class="label">Pending</div>
+                <div class="value">${escapeHtml(formatCurrency(pendingAmount))}</div>
+            </div>
+        </div>
+        <div class="cell-invoice-list">
+            ${cell.records
+                .sort((a, b) => {
+                    const aTime = a.invoiceDate ? a.invoiceDate.getTime() : 0;
+                    const bTime = b.invoiceDate ? b.invoiceDate.getTime() : 0;
+                    return aTime - bTime;
+                })
+                .map((record) => {
+                    const history = getHistoryForInvoice(record.invoiceNo, record.invoiceId);
+                    const lastHistory = history.length ? history[0] : null;
+                    const lastRemarks = lastHistory ? lastHistory.remarks : 'No past collection remark yet.';
+                    const followup = lastHistory && lastHistory.followupDate ? formatDate(lastHistory.followupDate) : '-';
+
+                    return `
+                        <article class="cell-invoice-item">
+                            <div class="cell-invoice-head">
+                                <div>
+                                    <div class="cell-invoice-title">Invoice #${escapeHtml(record.invoiceNo || record.invoiceId || '-')}</div>
+                                    <div class="cell-invoice-meta">${escapeHtml(record.branch || 'Main')} • Received/Billed ${escapeHtml(formatDate(record.invoiceDate))}</div>
+                                </div>
+                                <div class="comparison-total-chip">${escapeHtml(formatCurrency(record.amount))}</div>
+                            </div>
+                            <div class="cell-invoice-grid">
+                                <div class="cell-modal-card">
+                                    <div class="label">Expected Collection</div>
+                                    <div class="value">${escapeHtml(formatDate(record.expectedCollectionDate || record.dueDate))}</div>
+                                </div>
+                                <div class="cell-modal-card">
+                                    <div class="label">Payment Posted</div>
+                                    <div class="value">${record.collectedAmount > 0 ? escapeHtml(formatCurrency(record.collectedAmount)) : 'None'}</div>
+                                </div>
+                                <div class="cell-modal-card">
+                                    <div class="label">Last Follow-up</div>
+                                    <div class="value">${escapeHtml(followup)}</div>
+                                </div>
+                            </div>
+                            <div class="cell-invoice-note">${escapeHtml(lastRemarks)}</div>
+                            <div class="cell-invoice-actions">
+                                <button class="btn btn-primary btn-sm" onclick="openCollectorInvoiceFromCell('${encodeURIComponent(record.invoiceKey)}')">Open Call Log</button>
+                            </div>
+                        </article>
+                    `;
+                })
+                .join('')}
+        </div>
+    `;
+
+    modal.classList.remove('hidden');
+}
+
+function openCollectorCellByToken(token) {
+    openCollectorCell(decodeURIComponent(String(token || '')));
+}
+
+function closeCollectorCellModal() {
+    document.getElementById('collectorCellModal')?.classList.add('hidden');
+}
+
+function openCollectorInvoiceFromCell(invoiceKey) {
+    closeCollectorCellModal();
+    viewInvoiceDetail(decodeURIComponent(String(invoiceKey || '')));
+}
+
+function toggleAnalyticsDashboard(forceValue = null) {
+    analyticsDashboardVisible = typeof forceValue === 'boolean' ? forceValue : !analyticsDashboardVisible;
+
+    const dashboard = document.getElementById('trend-dashboard');
+    const button = document.getElementById('btnToggleAnalytics');
+
+    dashboard?.classList.toggle('dashboard-hidden', !analyticsDashboardVisible);
+    if (button) button.textContent = analyticsDashboardVisible ? 'Hide Analytics' : 'Analytics';
+}
+
+function renderTrendDashboard() {
+    const trendData = computeMonthlyTrendData();
+    renderTrendSummaryCards(trendData);
+    renderTrendInsights(trendData);
+    renderTrendStrip(trendData);
+    renderTrendComparisonTable(trendData);
 }
 
 function getTodayScheduledInvoices() {
@@ -1817,6 +2840,7 @@ function exportToExcel() {
 function setupModalEvents() {
     const followupModal = document.getElementById('followupModal');
     const detailModal = document.getElementById('detailModal');
+    const collectorCellModal = document.getElementById('collectorCellModal');
 
     followupModal?.addEventListener('click', (event) => {
         if (event.target === followupModal) closeFollowupModal();
@@ -1826,10 +2850,15 @@ function setupModalEvents() {
         if (event.target === detailModal) closeDetailModal();
     });
 
+    collectorCellModal?.addEventListener('click', (event) => {
+        if (event.target === collectorCellModal) closeCollectorCellModal();
+    });
+
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             closeFollowupModal();
             closeDetailModal();
+            closeCollectorCellModal();
             closeWelcomeModal();
         }
     });
@@ -1850,6 +2879,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupModalEvents();
     showRandomTip();
     initQuickAgeButtons();
+    toggleAnalyticsDashboard(false);
 
     document.getElementById('search-input')?.addEventListener('keyup', (event) => {
         if (event.key === 'Enter') applyFilters();

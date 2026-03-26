@@ -497,6 +497,763 @@
             border-left: 3px solid #0ea5a1;
         }
 
+        .dashboard-hidden {
+            display: none;
+        }
+
+        .collector-dashboard {
+            margin-bottom: 14px;
+        }
+
+        .collector-dashboard-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 12px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(248, 250, 252, 0.72);
+        }
+
+        .collector-dashboard-note {
+            font-size: 11px;
+            line-height: 1.5;
+            font-weight: 700;
+            color: #4f6f8f;
+        }
+
+        .collector-chip-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .collector-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            background: rgba(255, 255, 255, 0.86);
+            color: #1e4d7b;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .collector-chip.pending {
+            background: rgba(254, 249, 195, 0.75);
+            border-color: rgba(234, 179, 8, 0.34);
+            color: #854d0e;
+        }
+
+        .collector-table-wrap {
+            padding: 12px;
+        }
+
+        .collector-section-title {
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: 800;
+            color: #173d63;
+            letter-spacing: -0.02em;
+        }
+
+        .collector-sheet-scroll {
+            overflow: auto;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .collector-sheet-scroll.matrix {
+            max-height: 560px;
+        }
+
+        .collector-sheet {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 760px;
+        }
+
+        .collector-sheet th,
+        .collector-sheet td {
+            padding: 9px 11px;
+            border-right: 1px solid rgba(148, 163, 184, 0.12);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            font-size: 12px;
+            font-weight: 700;
+            color: #173d63;
+            background: rgba(255, 255, 255, 0.82);
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .collector-sheet th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: rgba(226, 236, 250, 0.96);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #5d7896;
+        }
+
+        .collector-sheet .text-left {
+            text-align: left;
+        }
+
+        .collector-sheet .text-right {
+            text-align: right;
+        }
+
+        .collector-sheet td.total-cell,
+        .collector-sheet tfoot td {
+            background: rgba(239, 246, 255, 0.94);
+            font-weight: 800;
+        }
+
+        .collector-sheet tbody tr:hover td {
+            background: rgba(239, 246, 255, 0.68);
+        }
+
+        .collector-sheet td.sticky-col,
+        .collector-sheet th.sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: rgba(255, 255, 255, 0.97);
+        }
+
+        .collector-sheet th.sticky-col {
+            z-index: 3;
+            background: rgba(226, 236, 250, 0.98);
+        }
+
+        .collector-sheet td.sticky-col.secondary,
+        .collector-sheet th.sticky-col.secondary {
+            left: 72px;
+        }
+
+        .collector-sheet td.sticky-col.rd,
+        .collector-sheet th.sticky-col.rd {
+            min-width: 72px;
+            width: 72px;
+        }
+
+        .collector-sheet td.sticky-col.customer,
+        .collector-sheet th.sticky-col.customer {
+            min-width: 220px;
+            width: 220px;
+        }
+
+        .collector-sheet td.month-cell {
+            min-width: 110px;
+            cursor: pointer;
+        }
+
+        .collector-sheet td.month-cell.no-bill {
+            background: rgba(255, 255, 255, 0.75);
+            cursor: default;
+        }
+
+        .collector-sheet td.month-cell.pending {
+            background: #f5ebc8;
+            color: #8a5c05;
+            box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.12);
+        }
+
+        .collector-sheet td.month-cell.collected {
+            background: rgba(220, 252, 231, 0.72);
+            color: #166534;
+        }
+
+        .collector-sheet td.month-cell.partial {
+            background: rgba(254, 249, 195, 0.72);
+            color: #854d0e;
+        }
+
+        .collector-sheet td.month-cell:hover:not(.no-bill) {
+            background: rgba(219, 234, 254, 0.88);
+        }
+
+        .collector-empty-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(180, 83, 9, 0.48);
+        }
+
+        .cell-modal-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .cell-modal-card {
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 10px;
+            background: rgba(248, 250, 252, 0.82);
+            padding: 10px;
+        }
+
+        .cell-modal-card .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #607997;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .cell-modal-card .value {
+            font-size: 18px;
+            font-weight: 800;
+            color: #173d63;
+        }
+
+        .cell-invoice-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .cell-invoice-item {
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.84);
+            padding: 12px;
+        }
+
+        .cell-invoice-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .cell-invoice-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: #173d63;
+        }
+
+        .cell-invoice-meta {
+            font-size: 11px;
+            font-weight: 700;
+            color: #5a7592;
+            line-height: 1.5;
+        }
+
+        .cell-invoice-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .cell-invoice-note {
+            border-radius: 10px;
+            background: rgba(255, 251, 235, 0.85);
+            border: 1px solid rgba(251, 191, 36, 0.26);
+            padding: 9px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #6b4f08;
+            margin-bottom: 10px;
+        }
+
+        .cell-invoice-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .trend-dashboard {
+            position: relative;
+            margin-bottom: 14px;
+            background:
+                radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 28%),
+                radial-gradient(circle at left center, rgba(37, 99, 235, 0.12), transparent 34%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(241, 247, 255, 0.94) 100%);
+        }
+
+        .trend-dashboard::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(15, 23, 42, 0.02) 1px, transparent 1px),
+                linear-gradient(rgba(15, 23, 42, 0.02) 1px, transparent 1px);
+            background-size: 18px 18px;
+            pointer-events: none;
+            opacity: 0.55;
+        }
+
+        .trend-dashboard > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .trend-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(170px, 1fr));
+            gap: 10px;
+            padding: 12px;
+        }
+
+        .trend-card {
+            border-radius: 14px;
+            padding: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(255, 255, 255, 0.82);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
+        }
+
+        .trend-card.primary {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 64, 175, 0.93) 100%);
+        }
+
+        .trend-card .eyebrow {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #5a7290;
+        }
+
+        .trend-card .value {
+            font-size: 30px;
+            line-height: 1;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: #153d63;
+            margin-bottom: 6px;
+        }
+
+        .trend-card .meta {
+            font-size: 12px;
+            font-weight: 700;
+            color: #466887;
+            line-height: 1.45;
+        }
+
+        .trend-card.primary .eyebrow,
+        .trend-card.primary .value,
+        .trend-card.primary .meta {
+            color: #fff;
+        }
+
+        .trend-insights {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            padding: 0 12px 12px;
+        }
+
+        .trend-insight {
+            border-radius: 12px;
+            padding: 12px 13px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(248, 250, 252, 0.84);
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+        }
+
+        .trend-insight .label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #607997;
+        }
+
+        .trend-insight .text {
+            font-size: 12px;
+            line-height: 1.55;
+            font-weight: 700;
+            color: #193f64;
+        }
+
+        .trend-strip {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(180px, 1fr);
+            gap: 10px;
+            padding: 0 12px 14px;
+            overflow-x: auto;
+        }
+
+        .trend-month-card {
+            border-radius: 16px;
+            padding: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+            min-height: 188px;
+        }
+
+        .trend-month-card.current {
+            background: linear-gradient(180deg, rgba(219, 234, 254, 0.88) 0%, rgba(255, 255, 255, 0.9) 100%);
+            border-color: rgba(96, 165, 250, 0.42);
+        }
+
+        .trend-month-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .trend-month {
+            font-size: 18px;
+            line-height: 1.05;
+            font-weight: 800;
+            color: #173d63;
+            letter-spacing: -0.02em;
+        }
+
+        .trend-month-tag {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #2563eb;
+            background: rgba(219, 234, 254, 0.92);
+            border: 1px solid rgba(96, 165, 250, 0.45);
+            border-radius: 999px;
+            padding: 4px 7px;
+            white-space: nowrap;
+        }
+
+        .trend-metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .trend-metric-row .name {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #66809d;
+        }
+
+        .trend-metric-row .amount {
+            color: #173d63;
+            font-size: 12px;
+        }
+
+        .trend-bar-stack {
+            display: grid;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .trend-bar-line {
+            display: grid;
+            grid-template-columns: 54px 1fr;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .trend-bar-line .bar-label {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #587290;
+        }
+
+        .trend-bar-track {
+            position: relative;
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(203, 213, 225, 0.42);
+            overflow: hidden;
+        }
+
+        .trend-bar-fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: var(--bar-width, 0%);
+            border-radius: inherit;
+        }
+
+        .trend-bar-fill.billed {
+            background: linear-gradient(90deg, rgba(15, 118, 110, 0.8) 0%, rgba(45, 212, 191, 0.95) 100%);
+        }
+
+        .trend-bar-fill.collected {
+            background: linear-gradient(90deg, rgba(37, 99, 235, 0.84) 0%, rgba(56, 189, 248, 0.95) 100%);
+        }
+
+        .trend-foot {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+            margin-top: 10px;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .trend-foot .positive {
+            color: #0f766e;
+        }
+
+        .trend-foot .negative {
+            color: #b42318;
+        }
+
+        .trend-foot .neutral {
+            color: #5f7896;
+        }
+
+        .trend-dashboard .positive {
+            color: #0f766e;
+        }
+
+        .trend-dashboard .negative {
+            color: #b42318;
+        }
+
+        .trend-dashboard .neutral {
+            color: #5f7896;
+        }
+
+        .trend-comparison-wrap {
+            padding: 0 12px 12px;
+        }
+
+        .comparison-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 2.2fr) minmax(290px, 1fr);
+            gap: 12px;
+        }
+
+        .comparison-panel {
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.76);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+            overflow: hidden;
+        }
+
+        .comparison-panel.unpaid {
+            background: rgba(248, 250, 252, 0.86);
+        }
+
+        .comparison-panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+            background: rgba(239, 246, 255, 0.64);
+        }
+
+        .comparison-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: #173d63;
+            letter-spacing: -0.02em;
+        }
+
+        .comparison-subtitle {
+            margin-top: 3px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #5e7895;
+            line-height: 1.4;
+        }
+
+        .comparison-total-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 11px;
+            font-weight: 800;
+            color: #1d4ed8;
+            background: rgba(219, 234, 254, 0.9);
+            border: 1px solid rgba(147, 197, 253, 0.65);
+            white-space: nowrap;
+        }
+
+        .comparison-sheet-scroll {
+            overflow: auto;
+        }
+
+        .comparison-sheet-scroll.compact {
+            max-height: 420px;
+        }
+
+        .comparison-sheet {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 760px;
+        }
+
+        .comparison-sheet.unpaid-sheet {
+            min-width: 100%;
+        }
+
+        .comparison-sheet th,
+        .comparison-sheet td {
+            padding: 10px 12px;
+            border-right: 1px solid rgba(148, 163, 184, 0.12);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            font-size: 12px;
+            font-weight: 700;
+            color: #183f65;
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .comparison-sheet th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            text-align: center;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #5f7896;
+            background: rgba(226, 236, 250, 0.95);
+        }
+
+        .comparison-sheet th:first-child,
+        .comparison-sheet td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: rgba(255, 255, 255, 0.96);
+        }
+
+        .comparison-sheet th:first-child {
+            z-index: 3;
+            text-align: left;
+            min-width: 220px;
+        }
+
+        .comparison-sheet td.customer-cell {
+            min-width: 220px;
+            font-weight: 800;
+        }
+
+        .comparison-sheet td.amount-cell {
+            text-align: right;
+            white-space: nowrap;
+            color: #173d63;
+        }
+
+        .comparison-sheet td.amount-cell.empty {
+            color: transparent;
+        }
+
+        .comparison-sheet td.amount-cell.total,
+        .comparison-sheet td.total-label,
+        .comparison-sheet tfoot td {
+            background: rgba(239, 246, 255, 0.92);
+            font-weight: 800;
+        }
+
+        .comparison-sheet tbody tr:hover td {
+            background: rgba(239, 246, 255, 0.7);
+        }
+
+        .comparison-sheet tbody tr:hover td:first-child {
+            background: rgba(239, 246, 255, 0.92);
+        }
+
+        .trend-comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255, 255, 255, 0.72);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .trend-comparison-table th,
+        .trend-comparison-table td {
+            padding: 10px 11px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+            font-size: 12px;
+            font-weight: 700;
+            color: #1f4268;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        .trend-comparison-table th {
+            background: rgba(239, 246, 255, 0.8);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #55708e;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .trend-comparison-table tbody tr:hover {
+            background: rgba(239, 246, 255, 0.78);
+        }
+
+        .trend-comparison-table td.metric {
+            white-space: nowrap;
+        }
+
+        .trend-comparison-table small {
+            color: #6a829d;
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .trend-mom {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 11px;
+            line-height: 1.25;
+        }
+
+        .trend-mom small {
+            font-size: 10px;
+            color: #6a829d;
+        }
+
+        .trend-recovery-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 4px 8px;
+            background: rgba(219, 234, 254, 0.72);
+            border: 1px solid rgba(147, 197, 253, 0.56);
+            color: #1d4ed8;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
         .report-panel-title {
             padding: 10px 12px;
             border-bottom: 1px solid rgba(148, 163, 184, 0.24);
@@ -1032,6 +1789,23 @@
                 grid-template-columns: repeat(3, minmax(140px, 1fr));
             }
 
+            .cell-modal-summary,
+            .cell-invoice-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .trend-summary-grid {
+                grid-template-columns: repeat(2, minmax(180px, 1fr));
+            }
+
+            .trend-insights {
+                grid-template-columns: 1fr;
+            }
+
+            .comparison-layout {
+                grid-template-columns: 1fr;
+            }
+
             .duration-summary {
                 grid-template-columns: repeat(2, minmax(180px, 1fr));
             }
@@ -1054,11 +1828,18 @@
 
             .priority-cards,
             .stats-row,
+            .trend-summary-grid,
+            .cell-modal-summary,
             .brief-grid,
             .detail-grid,
             .detail-form-grid,
-            .duration-summary {
+            .duration-summary,
+            .cell-invoice-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .trend-strip {
+                grid-auto-columns: minmax(240px, 1fr);
             }
 
             .collections-header h1 {
@@ -1157,6 +1938,20 @@
         </div>
     </div>
 
+    <div class="modal-overlay hidden" id="collectorCellModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2><span id="collectorCellTitle">Collection Cell</span></h2>
+                <p id="collectorCellSubtitle">Invoice worklist for this customer-month slot</p>
+            </div>
+            <div class="modal-body" id="collectorCellContent"></div>
+            <div class="modal-footer">
+                <span></span>
+                <button class="btn btn-secondary" onclick="closeCollectorCellModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="dashboard-container">
         <aside class="sidebar">
             <div class="sidebar-header"><h2>MARGA</h2><span class="subtitle">Enterprise System</span></div>
@@ -1180,6 +1975,7 @@
                 <div class="header-actions">
                     <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">Today's Brief</button>
+                    <button class="btn btn-secondary btn-sm" id="btnToggleAnalytics" onclick="toggleAnalyticsDashboard()">Analytics</button>
                     <button class="btn btn-secondary btn-sm" id="btnShowBadDebt" onclick="toggleBadDebt()">Bad Debt</button>
                     <span id="last-updated"></span>
                     <button class="btn btn-primary btn-sm" onclick="loadUnpaidInvoices()">Refresh</button>
@@ -1311,6 +2107,56 @@
                     <div class="subvalue" id="duration-need-collect-count">0 unpaid invoice(s)</div>
                 </div>
             </div>
+
+            <section class="data-table-container collector-dashboard" id="collector-dashboard">
+                <div class="report-panel-title">Collector Dashboard</div>
+                <div class="report-panel-subtitle">Quarter 4 2025 to present. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
+                <div class="collector-dashboard-meta">
+                    <div class="collector-dashboard-note" id="collector-dashboard-note">Preparing customer-cycle collection view...</div>
+                    <div class="collector-chip-row">
+                        <span class="collector-chip" id="collector-dashboard-range">Oct 2025 to Present</span>
+                        <span class="collector-chip pending" id="collector-dashboard-pending">Pending cells: 0</span>
+                    </div>
+                </div>
+                <div class="collector-table-wrap">
+                    <h3 class="collector-section-title">Collection for the Last 6 Months</h3>
+                    <div class="collector-sheet-scroll" id="collector-summary-table">
+                        <div class="empty-followup">Loading collector summary...</div>
+                    </div>
+                </div>
+                <div class="collector-table-wrap">
+                    <h3 class="collector-section-title">Month to Month Collection Comparison</h3>
+                    <div class="collector-sheet-scroll matrix" id="collector-matrix-table">
+                        <div class="empty-followup">Loading customer-month collection comparison...</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="data-table-container trend-dashboard dashboard-hidden" id="trend-dashboard">
+                <div class="report-panel-title">Collections Trend Dashboard</div>
+                <div class="report-panel-subtitle" id="trend-window-subtitle">Month-by-month comparison from November 2025 to present. Uses invoice posting month for billing and payment posting month for collections.</div>
+                <div class="trend-summary-grid" id="trend-summary-grid">
+                    <div class="trend-card primary">
+                        <span class="eyebrow">Trend Window</span>
+                        <div class="value">Loading</div>
+                        <div class="meta">Preparing month-by-month collection comparison.</div>
+                    </div>
+                </div>
+                <div class="trend-insights" id="trend-insights">
+                    <div class="trend-insight">
+                        <span class="label">Trend Insight</span>
+                        <div class="text">Loading collection pattern analysis...</div>
+                    </div>
+                </div>
+                <div class="trend-strip" id="trend-strip">
+                    <div class="empty-followup">Loading monthly trend cards...</div>
+                </div>
+                <div class="trend-comparison-wrap">
+                    <div class="table-scroll" id="trend-comparison-table">
+                        <div class="empty-followup">Loading month comparison table...</div>
+                    </div>
+                </div>
+            </section>
 
             <div class="report-grid">
                 <div class="data-table-container">
