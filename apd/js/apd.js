@@ -286,6 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hydrateState();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindFormControls();
+    bindTabControls();
     populateSelects();
     renderAll();
 });
@@ -317,6 +318,12 @@ function bindFormControls() {
     document.getElementById('resetDemoBtn').addEventListener('click', resetDemoData);
     document.getElementById('billsTableBody').addEventListener('click', onBillTableAction);
     document.getElementById('checksTableBody').addEventListener('click', onCheckTableAction);
+}
+
+function bindTabControls() {
+    document.querySelectorAll('[data-tab-target]').forEach((button) => {
+        button.addEventListener('click', () => setActiveTab(button.dataset.tabTarget));
+    });
 }
 
 function populateSelects() {
@@ -422,6 +429,7 @@ function renderAccountCards() {
 
     grid.querySelectorAll('[data-account-id]').forEach((button) => {
         button.addEventListener('click', () => {
+            setActiveTab('payable-intake');
             document.getElementById('billAccountInput').value = button.dataset.accountId;
             document.getElementById('billAccountInput').focus();
             MargaUtils.showToast('Account selected in payable form.', 'info');
@@ -630,6 +638,7 @@ function onBillTableAction(event) {
     if (!bill) return;
 
     if (button.dataset.action === 'edit-bill') {
+        setActiveTab('payable-intake');
         document.getElementById('billIdInput').value = bill.id;
         document.getElementById('billPayeeInput').value = bill.payee;
         document.getElementById('billDocTypeInput').value = bill.documentType;
@@ -639,15 +648,14 @@ function onBillTableAction(event) {
         document.getElementById('billAmountInput').value = Number(bill.amount || 0).toFixed(2);
         document.getElementById('billStatusInput').value = bill.status;
         document.getElementById('billNotesInput').value = bill.notes || '';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
     }
 
     if (button.dataset.action === 'link-check') {
+        setActiveTab('check-register-entry');
         document.getElementById('checkBillSelect').value = bill.id;
         syncCheckBillSelection();
         document.getElementById('checkNumberInput').focus();
-        window.scrollTo({ top: document.body.scrollHeight * 0.52, behavior: 'smooth' });
     }
 }
 
@@ -657,6 +665,7 @@ function onCheckTableAction(event) {
     const check = APD_STATE.checks.find((item) => item.id === button.dataset.id);
     if (!check) return;
     if (button.dataset.action === 'edit-check') {
+        setActiveTab('check-register-entry');
         document.getElementById('checkIdInput').value = check.id;
         populateBillSelect(check.billId);
         document.getElementById('checkBillSelect').value = check.billId;
@@ -667,7 +676,6 @@ function onCheckTableAction(event) {
         document.getElementById('checkStatusInput').value = check.status;
         document.getElementById('checkReceiptInput').value = check.receiptNumber || '';
         document.getElementById('checkReasonInput').value = check.reason || '';
-        window.scrollTo({ top: document.body.scrollHeight * 0.52, behavior: 'smooth' });
     }
 }
 
@@ -836,6 +844,19 @@ function createCheckId() {
 
 function cloneData(value) {
     return JSON.parse(JSON.stringify(value));
+}
+
+function setActiveTab(tabKey) {
+    const normalized = String(tabKey || '').trim().toLowerCase();
+    document.querySelectorAll('[data-tab-target]').forEach((button) => {
+        const active = String(button.dataset.tabTarget || '').trim().toLowerCase() === normalized;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-tab-panel]').forEach((panel) => {
+        const active = String(panel.dataset.tabPanel || '').trim().toLowerCase() === normalized;
+        panel.classList.toggle('is-active', active);
+    });
 }
 
 function toggleSidebar() {

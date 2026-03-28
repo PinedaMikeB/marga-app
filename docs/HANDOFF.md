@@ -61,6 +61,11 @@ Each thread should update only the relevant module sections plus `Current Focus`
   - shared chart-of-accounts reference for encoders
   - manual payable intake for invoice and SOA planning
   - check register and disbursement control with skipped or voided reason tracking
+- Refined APD layout so instructions and reference stay collapsed by default and the main workspace uses four tabs:
+  - Payable Intake
+  - Payables Planner
+  - Check Register Entry
+  - Disbursement Register
 - Added `/docs/APD-PC-CHART-OF-ACCOUNTS.md` as a plain-language finance reference for APD and future petty cash users.
 - Linked APD into dashboard navigation, settings navigation, and billing navigation.
 - Updated module registry defaults so APD now points to a real route.
