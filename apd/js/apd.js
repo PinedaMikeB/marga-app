@@ -3,6 +3,7 @@ if (!MargaAuth.requireAccess('apd')) {
 }
 
 const APD_STORAGE_KEYS = {
+    accounts: 'marga_apd_accounts_v1',
     bills: 'marga_apd_bills_v1',
     checks: 'marga_apd_checks_v1'
 };
@@ -36,7 +37,7 @@ const STATUS_TO_BILL = {
     Voided: 'Voided'
 };
 
-const SHARED_ACCOUNTS = [
+const DEFAULT_ACCOUNTS = [
     {
         id: 'fuel_delivery_expense',
         name: 'Fuel and Delivery Expense',
@@ -277,6 +278,7 @@ const DEFAULT_CHECKS = [
 ];
 
 const APD_STATE = {
+    accounts: [],
     bills: [],
     checks: []
 };
@@ -318,6 +320,7 @@ function loadUserHeader() {
 }
 
 function hydrateState() {
+    APD_STATE.accounts = readStorage(APD_STORAGE_KEYS.accounts, DEFAULT_ACCOUNTS).map(normalizeAccount);
     APD_STATE.bills = readStorage(APD_STORAGE_KEYS.bills, DEFAULT_BILLS).map(normalizeBill);
     APD_STATE.checks = readStorage(APD_STORAGE_KEYS.checks, DEFAULT_CHECKS).map(normalizeCheck);
 }
@@ -338,6 +341,14 @@ function bindFormControls() {
     document.getElementById('resetDemoBtn').addEventListener('click', resetDemoData);
     document.getElementById('billsTableBody').addEventListener('click', onBillTableAction);
     document.getElementById('checksTableBody').addEventListener('click', onCheckTableAction);
+    document.getElementById('manageAccountsBtn').addEventListener('click', openAccountManager);
+    document.getElementById('accountForm').addEventListener('submit', onAccountSubmit);
+    document.getElementById('accountFormClearBtn').addEventListener('click', clearAccountForm);
+    document.getElementById('newAccountBtn').addEventListener('click', clearAccountForm);
+    document.querySelectorAll('[data-close-account-manager]').forEach((button) => {
+        button.addEventListener('click', closeAccountManager);
+    });
+    document.getElementById('accountManagerTableBody').addEventListener('click', onAccountTableAction);
 }
 
 function bindTabControls() {
@@ -364,8 +375,9 @@ function bindViewControls() {
 }
 
 function populateSelects() {
+    const accounts = getAccounts();
     const billAccountInput = document.getElementById('billAccountInput');
-    billAccountInput.innerHTML = SHARED_ACCOUNTS.map((account) => (
+    billAccountInput.innerHTML = accounts.map((account) => (
         `<option value="${account.id}">${MargaUtils.escapeHtml(account.name)} (${account.type})</option>`
     )).join('');
 
@@ -403,6 +415,7 @@ function renderAll() {
     renderOverview();
     renderDashboardMatrix();
     renderAccountCards();
+    renderAccountManagerTable();
     renderBillsTable();
     renderChecksTable();
     renderAlerts();
@@ -536,7 +549,9 @@ function applyDocTypePreset() {
     const preset = DOC_TYPE_PRESETS[docType];
     if (!preset || document.getElementById('billIdInput').value) return;
     document.getElementById('billPlanTypeInput').value = preset.planType;
-    document.getElementById('billAccountInput').value = preset.accountId;
+    if (getAccountById(preset.accountId)) {
+        document.getElementById('billAccountInput').value = preset.accountId;
+    }
     if (!String(document.getElementById('billDashboardLabelInput').value || '').trim()) {
         document.getElementById('billDashboardLabelInput').value = preset.label;
     }
@@ -547,7 +562,7 @@ function renderAccountCards() {
     const grid = document.getElementById('accountGuideGrid');
     const search = String(document.getElementById('accountSearchInput').value || '').trim().toLowerCase();
     const scope = String(document.getElementById('accountScopeFilter').value || 'all').trim().toLowerCase();
-    const accounts = SHARED_ACCOUNTS.filter((account) => {
+    const accounts = getAccounts().filter((account) => {
         const haystack = `${account.name} ${account.meaning} ${account.useWhen} ${account.avoid}`.toLowerCase();
         const scopeMatch = scope === 'all' || account.scope === scope || (scope === 'pettycash' && (account.scope === 'shared' || account.scope === 'pettycash'));
         return scopeMatch && (!search || haystack.includes(search));
@@ -587,6 +602,35 @@ function renderAccountCards() {
             MargaUtils.showToast('Account selected in payable form.', 'info');
         });
     });
+}
+
+function renderAccountManagerTable() {
+    const tbody = document.getElementById('accountManagerTableBody');
+    if (!tbody) return;
+    const rows = getAccounts().slice().sort((left, right) => left.name.localeCompare(right.name));
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No account found.</div></td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((account) => `
+        <tr>
+            <td>
+                <div class="ref-cell">
+                    <span class="ref-primary">${MargaUtils.escapeHtml(account.name)}</span>
+                    <span class="ref-secondary">${MargaUtils.escapeHtml(account.meaning || '')}</span>
+                </div>
+            </td>
+            <td><span class="type-badge ${slugify(account.type)}">${MargaUtils.escapeHtml(account.type)}</span></td>
+            <td><span class="scope-badge ${account.scope}">${formatScope(account.scope)}</span></td>
+            <td>
+                <div class="row-actions">
+                    <button type="button" class="row-btn" data-action="view-account" data-id="${account.id}">View</button>
+                    <button type="button" class="row-btn" data-action="edit-account" data-id="${account.id}">Edit</button>
+                    <button type="button" class="row-btn" data-action="delete-account" data-id="${account.id}">Delete</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
 }
 
 function renderBillsTable() {
@@ -834,6 +878,35 @@ function onCheckTableAction(event) {
     }
 }
 
+function onAccountTableAction(event) {
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const account = getAccountById(button.dataset.id);
+    if (!account) return;
+
+    if (button.dataset.action === 'view-account' || button.dataset.action === 'edit-account') {
+        fillAccountForm(account);
+        document.getElementById('accountFormTitle').textContent = button.dataset.action === 'view-account' ? 'View Or Edit Account' : 'Edit Account';
+        if (button.dataset.action === 'edit-account') {
+            document.getElementById('accountNameInput').focus();
+        }
+        return;
+    }
+
+    if (button.dataset.action === 'delete-account') {
+        const used = APD_STATE.bills.some((bill) => bill.accountId === account.id);
+        if (used) {
+            MargaUtils.showToast('This account is already used by payables and cannot be removed yet.', 'error');
+            return;
+        }
+        APD_STATE.accounts = APD_STATE.accounts.filter((item) => item.id !== account.id);
+        persistState();
+        clearAccountForm();
+        refreshAccountViews();
+        MargaUtils.showToast('Account removed.', 'info');
+    }
+}
+
 function clearBillForm() {
     document.getElementById('billForm').reset();
     document.getElementById('billIdInput').value = '';
@@ -852,7 +925,16 @@ function clearCheckForm() {
     populateBillSelect();
 }
 
+function clearAccountForm() {
+    document.getElementById('accountForm').reset();
+    document.getElementById('accountIdInput').value = '';
+    document.getElementById('accountTypeInput').value = 'Expense';
+    document.getElementById('accountScopeInput').value = 'shared';
+    document.getElementById('accountFormTitle').textContent = 'Add Account';
+}
+
 function resetDemoData() {
+    localStorage.removeItem(APD_STORAGE_KEYS.accounts);
     localStorage.removeItem(APD_STORAGE_KEYS.bills);
     localStorage.removeItem(APD_STORAGE_KEYS.checks);
     VIEW_STATE.dashboardOffset = 0;
@@ -865,6 +947,7 @@ function resetDemoData() {
 }
 
 function persistState() {
+    localStorage.setItem(APD_STORAGE_KEYS.accounts, JSON.stringify(APD_STATE.accounts));
     localStorage.setItem(APD_STORAGE_KEYS.bills, JSON.stringify(APD_STATE.bills));
     localStorage.setItem(APD_STORAGE_KEYS.checks, JSON.stringify(APD_STATE.checks));
 }
@@ -903,6 +986,18 @@ function normalizeBill(bill) {
     };
 }
 
+function normalizeAccount(account) {
+    return {
+        id: String(account.id || createAccountId()).trim(),
+        name: String(account.name || '').trim(),
+        type: String(account.type || 'Expense').trim(),
+        scope: String(account.scope || 'shared').trim().toLowerCase(),
+        meaning: String(account.meaning || '').trim(),
+        useWhen: String(account.useWhen || '').trim(),
+        avoid: String(account.avoid || '').trim()
+    };
+}
+
 function normalizeCheck(check) {
     return {
         id: String(check.id || createCheckId()).trim(),
@@ -919,7 +1014,11 @@ function normalizeCheck(check) {
 }
 
 function getAccountById(accountId) {
-    return SHARED_ACCOUNTS.find((account) => account.id === accountId) || null;
+    return APD_STATE.accounts.find((account) => account.id === accountId) || null;
+}
+
+function getAccounts() {
+    return Array.isArray(APD_STATE.accounts) ? APD_STATE.accounts : [];
 }
 
 function upsertById(items, nextItem) {
@@ -1115,8 +1214,84 @@ function createCheckId() {
     return `CHK-${highest + 1}`;
 }
 
+function createAccountId() {
+    const base = slugify(document.getElementById('accountNameInput')?.value || `account-${Date.now()}`) || `account-${Date.now()}`;
+    let candidate = base;
+    let suffix = 2;
+    while (getAccounts().some((account) => account.id === candidate)) {
+        candidate = `${base}-${suffix}`;
+        suffix += 1;
+    }
+    return candidate;
+}
+
 function cloneData(value) {
     return JSON.parse(JSON.stringify(value));
+}
+
+function onAccountSubmit(event) {
+    event.preventDefault();
+    const next = normalizeAccount({
+        id: document.getElementById('accountIdInput').value || createAccountId(),
+        name: document.getElementById('accountNameInput').value,
+        type: document.getElementById('accountTypeInput').value,
+        scope: document.getElementById('accountScopeInput').value,
+        meaning: document.getElementById('accountMeaningInput').value,
+        useWhen: document.getElementById('accountUseWhenInput').value,
+        avoid: document.getElementById('accountAvoidInput').value
+    });
+
+    if (!next.name || !next.meaning) {
+        MargaUtils.showToast('Account name and meaning are required.', 'error');
+        return;
+    }
+
+    const duplicate = getAccounts().find((account) => account.id !== next.id && account.name.toLowerCase() === next.name.toLowerCase());
+    if (duplicate) {
+        MargaUtils.showToast('An account with the same name already exists.', 'error');
+        return;
+    }
+
+    upsertById(APD_STATE.accounts, next);
+    persistState();
+    refreshAccountViews(next.id);
+    clearAccountForm();
+    MargaUtils.showToast('Account saved.', 'success');
+}
+
+function fillAccountForm(account) {
+    document.getElementById('accountIdInput').value = account.id;
+    document.getElementById('accountNameInput').value = account.name;
+    document.getElementById('accountTypeInput').value = account.type;
+    document.getElementById('accountScopeInput').value = account.scope;
+    document.getElementById('accountMeaningInput').value = account.meaning || '';
+    document.getElementById('accountUseWhenInput').value = account.useWhen || '';
+    document.getElementById('accountAvoidInput').value = account.avoid || '';
+}
+
+function openAccountManager() {
+    document.getElementById('accountManagerModal').classList.remove('hidden');
+    document.getElementById('accountManagerModal').setAttribute('aria-hidden', 'false');
+    clearAccountForm();
+    renderAccountManagerTable();
+    document.getElementById('accountNameInput').focus();
+}
+
+function closeAccountManager() {
+    document.getElementById('accountManagerModal').classList.add('hidden');
+    document.getElementById('accountManagerModal').setAttribute('aria-hidden', 'true');
+}
+
+function refreshAccountViews(preferredId = '') {
+    const currentBillAccount = preferredId || document.getElementById('billAccountInput').value;
+    populateSelects();
+    if (currentBillAccount && getAccountById(currentBillAccount)) {
+        document.getElementById('billAccountInput').value = currentBillAccount;
+    }
+    renderAccountCards();
+    renderAccountManagerTable();
+    renderBillsTable();
+    renderDashboardMatrix();
 }
 
 function setActiveTab(tabKey) {

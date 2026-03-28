@@ -312,6 +312,62 @@ body::before {
     font-size: 0.84rem;
 }
 
+.modal-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 180;
+}
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 25, 39, 0.38);
+    backdrop-filter: blur(4px);
+}
+
+.modal-panel {
+    position: relative;
+    z-index: 1;
+    width: min(1180px, calc(100vw - 28px));
+    max-height: calc(100vh - 28px);
+    margin: 14px auto;
+    overflow: auto;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    background: linear-gradient(180deg, rgba(248, 252, 255, 0.98) 0%, rgba(238, 247, 253, 0.96) 100%);
+    box-shadow: 0 30px 70px rgba(10, 36, 58, 0.24);
+}
+
+.modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem 0.9rem;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.account-manager-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+    gap: 1rem;
+    padding: 0 1rem 1rem;
+}
+
+.account-list-card,
+.account-form-card {
+    min-height: 100%;
+}
+
+.account-form-card .finance-form {
+    padding-top: 0.3rem;
+}
+
 .reference-drawer {
     padding: 0;
 }
@@ -799,6 +855,10 @@ body::before {
     .apd-tabs {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .account-manager-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 820px) {
@@ -807,6 +867,11 @@ body::before {
     }
 
     .view-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .modal-header {
         flex-direction: column;
         align-items: stretch;
     }

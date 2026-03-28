@@ -73,6 +73,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Added `/docs/APD-PC-CHART-OF-ACCOUNTS.md` as a plain-language finance reference for APD and future petty cash users.
 - Linked APD into dashboard navigation, settings navigation, and billing navigation.
 - Updated module registry defaults so APD now points to a real route.
+- Added APD account-list management inside the page so users can view, add, edit, and remove chart-of-accounts entries from one modal, with delete protection for accounts already used by payables.
 
 ### 2026-03-28 - APD And Petty Cash Planning Thread
 - Added initial finance design guidance for separate APD and Petty Cash modules.

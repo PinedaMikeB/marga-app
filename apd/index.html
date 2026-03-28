@@ -133,6 +133,7 @@
                 </div>
                 <div class="view-toolbar-actions">
                     <button type="button" class="btn btn-secondary" id="showDashboardBtn">Dashboard</button>
+                    <button type="button" class="btn btn-secondary" id="manageAccountsBtn">Manage Accounts</button>
                     <button type="button" class="btn btn-primary" id="openWorkspaceBtn">Open APD Workspace</button>
                 </div>
             </section>
@@ -491,6 +492,99 @@
             </section>
         </div>
     </main>
+
+    <div class="modal-shell hidden" id="accountManagerModal" aria-hidden="true">
+        <div class="modal-backdrop" data-close-account-manager="1"></div>
+        <section class="modal-panel account-manager-panel" role="dialog" aria-modal="true" aria-labelledby="accountManagerTitle">
+            <div class="modal-header">
+                <div>
+                    <h3 id="accountManagerTitle">Account List Manager</h3>
+                    <p class="card-subtext">View, add, edit, or remove account names used by APD and future petty cash.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="newAccountBtn">Add Account</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-close-account-manager="1">Close</button>
+                </div>
+            </div>
+            <div class="account-manager-grid">
+                <article class="content-card account-list-card">
+                    <div class="card-header table-header">
+                        <div>
+                            <h3>Chart Of Accounts</h3>
+                            <p class="card-subtext">Changes here update the APD account dropdown and reference cards.</p>
+                        </div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="ledger-table">
+                            <thead>
+                                <tr>
+                                    <th>Account Name</th>
+                                    <th>Type</th>
+                                    <th>Scope</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="accountManagerTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="content-card account-form-card">
+                    <div class="card-header">
+                        <div>
+                            <h3 id="accountFormTitle">Add Account</h3>
+                            <p class="card-subtext">Use clear account names so encoders can pick the right account quickly.</p>
+                        </div>
+                    </div>
+                    <form id="accountForm" class="finance-form">
+                        <input type="hidden" id="accountIdInput">
+                        <div class="form-row">
+                            <label class="form-group">
+                                <span class="form-label">Account Name</span>
+                                <input type="text" class="form-input" id="accountNameInput" placeholder="Loans Payable - Lending Company" required>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Type</span>
+                                <select class="form-select" id="accountTypeInput">
+                                    <option value="Expense">Expense</option>
+                                    <option value="Liability">Liability</option>
+                                    <option value="Asset">Asset</option>
+                                    <option value="Fixed Asset">Fixed Asset</option>
+                                    <option value="Equity">Equity</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-group">
+                                <span class="form-label">Scope</span>
+                                <select class="form-select" id="accountScopeInput">
+                                    <option value="shared">Shared</option>
+                                    <option value="apd">APD Only</option>
+                                    <option value="pettycash">Petty Cash Relevant</option>
+                                </select>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Meaning</span>
+                                <input type="text" class="form-input" id="accountMeaningInput" placeholder="What this account represents" required>
+                            </label>
+                        </div>
+                        <label class="form-group">
+                            <span class="form-label">Use This When</span>
+                            <textarea class="form-input form-textarea" id="accountUseWhenInput" placeholder="When should encoder use this account?"></textarea>
+                        </label>
+                        <label class="form-group">
+                            <span class="form-label">Do Not Use For</span>
+                            <textarea class="form-input form-textarea" id="accountAvoidInput" placeholder="What should not be posted here?"></textarea>
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Save Account</button>
+                            <button type="button" class="btn btn-secondary" id="accountFormClearBtn">Clear</button>
+                        </div>
+                    </form>
+                </article>
+            </div>
+        </section>
+    </div>
 
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>
