@@ -448,7 +448,7 @@ function renderAll() {
 function renderOverview() {
     const today = startOfDay(new Date());
     const nextWeek = addDays(today, 7);
-    const openBills = APD_STATE.bills.filter((bill) => !['Released', 'Cleared', 'Voided'].includes(bill.status));
+    const openBills = APD_STATE.bills.filter((bill) => !['Cleared', 'Voided'].includes(bill.status));
     const dueThisWeek = openBills.filter((bill) => {
         const due = parseDateOnly(bill.dueDate);
         return due && due >= today && due <= nextWeek;
@@ -501,7 +501,7 @@ function renderDashboardMatrix() {
 
     const totalByMonth = months.map((month) => sumAmounts(matrixBills.filter((bill) => isSameMonth(bill.dueDate, month)).map((bill) => bill.amount)));
     const paidByMonth = months.map((month) => sumAmounts(matrixBills
-        .filter((bill) => isSameMonth(bill.dueDate, month) && ['Released', 'Cleared'].includes(bill.status))
+        .filter((bill) => isSameMonth(bill.dueDate, month) && bill.status === 'Cleared')
         .map((bill) => bill.amount)));
     const netByMonth = totalByMonth.map((amount, index) => Math.max(amount - paidByMonth[index], 0));
 
@@ -521,7 +521,7 @@ function renderDashboardCell(label, month, bills) {
     }
     const total = sumAmounts(monthBills.map((bill) => bill.amount));
     const ids = monthBills.map((bill) => bill.id).join(',');
-    const fullyPaid = monthBills.every((bill) => ['Released', 'Cleared'].includes(bill.status));
+    const fullyPaid = monthBills.every((bill) => bill.status === 'Cleared');
     const title = monthBills.length > 1
         ? `${label}: ${monthBills.length} payables in ${formatMonthHeading(month)}`
         : `${label}: ${MargaUtils.formatCurrency(total)}`;
@@ -1254,7 +1254,7 @@ function getDashboardLabel(bill) {
 }
 
 function getDueClass(dateValue, status) {
-    if (['Released', 'Cleared', 'Voided'].includes(status)) return 'on-schedule';
+    if (['Cleared', 'Voided'].includes(status)) return 'on-schedule';
     const due = parseDateOnly(dateValue);
     if (!due) return 'on-schedule';
     const today = startOfDay(new Date());
@@ -1264,7 +1264,9 @@ function getDueClass(dateValue, status) {
 }
 
 function getDueLabel(dateValue, status) {
-    if (['Released', 'Cleared'].includes(status)) return 'Closed';
+    if (status === 'Cleared') return 'Closed';
+    if (status === 'Released') return 'Check Released';
+    if (status === 'Printed') return 'Check Printed';
     if (status === 'Voided') return 'Voided';
     const due = parseDateOnly(dateValue);
     if (!due) return 'No Due Date';
