@@ -723,6 +723,18 @@ body::before {
     background: rgba(247, 251, 255, 0.82);
 }
 
+.series-edit-panel {
+    margin-bottom: 1rem;
+    padding: 1rem 1rem 0.9rem;
+    border: 1px solid rgba(20, 50, 77, 0.12);
+    border-radius: 18px;
+    background: rgba(248, 244, 232, 0.62);
+}
+
+.series-edit-header {
+    margin-bottom: 0.75rem;
+}
+
 .loan-setup-header {
     margin-bottom: 0.75rem;
 }

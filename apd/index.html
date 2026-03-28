@@ -276,6 +276,8 @@
                     </div>
                     <form id="billForm" class="finance-form">
                         <input type="hidden" id="billIdInput">
+                        <input type="hidden" id="billSeriesIdInput">
+                        <input type="hidden" id="billSeriesIndexInput">
                         <div class="form-row">
                             <label class="form-group">
                                 <span class="form-label">Dashboard Label</span>
@@ -353,6 +355,18 @@
                                 <select class="form-select" id="billStatusInput"></select>
                             </label>
                         </div>
+                        <section class="series-edit-panel hidden" id="billSeriesEditPanel" aria-live="polite">
+                            <div class="series-edit-header">
+                                <div>
+                                    <span class="form-label">Recurring Series Edit</span>
+                                    <p class="card-subtext">This payable belongs to a recurring series. Choose whether the correction should stay on this month only or also update the future months in the same series.</p>
+                                </div>
+                            </div>
+                            <label class="form-check">
+                                <input type="checkbox" id="billCascadeFutureInput" checked>
+                                <span>Apply this correction to this and future months</span>
+                            </label>
+                        </section>
                         <section class="loan-setup-panel hidden" id="billLoanSetupPanel" aria-live="polite">
                             <div class="loan-setup-header">
                                 <div>

@@ -371,6 +371,7 @@ function bindFormControls() {
     });
     document.getElementById('accountManagerTableBody').addEventListener('click', onAccountTableAction);
     syncLoanFields();
+    syncSeriesEditFields();
 }
 
 function bindTabControls() {
@@ -639,6 +640,17 @@ function syncLoanFields() {
     hint.textContent = 'Full accounting mode lets you split one payable into principal, interest, and penalty before the check is issued.';
 }
 
+function syncSeriesEditFields() {
+    const billId = String(document.getElementById('billIdInput').value || '').trim();
+    const seriesId = String(document.getElementById('billSeriesIdInput').value || '').trim();
+    const seriesIndex = Number(document.getElementById('billSeriesIndexInput').value || 0);
+    const panel = document.getElementById('billSeriesEditPanel');
+    const checkbox = document.getElementById('billCascadeFutureInput');
+    const showSeriesEdit = Boolean(billId && seriesId && seriesIndex > 0);
+    panel.classList.toggle('hidden', !showSeriesEdit);
+    checkbox.checked = showSeriesEdit;
+}
+
 function renderAccountCards() {
     const grid = document.getElementById('accountGuideGrid');
     const search = String(document.getElementById('accountSearchInput').value || '').trim().toLowerCase();
@@ -886,7 +898,44 @@ function onBillSubmit(event) {
 
     let savedCount = 1;
     if (billId) {
-        upsertById(APD_STATE.bills, base);
+        const original = APD_STATE.bills.find((bill) => bill.id === billId);
+        const shouldCascade = Boolean(
+            original?.seriesId
+            && original?.seriesIndex
+            && document.getElementById('billCascadeFutureInput').checked
+        );
+
+        if (shouldCascade) {
+            const futureBills = APD_STATE.bills.filter((bill) => (
+                bill.seriesId === original.seriesId && bill.seriesIndex >= original.seriesIndex
+            ));
+            futureBills.forEach((bill) => {
+                const updatedBill = normalizeBill({
+                    ...bill,
+                    dashboardLabel: base.dashboardLabel,
+                    payee: base.payee,
+                    documentType: base.documentType,
+                    accountId: base.accountId,
+                    amount: base.amount,
+                    status: base.status,
+                    simpleLoanMode: base.simpleLoanMode,
+                    breakdownPending: base.breakdownPending,
+                    principalAmount: base.principalAmount,
+                    interestAmount: base.interestAmount,
+                    penaltyAmount: base.penaltyAmount,
+                    notes: base.notes
+                });
+                upsertById(APD_STATE.bills, updatedBill);
+            });
+            savedCount = futureBills.length;
+        } else {
+            upsertById(APD_STATE.bills, {
+                ...base,
+                seriesId: original?.seriesId || '',
+                seriesIndex: original?.seriesIndex || 1,
+                seriesTotal: original?.seriesTotal || 1
+            });
+        }
     } else {
         const plannedBills = createBillsFromPlan(base);
         savedCount = plannedBills.length;
@@ -899,9 +948,10 @@ function onBillSubmit(event) {
     populateBillSelect();
     showView('dashboard');
     renderAll();
+    const actionLabel = billId ? 'updated' : 'saved';
     MargaUtils.showToast(savedCount > 1
-        ? `${savedCount} payables saved for ${getDashboardLabel(base)}.`
-        : `Payable saved for ${getDashboardLabel(base)}.`, 'success');
+        ? `${savedCount} payables ${actionLabel} for ${getDashboardLabel(base)}.`
+        : `Payable ${actionLabel} for ${getDashboardLabel(base)}.`, 'success');
 }
 
 function onCheckSubmit(event) {
@@ -1037,16 +1087,20 @@ function onAccountTableAction(event) {
 function clearBillForm() {
     document.getElementById('billForm').reset();
     document.getElementById('billIdInput').value = '';
+    document.getElementById('billSeriesIdInput').value = '';
+    document.getElementById('billSeriesIndexInput').value = '';
     document.getElementById('billStatusInput').value = 'Draft';
     document.getElementById('billPlanTypeInput').value = 'one_time';
     document.getElementById('billRemainingYearsInput').value = '0';
     document.getElementById('billRemainingMonthsInput').value = '0';
+    document.getElementById('billCascadeFutureInput').checked = false;
     document.getElementById('billSimpleLoanModeInput').checked = false;
     document.getElementById('billBreakdownPendingInput').checked = false;
     clearLoanBreakdownInputs();
     document.getElementById('billAccountInput').selectedIndex = 0;
     updatePlanHint();
     syncLoanFields();
+    syncSeriesEditFields();
 }
 
 function clearCheckForm() {
@@ -1174,6 +1228,8 @@ function upsertById(items, nextItem) {
 
 function fillBillForm(bill) {
     document.getElementById('billIdInput').value = bill.id;
+    document.getElementById('billSeriesIdInput').value = bill.seriesId || '';
+    document.getElementById('billSeriesIndexInput').value = String(bill.seriesIndex || 1);
     document.getElementById('billDashboardLabelInput').value = bill.dashboardLabel || '';
     document.getElementById('billPlanTypeInput').value = bill.planType || 'one_time';
     document.getElementById('billRemainingYearsInput').value = String(bill.remainingYears || 0);
@@ -1193,6 +1249,7 @@ function fillBillForm(bill) {
     document.getElementById('billNotesInput').value = bill.notes || '';
     updatePlanHint();
     syncLoanFields();
+    syncSeriesEditFields();
 }
 
 function createBillsFromPlan(baseBill) {
