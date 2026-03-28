@@ -346,7 +346,10 @@
                                 <input type="number" class="form-input" id="billAmountInput" min="0" step="0.01" placeholder="0.00" required>
                             </label>
                             <label class="form-group">
-                                <span class="form-label">Status</span>
+                                <span class="form-label form-label-with-action">
+                                    <span>Status</span>
+                                    <button type="button" class="mini-guide-btn" data-open-status-guide="1">Guide</button>
+                                </span>
                                 <select class="form-select" id="billStatusInput"></select>
                             </label>
                         </div>
@@ -413,6 +416,7 @@
                             <select id="billStatusFilter" class="form-select compact-select">
                                 <option value="all">All Statuses</option>
                             </select>
+                            <button type="button" class="btn btn-secondary btn-sm" data-open-status-guide="1">Status Guide</button>
                         </div>
                     </div>
                     <div class="table-scroll">
@@ -624,6 +628,34 @@
                     </form>
                 </article>
             </div>
+        </section>
+    </div>
+
+    <div class="modal-shell hidden" id="statusGuideModal" aria-hidden="true">
+        <div class="modal-backdrop" data-close-status-guide="1"></div>
+        <section class="modal-panel status-guide-panel" role="dialog" aria-modal="true" aria-labelledby="statusGuideTitle">
+            <div class="modal-header">
+                <div>
+                    <h3 id="statusGuideTitle">APD Status Guide</h3>
+                    <p class="card-subtext">Open this when you need to clarify what status to use before saving or moving a payable forward.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" data-close-status-guide="1">Close</button>
+                </div>
+            </div>
+            <article class="content-card status-guide-card">
+                <div class="table-scroll">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Meaning</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statusGuideTableBody"></tbody>
+                    </table>
+                </div>
+            </article>
         </section>
     </div>
 

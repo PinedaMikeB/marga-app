@@ -78,6 +78,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
   - `Simple Loan Mode` keeps one monthly amount when the principal-interest split is still unknown
   - `Breakdown Pending` flags loans that still need lender schedule detail later
   - principal, interest, and penalty entry fields stay hidden unless the user turns off simple mode
+- Added an APD status-guide popout so encoders can open the meaning of `Draft`, `For Approval`, `Approved for Payment`, `For Check Printing`, `Printed`, `Released`, `Cleared`, and `Voided` from the payable form and planner.
 
 ### 2026-03-28 - APD And Petty Cash Planning Thread
 - Added initial finance design guidance for separate APD and Petty Cash modules.

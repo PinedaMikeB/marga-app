@@ -302,6 +302,17 @@ const DOC_TYPE_PRESETS = {
 
 const LOAN_DOCUMENT_TYPES = new Set(['Loan Amortization', 'Housing Loan', 'Bank Loan']);
 
+const BILL_STATUS_GUIDE = [
+    { status: 'Draft', meaning: 'Encoded but not yet confirmed.' },
+    { status: 'For Approval', meaning: 'Ready for management review.' },
+    { status: 'Approved for Payment', meaning: 'Approved and waiting to prepare payment.' },
+    { status: 'For Check Printing', meaning: 'Approved and ready to issue check.' },
+    { status: 'Printed', meaning: 'Check already printed.' },
+    { status: 'Released', meaning: 'Check already given to payee.' },
+    { status: 'Cleared', meaning: 'Payment already cleared or settled.' },
+    { status: 'Voided', meaning: 'Cancelled entry or check.' }
+];
+
 document.addEventListener('DOMContentLoaded', () => {
     loadUserHeader();
     hydrateState();
@@ -349,8 +360,14 @@ function bindFormControls() {
     document.getElementById('accountForm').addEventListener('submit', onAccountSubmit);
     document.getElementById('accountFormClearBtn').addEventListener('click', clearAccountForm);
     document.getElementById('newAccountBtn').addEventListener('click', clearAccountForm);
+    document.querySelectorAll('[data-open-status-guide]').forEach((button) => {
+        button.addEventListener('click', openStatusGuide);
+    });
     document.querySelectorAll('[data-close-account-manager]').forEach((button) => {
         button.addEventListener('click', closeAccountManager);
+    });
+    document.querySelectorAll('[data-close-status-guide]').forEach((button) => {
+        button.addEventListener('click', closeStatusGuide);
     });
     document.getElementById('accountManagerTableBody').addEventListener('click', onAccountTableAction);
     syncLoanFields();
@@ -421,6 +438,7 @@ function renderAll() {
     renderDashboardMatrix();
     renderAccountCards();
     renderAccountManagerTable();
+    renderStatusGuideTable();
     renderBillsTable();
     renderChecksTable();
     renderAlerts();
@@ -689,6 +707,17 @@ function renderAccountManagerTable() {
                     <button type="button" class="row-btn" data-action="delete-account" data-id="${account.id}">Delete</button>
                 </div>
             </td>
+        </tr>
+    `).join('');
+}
+
+function renderStatusGuideTable() {
+    const tbody = document.getElementById('statusGuideTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = BILL_STATUS_GUIDE.map((item) => `
+        <tr>
+            <td><span class="status-badge ${slugify(item.status)}">${MargaUtils.escapeHtml(item.status)}</span></td>
+            <td>${MargaUtils.escapeHtml(item.meaning)}</td>
         </tr>
     `).join('');
 }
@@ -1388,6 +1417,17 @@ function openAccountManager() {
 function closeAccountManager() {
     document.getElementById('accountManagerModal').classList.add('hidden');
     document.getElementById('accountManagerModal').setAttribute('aria-hidden', 'true');
+}
+
+function openStatusGuide() {
+    document.getElementById('statusGuideModal').classList.remove('hidden');
+    document.getElementById('statusGuideModal').setAttribute('aria-hidden', 'false');
+    renderStatusGuideTable();
+}
+
+function closeStatusGuide() {
+    document.getElementById('statusGuideModal').classList.add('hidden');
+    document.getElementById('statusGuideModal').setAttribute('aria-hidden', 'true');
 }
 
 function refreshAccountViews(preferredId = '') {
