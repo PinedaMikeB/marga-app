@@ -350,6 +350,47 @@
                                 <select class="form-select" id="billStatusInput"></select>
                             </label>
                         </div>
+                        <section class="loan-setup-panel hidden" id="billLoanSetupPanel" aria-live="polite">
+                            <div class="loan-setup-header">
+                                <div>
+                                    <span class="form-label">Loan Setup</span>
+                                    <p class="card-subtext">Use simple mode when you only know the monthly check amount and the lender has not yet given the principal and interest split.</p>
+                                </div>
+                            </div>
+                            <div class="loan-checkbox-row">
+                                <label class="form-check">
+                                    <input type="checkbox" id="billSimpleLoanModeInput">
+                                    <span>Simple Loan Mode</span>
+                                </label>
+                                <label class="form-check">
+                                    <input type="checkbox" id="billBreakdownPendingInput">
+                                    <span>Breakdown Pending</span>
+                                </label>
+                            </div>
+                            <p class="form-help" id="billLoanModeHint">Simple mode keeps one monthly amount in APD now and lets you split principal and interest later.</p>
+                            <div class="breakdown-panel hidden" id="billBreakdownPanel">
+                                <div class="form-row">
+                                    <label class="form-group">
+                                        <span class="form-label">Principal Amount</span>
+                                        <input type="number" class="form-input" id="billPrincipalAmountInput" min="0" step="0.01" placeholder="0.00">
+                                    </label>
+                                    <label class="form-group">
+                                        <span class="form-label">Interest Amount</span>
+                                        <input type="number" class="form-input" id="billInterestAmountInput" min="0" step="0.01" placeholder="0.00">
+                                    </label>
+                                </div>
+                                <div class="form-row">
+                                    <label class="form-group">
+                                        <span class="form-label">Penalty Amount</span>
+                                        <input type="number" class="form-input" id="billPenaltyAmountInput" min="0" step="0.01" placeholder="0.00">
+                                    </label>
+                                    <div class="form-group">
+                                        <span class="form-label">Validation</span>
+                                        <p class="form-help compact" id="billBreakdownValidation">Principal + interest + penalty must match the payable amount when you turn off Simple Loan Mode.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                         <label class="form-group">
                             <span class="form-label">Notes</span>
                             <textarea class="form-input form-textarea" id="billNotesInput" placeholder="Important payment note, installment detail, or attachment reference"></textarea>

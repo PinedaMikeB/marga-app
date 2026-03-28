@@ -74,6 +74,10 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Linked APD into dashboard navigation, settings navigation, and billing navigation.
 - Updated module registry defaults so APD now points to a real route.
 - Added APD account-list management inside the page so users can view, add, edit, and remove chart-of-accounts entries from one modal, with delete protection for accounts already used by payables.
+- Added a simplified loan workflow in APD payable intake:
+  - `Simple Loan Mode` keeps one monthly amount when the principal-interest split is still unknown
+  - `Breakdown Pending` flags loans that still need lender schedule detail later
+  - principal, interest, and penalty entry fields stay hidden unless the user turns off simple mode
 
 ### 2026-03-28 - APD And Petty Cash Planning Thread
 - Added initial finance design guidance for separate APD and Petty Cash modules.

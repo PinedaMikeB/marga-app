@@ -687,6 +687,59 @@ body::before {
     flex-wrap: wrap;
 }
 
+.loan-setup-panel {
+    margin-bottom: 1rem;
+    padding: 1rem 1rem 0.9rem;
+    border: 1px solid rgba(20, 50, 77, 0.12);
+    border-radius: 18px;
+    background: rgba(247, 251, 255, 0.82);
+}
+
+.loan-setup-header {
+    margin-bottom: 0.75rem;
+}
+
+.loan-checkbox-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.55rem;
+}
+
+.form-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(20, 50, 77, 0.12);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--apd-navy);
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.form-check input {
+    margin: 0;
+}
+
+.form-help {
+    margin: 0;
+    color: #5a7186;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.form-help.compact {
+    padding-top: 0.75rem;
+}
+
+.breakdown-panel {
+    margin-top: 0.85rem;
+    padding-top: 0.85rem;
+    border-top: 1px dashed rgba(20, 50, 77, 0.12);
+}
+
 .table-scroll {
     padding: 0 1.2rem 1.2rem;
     overflow: auto;

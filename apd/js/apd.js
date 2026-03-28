@@ -289,6 +289,7 @@ const VIEW_STATE = {
 };
 
 const DOC_TYPE_PRESETS = {
+    'Loan Amortization': { accountId: 'bank_loans_payable', planType: 'monthly_term', label: 'Loan Amortization' },
     'Housing Loan': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Housing Loan' },
     'Bank Loan': { accountId: 'bank_loans_payable', planType: 'monthly_term', label: 'Bank Loan' },
     'Credit Card Payment': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Card Payment' },
@@ -298,6 +299,8 @@ const DOC_TYPE_PRESETS = {
     'Utility Bill': { accountId: 'internet_expense', planType: 'repeat_last_amount', label: 'Utility Bill' },
     'Personal Withdrawal': { accountId: 'owners_drawings', planType: 'one_time', label: "Owner's Drawings" }
 };
+
+const LOAN_DOCUMENT_TYPES = new Set(['Loan Amortization', 'Housing Loan', 'Bank Loan']);
 
 document.addEventListener('DOMContentLoaded', () => {
     loadUserHeader();
@@ -330,8 +333,9 @@ function bindFormControls() {
     document.getElementById('checkForm').addEventListener('submit', onCheckSubmit);
     document.getElementById('billFormClearBtn').addEventListener('click', clearBillForm);
     document.getElementById('checkFormClearBtn').addEventListener('click', clearCheckForm);
-    document.getElementById('billDocTypeInput').addEventListener('change', applyDocTypePreset);
+    document.getElementById('billDocTypeInput').addEventListener('change', onBillDocTypeChange);
     document.getElementById('billPlanTypeInput').addEventListener('change', updatePlanHint);
+    document.getElementById('billSimpleLoanModeInput').addEventListener('change', syncLoanFields);
     document.getElementById('accountSearchInput').addEventListener('input', renderAccountCards);
     document.getElementById('accountScopeFilter').addEventListener('change', renderAccountCards);
     document.getElementById('billSearchInput').addEventListener('input', renderBillsTable);
@@ -349,6 +353,7 @@ function bindFormControls() {
         button.addEventListener('click', closeAccountManager);
     });
     document.getElementById('accountManagerTableBody').addEventListener('click', onAccountTableAction);
+    syncLoanFields();
 }
 
 function bindTabControls() {
@@ -558,6 +563,61 @@ function applyDocTypePreset() {
     updatePlanHint();
 }
 
+function onBillDocTypeChange() {
+    applyDocTypePreset();
+    const isEditing = Boolean(String(document.getElementById('billIdInput').value || '').trim());
+    const docType = String(document.getElementById('billDocTypeInput').value || '').trim();
+
+    if (!isEditing && isLoanDocumentType(docType)) {
+        document.getElementById('billSimpleLoanModeInput').checked = true;
+        document.getElementById('billBreakdownPendingInput').checked = true;
+        clearLoanBreakdownInputs();
+    }
+
+    if (!isEditing && !isLoanDocumentType(docType)) {
+        document.getElementById('billSimpleLoanModeInput').checked = false;
+        document.getElementById('billBreakdownPendingInput').checked = false;
+        clearLoanBreakdownInputs();
+    }
+
+    syncLoanFields();
+}
+
+function isLoanDocumentType(documentType) {
+    return LOAN_DOCUMENT_TYPES.has(String(documentType || '').trim());
+}
+
+function clearLoanBreakdownInputs() {
+    document.getElementById('billPrincipalAmountInput').value = '';
+    document.getElementById('billInterestAmountInput').value = '';
+    document.getElementById('billPenaltyAmountInput').value = '';
+}
+
+function syncLoanFields() {
+    const docType = String(document.getElementById('billDocTypeInput').value || '').trim();
+    const isLoan = isLoanDocumentType(docType);
+    const simpleLoanMode = document.getElementById('billSimpleLoanModeInput').checked;
+    const setupPanel = document.getElementById('billLoanSetupPanel');
+    const breakdownPanel = document.getElementById('billBreakdownPanel');
+    const hint = document.getElementById('billLoanModeHint');
+
+    setupPanel.classList.toggle('hidden', !isLoan);
+    breakdownPanel.classList.toggle('hidden', !isLoan || simpleLoanMode);
+
+    if (!isLoan) {
+        hint.textContent = 'Simple mode keeps one monthly amount in APD now and lets you split principal and interest later.';
+        return;
+    }
+
+    if (simpleLoanMode) {
+        document.getElementById('billBreakdownPendingInput').checked = true;
+        hint.textContent = 'Simple mode keeps one monthly amount in APD now and marks the principal and interest split as pending.';
+        return;
+    }
+
+    hint.textContent = 'Full accounting mode lets you split one payable into principal, interest, and penalty before the check is issued.';
+}
+
 function renderAccountCards() {
     const grid = document.getElementById('accountGuideGrid');
     const search = String(document.getElementById('accountSearchInput').value || '').trim().toLowerCase();
@@ -652,12 +712,19 @@ function renderBillsTable() {
 
     tbody.innerHTML = rows.map((bill) => {
         const account = getAccountById(bill.accountId);
+        const billMeta = [bill.documentType, bill.documentNumber];
+        if (isLoanDocumentType(bill.documentType) && bill.simpleLoanMode) {
+            billMeta.push('Simple Loan Mode');
+        }
+        if (bill.breakdownPending) {
+            billMeta.push('Breakdown Pending');
+        }
         return `
             <tr>
                 <td>
                     <div class="ref-cell">
                         <span class="ref-primary">${MargaUtils.escapeHtml(bill.dashboardLabel || bill.id)}</span>
-                        <span class="ref-secondary">${MargaUtils.escapeHtml(bill.documentType)} · ${MargaUtils.escapeHtml(bill.documentNumber)}</span>
+                        <span class="ref-secondary">${MargaUtils.escapeHtml(billMeta.join(' · '))}</span>
                     </div>
                 </td>
                 <td>${MargaUtils.escapeHtml(bill.payee)}</td>
@@ -743,11 +810,14 @@ function renderAlerts() {
 function onBillSubmit(event) {
     event.preventDefault();
     const billId = String(document.getElementById('billIdInput').value || '').trim();
+    const documentType = document.getElementById('billDocTypeInput').value;
+    const isLoan = isLoanDocumentType(documentType);
+    const simpleLoanMode = isLoan ? document.getElementById('billSimpleLoanModeInput').checked : false;
     const base = normalizeBill({
         id: billId || createBillId(),
         dashboardLabel: document.getElementById('billDashboardLabelInput').value,
         payee: document.getElementById('billPayeeInput').value,
-        documentType: document.getElementById('billDocTypeInput').value,
+        documentType,
         documentNumber: document.getElementById('billDocNumberInput').value,
         dueDate: document.getElementById('billDueDateInput').value,
         accountId: document.getElementById('billAccountInput').value,
@@ -756,6 +826,11 @@ function onBillSubmit(event) {
         planType: document.getElementById('billPlanTypeInput').value,
         remainingYears: document.getElementById('billRemainingYearsInput').value,
         remainingMonths: document.getElementById('billRemainingMonthsInput').value,
+        simpleLoanMode,
+        breakdownPending: isLoan ? (simpleLoanMode || document.getElementById('billBreakdownPendingInput').checked) : false,
+        principalAmount: isLoan && !simpleLoanMode ? document.getElementById('billPrincipalAmountInput').value : 0,
+        interestAmount: isLoan && !simpleLoanMode ? document.getElementById('billInterestAmountInput').value : 0,
+        penaltyAmount: isLoan && !simpleLoanMode ? document.getElementById('billPenaltyAmountInput').value : 0,
         notes: document.getElementById('billNotesInput').value,
         createdAt: isoNow()
     });
@@ -763,6 +838,18 @@ function onBillSubmit(event) {
     if (!base.payee || !base.documentNumber || !base.accountId || !base.dueDate || !(base.amount > 0)) {
         MargaUtils.showToast('Complete the payable form before saving.', 'error');
         return;
+    }
+
+    if (isLoan && !base.simpleLoanMode) {
+        const breakdownTotal = Number(base.principalAmount || 0) + Number(base.interestAmount || 0) + Number(base.penaltyAmount || 0);
+        if (!(breakdownTotal > 0)) {
+            MargaUtils.showToast('Enter the principal, interest, or penalty breakdown for this loan.', 'error');
+            return;
+        }
+        if (Math.abs(breakdownTotal - Number(base.amount || 0)) > 0.01) {
+            MargaUtils.showToast('Loan breakdown must match the payable amount.', 'error');
+            return;
+        }
     }
 
     if (billId) {
@@ -914,8 +1001,12 @@ function clearBillForm() {
     document.getElementById('billPlanTypeInput').value = 'one_time';
     document.getElementById('billRemainingYearsInput').value = '0';
     document.getElementById('billRemainingMonthsInput').value = '0';
+    document.getElementById('billSimpleLoanModeInput').checked = false;
+    document.getElementById('billBreakdownPendingInput').checked = false;
+    clearLoanBreakdownInputs();
     document.getElementById('billAccountInput').selectedIndex = 0;
     updatePlanHint();
+    syncLoanFields();
 }
 
 function clearCheckForm() {
@@ -965,11 +1056,17 @@ function readStorage(key, fallback) {
 }
 
 function normalizeBill(bill) {
+    const documentType = String(bill.documentType || 'Invoice').trim();
+    const principalAmount = Number(bill.principalAmount || 0);
+    const interestAmount = Number(bill.interestAmount || 0);
+    const penaltyAmount = Number(bill.penaltyAmount || 0);
+    const hasLoanBreakdown = principalAmount > 0 || interestAmount > 0 || penaltyAmount > 0;
+    const loanDocument = isLoanDocumentType(documentType);
     return {
         id: String(bill.id || createBillId()).trim(),
         dashboardLabel: String(bill.dashboardLabel || '').trim(),
         payee: String(bill.payee || '').trim(),
-        documentType: String(bill.documentType || 'Invoice').trim(),
+        documentType,
         documentNumber: String(bill.documentNumber || '').trim(),
         dueDate: String(bill.dueDate || '').trim(),
         accountId: String(bill.accountId || '').trim(),
@@ -978,6 +1075,11 @@ function normalizeBill(bill) {
         planType: String(bill.planType || 'one_time').trim(),
         remainingYears: Number(bill.remainingYears || 0),
         remainingMonths: Number(bill.remainingMonths || 0),
+        simpleLoanMode: loanDocument ? ('simpleLoanMode' in bill ? Boolean(bill.simpleLoanMode) : !hasLoanBreakdown) : false,
+        breakdownPending: loanDocument ? ('breakdownPending' in bill ? Boolean(bill.breakdownPending) : !hasLoanBreakdown) : false,
+        principalAmount,
+        interestAmount,
+        penaltyAmount,
         seriesId: String(bill.seriesId || '').trim(),
         seriesIndex: Number(bill.seriesIndex || 1),
         seriesTotal: Number(bill.seriesTotal || 1),
@@ -1043,8 +1145,14 @@ function fillBillForm(bill) {
     document.getElementById('billAccountInput').value = bill.accountId;
     document.getElementById('billAmountInput').value = Number(bill.amount || 0).toFixed(2);
     document.getElementById('billStatusInput').value = bill.status;
+    document.getElementById('billSimpleLoanModeInput').checked = Boolean(bill.simpleLoanMode);
+    document.getElementById('billBreakdownPendingInput').checked = Boolean(bill.breakdownPending);
+    document.getElementById('billPrincipalAmountInput').value = bill.principalAmount ? Number(bill.principalAmount).toFixed(2) : '';
+    document.getElementById('billInterestAmountInput').value = bill.interestAmount ? Number(bill.interestAmount).toFixed(2) : '';
+    document.getElementById('billPenaltyAmountInput').value = bill.penaltyAmount ? Number(bill.penaltyAmount).toFixed(2) : '';
     document.getElementById('billNotesInput').value = bill.notes || '';
     updatePlanHint();
+    syncLoanFields();
 }
 
 function createBillsFromPlan(baseBill) {
