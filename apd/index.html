@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - APD Control Board</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/apd.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Finance Workspace</div>
+                <a href="../dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="index.html" class="nav-item active" data-module="apd">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16"/>
+                        <path d="M4 12h16"/>
+                        <path d="M4 18h10"/>
+                        <path d="M18 16l2 2 4-4"/>
+                    </svg>
+                    <span>APD</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+                <a href="../sync/index.html" class="nav-item" data-module="sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.5 9a9 9 0 0114.13-3.36L23 10"/>
+                        <path d="M20.5 15a9 9 0 01-14.13 3.36L1 14"/>
+                    </svg>
+                    <span>Sync Updater</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content apd-main">
+        <header class="main-header apd-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <div class="eyebrow">Accounts Payable And Disbursement</div>
+                <h1>APD Control Board</h1>
+                <p>Manual invoice and SOA planning, shared chart-of-accounts guidance, and strict check register control for disbursement.</p>
+            </div>
+            <div class="header-actions apd-actions">
+                <a href="../docs/APD-PC-CHART-OF-ACCOUNTS.md" class="btn btn-secondary btn-sm">Open COA Reference</a>
+                <button type="button" class="btn btn-primary btn-sm" id="resetDemoBtn">Reset Demo Data</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content apd-content">
+            <section class="hero-panel animate-in">
+                <div class="hero-copy">
+                    <div class="hero-chip">Phase 1 Prototype</div>
+                    <h2>Separate payables planning from petty cash liquidation.</h2>
+                    <p>The APD module is where you log invoices or SOAs to pay, control approval status, track check printing, and capture receipt details after release. The shared account glossary below is written for encoders so account choices stay consistent.</p>
+                    <div class="hero-rules">
+                        <span>Loan principal is not expense.</span>
+                        <span>Machine purchases are assets.</span>
+                        <span>Petty cash releases are not expense until liquidated.</span>
+                    </div>
+                </div>
+                <div class="hero-stats">
+                    <article class="hero-stat">
+                        <span class="stat-label">Due This Week</span>
+                        <strong id="statDueWeek">₱0.00</strong>
+                        <small id="statDueWeekMeta">0 bill(s)</small>
+                    </article>
+                    <article class="hero-stat">
+                        <span class="stat-label">Approved For Payment</span>
+                        <strong id="statApprovedCount">0</strong>
+                        <small id="statApprovedMeta">Ready for check prep</small>
+                    </article>
+                    <article class="hero-stat">
+                        <span class="stat-label">Printed Checks</span>
+                        <strong id="statPrintedCount">0</strong>
+                        <small id="statPrintedMeta">Awaiting release or clearing</small>
+                    </article>
+                    <article class="hero-stat">
+                        <span class="stat-label">Control Alerts</span>
+                        <strong id="statAlertCount">0</strong>
+                        <small id="statAlertMeta">Skipped, spoiled, or voided checks</small>
+                    </article>
+                </div>
+            </section>
+
+            <section class="content-card encoder-card animate-in" style="animation-delay: 0.05s">
+                <div class="card-header encoder-header">
+                    <div>
+                        <h3>Encoder Guardrails</h3>
+                        <p class="card-subtext">Use this quick reference before saving a payable or preparing a check.</p>
+                    </div>
+                    <div class="encoder-pills">
+                        <span class="encoder-pill shared">Shared With Petty Cash</span>
+                        <span class="encoder-pill apd">APD Controlled</span>
+                    </div>
+                </div>
+                <div class="encoder-grid">
+                    <div class="encoder-note">
+                        <strong>Use an expense account</strong>
+                        <span>when the cost is already consumed for operations, such as fuel, rent, utilities, or repairs.</span>
+                    </div>
+                    <div class="encoder-note">
+                        <strong>Use a liability account</strong>
+                        <span>when the amount is still owed, such as installment arrangement, bank loan principal, or unpaid remittance.</span>
+                    </div>
+                    <div class="encoder-note">
+                        <strong>Use an asset account</strong>
+                        <span>when the cash was only transferred, stocked, or converted into a machine or fund, not yet expensed.</span>
+                    </div>
+                    <div class="encoder-note danger">
+                        <strong>Never use Owner's Drawings as payroll</strong>
+                        <span>Personal withdrawals must stay separate from salary, rent, utilities, and supplier payments.</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="content-card reference-card animate-in" style="animation-delay: 0.1s">
+                <div class="card-header reference-header">
+                    <div>
+                        <h3>Shared Chart Of Accounts Reference</h3>
+                        <p class="card-subtext">Encoder-friendly meanings for the accounts shared by APD and future petty cash.</p>
+                    </div>
+                    <div class="reference-controls">
+                        <input type="search" id="accountSearchInput" class="search-input" placeholder="Search account name or meaning">
+                        <select id="accountScopeFilter" class="form-select compact-select">
+                            <option value="all">All Scopes</option>
+                            <option value="shared">Shared</option>
+                            <option value="apd">APD Only</option>
+                            <option value="pettycash">Petty Cash Relevant</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="account-guide-grid" id="accountGuideGrid"></div>
+            </section>
+
+            <section class="operations-grid">
+                <article class="content-card form-card animate-in" style="animation-delay: 0.15s">
+                    <div class="card-header">
+                        <div>
+                            <h3>Payable Intake</h3>
+                            <p class="card-subtext">Record invoices or SOAs manually so APD can plan and schedule the payment.</p>
+                        </div>
+                    </div>
+                    <form id="billForm" class="finance-form">
+                        <input type="hidden" id="billIdInput">
+                        <div class="form-row">
+                            <label class="form-group">
+                                <span class="form-label">Payee / Supplier</span>
+                                <input type="text" class="form-input" id="billPayeeInput" placeholder="Supplier or payee name" required>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Document Type</span>
+                                <select class="form-select" id="billDocTypeInput" required>
+                                    <option value="Invoice">Invoice</option>
+                                    <option value="SOA">SOA</option>
+                                    <option value="Loan Amortization">Loan Amortization</option>
+                                    <option value="Installment Settlement">Installment Settlement</option>
+                                    <option value="Utility Bill">Utility Bill</option>
+                                    <option value="Payroll">Payroll</option>
+                                    <option value="Asset Purchase">Asset Purchase</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-group">
+                                <span class="form-label">Invoice / SOA / Ref No.</span>
+                                <input type="text" class="form-input" id="billDocNumberInput" placeholder="Reference number" required>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Due Date</span>
+                                <input type="date" class="form-input" id="billDueDateInput" required>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-group form-group-wide">
+                                <span class="form-label">Account Name</span>
+                                <select class="form-select" id="billAccountInput" required></select>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Amount</span>
+                                <input type="number" class="form-input" id="billAmountInput" min="0" step="0.01" placeholder="0.00" required>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Status</span>
+                                <select class="form-select" id="billStatusInput"></select>
+                            </label>
+                        </div>
+                        <label class="form-group">
+                            <span class="form-label">Notes</span>
+                            <textarea class="form-input form-textarea" id="billNotesInput" placeholder="Important payment note, installment detail, or attachment reference"></textarea>
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Save Payable</button>
+                            <button type="button" class="btn btn-secondary" id="billFormClearBtn">Clear</button>
+                        </div>
+                    </form>
+                </article>
+
+                <article class="content-card table-card animate-in" style="animation-delay: 0.2s">
+                    <div class="card-header table-header">
+                        <div>
+                            <h3>Payables Planner</h3>
+                            <p class="card-subtext">Track what is due, what is approved, and what is already printed or released.</p>
+                        </div>
+                        <div class="table-controls">
+                            <input type="search" id="billSearchInput" class="search-input" placeholder="Search payee or reference">
+                            <select id="billStatusFilter" class="form-select compact-select">
+                                <option value="all">All Statuses</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="ledger-table">
+                            <thead>
+                                <tr>
+                                    <th>Reference</th>
+                                    <th>Payee</th>
+                                    <th>Account</th>
+                                    <th>Due</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="billsTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="operations-grid">
+                <article class="content-card form-card animate-in" style="animation-delay: 0.25s">
+                    <div class="card-header">
+                        <div>
+                            <h3>Check Register Entry</h3>
+                            <p class="card-subtext">One check number must point to one disbursement record. Reasons are required for skipped, spoiled, or voided checks.</p>
+                        </div>
+                    </div>
+                    <form id="checkForm" class="finance-form">
+                        <input type="hidden" id="checkIdInput">
+                        <div class="form-row">
+                            <label class="form-group form-group-wide">
+                                <span class="form-label">Linked Payable</span>
+                                <select class="form-select" id="checkBillSelect" required></select>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Bank</span>
+                                <input type="text" class="form-input" id="checkBankInput" placeholder="e.g. BDO Operating">
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-group">
+                                <span class="form-label">Check No.</span>
+                                <input type="text" class="form-input" id="checkNumberInput" placeholder="000123" required>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Issue Date</span>
+                                <input type="date" class="form-input" id="checkIssueDateInput" required>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Amount</span>
+                                <input type="number" class="form-input" id="checkAmountInput" min="0" step="0.01" placeholder="0.00" required>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-group">
+                                <span class="form-label">Check Status</span>
+                                <select class="form-select" id="checkStatusInput"></select>
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">OR / Receipt No.</span>
+                                <input type="text" class="form-input" id="checkReceiptInput" placeholder="Optional after payment">
+                            </label>
+                        </div>
+                        <label class="form-group">
+                            <span class="form-label">Control Note / Reason</span>
+                            <textarea class="form-input form-textarea" id="checkReasonInput" placeholder="Required for skipped, spoiled, or voided check numbers"></textarea>
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Save Check Record</button>
+                            <button type="button" class="btn btn-secondary" id="checkFormClearBtn">Clear</button>
+                        </div>
+                    </form>
+                </article>
+
+                <article class="content-card table-card animate-in" style="animation-delay: 0.3s">
+                    <div class="card-header table-header">
+                        <div>
+                            <h3>Disbursement Register</h3>
+                            <p class="card-subtext">Printed, released, cleared, voided, and skipped check numbers are visible in one ledger.</p>
+                        </div>
+                        <div class="table-controls">
+                            <select id="checkStatusFilter" class="form-select compact-select">
+                                <option value="all">All Check Statuses</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="ledger-table">
+                            <thead>
+                                <tr>
+                                    <th>Check No.</th>
+                                    <th>Payee</th>
+                                    <th>Bank</th>
+                                    <th>Issue Date</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Receipt</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="checksTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="content-card alert-card animate-in" style="animation-delay: 0.35s">
+                <div class="card-header">
+                    <div>
+                        <h3>Control Alerts</h3>
+                        <p class="card-subtext">Skipped, spoiled, and voided check numbers must stay visible for audit and print control.</p>
+                    </div>
+                </div>
+                <div class="alert-list" id="controlAlertList"></div>
+            </section>
+        </div>
+    </main>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="js/apd.js"></script>
+</body>
+</html>

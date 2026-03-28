@@ -1,6 +1,6 @@
 # MARGA Handoff (Single Source of Truth)
 
-Last Updated: 2026-03-18  
+Last Updated: 2026-03-28  
 Owner: Marga App Team
 
 This file is the canonical session-to-session handoff.
@@ -17,6 +17,8 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Keep the dual-lane office sync reliable after downtime or network loss.
 - Treat live MySQL as the business source of truth for office, finance, customer, machine, and contract records.
 - Prepare the next thread to design Collections and Billing against mirrored Firebase data without changing MySQL schema or workflow semantics.
+- Start finance planning for separate Accounts Payable and Disbursement (APD) and Petty Cash modules.
+- Build APD as the first finance workspace with shared chart-of-accounts guidance and local planning workflow before starting Petty Cash.
 
 ## Next Actions
 - Restart the office supervisor so commit `b9246e2` recovery logic is the code actually running on the PC.
@@ -25,11 +27,18 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Design Billing web flows against existing invoice/unpaid/DR lifecycle, not against new ad hoc web-only states.
 - Onboard Tier 1 billing and collection tables into executable sync manifest after UI/data-flow design is agreed.
 - Add clearer office-friendly wording to the sync supervisor UI.
+- Define APD chart-of-accounts labels and transaction classes so liabilities, assets, transfers, and expenses are not mixed.
+- Keep APD and Petty Cash as separate workflows with different controls, approvals, and reports.
+- Identify which legacy SQL tables hold check voucher, check printing, supplier payable, and OR reference history before any finance writeback is proposed.
+- Build Petty Cash after APD using the same shared chart-of-accounts reference and consistent encoder wording.
 
 ## Open Questions
 - For Billing UI, which pages are read-only mirrors first, and which actions are allowed later as controlled writeback?
 - For Collections UI, should follow-up entries from web go directly to `tbl_collectionhistory` only, or also stage in Firebase for review?
 - Should the sync supervisor auto-run at Windows login only, or do you want a stricter Windows Task Scheduler bootstrap with admin setup?
+- For APD, will phase 1 allow check printing only, or should bank-transfer disbursements also exist later under the same control register?
+- For savings deposits and owner withdrawals, do you want the system to distinguish company cash transfer versus owner draw explicitly?
+- Which legacy SQL tables currently store check-series control, supplier installments, and official receipt references after payment?
 
 ## Module Status Board
 | Module | Status | Current State | Next Step |
@@ -38,6 +47,8 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Field App (Tech/Messenger) | In Progress | Time in/out, finish, pending, signer, meter, notes, and safe writeback are live. | Add photo upload and admin queue UX. |
 | Billing | Planned | No rebuilt workflow yet; must follow SQL-originated invoice logic. | Design UI against synced billing data and office process rules. |
 | Collections | In Progress | Base records exist, but workflow design still needs stricter SQL parity. | Design queue, follow-up, and payment visibility against legacy semantics. |
+| Accounts Payable & Disbursement | In Progress | Working APD prototype page exists with shared account glossary, payable intake, and check register control board. | Connect the APD prototype to real legacy finance tables after SQL mapping review. |
+| Petty Cash | Planned | Legacy petty cash tables are identified, but the web workflow is not designed yet. | Define petty cash voucher, liquidation, replenishment, and transfer rules separate from APD. |
 | Customers | In Progress | Customer/branch master data now included in office sync coverage. | Continue data quality review and inactive-state parity. |
 | Machines | In Progress | Machine/model/brand are included in office sync coverage. | Verify delivery/service screens only use synced machine master rows. |
 | Contracts | In Progress | Contract tables are included in office sync coverage. | Use synced contract state as prerequisite for billing/service design. |
@@ -45,6 +56,25 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Sync Updater | In Progress | Dual-lane supervisor exists, restart shortcuts exist, and recovery logic is improved. | Validate outage recovery and extend coverage to billing/collections/payments. |
 
 ## Session Log (Top First)
+### 2026-03-28 - APD Prototype Build
+- Added a working `/apd/` module with:
+  - shared chart-of-accounts reference for encoders
+  - manual payable intake for invoice and SOA planning
+  - check register and disbursement control with skipped or voided reason tracking
+- Added `/docs/APD-PC-CHART-OF-ACCOUNTS.md` as a plain-language finance reference for APD and future petty cash users.
+- Linked APD into dashboard navigation, settings navigation, and billing navigation.
+- Updated module registry defaults so APD now points to a real route.
+
+### 2026-03-28 - APD And Petty Cash Planning Thread
+- Added initial finance design guidance for separate APD and Petty Cash modules.
+- Documented suggested chart-of-accounts labels for fuel, rental supplies, bank loans, supplier installments, payroll, utilities, facility repairs, motorcycle repairs, government contributions, machine purchases, petty cash, and savings transfers.
+- Added `apd` to built-in module defaults so permissions can treat APD separately from Billing and Petty Cash.
+- Captured key accounting guardrails for the next finance build:
+  - loan principal is a liability payment, not an expense
+  - machine purchases for rental are fixed assets, not ordinary expense
+  - petty cash releases and bank transfers are fund movements until liquidated
+  - owner withdrawals must not be posted as company operating expense
+
 ### 2026-03-18 - Sync Supervisor Recovery And Billing/Collections Prep
 - Added dual-lane local supervisor with desktop launch shortcuts:
   - `Start Marga Sync`
@@ -242,6 +272,32 @@ In Progress:
 
 Risks:
 - Collections and payment lifecycle are sensitive; keep principal money movement SQL-originated.
+
+### Accounts Payable And Disbursement (APD)
+Done:
+- Initial APD versus Petty Cash split is documented.
+- Suggested account labels are captured in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/APD-PC-MODULE-DESIGN.md`.
+- Shared encoder reference is captured in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/APD-PC-CHART-OF-ACCOUNTS.md`.
+- APD prototype page now exists at `/Volumes/Wotg Drive Mike/GitHub/Marga-App/apd/index.html`.
+
+In Progress:
+- Planning manual invoice/SOA entry, due-date monitoring, check voucher flow, check printing control, and OR capture against real legacy records.
+
+Risks:
+- Principal loan payments, machine purchases, bank transfers, and owner withdrawals must not be posted as ordinary expense lines.
+- Finance-sensitive posting should remain `MySQL -> Firebase` first until legacy table mapping is clear.
+
+### Petty Cash
+Done:
+- Legacy petty cash tables are already identified in sync coverage.
+- The workflow is explicitly separated from APD and check issuance.
+
+In Progress:
+- Planning petty cash voucher, liquidation, replenishment, and transfer tracking.
+
+Risks:
+- Petty cash movements can be misclassified if releases, liquidation lines, and fund transfers are mixed in one transaction type.
+- Personal withdrawals must be tracked separately from business expenses.
 
 ### Customers
 Done:

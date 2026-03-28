@@ -20,6 +20,7 @@ const SETTINGS_STATE = {
 const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
     { id: 'billing', label: 'Billing Module', dashboardLabel: 'Billing', route: 'billing/', note: 'Invoices, billing runs, due schedules' },
+    { id: 'apd', label: 'Accounts Payable and Disbursement Module', dashboardLabel: 'APD', route: 'apd/', note: 'Supplier invoices, due planning, check printing, and disbursement control' },
     { id: 'collections', label: 'Collections Module', dashboardLabel: 'Collections', route: 'collections.html', note: 'Collections, ORs, check follow-up' },
     { id: 'service', label: 'Customer Service Module', dashboardLabel: 'Service Dispatch', route: 'service/index.html', note: 'Task queue, assignment, transfer' },
     { id: 'field', label: 'Service Field App (Tech/Messenger)', dashboardLabel: 'Field App', route: 'field/index.html', note: 'Tech and messenger daily tasks' },
@@ -48,8 +49,8 @@ const BASE_ROLE_OPTIONS = [
 let ROLE_OPTIONS = BASE_ROLE_OPTIONS.map((role) => ({ ...role }));
 
 const BASE_ROLE_DEFAULTS = {
-    admin: ['customers', 'billing', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
-    billing: ['customers', 'billing', 'reports'],
+    admin: ['customers', 'billing', 'apd', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+    billing: ['customers', 'billing', 'apd', 'pettycash', 'reports'],
     collection: ['customers', 'collections', 'reports'],
     service: ['customers', 'service', 'inventory', 'field'],
     hr: ['hr', 'settings'],

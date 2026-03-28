@@ -29,8 +29,8 @@ INSECURE_TLS = False
 
 
 BASE_ROLE_DEFAULTS = {
-    "admin": ["customers", "billing", "collections", "service", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
-    "billing": ["customers", "billing", "reports"],
+    "admin": ["customers", "billing", "apd", "collections", "service", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
+    "billing": ["customers", "billing", "apd", "pettycash", "reports"],
     "collection": ["customers", "collections", "reports"],
     "service": ["customers", "service", "inventory", "field"],
     "hr": ["hr", "settings"],

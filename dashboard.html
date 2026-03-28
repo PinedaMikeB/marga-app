@@ -57,6 +57,16 @@
                     <span>Billing</span>
                 </a>
 
+                <a href="apd/" class="nav-item" data-module="apd">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16"/>
+                        <path d="M4 12h16"/>
+                        <path d="M4 18h10"/>
+                        <path d="M18 16l2 2 4-4"/>
+                    </svg>
+                    <span>APD</span>
+                </a>
+
                 <a href="collections.html" class="nav-item" data-module="collections">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="1" y="4" width="22" height="16" rx="2"/>
@@ -271,6 +281,18 @@
                         <span>New Invoice</span>
                     </a>
 
+                    <a href="apd/" class="action-card" data-module="apd">
+                        <div class="action-icon cyan">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 6h16"/>
+                                <path d="M4 12h16"/>
+                                <path d="M4 18h10"/>
+                                <path d="M18 16l2 2 4-4"/>
+                            </svg>
+                        </div>
+                        <span>Prepare Check</span>
+                    </a>
+
                     <a href="collections.html" class="action-card" data-module="collections">
                         <div class="action-icon amber">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -325,6 +347,7 @@
 	        const MODULE_TILE_CONFIG = {
 	            customers: { label: 'Customers', href: 'customers.html', note: 'Profiles, branches, machines' },
 	            billing: { label: 'Billing', href: 'billing/', note: 'Invoices, billing runs, due schedules' },
+	            apd: { label: 'APD', href: 'apd/', note: 'Payables planning, check register, and disbursement control' },
 	            collections: { label: 'Collections', href: 'collections.html', note: 'Collections, ORs, check follow-up' },
 	            service: { label: 'Service Dispatch', href: 'service/index.html', note: 'Task queue, assignment, transfer' },
 	            field: { label: 'Field App', href: 'field/index.html', note: 'Tech/messenger daily tasks, close and pending flow' },
