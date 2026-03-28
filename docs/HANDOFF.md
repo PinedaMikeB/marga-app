@@ -80,6 +80,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
   - principal, interest, and penalty entry fields stay hidden unless the user turns off simple mode
 - Added an APD status-guide popout so encoders can open the meaning of `Draft`, `For Approval`, `Approved for Payment`, `For Check Printing`, `Printed`, `Released`, `Cleared`, and `Voided` from the payable form and planner.
 - Adjusted APD payable save flow so new or edited payables return to the dashboard immediately, shift the dashboard month window to the saved due date, and confirm how many monthly entries were created for recurring plans.
+- Corrected APD dashboard summary logic so it now shows `Paid` amounts and computes `Net Payables = Total Payables - Paid`, while the matrix keeps non-voided payables visible and marks fully paid cells differently.
 
 ### 2026-03-28 - APD And Petty Cash Planning Thread
 - Added initial finance design guidance for separate APD and Petty Cash modules.

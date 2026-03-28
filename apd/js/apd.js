@@ -472,10 +472,10 @@ function renderDashboardMatrix() {
     const head = document.getElementById('dashboardMatrixHead');
     const body = document.getElementById('dashboardMatrixBody');
     const foot = document.getElementById('dashboardMatrixFoot');
-    const openBills = APD_STATE.bills.filter((bill) => !['Released', 'Cleared', 'Voided'].includes(bill.status));
+    const matrixBills = APD_STATE.bills.filter((bill) => bill.status !== 'Voided');
     const rowMap = new Map();
 
-    openBills.forEach((bill) => {
+    matrixBills.forEach((bill) => {
         const label = getDashboardLabel(bill);
         if (!rowMap.has(label)) rowMap.set(label, []);
         rowMap.get(label).push(bill);
@@ -499,13 +499,15 @@ function renderDashboardMatrix() {
         `;
     }).join('') || `<tr><td class="dashboard-row-label">No payables yet</td>${months.map(() => '<td class="dashboard-cell dashboard-empty">-</td>').join('')}</tr>`;
 
-    const totalByMonth = months.map((month) => sumAmounts(openBills.filter((bill) => isSameMonth(bill.dueDate, month)).map((bill) => bill.amount)));
-    const unpaidByMonth = months.map((month) => sumAmounts(openBills.filter((bill) => isSameMonth(bill.dueDate, month) && parseDateOnly(bill.dueDate) < startOfDay(new Date())).map((bill) => bill.amount)));
-    const netByMonth = totalByMonth.map((amount, index) => Math.max(amount - unpaidByMonth[index], 0));
+    const totalByMonth = months.map((month) => sumAmounts(matrixBills.filter((bill) => isSameMonth(bill.dueDate, month)).map((bill) => bill.amount)));
+    const paidByMonth = months.map((month) => sumAmounts(matrixBills
+        .filter((bill) => isSameMonth(bill.dueDate, month) && ['Released', 'Cleared'].includes(bill.status))
+        .map((bill) => bill.amount)));
+    const netByMonth = totalByMonth.map((amount, index) => Math.max(amount - paidByMonth[index], 0));
 
     foot.innerHTML = `
         ${renderSummaryRow('Total Payables', totalByMonth)}
-        ${renderSummaryRow('Unpaid', unpaidByMonth)}
+        ${renderSummaryRow('Paid', paidByMonth)}
         ${renderSummaryRow('Net Payables', netByMonth)}
     `;
 
@@ -519,12 +521,13 @@ function renderDashboardCell(label, month, bills) {
     }
     const total = sumAmounts(monthBills.map((bill) => bill.amount));
     const ids = monthBills.map((bill) => bill.id).join(',');
+    const fullyPaid = monthBills.every((bill) => ['Released', 'Cleared'].includes(bill.status));
     const title = monthBills.length > 1
         ? `${label}: ${monthBills.length} payables in ${formatMonthHeading(month)}`
         : `${label}: ${MargaUtils.formatCurrency(total)}`;
     return `
         <td class="dashboard-cell">
-            <button type="button" class="dashboard-amount-btn" data-bill-ids="${MargaUtils.escapeHtml(ids)}" title="${MargaUtils.escapeHtml(title)}">
+            <button type="button" class="dashboard-amount-btn ${fullyPaid ? 'is-paid' : ''}" data-bill-ids="${MargaUtils.escapeHtml(ids)}" title="${MargaUtils.escapeHtml(title)}">
                 ${MargaUtils.formatCurrency(total)}
             </button>
         </td>

@@ -298,6 +298,11 @@ body::before {
     box-shadow: 0 8px 18px rgba(43, 107, 49, 0.15);
 }
 
+.dashboard-amount-btn.is-paid {
+    background: rgba(136, 169, 193, 0.85);
+    color: #12324c;
+}
+
 .dashboard-empty {
     color: rgba(20, 50, 77, 0.28);
 }
