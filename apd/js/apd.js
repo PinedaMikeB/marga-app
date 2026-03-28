@@ -281,13 +281,31 @@ const APD_STATE = {
     checks: []
 };
 
+const VIEW_STATE = {
+    activeView: 'dashboard',
+    dashboardOffset: 0
+};
+
+const DOC_TYPE_PRESETS = {
+    'Housing Loan': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Housing Loan' },
+    'Bank Loan': { accountId: 'bank_loans_payable', planType: 'monthly_term', label: 'Bank Loan' },
+    'Credit Card Payment': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Card Payment' },
+    'Tuition Fee': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Tuition Fee' },
+    'Phone Bill': { accountId: 'telephone_expense', planType: 'repeat_last_amount', label: 'Phone Bill' },
+    'Electricity Bill': { accountId: 'electricity_expense', planType: 'repeat_last_amount', label: 'Electricity Bill' },
+    'Utility Bill': { accountId: 'internet_expense', planType: 'repeat_last_amount', label: 'Utility Bill' },
+    'Personal Withdrawal': { accountId: 'owners_drawings', planType: 'one_time', label: "Owner's Drawings" }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     loadUserHeader();
     hydrateState();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindFormControls();
     bindTabControls();
+    bindViewControls();
     populateSelects();
+    showView(VIEW_STATE.activeView);
     renderAll();
 });
 
@@ -309,6 +327,8 @@ function bindFormControls() {
     document.getElementById('checkForm').addEventListener('submit', onCheckSubmit);
     document.getElementById('billFormClearBtn').addEventListener('click', clearBillForm);
     document.getElementById('checkFormClearBtn').addEventListener('click', clearCheckForm);
+    document.getElementById('billDocTypeInput').addEventListener('change', applyDocTypePreset);
+    document.getElementById('billPlanTypeInput').addEventListener('change', updatePlanHint);
     document.getElementById('accountSearchInput').addEventListener('input', renderAccountCards);
     document.getElementById('accountScopeFilter').addEventListener('change', renderAccountCards);
     document.getElementById('billSearchInput').addEventListener('input', renderBillsTable);
@@ -324,6 +344,23 @@ function bindTabControls() {
     document.querySelectorAll('[data-tab-target]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tabTarget));
     });
+}
+
+function bindViewControls() {
+    document.getElementById('showDashboardBtn').addEventListener('click', () => showView('dashboard'));
+    document.getElementById('openWorkspaceBtn').addEventListener('click', () => {
+        showView('workspace');
+        setActiveTab('payable-intake');
+    });
+    document.getElementById('prevWindowBtn').addEventListener('click', () => {
+        VIEW_STATE.dashboardOffset -= 1;
+        renderDashboardMatrix();
+    });
+    document.getElementById('nextWindowBtn').addEventListener('click', () => {
+        VIEW_STATE.dashboardOffset += 1;
+        renderDashboardMatrix();
+    });
+    document.getElementById('dashboardMatrixBody').addEventListener('click', onDashboardMatrixClick);
 }
 
 function populateSelects() {
@@ -345,6 +382,7 @@ function populateSelects() {
     checkStatusFilter.innerHTML = '<option value="all">All Check Statuses</option>' + CHECK_STATUSES.map((status) => `<option value="${status}">${MargaUtils.escapeHtml(status)}</option>`).join('');
 
     populateBillSelect();
+    updatePlanHint();
 }
 
 function populateBillSelect(selectedId = '') {
@@ -363,6 +401,7 @@ function populateBillSelect(selectedId = '') {
 
 function renderAll() {
     renderOverview();
+    renderDashboardMatrix();
     renderAccountCards();
     renderBillsTable();
     renderChecksTable();
@@ -390,6 +429,118 @@ function renderOverview() {
     document.getElementById('statPrintedMeta').textContent = `${MargaUtils.formatCurrency(sumAmounts(printedChecks.map((check) => check.amount)))} in control register`;
     document.getElementById('statAlertCount').textContent = alerts.length.toLocaleString();
     document.getElementById('statAlertMeta').textContent = alerts.length ? 'Needs audit explanation' : 'No control exceptions';
+}
+
+function renderDashboardMatrix() {
+    const months = getDashboardMonths();
+    const head = document.getElementById('dashboardMatrixHead');
+    const body = document.getElementById('dashboardMatrixBody');
+    const foot = document.getElementById('dashboardMatrixFoot');
+    const openBills = APD_STATE.bills.filter((bill) => !['Released', 'Cleared', 'Voided'].includes(bill.status));
+    const rowMap = new Map();
+
+    openBills.forEach((bill) => {
+        const label = getDashboardLabel(bill);
+        if (!rowMap.has(label)) rowMap.set(label, []);
+        rowMap.get(label).push(bill);
+    });
+
+    head.innerHTML = `
+        <tr>
+            <th>Account Payables Dashboard</th>
+            ${months.map((month) => `<th>${MargaUtils.escapeHtml(formatMonthHeading(month))}</th>`).join('')}
+        </tr>
+    `;
+
+    const labels = [...rowMap.keys()].sort((left, right) => left.localeCompare(right));
+    body.innerHTML = labels.map((label) => {
+        const bills = rowMap.get(label) || [];
+        return `
+            <tr>
+                <td class="dashboard-row-label" title="${MargaUtils.escapeHtml(label)}">${MargaUtils.escapeHtml(label)}</td>
+                ${months.map((month) => renderDashboardCell(label, month, bills)).join('')}
+            </tr>
+        `;
+    }).join('') || `<tr><td class="dashboard-row-label">No payables yet</td>${months.map(() => '<td class="dashboard-cell dashboard-empty">-</td>').join('')}</tr>`;
+
+    const totalByMonth = months.map((month) => sumAmounts(openBills.filter((bill) => isSameMonth(bill.dueDate, month)).map((bill) => bill.amount)));
+    const unpaidByMonth = months.map((month) => sumAmounts(openBills.filter((bill) => isSameMonth(bill.dueDate, month) && parseDateOnly(bill.dueDate) < startOfDay(new Date())).map((bill) => bill.amount)));
+    const netByMonth = totalByMonth.map((amount, index) => Math.max(amount - unpaidByMonth[index], 0));
+
+    foot.innerHTML = `
+        ${renderSummaryRow('Total Payables', totalByMonth)}
+        ${renderSummaryRow('Unpaid', unpaidByMonth)}
+        ${renderSummaryRow('Net Payables', netByMonth)}
+    `;
+
+    document.getElementById('dashboardWindowLabel').textContent = `${formatMonthHeading(months[0])} to ${formatMonthHeading(months[months.length - 1])}`;
+}
+
+function renderDashboardCell(label, month, bills) {
+    const monthBills = bills.filter((bill) => isSameMonth(bill.dueDate, month));
+    if (!monthBills.length) {
+        return '<td class="dashboard-cell dashboard-empty"></td>';
+    }
+    const total = sumAmounts(monthBills.map((bill) => bill.amount));
+    const ids = monthBills.map((bill) => bill.id).join(',');
+    const title = monthBills.length > 1
+        ? `${label}: ${monthBills.length} payables in ${formatMonthHeading(month)}`
+        : `${label}: ${MargaUtils.formatCurrency(total)}`;
+    return `
+        <td class="dashboard-cell">
+            <button type="button" class="dashboard-amount-btn" data-bill-ids="${MargaUtils.escapeHtml(ids)}" title="${MargaUtils.escapeHtml(title)}">
+                ${MargaUtils.formatCurrency(total)}
+            </button>
+        </td>
+    `;
+}
+
+function renderSummaryRow(label, values) {
+    return `
+        <tr>
+            <td class="dashboard-summary-label">${MargaUtils.escapeHtml(label)}</td>
+            ${values.map((value) => `<td class="dashboard-cell dashboard-summary-label">${value ? MargaUtils.formatCurrency(value) : ''}</td>`).join('')}
+        </tr>
+    `;
+}
+
+function showView(viewKey) {
+    VIEW_STATE.activeView = viewKey === 'workspace' ? 'workspace' : 'dashboard';
+    document.getElementById('dashboardHome').classList.toggle('hidden', VIEW_STATE.activeView !== 'dashboard');
+    document.getElementById('workspaceHome').classList.toggle('hidden', VIEW_STATE.activeView !== 'workspace');
+    document.getElementById('showDashboardBtn').classList.toggle('btn-primary', VIEW_STATE.activeView === 'dashboard');
+    document.getElementById('showDashboardBtn').classList.toggle('btn-secondary', VIEW_STATE.activeView !== 'dashboard');
+    document.getElementById('openWorkspaceBtn').classList.toggle('btn-primary', VIEW_STATE.activeView === 'workspace');
+    document.getElementById('openWorkspaceBtn').classList.toggle('btn-secondary', VIEW_STATE.activeView !== 'workspace');
+}
+
+function updatePlanHint() {
+    const planType = String(document.getElementById('billPlanTypeInput').value || 'one_time');
+    const hint = document.getElementById('billPlanHint');
+    const recurrenceRow = document.getElementById('recurrenceFieldsRow');
+    if (planType === 'one_time') {
+        recurrenceRow.classList.add('hidden');
+        hint.textContent = 'Use one-time for normal invoices, SOAs, and personal owner drawings.';
+        return;
+    }
+    recurrenceRow.classList.remove('hidden');
+    if (planType === 'monthly_term') {
+        hint.textContent = 'Use monthly fixed term for housing loan, bank loan, card payment, tuition, and any fixed monthly amount. Remaining years and months will auto-generate future payables.';
+        return;
+    }
+    hint.textContent = 'Use repeat last bill amount for electricity, mobile phones, internet, and similar bills when you want to copy the latest amount forward and edit later if the actual bill changes.';
+}
+
+function applyDocTypePreset() {
+    const docType = String(document.getElementById('billDocTypeInput').value || '').trim();
+    const preset = DOC_TYPE_PRESETS[docType];
+    if (!preset || document.getElementById('billIdInput').value) return;
+    document.getElementById('billPlanTypeInput').value = preset.planType;
+    document.getElementById('billAccountInput').value = preset.accountId;
+    if (!String(document.getElementById('billDashboardLabelInput').value || '').trim()) {
+        document.getElementById('billDashboardLabelInput').value = preset.label;
+    }
+    updatePlanHint();
 }
 
 function renderAccountCards() {
@@ -429,6 +580,7 @@ function renderAccountCards() {
 
     grid.querySelectorAll('[data-account-id]').forEach((button) => {
         button.addEventListener('click', () => {
+            showView('workspace');
             setActiveTab('payable-intake');
             document.getElementById('billAccountInput').value = button.dataset.accountId;
             document.getElementById('billAccountInput').focus();
@@ -444,7 +596,7 @@ function renderBillsTable() {
     const rows = APD_STATE.bills
         .filter((bill) => {
             const account = getAccountById(bill.accountId);
-            const haystack = `${bill.id} ${bill.payee} ${bill.documentNumber} ${account?.name || ''}`.toLowerCase();
+            const haystack = `${bill.id} ${bill.dashboardLabel || ''} ${bill.payee} ${bill.documentNumber} ${account?.name || ''}`.toLowerCase();
             return (!search || haystack.includes(search)) && (statusFilter === 'all' || bill.status === statusFilter);
         })
         .sort((left, right) => String(left.dueDate).localeCompare(String(right.dueDate)));
@@ -460,7 +612,7 @@ function renderBillsTable() {
             <tr>
                 <td>
                     <div class="ref-cell">
-                        <span class="ref-primary">${MargaUtils.escapeHtml(bill.id)}</span>
+                        <span class="ref-primary">${MargaUtils.escapeHtml(bill.dashboardLabel || bill.id)}</span>
                         <span class="ref-secondary">${MargaUtils.escapeHtml(bill.documentType)} · ${MargaUtils.escapeHtml(bill.documentNumber)}</span>
                     </div>
                 </td>
@@ -547,8 +699,9 @@ function renderAlerts() {
 function onBillSubmit(event) {
     event.preventDefault();
     const billId = String(document.getElementById('billIdInput').value || '').trim();
-    const next = normalizeBill({
+    const base = normalizeBill({
         id: billId || createBillId(),
+        dashboardLabel: document.getElementById('billDashboardLabelInput').value,
         payee: document.getElementById('billPayeeInput').value,
         documentType: document.getElementById('billDocTypeInput').value,
         documentNumber: document.getElementById('billDocNumberInput').value,
@@ -556,16 +709,23 @@ function onBillSubmit(event) {
         accountId: document.getElementById('billAccountInput').value,
         amount: document.getElementById('billAmountInput').value,
         status: document.getElementById('billStatusInput').value,
+        planType: document.getElementById('billPlanTypeInput').value,
+        remainingYears: document.getElementById('billRemainingYearsInput').value,
+        remainingMonths: document.getElementById('billRemainingMonthsInput').value,
         notes: document.getElementById('billNotesInput').value,
         createdAt: isoNow()
     });
 
-    if (!next.payee || !next.documentNumber || !next.accountId || !next.dueDate || !(next.amount > 0)) {
+    if (!base.payee || !base.documentNumber || !base.accountId || !base.dueDate || !(base.amount > 0)) {
         MargaUtils.showToast('Complete the payable form before saving.', 'error');
         return;
     }
 
-    upsertById(APD_STATE.bills, next);
+    if (billId) {
+        upsertById(APD_STATE.bills, base);
+    } else {
+        createBillsFromPlan(base).forEach((bill) => APD_STATE.bills.push(bill));
+    }
     persistState();
     clearBillForm();
     populateBillSelect();
@@ -638,20 +798,14 @@ function onBillTableAction(event) {
     if (!bill) return;
 
     if (button.dataset.action === 'edit-bill') {
+        showView('workspace');
         setActiveTab('payable-intake');
-        document.getElementById('billIdInput').value = bill.id;
-        document.getElementById('billPayeeInput').value = bill.payee;
-        document.getElementById('billDocTypeInput').value = bill.documentType;
-        document.getElementById('billDocNumberInput').value = bill.documentNumber;
-        document.getElementById('billDueDateInput').value = bill.dueDate;
-        document.getElementById('billAccountInput').value = bill.accountId;
-        document.getElementById('billAmountInput').value = Number(bill.amount || 0).toFixed(2);
-        document.getElementById('billStatusInput').value = bill.status;
-        document.getElementById('billNotesInput').value = bill.notes || '';
+        fillBillForm(bill);
         return;
     }
 
     if (button.dataset.action === 'link-check') {
+        showView('workspace');
         setActiveTab('check-register-entry');
         document.getElementById('checkBillSelect').value = bill.id;
         syncCheckBillSelection();
@@ -665,6 +819,7 @@ function onCheckTableAction(event) {
     const check = APD_STATE.checks.find((item) => item.id === button.dataset.id);
     if (!check) return;
     if (button.dataset.action === 'edit-check') {
+        showView('workspace');
         setActiveTab('check-register-entry');
         document.getElementById('checkIdInput').value = check.id;
         populateBillSelect(check.billId);
@@ -683,7 +838,11 @@ function clearBillForm() {
     document.getElementById('billForm').reset();
     document.getElementById('billIdInput').value = '';
     document.getElementById('billStatusInput').value = 'Draft';
+    document.getElementById('billPlanTypeInput').value = 'one_time';
+    document.getElementById('billRemainingYearsInput').value = '0';
+    document.getElementById('billRemainingMonthsInput').value = '0';
     document.getElementById('billAccountInput').selectedIndex = 0;
+    updatePlanHint();
 }
 
 function clearCheckForm() {
@@ -696,9 +855,11 @@ function clearCheckForm() {
 function resetDemoData() {
     localStorage.removeItem(APD_STORAGE_KEYS.bills);
     localStorage.removeItem(APD_STORAGE_KEYS.checks);
+    VIEW_STATE.dashboardOffset = 0;
     hydrateState();
     clearBillForm();
     clearCheckForm();
+    showView('dashboard');
     renderAll();
     MargaUtils.showToast('APD demo data reset to defaults.', 'info');
 }
@@ -723,6 +884,7 @@ function readStorage(key, fallback) {
 function normalizeBill(bill) {
     return {
         id: String(bill.id || createBillId()).trim(),
+        dashboardLabel: String(bill.dashboardLabel || '').trim(),
         payee: String(bill.payee || '').trim(),
         documentType: String(bill.documentType || 'Invoice').trim(),
         documentNumber: String(bill.documentNumber || '').trim(),
@@ -730,6 +892,12 @@ function normalizeBill(bill) {
         accountId: String(bill.accountId || '').trim(),
         amount: Number(bill.amount || 0),
         status: BILL_STATUSES.includes(String(bill.status || '').trim()) ? String(bill.status).trim() : 'Draft',
+        planType: String(bill.planType || 'one_time').trim(),
+        remainingYears: Number(bill.remainingYears || 0),
+        remainingMonths: Number(bill.remainingMonths || 0),
+        seriesId: String(bill.seriesId || '').trim(),
+        seriesIndex: Number(bill.seriesIndex || 1),
+        seriesTotal: Number(bill.seriesTotal || 1),
         notes: String(bill.notes || '').trim(),
         createdAt: String(bill.createdAt || isoNow())
     };
@@ -761,6 +929,81 @@ function upsertById(items, nextItem) {
         return;
     }
     items[index] = nextItem;
+}
+
+function fillBillForm(bill) {
+    document.getElementById('billIdInput').value = bill.id;
+    document.getElementById('billDashboardLabelInput').value = bill.dashboardLabel || '';
+    document.getElementById('billPlanTypeInput').value = bill.planType || 'one_time';
+    document.getElementById('billRemainingYearsInput').value = String(bill.remainingYears || 0);
+    document.getElementById('billRemainingMonthsInput').value = String(bill.remainingMonths || 0);
+    document.getElementById('billPayeeInput').value = bill.payee;
+    document.getElementById('billDocTypeInput').value = bill.documentType;
+    document.getElementById('billDocNumberInput').value = bill.documentNumber;
+    document.getElementById('billDueDateInput').value = bill.dueDate;
+    document.getElementById('billAccountInput').value = bill.accountId;
+    document.getElementById('billAmountInput').value = Number(bill.amount || 0).toFixed(2);
+    document.getElementById('billStatusInput').value = bill.status;
+    document.getElementById('billNotesInput').value = bill.notes || '';
+    updatePlanHint();
+}
+
+function createBillsFromPlan(baseBill) {
+    const totalMonths = getPlannedOccurrences(baseBill.planType, baseBill.remainingYears, baseBill.remainingMonths);
+    const seriesId = totalMonths > 1 ? `SER-${Date.now()}` : '';
+    const due = parseDateOnly(baseBill.dueDate) || startOfDay(new Date());
+    const idSeed = APD_STATE.bills.reduce((max, bill) => {
+        const value = Number(String(bill.id || '').replace(/[^\d]/g, '')) || 0;
+        return Math.max(max, value);
+    }, 1000);
+    const bills = [];
+
+    for (let index = 0; index < totalMonths; index += 1) {
+        const billDate = addMonths(due, index);
+        bills.push(normalizeBill({
+            ...baseBill,
+            id: `APD-${idSeed + index + 1}`,
+            dueDate: toDateInputValue(billDate),
+            documentNumber: totalMonths > 1 ? `${baseBill.documentNumber}-${String(index + 1).padStart(2, '0')}` : baseBill.documentNumber,
+            seriesId,
+            seriesIndex: index + 1,
+            seriesTotal: totalMonths,
+            notes: baseBill.planType === 'repeat_last_amount'
+                ? `${baseBill.notes || ''}${baseBill.notes ? ' ' : ''}Projected from latest known bill amount.`.trim()
+                : baseBill.notes
+        }));
+    }
+
+    return bills;
+}
+
+function getPlannedOccurrences(planType, years, months) {
+    if (planType === 'one_time') return 1;
+    const total = (Number(years || 0) * 12) + Number(months || 0);
+    return Math.max(total, 1);
+}
+
+function onDashboardMatrixClick(event) {
+    const button = event.target.closest('[data-bill-ids]');
+    if (!button) return;
+    const ids = String(button.dataset.billIds || '').split(',').filter(Boolean);
+    if (!ids.length) return;
+    const bill = APD_STATE.bills.find((item) => item.id === ids[0]);
+    if (!bill) return;
+    if (ids.length > 1) {
+        MargaUtils.showToast('More than one payable is in this month slot. Opening the first payable in the series.', 'info');
+    }
+    openBillInWorkspace(bill);
+}
+
+function openBillInWorkspace(bill) {
+    showView('workspace');
+    setActiveTab('payable-intake');
+    fillBillForm(bill);
+}
+
+function getDashboardLabel(bill) {
+    return String(bill.dashboardLabel || bill.payee || getAccountById(bill.accountId)?.name || bill.id).trim();
 }
 
 function getDueClass(dateValue, status) {
@@ -814,11 +1057,41 @@ function addDays(date, days) {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate() + Number(days || 0));
 }
 
+function startOfMonth(date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date, months) {
+    return new Date(date.getFullYear(), date.getMonth() + Number(months || 0), date.getDate());
+}
+
 function parseDateOnly(value) {
     if (!value) return null;
     const parts = String(value).split('-').map((item) => Number(item));
     if (parts.length !== 3 || parts.some((item) => !Number.isFinite(item))) return null;
     return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function getDashboardMonths() {
+    const firstMonth = startOfMonth(addMonths(startOfDay(new Date()), VIEW_STATE.dashboardOffset));
+    return Array.from({ length: 6 }, (_, index) => addMonths(firstMonth, index));
+}
+
+function formatMonthHeading(date) {
+    return date.toLocaleDateString('en-PH', {
+        month: 'short',
+        year: '2-digit'
+    }).replace(' ', ' ');
+}
+
+function isSameMonth(dateValue, date) {
+    const parsed = parseDateOnly(dateValue);
+    if (!parsed || !date) return false;
+    return parsed.getFullYear() === date.getFullYear() && parsed.getMonth() === date.getMonth();
+}
+
+function toDateInputValue(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function offsetDate(days) {

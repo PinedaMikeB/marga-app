@@ -126,6 +126,39 @@
         </header>
 
         <div class="dashboard-content apd-content">
+            <section class="content-card view-toolbar animate-in">
+                <div>
+                    <h3>Account Payables Dashboard</h3>
+                    <p class="card-subtext">This is the main APD view. Click an amount to open that payable in the workspace and edit the amount, due date, or other details.</p>
+                </div>
+                <div class="view-toolbar-actions">
+                    <button type="button" class="btn btn-secondary" id="showDashboardBtn">Dashboard</button>
+                    <button type="button" class="btn btn-primary" id="openWorkspaceBtn">Open APD Workspace</button>
+                </div>
+            </section>
+
+            <section class="content-card dashboard-home animate-in" id="dashboardHome" style="animation-delay: 0.05s">
+                <div class="card-header table-header">
+                    <div>
+                        <h3>Monthly Payables Matrix</h3>
+                        <p class="card-subtext">Recurring items like housing loan, bank loan, card payment, tuition, phone, and electricity will auto-populate here by month.</p>
+                    </div>
+                    <div class="table-controls">
+                        <button type="button" class="btn btn-secondary btn-sm" id="prevWindowBtn">Earlier</button>
+                        <div class="month-window-label" id="dashboardWindowLabel">Loading months...</div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="nextWindowBtn">Later</button>
+                    </div>
+                </div>
+                <div class="table-scroll dashboard-scroll">
+                    <table class="dashboard-matrix">
+                        <thead id="dashboardMatrixHead"></thead>
+                        <tbody id="dashboardMatrixBody"></tbody>
+                        <tfoot id="dashboardMatrixFoot"></tfoot>
+                    </table>
+                </div>
+            </section>
+
+            <section class="workspace-home hidden" id="workspaceHome">
             <details class="content-card reference-drawer animate-in" id="apdReferenceDrawer">
                 <summary class="drawer-summary">
                     <div class="drawer-copy">
@@ -244,6 +277,31 @@
                         <input type="hidden" id="billIdInput">
                         <div class="form-row">
                             <label class="form-group">
+                                <span class="form-label">Dashboard Label</span>
+                                <input type="text" class="form-input" id="billDashboardLabelInput" placeholder="Rental, Bank Loan, Housing Loan, Card Payment">
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Payment Plan</span>
+                                <select class="form-select" id="billPlanTypeInput">
+                                    <option value="one_time">One Time</option>
+                                    <option value="monthly_term">Monthly Fixed Term</option>
+                                    <option value="repeat_last_amount">Repeat Last Bill Amount</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="form-row recurrence-row" id="recurrenceFieldsRow">
+                            <label class="form-group">
+                                <span class="form-label">Remaining Years</span>
+                                <input type="number" class="form-input" id="billRemainingYearsInput" min="0" step="1" value="0">
+                            </label>
+                            <label class="form-group">
+                                <span class="form-label">Remaining Months</span>
+                                <input type="number" class="form-input" id="billRemainingMonthsInput" min="0" step="1" value="0">
+                            </label>
+                        </div>
+                        <p class="plan-hint" id="billPlanHint">Use one-time for normal invoices or SOAs. Use monthly term for loans, tuition, and fixed card payments. Use repeat last bill amount for electricity, mobile, internet, and similar bills when you want to copy the last amount forward.</p>
+                        <div class="form-row">
+                            <label class="form-group">
                                 <span class="form-label">Payee / Supplier</span>
                                 <input type="text" class="form-input" id="billPayeeInput" placeholder="Supplier or payee name" required>
                             </label>
@@ -253,10 +311,17 @@
                                     <option value="Invoice">Invoice</option>
                                     <option value="SOA">SOA</option>
                                     <option value="Loan Amortization">Loan Amortization</option>
+                                    <option value="Housing Loan">Housing Loan</option>
+                                    <option value="Bank Loan">Bank Loan</option>
                                     <option value="Installment Settlement">Installment Settlement</option>
+                                    <option value="Credit Card Payment">Credit Card Payment</option>
+                                    <option value="Tuition Fee">Tuition Fee</option>
                                     <option value="Utility Bill">Utility Bill</option>
+                                    <option value="Phone Bill">Phone Bill</option>
+                                    <option value="Electricity Bill">Electricity Bill</option>
                                     <option value="Payroll">Payroll</option>
                                     <option value="Asset Purchase">Asset Purchase</option>
+                                    <option value="Personal Withdrawal">Personal Withdrawal</option>
                                 </select>
                             </label>
                         </div>
@@ -422,6 +487,7 @@
                         <div class="alert-list" id="controlAlertList"></div>
                     </article>
                 </section>
+            </section>
             </section>
         </div>
     </main>

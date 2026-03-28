@@ -66,6 +66,10 @@ Each thread should update only the relevant module sections plus `Current Focus`
   - Payables Planner
   - Check Register Entry
   - Disbursement Register
+- Added dashboard-first APD flow:
+  - monthly payables matrix is now the landing view
+  - workspace opens from a dedicated button or by clicking a payable amount
+  - recurring plans can auto-generate monthly payables for loans, card payments, tuition, and copied utility bills
 - Added `/docs/APD-PC-CHART-OF-ACCOUNTS.md` as a plain-language finance reference for APD and future petty cash users.
 - Linked APD into dashboard navigation, settings navigation, and billing navigation.
 - Updated module registry defaults so APD now points to a real route.
