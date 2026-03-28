@@ -881,16 +881,24 @@ function onBillSubmit(event) {
         }
     }
 
+    let savedCount = 1;
     if (billId) {
         upsertById(APD_STATE.bills, base);
     } else {
-        createBillsFromPlan(base).forEach((bill) => APD_STATE.bills.push(bill));
+        const plannedBills = createBillsFromPlan(base);
+        savedCount = plannedBills.length;
+        plannedBills.forEach((bill) => APD_STATE.bills.push(bill));
     }
+
     persistState();
+    focusDashboardOnDueDate(base.dueDate);
     clearBillForm();
     populateBillSelect();
+    showView('dashboard');
     renderAll();
-    MargaUtils.showToast('Payable saved in APD planner.', 'success');
+    MargaUtils.showToast(savedCount > 1
+        ? `${savedCount} payables saved for ${getDashboardLabel(base)}.`
+        : `Payable saved for ${getDashboardLabel(base)}.`, 'success');
 }
 
 function onCheckSubmit(event) {
@@ -1311,6 +1319,13 @@ function parseDateOnly(value) {
 function getDashboardMonths() {
     const firstMonth = startOfMonth(addMonths(startOfDay(new Date()), VIEW_STATE.dashboardOffset));
     return Array.from({ length: 6 }, (_, index) => addMonths(firstMonth, index));
+}
+
+function focusDashboardOnDueDate(dateValue) {
+    const due = parseDateOnly(dateValue);
+    if (!due) return;
+    const today = startOfDay(new Date());
+    VIEW_STATE.dashboardOffset = ((due.getFullYear() - today.getFullYear()) * 12) + (due.getMonth() - today.getMonth());
 }
 
 function formatMonthHeading(date) {
