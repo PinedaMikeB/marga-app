@@ -229,7 +229,6 @@ function getCacheState() {
             companyMap: {},
             branchMap: {},
             contractMap: {},
-            machineMap: {},
             machToBranchMap: {},
             machDeliveryDateMap: {},
             billingDocs: [],
@@ -252,11 +251,10 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         return cache;
     }
 
-    const [companyDocs, branchDocs, contractDocs, machineDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial'], maxPages: 80 }),
-        firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial'], maxPages: 90 }),
         firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 }),
         firestoreGetAll('tbl_billing', {
             fieldMask: ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'],
@@ -305,17 +303,6 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
             machId: String(getField(f, ['mach_id']) || '').trim(),
             status: Number(getField(f, ['status']) || 0),
             xserial: String(getField(f, ['xserial']) || '').trim()
-        };
-    });
-
-    cache.machineMap = {};
-    machineDocs.forEach((doc) => {
-        const f = doc.fields || {};
-        const id = String(getField(f, ['id']) || '').trim();
-        if (!id) return;
-        cache.machineMap[id] = {
-            id,
-            serial: String(getField(f, ['serial']) || '').trim()
         };
     });
 
@@ -512,12 +499,10 @@ function buildMachineLabel(machId, contractmainId) {
 }
 
 function resolveSerialLabel(cache, contract) {
-    const machId = String(contract?.machId || '').trim();
-    const machineSerial = String(cache.machineMap?.[machId]?.serial || '').trim();
-    if (machineSerial) return machineSerial;
     const contractSerial = String(contract?.xserial || '').trim();
     if (contractSerial) return contractSerial;
-    return 'N/A';
+    const machId = String(contract?.machId || '').trim();
+    return machId ? `Machine ${machId}` : 'N/A';
 }
 
 function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, serialNumber, months) {
