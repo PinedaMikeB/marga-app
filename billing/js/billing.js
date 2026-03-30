@@ -21,7 +21,12 @@ const els = {
     invoiceDetailTitle: null,
     invoiceDetailSubtitle: null,
     invoiceDetailContent: null,
-    invoiceDetailCloseBtn: null
+    invoiceDetailCloseBtn: null,
+    serialDetailModal: null,
+    serialDetailTitle: null,
+    serialDetailSubtitle: null,
+    serialDetailContent: null,
+    serialDetailCloseBtn: null
 };
 
 let lastPayload = null;
@@ -158,6 +163,16 @@ function pendingHref(companyId, monthKey) {
     return `${url.pathname}${url.search}`;
 }
 
+function customerHref(row) {
+    const url = new URL(MargaAuth.buildAppUrl('customers.html'), window.location.origin);
+    if (row?.company_id) url.searchParams.set('company_id', String(row.company_id));
+    if (row?.branch_id) url.searchParams.set('branch_id', String(row.branch_id));
+    if (row?.machine_id) url.searchParams.set('machine_id', String(row.machine_id));
+    if (row?.contractmain_id) url.searchParams.set('contractmain_id', String(row.contractmain_id));
+    url.searchParams.set('tab', 'machines');
+    return `${url.pathname}${url.search}`;
+}
+
 function renderSelectionCard(payload) {
     const selectedRowId = MargaUtils.getUrlParam('row_id');
     const selectedMonth = MargaUtils.getUrlParam('month');
@@ -235,6 +250,7 @@ function renderMatrixTable(payload) {
     const filteredRows = searchTerm
         ? rows.filter((row) => {
               const haystack = [
+                  row.serial_number,
                   row.account_name,
                   row.company_name,
                   row.branch_name,
@@ -313,9 +329,23 @@ function renderMatrixTable(payload) {
         return `
             <tr class="${trClass}">
                 <td class="rd-col">${row.reading_day ? escapeHtml(String(row.reading_day)) : '-'}</td>
+                <td class="sn-col">
+                    <button
+                        class="serial-link"
+                        type="button"
+                        data-row-id="${escapeHtml(String(rowId))}"
+                        aria-label="Open serial detail for ${escapeHtml(row.serial_number || row.machine_label || row.machine_id || 'machine')}"
+                    >
+                        ${escapeHtml(row.serial_number || 'N/A')}
+                    </button>
+                </td>
                 <td class="customer-col">
-                    <div class="customer-main">${escapeHtml(row.account_name || row.company_name)}</div>
+                    <div class="customer-main">${escapeHtml(row.company_name || row.account_name)}</div>
                     <div class="customer-sub">${escapeHtml(row.machine_label || row.machine_id || '')}</div>
+                </td>
+                <td class="branch-col">
+                    <div class="branch-main">${escapeHtml(row.branch_name || 'Main')}</div>
+                    <div class="branch-sub">${escapeHtml(row.account_name || row.company_name || '')}</div>
                 </td>
                 ${monthCells}
             </tr>
@@ -332,7 +362,9 @@ function renderMatrixTable(payload) {
             <thead>
                 <tr>
                     <th class="rd-col">RD</th>
+                    <th class="sn-col">SN</th>
                     <th class="customer-col">Customer</th>
+                    <th class="branch-col">Branch / Dept</th>
                     ${header}
                 </tr>
             </thead>
@@ -340,7 +372,9 @@ function renderMatrixTable(payload) {
             <tfoot>
                 <tr>
                     <th class="rd-col"></th>
+                    <th class="sn-col"></th>
                     <th class="customer-col"></th>
+                    <th class="branch-col"></th>
                     ${footer}
                 </tr>
             </tfoot>
@@ -350,6 +384,71 @@ function renderMatrixTable(payload) {
 
 function closeInvoiceDetailModal() {
     els.invoiceDetailModal?.classList.add('hidden');
+}
+
+function closeSerialDetailModal() {
+    els.serialDetailModal?.classList.add('hidden');
+}
+
+function openSerialDetailModal(rowId) {
+    if (!lastPayload) return;
+
+    const row = (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    if (!row) return;
+
+    const openCustomersHref = customerHref(row);
+    const latestBilledMonth = row.latest_billed_month || 'Not billed in current window';
+    const readingDay = row.reading_day ? `RD ${row.reading_day}` : 'RD -';
+
+    els.serialDetailTitle.textContent = row.serial_number || row.machine_label || 'Serial Detail';
+    els.serialDetailSubtitle.textContent = `${row.company_name || row.account_name || 'Unknown'} • ${row.branch_name || 'Main'} • ${readingDay}`;
+
+    els.serialDetailContent.innerHTML = `
+        <div class="detail-action-row">
+            <a class="detail-action-link" href="${escapeHtml(openCustomersHref)}">Open In Customers</a>
+        </div>
+        <div class="detail-summary-grid">
+            <article class="detail-summary-card">
+                <span class="label">Serial Number</span>
+                <span class="value">${escapeHtml(row.serial_number || 'N/A')}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Contract ID</span>
+                <span class="value">${escapeHtml(row.contractmain_id || 'N/A')}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Machine ID</span>
+                <span class="value">${escapeHtml(row.machine_id || 'N/A')}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Latest Billed Month</span>
+                <span class="value">${escapeHtml(latestBilledMonth)}</span>
+            </article>
+        </div>
+        <div class="detail-section-title">Billing Context</div>
+        <div class="invoice-detail-list">
+            <article class="invoice-detail-card">
+                <div class="detail-list-block">
+                    <span class="detail-list-label">Customer</span>
+                    <div class="detail-list-value">${escapeHtml(row.company_name || row.account_name || 'Unknown')}</div>
+                </div>
+                <div class="detail-list-block">
+                    <span class="detail-list-label">Branch / Department</span>
+                    <div class="detail-list-value">${escapeHtml(row.branch_name || 'Main')}</div>
+                </div>
+                <div class="detail-list-block">
+                    <span class="detail-list-label">Account Label</span>
+                    <div class="detail-list-value">${escapeHtml(row.account_name || row.company_name || 'Unknown')}</div>
+                </div>
+                <div class="detail-list-block">
+                    <span class="detail-list-label">Machine Label</span>
+                    <div class="detail-list-value">${escapeHtml(row.machine_label || row.machine_id || 'N/A')}</div>
+                </div>
+            </article>
+        </div>
+    `;
+
+    els.serialDetailModal.classList.remove('hidden');
 }
 
 function openInvoiceDetailModal(rowId, monthKey) {
@@ -489,6 +588,11 @@ function bindEvents() {
         }
     });
     els.matrixTableWrap?.addEventListener('click', (event) => {
+        const serialTrigger = event.target.closest('.serial-link');
+        if (serialTrigger) {
+            openSerialDetailModal(serialTrigger.dataset.rowId);
+            return;
+        }
         const trigger = event.target.closest('.billed-link');
         if (!trigger) return;
         openInvoiceDetailModal(trigger.dataset.rowId, trigger.dataset.monthKey);
@@ -497,8 +601,15 @@ function bindEvents() {
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
     });
+    els.serialDetailCloseBtn?.addEventListener('click', closeSerialDetailModal);
+    els.serialDetailModal?.addEventListener('click', (event) => {
+        if (event.target === els.serialDetailModal) closeSerialDetailModal();
+    });
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeInvoiceDetailModal();
+        if (event.key === 'Escape') {
+            closeInvoiceDetailModal();
+            closeSerialDetailModal();
+        }
     });
 }
 

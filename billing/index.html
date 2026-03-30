@@ -196,11 +196,11 @@
                 <div class="sheet-header matrix-header">
                     <div>
                         <div class="sheet-title">Month to Month Comparison</div>
-                        <p class="sheet-copy">`RD` means Reading Day. Beige empty cells are pending reading or billing. Click a beige cell to open billing context, or click a billed cell to inspect invoices and machine coverage for that customer-month.</p>
+                        <p class="sheet-copy">`RD` means Reading Day. Click `SN` to inspect serial, contract, and machine context. Beige empty cells are pending reading or billing. Click a beige cell to open billing context, or click a billed cell to inspect invoices and machine coverage for that customer-month.</p>
                         <div class="matrix-filter-row">
                             <div class="matrix-search-block">
                                 <label for="matrixSearchInput">Search Customer</label>
-                                <input type="search" id="matrixSearchInput" placeholder="Type China Bank, branch, or department">
+                                <input type="search" id="matrixSearchInput" placeholder="Type China Bank, serial, branch, or department">
                             </div>
                             <div class="matrix-search-meta" id="matrixSearchMeta">Showing all loaded customers.</div>
                         </div>
@@ -239,6 +239,19 @@
                 <button class="btn btn-secondary" type="button" id="invoiceDetailCloseBtn">Close</button>
             </div>
             <div class="billing-modal-body" id="invoiceDetailContent"></div>
+        </div>
+    </div>
+
+    <div class="billing-modal-overlay hidden" id="serialDetailModal">
+        <div class="billing-modal-card">
+            <div class="billing-modal-header">
+                <div>
+                    <div class="sheet-title" id="serialDetailTitle">Serial Detail</div>
+                    <p class="sheet-copy" id="serialDetailSubtitle">Machine, contract, and customer context for billing.</p>
+                </div>
+                <button class="btn btn-secondary" type="button" id="serialDetailCloseBtn">Close</button>
+            </div>
+            <div class="billing-modal-body" id="serialDetailContent"></div>
         </div>
     </div>
 

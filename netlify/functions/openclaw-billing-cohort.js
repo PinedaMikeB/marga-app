@@ -229,6 +229,7 @@ function getCacheState() {
             companyMap: {},
             branchMap: {},
             contractMap: {},
+            machineMap: {},
             machToBranchMap: {},
             machDeliveryDateMap: {},
             billingDocs: [],
@@ -251,10 +252,11 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         return cache;
     }
 
-    const [companyDocs, branchDocs, contractDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, machineDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
-        firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'mach_id', 'status'], maxPages: 80 }),
+        firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial'], maxPages: 80 }),
+        firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial'], maxPages: 90 }),
         firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 }),
         firestoreGetAll('tbl_billing', {
             fieldMask: ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'],
@@ -301,7 +303,19 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
             id,
             branchId: String(getField(f, ['contract_id']) || '').trim(),
             machId: String(getField(f, ['mach_id']) || '').trim(),
-            status: Number(getField(f, ['status']) || 0)
+            status: Number(getField(f, ['status']) || 0),
+            xserial: String(getField(f, ['xserial']) || '').trim()
+        };
+    });
+
+    cache.machineMap = {};
+    machineDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const id = String(getField(f, ['id']) || '').trim();
+        if (!id) return;
+        cache.machineMap[id] = {
+            id,
+            serial: String(getField(f, ['serial']) || '').trim()
         };
     });
 
@@ -497,7 +511,16 @@ function buildMachineLabel(machId, contractmainId) {
     return `Contract ${String(contractmainId || '').trim()}`;
 }
 
-function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, months) {
+function resolveSerialLabel(cache, contract) {
+    const machId = String(contract?.machId || '').trim();
+    const machineSerial = String(cache.machineMap?.[machId]?.serial || '').trim();
+    if (machineSerial) return machineSerial;
+    const contractSerial = String(contract?.xserial || '').trim();
+    if (contractSerial) return contractSerial;
+    return 'N/A';
+}
+
+function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, serialNumber, months) {
     let row = machineRows.get(rowId);
     if (!row) {
         const monthMap = {};
@@ -513,6 +536,7 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
             account_name: buildAccountLabel(companyName || 'Unknown', branchName || 'Main'),
             machine_id: String(machineId || '').trim(),
             contractmain_id: String(contractmainId || '').trim(),
+            serial_number: String(serialNumber || '').trim() || 'N/A',
             machine_label: buildMachineLabel(machineId, contractmainId),
             display_name: `${buildAccountLabel(companyName || 'Unknown', branchName || 'Main')} • ${buildMachineLabel(machineId, contractmainId)}`,
             months: monthMap,
@@ -665,9 +689,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const display = resolveBranchDisplay(cache, branch);
         activeNowSet.add(branch.id);
         const machineRowId = buildMachineRowKey(contract.machId, contract.id);
+        const serialNumber = resolveSerialLabel(cache, contract);
         activeNowMachineSet.add(machineRowId);
         if (!includeActiveRows) return;
-        if (!rowMatchesSearch(searchTerm, [display.companyName, display.branchName, contract.machId, contract.id])) return;
+        if (!rowMatchesSearch(searchTerm, [display.companyName, display.branchName, contract.machId, contract.id, serialNumber])) return;
         ensureCompanyRow(
             companyRows,
             display.branchId,
@@ -686,6 +711,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             display.branchName,
             contract.machId,
             contract.id,
+            serialNumber,
             months
         );
         const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
@@ -723,6 +749,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const amount = extractBillingAmount(f);
         const { invoiceRef, invoiceNo, invoiceId } = buildInvoiceRef(f, contractmainId, monthKey);
         const machId = String(contract.machId || '').trim();
+        const serialNumber = resolveSerialLabel(cache, contract);
         const machineRowId = buildMachineRowKey(machId, contractmainId);
 
         cell.billed = true;
@@ -772,6 +799,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             display.branchName,
             machId,
             contractmainId,
+            serialNumber,
             months
         );
         const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
@@ -1046,6 +1074,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 company_name: row.company_name,
                 branch_name: row.branch_name,
                 account_name: row.account_name,
+                serial_number: row.serial_number,
                 machine_id: row.machine_id,
                 machine_label: row.machine_label,
                 skipped_months: pendingLabels
@@ -1060,6 +1089,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 company_name: row.company_name,
                 branch_name: row.branch_name,
                 account_name: row.account_name,
+                serial_number: row.serial_number,
                 machine_id: row.machine_id,
                 machine_label: row.machine_label,
                 month_statuses: receiptStatuses
@@ -1073,6 +1103,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             company_name: row.company_name,
             branch_name: row.branch_name,
             account_name: row.account_name,
+            serial_number: row.serial_number,
             machine_id: row.machine_id,
             contractmain_id: row.contractmain_id,
             machine_label: row.machine_label,
@@ -1094,6 +1125,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             row.account_name,
             row.company_name,
             row.branch_name,
+            row.serial_number,
             row.machine_label,
             row.machine_id,
             row.reading_day

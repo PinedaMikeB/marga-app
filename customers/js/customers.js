@@ -45,6 +45,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         customers.models, 
         customers.brands
     );
+
+    applyDeepLink();
 });
 
 /**
@@ -84,6 +86,21 @@ async function loadAllData() {
         MargaUtils.showToast('Failed to load customer data', 'error');
     } finally {
         showLoading(false);
+    }
+}
+
+function applyDeepLink() {
+    const params = new URLSearchParams(window.location.search);
+    const companyId = String(params.get('company_id') || '').trim();
+    const tab = String(params.get('tab') || '').trim().toLowerCase();
+    if (!companyId) return;
+
+    const company = customers.companies.find((entry) => String(entry.id) === companyId);
+    if (!company) return;
+
+    openPanel(companyId);
+    if (tab === 'billing' || tab === 'machines' || tab === 'info') {
+        switchTab(tab);
     }
 }
 
