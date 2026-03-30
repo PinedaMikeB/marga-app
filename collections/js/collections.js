@@ -746,6 +746,28 @@ function getBillingLocation(contractmainId) {
     };
 }
 
+function buildAccountLabel(companyName, branchName) {
+    const company = String(companyName || '').trim();
+    const branch = String(branchName || '').trim();
+
+    if (!branch || branch.toLowerCase() === 'main') return company || 'Unknown';
+    if (!company) return branch;
+
+    const normalize = (value) => String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    const companyLower = normalize(company);
+    const branchLower = normalize(branch);
+
+    if (branchLower.includes(companyLower) || companyLower.includes(branchLower)) {
+        return branch;
+    }
+
+    return `${company} - ${branch}`;
+}
+
 function processInvoice(doc) {
     const f = doc.fields || {};
 
@@ -794,6 +816,7 @@ function processInvoice(doc) {
         priority: getPriority(age),
         company: location.companyName,
         branch: location.branchName,
+        accountLabel: buildAccountLabel(location.companyName, location.branchName),
         contactNumber: billingContactNumber || historyContact || '',
         category: location.categoryCode,
         lastRemarks: lastHistory ? lastHistory.remarks : null,
@@ -891,6 +914,7 @@ async function loadInvoices(mode) {
                     invoiceKey: invoiceNo || invoiceId,
                     company: location.companyName,
                     branch: location.branchName,
+                    accountLabel: buildAccountLabel(location.companyName, location.branchName),
                     invoiceDate,
                     dueDate,
                     amount,
@@ -1823,7 +1847,7 @@ function computeCollectorDashboardData() {
         if (!customerSetByMonth.has(record.monthKey)) {
             customerSetByMonth.set(record.monthKey, new Set());
         }
-        customerSetByMonth.get(record.monthKey).add(record.company);
+        customerSetByMonth.get(record.monthKey).add(record.accountLabel || record.company);
 
         if (!monthColumnKeys.has(record.monthKey)) return;
 
@@ -1835,11 +1859,12 @@ function computeCollectorDashboardData() {
                 lastPaymentDate: null
             };
 
-        const cellId = `${record.company}__${record.monthKey}`;
+        const customerKey = record.accountLabel || record.company;
+        const cellId = `${customerKey}__${record.monthKey}`;
         if (!collectorCellMap.has(cellId)) {
             collectorCellMap.set(cellId, {
                 id: cellId,
-                customer: record.company,
+                customer: customerKey,
                 monthKey: record.monthKey,
                 label: monthColumns.find((column) => column.key === record.monthKey)?.fullLabel || record.monthKey,
                 rdValues: [],
@@ -1861,16 +1886,16 @@ function computeCollectorDashboardData() {
             expectedCollectionDate: addDays(record.invoiceDate, 30)
         });
 
-        if (!customerRowsMap.has(record.company)) {
-            customerRowsMap.set(record.company, {
-                customer: record.company,
+        if (!customerRowsMap.has(customerKey)) {
+            customerRowsMap.set(customerKey, {
+                customer: customerKey,
                 rdCounts: new Map(),
                 months: {},
                 totalCollected: 0
             });
         }
 
-        const customerRow = customerRowsMap.get(record.company);
+        const customerRow = customerRowsMap.get(customerKey);
         customerRow.rdCounts.set(record.rd, (customerRow.rdCounts.get(record.rd) || 0) + 1);
         customerRow.months[record.monthKey] = cellId;
     });
