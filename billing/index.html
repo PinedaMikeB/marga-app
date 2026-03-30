@@ -142,7 +142,7 @@
                     </div>
                     <div class="field-block">
                         <label for="rowLimitInput">Rows</label>
-                        <input type="number" id="rowLimitInput" min="1" max="5000" value="300">
+                        <input type="number" id="rowLimitInput" min="1" max="5000" value="5000">
                     </div>
                     <div class="field-block">
                         <label for="billingPagesInput">Billing Pages</label>
@@ -197,6 +197,13 @@
                     <div>
                         <div class="sheet-title">Month to Month Comparison</div>
                         <p class="sheet-copy">`RD` means Reading Day. Beige empty cells are pending reading or billing. Click a beige cell to open billing context, or click a billed cell to inspect invoices and machine coverage for that customer-month.</p>
+                        <div class="matrix-filter-row">
+                            <div class="matrix-search-block">
+                                <label for="matrixSearchInput">Search Customer</label>
+                                <input type="search" id="matrixSearchInput" placeholder="Type China Bank, branch, or department">
+                            </div>
+                            <div class="matrix-search-meta" id="matrixSearchMeta">Showing all loaded customers.</div>
+                        </div>
                     </div>
                     <div class="legend-row">
                         <span class="legend-chip"><i class="legend-swatch billed"></i>Billed</span>

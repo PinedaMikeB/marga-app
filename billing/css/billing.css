@@ -117,6 +117,40 @@
     max-width: 72ch;
 }
 
+.matrix-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.9rem;
+    margin-top: 0.9rem;
+}
+
+.matrix-search-block label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--bill-muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.matrix-search-block input {
+    width: min(360px, 100%);
+    padding: 0.72rem 0.85rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--bill-ink);
+    font-size: 0.94rem;
+}
+
+.matrix-search-meta {
+    color: var(--bill-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
 .sheet-meta {
     padding: 0.55rem 0.8rem;
     border-radius: 999px;

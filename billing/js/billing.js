@@ -14,6 +14,8 @@ const els = {
     sheetMeta: null,
     summaryTableWrap: null,
     matrixTableWrap: null,
+    matrixSearchInput: null,
+    matrixSearchMeta: null,
     rawJson: null,
     invoiceDetailModal: null,
     invoiceDetailTitle: null,
@@ -23,6 +25,10 @@ const els = {
 };
 
 let lastPayload = null;
+
+function getMatrixSearchTerm() {
+    return String(els.matrixSearchInput?.value || '').trim().toLowerCase();
+}
 
 function cacheElements() {
     Object.keys(els).forEach((key) => {
@@ -109,7 +115,7 @@ function buildRequestContext() {
     params.set('end_year', String(end.year));
     params.set('end_month', String(end.month));
     params.set('months_back', '6');
-    params.set('row_limit', String(Math.max(1, Number(els.rowLimitInput.value || 300))));
+    params.set('row_limit', String(Math.max(1, Number(els.rowLimitInput.value || 5000))));
     params.set('latest_limit', '100');
     params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 260))));
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 240))));
@@ -219,9 +225,39 @@ function renderMatrixTable(payload) {
     const totals = matrix.totals || [];
     const selectedRowId = MargaUtils.getUrlParam('row_id');
     const selectedMonth = MargaUtils.getUrlParam('month');
+    const searchTerm = getMatrixSearchTerm();
+    const filteredRows = searchTerm
+        ? rows.filter((row) => {
+              const haystack = [
+                  row.account_name,
+                  row.company_name,
+                  row.branch_name,
+                  row.reading_day
+              ]
+                  .filter(Boolean)
+                  .join(' ')
+                  .toLowerCase();
+              return haystack.includes(searchTerm);
+          })
+        : rows;
+
+    if (els.matrixSearchMeta) {
+        if (!rows.length) {
+            els.matrixSearchMeta.textContent = 'No customers loaded yet.';
+        } else if (searchTerm) {
+            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} of ${formatCount(rows.length)} loaded customers for "${els.matrixSearchInput.value.trim()}".`;
+        } else {
+            els.matrixSearchMeta.textContent = `Showing all ${formatCount(rows.length)} loaded customers.`;
+        }
+    }
 
     if (!months.length || !rows.length) {
         els.matrixTableWrap.innerHTML = '<div class="empty-panel">No month-to-month billing rows returned.</div>';
+        return;
+    }
+
+    if (searchTerm && !filteredRows.length) {
+        els.matrixTableWrap.innerHTML = `<div class="empty-panel">No billing rows matched "${escapeHtml(els.matrixSearchInput.value.trim())}".</div>`;
         return;
     }
 
@@ -231,7 +267,7 @@ function renderMatrixTable(payload) {
         return `<th>${escapeHtml(label)}</th>`;
     }).join('');
 
-    const body = rows.map((row, index) => {
+    const body = filteredRows.map((row) => {
         const rowId = row.row_id || row.company_id;
         const trClass = String(rowId) === String(selectedRowId) ? 'selected-row' : '';
         const monthCells = months.map((monthKey) => {
@@ -276,8 +312,8 @@ function renderMatrixTable(payload) {
     }).join('');
 
     const footer = months.map((monthKey) => {
-        const total = totals.find((entry) => entry.month_key === monthKey);
-        return `<td class="total-cell">${escapeHtml(formatAmount(total?.amount_total || 0))}</td>`;
+        const amount = filteredRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0);
+        return `<td class="total-cell">${escapeHtml(formatAmount(amount))}</td>`;
     }).join('');
 
     els.matrixTableWrap.innerHTML = `
@@ -431,6 +467,9 @@ async function copyCurl() {
 function bindEvents() {
     els.runBtn?.addEventListener('click', loadDashboard);
     els.copyCurlBtn?.addEventListener('click', copyCurl);
+    els.matrixSearchInput?.addEventListener('input', () => {
+        if (lastPayload) renderMatrixTable(lastPayload);
+    });
     els.matrixTableWrap?.addEventListener('click', (event) => {
         const trigger = event.target.closest('.billed-link');
         if (!trigger) return;
