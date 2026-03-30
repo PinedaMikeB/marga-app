@@ -9,6 +9,12 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const DEFAULT_MONTHS_BACK = 6;
+const BRANCH_METADATA_OVERRIDES = {
+    '152': { company: 'China Bank Savings - Branches', branch: 'San Fernando - Bayan (CBS)' },
+    '169': { company: 'China Bank Savings - Branches', branch: 'Subic (CBS)' },
+    '227': { company: 'China Bank Savings - Branches', branch: 'Dagupan (CBS)' },
+    '231': { company: 'China Bank Savings - Branches', branch: 'La Union (CBS)' }
+};
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -224,6 +230,7 @@ function getCacheState() {
             branchMap: {},
             contractMap: {},
             machToBranchMap: {},
+            machDeliveryDateMap: {},
             billingDocs: [],
             scheduleDocs: []
         };
@@ -271,12 +278,14 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         const f = doc.fields || {};
         const id = String(getField(f, ['id']) || '').trim();
         if (!id) return;
+        const override = BRANCH_METADATA_OVERRIDES[id] || null;
         const earliestRaw = getField(f, ['earliest']);
         const earliest = earliestRaw === null || earliestRaw === undefined || earliestRaw === '' ? null : Number(earliestRaw);
         cache.branchMap[id] = {
             id,
-            name: String(getField(f, ['branchname']) || 'Main').trim() || 'Main',
+            name: String(override?.branch || getField(f, ['branchname']) || 'Main').trim() || 'Main',
             companyId: String(getField(f, ['company_id']) || '').trim(),
+            companyNameOverride: String(override?.company || '').trim(),
             earliest: Number.isFinite(earliest) ? earliest : null,
             intrvl: Number(getField(f, ['intrvl']) || 0) || 0,
             inactive: Number(getField(f, ['inactive']) || 0) || 0
@@ -309,9 +318,11 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
     });
 
     cache.machToBranchMap = {};
+    cache.machDeliveryDateMap = {};
     Object.entries(machineDeliveries).forEach(([machId, deliveries]) => {
         deliveries.sort((a, b) => (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0));
         cache.machToBranchMap[machId] = deliveries[0].branchId;
+        cache.machDeliveryDateMap[machId] = deliveries[0].date ? toIso(deliveries[0].date) : null;
     });
 
     cache.billingDocs = billingDocs;
@@ -511,7 +522,8 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
             unconfirmed_billed_months_count: 0,
             latest_billed_month: null,
             reading_day: null,
-            reading_day_source: null
+            reading_day_source: null,
+            expected_start_month: null
         };
         machineRows.set(rowId, row);
     }
@@ -529,6 +541,27 @@ function resolveContractBranch(cache, contract) {
     const fallbackBranchId = String(cache.machToBranchMap[machId] || '').trim();
     if (!fallbackBranchId) return null;
     return cache.branchMap[fallbackBranchId] || null;
+}
+
+function resolveBranchDisplay(cache, branch) {
+    const companyId = String(branch?.companyId || '').trim();
+    const companyNameOverride = String(branch?.companyNameOverride || '').trim();
+    return {
+        companyId,
+        companyName: companyNameOverride || cache.companyMap[companyId] || 'Unknown',
+        branchId: String(branch?.id || '').trim(),
+        branchName: String(branch?.name || 'Main').trim() || 'Main'
+    };
+}
+
+function resolveContractStartMonth(cache, contract, startKey) {
+    const machId = String(contract?.machId || '').trim();
+    const deliveryRaw = machId ? cache.machDeliveryDateMap[machId] : null;
+    const deliveryDate = normalizeDate(deliveryRaw);
+    if (!deliveryDate) return startKey;
+    const deliveryKey = monthKeyFromYearMonth(deliveryDate.getFullYear(), deliveryDate.getMonth() + 1);
+    if (!deliveryKey) return startKey;
+    return deliveryKey < startKey ? startKey : deliveryKey;
 }
 
 function finalizeReceiptStatus(cell) {
@@ -617,8 +650,34 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         if (Number(contract.status || 0) !== 1) return;
         const branch = resolveContractBranch(cache, contract);
         if (!branch || Number(branch.inactive || 0) === 1) return;
+        const display = resolveBranchDisplay(cache, branch);
         activeNowSet.add(branch.id);
-        activeNowMachineSet.add(buildMachineRowKey(contract.machId, contract.id));
+        const machineRowId = buildMachineRowKey(contract.machId, contract.id);
+        activeNowMachineSet.add(machineRowId);
+        ensureCompanyRow(
+            companyRows,
+            display.branchId,
+            display.companyId,
+            display.companyName,
+            display.branchId,
+            display.branchName,
+            months
+        );
+        const machineRow = ensureMachineRow(
+            machineRows,
+            machineRowId,
+            display.companyId,
+            display.companyName,
+            display.branchId,
+            display.branchName,
+            contract.machId,
+            contract.id,
+            months
+        );
+        const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
+        if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
+            machineRow.expected_start_month = expectedStartMonth;
+        }
     });
 
     cache.billingDocs.forEach((doc) => {
@@ -629,8 +688,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         if (!contract) return;
         const branch = resolveContractBranch(cache, contract);
         if (!branch) return;
-        const rowId = String(branch.id || '').trim();
-        const companyId = String(branch.companyId || '').trim();
+        const display = resolveBranchDisplay(cache, branch);
+        const rowId = display.branchId;
+        const companyId = display.companyId;
         if (!companyId || !rowId) return;
 
         const { monthKey, invoiceDate } = extractBillingMonth(f);
@@ -640,9 +700,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             companyRows,
             rowId,
             companyId,
-            cache.companyMap[companyId],
+            display.companyName,
             rowId,
-            branch.name,
+            display.branchName,
             months
         );
         const cell = row.months[monthKey];
@@ -693,13 +753,17 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             machineRows,
             machineRowId,
             companyId,
-            cache.companyMap[companyId],
+            display.companyName,
             rowId,
-            branch.name,
+            display.branchName,
             machId,
             contractmainId,
             months
         );
+        const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
+        if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
+            machineRow.expected_start_month = expectedStartMonth;
+        }
         const machineCell = machineRow.months[monthKey];
         machineCell.billed = true;
         machineCell.billing_line_count += 1;
@@ -866,6 +930,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         additionalSet.forEach((rowId) => matrixMachineIds.add(rowId));
         currentMachineTargetSet = toBillSet;
     });
+    activeNowMachineSet.forEach((rowId) => matrixMachineIds.add(rowId));
 
     const matrixRows = [];
     const skippedRows = [];
@@ -895,7 +960,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             if (!cell.billed) {
                 const monthIndex = months.indexOf(monthKey);
                 const wasSeenBefore = months.slice(0, monthIndex).some((priorKey) => row.months[priorKey].billed || row.months[priorKey].pending);
-                const isPending = wasSeenBefore && (activeNowMachineSet.has(rowId) || hasFutureBilling(billedMonthsByMachine, rowId, monthKey));
+                const expectedStartMonth = row.expected_start_month || startKey;
+                const isWithinExpectedWindow = monthKey >= expectedStartMonth;
+                const shouldTrackRow = activeNowMachineSet.has(rowId) || hasFutureBilling(billedMonthsByMachine, rowId, monthKey);
+                const isPending = isWithinExpectedWindow && shouldTrackRow && (wasSeenBefore || monthKey === expectedStartMonth);
                 cell.pending = isPending;
                 cell.skipped = isPending;
             }
