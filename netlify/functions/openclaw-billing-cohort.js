@@ -625,7 +625,19 @@ function resolveReadingDay(rowId, invoiceDaySignals, readingSignals, billingSign
     return { day: null, source: null };
 }
 
-function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
+function rowMatchesSearch(searchTerm, values) {
+    const needle = String(searchTerm || '').trim().toLowerCase();
+    if (!needle) return true;
+    return values
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(needle);
+}
+
+function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}) {
+    const includeActiveRows = Boolean(options.includeActiveRows);
+    const searchTerm = String(options.searchTerm || '').trim();
     const months = buildMonthRange(startKey, endKey);
     const companyRows = new Map();
     const machineRows = new Map();
@@ -654,6 +666,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         activeNowSet.add(branch.id);
         const machineRowId = buildMachineRowKey(contract.machId, contract.id);
         activeNowMachineSet.add(machineRowId);
+        if (!includeActiveRows) return;
+        if (!rowMatchesSearch(searchTerm, [display.companyName, display.branchName, contract.machId, contract.id])) return;
         ensureCompanyRow(
             companyRows,
             display.branchId,
@@ -930,7 +944,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         additionalSet.forEach((rowId) => matrixMachineIds.add(rowId));
         currentMachineTargetSet = toBillSet;
     });
-    activeNowMachineSet.forEach((rowId) => matrixMachineIds.add(rowId));
+    if (includeActiveRows) activeNowMachineSet.forEach((rowId) => matrixMachineIds.add(rowId));
 
     const matrixRows = [];
     const skippedRows = [];
@@ -1074,7 +1088,19 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         });
     });
 
-    matrixRows.sort((a, b) => {
+    const visibleMatrixRows = searchTerm
+        ? matrixRows.filter((row) => rowMatchesSearch(searchTerm, [
+            row.display_name,
+            row.account_name,
+            row.company_name,
+            row.branch_name,
+            row.machine_label,
+            row.machine_id,
+            row.reading_day
+        ]))
+        : matrixRows;
+
+    visibleMatrixRows.sort((a, b) => {
         const latestMonth = months[months.length - 1];
         const leftPending = a.months[latestMonth]?.pending ? 1 : 0;
         const rightPending = b.months[latestMonth]?.pending ? 1 : 0;
@@ -1092,10 +1118,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         month_key: monthKey,
         month_label: monthLabelFromKey(monthKey),
         month_label_short: shortMonthLabelFromKey(monthKey),
-        amount_total: Number(matrixRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0).toFixed(2))
+        amount_total: Number(visibleMatrixRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0).toFixed(2))
     }));
 
-    const latestBilledRows = matrixRows
+    const latestBilledRows = visibleMatrixRows
         .flatMap((row) => months.map((monthKey) => ({
             company_id: row.company_id,
             branch_id: row.branch_id,
@@ -1144,7 +1170,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             };
         }),
         comparisons,
-        matrixRows,
+        matrixRows: visibleMatrixRows,
         monthTotals,
         skippedRows,
         receiptGapRows,
@@ -1184,13 +1210,15 @@ exports.handler = async (event) => {
         const forceRefresh = boolParam(searchParams.get('refresh_cache'), false);
         const billingPages = intParam(searchParams.get('max_billing_pages') || DEFAULT_BILLING_MAX_PAGES, DEFAULT_BILLING_MAX_PAGES, 10, 600);
         const schedulePages = intParam(searchParams.get('max_schedule_pages') || DEFAULT_SCHEDULE_MAX_PAGES, DEFAULT_SCHEDULE_MAX_PAGES, 10, 600);
+        const searchTerm = String(searchParams.get('search') || '').trim();
+        const includeActiveRows = boolParam(searchParams.get('include_active_rows'), Boolean(searchTerm));
 
         if (!startKey || !endKey || startKey > endKey) {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
         }
 
         const cache = await loadCache(forceRefresh, billingPages, schedulePages);
-        const result = analyzeDashboard(cache, startKey, endKey, latestLimit);
+        const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm });
 
         return toJson(200, {
             ok: true,
@@ -1220,6 +1248,10 @@ exports.handler = async (event) => {
                 current_to_bill_total: result.topSummaryRows[result.topSummaryRows.length - 1]?.to_bill_customers_total || 0,
                 current_billed_total: result.topSummaryRows[result.topSummaryRows.length - 1]?.billed_customers_total || 0,
                 current_pending_total: result.topSummaryRows[result.topSummaryRows.length - 1]?.pending_customers_total || 0
+            },
+            filters: {
+                search: searchTerm || null,
+                include_active_rows: includeActiveRows
             },
             billing_last_6_months: result.topSummaryRows,
             month_summaries: result.monthSummaries,

@@ -25,6 +25,7 @@ const els = {
 };
 
 let lastPayload = null;
+let searchReloadTimer = null;
 
 function getMatrixSearchTerm() {
     return String(els.matrixSearchInput?.value || '').trim().toLowerCase();
@@ -121,6 +122,11 @@ function buildRequestContext() {
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 240))));
     params.set('include_rows', 'true');
     params.set('refresh_cache', String(Boolean(els.refreshCacheInput.checked)));
+    const search = String(els.matrixSearchInput?.value || '').trim();
+    if (search.length >= 2) {
+        params.set('search', search);
+        params.set('include_active_rows', 'true');
+    }
 
     const apiKey = String(els.apiKeyInput.value || '').trim();
     if (apiKey) localStorage.setItem('openclaw_api_key', apiKey);
@@ -474,6 +480,13 @@ function bindEvents() {
     els.copyCurlBtn?.addEventListener('click', copyCurl);
     els.matrixSearchInput?.addEventListener('input', () => {
         if (lastPayload) renderMatrixTable(lastPayload);
+        window.clearTimeout(searchReloadTimer);
+        const search = String(els.matrixSearchInput?.value || '').trim();
+        if (!search || search.length >= 2) {
+            searchReloadTimer = window.setTimeout(() => {
+                loadDashboard();
+            }, 350);
+        }
     });
     els.matrixTableWrap?.addEventListener('click', (event) => {
         const trigger = event.target.closest('.billed-link');
