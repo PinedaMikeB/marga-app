@@ -166,7 +166,7 @@ function renderSelectionCard(payload) {
     const row = (payload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(selectedRowId));
     const readingDay = row?.reading_day ? `Reading day ${row.reading_day}` : 'Reading day not available';
     const message = row
-        ? `${row.account_name || row.company_name} is selected for ${selectedMonth}. ${readingDay}. This came from a pending billing cell.`
+        ? `${row.display_name || row.account_name || row.company_name} is selected for ${selectedMonth}. ${readingDay}. This came from a pending billing cell.`
         : `Pending billing context selected for account ${selectedRowId} in ${selectedMonth}.`;
 
     els.selectionCopy.textContent = message;
@@ -232,6 +232,8 @@ function renderMatrixTable(payload) {
                   row.account_name,
                   row.company_name,
                   row.branch_name,
+                  row.machine_label,
+                  row.machine_id,
                   row.reading_day
               ]
                   .filter(Boolean)
@@ -305,7 +307,10 @@ function renderMatrixTable(payload) {
         return `
             <tr class="${trClass}">
                 <td class="rd-col">${row.reading_day ? escapeHtml(String(row.reading_day)) : '-'}</td>
-                <td class="customer-col">${escapeHtml(row.account_name || row.company_name)}</td>
+                <td class="customer-col">
+                    <div class="customer-main">${escapeHtml(row.account_name || row.company_name)}</div>
+                    <div class="customer-sub">${escapeHtml(row.machine_label || row.machine_id || '')}</div>
+                </td>
                 ${monthCells}
             </tr>
         `;
@@ -348,7 +353,7 @@ function openInvoiceDetailModal(rowId, monthKey) {
     const cell = row?.months?.[monthKey];
     if (!row || !cell || !cell.billed) return;
 
-    const title = row.account_name || row.company_name || 'Billing Detail';
+    const title = row.display_name || row.account_name || row.company_name || 'Billing Detail';
     const readingDay = row.reading_day ? `RD ${row.reading_day}` : 'RD -';
     const invoiceGroups = Array.isArray(cell.invoice_groups) ? cell.invoice_groups : [];
 
