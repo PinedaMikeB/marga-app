@@ -196,7 +196,7 @@
                 <div class="sheet-header matrix-header">
                     <div>
                         <div class="sheet-title">Month to Month Comparison</div>
-                        <p class="sheet-copy">`RD` means Reading Day. Beige empty cells are pending reading or billing. Click a beige cell to open billing context for that customer and month.</p>
+                        <p class="sheet-copy">`RD` means Reading Day. Beige empty cells are pending reading or billing. Click a beige cell to open billing context, or click a billed cell to inspect invoices and machine coverage for that customer-month.</p>
                     </div>
                     <div class="legend-row">
                         <span class="legend-chip"><i class="legend-swatch billed"></i>Billed</span>
@@ -221,6 +221,19 @@
             </section>
         </div>
     </main>
+
+    <div class="billing-modal-overlay hidden" id="invoiceDetailModal">
+        <div class="billing-modal-card">
+            <div class="billing-modal-header">
+                <div>
+                    <div class="sheet-title" id="invoiceDetailTitle">Invoice Detail</div>
+                    <p class="sheet-copy" id="invoiceDetailSubtitle">Invoice and machine breakdown for this billed month.</p>
+                </div>
+                <button class="btn btn-secondary" type="button" id="invoiceDetailCloseBtn">Close</button>
+            </div>
+            <div class="billing-modal-body" id="invoiceDetailContent"></div>
+        </div>
+    </div>
 
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>

@@ -246,7 +246,7 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
     const [companyDocs, branchDocs, contractDocs, billingDocs, scheduleDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
-        firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'status'], maxPages: 80 }),
+        firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'mach_id', 'status'], maxPages: 80 }),
         firestoreGetAll('tbl_billing', {
             fieldMask: ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'],
             maxPages: nextBillingPages
@@ -289,6 +289,7 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         cache.contractMap[id] = {
             id,
             branchId: String(getField(f, ['contract_id']) || '').trim(),
+            machId: String(getField(f, ['mach_id']) || '').trim(),
             status: Number(getField(f, ['status']) || 0)
         };
     });
@@ -365,8 +366,13 @@ function createMonthCell(monthKey) {
         pending: false,
         skipped: false,
         invoice_count: 0,
+        billing_line_count: 0,
+        machine_count: 0,
         amount_total: 0,
         billed_branch_ids: new Set(),
+        invoice_keys: new Set(),
+        machine_ids: new Set(),
+        invoice_groups: new Map(),
         billing_task_count: 0,
         received_task_count: 0,
         received_branch_ids: new Set(),
@@ -374,6 +380,36 @@ function createMonthCell(monthKey) {
         latest_invoice_date: null,
         receipt_status: 'not_billed'
     };
+}
+
+function buildInvoiceRef(fields, contractmainId, monthKey) {
+    const invoiceNo = String(getField(fields, ['invoiceno', 'invoice_no']) || '').trim();
+    const invoiceId = String(getField(fields, ['invoice_id', 'invoiceid']) || '').trim();
+    const invoiceRef = invoiceNo || invoiceId || `contract:${contractmainId}:${monthKey}`;
+    return {
+        invoiceRef,
+        invoiceNo: invoiceNo || invoiceId || invoiceRef,
+        invoiceId: invoiceId || invoiceNo || invoiceRef
+    };
+}
+
+function serializeInvoiceGroups(groups) {
+    return Array.from(groups.values())
+        .map((group) => ({
+            invoice_ref: group.invoice_ref,
+            invoice_no: group.invoice_no,
+            invoice_id: group.invoice_id,
+            amount_total: Number(group.amount_total.toFixed(2)),
+            billing_line_count: group.billing_line_count,
+            machine_count: group.machine_ids.size,
+            contract_count: group.contractmain_ids.size,
+            contractmain_ids: sortedUnique(Array.from(group.contractmain_ids)),
+            machine_ids: sortedUnique(Array.from(group.machine_ids))
+        }))
+        .sort((a, b) => {
+            if (b.amount_total !== a.amount_total) return b.amount_total - a.amount_total;
+            return String(a.invoice_no || a.invoice_ref).localeCompare(String(b.invoice_no || b.invoice_ref));
+        });
 }
 
 function buildAccountLabel(companyName, branchName) {
@@ -526,10 +562,34 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             months
         );
         const cell = row.months[monthKey];
+        const amount = extractBillingAmount(f);
+        const { invoiceRef, invoiceNo, invoiceId } = buildInvoiceRef(f, contractmainId, monthKey);
+        const machId = String(contract.machId || '').trim();
+
         cell.billed = true;
-        cell.invoice_count += 1;
-        cell.amount_total += extractBillingAmount(f);
+        cell.billing_line_count += 1;
+        cell.amount_total += amount;
         cell.billed_branch_ids.add(branch.id);
+        cell.invoice_keys.add(invoiceRef);
+        if (machId) cell.machine_ids.add(machId);
+
+        if (!cell.invoice_groups.has(invoiceRef)) {
+            cell.invoice_groups.set(invoiceRef, {
+                invoice_ref: invoiceRef,
+                invoice_no: invoiceNo,
+                invoice_id: invoiceId,
+                amount_total: 0,
+                billing_line_count: 0,
+                contractmain_ids: new Set(),
+                machine_ids: new Set()
+            });
+        }
+        const invoiceGroup = cell.invoice_groups.get(invoiceRef);
+        invoiceGroup.amount_total += amount;
+        invoiceGroup.billing_line_count += 1;
+        invoiceGroup.contractmain_ids.add(contractmainId);
+        if (machId) invoiceGroup.machine_ids.add(machId);
+
         if (!cell.latest_invoice_date || (invoiceDate && invoiceDate > new Date(cell.latest_invoice_date))) {
             cell.latest_invoice_date = toIso(invoiceDate);
         }
@@ -541,6 +601,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
         billedByMonth.get(monthKey)?.add(rowId);
         if (!billedMonthsByCompany.has(rowId)) billedMonthsByCompany.set(rowId, new Set());
         billedMonthsByCompany.get(rowId).add(monthKey);
+        cell.invoice_count = cell.invoice_keys.size;
+        cell.machine_count = cell.machine_ids.size;
     });
 
     cache.scheduleDocs.forEach((doc) => {
@@ -700,6 +762,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
                     month_label: monthLabelFromKey(monthKey),
                     receipt_status: cell.receipt_status,
                     invoice_count: cell.invoice_count,
+                    machine_count: cell.machine_count,
                     amount_total: Number(cell.amount_total.toFixed(2))
                 });
                 if (cell.billed) summary.receipt_gap_companies.push({ row_id: rowId, company_id: row.company_id, company_name: row.company_name, branch_name: row.branch_name, account_name: row.account_name, receipt_status: cell.receipt_status });
@@ -721,12 +784,15 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
                 pending: cell.pending,
                 skipped: cell.skipped,
                 invoice_count: cell.invoice_count,
+                billing_line_count: cell.billing_line_count,
+                machine_count: cell.machine_count,
                 amount_total: Number(cell.amount_total.toFixed(2)),
                 billing_task_count: cell.billing_task_count,
                 received_task_count: cell.received_task_count,
                 receipt_status: cell.receipt_status,
                 latest_invoice_date: cell.latest_invoice_date,
-                received_by_names: sortedUnique(Array.from(cell.received_by_names))
+                received_by_names: sortedUnique(Array.from(cell.received_by_names)),
+                invoice_groups: serializeInvoiceGroups(cell.invoice_groups)
             };
         });
 
@@ -802,6 +868,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit) {
             month_label: monthLabelFromKey(monthKey),
             latest_invoice_date: row.months[monthKey].latest_invoice_date,
             invoice_count: row.months[monthKey].invoice_count,
+            machine_count: row.months[monthKey].machine_count,
             amount_total: row.months[monthKey].amount_total,
             receipt_status: row.months[monthKey].receipt_status
         })))

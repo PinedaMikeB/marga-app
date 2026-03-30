@@ -14,7 +14,12 @@ const els = {
     sheetMeta: null,
     summaryTableWrap: null,
     matrixTableWrap: null,
-    rawJson: null
+    rawJson: null,
+    invoiceDetailModal: null,
+    invoiceDetailTitle: null,
+    invoiceDetailSubtitle: null,
+    invoiceDetailContent: null,
+    invoiceDetailCloseBtn: null
 };
 
 let lastPayload = null;
@@ -45,6 +50,11 @@ function formatAmount(value) {
         minimumFractionDigits: hasCents ? 2 : 0,
         maximumFractionDigits: 2
     });
+}
+
+function formatMetricCount(value, singular, plural = `${singular}s`) {
+    const count = Number(value || 0);
+    return `${formatCount(count)} ${count === 1 ? singular : plural}`;
 }
 
 function parseMonthInput(value) {
@@ -228,9 +238,20 @@ function renderMatrixTable(payload) {
             const cell = row.months?.[monthKey] || {};
             const isSelected = String(rowId) === String(selectedRowId) && monthKey === selectedMonth;
             if (cell.billed) {
+                const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
+                const machineMeta = `${formatCount(cell.machine_count || 0)} mach`;
                 return `
                     <td class="month-cell billed-cell ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(receiptLabel(cell.receipt_status))}">
-                        <span class="amount-value">${escapeHtml(formatAmount(cell.amount_total))}</span>
+                        <button
+                            class="billed-link"
+                            type="button"
+                            data-row-id="${escapeHtml(String(rowId))}"
+                            data-month-key="${escapeHtml(monthKey)}"
+                            aria-label="Open invoice detail for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
+                        >
+                            <span class="amount-value">${escapeHtml(formatAmount(cell.amount_total))}</span>
+                            <span class="cell-meta">${escapeHtml(`${invoiceMeta} • ${machineMeta}`)}</span>
+                        </button>
                         ${receiptDot(cell.receipt_status)}
                     </td>
                 `;
@@ -278,6 +299,82 @@ function renderMatrixTable(payload) {
             </tfoot>
         </table>
     `;
+}
+
+function closeInvoiceDetailModal() {
+    els.invoiceDetailModal?.classList.add('hidden');
+}
+
+function openInvoiceDetailModal(rowId, monthKey) {
+    if (!lastPayload) return;
+
+    const row = (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    const cell = row?.months?.[monthKey];
+    if (!row || !cell || !cell.billed) return;
+
+    const title = row.account_name || row.company_name || 'Billing Detail';
+    const readingDay = row.reading_day ? `RD ${row.reading_day}` : 'RD -';
+    const invoiceGroups = Array.isArray(cell.invoice_groups) ? cell.invoice_groups : [];
+
+    els.invoiceDetailTitle.textContent = title;
+    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${receiptLabel(cell.receipt_status)}`;
+
+    els.invoiceDetailContent.innerHTML = `
+        <div class="detail-summary-grid">
+            <article class="detail-summary-card">
+                <span class="label">Amount</span>
+                <span class="value">${escapeHtml(formatAmount(cell.amount_total || 0))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Invoices</span>
+                <span class="value">${escapeHtml(formatCount(cell.invoice_count || 0))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Machines</span>
+                <span class="value">${escapeHtml(formatCount(cell.machine_count || 0))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Billing Lines</span>
+                <span class="value">${escapeHtml(formatCount(cell.billing_line_count || 0))}</span>
+            </article>
+        </div>
+        <div class="detail-section-title">Invoice Breakdown</div>
+        ${
+            invoiceGroups.length
+                ? `
+                    <div class="invoice-detail-list">
+                        ${invoiceGroups
+                            .map(
+                                (group) => `
+                                    <article class="invoice-detail-card">
+                                        <div class="invoice-detail-head">
+                                            <div class="invoice-detail-ref">${escapeHtml(group.invoice_no || group.invoice_ref || 'Invoice')}</div>
+                                            <div class="invoice-detail-amount">${escapeHtml(formatAmount(group.amount_total || 0))}</div>
+                                        </div>
+                                        <div class="invoice-detail-meta">
+                                            <span class="invoice-detail-chip">${escapeHtml(formatMetricCount(group.machine_count || 0, 'machine'))}</span>
+                                            <span class="invoice-detail-chip">${escapeHtml(formatMetricCount(group.contract_count || 0, 'contract'))}</span>
+                                            <span class="invoice-detail-chip">${escapeHtml(formatMetricCount(group.billing_line_count || 0, 'billing line'))}</span>
+                                        </div>
+                                        <div class="detail-list-block">
+                                            <span class="detail-list-label">Machine IDs</span>
+                                            <div class="detail-list-value">${escapeHtml((group.machine_ids || []).join(', ') || 'No machine IDs mapped')}</div>
+                                        </div>
+                                        <div class="detail-list-block">
+                                            <span class="detail-list-label">Contractmain IDs</span>
+                                            <div class="detail-list-value">${escapeHtml((group.contractmain_ids || []).join(', ') || 'No contract IDs mapped')}</div>
+                                        </div>
+                                    </article>
+                                `
+                            )
+                            .join('')}
+                    </div>
+                `
+                : '<div class="detail-empty">No invoice-level detail was returned for this cell.</div>'
+        }
+    `;
+
+    els.invoiceDetailModal.classList.remove('hidden');
 }
 
 function renderAll(payload) {
@@ -334,6 +431,18 @@ async function copyCurl() {
 function bindEvents() {
     els.runBtn?.addEventListener('click', loadDashboard);
     els.copyCurlBtn?.addEventListener('click', copyCurl);
+    els.matrixTableWrap?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.billed-link');
+        if (!trigger) return;
+        openInvoiceDetailModal(trigger.dataset.rowId, trigger.dataset.monthKey);
+    });
+    els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
+    els.invoiceDetailModal?.addEventListener('click', (event) => {
+        if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeInvoiceDetailModal();
+    });
 }
 
 function toggleSidebar() {

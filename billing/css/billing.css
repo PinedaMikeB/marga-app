@@ -247,9 +247,36 @@
     font-weight: 700;
 }
 
+.billed-link {
+    width: 100%;
+    min-height: 56px;
+    padding: 0.45rem 0.55rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-align: center;
+}
+
+.billed-link:hover,
+.billed-link:focus-visible {
+    outline: 2px solid #90baf4;
+    outline-offset: -2px;
+}
+
 .amount-value {
     display: inline-block;
     padding-right: 14px;
+}
+
+.cell-meta {
+    display: block;
+    margin-top: 0.28rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--bill-muted);
+    white-space: normal;
+    line-height: 1.25;
 }
 
 .billed-cell .receipt-dot {
@@ -320,6 +347,164 @@
     color: var(--bill-muted);
 }
 
+.billing-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.billing-modal-overlay.hidden {
+    display: none;
+}
+
+.billing-modal-card {
+    width: min(920px, 100%);
+    max-height: 84vh;
+    overflow: hidden;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
+    display: flex;
+    flex-direction: column;
+}
+
+.billing-modal-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    padding: 1.15rem 1.25rem 0.9rem;
+    border-bottom: 1px solid var(--bill-line);
+}
+
+.billing-modal-body {
+    padding: 1rem 1.25rem 1.25rem;
+    overflow: auto;
+}
+
+.detail-summary-grid {
+    display: grid;
+    gap: 0.8rem;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    margin-bottom: 1rem;
+}
+
+.detail-summary-card {
+    border: 1px solid var(--bill-line);
+    border-radius: 16px;
+    padding: 0.85rem 0.9rem;
+    background: var(--bill-panel);
+}
+
+.detail-summary-card .label {
+    display: block;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.detail-summary-card .value {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--bill-ink);
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.detail-section-title {
+    margin: 1rem 0 0.65rem;
+    color: var(--bill-ink);
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.detail-empty {
+    padding: 0.9rem 1rem;
+    border-radius: 14px;
+    background: var(--bill-panel);
+    color: var(--bill-muted);
+}
+
+.invoice-detail-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.invoice-detail-card {
+    border: 1px solid var(--bill-line);
+    border-radius: 18px;
+    background: #fff;
+    padding: 0.95rem 1rem;
+}
+
+.invoice-detail-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.invoice-detail-ref {
+    color: var(--bill-ink);
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.invoice-detail-amount {
+    color: var(--bill-accent);
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.invoice-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+}
+
+.invoice-detail-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.55rem;
+    border-radius: 999px;
+    background: var(--bill-accent-soft);
+    color: var(--bill-accent);
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.detail-list-block {
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top: 1px dashed var(--bill-line);
+}
+
+.detail-list-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.detail-list-value {
+    color: var(--bill-ink);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
 @media (max-width: 1024px) {
     .sheet-header,
     .selection-grid {
@@ -339,5 +524,14 @@
 
     .billing-sheet {
         min-width: 760px;
+    }
+
+    .billing-modal-overlay {
+        padding: 0.8rem;
+    }
+
+    .billing-modal-header {
+        flex-direction: column;
+        align-items: stretch;
     }
 }
