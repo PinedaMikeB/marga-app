@@ -285,11 +285,11 @@ async function firestoreGet(collection, pageSize = 300, pageToken = null, fieldM
     }
 
     const url = `${BASE_URL}/${collection}?${params.toString()}`;
-    const maxAttempts = 2;
+    const maxAttempts = 3;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000);
+        const timeout = setTimeout(() => controller.abort(), 90000);
 
         try {
             const response = await fetch(url, { signal: controller.signal });
@@ -306,8 +306,8 @@ async function firestoreGet(collection, pageSize = 300, pageToken = null, fieldM
 
 async function firestoreGetAll(collection, statusCallback = null, options = {}) {
     const {
-        pageSize: requestPageSize = 300,
-        maxPages = 150,
+        pageSize: requestPageSize = 1000,
+        maxPages = 200,
         fieldMask = null
     } = options;
 
