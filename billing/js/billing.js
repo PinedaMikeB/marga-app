@@ -123,8 +123,8 @@ function buildRequestContext() {
     params.set('months_back', '6');
     params.set('row_limit', String(Math.max(1, Number(els.rowLimitInput.value || 5000))));
     params.set('latest_limit', '100');
-    params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 80))));
-    params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 80))));
+    params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 10))));
+    params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 10))));
     params.set('include_rows', 'true');
     params.set('refresh_cache', String(Boolean(els.refreshCacheInput.checked)));
     const search = String(els.matrixSearchInput?.value || '').trim();

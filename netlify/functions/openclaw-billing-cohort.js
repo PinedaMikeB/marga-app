@@ -231,6 +231,7 @@ function getCacheState() {
             contractMap: {},
             machToBranchMap: {},
             machDeliveryDateMap: {},
+            machineHistoryLoaded: false,
             billingDocs: [],
             scheduleDocs: []
         };
@@ -238,14 +239,15 @@ function getCacheState() {
     return global.__openclawBillingCohortCache;
 }
 
-async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MAX_PAGES, schedulePages = DEFAULT_SCHEDULE_MAX_PAGES) {
+async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MAX_PAGES, schedulePages = DEFAULT_SCHEDULE_MAX_PAGES, includeMachineHistory = false) {
     const cache = getCacheState();
     const now = Date.now();
     const nextBillingPages = Math.max(10, Math.min(600, Number(billingPages)));
     const nextSchedulePages = Math.max(10, Math.min(600, Number(schedulePages)));
 
     const sameWindow = Number(cache.billingPages || 0) === nextBillingPages
-        && Number(cache.schedulePages || 0) === nextSchedulePages;
+        && Number(cache.schedulePages || 0) === nextSchedulePages
+        && Boolean(cache.machineHistoryLoaded) === Boolean(includeMachineHistory);
 
     if (!forceRefresh && sameWindow && cache.stamp && (now - cache.stamp) < CACHE_TTL_MS) {
         return cache;
@@ -255,7 +257,9 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial'], maxPages: 80 }),
-        firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 }),
+        includeMachineHistory
+            ? firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 })
+            : Promise.resolve([]),
         firestoreGetAll('tbl_billing', {
             fieldMask: ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'],
             maxPages: nextBillingPages
@@ -325,6 +329,7 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         cache.machToBranchMap[machId] = deliveries[0].branchId;
         cache.machDeliveryDateMap[machId] = deliveries[0].date ? toIso(deliveries[0].date) : null;
     });
+    cache.machineHistoryLoaded = includeMachineHistory;
 
     cache.billingDocs = billingDocs;
     cache.scheduleDocs = scheduleDocs;
@@ -1234,7 +1239,7 @@ exports.handler = async (event) => {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
         }
 
-        const cache = await loadCache(forceRefresh, billingPages, schedulePages);
+        const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeActiveRows);
         const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm });
 
         return toJson(200, {
