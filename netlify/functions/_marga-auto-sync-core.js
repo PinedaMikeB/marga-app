@@ -38,7 +38,13 @@ const DEFAULT_TABLES = [
   "tbl_pullout",
   "tbl_companylist",
   "tbl_branchinfo",
+  "tbl_branchcontact",
+  "tbl_customerinfo",
+  "tbl_customertype",
   "tbl_contractmain",
+  "tbl_contractdetails",
+  "tbl_contractinfo",
+  "tbl_contracthistory",
   "tbl_machine",
 ];
 
@@ -52,8 +58,14 @@ const TABLE_ID_HINTS = {
   tbl_newmachinehistory: "id",
   tbl_companylist: "id",
   tbl_branchinfo: "id",
+  tbl_branchcontact: "id",
+  tbl_customerinfo: "id",
+  tbl_customertype: "id",
   tbl_machine: "id",
   tbl_contractmain: "id",
+  tbl_contractdetails: "id",
+  tbl_contractinfo: "id",
+  tbl_contracthistory: "id",
   tbl_billinfo: "id",
 };
 

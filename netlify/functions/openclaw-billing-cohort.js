@@ -161,6 +161,10 @@ function buildMonthRange(startKey, endKey) {
     return out;
 }
 
+function monthWindowStart(monthKey) {
+    return `${String(monthKey || '').trim()}-01 00:00:00`;
+}
+
 function toIso(value) {
     const d = normalizeDate(value);
     return d ? d.toISOString() : null;
@@ -242,6 +246,7 @@ function getCacheState() {
             companyMap: {},
             branchMap: {},
             contractMap: {},
+            scheduleInvoiceBranchMap: {},
             machToBranchMap: {},
             machDeliveryDateMap: {},
             machineHistoryLoaded: false,
@@ -277,7 +282,10 @@ async function loadCache(
     }
 
     const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'];
+    const scheduleFieldMask = ['id', 'company_id', 'branch_id', 'purpose_id', 'task_datetime', 'invoice_num', 'field_billing_received_by', 'field_billing_date', 'field_billing_time'];
     const billingMonthKeys = startKey && endKey ? buildMonthRange(startKey, endKey) : [];
+    const scheduleWindowStart = billingMonthKeys.length ? monthWindowStart(startKey) : '';
+    const scheduleWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
     const [companyDocs, branchDocs, contractDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
@@ -310,10 +318,46 @@ async function loadCache(
                 return Array.from(byName.values());
             })
             : firestoreGetAll('tbl_billing', { fieldMask: billingFieldMask, maxPages: nextBillingPages }),
-        firestoreGetAll('tbl_schedule', {
-            fieldMask: ['id', 'company_id', 'branch_id', 'purpose_id', 'task_datetime', 'field_billing_received_by', 'field_billing_date', 'field_billing_time'],
-            maxPages: nextSchedulePages
-        })
+        billingMonthKeys.length
+            ? Promise.all([
+                firestoreRunQuery({
+                    from: [{ collectionId: 'tbl_schedule' }],
+                    where: {
+                        compositeFilter: {
+                            op: 'AND',
+                            filters: [
+                                { fieldFilter: { field: { fieldPath: 'task_datetime' }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: scheduleWindowStart } } },
+                                { fieldFilter: { field: { fieldPath: 'task_datetime' }, op: 'LESS_THAN', value: { stringValue: scheduleWindowEnd } } }
+                            ]
+                        }
+                    },
+                    select: { fields: scheduleFieldMask.map((fieldPath) => ({ fieldPath })) }
+                }),
+                firestoreRunQuery({
+                    from: [{ collectionId: 'tbl_schedule' }],
+                    where: {
+                        compositeFilter: {
+                            op: 'AND',
+                            filters: [
+                                { fieldFilter: { field: { fieldPath: 'field_billing_date' }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: scheduleWindowStart } } },
+                                { fieldFilter: { field: { fieldPath: 'field_billing_date' }, op: 'LESS_THAN', value: { stringValue: scheduleWindowEnd } } }
+                            ]
+                        }
+                    },
+                    select: { fields: scheduleFieldMask.map((fieldPath) => ({ fieldPath })) }
+                })
+            ]).then((groups) => {
+                const byName = new Map();
+                groups.flat().forEach((doc) => {
+                    const name = String(doc?.name || '').trim();
+                    if (name && !byName.has(name)) byName.set(name, doc);
+                });
+                return Array.from(byName.values());
+            })
+            : firestoreGetAll('tbl_schedule', {
+                fieldMask: scheduleFieldMask,
+                maxPages: nextSchedulePages
+            })
     ]);
 
     cache.companyMap = {};
@@ -374,6 +418,29 @@ async function loadCache(
         deliveries.sort((a, b) => (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0));
         cache.machToBranchMap[machId] = deliveries[0].branchId;
         cache.machDeliveryDateMap[machId] = deliveries[0].date ? toIso(deliveries[0].date) : null;
+    });
+
+    cache.scheduleInvoiceBranchMap = {};
+    scheduleDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const invoiceNum = String(getField(f, ['invoice_num']) || '').trim();
+        const branchId = String(getField(f, ['branch_id']) || '').trim();
+        if (!invoiceNum || !branchId) return;
+        if (!cache.branchMap[branchId]) return;
+
+        const purposeId = Number(getField(f, ['purpose_id']) || 0);
+        const taskDate = normalizeDate(getField(f, ['task_datetime']));
+        const billingDate = normalizeDate(getField(f, ['field_billing_date']));
+        const nextEntry = {
+            branchId,
+            purposeId,
+            sortDate: (billingDate || taskDate)?.getTime?.() || 0,
+            monthKey: extractScheduleMonthKey(f)
+        };
+        if (!Array.isArray(cache.scheduleInvoiceBranchMap[invoiceNum])) {
+            cache.scheduleInvoiceBranchMap[invoiceNum] = [];
+        }
+        cache.scheduleInvoiceBranchMap[invoiceNum].push(nextEntry);
     });
     cache.machineHistoryLoaded = includeMachineHistory;
 
@@ -625,6 +692,54 @@ function resolveContractBranch(cache, contract) {
     return null;
 }
 
+function resolveInvoiceBranch(cache, fields) {
+    const { monthKey: billingMonthKey, invoiceDate } = extractBillingMonth(fields);
+    const invoiceRefs = [
+        String(getField(fields, ['invoice_id', 'invoiceid']) || '').trim(),
+        String(getField(fields, ['invoiceno', 'invoice_no']) || '').trim()
+    ].filter(Boolean);
+
+    const scoreForPurpose = (value) => {
+        if (value === BILLING_PURPOSE_ID) return 3;
+        if (value === READING_PURPOSE_ID) return 2;
+        return 1;
+    };
+
+    for (const invoiceRef of invoiceRefs) {
+        const matches = Array.isArray(cache.scheduleInvoiceBranchMap?.[invoiceRef])
+            ? cache.scheduleInvoiceBranchMap[invoiceRef]
+            : [];
+        if (!matches.length) continue;
+
+        const match = [...matches].sort((left, right) => {
+            const leftSameMonth = left.monthKey && billingMonthKey && left.monthKey === billingMonthKey ? 1 : 0;
+            const rightSameMonth = right.monthKey && billingMonthKey && right.monthKey === billingMonthKey ? 1 : 0;
+            if (rightSameMonth !== leftSameMonth) return rightSameMonth - leftSameMonth;
+
+            const leftPurposeScore = scoreForPurpose(left.purposeId);
+            const rightPurposeScore = scoreForPurpose(right.purposeId);
+            if (rightPurposeScore !== leftPurposeScore) return rightPurposeScore - leftPurposeScore;
+
+            if (invoiceDate) {
+                const leftDiff = Math.abs((left.sortDate || 0) - invoiceDate.getTime());
+                const rightDiff = Math.abs((right.sortDate || 0) - invoiceDate.getTime());
+                if (leftDiff !== rightDiff) return leftDiff - rightDiff;
+            }
+
+            return (right.sortDate || 0) - (left.sortDate || 0);
+        })[0];
+
+        const branch = cache.branchMap[String(match?.branchId || '').trim()];
+        if (branch) return branch;
+    }
+
+    return null;
+}
+
+function resolveBillingBranch(cache, contract, fields) {
+    return resolveInvoiceBranch(cache, fields) || resolveContractBranch(cache, contract);
+}
+
 function resolveBranchDisplay(cache, branch) {
     const companyId = String(branch?.companyId || '').trim();
     const companyNameOverride = String(branch?.companyNameOverride || '').trim();
@@ -784,7 +899,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         if (!contractmainId) return;
         const contract = cache.contractMap[contractmainId];
         if (!contract) return;
-        const branch = resolveContractBranch(cache, contract);
+        const branch = resolveBillingBranch(cache, contract, f);
         if (!branch) return;
         const display = resolveBranchDisplay(cache, branch);
         const rowId = display.branchId;
