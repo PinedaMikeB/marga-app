@@ -30,6 +30,7 @@ const els = {
 };
 
 let lastPayload = null;
+let renderedMatrixRows = [];
 let searchReloadTimer = null;
 
 function getMatrixSearchTerm() {
@@ -126,11 +127,12 @@ function buildRequestContext() {
     params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 10))));
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 10))));
     params.set('include_rows', 'true');
+    params.set('include_active_rows', 'true');
     params.set('refresh_cache', String(Boolean(els.refreshCacheInput.checked)));
     const search = String(els.matrixSearchInput?.value || '').trim();
     if (search.length >= 2) {
         params.set('search', search);
-        params.set('include_active_rows', 'true');
+        params.set('include_machine_history', 'true');
     }
 
     const apiKey = String(els.apiKeyInput.value || '').trim();
@@ -239,6 +241,154 @@ function renderSummaryTable(payload) {
     `;
 }
 
+function summarizeReceiptStatus(cells) {
+    const billedCells = cells.filter((cell) => cell && cell.billed);
+    if (!billedCells.length) return 'not_billed';
+    if (billedCells.every((cell) => cell.receipt_status === 'received')) return 'received';
+    if (billedCells.some((cell) => cell.receipt_status === 'received' || cell.receipt_status === 'partial')) return 'partial';
+    return 'not_confirmed';
+}
+
+function mergeInvoiceGroups(groups) {
+    const merged = new Map();
+    groups.forEach((group) => {
+        const key = String(group?.invoice_ref || group?.invoice_no || group?.invoice_id || '').trim();
+        if (!key) return;
+        if (!merged.has(key)) {
+            merged.set(key, {
+                invoice_ref: key,
+                invoice_no: group.invoice_no || group.invoice_ref || group.invoice_id || key,
+                invoice_id: group.invoice_id || group.invoice_no || key,
+                amount_total: 0,
+                billing_line_count: 0,
+                machine_ids: new Set(),
+                contractmain_ids: new Set()
+            });
+        }
+        const target = merged.get(key);
+        target.amount_total += Number(group.amount_total || 0);
+        target.billing_line_count += Number(group.billing_line_count || 0);
+        (group.machine_ids || []).forEach((machineId) => {
+            if (String(machineId || '').trim()) target.machine_ids.add(String(machineId).trim());
+        });
+        (group.contractmain_ids || []).forEach((contractId) => {
+            if (String(contractId || '').trim()) target.contractmain_ids.add(String(contractId).trim());
+        });
+    });
+    return Array.from(merged.values())
+        .map((group) => ({
+            invoice_ref: group.invoice_ref,
+            invoice_no: group.invoice_no,
+            invoice_id: group.invoice_id,
+            amount_total: Number(group.amount_total.toFixed(2)),
+            billing_line_count: group.billing_line_count,
+            machine_count: group.machine_ids.size,
+            contract_count: group.contractmain_ids.size,
+            machine_ids: Array.from(group.machine_ids).sort((a, b) => a.localeCompare(b)),
+            contractmain_ids: Array.from(group.contractmain_ids).sort((a, b) => a.localeCompare(b))
+        }))
+        .sort((a, b) => {
+            if (b.amount_total !== a.amount_total) return b.amount_total - a.amount_total;
+            return String(a.invoice_no || a.invoice_ref).localeCompare(String(b.invoice_no || b.invoice_ref));
+        });
+}
+
+function buildCompanySummaryRows(rows, months) {
+    const groups = new Map();
+    rows.forEach((row) => {
+        const key = String(row.company_id || row.company_name || row.account_name || row.row_id || '').trim();
+        if (!key) return;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                company_id: row.company_id || null,
+                company_name: row.company_name || row.account_name || 'Unknown',
+                rows: []
+            });
+        }
+        groups.get(key).rows.push(row);
+    });
+
+    const inserted = new Set();
+    const displayRows = [];
+    rows.forEach((row) => {
+        const key = String(row.company_id || row.company_name || row.account_name || row.row_id || '').trim();
+        const group = groups.get(key);
+        const qualifies = group && group.rows.length > 1;
+
+        if (qualifies && !inserted.has(key)) {
+            inserted.add(key);
+            const summaryMonths = {};
+            months.forEach((monthKey) => {
+                const childCells = group.rows.map((child) => child.months?.[monthKey] || {});
+                const billedCells = childCells.filter((cell) => cell.billed);
+                const pendingCount = childCells.filter((cell) => cell.pending).length;
+                const mergedGroups = mergeInvoiceGroups(
+                    childCells.flatMap((cell) => (Array.isArray(cell.invoice_groups) ? cell.invoice_groups : []))
+                );
+                const amountTotal = billedCells.reduce((sum, cell) => sum + Number(cell.amount_total || 0), 0);
+                const billingLineCount = billedCells.reduce((sum, cell) => sum + Number(cell.billing_line_count || 0), 0);
+                const invoiceCount = mergedGroups.length;
+                const machineIds = new Set();
+                mergedGroups.forEach((groupInvoice) => {
+                    (groupInvoice.machine_ids || []).forEach((machineId) => machineIds.add(String(machineId)));
+                });
+                childCells.forEach((cell, index) => {
+                    const machineId = String(group.rows[index]?.machine_id || '').trim();
+                    if (cell.billed && machineId) machineIds.add(machineId);
+                });
+                summaryMonths[monthKey] = {
+                    month_key: monthKey,
+                    month_label: childCells[0]?.month_label || monthKey,
+                    month_label_short: childCells[0]?.month_label_short || monthKey,
+                    billed: billedCells.length > 0,
+                    pending: billedCells.length === 0 && pendingCount > 0,
+                    skipped: billedCells.length === 0 && pendingCount > 0,
+                    invoice_count: invoiceCount,
+                    billing_line_count: billingLineCount,
+                    machine_count: machineIds.size || billedCells.length,
+                    amount_total: Number(amountTotal.toFixed(2)),
+                    billing_task_count: childCells.reduce((sum, cell) => sum + Number(cell.billing_task_count || 0), 0),
+                    received_task_count: childCells.reduce((sum, cell) => sum + Number(cell.received_task_count || 0), 0),
+                    receipt_status: summarizeReceiptStatus(childCells),
+                    latest_invoice_date: childCells
+                        .map((cell) => cell.latest_invoice_date)
+                        .filter(Boolean)
+                        .sort()
+                        .slice(-1)[0] || null,
+                    received_by_names: Array.from(new Set(childCells.flatMap((cell) => cell.received_by_names || []))).sort((a, b) => a.localeCompare(b)),
+                    invoice_groups: mergedGroups,
+                    pending_count: pendingCount
+                };
+            });
+
+            displayRows.push({
+                row_id: `summary:${key}`,
+                is_summary_row: true,
+                company_id: group.company_id,
+                company_name: group.company_name,
+                account_name: group.company_name,
+                branch_name: 'All branches / departments',
+                serial_number: '',
+                machine_id: '',
+                contractmain_id: '',
+                machine_label: `${formatCount(group.rows.length)} machine row${group.rows.length === 1 ? '' : 's'}`,
+                display_name: `${group.company_name} • company subtotal`,
+                reading_day: null,
+                months: summaryMonths
+            });
+        }
+
+        if (qualifies) {
+            displayRows.push({ ...row, is_detail_row: true });
+            return;
+        }
+        displayRows.push(row);
+    });
+
+    return displayRows;
+}
+
 function renderMatrixTable(payload) {
     const matrix = payload.month_matrix || {};
     const months = matrix.months || [];
@@ -265,11 +415,15 @@ function renderMatrixTable(payload) {
           })
         : rows;
 
+    const displayRows = searchTerm ? buildCompanySummaryRows(filteredRows, months) : filteredRows;
+    renderedMatrixRows = displayRows;
+
     if (els.matrixSearchMeta) {
         if (!rows.length) {
             els.matrixSearchMeta.textContent = 'No customers loaded yet.';
         } else if (searchTerm) {
-            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} of ${formatCount(rows.length)} loaded customers for "${els.matrixSearchInput.value.trim()}".`;
+            const subtotalCount = displayRows.filter((row) => row.is_summary_row).length;
+            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}". ${subtotalCount ? `${formatCount(subtotalCount)} company subtotal row${subtotalCount === 1 ? '' : 's'} added.` : ''}`;
         } else {
             els.matrixSearchMeta.textContent = `Showing all ${formatCount(rows.length)} loaded customers.`;
         }
@@ -291,26 +445,33 @@ function renderMatrixTable(payload) {
         return `<th>${escapeHtml(label)}</th>`;
     }).join('');
 
-    const body = filteredRows.map((row) => {
+    const body = displayRows.map((row) => {
         const rowId = row.row_id || row.company_id;
-        const trClass = String(rowId) === String(selectedRowId) ? 'selected-row' : '';
+        const trClass = [
+            String(rowId) === String(selectedRowId) ? 'selected-row' : '',
+            row.is_summary_row ? 'summary-row' : '',
+            row.is_detail_row ? 'detail-row' : ''
+        ].filter(Boolean).join(' ');
         const monthCells = months.map((monthKey) => {
             const cell = row.months?.[monthKey] || {};
             const isSelected = String(rowId) === String(selectedRowId) && monthKey === selectedMonth;
             if (cell.billed) {
                 const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
                 const machineMeta = `${formatCount(cell.machine_count || 0)} mach`;
+                const pendingMeta = row.is_summary_row && Number(cell.pending_count || 0) > 0
+                    ? ` • ${formatCount(cell.pending_count || 0)} pending`
+                    : '';
                 return `
                     <td class="month-cell billed-cell ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(receiptLabel(cell.receipt_status))}">
                         <button
-                            class="billed-link"
+                            class="billed-link ${row.is_summary_row ? 'summary-billed-link' : ''}"
                             type="button"
                             data-row-id="${escapeHtml(String(rowId))}"
                             data-month-key="${escapeHtml(monthKey)}"
                             aria-label="Open invoice detail for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
                         >
                             <span class="amount-value">${escapeHtml(formatAmount(cell.amount_total))}</span>
-                            <span class="cell-meta">${escapeHtml(`${invoiceMeta} • ${machineMeta}`)}</span>
+                            <span class="cell-meta">${escapeHtml(`${invoiceMeta} • ${machineMeta}${pendingMeta}`)}</span>
                         </button>
                         ${receiptDot(cell.receipt_status)}
                     </td>
@@ -328,24 +489,30 @@ function renderMatrixTable(payload) {
 
         return `
             <tr class="${trClass}">
-                <td class="rd-col">${row.reading_day ? escapeHtml(String(row.reading_day)) : '-'}</td>
+                <td class="rd-col">${row.is_summary_row ? '' : (row.reading_day ? escapeHtml(String(row.reading_day)) : '-')}</td>
                 <td class="sn-col">
-                    <button
-                        class="serial-link"
-                        type="button"
-                        data-row-id="${escapeHtml(String(rowId))}"
-                        aria-label="Open serial detail for ${escapeHtml(row.serial_number || row.machine_label || row.machine_id || 'machine')}"
-                    >
-                        ${escapeHtml(row.serial_number || 'N/A')}
-                    </button>
+                    ${
+                        row.is_summary_row
+                            ? '<span class="subtotal-pill">Subtotal</span>'
+                            : `
+                                <button
+                                    class="serial-link"
+                                    type="button"
+                                    data-row-id="${escapeHtml(String(rowId))}"
+                                    aria-label="Open serial detail for ${escapeHtml(row.serial_number || row.machine_label || row.machine_id || 'machine')}"
+                                >
+                                    ${escapeHtml(row.serial_number || 'N/A')}
+                                </button>
+                            `
+                    }
                 </td>
                 <td class="customer-col">
                     <div class="customer-main">${escapeHtml(row.company_name || row.account_name)}</div>
-                    <div class="customer-sub">${escapeHtml(row.machine_label || row.machine_id || '')}</div>
+                    <div class="customer-sub">${escapeHtml(row.is_summary_row ? (row.machine_label || '') : (row.machine_label || row.machine_id || ''))}</div>
                 </td>
                 <td class="branch-col">
                     <div class="branch-main">${escapeHtml(row.branch_name || 'Main')}</div>
-                    <div class="branch-sub">${escapeHtml(row.account_name || row.company_name || '')}</div>
+                    <div class="branch-sub">${escapeHtml(row.is_summary_row ? 'Search subtotal across loaded machine rows' : (row.account_name || row.company_name || ''))}</div>
                 </td>
                 ${monthCells}
             </tr>
@@ -393,8 +560,8 @@ function closeSerialDetailModal() {
 function openSerialDetailModal(rowId) {
     if (!lastPayload) return;
 
-    const row = (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
-    if (!row) return;
+    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    if (!row || row.is_summary_row) return;
 
     const openCustomersHref = customerHref(row);
     const latestBilledMonth = row.latest_billed_month || 'Not billed in current window';
@@ -454,12 +621,13 @@ function openSerialDetailModal(rowId) {
 function openInvoiceDetailModal(rowId, monthKey) {
     if (!lastPayload) return;
 
-    const row = (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
+        || (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
     const cell = row?.months?.[monthKey];
     if (!row || !cell || !cell.billed) return;
 
     const title = row.display_name || row.account_name || row.company_name || 'Billing Detail';
-    const readingDay = row.reading_day ? `RD ${row.reading_day}` : 'RD -';
+    const readingDay = row.is_summary_row ? 'Company subtotal' : (row.reading_day ? `RD ${row.reading_day}` : 'RD -');
     const invoiceGroups = Array.isArray(cell.invoice_groups) ? cell.invoice_groups : [];
 
     els.invoiceDetailTitle.textContent = title;
@@ -483,6 +651,16 @@ function openInvoiceDetailModal(rowId, monthKey) {
                 <span class="label">Billing Lines</span>
                 <span class="value">${escapeHtml(formatCount(cell.billing_line_count || 0))}</span>
             </article>
+            ${
+                row.is_summary_row
+                    ? `
+                        <article class="detail-summary-card">
+                            <span class="label">Pending Machine Rows</span>
+                            <span class="value">${escapeHtml(formatCount(cell.pending_count || 0))}</span>
+                        </article>
+                    `
+                    : ''
+            }
         </div>
         <div class="detail-section-title">Invoice Breakdown</div>
         ${

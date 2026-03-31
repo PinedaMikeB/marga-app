@@ -603,11 +603,26 @@ function resolveContractBranch(cache, contract) {
     if (directBranch) return directBranch;
 
     const machId = String(contract?.machId || '').trim();
-    if (!machId) return null;
-
     const fallbackBranchId = String(cache.machToBranchMap[machId] || '').trim();
-    if (!fallbackBranchId) return null;
-    return cache.branchMap[fallbackBranchId] || null;
+    const fallbackBranch = fallbackBranchId ? cache.branchMap[fallbackBranchId] : null;
+    if (fallbackBranch) return fallbackBranch;
+
+    const unresolvedBranchId = directBranchId || fallbackBranchId;
+    if (unresolvedBranchId) {
+        return {
+            id: `unlinked:${unresolvedBranchId}`,
+            companyId: `unlinked:${unresolvedBranchId}`,
+            name: `Unlinked Branch ${unresolvedBranchId}`,
+            companyNameOverride: 'Unlinked in Firebase',
+            earliest: null,
+            intrvl: 0,
+            inactive: 0,
+            isUnlinked: true
+        };
+    }
+
+    if (!machId) return null;
+    return null;
 }
 
 function resolveBranchDisplay(cache, branch) {
@@ -1286,13 +1301,14 @@ exports.handler = async (event) => {
         const billingPages = intParam(searchParams.get('max_billing_pages') || DEFAULT_BILLING_MAX_PAGES, DEFAULT_BILLING_MAX_PAGES, 10, 600);
         const schedulePages = intParam(searchParams.get('max_schedule_pages') || DEFAULT_SCHEDULE_MAX_PAGES, DEFAULT_SCHEDULE_MAX_PAGES, 10, 600);
         const searchTerm = String(searchParams.get('search') || '').trim();
-        const includeActiveRows = boolParam(searchParams.get('include_active_rows'), Boolean(searchTerm));
+        const includeActiveRows = boolParam(searchParams.get('include_active_rows'), true);
+        const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm));
 
         if (!startKey || !endKey || startKey > endKey) {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
         }
 
-        const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeActiveRows, startKey, endKey);
+        const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeMachineHistory, startKey, endKey);
         const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm });
 
         return toJson(200, {
