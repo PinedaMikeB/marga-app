@@ -585,16 +585,44 @@
             color: #854d0e;
         }
 
+        .collector-chip.viewport {
+            background: rgba(219, 234, 254, 0.78);
+            border-color: rgba(96, 165, 250, 0.34);
+            color: #1d4f7a;
+        }
+
         .collector-table-wrap {
             padding: 12px;
         }
 
+        .collector-section-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
         .collector-section-title {
-            margin: 0 0 10px;
+            margin: 0;
             font-size: 13px;
             font-weight: 800;
             color: #173d63;
             letter-spacing: -0.02em;
+        }
+
+        .collector-matrix-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .collector-scroll-btn {
+            min-width: 40px;
+            justify-content: center;
+            padding-inline: 0;
         }
 
         .collector-sheet-scroll {
@@ -2200,7 +2228,14 @@
                     </div>
                 </div>
                 <div class="collector-table-wrap">
-                    <h3 class="collector-section-title">Month to Month Collection Comparison</h3>
+                    <div class="collector-section-head">
+                        <h3 class="collector-section-title">Month to Month Collection Comparison</h3>
+                        <div class="collector-matrix-actions">
+                            <span class="collector-chip viewport" id="collector-visible-range">Viewing Oct 2025 to Mar 2026</span>
+                            <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeft" aria-label="Scroll collection months left">←</button>
+                            <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRight" aria-label="Scroll collection months right">→</button>
+                        </div>
+                    </div>
                     <div class="collector-sheet-scroll matrix" id="collector-matrix-table">
                         <div class="empty-followup">Loading customer-month collection comparison...</div>
                     </div>

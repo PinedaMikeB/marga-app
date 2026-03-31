@@ -36,6 +36,7 @@ let billingEntriesForDuration = [];
 let billingMetaByInvoiceKey = new Map();
 let collectorBillingRecords = [];
 let collectorCellMap = new Map();
+let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
 
 const dailyTips = [
@@ -295,6 +296,155 @@ function prepareCollectorRows(rows) {
         : rows;
 
     return [...filteredRows].sort((left, right) => compareCollectorRows(left, right, getCollectorSortValue()));
+}
+
+function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
+    const cellId = `${rowMeta.rowId}__${monthMeta.key}`;
+    if (!cellMap.has(cellId)) {
+        cellMap.set(cellId, {
+            id: cellId,
+            rowId: rowMeta.rowId,
+            customer: rowMeta.customer,
+            branchName: rowMeta.branchName,
+            accountLabel: rowMeta.accountLabel,
+            machineId: rowMeta.machineId,
+            contractmainId: rowMeta.contractmainId,
+            serialNumber: rowMeta.serialNumber,
+            machineLabel: rowMeta.machineLabel,
+            monthKey: monthMeta.key,
+            label: monthMeta.fullLabel || monthMeta.label || monthMeta.key,
+            rdValues: [],
+            billedTotal: 0,
+            collectedTotal: 0,
+            records: [],
+            recordMap: new Map()
+        });
+    }
+    return cellMap.get(cellId);
+}
+
+function upsertCollectorCellRecord(cell, recordKey, payload) {
+    const safeKey = String(recordKey || '').trim() || `record-${cell.recordMap.size + 1}`;
+    if (!cell.recordMap.has(safeKey)) {
+        cell.recordMap.set(safeKey, {
+            invoiceId: payload.invoiceId || '',
+            invoiceNo: payload.invoiceNo || payload.invoiceId || '',
+            invoiceKey: payload.invoiceKey || safeKey,
+            amount: Number(payload.amount || 0),
+            billedAmount: Number(payload.billedAmount || payload.amount || 0),
+            collectedAmount: Number(payload.collectedAmount || 0),
+            totalCollectedAmount: Number(payload.totalCollectedAmount || payload.collectedAmount || 0),
+            company: payload.company || cell.customer,
+            branch: payload.branch || cell.branchName,
+            accountLabel: payload.accountLabel || cell.accountLabel,
+            machineId: payload.machineId || cell.machineId,
+            contractmainId: payload.contractmainId || cell.contractmainId,
+            serialNumber: payload.serialNumber || cell.serialNumber,
+            machineLabel: payload.machineLabel || cell.machineLabel,
+            invoiceDate: payload.invoiceDate || null,
+            dueDate: payload.dueDate || null,
+            expectedCollectionDate: payload.expectedCollectionDate || null,
+            firstPaymentDate: payload.firstPaymentDate || null,
+            lastPaymentDate: payload.lastPaymentDate || null,
+            paymentMonthKey: payload.paymentMonthKey || '',
+            paymentOrNumbers: new Set(payload.paymentOrNumbers || []),
+            rd: payload.rd ?? null
+        });
+    } else {
+        const current = cell.recordMap.get(safeKey);
+        current.amount = Number(current.amount || 0) || Number(payload.amount || 0);
+        current.billedAmount = Number(current.billedAmount || 0) + Number(payload.billedAmount || 0);
+        current.collectedAmount = Number(current.collectedAmount || 0) + Number(payload.collectedAmount || 0);
+        current.totalCollectedAmount = Math.max(Number(current.totalCollectedAmount || 0), Number(payload.totalCollectedAmount || 0));
+        current.branch = current.branch || payload.branch || cell.branchName;
+        current.accountLabel = current.accountLabel || payload.accountLabel || cell.accountLabel;
+        current.serialNumber = current.serialNumber || payload.serialNumber || cell.serialNumber;
+        current.machineLabel = current.machineLabel || payload.machineLabel || cell.machineLabel;
+        current.rd = current.rd ?? payload.rd ?? null;
+        if (!current.invoiceDate && payload.invoiceDate) current.invoiceDate = payload.invoiceDate;
+        if (!current.dueDate && payload.dueDate) current.dueDate = payload.dueDate;
+        if (!current.expectedCollectionDate && payload.expectedCollectionDate) current.expectedCollectionDate = payload.expectedCollectionDate;
+        if (!current.firstPaymentDate || (payload.firstPaymentDate && payload.firstPaymentDate < current.firstPaymentDate)) {
+            current.firstPaymentDate = payload.firstPaymentDate || current.firstPaymentDate;
+        }
+        if (!current.lastPaymentDate || (payload.lastPaymentDate && payload.lastPaymentDate > current.lastPaymentDate)) {
+            current.lastPaymentDate = payload.lastPaymentDate || current.lastPaymentDate;
+        }
+        (payload.paymentOrNumbers || []).forEach((orNumber) => {
+            if (orNumber) current.paymentOrNumbers.add(orNumber);
+        });
+    }
+
+    return cell.recordMap.get(safeKey);
+}
+
+function finalizeCollectorCellRecords(cellMap) {
+    cellMap.forEach((cell) => {
+        cell.records = Array.from(cell.recordMap.values())
+            .map((record) => ({
+                ...record,
+                paymentOrNumbers: Array.from(record.paymentOrNumbers || []).sort()
+            }))
+            .sort((left, right) => {
+                const leftTime = (left.lastPaymentDate || left.invoiceDate || left.dueDate || new Date(0)).getTime();
+                const rightTime = (right.lastPaymentDate || right.invoiceDate || right.dueDate || new Date(0)).getTime();
+                return rightTime - leftTime;
+            });
+        delete cell.recordMap;
+    });
+}
+
+function updateCollectorViewportRange() {
+    const chip = document.getElementById('collector-visible-range');
+    const container = document.getElementById('collector-matrix-table');
+    if (!chip || !container) return;
+
+    const monthHeaders = Array.from(container.querySelectorAll('thead th[data-month-key]'));
+    if (!monthHeaders.length) {
+        chip.textContent = 'Viewing current months';
+        return;
+    }
+
+    const stickyBranch = container.querySelector('thead th.sticky-col.branch');
+    const containerRect = container.getBoundingClientRect();
+    const stickyOffset = stickyBranch ? stickyBranch.getBoundingClientRect().right - containerRect.left : 0;
+    const visibleLeft = containerRect.left + Math.max(0, stickyOffset);
+    const visibleRight = containerRect.right;
+
+    const visibleHeaders = monthHeaders.filter((header) => {
+        const rect = header.getBoundingClientRect();
+        return rect.right > visibleLeft && rect.left < visibleRight;
+    });
+
+    const firstVisible = visibleHeaders[0] || monthHeaders[0];
+    const lastVisible = visibleHeaders[visibleHeaders.length - 1] || monthHeaders[monthHeaders.length - 1];
+    const firstLabel = firstVisible?.dataset.monthFullLabel || firstVisible?.dataset.monthLabel || '';
+    const lastLabel = lastVisible?.dataset.monthFullLabel || lastVisible?.dataset.monthLabel || '';
+    chip.textContent = firstLabel && lastLabel && firstLabel !== lastLabel
+        ? `Viewing ${firstLabel} to ${lastLabel}`
+        : `Viewing ${firstLabel || lastLabel || 'current month'}`;
+}
+
+function scrollCollectorMatrix(direction) {
+    const container = document.getElementById('collector-matrix-table');
+    if (!container) return;
+    const delta = Math.max(220, Math.round(container.clientWidth * 0.62)) * direction;
+    container.scrollBy({ left: delta, behavior: 'smooth' });
+    window.setTimeout(updateCollectorViewportRange, 220);
+}
+
+function bindCollectorMatrixViewport() {
+    const container = document.getElementById('collector-matrix-table');
+    if (!container) return;
+
+    if (!collectorViewportBound) {
+        container.addEventListener('scroll', updateCollectorViewportRange, { passive: true });
+        document.getElementById('collectorScrollLeft')?.addEventListener('click', () => scrollCollectorMatrix(-1));
+        document.getElementById('collectorScrollRight')?.addEventListener('click', () => scrollCollectorMatrix(1));
+        collectorViewportBound = true;
+    }
+
+    updateCollectorViewportRange();
 }
 
 function updateLoadingStatus(message) {
@@ -767,7 +917,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['invoice_id', 'payment_amt', 'date_deposit', 'date_paid', 'tax_date_paid'],
+        fieldMask: ['invoice_id', 'payment_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number'],
         maxPages: 260
     });
 
@@ -786,7 +936,8 @@ async function loadLookups() {
             paymentEntries.push({
                 invoiceId: invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '',
                 amount,
-                paymentDate
+                paymentDate,
+                orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim()
             });
         }
     });
@@ -1933,6 +2084,7 @@ function computeCollectorDashboardData() {
     const previousMonthStart = addMonths(windowStart, -1);
     const monthColumnKeys = new Set(monthColumns.map((column) => column.key));
 
+    const monthMetaMap = new Map(monthColumns.map((column) => [column.key, column]));
     const paymentMap = new Map();
     paymentEntries.forEach((entry) => {
         const invoiceKey = String(entry.invoiceId || '').trim();
@@ -1942,7 +2094,8 @@ function computeCollectorDashboardData() {
             paymentMap.set(invoiceKey, {
                 amount: 0,
                 firstPaymentDate: null,
-                lastPaymentDate: null
+                lastPaymentDate: null,
+                months: new Map()
             });
         }
 
@@ -1956,6 +2109,30 @@ function computeCollectorDashboardData() {
 
         if (paymentDate && (!summary.lastPaymentDate || paymentDate > summary.lastPaymentDate)) {
             summary.lastPaymentDate = paymentDate;
+        }
+
+        const paymentMonthKey = getMonthKey(paymentDate);
+        if (!paymentMonthKey) return;
+
+        if (!summary.months.has(paymentMonthKey)) {
+            summary.months.set(paymentMonthKey, {
+                amount: 0,
+                firstPaymentDate: null,
+                lastPaymentDate: null,
+                orNumbers: new Set()
+            });
+        }
+
+        const monthSummary = summary.months.get(paymentMonthKey);
+        monthSummary.amount += Number(entry.amount || 0);
+        if (paymentDate && (!monthSummary.firstPaymentDate || paymentDate < monthSummary.firstPaymentDate)) {
+            monthSummary.firstPaymentDate = paymentDate;
+        }
+        if (paymentDate && (!monthSummary.lastPaymentDate || paymentDate > monthSummary.lastPaymentDate)) {
+            monthSummary.lastPaymentDate = paymentDate;
+        }
+        if (entry.orNumber) {
+            monthSummary.orNumbers.add(String(entry.orNumber).trim());
         }
     });
 
@@ -1971,58 +2148,23 @@ function computeCollectorDashboardData() {
     });
 
     collectorBillingRecords.forEach((record) => {
-        if (!record.invoiceDate || record.invoiceDate < previousMonthStart || record.invoiceDate > today) return;
-
         const rowId = String(record.contractmainId || `${record.accountLabel || record.company}__${record.machineId || record.invoiceKey}`).trim();
         if (!rowId) return;
-
-        if (!accountSetByMonth.has(record.monthKey)) {
-            accountSetByMonth.set(record.monthKey, new Set());
-        }
-        accountSetByMonth.get(record.monthKey).add(rowId);
-
-        if (!monthColumnKeys.has(record.monthKey)) return;
 
         const paymentSummary =
             paymentMap.get(String(record.invoiceId || '').trim()) ||
             paymentMap.get(String(record.invoiceNo || '').trim()) || {
                 amount: 0,
                 firstPaymentDate: null,
-                lastPaymentDate: null
+                lastPaymentDate: null,
+                months: new Map()
             };
 
-        const cellId = `${rowId}__${record.monthKey}`;
-        if (!collectorCellMap.has(cellId)) {
-            collectorCellMap.set(cellId, {
-                id: cellId,
-                rowId,
-                customer: record.company || 'Unknown',
-                branchName: record.branch || 'Main',
-                accountLabel: record.accountLabel || record.company || 'Unknown',
-                machineId: record.machineId || '',
-                contractmainId: record.contractmainId || '',
-                serialNumber: record.serialNumber || buildMachineLabel(record.machineId, record.contractmainId),
-                machineLabel: record.machineLabel || buildMachineLabel(record.machineId, record.contractmainId),
-                monthKey: record.monthKey,
-                label: monthColumns.find((column) => column.key === record.monthKey)?.fullLabel || record.monthKey,
-                rdValues: [],
-                billedTotal: 0,
-                collectedTotal: 0,
-                records: []
-            });
-        }
+        const invoiceDateInBalanceWindow = record.invoiceDate && record.invoiceDate >= previousMonthStart && record.invoiceDate <= today;
+        const paymentMonthsInWindow = Array.from(paymentSummary.months.keys()).filter((key) => monthColumnKeys.has(key));
+        const invoiceMonthVisible = monthColumnKeys.has(record.monthKey);
 
-        const cell = collectorCellMap.get(cellId);
-        cell.rdValues.push(record.rd);
-        cell.billedTotal += Number(record.amount || 0);
-        cell.collectedTotal += Number(paymentSummary.amount || 0);
-        cell.records.push({
-            ...record,
-            collectedAmount: Number(paymentSummary.amount || 0),
-            firstPaymentDate: paymentSummary.firstPaymentDate,
-            lastPaymentDate: paymentSummary.lastPaymentDate,
-            expectedCollectionDate: addDays(record.invoiceDate, 30)
-        });
+        if (!invoiceDateInBalanceWindow && !paymentMonthsInWindow.length) return;
 
         if (!accountRowsMap.has(rowId)) {
             accountRowsMap.set(rowId, {
@@ -2042,8 +2184,55 @@ function computeCollectorDashboardData() {
 
         const accountRow = accountRowsMap.get(rowId);
         accountRow.rdCounts.set(record.rd, (accountRow.rdCounts.get(record.rd) || 0) + 1);
-        accountRow.months[record.monthKey] = cellId;
+
+        if (invoiceDateInBalanceWindow) {
+            if (!accountSetByMonth.has(record.monthKey)) {
+                accountSetByMonth.set(record.monthKey, new Set());
+            }
+            accountSetByMonth.get(record.monthKey).add(rowId);
+        }
+
+        if (invoiceMonthVisible) {
+            const invoiceCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(record.monthKey));
+            invoiceCell.rdValues.push(record.rd);
+            invoiceCell.billedTotal += Number(record.amount || 0);
+            upsertCollectorCellRecord(invoiceCell, record.invoiceKey, {
+                ...record,
+                amount: Number(record.amount || 0),
+                billedAmount: Number(record.amount || 0),
+                collectedAmount: 0,
+                totalCollectedAmount: Number(paymentSummary.amount || 0),
+                expectedCollectionDate: addDays(record.invoiceDate, 30),
+                firstPaymentDate: paymentSummary.firstPaymentDate,
+                lastPaymentDate: paymentSummary.lastPaymentDate,
+                rd: record.rd
+            });
+            accountRow.months[record.monthKey] = invoiceCell.id;
+        }
+
+        paymentMonthsInWindow.forEach((monthKey) => {
+            const monthSummary = paymentSummary.months.get(monthKey);
+            const paymentCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(monthKey));
+            paymentCell.rdValues.push(record.rd);
+            paymentCell.collectedTotal += Number(monthSummary?.amount || 0);
+            upsertCollectorCellRecord(paymentCell, record.invoiceKey, {
+                ...record,
+                amount: Number(record.amount || 0),
+                billedAmount: 0,
+                collectedAmount: Number(monthSummary?.amount || 0),
+                totalCollectedAmount: Number(paymentSummary.amount || 0),
+                expectedCollectionDate: addDays(record.invoiceDate, 30),
+                firstPaymentDate: monthSummary?.firstPaymentDate || paymentSummary.firstPaymentDate,
+                lastPaymentDate: monthSummary?.lastPaymentDate || paymentSummary.lastPaymentDate,
+                paymentMonthKey: monthKey,
+                paymentOrNumbers: Array.from(monthSummary?.orNumbers || []),
+                rd: record.rd
+            });
+            accountRow.months[monthKey] = paymentCell.id;
+        });
     });
+
+    finalizeCollectorCellRecords(collectorCellMap);
 
     const customerRows = Array.from(accountRowsMap.values())
         .map((row) => {
@@ -2189,7 +2378,10 @@ function renderCollectorMatrixTable(data, visibleRows) {
                     <th class="sticky-col customer text-left">Customer</th>
                     <th class="sticky-col branch text-left">Branch / Dept</th>
                     ${data.monthColumns
-                        .map((column) => `<th>${escapeHtml(column.label)}${column.isCurrentMonth ? ' <span class="trend-recovery-chip">MTD</span>' : ''}</th>`)
+                        .map(
+                            (column) =>
+                                `<th data-month-key="${escapeHtml(column.key)}" data-month-label="${escapeHtml(column.label)}" data-month-full-label="${escapeHtml(column.fullLabel)}">${escapeHtml(column.label)}${column.isCurrentMonth ? ' <span class="trend-recovery-chip">MTD</span>' : ''}</th>`
+                        )
                         .join('')}
                     <th>Total</th>
                 </tr>
@@ -2253,6 +2445,8 @@ function renderCollectorMatrixTable(data, visibleRows) {
             </tfoot>
         </table>
     `;
+
+    bindCollectorMatrixViewport();
 }
 
 function renderCollectorDashboard() {
@@ -2329,6 +2523,8 @@ function openCollectorCell(cellId) {
                     const lastHistory = history.length ? history[0] : null;
                     const lastRemarks = lastHistory ? lastHistory.remarks : 'No past collection remark yet.';
                     const followup = lastHistory && lastHistory.followupDate ? formatDate(lastHistory.followupDate) : '-';
+                    const receiptLabel = record.paymentOrNumbers?.length ? record.paymentOrNumbers.join(', ') : 'None';
+                    const paymentPostedLabel = record.lastPaymentDate ? formatDate(record.lastPaymentDate) : 'None';
 
                     return `
                         <article class="cell-invoice-item">
@@ -2347,6 +2543,14 @@ function openCollectorCell(cellId) {
                                 <div class="cell-modal-card">
                                     <div class="label">Payment Posted</div>
                                     <div class="value">${record.collectedAmount > 0 ? escapeHtml(formatCurrency(record.collectedAmount)) : 'None'}</div>
+                                </div>
+                                <div class="cell-modal-card">
+                                    <div class="label">Payment Date</div>
+                                    <div class="value">${escapeHtml(paymentPostedLabel)}</div>
+                                </div>
+                                <div class="cell-modal-card">
+                                    <div class="label">Official Receipt</div>
+                                    <div class="value">${escapeHtml(receiptLabel)}</div>
                                 </div>
                                 <div class="cell-modal-card">
                                     <div class="label">Last Follow-up</div>
