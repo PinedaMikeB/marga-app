@@ -8,6 +8,7 @@ let customers = {
     companies: [],
     branches: [],
     contracts: [],
+    contractDeps: [],
     machines: [],
     models: [],
     brands: [],
@@ -20,8 +21,16 @@ let customers = {
 let currentPage = 1;
 const itemsPerPage = 25;
 let filteredCompanies = [];
-let selectedCompanyId = null;
+let accountRows = [];
+let selectedAccountKey = null;
 let currentFilter = 'all'; // 'all', 'active', 'inactive'
+let recentBilledContractIds = new Set();
+
+const BILLING_ACTIVITY_START_KEY = '2025-10';
+const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 /**
  * Initialize module
@@ -41,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         customers.areas, 
         customers.cities, 
         customers.contracts, 
+        customers.contractDeps,
         customers.machines, 
         customers.models, 
         customers.brands
@@ -57,27 +67,31 @@ async function loadAllData() {
         showLoading(true);
 
         // Load all collections in parallel
-        const [companies, branches, contracts, machines, models, brands, areas, cities, billInfo] = 
+        const [companies, branches, contracts, contractDeps, machines, models, brands, areas, cities, billInfo, billedContractIds] = 
             await Promise.all([
                 MargaUtils.fetchCollection('tbl_companylist'),
                 MargaUtils.fetchCollection('tbl_branchinfo'),
                 MargaUtils.fetchCollection('tbl_contractmain'),
+                MargaUtils.fetchCollection('tbl_contractdep'),
                 MargaUtils.fetchCollection('tbl_machine'),
                 MargaUtils.fetchCollection('tbl_model'),
                 MargaUtils.fetchCollection('tbl_brand'),
                 MargaUtils.fetchCollection('tbl_area'),
                 MargaUtils.fetchCollection('tbl_city'),
-                MargaUtils.fetchCollection('tbl_billinfo')
+                MargaUtils.fetchCollection('tbl_billinfo'),
+                fetchRecentBilledContractIds(BILLING_ACTIVITY_START_KEY, getCurrentMonthKey())
             ]);
 
-        customers = { companies, branches, contracts, machines, models, brands, areas, cities, billInfo };
+        customers = { companies, branches, contracts, contractDeps, machines, models, brands, areas, cities, billInfo };
+        recentBilledContractIds = billedContractIds;
+        accountRows = buildAccountRows();
 
         // Update stats
         updateStats();
 
-        // Sort companies alphabetically and apply initial filter
-        filteredCompanies = [...companies].sort((a, b) => 
-            (a.companyname || '').localeCompare(b.companyname || '')
+        // Sort account rows alphabetically and apply initial filter
+        filteredCompanies = [...accountRows].sort((a, b) =>
+            `${a.companyName || ''} ${a.accountName || ''}`.localeCompare(`${b.companyName || ''} ${b.accountName || ''}`)
         );
         renderTable();
 
@@ -92,16 +106,236 @@ async function loadAllData() {
 function applyDeepLink() {
     const params = new URLSearchParams(window.location.search);
     const companyId = String(params.get('company_id') || '').trim();
+    const branchId = String(params.get('branch_id') || '').trim();
+    const machineId = String(params.get('machine_id') || '').trim();
+    const contractmainId = String(params.get('contractmain_id') || '').trim();
     const tab = String(params.get('tab') || '').trim().toLowerCase();
-    if (!companyId) return;
+    const account = accountRows.find((entry) => {
+        if (branchId && String(entry.branchId || '') === branchId) return true;
+        if (machineId && entry.contracts.some((contract) => String(contract.mach_id || '') === machineId)) return true;
+        if (contractmainId && entry.contracts.some((contract) => String(contract.id || '') === contractmainId)) return true;
+        if (companyId && String(entry.companyId || '') === companyId) return true;
+        return false;
+    });
+    if (!account) return;
 
-    const company = customers.companies.find((entry) => String(entry.id) === companyId);
-    if (!company) return;
-
-    openPanel(companyId);
+    openPanel(account.key);
     if (tab === 'billing' || tab === 'machines' || tab === 'info') {
         switchTab(tab);
     }
+}
+
+function normalizeText(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function getCurrentMonthKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function shiftMonthKey(key, offset) {
+    const match = String(key || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return null;
+    const date = new Date(Number(match[1]), Number(match[2]) - 1 + Number(offset || 0), 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function buildMonthRange(startKey, endKey) {
+    const keys = [];
+    let current = startKey;
+    while (current && current <= endKey) {
+        keys.push(current);
+        if (current === endKey) break;
+        current = shiftMonthKey(current, 1);
+    }
+    return keys;
+}
+
+function monthNameFromKey(key) {
+    const match = String(key || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return '';
+    return MONTH_NAMES[Number(match[2]) - 1] || '';
+}
+
+async function runFirestoreQuery(structuredQuery) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structuredQuery })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to query recent billing activity: HTTP ${response.status}`);
+    }
+
+    const rows = await response.json();
+    return Array.isArray(rows)
+        ? rows.filter((row) => row?.document).map((row) => MargaUtils.parseFirestoreDoc(row.document)).filter(Boolean)
+        : [];
+}
+
+async function fetchRecentBilledContractIds(startKey, endKey) {
+    try {
+        const monthKeys = buildMonthRange(startKey, endKey);
+        if (!monthKeys.length) return new Set();
+
+        const groups = await Promise.all(monthKeys.map((monthKey) => runFirestoreQuery({
+            from: [{ collectionId: 'tbl_billing' }],
+            where: {
+                compositeFilter: {
+                    op: 'AND',
+                    filters: [
+                        { fieldFilter: { field: { fieldPath: 'year' }, op: 'EQUAL', value: { stringValue: String(monthKey.slice(0, 4)) } } },
+                        { fieldFilter: { field: { fieldPath: 'month' }, op: 'EQUAL', value: { stringValue: monthNameFromKey(monthKey) } } }
+                    ]
+                }
+            },
+            select: {
+                fields: [
+                    { fieldPath: 'contractmain_id' }
+                ]
+            }
+        })));
+
+        const contractIds = new Set();
+        groups.flat().forEach((doc) => {
+            const contractId = String(doc?.contractmain_id || '').trim();
+            if (contractId) contractIds.add(contractId);
+        });
+        return contractIds;
+    } catch (error) {
+        console.warn('Recent billing activity lookup failed:', error);
+        return new Set();
+    }
+}
+
+function resolveContractDep(contract) {
+    return (customers.contractDeps || []).find((entry) => String(entry.id) === String(contract.contract_id)) || null;
+}
+
+function resolveContractBranch(contract) {
+    const contractDep = resolveContractDep(contract);
+    const contractDepBranchId = Number(contractDep?.branch_id || 0) || 0;
+    const directBranch = customers.branches.find((entry) => String(entry.id) === String(contract.contract_id)) || null;
+    if (contractDepBranchId) {
+        return customers.branches.find((entry) => String(entry.id) === String(contractDepBranchId)) || null;
+    }
+    return directBranch;
+}
+
+function buildAccountName(branchName, departmentName = '') {
+    const base = String(branchName || 'Main').trim() || 'Main';
+    const dept = String(departmentName || '').trim();
+    if (!dept) return base;
+    if (normalizeText(base).includes(normalizeText(dept))) return base;
+    return `${base} - ${dept}`;
+}
+
+function buildAccountRows() {
+    const companyMap = new Map(customers.companies.map((company) => [String(company.id), company]));
+    const branchMap = new Map(customers.branches.map((branch) => [String(branch.id), branch]));
+    const machineMap = new Map(customers.machines.map((machine) => [String(machine.id), machine]));
+    const modelMap = new Map(customers.models.map((model) => [String(model.id), model]));
+    const rows = new Map();
+    const rowsByBranch = new Map();
+
+    const ensureRow = ({ company, branch, contractDep, fallbackBranchId = null }) => {
+        const companyId = String(company?.id || branch?.company_id || 'unlinked').trim() || 'unlinked';
+        const branchId = String(branch?.id || fallbackBranchId || '').trim();
+        const departmentName = String(contractDep?.departmentname || '').trim();
+        const companyName = String(company?.companyname || branch?.company_name || 'Unlinked in Firebase').trim() || 'Unlinked in Firebase';
+        const branchName = String(branch?.branchname || (branchId ? `Unlinked Branch ${branchId}` : 'Unlinked Branch')).trim() || 'Unlinked Branch';
+        const accountName = buildAccountName(branchName, departmentName);
+        const key = [companyId, branchId || 'unlinked', normalizeText(departmentName || branchName || accountName)].join(':');
+
+        if (!rows.has(key)) {
+            rows.set(key, {
+                key,
+                companyId,
+                companyName,
+                branchId: branch?.id || fallbackBranchId || null,
+                branch,
+                company,
+                branchName,
+                departmentName,
+                accountName,
+                contracts: [],
+                machineEntries: [],
+                billInfoRows: [],
+                machineCount: 0,
+                activeMachineCount: 0,
+                recentBilledContractCount: 0,
+                isActive: false,
+                location: getLocation(branch),
+                contactName: branch?.signatory || 'N/A'
+            });
+        }
+
+        const row = rows.get(key);
+        if (branch?.id) {
+            const branchKey = String(branch.id);
+            if (!rowsByBranch.has(branchKey)) rowsByBranch.set(branchKey, []);
+            if (!rowsByBranch.get(branchKey).includes(key)) rowsByBranch.get(branchKey).push(key);
+        }
+        return row;
+    };
+
+    customers.contracts.forEach((contract) => {
+        const contractDep = resolveContractDep(contract);
+        const branch = resolveContractBranch(contract);
+        const company = branch ? companyMap.get(String(branch.company_id)) || null : null;
+        const fallbackBranchId = Number(contractDep?.branch_id || 0) || (!branch ? Number(contract.contract_id || 0) || null : null);
+        const row = ensureRow({ company, branch, contractDep, fallbackBranchId });
+
+        row.contracts.push(contract);
+        const machine = machineMap.get(String(contract.mach_id)) || {};
+        const model = modelMap.get(String(machine.model_id)) || null;
+        row.machineEntries.push({
+            contractId: contract.id,
+            machineId: contract.mach_id,
+            serial: machine.serial || contract.xserial || 'N/A',
+            modelName: model?.modelname || machine.description || 'Unknown Model',
+            status: contract.status
+        });
+        if (recentBilledContractIds.has(String(contract.id || '').trim())) {
+            row.recentBilledContractCount += 1;
+        }
+        if (Number(contract.status || 0) === 1) {
+            row.activeMachineCount += 1;
+        }
+    });
+
+    customers.branches.forEach((branch) => {
+        const branchKey = String(branch.id);
+        if (rowsByBranch.has(branchKey)) return;
+        const company = companyMap.get(String(branch.company_id)) || null;
+        ensureRow({ company, branch, contractDep: null, fallbackBranchId: branch.id });
+    });
+
+    const billInfoByBranch = new Map();
+    customers.billInfo.forEach((billInfo) => {
+        const key = String(billInfo.branch_id || '').trim();
+        if (!key) return;
+        if (!billInfoByBranch.has(key)) billInfoByBranch.set(key, []);
+        billInfoByBranch.get(key).push(billInfo);
+    });
+
+    return Array.from(rows.values())
+        .map((row) => {
+            row.machineEntries = row.machineEntries.sort((left, right) => String(left.modelName || '').localeCompare(String(right.modelName || '')));
+            row.machineCount = row.machineEntries.length;
+            row.isActive = row.activeMachineCount > 0 || row.recentBilledContractCount > 0;
+            row.location = getLocation(row.branch);
+            row.contactName = row.branch?.signatory || 'N/A';
+            row.billInfoRows = row.branchId ? (billInfoByBranch.get(String(row.branchId)) || []) : [];
+            return row;
+        })
+        .sort((left, right) => {
+            const companyCompare = String(left.companyName || '').localeCompare(String(right.companyName || ''));
+            if (companyCompare !== 0) return companyCompare;
+            return String(left.accountName || '').localeCompare(String(right.accountName || ''));
+        });
 }
 
 /**
@@ -124,20 +358,11 @@ function updateStats() {
  * Update filter button counts
  */
 function updateFilterCounts() {
-    // Group branches by company
-    const branchesByCompany = {};
-    customers.branches.forEach(b => {
-        if (!branchesByCompany[b.company_id]) branchesByCompany[b.company_id] = [];
-        branchesByCompany[b.company_id].push(b);
-    });
-    
     let activeCount = 0;
     let inactiveCount = 0;
-    
-    customers.companies.forEach(company => {
-        const companyBranches = branchesByCompany[company.id] || [];
-        const machineCount = getMachineCount(companyBranches);
-        if (machineCount > 0) {
+
+    accountRows.forEach((row) => {
+        if (row.isActive) {
             activeCount++;
         } else {
             inactiveCount++;
@@ -148,7 +373,7 @@ function updateFilterCounts() {
     const countActive = document.getElementById('countActive');
     const countInactive = document.getElementById('countInactive');
     
-    if (countAll) countAll.textContent = `(${customers.companies.length})`;
+    if (countAll) countAll.textContent = `(${accountRows.length})`;
     if (countActive) countActive.textContent = `(${activeCount})`;
     if (countInactive) countInactive.textContent = `(${inactiveCount})`;
 }
@@ -187,38 +412,37 @@ function applyFilters(query = '') {
         query = document.getElementById('searchInput')?.value?.toLowerCase().trim() || '';
     }
     
-    // Group branches by company for status check
-    const branchesByCompany = {};
-    customers.branches.forEach(b => {
-        if (!branchesByCompany[b.company_id]) branchesByCompany[b.company_id] = [];
-        branchesByCompany[b.company_id].push(b);
-    });
-    
-    // Start with all companies
-    let result = [...customers.companies];
+    // Start with all account rows
+    let result = [...accountRows];
     
     // Apply search filter
     if (query) {
-        result = result.filter(c => 
-            c.companyname?.toLowerCase().includes(query)
+        result = result.filter((row) =>
+            [
+                row.companyName,
+                row.accountName,
+                row.branchName,
+                row.departmentName,
+                row.contactName
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase()
+                .includes(query)
         );
     }
     
     // Apply status filter
     if (currentFilter !== 'all') {
-        result = result.filter(company => {
-            const companyBranches = branchesByCompany[company.id] || [];
-            const machineCount = getMachineCount(companyBranches);
-            const isActive = machineCount > 0;
-            
-            if (currentFilter === 'active') return isActive;
-            if (currentFilter === 'inactive') return !isActive;
+        result = result.filter((row) => {
+            if (currentFilter === 'active') return row.isActive;
+            if (currentFilter === 'inactive') return !row.isActive;
             return true;
         });
     }
     
     // Sort alphabetically
-    result.sort((a, b) => (a.companyname || '').localeCompare(b.companyname || ''));
+    result.sort((a, b) => `${a.companyName || ''} ${a.accountName || ''}`.localeCompare(`${b.companyName || ''} ${b.accountName || ''}`));
     
     filteredCompanies = result;
     currentPage = 1;
@@ -254,13 +478,6 @@ function renderTable() {
     const endIdx = startIdx + itemsPerPage;
     const pageCompanies = filteredCompanies.slice(startIdx, endIdx);
 
-    // Group branches by company for quick lookup
-    const branchesByCompany = {};
-    customers.branches.forEach(b => {
-        if (!branchesByCompany[b.company_id]) branchesByCompany[b.company_id] = [];
-        branchesByCompany[b.company_id].push(b);
-    });
-
     if (pageCompanies.length === 0) {
         tbody.innerHTML = `
             <tr>
@@ -276,21 +493,20 @@ function renderTable() {
         return;
     }
 
-    tbody.innerHTML = pageCompanies.map(company => {
-        const companyBranches = branchesByCompany[company.id] || [];
-        const firstBranch = companyBranches[0] || {};
-        const machineCount = getMachineCount(companyBranches);
-        const location = getLocation(firstBranch);
-        const isActive = machineCount > 0;
+    tbody.innerHTML = pageCompanies.map((account) => {
+        const machineCount = account.machineCount || 0;
+        const location = account.location || 'N/A';
+        const isActive = Boolean(account.isActive);
+        const rowKey = MargaUtils.escapeHtml(String(account.key || '')).replace(/'/g, "\\'");
 
         return `
-            <tr onclick="openPanel(${company.id})">
+            <tr onclick="openPanel('${rowKey}')">
                 <td>
-                    <div class="customer-name">${MargaUtils.escapeHtml(company.companyname || 'Unknown')}</div>
-                    <div class="customer-branch">${companyBranches.length} branch${companyBranches.length !== 1 ? 'es' : ''}</div>
+                    <div class="customer-name">${MargaUtils.escapeHtml(account.companyName || 'Unknown')}</div>
+                    <div class="customer-branch">${MargaUtils.escapeHtml(account.accountName || account.branchName || 'Account')}</div>
                 </td>
                 <td class="customer-location">${MargaUtils.escapeHtml(location)}</td>
-                <td class="customer-contact">${MargaUtils.escapeHtml(firstBranch.signatory || 'N/A')}</td>
+                <td class="customer-contact">${MargaUtils.escapeHtml(account.contactName || 'N/A')}</td>
                 <td class="machine-count">${machineCount}</td>
                 <td>
                     <span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">
@@ -298,7 +514,7 @@ function renderTable() {
                     </span>
                 </td>
                 <td>
-                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openPanel(${company.id})">
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openPanel('${rowKey}')">
                         View
                     </button>
                 </td>
@@ -377,14 +593,16 @@ function nextPage() {
 /**
  * Open detail panel
  */
-function openPanel(companyId) {
-    selectedCompanyId = companyId;
-    
-    const company = customers.companies.find(c => c.id == companyId);
-    const companyBranches = customers.branches.filter(b => b.company_id == companyId);
-    
-    document.getElementById('panelCompanyName').textContent = company?.companyname || 'Unknown';
-    document.getElementById('panelBranchCount').textContent = `${companyBranches.length} Branch${companyBranches.length !== 1 ? 'es' : ''}`;
+function openPanel(accountKey) {
+    selectedAccountKey = String(accountKey || '');
+    const account = accountRows.find((entry) => String(entry.key) === selectedAccountKey);
+    if (!account) {
+        MargaUtils.showToast('Account not found', 'error');
+        return;
+    }
+
+    document.getElementById('panelCompanyName').textContent = account.companyName || 'Unknown';
+    document.getElementById('panelBranchCount').textContent = account.accountName || account.branchName || 'Account';
     
     // Reset to info tab
     document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
@@ -392,7 +610,7 @@ function openPanel(companyId) {
     if (infoTab) infoTab.classList.add('active');
     
     // Load info tab content
-    loadInfoTab(company, companyBranches);
+    loadInfoTab(account);
     
     // Show modal
     document.getElementById('detailPanel').classList.add('open');
@@ -405,7 +623,7 @@ function openPanel(companyId) {
 function closePanel() {
     document.getElementById('detailPanel').classList.remove('open');
     document.getElementById('detailOverlay').classList.remove('visible');
-    selectedCompanyId = null;
+    selectedAccountKey = null;
 }
 
 /**
@@ -416,18 +634,18 @@ function switchTab(tabName) {
     const tab = document.querySelector(`.detail-tab[data-tab="${tabName}"]`);
     if (tab) tab.classList.add('active');
     
-    const company = customers.companies.find(c => c.id == selectedCompanyId);
-    const companyBranches = customers.branches.filter(b => b.company_id == selectedCompanyId);
+    const account = accountRows.find((entry) => String(entry.key) === String(selectedAccountKey));
+    if (!account) return;
     
     switch(tabName) {
         case 'info':
-            loadInfoTab(company, companyBranches);
+            loadInfoTab(account);
             break;
         case 'billing':
-            loadBillingTab(companyBranches);
+            loadBillingTab(account);
             break;
         case 'machines':
-            loadMachinesTab(companyBranches);
+            loadMachinesTab(account);
             break;
     }
 }
@@ -435,23 +653,11 @@ function switchTab(tabName) {
 /**
  * Load Info Tab content
  */
-function loadInfoTab(company, companyBranches) {
+function loadInfoTab(account) {
     const content = document.getElementById('panelContent');
-    
-    // Get machines per branch
-    const machinesByBranch = {};
-    companyBranches.forEach(branch => {
-        const branchContracts = customers.contracts.filter(c => c.contract_id == branch.id);
-        machinesByBranch[branch.id] = branchContracts.map(contract => {
-            const machine = customers.machines.find(m => m.id == contract.mach_id) || {};
-            const model = customers.models.find(m => m.id == machine.model_id);
-            return {
-                model: model?.modelname || 'Unknown Model',
-                serial: machine.serial || contract.xserial || 'N/A',
-                status: contract.status
-            };
-        });
-    });
+    const company = account.company || customers.companies.find((entry) => String(entry.id) === String(account.companyId));
+    const branch = account.branch || {};
+    const activeMachines = account.machineEntries.filter((entry) => Number(entry.status || 0) === 1).length;
     
     content.innerHTML = `
         <div class="detail-section">
@@ -473,28 +679,25 @@ function loadInfoTab(company, companyBranches) {
         </div>
 
         <div class="detail-section">
-            <div class="detail-section-title">Branches (${companyBranches.length})</div>
-            ${companyBranches.map(branch => {
-                const branchMachines = machinesByBranch[branch.id] || [];
-                const activeMachines = branchMachines.filter(m => m.status == 1).length;
-                
-                return `
-                <div class="branch-card branch-clickable" onclick="editBranch(${branch.id})">
+            <div class="detail-section-title">Selected Account</div>
+            <div class="branch-card ${account.branchId ? 'branch-clickable' : ''}" ${account.branchId ? `onclick="editBranch(${account.branchId})"` : ''}>
                     <div class="branch-card-header">
                         <div>
-                            <div class="branch-name">${MargaUtils.escapeHtml(branch.branchname || 'Unnamed')}</div>
+                            <div class="branch-name">${MargaUtils.escapeHtml(account.accountName || branch.branchname || 'Unnamed')}</div>
                             <div class="branch-code">${MargaUtils.escapeHtml(branch.code || '')}</div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="badge ${branch.inactive ? 'badge-danger' : 'badge-success'}">
-                                ${branch.inactive ? 'Inactive' : 'Active'}
+                            <span class="badge ${account.isActive ? 'badge-success' : 'badge-danger'}">
+                                ${account.isActive ? 'Active' : 'Inactive'}
                             </span>
+                            ${account.branchId ? `
                             <span class="branch-edit-icon">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
                                     <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                 </svg>
                             </span>
+                            ` : ''}
                         </div>
                     </div>
                     <div class="branch-details">
@@ -502,35 +705,36 @@ function loadInfoTab(company, companyBranches) {
                         <div><strong>Signatory:</strong> ${MargaUtils.escapeHtml(branch.signatory || 'N/A')} ${branch.designation ? '(' + MargaUtils.escapeHtml(branch.designation) + ')' : ''}</div>
                         <div><strong>Email:</strong> ${MargaUtils.escapeHtml(branch.email || 'N/A')}</div>
                     </div>
-                    ${branchMachines.length > 0 ? `
+                    ${account.machineEntries.length > 0 ? `
                     <div class="branch-machines">
                         <div class="branch-machines-title">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="2" y="6" width="20" height="12" rx="2"/>
                                 <path d="M12 12h.01"/>
                             </svg>
-                            Machines (${branchMachines.length}) - ${activeMachines} active
+                            Machines (${account.machineEntries.length}) - ${activeMachines} active
                         </div>
                         <div class="branch-machines-list">
-                            ${branchMachines.slice(0, 3).map(m => `
+                            ${account.machineEntries.slice(0, 3).map(m => `
                                 <span class="machine-tag ${m.status == 1 ? 'active' : m.status == 0 ? 'pending' : 'terminated'}">
-                                    ${MargaUtils.escapeHtml(m.model)}
+                                    ${MargaUtils.escapeHtml(m.modelName)}
                                 </span>
                             `).join('')}
-                            ${branchMachines.length > 3 ? `<span class="machine-tag more">+${branchMachines.length - 3} more</span>` : ''}
+                            ${account.machineEntries.length > 3 ? `<span class="machine-tag more">+${account.machineEntries.length - 3} more</span>` : ''}
                         </div>
                     </div>
                     ` : ''}
+                    ${account.branchId ? `
                     <div class="branch-actions">
-                        <button class="btn-convert" onclick="event.stopPropagation(); showConvertModal(${branch.id}, '${MargaUtils.escapeHtml(branch.branchname || '').replace(/'/g, "\\'")}')">
+                        <button class="btn-convert" onclick="event.stopPropagation(); showConvertModal(${account.branchId}, '${MargaUtils.escapeHtml(branch.branchname || '').replace(/'/g, "\\'")}')">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 5v14M5 12h14"/>
                             </svg>
                             Convert to Company
                         </button>
                     </div>
+                    ` : ''}
                 </div>
-            `}).join('') || '<p class="text-muted text-center">No branches found</p>'}
         </div>
     `;
 }
@@ -538,9 +742,8 @@ function loadInfoTab(company, companyBranches) {
 /**
  * Load Billing Tab content
  */
-function loadBillingTab(companyBranches) {
-    const branchIds = companyBranches.map(b => b.id);
-    const branchBillInfo = customers.billInfo.filter(bi => branchIds.includes(bi.branch_id));
+function loadBillingTab(account) {
+    const branchBillInfo = account.billInfoRows || [];
     const content = document.getElementById('panelContent');
     
     if (branchBillInfo.length === 0) {
@@ -561,10 +764,9 @@ function loadBillingTab(companyBranches) {
         <div class="detail-section">
             <div class="detail-section-title">Billing Information</div>
             ${branchBillInfo.map(bi => {
-                const branch = companyBranches.find(b => b.id == bi.branch_id);
                 return `
                 <div class="billing-card">
-                    <div class="billing-card-header">${MargaUtils.escapeHtml(branch?.branchname || 'Branch')}</div>
+                    <div class="billing-card-header">${MargaUtils.escapeHtml(account.accountName || account.branchName || 'Account')}</div>
                     <div class="billing-grid">
                         <div class="billing-field">
                             <div class="field-label">Payee Name</div>
@@ -600,9 +802,8 @@ function loadBillingTab(companyBranches) {
 /**
  * Load Machines Tab content
  */
-function loadMachinesTab(companyBranches) {
-    const branchIds = companyBranches.map(b => b.id);
-    const branchContracts = customers.contracts.filter(c => branchIds.includes(c.contract_id));
+function loadMachinesTab(account) {
+    const branchContracts = account.contracts || [];
     const content = document.getElementById('panelContent');
     
     // Status mapping based on legacy system
@@ -708,14 +909,15 @@ function formatAddress(branch) {
  * Export customers to CSV
  */
 function exportCustomers() {
-    const headers = ['Company Name', 'TIN', 'Business Style', 'Branch Count'];
-    const rows = filteredCompanies.map(c => {
-        const branchCount = customers.branches.filter(b => b.company_id == c.id).length;
+    const headers = ['Company Name', 'Account', 'Location', 'Contact', 'Machine Count', 'Status'];
+    const rows = filteredCompanies.map((row) => {
         return [
-            c.companyname || '',
-            c.company_tin || '',
-            c.business_style || '',
-            branchCount
+            row.companyName || '',
+            row.accountName || row.branchName || '',
+            row.location || '',
+            row.contactName || '',
+            row.machineCount || 0,
+            row.isActive ? 'Active' : 'Inactive'
         ];
     });
     
@@ -738,21 +940,18 @@ function exportCustomers() {
  * Edit customer - opens the form with current data
  */
 function editCustomer() {
-    if (!selectedCompanyId) {
+    if (!selectedAccountKey) {
         MargaUtils.showToast('No customer selected', 'error');
         return;
     }
-    
-    const company = customers.companies.find(c => c.id == selectedCompanyId);
-    const companyBranches = customers.branches.filter(b => b.company_id == selectedCompanyId);
-    const branchIds = companyBranches.map(b => b.id);
-    const branchBillInfo = customers.billInfo.filter(bi => branchIds.includes(bi.branch_id));
-    
-    // Close the detail panel
-    closePanel();
-    
-    // Open edit form
-    CustomerForm.openEdit(company, companyBranches, branchBillInfo);
+
+    const account = accountRows.find((entry) => String(entry.key) === String(selectedAccountKey));
+    if (!account?.branchId) {
+        MargaUtils.showToast('This account has no editable branch link yet.', 'error');
+        return;
+    }
+
+    editBranch(account.branchId);
 }
 
 /**
@@ -781,12 +980,9 @@ function editBranch(branchId) {
     }
     
     const company = customers.companies.find(c => c.id == branch.company_id);
-    const companyBranches = customers.branches.filter(b => b.company_id == branch.company_id);
-    const branchIds = companyBranches.map(b => b.id);
-    const branchBillInfo = customers.billInfo.filter(bi => branchIds.includes(bi.branch_id));
-    
-    // Find the index of this branch
-    const branchIndex = companyBranches.findIndex(b => b.id == branchId);
+    const companyBranches = [branch];
+    const branchBillInfo = customers.billInfo.filter(bi => bi.branch_id == branchId);
+    const branchIndex = 0;
     
     // Close the detail panel
     closePanel();

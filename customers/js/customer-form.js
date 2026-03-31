@@ -45,6 +45,7 @@ const CustomerForm = (function() {
         areas: [],
         cities: [],
         contracts: [],  // All contracts
+        contractDeps: [],
         machines: [],   // All machines
         models: [],     // All models
         brands: [],     // All brands
@@ -81,10 +82,11 @@ const CustomerForm = (function() {
     /**
      * Initialize the form module
      */
-    async function init(areas, cities, contracts, machines, models, brands) {
+    async function init(areas, cities, contracts, contractDeps, machines, models, brands) {
         refData.areas = areas || [];
         refData.cities = cities || [];
         refData.contracts = contracts || [];
+        refData.contractDeps = contractDeps || [];
         refData.machines = machines || [];
         refData.models = models || [];
         refData.brands = brands || [];
@@ -223,6 +225,13 @@ const CustomerForm = (function() {
         console.log(`Machine history logged: Machine #${machineId}`, changes);
     }
 
+    function resolveContractBranchId(contract) {
+        const contractDep = refData.contractDeps.find((entry) => String(entry.id) === String(contract.contract_id)) || null;
+        const contractDepBranchId = Number(contractDep?.branch_id || 0) || 0;
+        if (contractDepBranchId) return contractDepBranchId;
+        return Number(contract.contract_id || 0) || null;
+    }
+
     /**
      * Render Machine & Contract section for a branch (EDITABLE)
      */
@@ -254,7 +263,7 @@ const CustomerForm = (function() {
         }
 
         // Find contracts for this branch
-        const branchContracts = refData.contracts.filter(c => c.contract_id == branch.id);
+        const branchContracts = refData.contracts.filter((contract) => resolveContractBranchId(contract) == branch.id);
         
         if (branchContracts.length === 0) {
             return `
