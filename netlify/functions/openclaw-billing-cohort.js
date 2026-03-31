@@ -247,6 +247,7 @@ function getCacheState() {
             companyMap: {},
             branchMap: {},
             contractMap: {},
+            contractDepMap: {},
             scheduleInvoiceBranchMap: {},
             machToBranchMap: {},
             machDeliveryDateMap: {},
@@ -288,10 +289,11 @@ async function loadCache(
     const scheduleWindowStart = billingMonthKeys.length ? monthWindowStart(startKey) : '';
     const scheduleWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', { fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial'], maxPages: 80 }),
+        firestoreGetAll('tbl_contractdep', { fieldMask: ['id', 'branch_id', 'departmentname'], maxPages: 60 }),
         includeMachineHistory
             ? firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 })
             : Promise.resolve([]),
@@ -398,6 +400,18 @@ async function loadCache(
             machId: String(getField(f, ['mach_id']) || '').trim(),
             status: Number(getField(f, ['status']) || 0),
             xserial: String(getField(f, ['xserial']) || '').trim()
+        };
+    });
+
+    cache.contractDepMap = {};
+    contractDepDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const id = String(getField(f, ['id']) || '').trim();
+        if (!id) return;
+        cache.contractDepMap[id] = {
+            id,
+            branchId: String(getField(f, ['branch_id']) || '').trim(),
+            departmentName: String(getField(f, ['departmentname']) || '').trim()
         };
     });
 
@@ -672,16 +686,32 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
 }
 
 function resolveContractBranch(cache, contract) {
-    const directBranchId = String(contract?.branchId || '').trim();
+    const contractDepId = String(contract?.branchId || '').trim();
+    const contractDep = cache.contractDepMap?.[contractDepId] || null;
+    const directBranchId = String(contractDep?.branchId || contract?.branchId || '').trim();
     const directBranch = cache.branchMap[directBranchId];
-    if (directBranch) return directBranch;
+    if (directBranch) {
+        const departmentName = String(contractDep?.departmentName || '').trim();
+        if (!departmentName) return directBranch;
+        const baseName = String(directBranch.name || 'Main').trim() || 'Main';
+        const normalizedBase = baseName.toLowerCase();
+        const normalizedDept = departmentName.toLowerCase();
+        const resolvedName = normalizedBase.includes(normalizedDept)
+            ? baseName
+            : `${baseName} - ${departmentName}`;
+        return {
+            ...directBranch,
+            name: resolvedName,
+            sourceContractDepId: contractDepId
+        };
+    }
 
     const machId = String(contract?.machId || '').trim();
     const fallbackBranchId = String(cache.machToBranchMap[machId] || '').trim();
     const fallbackBranch = fallbackBranchId ? cache.branchMap[fallbackBranchId] : null;
     if (fallbackBranch) return fallbackBranch;
 
-    const unresolvedBranchId = directBranchId || fallbackBranchId;
+    const unresolvedBranchId = directBranchId || fallbackBranchId || contractDepId;
     if (unresolvedBranchId) {
         return {
             id: `unlinked:${unresolvedBranchId}`,

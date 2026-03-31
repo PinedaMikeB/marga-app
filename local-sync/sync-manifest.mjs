@@ -210,6 +210,13 @@ export const OFFICE_SYNC_MANIFEST = {
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {
+      table: "tbl_contractdep",
+      domain: "contracts",
+      sourceOfTruth: "mysql",
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 180 },
+      firebaseToMysql: { enabled: false, mode: "none" },
+    },
+    {
       table: "tbl_contractdetails",
       domain: "contracts",
       sourceOfTruth: "mysql",
