@@ -220,6 +220,19 @@ async function firestoreGetAll(collection, options = {}) {
     return docs;
 }
 
+async function firestoreRunQuery(structuredQuery) {
+    const params = new URLSearchParams();
+    params.set('key', FIREBASE_API_KEY);
+    const response = await fetch(`${BASE_URL}:runQuery?${params.toString()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structuredQuery })
+    });
+    if (!response.ok) throw new Error(`Failed to run Firestore query: ${response.status}`);
+    const rows = await response.json();
+    return Array.isArray(rows) ? rows.map((row) => row.document).filter(Boolean) : [];
+}
+
 function getCacheState() {
     if (!global.__openclawBillingCohortCache) {
         global.__openclawBillingCohortCache = {
@@ -232,6 +245,7 @@ function getCacheState() {
             machToBranchMap: {},
             machDeliveryDateMap: {},
             machineHistoryLoaded: false,
+            billingWindowKey: '',
             billingDocs: [],
             scheduleDocs: []
         };
@@ -239,19 +253,31 @@ function getCacheState() {
     return global.__openclawBillingCohortCache;
 }
 
-async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MAX_PAGES, schedulePages = DEFAULT_SCHEDULE_MAX_PAGES, includeMachineHistory = false) {
+async function loadCache(
+    forceRefresh = false,
+    billingPages = DEFAULT_BILLING_MAX_PAGES,
+    schedulePages = DEFAULT_SCHEDULE_MAX_PAGES,
+    includeMachineHistory = false,
+    startKey = null,
+    endKey = null
+) {
     const cache = getCacheState();
     const now = Date.now();
     const nextBillingPages = Math.max(10, Math.min(600, Number(billingPages)));
     const nextSchedulePages = Math.max(10, Math.min(600, Number(schedulePages)));
+    const nextBillingWindowKey = startKey && endKey ? `${startKey}:${endKey}` : '';
 
     const sameWindow = Number(cache.billingPages || 0) === nextBillingPages
         && Number(cache.schedulePages || 0) === nextSchedulePages
-        && Boolean(cache.machineHistoryLoaded) === Boolean(includeMachineHistory);
+        && Boolean(cache.machineHistoryLoaded) === Boolean(includeMachineHistory)
+        && String(cache.billingWindowKey || '') === nextBillingWindowKey;
 
     if (!forceRefresh && sameWindow && cache.stamp && (now - cache.stamp) < CACHE_TTL_MS) {
         return cache;
     }
+
+    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'];
+    const billingMonthKeys = startKey && endKey ? buildMonthRange(startKey, endKey) : [];
 
     const [companyDocs, branchDocs, contractDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
@@ -260,10 +286,30 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
         includeMachineHistory
             ? firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 })
             : Promise.resolve([]),
-        firestoreGetAll('tbl_billing', {
-            fieldMask: ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'],
-            maxPages: nextBillingPages
-        }),
+        billingMonthKeys.length
+            ? Promise.all(
+                billingMonthKeys.map((monthKey) => firestoreRunQuery({
+                    from: [{ collectionId: 'tbl_billing' }],
+                    where: {
+                        compositeFilter: {
+                            op: 'AND',
+                            filters: [
+                                { fieldFilter: { field: { fieldPath: 'year' }, op: 'EQUAL', value: { stringValue: String(monthKey.slice(0, 4)) } } },
+                                { fieldFilter: { field: { fieldPath: 'month' }, op: 'EQUAL', value: { stringValue: String(monthNameFromKey(monthKey) || '') } } }
+                            ]
+                        }
+                    },
+                    select: { fields: billingFieldMask.map((fieldPath) => ({ fieldPath })) }
+                }))
+            ).then((groups) => {
+                const byName = new Map();
+                groups.flat().forEach((doc) => {
+                    const name = String(doc?.name || '').trim();
+                    if (name && !byName.has(name)) byName.set(name, doc);
+                });
+                return Array.from(byName.values());
+            })
+            : firestoreGetAll('tbl_billing', { fieldMask: billingFieldMask, maxPages: nextBillingPages }),
         firestoreGetAll('tbl_schedule', {
             fieldMask: ['id', 'company_id', 'branch_id', 'purpose_id', 'task_datetime', 'field_billing_received_by', 'field_billing_date', 'field_billing_time'],
             maxPages: nextSchedulePages
@@ -335,6 +381,7 @@ async function loadCache(forceRefresh = false, billingPages = DEFAULT_BILLING_MA
     cache.scheduleDocs = scheduleDocs;
     cache.billingPages = nextBillingPages;
     cache.schedulePages = nextSchedulePages;
+    cache.billingWindowKey = nextBillingWindowKey;
     cache.stamp = now;
     return cache;
 }
@@ -353,6 +400,12 @@ function extractBillingMonth(fields) {
         monthKey: monthKeyFromYearMonth(year, month),
         invoiceDate
     };
+}
+
+function monthNameFromKey(monthKey) {
+    const match = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return null;
+    return MONTH_NAMES[Number(match[2]) - 1] || null;
 }
 
 function extractScheduleMonthKey(fields) {
@@ -1239,7 +1292,7 @@ exports.handler = async (event) => {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
         }
 
-        const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeActiveRows);
+        const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeActiveRows, startKey, endKey);
         const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm });
 
         return toJson(200, {
