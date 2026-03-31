@@ -634,21 +634,31 @@
             background: rgba(226, 236, 250, 0.98);
         }
 
-        .collector-sheet td.sticky-col.secondary,
-        .collector-sheet th.sticky-col.secondary {
+        .collector-sheet td.sticky-col.sn,
+        .collector-sheet th.sticky-col.sn {
             left: 72px;
+            min-width: 156px;
+            width: 156px;
+        }
+
+        .collector-sheet td.sticky-col.customer,
+        .collector-sheet th.sticky-col.customer {
+            left: 228px;
+            min-width: 240px;
+            width: 240px;
+        }
+
+        .collector-sheet td.sticky-col.branch,
+        .collector-sheet th.sticky-col.branch {
+            left: 468px;
+            min-width: 220px;
+            width: 220px;
         }
 
         .collector-sheet td.sticky-col.rd,
         .collector-sheet th.sticky-col.rd {
             min-width: 72px;
             width: 72px;
-        }
-
-        .collector-sheet td.sticky-col.customer,
-        .collector-sheet th.sticky-col.customer {
-            min-width: 220px;
-            width: 220px;
         }
 
         .collector-sheet td.month-cell {
@@ -687,6 +697,22 @@
             height: 8px;
             border-radius: 999px;
             background: rgba(180, 83, 9, 0.48);
+        }
+
+        .collector-primary {
+            font-weight: 800;
+            color: #173d63;
+            white-space: normal;
+            line-height: 1.35;
+        }
+
+        .collector-sub {
+            margin-top: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #60758d;
+            white-space: normal;
+            line-height: 1.3;
         }
 
         .cell-modal-summary {
@@ -2110,7 +2136,7 @@
 
             <section class="data-table-container collector-dashboard" id="collector-dashboard">
                 <div class="report-panel-title">Collector Dashboard</div>
-                <div class="report-panel-subtitle">Quarter 4 2025 to present. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
+                <div class="report-panel-subtitle">Quarter 4 2025 to present. Each row is one machine/account. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
                 <div class="collector-dashboard-meta">
                     <div class="collector-dashboard-note" id="collector-dashboard-note">Preparing customer-cycle collection view...</div>
                     <div class="collector-chip-row">

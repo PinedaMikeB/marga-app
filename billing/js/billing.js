@@ -93,6 +93,12 @@ function setStatus(text, type = 'idle') {
     if (type === 'error') els.statusPill.classList.add('error');
 }
 
+function updateMatrixStickyOffset() {
+    const header = document.querySelector('.main-header');
+    const topOffset = header ? Math.ceil(header.getBoundingClientRect().height) : 84;
+    document.documentElement.style.setProperty('--billing-sticky-top', `${Math.max(64, topOffset)}px`);
+}
+
 function initDefaults() {
     els.endMonthInput.value = monthInputValue(new Date());
 }
@@ -813,6 +819,7 @@ function bindEvents() {
             closeSerialDetailModal();
         }
     });
+    window.addEventListener('resize', updateMatrixStickyOffset);
 }
 
 function toggleSidebar() {
@@ -829,6 +836,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedKey) els.apiKeyInput.value = savedKey;
 
     initDefaults();
+    updateMatrixStickyOffset();
     bindEvents();
     loadDashboard();
 });

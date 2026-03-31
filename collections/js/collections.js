@@ -21,6 +21,7 @@ let collectionHistory = {};
 
 // Lookup maps
 let contractMap = {};
+let contractDepMap = {};
 let branchMap = {};
 let companyMap = {};
 let paidInvoiceIds = new Set();
@@ -642,7 +643,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading company and branch data...');
 
-    const [companyDocs, branchDocs, contractDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', null, {
             fieldMask: ['id', 'companyname'],
             maxPages: 20
@@ -652,7 +653,11 @@ async function loadLookups() {
             maxPages: 30
         }),
         firestoreGetAll('tbl_contractmain', null, {
-            fieldMask: ['id', 'contract_id', 'mach_id', 'category_id'],
+            fieldMask: ['id', 'contract_id', 'mach_id', 'category_id', 'xserial'],
+            maxPages: 40
+        }),
+        firestoreGetAll('tbl_contractdep', null, {
+            fieldMask: ['id', 'branch_id', 'departmentname'],
             maxPages: 40
         })
     ]);
@@ -676,6 +681,18 @@ async function loadLookups() {
         };
     });
 
+    contractDepMap = {};
+    contractDepDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const id = String(getField(f, ['id']) || '').trim();
+        if (!id) return;
+        contractDepMap[id] = {
+            id,
+            branchId: String(getField(f, ['branch_id']) || '').trim(),
+            departmentName: String(getField(f, ['departmentname']) || '').trim()
+        };
+    });
+
     contractMap = {};
     contractDocs.forEach((doc) => {
         const f = doc.fields || {};
@@ -685,7 +702,8 @@ async function loadLookups() {
         contractMap[id] = {
             contractId: String(getField(f, ['contract_id']) || '').trim(),
             machId: String(getField(f, ['mach_id']) || '').trim(),
-            categoryId: getField(f, ['category_id'])
+            categoryId: getField(f, ['category_id']),
+            xserial: String(getField(f, ['xserial']) || '').trim()
         };
     });
 
@@ -724,25 +742,72 @@ async function loadLookups() {
     lookupsLoaded = true;
 }
 
+function buildMachineLabel(machineId, contractmainId) {
+    const machine = String(machineId || '').trim();
+    if (machine) return `Machine ${machine}`;
+    return `Contract ${String(contractmainId || '').trim()}`;
+}
+
+function resolveSerialLabel(contract) {
+    const contractSerial = String(contract?.xserial || '').trim();
+    if (contractSerial) return contractSerial;
+    return buildMachineLabel(contract?.machId, contract?.id);
+}
+
+function resolveContractBranch(contract) {
+    const contractDepId = String(contract?.contractId || '').trim();
+    const contractDep = contractDepMap[contractDepId] || null;
+    const directBranchId = String(contractDep?.branchId || contract?.contractId || '').trim();
+    const directBranch = branchMap[directBranchId];
+
+    if (directBranch) {
+        const departmentName = String(contractDep?.departmentName || '').trim();
+        if (!departmentName) return directBranch;
+
+        const baseName = String(directBranch.name || 'Main').trim() || 'Main';
+        const normalizedBase = baseName.toLowerCase();
+        const normalizedDept = departmentName.toLowerCase();
+        return {
+            ...directBranch,
+            name: normalizedBase.includes(normalizedDept)
+                ? baseName
+                : `${baseName} - ${departmentName}`
+        };
+    }
+
+    const machId = String(contract?.machId || '').trim();
+    const fallbackBranchId = String(machToBranchMap[machId] || '').trim();
+    const fallbackBranch = fallbackBranchId ? branchMap[fallbackBranchId] : null;
+    if (fallbackBranch) return fallbackBranch;
+
+    const unresolvedBranchId = directBranchId || fallbackBranchId || contractDepId;
+    if (unresolvedBranchId) {
+        return {
+            id: `unlinked:${unresolvedBranchId}`,
+            companyId: `unlinked:${unresolvedBranchId}`,
+            name: `Unlinked Branch ${unresolvedBranchId}`,
+            companyNameOverride: 'Unlinked in Firebase'
+        };
+    }
+
+    return null;
+}
+
 function getBillingLocation(contractmainId) {
     const contract = contractMap[String(contractmainId || '').trim()] || {};
-
-    let companyName = 'Unknown';
-    let branchName = 'Main';
-
-    let branchId = machToBranchMap[contract.machId];
-    if (!branchId && contract.contractId) branchId = contract.contractId;
-
-    const branch = branchMap[String(branchId || '').trim()];
-    if (branch) {
-        branchName = branch.name || 'Main';
-        companyName = companyMap[branch.companyId] || 'Unknown';
-    }
+    const branch = resolveContractBranch(contract);
+    const companyName = branch?.companyNameOverride || companyMap[String(branch?.companyId || '').trim()] || 'Unknown';
+    const branchName = branch?.name || 'Main';
 
     return {
         companyName,
         branchName,
-        categoryCode: getCategoryCode(contract.categoryId)
+        accountLabel: buildAccountLabel(companyName, branchName),
+        categoryCode: getCategoryCode(contract.categoryId),
+        machineId: String(contract.machId || '').trim(),
+        contractmainId: String(contractmainId || '').trim(),
+        serialNumber: resolveSerialLabel({ ...contract, id: contractmainId }),
+        machineLabel: buildMachineLabel(contract.machId, contractmainId)
     };
 }
 
@@ -816,7 +881,11 @@ function processInvoice(doc) {
         priority: getPriority(age),
         company: location.companyName,
         branch: location.branchName,
-        accountLabel: buildAccountLabel(location.companyName, location.branchName),
+        accountLabel: location.accountLabel,
+        machineId: location.machineId,
+        contractmainId: location.contractmainId,
+        serialNumber: location.serialNumber,
+        machineLabel: location.machineLabel,
         contactNumber: billingContactNumber || historyContact || '',
         category: location.categoryCode,
         lastRemarks: lastHistory ? lastHistory.remarks : null,
@@ -898,6 +967,7 @@ async function loadInvoices(mode) {
             const billingMeta = {
                 company: location.companyName,
                 branch: location.branchName,
+                accountLabel: location.accountLabel,
                 invoiceDate,
                 dueDate,
                 month: getField(f, ['month']),
@@ -914,7 +984,11 @@ async function loadInvoices(mode) {
                     invoiceKey: invoiceNo || invoiceId,
                     company: location.companyName,
                     branch: location.branchName,
-                    accountLabel: buildAccountLabel(location.companyName, location.branchName),
+                    accountLabel: location.accountLabel,
+                    machineId: location.machineId,
+                    contractmainId: location.contractmainId,
+                    serialNumber: location.serialNumber,
+                    machineLabel: location.machineLabel,
                     invoiceDate,
                     dueDate,
                     amount,
@@ -1830,8 +1904,8 @@ function computeCollectorDashboardData() {
         }
     });
 
-    const customerSetByMonth = new Map();
-    const customerRowsMap = new Map();
+    const accountSetByMonth = new Map();
+    const accountRowsMap = new Map();
     const monthTotals = {};
     const pendingCountsByMonth = {};
     collectorCellMap = new Map();
@@ -1844,10 +1918,13 @@ function computeCollectorDashboardData() {
     collectorBillingRecords.forEach((record) => {
         if (!record.invoiceDate || record.invoiceDate < previousMonthStart || record.invoiceDate > today) return;
 
-        if (!customerSetByMonth.has(record.monthKey)) {
-            customerSetByMonth.set(record.monthKey, new Set());
+        const rowId = String(record.contractmainId || `${record.accountLabel || record.company}__${record.machineId || record.invoiceKey}`).trim();
+        if (!rowId) return;
+
+        if (!accountSetByMonth.has(record.monthKey)) {
+            accountSetByMonth.set(record.monthKey, new Set());
         }
-        customerSetByMonth.get(record.monthKey).add(record.accountLabel || record.company);
+        accountSetByMonth.get(record.monthKey).add(rowId);
 
         if (!monthColumnKeys.has(record.monthKey)) return;
 
@@ -1859,12 +1936,18 @@ function computeCollectorDashboardData() {
                 lastPaymentDate: null
             };
 
-        const customerKey = record.accountLabel || record.company;
-        const cellId = `${customerKey}__${record.monthKey}`;
+        const cellId = `${rowId}__${record.monthKey}`;
         if (!collectorCellMap.has(cellId)) {
             collectorCellMap.set(cellId, {
                 id: cellId,
-                customer: customerKey,
+                rowId,
+                customer: record.company || 'Unknown',
+                branchName: record.branch || 'Main',
+                accountLabel: record.accountLabel || record.company || 'Unknown',
+                machineId: record.machineId || '',
+                contractmainId: record.contractmainId || '',
+                serialNumber: record.serialNumber || buildMachineLabel(record.machineId, record.contractmainId),
+                machineLabel: record.machineLabel || buildMachineLabel(record.machineId, record.contractmainId),
                 monthKey: record.monthKey,
                 label: monthColumns.find((column) => column.key === record.monthKey)?.fullLabel || record.monthKey,
                 rdValues: [],
@@ -1886,21 +1969,28 @@ function computeCollectorDashboardData() {
             expectedCollectionDate: addDays(record.invoiceDate, 30)
         });
 
-        if (!customerRowsMap.has(customerKey)) {
-            customerRowsMap.set(customerKey, {
-                customer: customerKey,
+        if (!accountRowsMap.has(rowId)) {
+            accountRowsMap.set(rowId, {
+                rowId,
+                customer: record.company || 'Unknown',
+                branchName: record.branch || 'Main',
+                accountLabel: record.accountLabel || record.company || 'Unknown',
+                serialNumber: record.serialNumber || buildMachineLabel(record.machineId, record.contractmainId),
+                machineLabel: record.machineLabel || buildMachineLabel(record.machineId, record.contractmainId),
+                machineId: record.machineId || '',
+                contractmainId: record.contractmainId || '',
                 rdCounts: new Map(),
                 months: {},
                 totalCollected: 0
             });
         }
 
-        const customerRow = customerRowsMap.get(customerKey);
-        customerRow.rdCounts.set(record.rd, (customerRow.rdCounts.get(record.rd) || 0) + 1);
-        customerRow.months[record.monthKey] = cellId;
+        const accountRow = accountRowsMap.get(rowId);
+        accountRow.rdCounts.set(record.rd, (accountRow.rdCounts.get(record.rd) || 0) + 1);
+        accountRow.months[record.monthKey] = cellId;
     });
 
-    const customerRows = Array.from(customerRowsMap.values())
+    const customerRows = Array.from(accountRowsMap.values())
         .map((row) => {
             let rd = null;
             Array.from(row.rdCounts.entries())
@@ -1925,7 +2015,14 @@ function computeCollectorDashboardData() {
             });
 
             return {
+                rowId: row.rowId,
                 customer: row.customer,
+                branchName: row.branchName,
+                accountLabel: row.accountLabel,
+                serialNumber: row.serialNumber,
+                machineLabel: row.machineLabel,
+                machineId: row.machineId,
+                contractmainId: row.contractmainId,
                 rd,
                 months: row.months,
                 totalCollected: row.totalCollected
@@ -1940,8 +2037,8 @@ function computeCollectorDashboardData() {
 
     const monthlySummaryRows = monthColumns
         .map((column) => {
-            const previousCustomers = customerSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
-            const currentCustomers = customerSetByMonth.get(column.key) || new Set();
+            const previousCustomers = accountSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
+            const currentCustomers = accountSetByMonth.get(column.key) || new Set();
 
             const additional = Array.from(currentCustomers).filter((customer) => !previousCustomers.has(customer)).length;
             const inactive = Array.from(previousCustomers).filter((customer) => !currentCustomers.has(customer)).length;
@@ -2025,7 +2122,9 @@ function renderCollectorMatrixTable(data) {
             <thead>
                 <tr>
                     <th class="sticky-col rd">RD</th>
-                    <th class="sticky-col secondary customer text-left">Customer</th>
+                    <th class="sticky-col sn">SN</th>
+                    <th class="sticky-col customer text-left">Customer</th>
+                    <th class="sticky-col branch text-left">Branch / Dept</th>
                     ${data.monthColumns
                         .map((column) => `<th>${escapeHtml(column.label)}${column.isCurrentMonth ? ' <span class="trend-recovery-chip">MTD</span>' : ''}</th>`)
                         .join('')}
@@ -2059,7 +2158,17 @@ function renderCollectorMatrixTable(data) {
                         return `
                             <tr>
                                 <td class="sticky-col rd">${row.rd !== null && row.rd !== undefined ? escapeHtml(String(row.rd)) : '-'}</td>
-                                <td class="sticky-col secondary customer text-left">${escapeHtml(row.customer)}</td>
+                                <td class="sticky-col sn">
+                                    <div class="collector-primary">${escapeHtml(row.serialNumber || 'N/A')}</div>
+                                </td>
+                                <td class="sticky-col customer text-left">
+                                    <div class="collector-primary">${escapeHtml(row.customer)}</div>
+                                    <div class="collector-sub">${escapeHtml(row.machineLabel || buildMachineLabel(row.machineId, row.contractmainId))}</div>
+                                </td>
+                                <td class="sticky-col branch text-left">
+                                    <div class="collector-primary">${escapeHtml(row.branchName || 'Main')}</div>
+                                    <div class="collector-sub">${escapeHtml(row.accountLabel || row.customer)}</div>
+                                </td>
                                 ${cells}
                                 <td class="total-cell text-right">${escapeHtml(formatPlainNumber(row.totalCollected))}</td>
                             </tr>
@@ -2070,7 +2179,9 @@ function renderCollectorMatrixTable(data) {
             <tfoot>
                 <tr>
                     <td class="sticky-col rd total-cell"></td>
-                    <td class="sticky-col secondary customer total-cell text-left">Total</td>
+                    <td class="sticky-col sn total-cell"></td>
+                    <td class="sticky-col customer total-cell text-left">Total</td>
+                    <td class="sticky-col branch total-cell"></td>
                     ${data.monthColumns
                         .map((column) => `<td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.monthTotals[column.key] || 0))}</td>`)
                         .join('')}
@@ -2090,7 +2201,7 @@ function renderCollectorDashboard() {
 
     const noteNode = document.getElementById('collector-dashboard-note');
     if (noteNode) {
-        noteNode.textContent = `${data.customerRows.length.toLocaleString()} customer(s) across ${data.monthColumns.length.toLocaleString()} month(s). Click beige cells to review unpaid invoices and continue collection remarks.`;
+        noteNode.textContent = `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s). Click beige cells to review unpaid invoices and continue collection remarks.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
@@ -2114,10 +2225,10 @@ function openCollectorCell(cellId) {
     const content = document.getElementById('collectorCellContent');
     if (!modal || !title || !subtitle || !content) return;
 
-    title.textContent = `${cell.customer} • ${cell.label}`;
+    title.textContent = `${cell.customer} • ${cell.branchName || cell.accountLabel || 'Main'} • ${cell.label}`;
     subtitle.textContent = cell.collectedTotal > 0
-        ? 'Invoice worklist for this customer-month slot. Use Open Call Log to continue the collector notes.'
-        : 'No payment posted yet for this customer-month slot. Review invoices and continue the collection follow-up.';
+        ? `Invoice worklist for ${cell.serialNumber || cell.machineLabel || 'this account'}. Use Open Call Log to continue the collector notes.`
+        : `No payment posted yet for ${cell.serialNumber || cell.machineLabel || 'this account'}. Review invoices and continue the collection follow-up.`;
 
     const pendingAmount = Math.max(0, cell.billedTotal - cell.collectedTotal);
 
