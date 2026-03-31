@@ -530,6 +530,42 @@
             flex-wrap: wrap;
         }
 
+        .collector-control-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 12px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(248, 250, 252, 0.72);
+        }
+
+        .collector-control-block label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #5d7896;
+        }
+
+        .collector-control-block input,
+        .collector-control-block select {
+            width: min(280px, 100%);
+            padding: 10px 12px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.92);
+            color: #173d63;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .collector-control-block.sort {
+            min-width: 180px;
+        }
+
         .collector-chip {
             display: inline-flex;
             align-items: center;
@@ -2142,6 +2178,19 @@
                     <div class="collector-chip-row">
                         <span class="collector-chip" id="collector-dashboard-range">Oct 2025 to Present</span>
                         <span class="collector-chip pending" id="collector-dashboard-pending">Pending cells: 0</span>
+                    </div>
+                </div>
+                <div class="collector-control-row">
+                    <div class="collector-control-block">
+                        <label for="collectorSearchInput">Search Account</label>
+                        <input type="search" id="collectorSearchInput" placeholder="Type customer, serial, branch, or department">
+                    </div>
+                    <div class="collector-control-block sort">
+                        <label for="collectorSortInput">Sort By</label>
+                        <select id="collectorSortInput">
+                            <option value="rd">RD</option>
+                            <option value="customer">Customer</option>
+                        </select>
                     </div>
                 </div>
                 <div class="collector-table-wrap">

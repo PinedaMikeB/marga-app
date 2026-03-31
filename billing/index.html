@@ -202,6 +202,13 @@
                                 <label for="matrixSearchInput">Search Customer</label>
                                 <input type="search" id="matrixSearchInput" placeholder="Type China Bank, serial, branch, or department">
                             </div>
+                            <div class="matrix-search-block sort-block">
+                                <label for="matrixSortInput">Sort By</label>
+                                <select id="matrixSortInput">
+                                    <option value="rd">RD</option>
+                                    <option value="customer">Customer</option>
+                                </select>
+                            </div>
                             <div class="matrix-search-meta" id="matrixSearchMeta">Showing all loaded customers.</div>
                         </div>
                     </div>
@@ -213,7 +220,7 @@
                         <span class="legend-chip"><i class="legend-dot not-confirmed"></i>Not Confirmed</span>
                     </div>
                 </div>
-                <div class="sheet-wrap" id="matrixTableWrap">
+                <div class="sheet-wrap matrix-scroll" id="matrixTableWrap">
                     <div class="empty-panel">Load the dashboard to see month-to-month comparison.</div>
                 </div>
             </section>

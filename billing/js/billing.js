@@ -15,6 +15,7 @@ const els = {
     summaryTableWrap: null,
     matrixTableWrap: null,
     matrixSearchInput: null,
+    matrixSortInput: null,
     matrixSearchMeta: null,
     rawJson: null,
     invoiceDetailModal: null,
@@ -35,6 +36,10 @@ let searchReloadTimer = null;
 
 function getMatrixSearchTerm() {
     return String(els.matrixSearchInput?.value || '').trim().toLowerCase();
+}
+
+function getMatrixSortValue() {
+    return String(els.matrixSortInput?.value || 'rd').trim().toLowerCase();
 }
 
 function cacheElements() {
@@ -93,14 +98,31 @@ function setStatus(text, type = 'idle') {
     if (type === 'error') els.statusPill.classList.add('error');
 }
 
-function updateMatrixStickyOffset() {
-    const header = document.querySelector('.main-header');
-    const topOffset = header ? Math.ceil(header.getBoundingClientRect().height) : 84;
-    document.documentElement.style.setProperty('--billing-sticky-top', `${Math.max(64, topOffset)}px`);
-}
-
 function initDefaults() {
     els.endMonthInput.value = monthInputValue(new Date());
+}
+
+function compareBillingRows(left, right, sortValue) {
+    const leftRd = Number(left.reading_day || 0) || Number.MAX_SAFE_INTEGER;
+    const rightRd = Number(right.reading_day || 0) || Number.MAX_SAFE_INTEGER;
+    const leftCustomer = String(left.company_name || left.account_name || '').toLowerCase();
+    const rightCustomer = String(right.company_name || right.account_name || '').toLowerCase();
+    const leftBranch = String(left.branch_name || '').toLowerCase();
+    const rightBranch = String(right.branch_name || '').toLowerCase();
+    const leftSerial = String(left.serial_number || left.machine_label || '').toLowerCase();
+    const rightSerial = String(right.serial_number || right.machine_label || '').toLowerCase();
+
+    if (sortValue === 'customer') {
+        return leftCustomer.localeCompare(rightCustomer)
+            || leftBranch.localeCompare(rightBranch)
+            || leftRd - rightRd
+            || leftSerial.localeCompare(rightSerial);
+    }
+
+    return leftRd - rightRd
+        || leftCustomer.localeCompare(rightCustomer)
+        || leftBranch.localeCompare(rightBranch)
+        || leftSerial.localeCompare(rightSerial);
 }
 
 function applyUserContext() {
@@ -426,8 +448,9 @@ function renderMatrixTable(payload) {
               return haystack.includes(searchTerm);
           })
         : rows;
+    const sortedRows = [...filteredRows].sort((left, right) => compareBillingRows(left, right, getMatrixSortValue()));
 
-    const displayRows = searchTerm ? buildCompanySummaryRows(filteredRows, months) : filteredRows;
+    const displayRows = searchTerm ? buildCompanySummaryRows(sortedRows, months) : sortedRows;
     renderedMatrixRows = displayRows;
 
     if (els.matrixSearchMeta) {
@@ -795,6 +818,9 @@ function bindEvents() {
             }, 350);
         }
     });
+    els.matrixSortInput?.addEventListener('change', () => {
+        if (lastPayload) renderMatrixTable(lastPayload);
+    });
     els.matrixTableWrap?.addEventListener('click', (event) => {
         const serialTrigger = event.target.closest('.serial-link');
         if (serialTrigger) {
@@ -819,7 +845,6 @@ function bindEvents() {
             closeSerialDetailModal();
         }
     });
-    window.addEventListener('resize', updateMatrixStickyOffset);
 }
 
 function toggleSidebar() {
@@ -836,7 +861,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedKey) els.apiKeyInput.value = savedKey;
 
     initDefaults();
-    updateMatrixStickyOffset();
     bindEvents();
     loadDashboard();
 });

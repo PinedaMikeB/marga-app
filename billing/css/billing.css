@@ -228,6 +228,11 @@
     overflow: auto;
 }
 
+.matrix-scroll {
+    max-height: min(70vh, 820px);
+    overflow: auto;
+}
+
 .billing-sheet {
     width: 100%;
     min-width: 840px;
@@ -253,9 +258,23 @@
 
 .matrix-sheet thead th {
     position: sticky;
-    top: var(--billing-sticky-top);
+    top: 0;
     z-index: 12;
     box-shadow: 0 1px 0 rgba(214, 225, 238, 0.95);
+}
+
+.matrix-search-block select {
+    width: min(220px, 100%);
+    padding: 0.72rem 0.85rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--bill-ink);
+    font-size: 0.94rem;
+}
+
+.sort-block {
+    min-width: 180px;
 }
 
 .summary-sheet td.pending-count {

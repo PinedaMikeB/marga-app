@@ -242,6 +242,61 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
+function getCollectorSearchTerm() {
+    return String(document.getElementById('collectorSearchInput')?.value || '').trim().toLowerCase();
+}
+
+function getCollectorSortValue() {
+    return String(document.getElementById('collectorSortInput')?.value || 'rd').trim().toLowerCase();
+}
+
+function compareCollectorRows(left, right, sortValue) {
+    const leftRd = Number(left.rd || 0) || Number.MAX_SAFE_INTEGER;
+    const rightRd = Number(right.rd || 0) || Number.MAX_SAFE_INTEGER;
+    const leftCustomer = String(left.customer || '').toLowerCase();
+    const rightCustomer = String(right.customer || '').toLowerCase();
+    const leftBranch = String(left.branchName || left.accountLabel || '').toLowerCase();
+    const rightBranch = String(right.branchName || right.accountLabel || '').toLowerCase();
+    const leftSerial = String(left.serialNumber || left.machineLabel || '').toLowerCase();
+    const rightSerial = String(right.serialNumber || right.machineLabel || '').toLowerCase();
+
+    if (sortValue === 'customer') {
+        return leftCustomer.localeCompare(rightCustomer)
+            || leftBranch.localeCompare(rightBranch)
+            || leftRd - rightRd
+            || leftSerial.localeCompare(rightSerial);
+    }
+
+    return leftRd - rightRd
+        || leftCustomer.localeCompare(rightCustomer)
+        || leftBranch.localeCompare(rightBranch)
+        || leftSerial.localeCompare(rightSerial);
+}
+
+function prepareCollectorRows(rows) {
+    const searchTerm = getCollectorSearchTerm();
+    const filteredRows = searchTerm
+        ? rows.filter((row) => {
+            const haystack = [
+                row.customer,
+                row.branchName,
+                row.accountLabel,
+                row.serialNumber,
+                row.machineLabel,
+                row.machineId,
+                row.contractmainId,
+                row.rd
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return haystack.includes(searchTerm);
+        })
+        : rows;
+
+    return [...filteredRows].sort((left, right) => compareCollectorRows(left, right, getCollectorSortValue()));
+}
+
 function updateLoadingStatus(message) {
     const container = document.getElementById('table-container');
     if (!container) return;
@@ -2113,9 +2168,17 @@ function renderCollectorSummaryTable(data) {
     `;
 }
 
-function renderCollectorMatrixTable(data) {
+function renderCollectorMatrixTable(data, visibleRows) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
+
+    if (!visibleRows.length) {
+        const searchTerm = getCollectorSearchTerm();
+        container.innerHTML = searchTerm
+            ? `<div class="empty-followup">No collection rows matched "${escapeHtml(searchTerm)}".</div>`
+            : '<div class="empty-followup">No collection rows available.</div>';
+        return;
+    }
 
     container.innerHTML = `
         <table class="collector-sheet">
@@ -2132,7 +2195,7 @@ function renderCollectorMatrixTable(data) {
                 </tr>
             </thead>
             <tbody>
-                ${data.customerRows
+                ${visibleRows
                     .map((row) => {
                         const cells = data.monthColumns
                             .map((column) => {
@@ -2185,9 +2248,7 @@ function renderCollectorMatrixTable(data) {
                     ${data.monthColumns
                         .map((column) => `<td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.monthTotals[column.key] || 0))}</td>`)
                         .join('')}
-                    <td class="total-cell text-right">${escapeHtml(
-                        formatPlainNumber(data.customerRows.reduce((sum, row) => sum + row.totalCollected, 0))
-                    )}</td>
+                    <td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.customerRows.reduce((sum, row) => sum + row.totalCollected, 0)))}</td>
                 </tr>
             </tfoot>
         </table>
@@ -2196,12 +2257,17 @@ function renderCollectorMatrixTable(data) {
 
 function renderCollectorDashboard() {
     const data = computeCollectorDashboardData();
+    const visibleRows = prepareCollectorRows(data.customerRows);
     renderCollectorSummaryTable(data);
-    renderCollectorMatrixTable(data);
+    renderCollectorMatrixTable(data, visibleRows);
 
     const noteNode = document.getElementById('collector-dashboard-note');
     if (noteNode) {
-        noteNode.textContent = `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s). Click beige cells to review unpaid invoices and continue collection remarks.`;
+        const searchTerm = getCollectorSearchTerm();
+        const filterText = searchTerm
+            ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
+            : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
+        noteNode.textContent = `${filterText} Click beige cells to review unpaid invoices and continue collection remarks.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
@@ -3016,6 +3082,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     showRandomTip();
     initQuickAgeButtons();
     toggleAnalyticsDashboard(false);
+
+    document.getElementById('collectorSearchInput')?.addEventListener('input', () => {
+        if (lastLoadSucceeded) renderCollectorDashboard();
+    });
+    document.getElementById('collectorSortInput')?.addEventListener('change', () => {
+        if (lastLoadSucceeded) renderCollectorDashboard();
+    });
 
     document.getElementById('search-input')?.addEventListener('keyup', (event) => {
         if (event.key === 'Enter') applyFilters();
