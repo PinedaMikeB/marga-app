@@ -53,6 +53,25 @@ COLLECTOR_DASHBOARD_START.setHours(0, 0, 0, 0);
 const MONTHLY_TREND_START = new Date(2025, 10, 1);
 MONTHLY_TREND_START.setHours(0, 0, 0, 0);
 
+function buildMonthColumns(startValue, endValue) {
+    const monthColumns = [];
+    let cursor = startOfMonth(startValue);
+    const lastMonth = startOfMonth(endValue);
+
+    while (cursor && lastMonth && cursor <= lastMonth) {
+        monthColumns.push({
+            key: getMonthKey(cursor),
+            label: formatMonthLabelCompact(cursor),
+            fullLabel: formatMonthLabel(cursor, true),
+            monthStart: new Date(cursor.getTime()),
+            isCurrentMonth: false
+        });
+        cursor = addMonths(cursor, 1);
+    }
+
+    return monthColumns;
+}
+
 function getValue(field) {
     if (!field || typeof field !== 'object') return null;
     if (field.integerValue !== undefined) return Number(field.integerValue);
@@ -2066,20 +2085,14 @@ function computeCollectorDashboardData() {
     today.setHours(0, 0, 0, 0);
 
     const windowStart = new Date(COLLECTOR_DASHBOARD_START.getTime());
-    const monthColumns = [];
-    let cursor = startOfMonth(windowStart);
-    const endMonth = startOfMonth(today);
-
-    while (cursor && endMonth && cursor <= endMonth) {
-        monthColumns.push({
-            key: getMonthKey(cursor),
-            label: formatMonthLabelCompact(cursor),
-            fullLabel: formatMonthLabel(cursor, true),
-            monthStart: new Date(cursor.getTime()),
-            isCurrentMonth: getMonthKey(cursor) === getMonthKey(today)
-        });
-        cursor = addMonths(cursor, 1);
-    }
+    const summaryEnd = startOfMonth(today);
+    const matrixEnd = startOfMonth(new Date(today.getFullYear(), 11, 1));
+    const summaryMonthColumns = buildMonthColumns(windowStart, summaryEnd);
+    const monthColumns = buildMonthColumns(windowStart, matrixEnd);
+    const currentMonthKey = getMonthKey(today);
+    monthColumns.forEach((column) => {
+        column.isCurrentMonth = column.key === currentMonthKey;
+    });
 
     const previousMonthStart = addMonths(windowStart, -1);
     const monthColumnKeys = new Set(monthColumns.map((column) => column.key));
@@ -2279,7 +2292,7 @@ function computeCollectorDashboardData() {
             return a.customer.localeCompare(b.customer);
         });
 
-    const monthlySummaryRows = monthColumns
+    const monthlySummaryRows = summaryMonthColumns
         .map((column) => {
             const previousCustomers = accountSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
             const currentCustomers = accountSetByMonth.get(column.key) || new Set();
@@ -2309,13 +2322,15 @@ function computeCollectorDashboardData() {
 
     return {
         monthColumns,
+        summaryMonthColumns,
         customerRows,
         monthlySummaryRows,
         monthTotals,
         pendingCountsByMonth,
         pendingCellCount,
         windowStart,
-        windowEnd: today
+        windowEnd: today,
+        matrixEnd
     };
 }
 
@@ -2466,7 +2481,7 @@ function renderCollectorDashboard() {
 
     const rangeNode = document.getElementById('collector-dashboard-range');
     if (rangeNode) {
-        rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.windowEnd, true)}`;
+        rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.matrixEnd, true)}`;
     }
 
     const pendingNode = document.getElementById('collector-dashboard-pending');

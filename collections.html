@@ -2200,25 +2200,12 @@
 
             <section class="data-table-container collector-dashboard" id="collector-dashboard">
                 <div class="report-panel-title">Collector Dashboard</div>
-                <div class="report-panel-subtitle">Quarter 4 2025 to present. Each row is one machine/account. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
+                <div class="report-panel-subtitle">Quarter 4 2025 to December 2026 display window. Each row is one machine/account. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
                 <div class="collector-dashboard-meta">
                     <div class="collector-dashboard-note" id="collector-dashboard-note">Preparing customer-cycle collection view...</div>
                     <div class="collector-chip-row">
-                        <span class="collector-chip" id="collector-dashboard-range">Oct 2025 to Present</span>
+                        <span class="collector-chip" id="collector-dashboard-range">October 2025 to December 2026</span>
                         <span class="collector-chip pending" id="collector-dashboard-pending">Pending cells: 0</span>
-                    </div>
-                </div>
-                <div class="collector-control-row">
-                    <div class="collector-control-block">
-                        <label for="collectorSearchInput">Search Account</label>
-                        <input type="search" id="collectorSearchInput" placeholder="Type customer, serial, branch, or department">
-                    </div>
-                    <div class="collector-control-block sort">
-                        <label for="collectorSortInput">Sort By</label>
-                        <select id="collectorSortInput">
-                            <option value="rd">RD</option>
-                            <option value="customer">Customer</option>
-                        </select>
                     </div>
                 </div>
                 <div class="collector-table-wrap">
@@ -2231,9 +2218,22 @@
                     <div class="collector-section-head">
                         <h3 class="collector-section-title">Month to Month Collection Comparison</h3>
                         <div class="collector-matrix-actions">
-                            <span class="collector-chip viewport" id="collector-visible-range">Viewing Oct 2025 to Mar 2026</span>
+                            <span class="collector-chip viewport" id="collector-visible-range">Viewing October 2025 to December 2026</span>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeft" aria-label="Scroll collection months left">←</button>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRight" aria-label="Scroll collection months right">→</button>
+                        </div>
+                    </div>
+                    <div class="collector-control-row">
+                        <div class="collector-control-block">
+                            <label for="collectorSearchInput">Search Account</label>
+                            <input type="search" id="collectorSearchInput" placeholder="Type customer, serial, branch, or department">
+                        </div>
+                        <div class="collector-control-block sort">
+                            <label for="collectorSortInput">Sort By</label>
+                            <select id="collectorSortInput">
+                                <option value="rd">RD</option>
+                                <option value="customer">Customer</option>
+                            </select>
                         </div>
                     </div>
                     <div class="collector-sheet-scroll matrix" id="collector-matrix-table">
