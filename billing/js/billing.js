@@ -394,9 +394,15 @@ function renderMatrixTable(payload) {
     const months = matrix.months || [];
     const rows = matrix.rows || [];
     const totals = matrix.totals || [];
+    const payloadSearchTerm = String(payload?.filters?.search || '').trim().toLowerCase();
     const selectedRowId = MargaUtils.getUrlParam('row_id');
     const selectedMonth = MargaUtils.getUrlParam('month');
     const searchTerm = getMatrixSearchTerm();
+    const payloadMatchesCurrentSearch = payloadSearchTerm === searchTerm;
+    const matchedRowCount = payloadMatchesCurrentSearch
+        ? Number(payload?.summary?.matrix_customers_total || rows.length)
+        : rows.length;
+    const isRowWindowed = matchedRowCount > rows.length;
     const filteredRows = searchTerm
         ? rows.filter((row) => {
               const haystack = [
@@ -421,11 +427,21 @@ function renderMatrixTable(payload) {
     if (els.matrixSearchMeta) {
         if (!rows.length) {
             els.matrixSearchMeta.textContent = 'No customers loaded yet.';
+        } else if (searchTerm && !payloadMatchesCurrentSearch) {
+            els.matrixSearchMeta.textContent = `Filtering ${formatCount(filteredRows.length)} loaded machine rows for "${els.matrixSearchInput.value.trim()}". Full search refresh starts at 2 characters.`;
         } else if (searchTerm) {
             const subtotalCount = displayRows.filter((row) => row.is_summary_row).length;
-            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}". ${subtotalCount ? `${formatCount(subtotalCount)} company subtotal row${subtotalCount === 1 ? '' : 's'} added.` : ''}`;
+            const windowText = isRowWindowed
+                ? ` Showing first ${formatCount(rows.length)} loaded rows out of ${formatCount(matchedRowCount)} matched rows.`
+                : ` Showing all ${formatCount(matchedRowCount)} matched rows.`;
+            const subtotalText = subtotalCount
+                ? ` ${formatCount(subtotalCount)} company subtotal row${subtotalCount === 1 ? '' : 's'} added.`
+                : '';
+            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}".${windowText}${subtotalText} Footer totals reflect all matched rows.`;
         } else {
-            els.matrixSearchMeta.textContent = `Showing all ${formatCount(rows.length)} loaded customers.`;
+            els.matrixSearchMeta.textContent = isRowWindowed
+                ? `Showing first ${formatCount(rows.length)} loaded machine rows out of ${formatCount(matchedRowCount)} matched rows. Footer totals reflect all matched rows.`
+                : `Showing all ${formatCount(matchedRowCount)} matched machine rows. Footer totals reflect all matched rows.`;
         }
     }
 
@@ -520,8 +536,16 @@ function renderMatrixTable(payload) {
     }).join('');
 
     const footer = months.map((monthKey) => {
-        const amount = filteredRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0);
-        return `<td class="total-cell">${escapeHtml(formatAmount(amount))}</td>`;
+        const authoritativeTotal = payloadMatchesCurrentSearch
+            ? totals.find((entry) => entry.month_key === monthKey)
+            : null;
+        const amount = authoritativeTotal
+            ? Number(authoritativeTotal.amount_total || 0)
+            : filteredRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0);
+        const totalTitle = authoritativeTotal
+            ? 'Full matched billing total'
+            : 'Loaded row subtotal';
+        return `<td class="total-cell" title="${escapeHtml(totalTitle)}">${escapeHtml(formatAmount(amount))}</td>`;
     }).join('');
 
     els.matrixTableWrap.innerHTML = `
