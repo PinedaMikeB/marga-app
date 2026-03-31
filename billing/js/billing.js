@@ -122,7 +122,7 @@ function buildRequestContext() {
     params.set('end_year', String(end.year));
     params.set('end_month', String(end.month));
     params.set('months_back', '6');
-    params.set('row_limit', String(Math.max(1, Number(els.rowLimitInput.value || 5000))));
+    params.set('row_limit', String(Math.max(1, Math.min(1200, Number(els.rowLimitInput.value || 1000)))));
     params.set('latest_limit', '100');
     params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 10))));
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 10))));
@@ -682,11 +682,11 @@ function openInvoiceDetailModal(rowId, monthKey) {
                                         </div>
                                         <div class="detail-list-block">
                                             <span class="detail-list-label">Machine IDs</span>
-                                            <div class="detail-list-value">${escapeHtml((group.machine_ids || []).join(', ') || 'No machine IDs mapped')}</div>
+                                            <div class="detail-list-value">${escapeHtml((group.machine_ids || []).join(', ') || 'No machine IDs mapped')}${group.machine_ids_truncated ? ' ...' : ''}</div>
                                         </div>
                                         <div class="detail-list-block">
                                             <span class="detail-list-label">Contractmain IDs</span>
-                                            <div class="detail-list-value">${escapeHtml((group.contractmain_ids || []).join(', ') || 'No contract IDs mapped')}</div>
+                                            <div class="detail-list-value">${escapeHtml((group.contractmain_ids || []).join(', ') || 'No contract IDs mapped')}${group.contractmain_ids_truncated ? ' ...' : ''}</div>
                                         </div>
                                     </article>
                                 `

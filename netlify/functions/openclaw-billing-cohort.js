@@ -9,6 +9,7 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const DEFAULT_MONTHS_BACK = 6;
+const DETAIL_ID_PREVIEW_LIMIT = 12;
 const BRANCH_METADATA_OVERRIDES = {
     '152': { company: 'China Bank Savings - Branches', branch: 'San Fernando - Bayan (CBS)' },
     '169': { company: 'China Bank Savings - Branches', branch: 'Subic (CBS)' },
@@ -552,17 +553,23 @@ function buildInvoiceRef(fields, contractmainId, monthKey) {
 
 function serializeInvoiceGroups(groups) {
     return Array.from(groups.values())
-        .map((group) => ({
-            invoice_ref: group.invoice_ref,
-            invoice_no: group.invoice_no,
-            invoice_id: group.invoice_id,
-            amount_total: Number(group.amount_total.toFixed(2)),
-            billing_line_count: group.billing_line_count,
-            machine_count: group.machine_ids.size,
-            contract_count: group.contractmain_ids.size,
-            contractmain_ids: sortedUnique(Array.from(group.contractmain_ids)),
-            machine_ids: sortedUnique(Array.from(group.machine_ids))
-        }))
+        .map((group) => {
+            const contractIds = sortedUnique(Array.from(group.contractmain_ids));
+            const machineIds = sortedUnique(Array.from(group.machine_ids));
+            return {
+                invoice_ref: group.invoice_ref,
+                invoice_no: group.invoice_no,
+                invoice_id: group.invoice_id,
+                amount_total: Number(group.amount_total.toFixed(2)),
+                billing_line_count: group.billing_line_count,
+                machine_count: machineIds.length,
+                contract_count: contractIds.length,
+                contractmain_ids: contractIds.slice(0, DETAIL_ID_PREVIEW_LIMIT),
+                contractmain_ids_truncated: contractIds.length > DETAIL_ID_PREVIEW_LIMIT,
+                machine_ids: machineIds.slice(0, DETAIL_ID_PREVIEW_LIMIT),
+                machine_ids_truncated: machineIds.length > DETAIL_ID_PREVIEW_LIMIT
+            };
+        })
         .sort((a, b) => {
             if (b.amount_total !== a.amount_total) return b.amount_total - a.amount_total;
             return String(a.invoice_no || a.invoice_ref).localeCompare(String(b.invoice_no || b.invoice_ref));
@@ -1410,7 +1417,7 @@ exports.handler = async (event) => {
             ? monthKeyFromYearMonth(explicitStartYear, explicitStartMonth)
             : shiftMonthKey(endKey, -(monthsBack - 1));
         const includeRows = boolParam(searchParams.get('include_rows'), true);
-        const rowLimit = intParam(searchParams.get('row_limit') || 1000, 1000, 1, 5000);
+        const rowLimit = intParam(searchParams.get('row_limit') || 1000, 1000, 1, 1200);
         const latestLimit = intParam(searchParams.get('latest_limit') || 200, 200, 1, 5000);
         const forceRefresh = boolParam(searchParams.get('refresh_cache'), false);
         const billingPages = intParam(searchParams.get('max_billing_pages') || DEFAULT_BILLING_MAX_PAGES, DEFAULT_BILLING_MAX_PAGES, 10, 600);
@@ -1467,11 +1474,7 @@ exports.handler = async (event) => {
                 month_labels_short: result.months.map(shortMonthLabelFromKey),
                 totals: result.monthTotals,
                 rows: includeRows ? result.matrixRows.slice(0, rowLimit) : []
-            },
-            skipped_customers: includeRows ? result.skippedRows.slice(0, rowLimit) : [],
-            receipt_gap_customers: includeRows ? result.receiptGapRows.slice(0, rowLimit) : [],
-            latest_billed_entries: result.latestBilledRows,
-            cohort_customers: includeRows ? result.matrixRows.slice(0, rowLimit) : []
+            }
         });
     } catch (error) {
         return toJson(500, {
