@@ -383,8 +383,8 @@ function buildCompanySummaryRows(rows, months) {
                     childCells.flatMap((cell) => (Array.isArray(cell.reading_groups) ? cell.reading_groups : []))
                 );
                 const amountTotal = billedCells.reduce((sum, cell) => sum + Number(cell.amount_total || 0), 0);
-                const displayAmountTotal = childCells.reduce((sum, cell) => sum + Number(cell.display_amount_total || cell.amount_total || 0), 0);
                 const readingAmountTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_amount_total || 0), 0);
+                const displayAmountTotal = amountTotal > 0 ? amountTotal : readingAmountTotal;
                 const readingPagesTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_pages_total || 0), 0);
                 const readingTaskCount = childCells.reduce((sum, cell) => sum + Number(cell.reading_task_count || 0), 0);
                 const billingLineCount = billedCells.reduce((sum, cell) => sum + Number(cell.billing_line_count || 0), 0);
@@ -417,7 +417,9 @@ function buildCompanySummaryRows(rows, months) {
                     billing_task_count: childCells.reduce((sum, cell) => sum + Number(cell.billing_task_count || 0), 0),
                     received_task_count: childCells.reduce((sum, cell) => sum + Number(cell.received_task_count || 0), 0),
                     receipt_status: summarizeReceiptStatus(childCells),
-                    billed_basis: amountTotal > 0 ? 'invoice' : (readingAmountTotal > 0 ? 'meter_reading' : 'none'),
+                    billed_basis: amountTotal > 0 && readingAmountTotal > 0
+                        ? 'invoice_and_meter'
+                        : (amountTotal > 0 ? 'invoice' : (readingAmountTotal > 0 ? 'meter_reading' : 'none')),
                     latest_invoice_date: childCells
                         .map((cell) => cell.latest_invoice_date)
                         .filter(Boolean)
