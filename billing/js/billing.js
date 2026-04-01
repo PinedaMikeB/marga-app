@@ -103,6 +103,10 @@ function initDefaults() {
 }
 
 function compareBillingRows(left, right, sortValue) {
+    const leftAmountCount = Object.values(left?.months || {}).reduce((sum, cell) => sum + (Number(cell?.display_amount_total || 0) > 0 ? 1 : 0), 0);
+    const rightAmountCount = Object.values(right?.months || {}).reduce((sum, cell) => sum + (Number(cell?.display_amount_total || 0) > 0 ? 1 : 0), 0);
+    const leftLatestAmount = Object.values(left?.months || {}).reduce((max, cell) => Math.max(max, Number(cell?.display_amount_total || 0)), 0);
+    const rightLatestAmount = Object.values(right?.months || {}).reduce((max, cell) => Math.max(max, Number(cell?.display_amount_total || 0)), 0);
     const leftRd = Number(left.reading_day || 0) || Number.MAX_SAFE_INTEGER;
     const rightRd = Number(right.reading_day || 0) || Number.MAX_SAFE_INTEGER;
     const leftCustomer = String(left.company_name || left.account_name || '').toLowerCase();
@@ -111,6 +115,9 @@ function compareBillingRows(left, right, sortValue) {
     const rightBranch = String(right.branch_name || '').toLowerCase();
     const leftSerial = String(left.serial_number || left.machine_label || '').toLowerCase();
     const rightSerial = String(right.serial_number || right.machine_label || '').toLowerCase();
+
+    if (rightAmountCount !== leftAmountCount) return rightAmountCount - leftAmountCount;
+    if (rightLatestAmount !== leftLatestAmount) return rightLatestAmount - leftLatestAmount;
 
     if (sortValue === 'customer') {
         return leftCustomer.localeCompare(rightCustomer)
@@ -491,6 +498,9 @@ function renderMatrixTable(payload) {
           })
         : rows;
     const sortedRows = [...filteredRows].sort((left, right) => compareBillingRows(left, right, getMatrixSortValue()));
+    const rowsWithAmounts = filteredRows.filter((row) => (
+        Object.values(row?.months || {}).some((cell) => Number(cell?.display_amount_total || 0) > 0)
+    )).length;
 
     const displayRows = searchTerm ? buildCompanySummaryRows(sortedRows, months) : sortedRows;
     renderedMatrixRows = displayRows;
@@ -508,7 +518,7 @@ function renderMatrixTable(payload) {
             const subtotalText = subtotalCount
                 ? ` ${formatCount(subtotalCount)} company subtotal row${subtotalCount === 1 ? '' : 's'} added.`
                 : '';
-            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}".${windowText}${subtotalText} Footer totals reflect all matched rows.`;
+            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}". ${formatCount(rowsWithAmounts)} row${rowsWithAmounts === 1 ? '' : 's'} already have amounts and are shown first.${windowText}${subtotalText} Footer totals reflect all matched rows.`;
         } else {
             els.matrixSearchMeta.textContent = isRowWindowed
                 ? `Showing first ${formatCount(rows.length)} loaded machine rows out of ${formatCount(matchedRowCount)} matched rows. Footer totals reflect all matched rows.`
