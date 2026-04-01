@@ -371,6 +371,10 @@
     font-weight: 700;
 }
 
+.meter-cell {
+    background: #eef8ff;
+}
+
 .billed-link {
     width: 100%;
     min-height: 56px;

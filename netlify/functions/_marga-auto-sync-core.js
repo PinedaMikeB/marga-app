@@ -47,6 +47,7 @@ const DEFAULT_TABLES = [
   "tbl_contractinfo",
   "tbl_contracthistory",
   "tbl_machine",
+  "tbl_machinereading",
 ];
 
 const TABLE_ID_HINTS = {
@@ -69,6 +70,10 @@ const TABLE_ID_HINTS = {
   tbl_contractinfo: "id",
   tbl_contracthistory: "id",
   tbl_billinfo: "id",
+  tbl_billout: "id",
+  tbl_billoutparticular: "id",
+  tbl_billoutparticulars: "id",
+  tbl_machinereading: "id",
 };
 
 function toIsoNow() {

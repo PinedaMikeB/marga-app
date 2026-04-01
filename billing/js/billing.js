@@ -321,6 +321,31 @@ function mergeInvoiceGroups(groups) {
         });
 }
 
+function mergeReadingGroups(groups) {
+    return [...groups]
+        .map((group) => ({
+            schedule_id: group.schedule_id,
+            invoice_num: group.invoice_num,
+            task_date: group.task_date,
+            machine_id: group.machine_id,
+            contractmain_id: group.contractmain_id,
+            pages: Number(group.pages || 0),
+            page_rate: Number(group.page_rate || 0),
+            monthly_quota: Number(group.monthly_quota || 0),
+            monthly_rate: Number(group.monthly_rate || 0),
+            amount_total: Number(group.amount_total || 0),
+            net_amount: Number(group.net_amount || 0),
+            vat_amount: Number(group.vat_amount || 0),
+            with_vat: Boolean(group.with_vat),
+            category_id: Number(group.category_id || 0),
+            formula: group.formula || 'net_pages_times_page_rate'
+        }))
+        .sort((a, b) => {
+            if (b.amount_total !== a.amount_total) return b.amount_total - a.amount_total;
+            return String(a.task_date || '').localeCompare(String(b.task_date || ''));
+        });
+}
+
 function buildCompanySummaryRows(rows, months) {
     const groups = new Map();
     rows.forEach((row) => {
@@ -354,7 +379,14 @@ function buildCompanySummaryRows(rows, months) {
                 const mergedGroups = mergeInvoiceGroups(
                     childCells.flatMap((cell) => (Array.isArray(cell.invoice_groups) ? cell.invoice_groups : []))
                 );
+                const mergedReadingGroups = mergeReadingGroups(
+                    childCells.flatMap((cell) => (Array.isArray(cell.reading_groups) ? cell.reading_groups : []))
+                );
                 const amountTotal = billedCells.reduce((sum, cell) => sum + Number(cell.amount_total || 0), 0);
+                const displayAmountTotal = childCells.reduce((sum, cell) => sum + Number(cell.display_amount_total || cell.amount_total || 0), 0);
+                const readingAmountTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_amount_total || 0), 0);
+                const readingPagesTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_pages_total || 0), 0);
+                const readingTaskCount = childCells.reduce((sum, cell) => sum + Number(cell.reading_task_count || 0), 0);
                 const billingLineCount = billedCells.reduce((sum, cell) => sum + Number(cell.billing_line_count || 0), 0);
                 const invoiceCount = mergedGroups.length;
                 const machineIds = new Set();
@@ -363,7 +395,9 @@ function buildCompanySummaryRows(rows, months) {
                 });
                 childCells.forEach((cell, index) => {
                     const machineId = String(group.rows[index]?.machine_id || '').trim();
-                    if (cell.billed && machineId) machineIds.add(machineId);
+                    if ((cell.billed || Number(cell.display_amount_total || cell.reading_amount_total || 0) > 0) && machineId) {
+                        machineIds.add(machineId);
+                    }
                 });
                 summaryMonths[monthKey] = {
                     month_key: monthKey,
@@ -376,9 +410,14 @@ function buildCompanySummaryRows(rows, months) {
                     billing_line_count: billingLineCount,
                     machine_count: machineIds.size || billedCells.length,
                     amount_total: Number(amountTotal.toFixed(2)),
+                    display_amount_total: Number(displayAmountTotal.toFixed(2)),
+                    reading_amount_total: Number(readingAmountTotal.toFixed(2)),
+                    reading_pages_total: readingPagesTotal,
+                    reading_task_count: readingTaskCount,
                     billing_task_count: childCells.reduce((sum, cell) => sum + Number(cell.billing_task_count || 0), 0),
                     received_task_count: childCells.reduce((sum, cell) => sum + Number(cell.received_task_count || 0), 0),
                     receipt_status: summarizeReceiptStatus(childCells),
+                    billed_basis: amountTotal > 0 ? 'invoice' : (readingAmountTotal > 0 ? 'meter_reading' : 'none'),
                     latest_invoice_date: childCells
                         .map((cell) => cell.latest_invoice_date)
                         .filter(Boolean)
@@ -386,6 +425,7 @@ function buildCompanySummaryRows(rows, months) {
                         .slice(-1)[0] || null,
                     received_by_names: Array.from(new Set(childCells.flatMap((cell) => cell.received_by_names || []))).sort((a, b) => a.localeCompare(b)),
                     invoice_groups: mergedGroups,
+                    reading_groups: mergedReadingGroups,
                     pending_count: pendingCount
                 };
             });
@@ -500,14 +540,20 @@ function renderMatrixTable(payload) {
         const monthCells = months.map((monthKey) => {
             const cell = row.months?.[monthKey] || {};
             const isSelected = String(rowId) === String(selectedRowId) && monthKey === selectedMonth;
-            if (cell.billed) {
+            const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
+            const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
+            const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
+            if (cell.billed || shownAmount > 0) {
                 const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
                 const machineMeta = `${formatCount(cell.machine_count || 0)} mach`;
                 const pendingMeta = row.is_summary_row && Number(cell.pending_count || 0) > 0
                     ? ` • ${formatCount(cell.pending_count || 0)} pending`
                     : '';
+                const cellMeta = hasInvoiceAmount
+                    ? `${invoiceMeta} • ${machineMeta}${pendingMeta}`
+                    : `${formatCount(cell.reading_task_count || 0)} meter form • ${formatCount(cell.reading_pages_total || 0)} pg${pendingMeta}`;
                 return `
-                    <td class="month-cell billed-cell ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(receiptLabel(cell.receipt_status))}">
+                    <td class="month-cell billed-cell ${!hasInvoiceAmount && hasReadingBreakdown ? 'meter-cell' : ''} ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter reading breakdown amount')}">
                         <button
                             class="billed-link ${row.is_summary_row ? 'summary-billed-link' : ''}"
                             type="button"
@@ -515,10 +561,10 @@ function renderMatrixTable(payload) {
                             data-month-key="${escapeHtml(monthKey)}"
                             aria-label="Open invoice detail for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
                         >
-                            <span class="amount-value">${escapeHtml(formatAmount(cell.amount_total))}</span>
-                            <span class="cell-meta">${escapeHtml(`${invoiceMeta} • ${machineMeta}${pendingMeta}`)}</span>
+                            <span class="amount-value">${escapeHtml(formatAmount(shownAmount))}</span>
+                            <span class="cell-meta">${escapeHtml(cellMeta)}</span>
                         </button>
-                        ${receiptDot(cell.receipt_status)}
+                        ${hasInvoiceAmount ? receiptDot(cell.receipt_status) : ''}
                     </td>
                 `;
             }
@@ -677,20 +723,23 @@ function openInvoiceDetailModal(rowId, monthKey) {
     const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
         || (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
     const cell = row?.months?.[monthKey];
-    if (!row || !cell || !cell.billed) return;
+    if (!row || !cell || !(cell.billed || Number(cell.display_amount_total || cell.reading_amount_total || 0) > 0)) return;
 
     const title = row.display_name || row.account_name || row.company_name || 'Billing Detail';
     const readingDay = row.is_summary_row ? 'Company subtotal' : (row.reading_day ? `RD ${row.reading_day}` : 'RD -');
     const invoiceGroups = Array.isArray(cell.invoice_groups) ? cell.invoice_groups : [];
+    const readingGroups = Array.isArray(cell.reading_groups) ? cell.reading_groups : [];
+    const shownAmount = Number(cell.display_amount_total || cell.amount_total || cell.reading_amount_total || 0);
+    const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
 
     els.invoiceDetailTitle.textContent = title;
-    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${receiptLabel(cell.receipt_status)}`;
+    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter breakdown amount'}`;
 
     els.invoiceDetailContent.innerHTML = `
         <div class="detail-summary-grid">
             <article class="detail-summary-card">
-                <span class="label">Amount</span>
-                <span class="value">${escapeHtml(formatAmount(cell.amount_total || 0))}</span>
+                <span class="label">Shown Amount</span>
+                <span class="value">${escapeHtml(formatAmount(shownAmount))}</span>
             </article>
             <article class="detail-summary-card">
                 <span class="label">Invoices</span>
@@ -704,6 +753,14 @@ function openInvoiceDetailModal(rowId, monthKey) {
                 <span class="label">Billing Lines</span>
                 <span class="value">${escapeHtml(formatCount(cell.billing_line_count || 0))}</span>
             </article>
+            <article class="detail-summary-card">
+                <span class="label">Meter Breakdown</span>
+                <span class="value">${escapeHtml(formatAmount(cell.reading_amount_total || 0))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Net Pages</span>
+                <span class="value">${escapeHtml(formatCount(cell.reading_pages_total || 0))}</span>
+            </article>
             ${
                 row.is_summary_row
                     ? `
@@ -715,6 +772,11 @@ function openInvoiceDetailModal(rowId, monthKey) {
                     : ''
             }
         </div>
+        ${
+            !hasInvoiceAmount && Number(cell.reading_amount_total || 0) > 0
+                ? `<div class="detail-empty">This row is showing the meter-reading amount for the branch or department. The official invoice may be consolidated under the mother account.</div>`
+                : ''
+        }
         <div class="detail-section-title">Invoice Breakdown</div>
         ${
             invoiceGroups.length
@@ -748,6 +810,44 @@ function openInvoiceDetailModal(rowId, monthKey) {
                     </div>
                 `
                 : '<div class="detail-empty">No invoice-level detail was returned for this cell.</div>'
+        }
+        <div class="detail-section-title">Meter Reading Breakdown</div>
+        ${
+            readingGroups.length
+                ? `
+                    <div class="invoice-detail-list">
+                        ${readingGroups
+                            .map(
+                                (group) => `
+                                    <article class="invoice-detail-card">
+                                        <div class="invoice-detail-head">
+                                            <div class="invoice-detail-ref">${escapeHtml(group.invoice_num ? `Invoice ${group.invoice_num}` : `Schedule ${group.schedule_id || 'N/A'}`)}</div>
+                                            <div class="invoice-detail-amount">${escapeHtml(formatAmount(group.amount_total || 0))}</div>
+                                        </div>
+                                        <div class="invoice-detail-meta">
+                                            <span class="invoice-detail-chip">${escapeHtml(formatMetricCount(group.pages || 0, 'page'))}</span>
+                                            <span class="invoice-detail-chip">${escapeHtml(`Rate ${formatAmount(group.page_rate || 0)}`)}</span>
+                                            <span class="invoice-detail-chip">${escapeHtml(group.with_vat ? 'VAT Inclusive' : 'VAT Exclusive')}</span>
+                                        </div>
+                                        <div class="detail-list-block">
+                                            <span class="detail-list-label">Contract / Machine</span>
+                                            <div class="detail-list-value">${escapeHtml(`Contract ${group.contractmain_id || 'N/A'} • Machine ${group.machine_id || 'N/A'}`)}</div>
+                                        </div>
+                                        <div class="detail-list-block">
+                                            <span class="detail-list-label">Quota / Monthly</span>
+                                            <div class="detail-list-value">${escapeHtml(`${formatCount(group.monthly_quota || 0)} quota • ${formatAmount(group.monthly_rate || 0)} monthly`)}</div>
+                                        </div>
+                                        <div class="detail-list-block">
+                                            <span class="detail-list-label">Computation</span>
+                                            <div class="detail-list-value">${escapeHtml(`${formatCount(group.pages || 0)} pages × ${formatAmount(group.page_rate || 0)} = ${formatAmount(group.amount_total || 0)}`)}</div>
+                                        </div>
+                                    </article>
+                                `
+                            )
+                            .join('')}
+                    </div>
+                `
+                : '<div class="detail-empty">No meter-reading breakdown was returned for this cell.</div>'
         }
     `;
 
