@@ -257,7 +257,8 @@ function getCacheState() {
             machineHistoryLoaded: false,
             billingWindowKey: '',
             billingDocs: [],
-            scheduleDocs: []
+            scheduleDocs: [],
+            machineReadingDocs: []
         };
     }
     return global.__openclawBillingCohortCache;
@@ -303,11 +304,23 @@ async function loadCache(
         'field_billing_date',
         'field_billing_time'
     ];
+    const machineReadingFieldMask = [
+        'id',
+        'machine_id',
+        'current_contract',
+        'invoice_id',
+        'meter_reading',
+        'meter_reading2',
+        'timestmp'
+    ];
     const billingMonthKeys = startKey && endKey ? buildMonthRange(startKey, endKey) : [];
     const scheduleWindowStart = billingMonthKeys.length ? monthWindowStart(startKey) : '';
     const scheduleWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
+    const machineReadingStartKey = billingMonthKeys.length ? (shiftMonthKey(startKey, -1) || startKey) : '';
+    const machineReadingWindowStart = machineReadingStartKey ? monthWindowStart(machineReadingStartKey) : '';
+    const machineReadingWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs, machineHistoryDocs, billingDocs, scheduleDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, machineHistoryDocs, billingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
@@ -380,6 +393,24 @@ async function loadCache(
             })
             : firestoreGetAll('tbl_schedule', {
                 fieldMask: scheduleFieldMask,
+                maxPages: nextSchedulePages
+            }),
+        billingMonthKeys.length
+            ? firestoreRunQuery({
+                from: [{ collectionId: 'tbl_machinereading' }],
+                where: {
+                    compositeFilter: {
+                        op: 'AND',
+                        filters: [
+                            { fieldFilter: { field: { fieldPath: 'timestmp' }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: machineReadingWindowStart } } },
+                            { fieldFilter: { field: { fieldPath: 'timestmp' }, op: 'LESS_THAN', value: { stringValue: machineReadingWindowEnd } } }
+                        ]
+                    }
+                },
+                select: { fields: machineReadingFieldMask.map((fieldPath) => ({ fieldPath })) }
+            })
+            : firestoreGetAll('tbl_machinereading', {
+                fieldMask: machineReadingFieldMask,
                 maxPages: nextSchedulePages
             })
     ]);
@@ -509,6 +540,7 @@ async function loadCache(
 
     cache.billingDocs = billingDocs;
     cache.scheduleDocs = scheduleDocs;
+    cache.machineReadingDocs = machineReadingDocs;
     cache.billingPages = nextBillingPages;
     cache.schedulePages = nextSchedulePages;
     cache.billingWindowKey = nextBillingWindowKey;
@@ -643,6 +675,13 @@ function computeReadingAmount(contract, fields) {
         categoryId: Number(contract?.categoryId || 0) || 0,
         formula
     };
+}
+
+function buildReadingFromMeters(contract, presentReading, previousReading) {
+    return computeReadingAmount(contract, {
+        field_previous_meter: { integerValue: String(Number(previousReading || 0) || 0) },
+        field_present_meter: { integerValue: String(Number(presentReading || 0) || 0) }
+    });
 }
 
 function createMonthCell(monthKey) {
@@ -1376,6 +1415,138 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         }
     });
 
+    const monthlyReadingByContractMachine = new Map();
+    cache.machineReadingDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const contractId = String(getField(f, ['current_contract']) || '').trim();
+        const machineId = String(getField(f, ['machine_id']) || '').trim();
+        const readingStamp = normalizeDate(getField(f, ['timestmp']));
+        const meterReading = Number(getField(f, ['meter_reading']) || 0) || 0;
+        if (!contractId || !machineId || !readingStamp || meterReading <= 0) return;
+        const monthKey = monthKeyFromYearMonth(readingStamp.getFullYear(), readingStamp.getMonth() + 1);
+        if (!monthKey) return;
+        const bucketKey = `${contractId}::${machineId}`;
+        if (!monthlyReadingByContractMachine.has(bucketKey)) monthlyReadingByContractMachine.set(bucketKey, new Map());
+        const monthBucket = monthlyReadingByContractMachine.get(bucketKey);
+        const existing = monthBucket.get(monthKey);
+        const nextEntry = {
+            schedule_id: `reading:${String(getField(f, ['id']) || '').trim() || `${bucketKey}:${monthKey}`}`,
+            invoice_num: String(getField(f, ['invoice_id']) || '').trim() || null,
+            task_date: toIso(readingStamp),
+            machine_id: machineId,
+            contractmain_id: contractId,
+            meter_reading: meterReading
+        };
+        if (!existing || new Date(existing.task_date).getTime() < readingStamp.getTime()) {
+            monthBucket.set(monthKey, nextEntry);
+        }
+    });
+
+    monthlyReadingByContractMachine.forEach((monthBucket, bucketKey) => {
+        const [contractId, machineId] = String(bucketKey).split('::');
+        const matchedContract = cache.contractMap?.[contractId];
+        if (!matchedContract) return;
+        const matchedBranch = resolveContractBranch(cache, matchedContract);
+        const matchedDisplay = matchedBranch ? resolveBranchDisplay(cache, matchedBranch) : null;
+        if (!matchedDisplay) return;
+        if (!rowMatchesSearch(searchTerm, [
+            matchedDisplay.companyName,
+            matchedDisplay.branchName,
+            matchedContract.machId,
+            matchedContract.id,
+            matchedContract.xserial
+        ])) return;
+
+        const serialNumber = resolveSerialLabel(cache, matchedContract);
+        const machineRowId = buildMachineRowKey(matchedContract.machId, matchedContract.id);
+        const row = ensureCompanyRow(
+            companyRows,
+            matchedDisplay.branchId,
+            matchedDisplay.companyId,
+            matchedDisplay.companyName,
+            matchedDisplay.branchId,
+            matchedDisplay.branchName,
+            months
+        );
+        const machineRow = ensureMachineRow(
+            machineRows,
+            machineRowId,
+            matchedDisplay.companyId,
+            matchedDisplay.companyName,
+            matchedDisplay.branchId,
+            matchedDisplay.branchName,
+            matchedContract.machId,
+            matchedContract.id,
+            serialNumber,
+            months
+        );
+        const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
+        if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
+            machineRow.expected_start_month = expectedStartMonth;
+        }
+
+        const orderedMonths = Array.from(monthBucket.keys()).sort((a, b) => a.localeCompare(b));
+        let previousEntry = null;
+        orderedMonths.forEach((readingMonthKey) => {
+            const currentEntry = monthBucket.get(readingMonthKey);
+            if (!currentEntry) return;
+            if (readingMonthKey < startKey || readingMonthKey > endKey) {
+                previousEntry = currentEntry;
+                return;
+            }
+            if (!previousEntry) {
+                previousEntry = currentEntry;
+                return;
+            }
+
+            const reading = buildReadingFromMeters(matchedContract, currentEntry.meter_reading, previousEntry.meter_reading);
+            if (reading.amountDue > 0 || reading.pages > 0) {
+                const companyCell = row.months[readingMonthKey];
+                const machineCell = machineRow.months[readingMonthKey];
+                const readingEntry = {
+                    schedule_id: currentEntry.schedule_id,
+                    invoice_num: currentEntry.invoice_num,
+                    task_date: currentEntry.task_date,
+                    machine_id: machineId,
+                    contractmain_id: contractId,
+                    pages: reading.pages,
+                    page_rate: reading.pageRate,
+                    monthly_quota: reading.monthlyQuota,
+                    monthly_rate: reading.monthlyRate,
+                    amount_total: reading.amountDue,
+                    net_amount: reading.netAmount,
+                    vat_amount: reading.vatAmount,
+                    with_vat: reading.withVat,
+                    category_id: reading.categoryId,
+                    formula: `tbl_machinereading:${reading.formula}`
+                };
+
+                if (!companyCell.reading_groups.has(currentEntry.schedule_id)) {
+                    companyCell.reading_task_count += 1;
+                    companyCell.reading_amount_total += reading.amountDue;
+                    companyCell.reading_pages_total += reading.pages;
+                    companyCell.display_amount_total = companyCell.amount_total > 0 ? companyCell.amount_total : companyCell.reading_amount_total;
+                    companyCell.reading_formula = companyCell.reading_formula || readingEntry.formula;
+                    companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice' : 'meter_reading';
+                    companyCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
+                }
+
+                if (!machineCell.reading_groups.has(currentEntry.schedule_id)) {
+                    machineCell.reading_task_count += 1;
+                    machineCell.reading_amount_total += reading.amountDue;
+                    machineCell.reading_pages_total += reading.pages;
+                    machineCell.display_amount_total = machineCell.amount_total > 0 ? machineCell.amount_total : machineCell.reading_amount_total;
+                    machineCell.reading_formula = machineCell.reading_formula || readingEntry.formula;
+                    machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice' : 'meter_reading';
+                    if (machineId) machineCell.machine_ids.add(machineId);
+                    machineCell.machine_count = machineCell.machine_ids.size || 1;
+                    machineCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
+                }
+            }
+            previousEntry = currentEntry;
+        });
+    });
+
     const summaryByMonth = new Map(months.map((monthKey) => [monthKey, {
         month_key: monthKey,
         month_label: monthLabelFromKey(monthKey),
@@ -1773,7 +1944,8 @@ exports.handler = async (event) => {
                 receipt_status_source: 'Billing task confirmation from tbl_schedule purpose_id=1 using field_billing_received_by',
                 reading_day_source: 'Primary: tbl_schedule purpose_id=8 day-of-month; fallback: billing schedule day; fallback: tbl_branchinfo.earliest',
                 billing_docs_scanned: cache.billingDocs.length,
-                schedule_docs_scanned: cache.scheduleDocs.length
+                schedule_docs_scanned: cache.scheduleDocs.length,
+                machine_reading_docs_scanned: cache.machineReadingDocs.length
             },
             period: {
                 start_month_key: startKey,
