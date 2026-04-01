@@ -12,13 +12,14 @@ const SCHEDULE_SAFE_REVERSE_FIELDS = [
   "dev_remarks",
 ];
 
-export const OFFICE_SYNC_MANIFEST_VERSION = "2026-03-16";
+export const OFFICE_SYNC_MANIFEST_VERSION = "2026-04-01";
 
 export const OFFICE_SYNC_MANIFEST = {
   version: OFFICE_SYNC_MANIFEST_VERSION,
   reverseBridge: {
     trackedTables: [
       "tbl_collectionhistory",
+      "tbl_paymentinfo",
       "tbl_schedule",
       "tbl_schedtime",
       "tbl_closedscheds",
@@ -84,7 +85,11 @@ export const OFFICE_SYNC_MANIFEST = {
       table: "tbl_collectionhistory",
       domain: "collections",
       sourceOfTruth: "hybrid",
-      mysqlToFirebase: { enabled: false, mode: "append_only" },
+      mysqlToFirebase: {
+        enabled: true,
+        mode: "append_only",
+        fullResyncIntervalMinutes: 120,
+      },
       firebaseToMysql: { enabled: true, mode: "append_only" },
     },
     {
@@ -193,6 +198,7 @@ export const OFFICE_SYNC_MANIFEST = {
         mode: "mutable_with_timestamp",
         mutableDateColumn: "timestmp",
         mutableLookbackHours: 72,
+        fullResyncIntervalMinutes: 180,
       },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
@@ -244,28 +250,14 @@ export const OFFICE_SYNC_MANIFEST = {
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {
+      table: "tbl_newmachinehistory",
+      domain: "machines",
+      sourceOfTruth: "mysql",
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 180 },
+      firebaseToMysql: { enabled: false, mode: "none" },
+    },
+    {
       table: "tbl_billinfo",
-      domain: "billing",
-      sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
-      firebaseToMysql: { enabled: false, mode: "none" },
-    },
-    {
-      table: "tbl_billout",
-      domain: "billing",
-      sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
-      firebaseToMysql: { enabled: false, mode: "none" },
-    },
-    {
-      table: "tbl_billoutparticular",
-      domain: "billing",
-      sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
-      firebaseToMysql: { enabled: false, mode: "none" },
-    },
-    {
-      table: "tbl_billoutparticulars",
       domain: "billing",
       sourceOfTruth: "mysql",
       mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
@@ -301,37 +293,39 @@ export const OFFICE_SYNC_MANIFEST = {
       table: "tbl_collectioninfo",
       domain: "collections",
       sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: false, mode: "mutable_no_timestamp" },
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {
       table: "tbl_collections",
       domain: "collections",
       sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: false, mode: "mutable_no_timestamp" },
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {
       table: "tbl_paymentinfo",
       domain: "payments",
-      sourceOfTruth: "mysql",
+      sourceOfTruth: "hybrid",
       mysqlToFirebase: {
-        enabled: false,
+        enabled: true,
         mode: "mutable_with_timestamp",
         mutableDateColumn: "timestamp",
         mutableLookbackHours: 168,
+        fullResyncIntervalMinutes: 60,
       },
-      firebaseToMysql: { enabled: false, mode: "none" },
+      firebaseToMysql: { enabled: true, mode: "schedule_payment_test_bridge" },
     },
     {
       table: "tbl_payments",
       domain: "payments",
       sourceOfTruth: "mysql",
       mysqlToFirebase: {
-        enabled: false,
+        enabled: true,
         mode: "mutable_with_timestamp",
         mutableDateColumn: "timestamp",
         mutableLookbackHours: 168,
+        fullResyncIntervalMinutes: 120,
       },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
@@ -340,10 +334,11 @@ export const OFFICE_SYNC_MANIFEST = {
       domain: "payments",
       sourceOfTruth: "mysql",
       mysqlToFirebase: {
-        enabled: false,
+        enabled: true,
         mode: "mutable_with_timestamp",
         mutableDateColumn: "date_added",
         mutableLookbackHours: 168,
+        fullResyncIntervalMinutes: 120,
       },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
@@ -351,7 +346,7 @@ export const OFFICE_SYNC_MANIFEST = {
       table: "tbl_checkpayments",
       domain: "payments",
       sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: false, mode: "mutable_no_timestamp" },
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {
@@ -382,7 +377,7 @@ export const OFFICE_SYNC_MANIFEST = {
       table: "tbl_ornumber",
       domain: "payments",
       sourceOfTruth: "mysql",
-      mysqlToFirebase: { enabled: false, mode: "mutable_no_timestamp" },
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 120 },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {

@@ -37,16 +37,35 @@ const TABLE_ID_HINTS = {
   tbl_savedscheds: "id",
   tbl_schedtime: "id",
   tbl_closedscheds: "id",
+  tbl_collectionhistory: "id",
+  tbl_collectioninfo: "id",
+  tbl_collections: "id",
   tbl_billinfo: "id",
   tbl_billout: "id",
   tbl_billoutparticular: "id",
   tbl_billoutparticulars: "id",
   tbl_billing: "id",
-  tbl_collection: "id",
-  tbl_collectiondetails: "id",
+  tbl_branchcontact: "id",
+  tbl_customerinfo: "id",
+  tbl_customertype: "id",
+  tbl_machine: "id",
+  tbl_machinereading: "id",
+  tbl_contractmain: "id",
+  tbl_contractdep: "id",
+  tbl_contractdetails: "id",
+  tbl_contractinfo: "id",
+  tbl_contracthistory: "id",
+  tbl_newmachinehistory: "id",
   tbl_paymentinfo: "id",
-  tbl_or: "id",
-  tbl_check: "id",
+  tbl_payments: "id",
+  tbl_paymentcheck: "id",
+  tbl_checkpayments: "id",
+  tbl_ornumber: "id",
+  tbl_deliveryinfo: "id",
+  tbl_finaldr: "id",
+  tbl_finaldrdetails: "id",
+  tbl_inventoryparts: "id",
+  tbl_partstype: "id",
 };
 const DATE_COLUMN_CANDIDATES = ["task_datetime", "schedule_date", "timestmp", "updated_at", "original_sched"];
 
@@ -69,6 +88,17 @@ function parseTableList(value) {
       .map((entry) => String(entry || "").trim().toLowerCase())
       .filter(Boolean),
   )];
+}
+
+function parseListMode(value) {
+  return String(value || "").trim().toLowerCase() === "replace" ? "replace" : "merge";
+}
+
+function mergeTableLists(defaults, envEntries, mode) {
+  const normalizedDefaults = [...new Set((defaults || []).map((entry) => String(entry || "").trim().toLowerCase()).filter(Boolean))];
+  const normalizedEnvEntries = [...new Set((envEntries || []).map((entry) => String(entry || "").trim().toLowerCase()).filter(Boolean))];
+  if (mode === "replace" && normalizedEnvEntries.length) return normalizedEnvEntries;
+  return [...new Set([...normalizedDefaults, ...normalizedEnvEntries])];
 }
 
 function parseArgs(argv) {
@@ -151,15 +181,18 @@ function parseArgs(argv) {
 export function loadLiveMysqlSyncConfig(overrides = {}) {
   const env = loadEnvFile(path.join(__dirname, ".env"));
   const paths = defaultPaths();
+  const tableListMode = parseListMode(overrides.tablesMode || env.MYSQL_TO_FIREBASE_TABLES_MODE);
+  const bootstrapListMode = parseListMode(overrides.bootstrapTablesMode || env.MYSQL_TO_FIREBASE_BOOTSTRAP_TABLES_MODE);
+  const mutableListMode = parseListMode(overrides.mutableTablesMode || env.MYSQL_TO_FIREBASE_MUTABLE_TABLES_MODE);
   const tables = overrides.tables?.length
     ? overrides.tables
-    : parseTableList(env.MYSQL_TO_FIREBASE_TABLES) || DEFAULT_TABLES;
+    : mergeTableLists(DEFAULT_TABLES, parseTableList(env.MYSQL_TO_FIREBASE_TABLES), tableListMode);
   const bootstrapTables = overrides.bootstrapTables?.length
     ? overrides.bootstrapTables
-    : parseTableList(env.MYSQL_TO_FIREBASE_BOOTSTRAP_TABLES) || DEFAULT_BOOTSTRAP_TABLES;
+    : mergeTableLists(DEFAULT_BOOTSTRAP_TABLES, parseTableList(env.MYSQL_TO_FIREBASE_BOOTSTRAP_TABLES), bootstrapListMode);
   const mutableTables = overrides.mutableTables?.length
     ? overrides.mutableTables
-    : parseTableList(env.MYSQL_TO_FIREBASE_MUTABLE_TABLES) || DEFAULT_MUTABLE_TABLES;
+    : mergeTableLists(DEFAULT_MUTABLE_TABLES, parseTableList(env.MYSQL_TO_FIREBASE_MUTABLE_TABLES), mutableListMode);
 
   return {
     firebaseConfigPath: resolveMaybeRelative(__dirname, overrides.firebaseConfigPath, env.FIREBASE_CONFIG_PATH || paths.firebaseConfigPath),
@@ -343,6 +376,15 @@ async function fetchAllRowsForFullResync(pool, table, idColumn, batchSize) {
 }
 
 function summarizeReport(stats, reportPath) {
+  const tableStatusCounts = {};
+  const warningTables = [];
+  const zeroRowTables = [];
+  Object.values(stats.tables).forEach((table) => {
+    const status = table.status || "pending";
+    tableStatusCounts[status] = (tableStatusCounts[status] || 0) + 1;
+    if (status.startsWith("skipped")) warningTables.push(table.table);
+    if ((table.watermarkAfter || 0) === 0 && (table.pushed || 0) === 0) zeroRowTables.push(table.table);
+  });
   return {
     generatedAt: toIsoNow(),
     mode: stats.dryRun ? "dry-run" : "write",
@@ -357,6 +399,10 @@ function summarizeReport(stats, reportPath) {
       savedschedPushed: stats.tables.tbl_savedscheds?.pushed || 0,
       schedtimePushed: stats.tables.tbl_schedtime?.pushed || 0,
       closedschedPushed: stats.tables.tbl_closedscheds?.pushed || 0,
+      syncedTableCount: Object.values(stats.tables).filter((table) => (table.pushed || 0) > 0).length,
+      tableStatusCounts,
+      warningTables,
+      zeroRowTables,
     },
     tables: stats.tables,
   };
@@ -395,6 +441,8 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
       baselineInitialized: !watermarkMap.get(table)?.exists,
       pushed: 0,
       skipped: 0,
+      status: "pending",
+      notes: [],
       examples: [],
     }])),
   };
@@ -422,16 +470,26 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
   }
 
   try {
+    emit("info", "MySQL -> Firebase table scope loaded.", {
+      tableCount: tables.length,
+      tables,
+      bootstrapTables: [...bootstrapTables],
+      mutableTables: [...mutableTables],
+    });
     for (const table of tables) {
       const tableStats = stats.tables[table];
       const columns = await describeTable(pool, table);
       if (!columns.length) {
+        tableStats.status = "skipped_no_columns";
+        tableStats.notes.push("no discoverable columns");
         emit("warn", `${table} has no discoverable columns. Table skipped.`);
         continue;
       }
 
       const idColumn = guessIdColumn(table, columns);
       if (!idColumn) {
+        tableStats.status = "skipped_no_numeric_id";
+        tableStats.notes.push("no numeric id column");
         emit("warn", `${table} has no numeric ID column. Table skipped.`);
         continue;
       }
@@ -444,6 +502,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
         const bootstrapDateColumn = bootstrapTables.has(table) ? resolveBootstrapDateColumn(columns) : "";
         const bootstrapStartDateTime = bootstrapDateColumn ? buildBootstrapStartDateTime(config.bootstrapDays) : "";
         if (fullResyncDue && maxId > 0) {
+          tableStats.status = "baseline_full_refresh";
           const fullRows = await fetchAllRowsForFullResync(pool, table, idColumn, config.batchSize);
           emit("info", `${table} watermark missing. Running manifest full refresh.`, {
             rowsFound: fullRows.length,
@@ -483,6 +542,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
             nextState.fullResyncAtByTable[table] = toIsoNow();
           }
         } else if (bootstrapDateColumn && maxId > 0) {
+          tableStats.status = "baseline_bootstrap";
           const bootstrapRows = await fetchRowsForBootstrap(pool, table, idColumn, bootstrapDateColumn, bootstrapStartDateTime, config.batchSize);
           emit("info", `${table} watermark missing. Bootstrapping recent live MySQL rows.`, {
             dateColumn: bootstrapDateColumn,
@@ -523,6 +583,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
           await flushWrites();
           tableStats.watermarkAfter = maxId;
         } else {
+          tableStats.status = "empty_baseline";
           tableStats.watermarkAfter = maxId;
           tableStats.skipped = tableStats.watermarkAfter;
           stats.skippedRows += tableStats.watermarkAfter;
@@ -541,6 +602,13 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
           lastId: tableStats.watermarkAfter,
           idColumn,
           bootstrapDateColumn: bootstrapDateColumn || null,
+        });
+        emit("info", `${table} sync pass finished.`, {
+          status: tableStats.status,
+          pushed: tableStats.pushed,
+          skipped: tableStats.skipped,
+          watermarkBefore: tableStats.watermarkBefore,
+          watermarkAfter: tableStats.watermarkAfter,
         });
         continue;
       }
@@ -631,6 +699,7 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
         }
 
         if (fullRefreshCount > 0) {
+          tableStats.status = "synced_full_refresh";
           emit("info", `${table} full refresh applied from manifest.`, {
             refreshedRows: fullRefreshCount,
           });
@@ -675,12 +744,17 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
         await flushWrites();
 
         if (mutableRefreshCount > 0) {
+          tableStats.status = "synced_mutable_refresh";
           emit("info", `${table} mutable refresh applied.`, {
             dateColumn: mutableDateColumn,
             startDateTime: mutableStartDateTime,
             refreshedRows: mutableRefreshCount,
           });
         }
+      }
+
+      if (!tableStats.status || tableStats.status === "pending") {
+        tableStats.status = tableStats.pushed > 0 ? "synced_incremental" : "no_changes";
       }
 
       if (!config.dryRun && tableStats.watermarkAfter > tableStats.watermarkBefore) {
@@ -696,6 +770,14 @@ export async function runLiveMysqlToFirebase(config, hooks = {}) {
           after: tableStats.watermarkAfter,
         });
       }
+
+      emit("info", `${table} sync pass finished.`, {
+        status: tableStats.status,
+        pushed: tableStats.pushed,
+        skipped: tableStats.skipped,
+        watermarkBefore: tableStats.watermarkBefore,
+        watermarkAfter: tableStats.watermarkAfter,
+      });
     }
 
     if (linkedScheduleIdsToRefresh.size && tables.includes("tbl_schedule")) {
