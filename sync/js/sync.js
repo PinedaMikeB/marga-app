@@ -13,14 +13,14 @@ const PRESETS = [
         label: 'Billing',
         description: 'Billing and invoice related tables',
         defaultOn: true,
-        tables: ['tbl_billinfo', 'tbl_billout', 'tbl_billoutparticular', 'tbl_billoutparticulars', 'tbl_billing']
+        tables: ['tbl_billinfo', 'tbl_billing', 'tbl_machinereading']
     },
     {
         key: 'collections',
         label: 'Collections',
         description: 'Collections and payment related tables',
         defaultOn: true,
-        tables: ['tbl_collection', 'tbl_collectiondetails', 'tbl_paymentinfo', 'tbl_or', 'tbl_check']
+        tables: ['tbl_collectionhistory', 'tbl_collectioninfo', 'tbl_collections', 'tbl_paymentinfo', 'tbl_payments', 'tbl_paymentcheck', 'tbl_checkpayments', 'tbl_ornumber']
     },
     {
         key: 'service',
@@ -52,7 +52,7 @@ const PRESETS = [
         label: 'Core Master Data',
         description: 'Companies, branches, contracts, machines, models, brands',
         defaultOn: false,
-        tables: ['tbl_companylist', 'tbl_branchinfo', 'tbl_contractmain', 'tbl_machine', 'tbl_model', 'tbl_brand']
+        tables: ['tbl_companylist', 'tbl_branchinfo', 'tbl_branchcontact', 'tbl_customerinfo', 'tbl_customertype', 'tbl_contractmain', 'tbl_contractdep', 'tbl_machine', 'tbl_model', 'tbl_brand']
     }
 ];
 
@@ -62,17 +62,28 @@ const TABLE_ID_HINTS = {
     tbl_savedscheds: 'id',
     tbl_schedtime: 'id',
     tbl_closedscheds: 'id',
-    tbl_trouble: 'id',
-    tbl_machinerequest: 'id',
-    tbl_newmachinerepair: 'id',
+    tbl_collectionhistory: 'id',
+    tbl_collectioninfo: 'id',
+    tbl_collections: 'id',
+    tbl_paymentinfo: 'id',
+    tbl_payments: 'id',
+    tbl_paymentcheck: 'id',
+    tbl_checkpayments: 'id',
+    tbl_ornumber: 'id',
+    tbl_machinereading: 'id',
     tbl_newmachinehistory: 'id',
     tbl_companylist: 'id',
     tbl_branchinfo: 'id',
+    tbl_branchcontact: 'id',
+    tbl_customerinfo: 'id',
+    tbl_customertype: 'id',
     tbl_machine: 'id',
     tbl_model: 'id',
     tbl_brand: 'id',
     tbl_contractmain: 'id',
-    tbl_billinfo: 'id'
+    tbl_contractdep: 'id',
+    tbl_billinfo: 'id',
+    tbl_billing: 'id'
 };
 
 const syncState = {

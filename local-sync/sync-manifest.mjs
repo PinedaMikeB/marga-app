@@ -12,7 +12,7 @@ const SCHEDULE_SAFE_REVERSE_FIELDS = [
   "dev_remarks",
 ];
 
-export const OFFICE_SYNC_MANIFEST_VERSION = "2026-03-24";
+export const OFFICE_SYNC_MANIFEST_VERSION = "2026-04-01";
 
 export const OFFICE_SYNC_MANIFEST = {
   version: OFFICE_SYNC_MANIFEST_VERSION,
@@ -194,10 +194,11 @@ export const OFFICE_SYNC_MANIFEST = {
       domain: "machines",
       sourceOfTruth: "mysql",
       mysqlToFirebase: {
-        enabled: false,
+        enabled: true,
         mode: "mutable_with_timestamp",
         mutableDateColumn: "timestmp",
         mutableLookbackHours: 72,
+        fullResyncIntervalMinutes: 180,
       },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
@@ -212,6 +213,13 @@ export const OFFICE_SYNC_MANIFEST = {
         mutableLookbackHours: 168,
         fullResyncIntervalMinutes: 180,
       },
+      firebaseToMysql: { enabled: false, mode: "none" },
+    },
+    {
+      table: "tbl_contractdep",
+      domain: "contracts",
+      sourceOfTruth: "mysql",
+      mysqlToFirebase: { enabled: true, mode: "mutable_no_timestamp", fullResyncIntervalMinutes: 180 },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
     {
@@ -313,10 +321,11 @@ export const OFFICE_SYNC_MANIFEST = {
       domain: "payments",
       sourceOfTruth: "mysql",
       mysqlToFirebase: {
-        enabled: false,
+        enabled: true,
         mode: "mutable_with_timestamp",
         mutableDateColumn: "timestamp",
         mutableLookbackHours: 168,
+        fullResyncIntervalMinutes: 120,
       },
       firebaseToMysql: { enabled: false, mode: "none" },
     },
