@@ -1428,7 +1428,6 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const bucketKey = `${contractId}::${machineId}`;
         if (!monthlyReadingByContractMachine.has(bucketKey)) monthlyReadingByContractMachine.set(bucketKey, new Map());
         const monthBucket = monthlyReadingByContractMachine.get(bucketKey);
-        const existing = monthBucket.get(monthKey);
         const nextEntry = {
             schedule_id: `reading:${String(getField(f, ['id']) || '').trim() || `${bucketKey}:${monthKey}`}`,
             invoice_num: String(getField(f, ['invoice_id']) || '').trim() || null,
@@ -1437,9 +1436,13 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             contractmain_id: contractId,
             meter_reading: meterReading
         };
-        if (!existing || new Date(existing.task_date).getTime() < readingStamp.getTime()) {
-            monthBucket.set(monthKey, nextEntry);
+        const existing = monthBucket.get(monthKey);
+        if (!existing) {
+            monthBucket.set(monthKey, { earliest: nextEntry, latest: nextEntry });
+            return;
         }
+        if (new Date(existing.earliest.task_date).getTime() > readingStamp.getTime()) existing.earliest = nextEntry;
+        if (new Date(existing.latest.task_date).getTime() < readingStamp.getTime()) existing.latest = nextEntry;
     });
 
     monthlyReadingByContractMachine.forEach((monthBucket, bucketKey) => {
@@ -1488,25 +1491,36 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const orderedMonths = Array.from(monthBucket.keys()).sort((a, b) => a.localeCompare(b));
         let previousEntry = null;
         orderedMonths.forEach((readingMonthKey) => {
-            const currentEntry = monthBucket.get(readingMonthKey);
-            if (!currentEntry) return;
+            const readingSet = monthBucket.get(readingMonthKey);
+            if (!readingSet) return;
+            const currentLatest = readingSet.latest;
+            const currentEarliest = readingSet.earliest;
             if (readingMonthKey < startKey || readingMonthKey > endKey) {
-                previousEntry = currentEntry;
+                previousEntry = currentLatest;
                 return;
             }
-            if (!previousEntry) {
-                previousEntry = currentEntry;
+            let reading = null;
+            let sourceEntry = currentLatest;
+            let meterSource = null;
+            if (previousEntry) {
+                reading = buildReadingFromMeters(matchedContract, currentLatest.meter_reading, previousEntry.meter_reading);
+                meterSource = 'prior_month_latest';
+            } else if (currentEarliest && currentLatest && Number(currentLatest.meter_reading || 0) > Number(currentEarliest.meter_reading || 0)) {
+                reading = buildReadingFromMeters(matchedContract, currentLatest.meter_reading, currentEarliest.meter_reading);
+                sourceEntry = currentLatest;
+                meterSource = 'same_month_delta';
+            }
+            if (!reading) {
+                previousEntry = currentLatest;
                 return;
             }
-
-            const reading = buildReadingFromMeters(matchedContract, currentEntry.meter_reading, previousEntry.meter_reading);
             if (reading.amountDue > 0 || reading.pages > 0) {
                 const companyCell = row.months[readingMonthKey];
                 const machineCell = machineRow.months[readingMonthKey];
                 const readingEntry = {
-                    schedule_id: currentEntry.schedule_id,
-                    invoice_num: currentEntry.invoice_num,
-                    task_date: currentEntry.task_date,
+                    schedule_id: sourceEntry.schedule_id,
+                    invoice_num: sourceEntry.invoice_num,
+                    task_date: sourceEntry.task_date,
                     machine_id: machineId,
                     contractmain_id: contractId,
                     pages: reading.pages,
@@ -1518,20 +1532,20 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     vat_amount: reading.vatAmount,
                     with_vat: reading.withVat,
                     category_id: reading.categoryId,
-                    formula: `tbl_machinereading:${reading.formula}`
+                    formula: `tbl_machinereading:${meterSource || 'unknown'}:${reading.formula}`
                 };
 
-                if (!companyCell.reading_groups.has(currentEntry.schedule_id)) {
+                if (!companyCell.reading_groups.has(sourceEntry.schedule_id)) {
                     companyCell.reading_task_count += 1;
                     companyCell.reading_amount_total += reading.amountDue;
                     companyCell.reading_pages_total += reading.pages;
                     companyCell.display_amount_total = companyCell.amount_total > 0 ? companyCell.amount_total : companyCell.reading_amount_total;
                     companyCell.reading_formula = companyCell.reading_formula || readingEntry.formula;
                     companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice' : 'meter_reading';
-                    companyCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
+                    companyCell.reading_groups.set(sourceEntry.schedule_id, readingEntry);
                 }
 
-                if (!machineCell.reading_groups.has(currentEntry.schedule_id)) {
+                if (!machineCell.reading_groups.has(sourceEntry.schedule_id)) {
                     machineCell.reading_task_count += 1;
                     machineCell.reading_amount_total += reading.amountDue;
                     machineCell.reading_pages_total += reading.pages;
@@ -1540,10 +1554,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice' : 'meter_reading';
                     if (machineId) machineCell.machine_ids.add(machineId);
                     machineCell.machine_count = machineCell.machine_ids.size || 1;
-                    machineCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
+                    machineCell.reading_groups.set(sourceEntry.schedule_id, readingEntry);
                 }
             }
-            previousEntry = currentEntry;
+            previousEntry = currentLatest;
         });
     });
 
