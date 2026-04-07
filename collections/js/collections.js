@@ -38,6 +38,8 @@ let collectorBillingRecords = [];
 let collectorCellMap = new Map();
 let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
+let collectorBillingMatrixCache = null;
+let collectorBillingMatrixPromise = null;
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -334,7 +336,15 @@ function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
             label: monthMeta.fullLabel || monthMeta.label || monthMeta.key,
             rdValues: [],
             billedTotal: 0,
+            displayBilledTotal: 0,
             collectedTotal: 0,
+            billedBasis: 'none',
+            missedReading: false,
+            catchUpBilling: false,
+            catchUpGapMonths: 0,
+            pendingBilling: false,
+            readingPagesTotal: 0,
+            readingTaskCount: 0,
             records: [],
             recordMap: new Map()
         });
@@ -399,6 +409,9 @@ function upsertCollectorCellRecord(cell, recordKey, payload) {
 
 function finalizeCollectorCellRecords(cellMap) {
     cellMap.forEach((cell) => {
+        cell.displayBilledTotal = Number(
+            (Number(cell.displayBilledTotal || 0) > 0 ? cell.displayBilledTotal : cell.billedTotal) || 0
+        );
         cell.records = Array.from(cell.recordMap.values())
             .map((record) => ({
                 ...record,
@@ -411,6 +424,59 @@ function finalizeCollectorCellRecords(cellMap) {
             });
         delete cell.recordMap;
     });
+}
+
+async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
+    const startKey = getMonthKey(windowStart);
+    const endKey = getMonthKey(endMonthDate);
+    const cacheKey = `${startKey}:${endKey}`;
+
+    if (collectorBillingMatrixCache?.cacheKey === cacheKey) return collectorBillingMatrixCache;
+    if (collectorBillingMatrixPromise?.cacheKey === cacheKey) return collectorBillingMatrixPromise.promise;
+
+    const params = new URLSearchParams();
+    params.set('start_year', String(windowStart.getFullYear()));
+    params.set('start_month', String(windowStart.getMonth() + 1));
+    params.set('end_year', String(endMonthDate.getFullYear()));
+    params.set('end_month', String(endMonthDate.getMonth() + 1));
+    params.set('include_rows', 'true');
+    params.set('include_active_rows', 'true');
+    params.set('row_limit', '1200');
+    params.set('latest_limit', '100');
+    params.set('max_billing_pages', '10');
+    params.set('max_schedule_pages', '10');
+
+    const request = fetch(`/.netlify/functions/openclaw-billing-cohort?${params.toString()}`)
+        .then(async (response) => {
+            if (!response.ok) throw new Error(`Billing cohort request failed: ${response.status}`);
+            const payload = await response.json();
+            const rows = Array.isArray(payload?.month_matrix?.rows) ? payload.month_matrix.rows : [];
+            const rowMap = new Map();
+            rows.forEach((row) => {
+                if (!row || row.is_summary_row) return;
+                const rowId = String(row.row_id || '').trim();
+                if (rowId) rowMap.set(rowId, row);
+                const contractId = String(row.contractmain_id || '').trim();
+                if (contractId) rowMap.set(`contract:${contractId}`, row);
+                const machineId = String(row.machine_id || '').trim();
+                if (machineId && !contractId) rowMap.set(`machine:${machineId}`, row);
+            });
+            const result = { cacheKey, payload, rowMap };
+            collectorBillingMatrixCache = result;
+            return result;
+        })
+        .catch((error) => {
+            console.warn('Unable to load billing cohort for collections:', error);
+            const result = { cacheKey, payload: null, rowMap: new Map() };
+            collectorBillingMatrixCache = result;
+            return result;
+        })
+        .finally(() => {
+            if (collectorBillingMatrixPromise?.cacheKey === cacheKey) collectorBillingMatrixPromise = null;
+        });
+
+    collectorBillingMatrixPromise = { cacheKey, promise: request };
+    return request;
 }
 
 function updateCollectorViewportRange() {
@@ -973,6 +1039,14 @@ function buildMachineLabel(machineId, contractmainId) {
     return `Contract ${String(contractmainId || '').trim()}`;
 }
 
+function buildCollectorRowKey(machineId, contractmainId) {
+    const contractId = String(contractmainId || '').trim();
+    if (contractId) return `contract:${contractId}`;
+    const machine = String(machineId || '').trim();
+    if (machine) return `machine:${machine}`;
+    return `contract:unknown`;
+}
+
 function resolveSerialLabel(contract) {
     const contractSerial = String(contract?.xserial || '').trim();
     if (contractSerial) return contractSerial;
@@ -1371,7 +1445,7 @@ function recomputeFilteredInvoices() {
 
     updateAllStats();
     updateDurationSummary();
-    renderCollectorDashboard();
+    void renderCollectorDashboard();
     renderTrendDashboard();
     renderTable();
     showActiveFilters();
@@ -2080,7 +2154,7 @@ function renderTrendComparisonTable(trendData) {
     `;
 }
 
-function computeCollectorDashboardData() {
+async function computeCollectorDashboardData() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -2096,6 +2170,7 @@ function computeCollectorDashboardData() {
 
     const previousMonthStart = addMonths(windowStart, -1);
     const monthColumnKeys = new Set(monthColumns.map((column) => column.key));
+    const billingMatrix = await loadCollectorBillingMatrix(windowStart, summaryEnd);
 
     const monthMetaMap = new Map(monthColumns.map((column) => [column.key, column]));
     const paymentMap = new Map();
@@ -2161,7 +2236,7 @@ function computeCollectorDashboardData() {
     });
 
     collectorBillingRecords.forEach((record) => {
-        const rowId = String(record.contractmainId || `${record.accountLabel || record.company}__${record.machineId || record.invoiceKey}`).trim();
+        const rowId = buildCollectorRowKey(record.machineId, record.contractmainId);
         if (!rowId) return;
 
         const paymentSummary =
@@ -2209,6 +2284,7 @@ function computeCollectorDashboardData() {
             const invoiceCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(record.monthKey));
             invoiceCell.rdValues.push(record.rd);
             invoiceCell.billedTotal += Number(record.amount || 0);
+            invoiceCell.displayBilledTotal = Math.max(Number(invoiceCell.displayBilledTotal || 0), Number(invoiceCell.billedTotal || 0));
             upsertCollectorCellRecord(invoiceCell, record.invoiceKey, {
                 ...record,
                 amount: Number(record.amount || 0),
@@ -2245,6 +2321,52 @@ function computeCollectorDashboardData() {
         });
     });
 
+    billingMatrix.rowMap.forEach((billingRow) => {
+        const rowId = String(billingRow?.row_id || '').trim();
+        if (!rowId) return;
+
+        if (!accountRowsMap.has(rowId)) {
+            accountRowsMap.set(rowId, {
+                rowId,
+                customer: billingRow.company_name || billingRow.account_name || 'Unknown',
+                branchName: billingRow.branch_name || 'Main',
+                accountLabel: billingRow.account_name || billingRow.company_name || 'Unknown',
+                serialNumber: billingRow.serial_number || buildMachineLabel(billingRow.machine_id, billingRow.contractmain_id),
+                machineLabel: billingRow.machine_label || buildMachineLabel(billingRow.machine_id, billingRow.contractmain_id),
+                machineId: String(billingRow.machine_id || '').trim(),
+                contractmainId: String(billingRow.contractmain_id || '').trim(),
+                rdCounts: new Map(),
+                months: {},
+                totalCollected: 0
+            });
+        }
+
+        const accountRow = accountRowsMap.get(rowId);
+        const readingDay = Number(billingRow.reading_day || 0) || null;
+        if (readingDay) accountRow.rdCounts.set(readingDay, (accountRow.rdCounts.get(readingDay) || 0) + 1);
+
+        monthColumns.forEach((column) => {
+            const billingCell = billingRow.months?.[column.key];
+            if (!billingCell) return;
+            const displayBilledTotal = Number(billingCell.display_amount_total || billingCell.amount_total || 0);
+            const hasBillingState = displayBilledTotal > 0 || billingCell.pending || billingCell.missed_reading || billingCell.catch_up_billing;
+            if (!hasBillingState) return;
+
+            const collectorCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(column.key));
+            collectorCell.rdValues.push(readingDay);
+            collectorCell.displayBilledTotal = Math.max(Number(collectorCell.displayBilledTotal || 0), displayBilledTotal);
+            collectorCell.billedTotal = Math.max(Number(collectorCell.billedTotal || 0), displayBilledTotal);
+            collectorCell.billedBasis = billingCell.billed_basis || collectorCell.billedBasis || 'none';
+            collectorCell.missedReading = Boolean(collectorCell.missedReading || billingCell.missed_reading);
+            collectorCell.catchUpBilling = Boolean(collectorCell.catchUpBilling || billingCell.catch_up_billing);
+            collectorCell.catchUpGapMonths = Math.max(Number(collectorCell.catchUpGapMonths || 0), Number(billingCell.catch_up_gap_months || 0));
+            collectorCell.pendingBilling = Boolean(collectorCell.pendingBilling || billingCell.pending);
+            collectorCell.readingPagesTotal = Math.max(Number(collectorCell.readingPagesTotal || 0), Number(billingCell.reading_pages_total || 0));
+            collectorCell.readingTaskCount = Math.max(Number(collectorCell.readingTaskCount || 0), Number(billingCell.reading_task_count || 0));
+            accountRow.months[column.key] = collectorCell.id;
+        });
+    });
+
     finalizeCollectorCellRecords(collectorCellMap);
 
     const customerRows = Array.from(accountRowsMap.values())
@@ -2265,7 +2387,8 @@ function computeCollectorDashboardData() {
                 if (cell) {
                     row.totalCollected += cell.collectedTotal;
                     monthTotals[column.key] += cell.collectedTotal;
-                    if (cell.billedTotal > 0 && cell.collectedTotal <= 0) {
+                    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                    if ((billedTarget > 0 || cell.missedReading || cell.pendingBilling) && cell.collectedTotal <= 0) {
                         pendingCountsByMonth[column.key] += 1;
                     }
                 }
@@ -2318,7 +2441,10 @@ function computeCollectorDashboardData() {
         })
         .reverse();
 
-    const pendingCellCount = Array.from(collectorCellMap.values()).filter((cell) => cell.billedTotal > 0 && cell.collectedTotal <= 0).length;
+    const pendingCellCount = Array.from(collectorCellMap.values()).filter((cell) => {
+        const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+        return (billedTarget > 0 || cell.missedReading || cell.pendingBilling) && cell.collectedTotal <= 0;
+    }).length;
 
     return {
         monthColumns,
@@ -2411,14 +2537,28 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                     return '<td class="month-cell no-bill"></td>';
                                 }
 
+                                const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                                const missedReading = Boolean(cell.missedReading);
+                                const catchUpBilling = Boolean(cell.catchUpBilling);
+                                const showBillingAmount = billedTarget > 0;
                                 let cellClass = 'month-cell pending';
                                 let cellText = '<span class="collector-empty-dot"></span>';
-                                if (cell.collectedTotal > 0 && cell.collectedTotal < cell.billedTotal) {
+
+                                if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal < billedTarget) {
                                     cellClass = 'month-cell partial';
                                     cellText = escapeHtml(formatPlainNumber(cell.collectedTotal));
-                                } else if (cell.collectedTotal >= cell.billedTotal && cell.collectedTotal > 0) {
+                                } else if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal >= billedTarget) {
                                     cellClass = 'month-cell collected';
                                     cellText = escapeHtml(formatPlainNumber(cell.collectedTotal));
+                                } else if (showBillingAmount) {
+                                    cellClass = `month-cell pending${catchUpBilling ? ' catch-up' : ''}`;
+                                    cellText = `
+                                        <span class="collector-amount">${escapeHtml(formatPlainNumber(billedTarget))}</span>
+                                        ${catchUpBilling ? `<span class="collector-state-label catch-up">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))})` : ''}</span>` : ''}
+                                    `;
+                                } else if (missedReading || cell.pendingBilling) {
+                                    cellClass = `month-cell missed-reading${cell.pendingBilling ? ' pending-billing' : ''}`;
+                                    cellText = `<span class="collector-state-label missed">${escapeHtml(missedReading ? 'Missed Reading' : 'Pending Billing')}</span>`;
                                 }
 
                                 return `<td class="${cellClass}" onclick="openCollectorCellByToken('${encodeURIComponent(cell.id)}')">${cellText}</td>`;
@@ -2464,8 +2604,8 @@ function renderCollectorMatrixTable(data, visibleRows) {
     bindCollectorMatrixViewport();
 }
 
-function renderCollectorDashboard() {
-    const data = computeCollectorDashboardData();
+async function renderCollectorDashboard() {
+    const data = await computeCollectorDashboardData();
     const visibleRows = prepareCollectorRows(data.customerRows);
     renderCollectorSummaryTable(data);
     renderCollectorMatrixTable(data, visibleRows);
@@ -2476,7 +2616,7 @@ function renderCollectorDashboard() {
         const filterText = searchTerm
             ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Click beige cells to review unpaid invoices and continue collection remarks.`;
+        noteNode.textContent = `${filterText} Cells can show branch billed amounts from Billing even when collection is still zero. Footer totals remain collected totals. Click cells to review unpaid invoices, missed readings, and continue collection remarks.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
@@ -2501,11 +2641,17 @@ function openCollectorCell(cellId) {
     if (!modal || !title || !subtitle || !content) return;
 
     title.textContent = `${cell.customer} • ${cell.branchName || cell.accountLabel || 'Main'} • ${cell.label}`;
-    subtitle.textContent = cell.collectedTotal > 0
-        ? `Invoice worklist for ${cell.serialNumber || cell.machineLabel || 'this account'}. Use Open Call Log to continue the collector notes.`
-        : `No payment posted yet for ${cell.serialNumber || cell.machineLabel || 'this account'}. Review invoices and continue the collection follow-up.`;
-
-    const pendingAmount = Math.max(0, cell.billedTotal - cell.collectedTotal);
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+    const pendingAmount = Math.max(0, billedTarget - cell.collectedTotal);
+    if (cell.missedReading) {
+        subtitle.textContent = `No billed amount exists yet for ${cell.serialNumber || cell.machineLabel || 'this account'} in this month. This looks like a missed reading or missed billing month, so the collector can follow up with billing staff.`;
+    } else if (cell.collectedTotal > 0) {
+        subtitle.textContent = `Invoice worklist for ${cell.serialNumber || cell.machineLabel || 'this account'}. Use Open Call Log to continue the collector notes.`;
+    } else if (billedTarget > 0) {
+        subtitle.textContent = `No payment posted yet for ${cell.serialNumber || cell.machineLabel || 'this account'}. Billed amount follows the billing breakdown for this branch or department.`;
+    } else {
+        subtitle.textContent = `No payment posted yet for ${cell.serialNumber || cell.machineLabel || 'this account'}. Review invoices and continue the collection follow-up.`;
+    }
 
     content.innerHTML = `
         <div class="cell-modal-summary">
@@ -2515,7 +2661,7 @@ function openCollectorCell(cellId) {
             </div>
             <div class="cell-modal-card">
                 <div class="label">Billed</div>
-                <div class="value">${escapeHtml(formatCurrency(cell.billedTotal))}</div>
+                <div class="value">${escapeHtml(formatCurrency(billedTarget))}</div>
             </div>
             <div class="cell-modal-card">
                 <div class="label">Collected</div>
@@ -2526,8 +2672,16 @@ function openCollectorCell(cellId) {
                 <div class="value">${escapeHtml(formatCurrency(pendingAmount))}</div>
             </div>
         </div>
+        <div class="collector-cell-status-row">
+            ${cell.missedReading ? '<span class="collector-chip pending">Missed Reading</span>' : ''}
+            ${cell.catchUpBilling ? `<span class="collector-chip viewport">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))} months)` : ''}</span>` : ''}
+            ${cell.pendingBilling && !cell.missedReading ? '<span class="collector-chip pending">Pending Billing</span>' : ''}
+            ${cell.readingPagesTotal > 0 ? `<span class="collector-chip">Reading Pages: ${escapeHtml(formatPlainNumber(cell.readingPagesTotal))}</span>` : ''}
+            ${cell.readingTaskCount > 0 ? `<span class="collector-chip">Meter Forms: ${escapeHtml(formatPlainNumber(cell.readingTaskCount))}</span>` : ''}
+        </div>
         <div class="cell-invoice-list">
-            ${cell.records
+            ${cell.records.length
+                ? cell.records
                 .sort((a, b) => {
                     const aTime = a.invoiceDate ? a.invoiceDate.getTime() : 0;
                     const bTime = b.invoiceDate ? b.invoiceDate.getTime() : 0;
@@ -2579,7 +2733,21 @@ function openCollectorCell(cellId) {
                         </article>
                     `;
                 })
-                .join('')}
+                .join('')
+                : `<article class="cell-invoice-item">
+                        <div class="cell-invoice-head">
+                            <div>
+                                <div class="cell-invoice-title">${cell.missedReading ? 'No invoice created yet' : 'No invoice record linked yet'}</div>
+                                <div class="cell-invoice-meta">${escapeHtml(cell.branchName || cell.accountLabel || 'Main')} • ${escapeHtml(cell.label)}</div>
+                            </div>
+                            <div class="comparison-total-chip">${escapeHtml(formatCurrency(billedTarget))}</div>
+                        </div>
+                        <div class="cell-invoice-note">${escapeHtml(
+                            cell.missedReading
+                                ? 'This month looks missed in billing. The collector can use this as a reminder to ask billing staff to complete the missing reading or billing.'
+                                : 'This branch has a billing breakdown amount from the billing dashboard, but no invoice record is linked in Collections yet.'
+                        )}</div>
+                    </article>`}
         </div>
     `;
 
@@ -3303,10 +3471,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     toggleAnalyticsDashboard(false);
 
     document.getElementById('collectorSearchInput')?.addEventListener('input', () => {
-        if (lastLoadSucceeded) renderCollectorDashboard();
+        if (lastLoadSucceeded) void renderCollectorDashboard();
     });
     document.getElementById('collectorSortInput')?.addEventListener('change', () => {
-        if (lastLoadSucceeded) renderCollectorDashboard();
+        if (lastLoadSucceeded) void renderCollectorDashboard();
     });
 
     document.getElementById('search-input')?.addEventListener('keyup', (event) => {
