@@ -40,6 +40,7 @@ let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
 let collectorBillingMatrixCache = null;
 let collectorBillingMatrixPromise = null;
+let collectorMatrixDragState = null;
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -480,13 +481,16 @@ async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
 }
 
 function updateCollectorViewportRange() {
-    const chip = document.getElementById('collector-visible-range');
+    const chips = [
+        document.getElementById('collector-visible-range'),
+        document.getElementById('collector-visible-range-inline')
+    ].filter(Boolean);
     const container = document.getElementById('collector-matrix-table');
-    if (!chip || !container) return;
+    if (!chips.length || !container) return;
 
     const monthHeaders = Array.from(container.querySelectorAll('thead th[data-month-key]'));
     if (!monthHeaders.length) {
-        chip.textContent = 'Viewing current months';
+        chips.forEach((chip) => { chip.textContent = 'Viewing current months'; });
         return;
     }
 
@@ -505,9 +509,10 @@ function updateCollectorViewportRange() {
     const lastVisible = visibleHeaders[visibleHeaders.length - 1] || monthHeaders[monthHeaders.length - 1];
     const firstLabel = firstVisible?.dataset.monthFullLabel || firstVisible?.dataset.monthLabel || '';
     const lastLabel = lastVisible?.dataset.monthFullLabel || lastVisible?.dataset.monthLabel || '';
-    chip.textContent = firstLabel && lastLabel && firstLabel !== lastLabel
+    const text = firstLabel && lastLabel && firstLabel !== lastLabel
         ? `Viewing ${firstLabel} to ${lastLabel}`
         : `Viewing ${firstLabel || lastLabel || 'current month'}`;
+    chips.forEach((chip) => { chip.textContent = text; });
 }
 
 function scrollCollectorMatrix(direction) {
@@ -526,6 +531,38 @@ function bindCollectorMatrixViewport() {
         container.addEventListener('scroll', updateCollectorViewportRange, { passive: true });
         document.getElementById('collectorScrollLeft')?.addEventListener('click', () => scrollCollectorMatrix(-1));
         document.getElementById('collectorScrollRight')?.addEventListener('click', () => scrollCollectorMatrix(1));
+        document.getElementById('collectorScrollLeftInline')?.addEventListener('click', () => scrollCollectorMatrix(-1));
+        document.getElementById('collectorScrollRightInline')?.addEventListener('click', () => scrollCollectorMatrix(1));
+
+        container.addEventListener('mousedown', (event) => {
+            if (event.button !== 0) return;
+            if (event.target.closest('button, a, input, select, textarea')) return;
+            collectorMatrixDragState = {
+                startX: event.clientX,
+                startScrollLeft: container.scrollLeft
+            };
+            container.classList.add('dragging');
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            if (!collectorMatrixDragState) return;
+            const delta = event.clientX - collectorMatrixDragState.startX;
+            container.scrollLeft = collectorMatrixDragState.startScrollLeft - delta;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (!collectorMatrixDragState) return;
+            collectorMatrixDragState = null;
+            container.classList.remove('dragging');
+            updateCollectorViewportRange();
+        });
+
+        container.addEventListener('mouseleave', () => {
+            if (!collectorMatrixDragState) return;
+            collectorMatrixDragState = null;
+            container.classList.remove('dragging');
+        });
+
         collectorViewportBound = true;
     }
 

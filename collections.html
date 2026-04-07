@@ -566,6 +566,19 @@
             min-width: 180px;
         }
 
+        .collector-control-block.nav {
+            margin-left: auto;
+            min-width: 260px;
+        }
+
+        .collector-nav-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
         .collector-chip {
             display: inline-flex;
             align-items: center;
@@ -662,6 +675,13 @@
 
         .collector-sheet-scroll.matrix {
             max-height: 560px;
+            overflow: auto;
+            cursor: grab;
+        }
+
+        .collector-sheet-scroll.matrix.dragging {
+            cursor: grabbing;
+            user-select: none;
         }
 
         .collector-sheet {
@@ -2308,6 +2328,14 @@
                                 <option value="rd">RD</option>
                                 <option value="customer">Customer</option>
                             </select>
+                        </div>
+                        <div class="collector-control-block nav">
+                            <label>Month View</label>
+                            <div class="collector-nav-row">
+                                <span class="collector-chip viewport" id="collector-visible-range-inline">Viewing October 2025 to December 2026</span>
+                                <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeftInline" aria-label="Scroll collection months left">←</button>
+                                <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRightInline" aria-label="Scroll collection months right">→</button>
+                            </div>
                         </div>
                     </div>
                     <div class="collector-chip-row collector-matrix-legend">
