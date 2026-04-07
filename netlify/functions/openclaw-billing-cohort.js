@@ -702,6 +702,9 @@ function createMonthCell(monthKey) {
         reading_task_count: 0,
         reading_formula: null,
         billed_basis: 'none',
+        missed_reading: false,
+        catch_up_billing: false,
+        catch_up_gap_months: 0,
         billed_branch_ids: new Set(),
         invoice_keys: new Set(),
         machine_ids: new Set(),
@@ -1676,7 +1679,6 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         months.forEach((monthKey) => {
             const cell = row.months[monthKey];
             const accountCell = accountRow?.months?.[monthKey];
-            const summary = summaryByMonth.get(monthKey);
 
             if (!cell.billed) {
                 const monthIndex = months.indexOf(monthKey);
@@ -1707,6 +1709,44 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             }
 
             finalizeReceiptStatus(cell);
+        });
+
+        months.forEach((monthKey, monthIndex) => {
+            const cell = row.months[monthKey];
+            cell.missed_reading = false;
+            cell.catch_up_billing = false;
+            cell.catch_up_gap_months = 0;
+
+            if (cell.pending) {
+                const hasLaterBilled = months.slice(monthIndex + 1).some((nextKey) => {
+                    const nextCell = row.months[nextKey];
+                    return Boolean(nextCell?.billed || Number(nextCell?.display_amount_total || 0) > 0);
+                });
+                if (hasLaterBilled) cell.missed_reading = true;
+                return;
+            }
+
+            if (!(cell.billed || Number(cell.display_amount_total || 0) > 0)) return;
+
+            let gapMonths = 0;
+            for (let priorIndex = monthIndex - 1; priorIndex >= 0; priorIndex -= 1) {
+                const priorCell = row.months[months[priorIndex]];
+                if (priorCell?.pending) {
+                    gapMonths += 1;
+                    continue;
+                }
+                if (priorCell?.billed || Number(priorCell?.display_amount_total || 0) > 0) break;
+                break;
+            }
+            if (gapMonths > 0) {
+                cell.catch_up_billing = true;
+                cell.catch_up_gap_months = gapMonths;
+            }
+        });
+
+        months.forEach((monthKey) => {
+            const cell = row.months[monthKey];
+            const summary = summaryByMonth.get(monthKey);
 
             if (cell.billed) row.billed_months_count += 1;
             if (cell.pending) {
@@ -1752,6 +1792,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 reading_task_count: Number(cell.reading_task_count || 0) || 0,
                 reading_formula: cell.reading_formula || null,
                 billed_basis: cell.billed_basis || 'none',
+                missed_reading: Boolean(cell.missed_reading),
+                catch_up_billing: Boolean(cell.catch_up_billing),
+                catch_up_gap_months: Number(cell.catch_up_gap_months || 0) || 0,
                 billing_task_count: cell.billing_task_count,
                 received_task_count: cell.received_task_count,
                 receipt_status: cell.receipt_status,
