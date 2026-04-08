@@ -144,6 +144,7 @@ const PETTY_CASH_STATE = {
     requests: [],
     employees: [],
     payees: [],
+    suppliers: [],
     settings: normalizeSettings(DEFAULT_SETTINGS)
 };
 
@@ -152,6 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     hydrateState();
     await loadEmployeeOptions();
     await loadPayeeOptions();
+    await loadSupplierOptions();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindControls();
     populateSelects();
@@ -225,12 +227,18 @@ function populateSelects() {
         .sort((left, right) => left.localeCompare(right))
         .map((name) => `<option value="${escapeHtml(name)}"></option>`)
         .join('');
+    const supplierOptions = PETTY_CASH_STATE.suppliers
+        .slice()
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+        .join('');
 
     document.getElementById('entryAccountInput').innerHTML = `<option value="">Select account</option>${accountOptions}`;
     document.getElementById('entryRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
     document.getElementById('requestRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
     document.getElementById('entryExpenseGroupInput').innerHTML = `<option value="">Select item group</option>${expenseGroupOptions}`;
     document.getElementById('entryPayeeList').innerHTML = payeeOptions;
+    document.getElementById('entrySupplierList').innerHTML = supplierOptions;
     document.getElementById('entryStatusInput').innerHTML = ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('entryStatusFilter').innerHTML = '<option value="all">All Entry Statuses</option>' + ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('requestStatusInput').innerHTML = REQUEST_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
@@ -270,6 +278,7 @@ function onEntrySubmit(event) {
         voucherNumber: String(document.getElementById('entryVoucherInput').value || '').trim() || '',
         date: document.getElementById('entryDateInput').value,
         payee: document.getElementById('entryPayeeInput').value,
+        supplier: document.getElementById('entrySupplierInput').value,
         requestedBy: document.getElementById('entryRequestedByInput').value,
         expenseGroup: document.getElementById('entryExpenseGroupInput').value,
         accountId: document.getElementById('entryAccountInput').value,
@@ -292,6 +301,7 @@ function onEntrySubmit(event) {
     }
 
     ensurePayeeOption(next.payee);
+    ensureSupplierOption(next.supplier);
     upsertById(PETTY_CASH_STATE.entries, next);
     reconcileRequests();
     persistState();
@@ -417,6 +427,7 @@ function renderAll() {
     renderFundSnapshot();
     renderDailySummary();
     renderEntriesTable();
+    renderSupplierSummary();
     renderRequestsTable();
     renderAccountCards();
     renderRequestPreview();
@@ -537,6 +548,7 @@ function renderEntriesTable() {
                 entry.id,
                 entry.voucherNumber,
                 entry.payee,
+                entry.supplier,
                 entry.requestedBy,
                 getExpenseGroupLabel(entry.expenseGroup),
                 entry.receiptNumber,
@@ -549,7 +561,7 @@ function renderEntriesTable() {
         .sort((left, right) => String(left.voucherNumber || left.id).localeCompare(String(right.voucherNumber || right.id)));
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No petty cash entry matched the selected day and filters.</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No petty cash entry matched the selected day and filters.</div></td></tr>';
         return;
     }
 
@@ -565,6 +577,7 @@ function renderEntriesTable() {
                     </div>
                 </td>
                 <td>${escapeHtml(entry.requestedBy || '-')}</td>
+                <td>${escapeHtml(entry.supplier || '-')}</td>
                 <td>
                     <div class="ref-cell">
                         <span class="ref-primary">${escapeHtml(account?.name || 'Unknown Account')}</span>
@@ -590,6 +603,46 @@ function renderEntriesTable() {
             </tr>
         `;
     }).join('');
+}
+
+function renderSupplierSummary() {
+    const tbody = document.getElementById('supplierSummaryBody');
+    const selectedDate = getSelectedDateValue();
+    const selectedMonth = String(selectedDate || '').slice(0, 7);
+    const rows = new Map();
+
+    PETTY_CASH_STATE.entries
+        .filter((entry) => entry.status !== 'Cancelled' && String(entry.date || '').slice(0, 7) === selectedMonth)
+        .forEach((entry) => {
+            const supplier = String(entry.supplier || '').trim();
+            if (!supplier) return;
+            if (!rows.has(supplier)) {
+                rows.set(supplier, { supplier, count: 0, total: 0 });
+            }
+            const bucket = rows.get(supplier);
+            bucket.count += 1;
+            bucket.total += Number(entry.amount || 0);
+        });
+
+    const summaryRows = [...rows.values()].sort((left, right) => {
+        if (right.total !== left.total) return right.total - left.total;
+        return left.supplier.localeCompare(right.supplier);
+    });
+
+    document.getElementById('supplierSummaryMeta').textContent = `Supplier totals for ${formatMonthLabelFromValue(selectedDate)}.`;
+
+    if (!summaryRows.length) {
+        tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state">No supplier/store has been recorded for the selected month yet.</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = summaryRows.map((row) => `
+        <tr>
+            <td>${escapeHtml(row.supplier)}</td>
+            <td>${row.count.toLocaleString()}</td>
+            <td>${MargaUtils.formatCurrency(row.total)}</td>
+        </tr>
+    `).join('');
 }
 
 function renderRequestsTable() {
@@ -759,6 +812,8 @@ function fillEntryForm(entry) {
     document.getElementById('entryStatusInput').value = entry.status;
     ensurePayeeOption(entry.payee || '');
     document.getElementById('entryPayeeInput').value = entry.payee;
+    ensureSupplierOption(entry.supplier || '');
+    document.getElementById('entrySupplierInput').value = entry.supplier || '';
     ensureEmployeeOption(entry.requestedBy || '');
     document.getElementById('entryRequestedByInput').value = entry.requestedBy || '';
     document.getElementById('entryExpenseGroupInput').value = entry.expenseGroup || inferExpenseGroupFromAccount(entry.accountId) || '';
@@ -789,6 +844,7 @@ function clearEntryForm() {
     document.getElementById('entryVoucherInput').value = '';
     document.getElementById('entryDateInput').value = getSelectedDateValue();
     document.getElementById('entryStatusInput').value = 'Pending Liquidation';
+    document.getElementById('entrySupplierInput').value = '';
     ensureEmployeeOption(currentUser?.name || '');
     document.getElementById('entryRequestedByInput').value = currentUser?.name || '';
     document.getElementById('entryExpenseGroupInput').value = '';
@@ -874,6 +930,7 @@ function printDailyDocument(reportDate, entries) {
                 <td>${escapeHtml(entry.voucherNumber || entry.id)}</td>
                 <td>${escapeHtml(entry.payee)}</td>
                 <td>${escapeHtml(entry.requestedBy || '-')}</td>
+                <td>${escapeHtml(entry.supplier || '-')}</td>
                 <td>${escapeHtml(account?.name || '-')}</td>
                 <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
                 <td>${escapeHtml(entry.description || '-')}</td>
@@ -940,8 +997,9 @@ function printDailyDocument(reportDate, entries) {
                     <tr>
                         <th>#</th>
                         <th>Voucher</th>
-                        <th>Payee</th>
+                        <th>Released To</th>
                         <th>Requested By</th>
+                        <th>Supplier / Store</th>
                         <th>Account</th>
                         <th>Group</th>
                         <th>Description / Remarks</th>
@@ -984,6 +1042,7 @@ function printRequestDocument(request) {
                 <td>${escapeHtml(entry.voucherNumber || entry.id)}</td>
                 <td>${escapeHtml(entry.payee)}</td>
                 <td>${escapeHtml(entry.requestedBy || '-')}</td>
+                <td>${escapeHtml(entry.supplier || '-')}</td>
                 <td>${escapeHtml(account?.name || '-')}</td>
                 <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
                 <td>${escapeHtml(entry.description || '-')}</td>
@@ -1048,8 +1107,9 @@ function printRequestDocument(request) {
                     <tr>
                         <th>#</th>
                         <th>Voucher</th>
-                        <th>Payee</th>
+                        <th>Released To</th>
                         <th>Requested By</th>
+                        <th>Supplier / Store</th>
                         <th>Account</th>
                         <th>Group</th>
                         <th>Description / Remarks</th>
@@ -1234,6 +1294,7 @@ function normalizeEntry(entry) {
         voucherNumber: String(entry.voucherNumber || baseId).trim(),
         date: String(entry.date || getSelectedDateValue()).trim(),
         payee: String(entry.payee || '').trim(),
+        supplier: String(entry.supplier || '').trim(),
         requestedBy: String(entry.requestedBy || '').trim(),
         expenseGroup: String(entry.expenseGroup || inferExpenseGroupFromAccount(entry.accountId) || '').trim(),
         accountId: String(entry.accountId || getDefaultAccountForGroup(entry.expenseGroup) || '').trim(),
@@ -1342,6 +1403,47 @@ async function loadPayeeOptions() {
     PETTY_CASH_STATE.payees = [...names].map((item) => String(item || '').trim()).filter(Boolean);
 }
 
+async function loadSupplierOptions() {
+    const names = new Set(PAYEE_FALLBACK_OPTIONS);
+    PETTY_CASH_STATE.entries.forEach((entry) => {
+        if (entry.supplier) names.add(String(entry.supplier).trim());
+    });
+
+    try {
+        const apdRaw = localStorage.getItem('marga_apd_bills_v1');
+        if (apdRaw) {
+            const bills = JSON.parse(apdRaw);
+            if (Array.isArray(bills)) {
+                bills.forEach((bill) => {
+                    const payee = String(bill?.payee || '').trim();
+                    if (payee) names.add(payee);
+                });
+            }
+        }
+    } catch (error) {
+        console.warn('Unable to read APD payees for petty cash supplier dropdown:', error);
+    }
+
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'tbl_supplier' }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+            limit: 5000
+        });
+        docs
+            .map((doc) => MargaAuth.parseFirestoreDoc(doc))
+            .filter(Boolean)
+            .forEach((supplier) => {
+                const name = formatSupplierName(supplier);
+                if (name) names.add(name);
+            });
+    } catch (error) {
+        console.warn('Unable to load supplier suggestions for petty cash:', error);
+    }
+
+    PETTY_CASH_STATE.suppliers = [...names].map((item) => String(item || '').trim()).filter(Boolean);
+}
+
 function formatEmployeeName(employee) {
     if (!employee || typeof employee !== 'object') return '';
     const full = String(
@@ -1383,6 +1485,15 @@ function ensurePayeeOption(name) {
     if (!normalized) return;
     if (!PETTY_CASH_STATE.payees.includes(normalized)) {
         PETTY_CASH_STATE.payees.push(normalized);
+        populateSelects();
+    }
+}
+
+function ensureSupplierOption(name) {
+    const normalized = String(name || '').trim();
+    if (!normalized) return;
+    if (!PETTY_CASH_STATE.suppliers.includes(normalized)) {
+        PETTY_CASH_STATE.suppliers.push(normalized);
         populateSelects();
     }
 }
@@ -1525,6 +1636,15 @@ function formatLongDate(value) {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
+    });
+}
+
+function formatMonthLabelFromValue(value) {
+    const date = parseDateOnly(value);
+    if (!date) return 'the selected month';
+    return date.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'long'
     });
 }
 

@@ -210,6 +210,11 @@
                             <datalist id="entryPayeeList"></datalist>
                         </label>
                         <label class="marga-field">
+                            <span>Supplier / Store</span>
+                            <input type="text" id="entrySupplierInput" list="entrySupplierList" placeholder="Toner Pro, Lazada, Shopee, Globe Telecom">
+                            <datalist id="entrySupplierList"></datalist>
+                        </label>
+                        <label class="marga-field">
                             <span>Requested By</span>
                             <select id="entryRequestedByInput"></select>
                         </label>
@@ -345,7 +350,7 @@
                         <p class="card-subtext">Review the petty cash lines for the selected date, open an entry for editing, and see whether it is already tied to a replenishment request.</p>
                     </div>
                     <div class="table-controls register-controls">
-                        <input type="search" id="entrySearchInput" class="search-input" placeholder="Search payee, requested by, remarks, or receipt">
+                        <input type="search" id="entrySearchInput" class="search-input" placeholder="Search released to, supplier, requested by, remarks, or receipt">
                         <select id="entryStatusFilter" class="form-select compact-select"></select>
                     </div>
                 </div>
@@ -354,8 +359,9 @@
                     <table class="ledger-table">
                         <thead>
                             <tr>
-                                <th>Voucher / Payee</th>
+                                <th>Voucher / Released To</th>
                                 <th>Requested By</th>
+                                <th>Supplier / Store</th>
                                 <th>Account</th>
                                 <th>Group</th>
                                 <th>Remarks</th>
@@ -366,6 +372,28 @@
                             </tr>
                         </thead>
                         <tbody id="entriesTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="content-card history-card animate-in" style="animation-delay: 0.28s">
+                <div class="card-header table-header">
+                    <div>
+                        <h3>Monthly Supplier Summary</h3>
+                        <p class="card-subtext" id="supplierSummaryMeta">Supplier totals for the selected month.</p>
+                    </div>
+                    <div class="history-note">Tracks which supplier/store gets the most petty cash spend each month.</div>
+                </div>
+                <div class="table-scroll">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Supplier / Store</th>
+                                <th>Entries</th>
+                                <th>Total Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="supplierSummaryBody"></tbody>
                     </table>
                 </div>
             </section>
