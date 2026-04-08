@@ -190,7 +190,7 @@
                     <div class="card-header">
                         <div>
                             <h3>Petty Cash Entry</h3>
-                            <p class="card-subtext">Encode one petty cash release or liquidation line. Use the description field for remarks or supporting notes.</p>
+                            <p class="card-subtext">Encode one petty cash release or liquidation line. Use the description field for remarks or supporting notes. If one PCV has toner, ink, and parts together, save separate lines using the same voucher and split the amount per item group.</p>
                         </div>
                         <div class="badge-note" id="entryFormModeLabel">New Entry</div>
                     </div>
@@ -210,7 +210,11 @@
                         </label>
                         <label class="marga-field">
                             <span>Requested By</span>
-                            <input type="text" id="entryRequestedByInput" placeholder="Employee or department">
+                            <select id="entryRequestedByInput"></select>
+                        </label>
+                        <label class="marga-field">
+                            <span>Expense Group</span>
+                            <select id="entryExpenseGroupInput"></select>
                         </label>
                         <label class="marga-field">
                             <span>Chart Of Account</span>
@@ -301,7 +305,7 @@
                         </label>
                         <label class="marga-field">
                             <span>Requested By</span>
-                            <input type="text" id="requestRequestedByInput" placeholder="Prepared by">
+                            <select id="requestRequestedByInput"></select>
                         </label>
                         <label class="marga-field">
                             <span>Reviewed / Approved By</span>
@@ -352,6 +356,7 @@
                                 <th>Voucher / Payee</th>
                                 <th>Requested By</th>
                                 <th>Account</th>
+                                <th>Group</th>
                                 <th>Remarks</th>
                                 <th>Amount</th>
                                 <th>Status</th>

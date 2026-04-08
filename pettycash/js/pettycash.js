@@ -22,6 +22,28 @@ const REQUEST_STATUSES = [
     'Released'
 ];
 
+const EXPENSE_GROUPS = [
+    { id: 'field_parts', label: 'Printer Parts - Field Repair', accountId: 'printer_repair_parts_field_expense' },
+    { id: 'workshop_parts', label: 'Printer Parts - Workshop Repair', accountId: 'printer_repair_parts_workshop_expense' },
+    { id: 'toner', label: 'Toner', accountId: 'toner_expense' },
+    { id: 'ink', label: 'Ink', accountId: 'ink_expense' },
+    { id: 'gasoline', label: 'Gasoline', accountId: 'gasoline_expense' },
+    { id: 'diesel', label: 'Diesel', accountId: 'diesel_expense' },
+    { id: 'commute_fare', label: 'Commute Fare', accountId: 'commute_fare_expense' },
+    { id: 'office_supplies', label: 'Office Supplies', accountId: 'office_supplies_expense' },
+    { id: 'other_materials', label: 'Other Materials', accountId: 'other_materials_expense' },
+    { id: 'other', label: 'Other Expense', accountId: '' }
+];
+
+const EMPLOYEE_FALLBACK_OPTIONS = [
+    'Michael Pineda',
+    'Mike Pineda',
+    'Petty Cash Manager',
+    'Accounting',
+    'Messenger Team',
+    'Admin Office'
+];
+
 const DEFAULT_SETTINGS = {
     custodian: 'Petty Cash Manager',
     department: 'Office Finance',
@@ -37,7 +59,8 @@ const DEFAULT_ENTRIES = [
         date: offsetDate(-2),
         payee: 'Phoenix Fuel Station',
         requestedBy: 'Messenger Team',
-        accountId: 'fuel_delivery_expense',
+        expenseGroup: 'gasoline',
+        accountId: 'gasoline_expense',
         amount: 860.00,
         receiptNumber: 'OR-1182',
         description: 'Fuel for messenger and delivery runs around the south area.',
@@ -51,7 +74,8 @@ const DEFAULT_ENTRIES = [
         date: offsetDate(-2),
         payee: 'Ace Hardware',
         requestedBy: 'Admin Office',
-        accountId: 'repairs_maintenance_leased_premises',
+        expenseGroup: 'other_materials',
+        accountId: 'other_materials_expense',
         amount: 540.00,
         receiptNumber: 'OR-4405',
         description: 'Minor office repair materials. Remarks: replaced broken faucet and hose.',
@@ -65,6 +89,7 @@ const DEFAULT_ENTRIES = [
         date: offsetDate(-1),
         payee: 'Converge Payment Center',
         requestedBy: 'Accounting',
+        expenseGroup: 'other',
         accountId: 'internet_expense',
         amount: 1899.00,
         receiptNumber: 'OR-9821',
@@ -94,12 +119,14 @@ const PETTY_CASH_STATE = {
     accounts: [],
     entries: [],
     requests: [],
+    employees: [],
     settings: normalizeSettings(DEFAULT_SETTINGS)
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     loadUserHeader();
     hydrateState();
+    await loadEmployeeOptions();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindControls();
     populateSelects();
@@ -135,6 +162,7 @@ function bindControls() {
     document.getElementById('reportDateInput').addEventListener('change', onWorkingDateChange);
     document.getElementById('entryForm').addEventListener('submit', onEntrySubmit);
     document.getElementById('entryFormClearBtn').addEventListener('click', clearEntryForm);
+    document.getElementById('entryExpenseGroupInput').addEventListener('change', onExpenseGroupChange);
     document.getElementById('settingsForm').addEventListener('submit', onSettingsSubmit);
     document.getElementById('requestForm').addEventListener('submit', onRequestSubmit);
     document.getElementById('requestClearBtn').addEventListener('click', clearRequestForm);
@@ -159,11 +187,31 @@ function populateSelects() {
         .sort((left, right) => left.name.localeCompare(right.name))
         .map((account) => `<option value="${account.id}">${escapeHtml(account.name)} (${escapeHtml(account.type)})</option>`)
         .join('');
+    const employeeOptions = PETTY_CASH_STATE.employees
+        .slice()
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+        .join('');
+    const expenseGroupOptions = EXPENSE_GROUPS
+        .map((group) => `<option value="${group.id}">${escapeHtml(group.label)}</option>`)
+        .join('');
 
     document.getElementById('entryAccountInput').innerHTML = `<option value="">Select account</option>${accountOptions}`;
+    document.getElementById('entryRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
+    document.getElementById('requestRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
+    document.getElementById('entryExpenseGroupInput').innerHTML = `<option value="">Select item group</option>${expenseGroupOptions}`;
     document.getElementById('entryStatusInput').innerHTML = ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('entryStatusFilter').innerHTML = '<option value="all">All Entry Statuses</option>' + ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('requestStatusInput').innerHTML = REQUEST_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
+}
+
+function onExpenseGroupChange() {
+    const groupId = String(document.getElementById('entryExpenseGroupInput').value || '').trim();
+    const group = EXPENSE_GROUPS.find((item) => item.id === groupId) || null;
+    if (!group?.accountId) return;
+    if (getAccountById(group.accountId)) {
+        document.getElementById('entryAccountInput').value = group.accountId;
+    }
 }
 
 function onWorkingDateChange() {
@@ -187,6 +235,7 @@ function onEntrySubmit(event) {
         date: document.getElementById('entryDateInput').value,
         payee: document.getElementById('entryPayeeInput').value,
         requestedBy: document.getElementById('entryRequestedByInput').value,
+        expenseGroup: document.getElementById('entryExpenseGroupInput').value,
         accountId: document.getElementById('entryAccountInput').value,
         amount: document.getElementById('entryAmountInput').value,
         receiptNumber: document.getElementById('entryReceiptInput').value,
@@ -196,8 +245,8 @@ function onEntrySubmit(event) {
         createdAt: getExistingEntryById(document.getElementById('entryIdInput').value)?.createdAt || isoNow()
     });
 
-    if (!next.date || !next.payee || !next.accountId || next.amount <= 0 || !next.description) {
-        MargaUtils.showToast('Date, payee, account, amount, and description are required.', 'error');
+    if (!next.date || !next.payee || !next.requestedBy || !next.expenseGroup || !next.accountId || next.amount <= 0 || !next.description) {
+        MargaUtils.showToast('Date, payee, requested by, item group, account, amount, and description are required.', 'error');
         return;
     }
 
@@ -452,6 +501,7 @@ function renderEntriesTable() {
                 entry.voucherNumber,
                 entry.payee,
                 entry.requestedBy,
+                getExpenseGroupLabel(entry.expenseGroup),
                 entry.receiptNumber,
                 entry.description,
                 account?.name || '',
@@ -462,7 +512,7 @@ function renderEntriesTable() {
         .sort((left, right) => String(left.voucherNumber || left.id).localeCompare(String(right.voucherNumber || right.id)));
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No petty cash entry matched the selected day and filters.</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No petty cash entry matched the selected day and filters.</div></td></tr>';
         return;
     }
 
@@ -484,6 +534,7 @@ function renderEntriesTable() {
                         <span class="ref-secondary">${escapeHtml(account?.type || '')}</span>
                     </div>
                 </td>
+                <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
                 <td>
                     <div class="ref-cell">
                         <span>${escapeHtml(entry.description || '-')}</span>
@@ -594,6 +645,10 @@ function renderAccountCards() {
     grid.querySelectorAll('[data-use-account]').forEach((button) => {
         button.addEventListener('click', () => {
             document.getElementById('entryAccountInput').value = button.dataset.useAccount;
+            const inferredGroup = inferExpenseGroupFromAccount(button.dataset.useAccount);
+            if (inferredGroup) {
+                document.getElementById('entryExpenseGroupInput').value = inferredGroup;
+            }
             document.getElementById('entryAccountInput').focus();
             MargaUtils.showToast('Account selected in petty cash entry form.', 'info');
         });
@@ -666,7 +721,9 @@ function fillEntryForm(entry) {
     document.getElementById('entryDateInput').value = entry.date;
     document.getElementById('entryStatusInput').value = entry.status;
     document.getElementById('entryPayeeInput').value = entry.payee;
+    ensureEmployeeOption(entry.requestedBy || '');
     document.getElementById('entryRequestedByInput').value = entry.requestedBy || '';
+    document.getElementById('entryExpenseGroupInput').value = entry.expenseGroup || inferExpenseGroupFromAccount(entry.accountId) || '';
     document.getElementById('entryAccountInput').value = entry.accountId;
     document.getElementById('entryAmountInput').value = Number(entry.amount || 0).toFixed(2);
     document.getElementById('entryReceiptInput').value = entry.receiptNumber || '';
@@ -679,6 +736,7 @@ function fillRequestForm(request) {
     document.getElementById('requestDateInput').value = request.requestDate;
     document.getElementById('requestReportDateInput').value = request.reportDate;
     document.getElementById('requestStatusInput').value = request.status;
+    ensureEmployeeOption(request.requestedBy || '');
     document.getElementById('requestRequestedByInput').value = request.requestedBy || '';
     document.getElementById('requestApprovedByInput').value = request.approvedBy || '';
     document.getElementById('requestNotesInput').value = request.notes || '';
@@ -693,7 +751,9 @@ function clearEntryForm() {
     document.getElementById('entryVoucherInput').value = '';
     document.getElementById('entryDateInput').value = getSelectedDateValue();
     document.getElementById('entryStatusInput').value = 'Pending Liquidation';
+    ensureEmployeeOption(currentUser?.name || '');
     document.getElementById('entryRequestedByInput').value = currentUser?.name || '';
+    document.getElementById('entryExpenseGroupInput').value = '';
     document.getElementById('entryFormModeLabel').textContent = 'New Entry';
 }
 
@@ -704,6 +764,7 @@ function clearRequestForm() {
     document.getElementById('requestDateInput').value = getSelectedDateValue();
     document.getElementById('requestReportDateInput').value = getSelectedDateValue();
     document.getElementById('requestStatusInput').value = 'Draft';
+    ensureEmployeeOption(currentUser?.name || PETTY_CASH_STATE.settings.custodian || '');
     document.getElementById('requestRequestedByInput').value = currentUser?.name || PETTY_CASH_STATE.settings.custodian || '';
     document.getElementById('requestApprovedByInput').value = '';
     document.getElementById('requestNotesInput').value = '';
@@ -722,6 +783,7 @@ function generateRequestFromSelectedDay() {
     document.getElementById('requestReportDateInput').value = reportDate;
     document.getElementById('requestDateInput').value = getSelectedDateValue();
     if (!document.getElementById('requestRequestedByInput').value.trim()) {
+        ensureEmployeeOption(MargaAuth.getUser()?.name || PETTY_CASH_STATE.settings.custodian || '');
         document.getElementById('requestRequestedByInput').value = MargaAuth.getUser()?.name || PETTY_CASH_STATE.settings.custodian || '';
     }
     if (!document.getElementById('requestNotesInput').value.trim()) {
@@ -765,16 +827,17 @@ function printDailyDocument(reportDate, entries) {
     const releasedAmount = sumAmounts(releasedToday.map((request) => request.amount));
     const dayClosing = Math.max(dayOpening + releasedAmount - spentToday, 0);
 
-    const detailRows = entries.map((entry, index) => {
-        const account = getAccountById(entry.accountId);
-        const request = getRequestById(entry.replenishmentId);
-        return `
+        const detailRows = entries.map((entry, index) => {
+            const account = getAccountById(entry.accountId);
+            const request = getRequestById(entry.replenishmentId);
+            return `
             <tr>
                 <td>${index + 1}</td>
                 <td>${escapeHtml(entry.voucherNumber || entry.id)}</td>
                 <td>${escapeHtml(entry.payee)}</td>
                 <td>${escapeHtml(entry.requestedBy || '-')}</td>
                 <td>${escapeHtml(account?.name || '-')}</td>
+                <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
                 <td>${escapeHtml(entry.description || '-')}</td>
                 <td>${escapeHtml(entry.receiptNumber || '-')}</td>
                 <td>${escapeHtml(entry.status)}</td>
@@ -842,6 +905,7 @@ function printDailyDocument(reportDate, entries) {
                         <th>Payee</th>
                         <th>Requested By</th>
                         <th>Account</th>
+                        <th>Group</th>
                         <th>Description / Remarks</th>
                         <th>Receipt</th>
                         <th>Status</th>
@@ -874,15 +938,16 @@ function printRequestDocument(request) {
     }
 
     const breakdown = buildAccountBreakdown(entries);
-    const detailRows = entries.map((entry, index) => {
-        const account = getAccountById(entry.accountId);
-        return `
+        const detailRows = entries.map((entry, index) => {
+            const account = getAccountById(entry.accountId);
+            return `
             <tr>
                 <td>${index + 1}</td>
                 <td>${escapeHtml(entry.voucherNumber || entry.id)}</td>
                 <td>${escapeHtml(entry.payee)}</td>
                 <td>${escapeHtml(entry.requestedBy || '-')}</td>
                 <td>${escapeHtml(account?.name || '-')}</td>
+                <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
                 <td>${escapeHtml(entry.description || '-')}</td>
                 <td class="amount">${MargaUtils.formatCurrency(entry.amount)}</td>
             </tr>
@@ -948,6 +1013,7 @@ function printRequestDocument(request) {
                         <th>Payee</th>
                         <th>Requested By</th>
                         <th>Account</th>
+                        <th>Group</th>
                         <th>Description / Remarks</th>
                         <th class="amount">Amount</th>
                     </tr>
@@ -1098,6 +1164,22 @@ function getAccountById(accountId) {
     return PETTY_CASH_STATE.accounts.find((account) => account.id === accountId) || null;
 }
 
+function getExpenseGroupLabel(groupId) {
+    return EXPENSE_GROUPS.find((group) => group.id === groupId)?.label || '';
+}
+
+function getDefaultAccountForGroup(groupId) {
+    return EXPENSE_GROUPS.find((group) => group.id === groupId)?.accountId || '';
+}
+
+function inferExpenseGroupFromAccount(accountId) {
+    const normalized = String(accountId || '').trim();
+    const direct = EXPENSE_GROUPS.find((group) => group.accountId === normalized);
+    if (direct) return direct.id;
+    if (normalized === 'fuel_delivery_expense') return 'gasoline';
+    return '';
+}
+
 function normalizeAccount(account) {
     return MargaFinanceAccounts.normalizeAccount(account);
 }
@@ -1110,7 +1192,8 @@ function normalizeEntry(entry) {
         date: String(entry.date || getSelectedDateValue()).trim(),
         payee: String(entry.payee || '').trim(),
         requestedBy: String(entry.requestedBy || '').trim(),
-        accountId: String(entry.accountId || '').trim(),
+        expenseGroup: String(entry.expenseGroup || inferExpenseGroupFromAccount(entry.accountId) || '').trim(),
+        accountId: String(entry.accountId || getDefaultAccountForGroup(entry.expenseGroup) || '').trim(),
         amount: Number(entry.amount || 0),
         receiptNumber: String(entry.receiptNumber || '').trim(),
         description: String(entry.description || '').trim(),
@@ -1143,6 +1226,73 @@ function normalizeSettings(settings) {
         openingBalance: Number(settings.openingBalance || 0),
         threshold: Number(settings.threshold || 0)
     };
+}
+
+async function loadEmployeeOptions() {
+    const currentUser = MargaAuth.getUser();
+    const names = new Set(EMPLOYEE_FALLBACK_OPTIONS);
+    if (currentUser?.name) names.add(String(currentUser.name).trim());
+    names.add('Michael Pineda');
+
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'tbl_employee' }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+            limit: 5000
+        });
+        docs
+            .map((doc) => MargaAuth.parseFirestoreDoc(doc))
+            .filter(Boolean)
+            .filter((employee) => employee.marga_active !== false && employee.active !== false && Number(employee.estatus || 1) !== 0)
+            .forEach((employee) => {
+                const name = formatEmployeeName(employee);
+                if (name) names.add(name);
+            });
+    } catch (error) {
+        console.warn('Unable to load employee dropdown for petty cash:', error);
+    }
+
+    PETTY_CASH_STATE.employees = [...names].map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function formatEmployeeName(employee) {
+    if (!employee || typeof employee !== 'object') return '';
+    const full = String(
+        employee.marga_fullname
+        || employee.name
+        || `${String(employee.firstname || '').trim()} ${String(employee.lastname || '').trim()}`.trim()
+        || employee.nickname
+        || employee.username
+        || ''
+    ).trim();
+    return full;
+}
+
+function ensureEmployeeOption(name) {
+    const normalized = String(name || '').trim();
+    if (!normalized) return;
+    if (!PETTY_CASH_STATE.employees.includes(normalized)) {
+        PETTY_CASH_STATE.employees.push(normalized);
+        populateSelects();
+    }
+}
+
+async function runQuery(structuredQuery) {
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ structuredQuery })
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || (Array.isArray(payload) && payload[0]?.error)) {
+        const message = payload?.error?.message || payload?.[0]?.error?.message || 'Query failed.';
+        throw new Error(message);
+    }
+    if (!Array.isArray(payload)) return [];
+    return payload.map((row) => row.document).filter(Boolean);
 }
 
 function persistState() {

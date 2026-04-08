@@ -12,6 +12,33 @@ const MargaFinanceAccounts = (() => {
             avoid: 'Do not use for repairs, private use, or parts replacement.'
         },
         {
+            id: 'gasoline_expense',
+            name: 'Gasoline Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Gasoline purchases for company cars, motorcycles, and field service travel.',
+            useWhen: 'Use when you need gasoline tracked separately from diesel.',
+            avoid: 'Do not use for diesel, commute fare, or non-fuel repairs.'
+        },
+        {
+            id: 'diesel_expense',
+            name: 'Diesel Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Diesel purchases for company vehicles, delivery units, or generators if diesel monitoring must stay separate.',
+            useWhen: 'Use when the receipt is specifically diesel and you want diesel totals separate from gasoline.',
+            avoid: 'Do not use for gasoline, commute fare, or vehicle repairs.'
+        },
+        {
+            id: 'commute_fare_expense',
+            name: 'Commute Fare Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Public transport, taxi, tricycle, jeep, bus, or similar reimbursable business travel fares.',
+            useWhen: 'Use for employee or messenger transport fares paid from petty cash.',
+            avoid: 'Do not use for gasoline, diesel, or vehicle maintenance.'
+        },
+        {
             id: 'rental_service_supplies_expense',
             name: 'Rental Service Supplies Expense',
             type: 'Expense',
@@ -19,6 +46,60 @@ const MargaFinanceAccounts = (() => {
             meaning: 'Parts, toner, ink, and rental-package supplies already consumed for customer support.',
             useWhen: 'Use when the stock has already been issued and should now hit expense.',
             avoid: 'Do not use for inventory purchases that are still on hand or for machine assets.'
+        },
+        {
+            id: 'printer_repair_parts_field_expense',
+            name: 'Printer Repair Parts Expense - Field Service',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Parts bought and immediately used to repair printers or copiers during field service work.',
+            useWhen: 'Use for rollers, gears, sensors, fusers, springs, and similar repair parts consumed in on-site work.',
+            avoid: 'Do not use for workshop-only jobs, toner, ink, or stocked inventory not yet consumed.'
+        },
+        {
+            id: 'printer_repair_parts_workshop_expense',
+            name: 'Printer Repair Parts Expense - Workshop',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Parts bought and immediately used for printer or copier repair jobs done in the workshop.',
+            useWhen: 'Use when the repair part is consumed in internal bench or workshop repairs.',
+            avoid: 'Do not use for field-only jobs, toner, ink, or inventory purchases that remain unused.'
+        },
+        {
+            id: 'toner_expense',
+            name: 'Toner Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Toner purchases that should be monitored separately from parts and ink.',
+            useWhen: 'Use for toner bottles, toner powder, or toner cartridges consumed or urgently bought through petty cash.',
+            avoid: 'Do not use for printer repair parts, liquid ink, or stocked inventory not yet consumed.'
+        },
+        {
+            id: 'ink_expense',
+            name: 'Ink Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Ink purchases that should be monitored separately from toner and repair parts.',
+            useWhen: 'Use for liquid ink, ink refills, or ink bottles consumed through petty cash.',
+            avoid: 'Do not use for toner, printer repair parts, or inventory still on hand.'
+        },
+        {
+            id: 'office_supplies_expense',
+            name: 'Office Supplies Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Pens, paper, folders, tapes, cleaning materials, and other regular office supplies.',
+            useWhen: 'Use for petty cash purchases of ordinary office-use materials.',
+            avoid: 'Do not use for printer repair parts, toner, ink, or machine assets.'
+        },
+        {
+            id: 'other_materials_expense',
+            name: 'Other Materials Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Small operating materials that do not fit the dedicated toner, ink, parts, or office supplies accounts.',
+            useWhen: 'Use only when no more specific petty cash material account fits the purchase.',
+            avoid: 'Do not use when the item clearly belongs to parts, toner, ink, office supplies, gasoline, diesel, or commute fare.'
         },
         {
             id: 'bank_loans_payable',
@@ -197,7 +278,14 @@ const MargaFinanceAccounts = (() => {
             if (!raw) return getDefaultAccounts();
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) return getDefaultAccounts();
-            return parsed.map(normalizeAccount);
+            const stored = parsed.map(normalizeAccount);
+            const merged = new Map(getDefaultAccounts().map((account) => [account.id, account]));
+            stored.forEach((account) => {
+                if (account.id) {
+                    merged.set(account.id, account);
+                }
+            });
+            return [...merged.values()];
         } catch (error) {
             console.warn('Failed to read shared finance accounts:', error);
             return getDefaultAccounts();
