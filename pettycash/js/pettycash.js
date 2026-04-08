@@ -149,6 +149,7 @@ function bindControls() {
     document.getElementById('requestsTableBody').addEventListener('click', onRequestsTableAction);
     document.getElementById('printDailyReportBtn').addEventListener('click', printDailyReport);
     document.getElementById('printReplenishmentBtn').addEventListener('click', printReplenishmentRequest);
+    document.getElementById('resetTrialEntriesBtn').addEventListener('click', resetTrialEntries);
     document.getElementById('resetDemoBtn').addEventListener('click', resetDemoData);
 }
 
@@ -1160,6 +1161,19 @@ function resetDemoData() {
     clearRequestForm();
     renderAll();
     MargaUtils.showToast('Petty cash demo data reset to defaults.', 'info');
+}
+
+function resetTrialEntries() {
+    localStorage.removeItem(PETTY_CASH_STORAGE_KEYS.entries);
+    localStorage.removeItem(PETTY_CASH_STORAGE_KEYS.requests);
+    PETTY_CASH_STATE.entries = cloneData(DEFAULT_ENTRIES).map(normalizeEntry);
+    PETTY_CASH_STATE.requests = cloneData(DEFAULT_REQUESTS).map(normalizeRequest);
+    reconcileRequests();
+    persistState();
+    clearEntryForm();
+    clearRequestForm();
+    renderAll();
+    MargaUtils.showToast('Trial petty cash entries and replenishment requests were reset.', 'info');
 }
 
 function createEntryId() {
