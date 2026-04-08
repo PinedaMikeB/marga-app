@@ -205,8 +205,9 @@
                             <select id="entryStatusInput"></select>
                         </label>
                         <label class="marga-field">
-                            <span>Payee / Vendor</span>
-                            <input type="text" id="entryPayeeInput" placeholder="Who received the petty cash" required>
+                            <span>Released To / Paid To</span>
+                            <input type="text" id="entryPayeeInput" list="entryPayeeList" placeholder="Employee, supplier, Lazada, Shopee, Globe Telecom" required>
+                            <datalist id="entryPayeeList"></datalist>
                         </label>
                         <label class="marga-field">
                             <span>Requested By</span>

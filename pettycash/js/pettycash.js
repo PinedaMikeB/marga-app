@@ -44,6 +44,21 @@ const EMPLOYEE_FALLBACK_OPTIONS = [
     'Admin Office'
 ];
 
+const PAYEE_FALLBACK_OPTIONS = [
+    'Michael Pineda',
+    'Mike Pineda',
+    'Lazada',
+    'Shopee',
+    'Globe Telecom',
+    'Converge',
+    'Phoenix Fuel Station',
+    'Ace Hardware',
+    'Mercury Drug',
+    'Grab',
+    'Taxi Fare',
+    'Tricycle Fare'
+];
+
 const DEFAULT_SETTINGS = {
     custodian: 'Petty Cash Manager',
     department: 'Office Finance',
@@ -120,6 +135,7 @@ const PETTY_CASH_STATE = {
     entries: [],
     requests: [],
     employees: [],
+    payees: [],
     settings: normalizeSettings(DEFAULT_SETTINGS)
 };
 
@@ -127,6 +143,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadUserHeader();
     hydrateState();
     await loadEmployeeOptions();
+    await loadPayeeOptions();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindControls();
     populateSelects();
@@ -195,11 +212,17 @@ function populateSelects() {
     const expenseGroupOptions = EXPENSE_GROUPS
         .map((group) => `<option value="${group.id}">${escapeHtml(group.label)}</option>`)
         .join('');
+    const payeeOptions = PETTY_CASH_STATE.payees
+        .slice()
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+        .join('');
 
     document.getElementById('entryAccountInput').innerHTML = `<option value="">Select account</option>${accountOptions}`;
     document.getElementById('entryRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
     document.getElementById('requestRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
     document.getElementById('entryExpenseGroupInput').innerHTML = `<option value="">Select item group</option>${expenseGroupOptions}`;
+    document.getElementById('entryPayeeList').innerHTML = payeeOptions;
     document.getElementById('entryStatusInput').innerHTML = ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('entryStatusFilter').innerHTML = '<option value="all">All Entry Statuses</option>' + ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('requestStatusInput').innerHTML = REQUEST_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
@@ -255,6 +278,7 @@ function onEntrySubmit(event) {
         return;
     }
 
+    ensurePayeeOption(next.payee);
     upsertById(PETTY_CASH_STATE.entries, next);
     reconcileRequests();
     persistState();
@@ -720,6 +744,7 @@ function fillEntryForm(entry) {
     document.getElementById('entryVoucherInput').value = entry.voucherNumber || '';
     document.getElementById('entryDateInput').value = entry.date;
     document.getElementById('entryStatusInput').value = entry.status;
+    ensurePayeeOption(entry.payee || '');
     document.getElementById('entryPayeeInput').value = entry.payee;
     ensureEmployeeOption(entry.requestedBy || '');
     document.getElementById('entryRequestedByInput').value = entry.requestedBy || '';
@@ -1255,6 +1280,50 @@ async function loadEmployeeOptions() {
     PETTY_CASH_STATE.employees = [...names].map((item) => String(item || '').trim()).filter(Boolean);
 }
 
+async function loadPayeeOptions() {
+    const names = new Set(PAYEE_FALLBACK_OPTIONS);
+    PETTY_CASH_STATE.entries.forEach((entry) => {
+        if (entry.payee) names.add(String(entry.payee).trim());
+    });
+    PETTY_CASH_STATE.employees.forEach((name) => {
+        if (name) names.add(String(name).trim());
+    });
+
+    try {
+        const apdRaw = localStorage.getItem('marga_apd_bills_v1');
+        if (apdRaw) {
+            const bills = JSON.parse(apdRaw);
+            if (Array.isArray(bills)) {
+                bills.forEach((bill) => {
+                    const payee = String(bill?.payee || '').trim();
+                    if (payee) names.add(payee);
+                });
+            }
+        }
+    } catch (error) {
+        console.warn('Unable to read APD payees for petty cash dropdown:', error);
+    }
+
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'tbl_supplier' }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+            limit: 5000
+        });
+        docs
+            .map((doc) => MargaAuth.parseFirestoreDoc(doc))
+            .filter(Boolean)
+            .forEach((supplier) => {
+                const name = formatSupplierName(supplier);
+                if (name) names.add(name);
+            });
+    } catch (error) {
+        console.warn('Unable to load supplier suggestions for petty cash:', error);
+    }
+
+    PETTY_CASH_STATE.payees = [...names].map((item) => String(item || '').trim()).filter(Boolean);
+}
+
 function formatEmployeeName(employee) {
     if (!employee || typeof employee !== 'object') return '';
     const full = String(
@@ -1268,11 +1337,34 @@ function formatEmployeeName(employee) {
     return full;
 }
 
+function formatSupplierName(supplier) {
+    if (!supplier || typeof supplier !== 'object') return '';
+    return String(
+        supplier.supplier
+        || supplier.supplier_name
+        || supplier.vendor
+        || supplier.vendor_name
+        || supplier.name
+        || supplier.company
+        || supplier.companyname
+        || ''
+    ).trim();
+}
+
 function ensureEmployeeOption(name) {
     const normalized = String(name || '').trim();
     if (!normalized) return;
     if (!PETTY_CASH_STATE.employees.includes(normalized)) {
         PETTY_CASH_STATE.employees.push(normalized);
+        populateSelects();
+    }
+}
+
+function ensurePayeeOption(name) {
+    const normalized = String(name || '').trim();
+    if (!normalized) return;
+    if (!PETTY_CASH_STATE.payees.includes(normalized)) {
+        PETTY_CASH_STATE.payees.push(normalized);
         populateSelects();
     }
 }
