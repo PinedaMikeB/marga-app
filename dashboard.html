@@ -67,6 +67,14 @@
                     <span>APD</span>
                 </a>
 
+                <a href="pettycash/" class="nav-item" data-module="pettycash">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1v22"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+                    </svg>
+                    <span>Petty Cash</span>
+                </a>
+
                 <a href="collections.html" class="nav-item" data-module="collections">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="1" y="4" width="22" height="16" rx="2"/>
@@ -348,6 +356,7 @@
 	            customers: { label: 'Customers', href: 'customers.html', note: 'Profiles, branches, machines' },
 	            billing: { label: 'Billing', href: 'billing/', note: 'Invoices, billing runs, due schedules' },
 	            apd: { label: 'APD', href: 'apd/', note: 'Payables planning, check register, and disbursement control' },
+	            pettycash: { label: 'Petty Cash', href: 'pettycash/', note: 'Daily petty cash ledger, liquidation, and replenishment request printing' },
 	            collections: { label: 'Collections', href: 'collections.html', note: 'Collections, ORs, check follow-up' },
 	            service: { label: 'Service Dispatch', href: 'service/index.html', note: 'Task queue, assignment, transfer' },
 	            field: { label: 'Field App', href: 'field/index.html', note: 'Tech/messenger daily tasks, close and pending flow' },
@@ -457,11 +466,13 @@
                 activeDocs.forEach((doc) => {
                     const moduleId = MargaAuth.normalizeModules([doc.module || doc._docId || doc.label])[0];
                     if (!moduleId) return;
+                    const existing = MODULE_TILE_CONFIG[moduleId] || null;
+                    const resolvedHref = String(doc.route || doc.href || existing?.href || '').trim();
                     MODULE_TILE_CONFIG[moduleId] = {
                         label: String(doc.dashboard_label || doc.nav_label || doc.label || MargaAuth.formatRoleLabel(moduleId)).trim(),
-                        href: String(doc.route || doc.href || '').trim(),
+                        href: resolvedHref,
                         note: String(doc.note || 'Module page is ready for role assignment.').trim(),
-                        pending: !String(doc.route || doc.href || '').trim()
+                        pending: !resolvedHref
                     };
                 });
                 MargaAuth.registerModules(Object.keys(MODULE_TILE_CONFIG));

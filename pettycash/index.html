@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Petty Cash Ledger</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/pettycash.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Finance Workspace</div>
+                <a href="../dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="../apd/" class="nav-item" data-module="apd">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16"/>
+                        <path d="M4 12h16"/>
+                        <path d="M4 18h10"/>
+                        <path d="M18 16l2 2 4-4"/>
+                    </svg>
+                    <span>APD</span>
+                </a>
+                <a href="index.html" class="nav-item active" data-module="pettycash">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1v22"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+                    </svg>
+                    <span>Petty Cash</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+                <a href="../sync/index.html" class="nav-item" data-module="sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.5 9a9 9 0 0114.13-3.36L23 10"/>
+                        <path d="M20.5 15a9 9 0 01-14.13 3.36L1 14"/>
+                    </svg>
+                    <span>Sync Updater</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content pettycash-main">
+        <header class="main-header pettycash-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <div class="eyebrow">Petty Cash Module</div>
+                <h1>Petty Cash Ledger</h1>
+                <p>Encode daily petty cash expenses, keep descriptions or remarks, print the day report, and prepare a replenishment request without letting the petty cash manager edit the chart of accounts.</p>
+            </div>
+            <div class="header-actions pettycash-actions">
+                <a href="../docs/APD-PC-CHART-OF-ACCOUNTS.md" class="btn btn-secondary btn-sm">Open COA Reference</a>
+                <button type="button" class="btn btn-secondary btn-sm" id="printDailyReportBtn">Print Daily Report</button>
+                <button type="button" class="btn btn-primary btn-sm" id="printReplenishmentBtn">Print Replenishment</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="resetDemoBtn">Reset Demo Data</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content pettycash-content">
+            <section class="content-card toolbar-card animate-in">
+                <div>
+                    <h3>Daily Cash Control</h3>
+                    <p class="card-subtext">Pick the working date below. Daily totals, printouts, and replenishment drafting follow this selected date.</p>
+                </div>
+                <div class="toolbar-controls">
+                    <label class="toolbar-field">
+                        <span>Working Date</span>
+                        <input type="date" id="reportDateInput">
+                    </label>
+                    <div class="toolbar-note" id="workingDateNote">Preparing today's petty cash report.</div>
+                </div>
+            </section>
+
+            <section class="hero-panel animate-in" style="animation-delay: 0.05s">
+                <div class="hero-copy">
+                    <div class="hero-chip">Read-Only COA</div>
+                    <h2>Track the box, keep the remarks, and print the paper trail before day-end.</h2>
+                    <p>This module keeps the petty cash manager focused on voucher entry, liquidation, and replenishment. The chart of accounts stays visible and selectable, but account maintenance remains outside this page.</p>
+                    <div class="hero-rules">
+                        <span>Accounts are visible, not editable here.</span>
+                        <span>Description captures remarks for every release.</span>
+                        <span>Daily report and replenishment use the same selected date.</span>
+                    </div>
+                </div>
+                <div class="hero-stats">
+                    <article class="hero-stat">
+                        <span class="stat-label">Cash On Hand</span>
+                        <strong id="statCashOnHand">₱0.00</strong>
+                        <small id="statCashOnHandMeta">Opening balance minus logged spending</small>
+                    </article>
+                    <article class="hero-stat">
+                        <span class="stat-label">Spent For The Day</span>
+                        <strong id="statSpentToday">₱0.00</strong>
+                        <small id="statSpentTodayMeta">0 entry(s) on selected date</small>
+                    </article>
+                    <article class="hero-stat">
+                        <span class="stat-label">Pending Liquidation</span>
+                        <strong id="statPendingLiquidation">₱0.00</strong>
+                        <small id="statPendingLiquidationMeta">Entries still waiting for liquidation</small>
+                    </article>
+                    <article class="hero-stat">
+                        <span class="stat-label">Ready For Replenishment</span>
+                        <strong id="statReadyReplenishment">₱0.00</strong>
+                        <small id="statReadyReplenishmentMeta">Liquidated amount not yet released back to fund</small>
+                    </article>
+                </div>
+            </section>
+
+            <section class="workspace-grid">
+                <article class="content-card entry-card animate-in" style="animation-delay: 0.1s">
+                    <div class="card-header">
+                        <div>
+                            <h3>Petty Cash Entry</h3>
+                            <p class="card-subtext">Encode one petty cash release or liquidation line. Use the description field for remarks or supporting notes.</p>
+                        </div>
+                        <div class="badge-note" id="entryFormModeLabel">New Entry</div>
+                    </div>
+                    <form id="entryForm" class="marga-form-grid entry-form-grid">
+                        <input type="hidden" id="entryIdInput">
+                        <label class="marga-field">
+                            <span>Date</span>
+                            <input type="date" id="entryDateInput" required>
+                        </label>
+                        <label class="marga-field">
+                            <span>Status</span>
+                            <select id="entryStatusInput"></select>
+                        </label>
+                        <label class="marga-field">
+                            <span>Payee / Vendor</span>
+                            <input type="text" id="entryPayeeInput" placeholder="Who received the petty cash" required>
+                        </label>
+                        <label class="marga-field">
+                            <span>Requested By</span>
+                            <input type="text" id="entryRequestedByInput" placeholder="Employee or department">
+                        </label>
+                        <label class="marga-field">
+                            <span>Chart Of Account</span>
+                            <select id="entryAccountInput" required></select>
+                        </label>
+                        <label class="marga-field">
+                            <span>Amount</span>
+                            <input type="number" id="entryAmountInput" min="0" step="0.01" placeholder="0.00" required>
+                        </label>
+                        <label class="marga-field">
+                            <span>Receipt / Reference No.</span>
+                            <input type="text" id="entryReceiptInput" placeholder="Optional receipt or stub number">
+                        </label>
+                        <label class="marga-field">
+                            <span>Voucher No.</span>
+                            <input type="text" id="entryVoucherInput" placeholder="Auto-generated if blank">
+                        </label>
+                        <label class="marga-field full-span">
+                            <span>Description / Remarks</span>
+                            <textarea id="entryDescriptionInput" rows="4" placeholder="Add purpose, remarks, or details needed for the daily report." required></textarea>
+                        </label>
+                        <div class="form-actions full-span">
+                            <button type="submit" class="btn btn-primary">Save Entry</button>
+                            <button type="button" class="btn btn-secondary" id="entryFormClearBtn">Clear</button>
+                        </div>
+                    </form>
+                </article>
+
+                <article class="content-card fund-card animate-in" style="animation-delay: 0.15s">
+                    <div class="card-header">
+                        <div>
+                            <h3>Fund Control</h3>
+                            <p class="card-subtext">Set the petty cash custodian, fund ceiling, opening balance, and warning level used in the dashboard and printouts.</p>
+                        </div>
+                        <div class="badge-note muted">Cash Box Setup</div>
+                    </div>
+                    <form id="settingsForm" class="marga-form-grid">
+                        <label class="marga-field">
+                            <span>Custodian</span>
+                            <input type="text" id="custodianInput" placeholder="Petty cash custodian name">
+                        </label>
+                        <label class="marga-field">
+                            <span>Department</span>
+                            <input type="text" id="departmentInput" placeholder="Office or department">
+                        </label>
+                        <label class="marga-field">
+                            <span>Fund Ceiling</span>
+                            <input type="number" id="fundLimitInput" min="0" step="0.01" placeholder="0.00">
+                        </label>
+                        <label class="marga-field">
+                            <span>Opening Balance</span>
+                            <input type="number" id="openingBalanceInput" min="0" step="0.01" placeholder="0.00">
+                        </label>
+                        <label class="marga-field full-span">
+                            <span>Low Balance Alert Threshold</span>
+                            <input type="number" id="thresholdInput" min="0" step="0.01" placeholder="0.00">
+                        </label>
+                        <div class="form-actions full-span">
+                            <button type="submit" class="btn btn-primary">Save Fund Setup</button>
+                        </div>
+                    </form>
+                    <div class="snapshot-grid" id="fundSnapshotGrid"></div>
+                </article>
+            </section>
+
+            <section class="content-card request-card animate-in" style="animation-delay: 0.2s">
+                <div class="card-header">
+                    <div>
+                        <h3>Request For Replenishment</h3>
+                        <p class="card-subtext">Generate the request from the selected date, save it for follow-up, then print the replenishment sheet with account breakdown and voucher detail.</p>
+                    </div>
+                    <div class="badge-note accent" id="requestDraftBadge">Draft Based On Selected Day</div>
+                </div>
+                <div class="request-grid">
+                    <form id="requestForm" class="marga-form-grid request-form-grid">
+                        <input type="hidden" id="requestIdInput">
+                        <label class="marga-field">
+                            <span>Request Date</span>
+                            <input type="date" id="requestDateInput" required>
+                        </label>
+                        <label class="marga-field">
+                            <span>Report Date</span>
+                            <input type="date" id="requestReportDateInput" required>
+                        </label>
+                        <label class="marga-field">
+                            <span>Status</span>
+                            <select id="requestStatusInput"></select>
+                        </label>
+                        <label class="marga-field">
+                            <span>Requested By</span>
+                            <input type="text" id="requestRequestedByInput" placeholder="Prepared by">
+                        </label>
+                        <label class="marga-field">
+                            <span>Reviewed / Approved By</span>
+                            <input type="text" id="requestApprovedByInput" placeholder="Manager or approver">
+                        </label>
+                        <label class="marga-field">
+                            <span>Requested Amount</span>
+                            <input type="text" id="requestAmountInput" readonly>
+                        </label>
+                        <label class="marga-field full-span">
+                            <span>Notes</span>
+                            <textarea id="requestNotesInput" rows="3" placeholder="Optional replenishment note or summary."></textarea>
+                        </label>
+                        <div class="form-actions full-span">
+                            <button type="button" class="btn btn-secondary" id="generateRequestBtn">Generate From Selected Day</button>
+                            <button type="submit" class="btn btn-primary">Save Request</button>
+                            <button type="button" class="btn btn-secondary" id="requestClearBtn">Clear</button>
+                        </div>
+                    </form>
+
+                    <div class="request-preview">
+                        <div class="preview-head">
+                            <h4>Replenishment Coverage</h4>
+                            <p id="requestCoverageMeta">No day generated yet.</p>
+                        </div>
+                        <div class="preview-totals" id="requestPreviewTotals"></div>
+                        <div class="preview-breakdown" id="requestPreviewBreakdown"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="content-card register-card animate-in" style="animation-delay: 0.25s">
+                <div class="card-header table-header">
+                    <div>
+                        <h3>Daily Register</h3>
+                        <p class="card-subtext">Review the petty cash lines for the selected date, open an entry for editing, and see whether it is already tied to a replenishment request.</p>
+                    </div>
+                    <div class="table-controls register-controls">
+                        <input type="search" id="entrySearchInput" class="search-input" placeholder="Search payee, requested by, remarks, or receipt">
+                        <select id="entryStatusFilter" class="form-select compact-select"></select>
+                    </div>
+                </div>
+                <div class="daily-summary-grid" id="dailySummaryGrid"></div>
+                <div class="table-scroll">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Voucher / Payee</th>
+                                <th>Requested By</th>
+                                <th>Account</th>
+                                <th>Remarks</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Replenishment</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="entriesTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="content-card history-card animate-in" style="animation-delay: 0.3s">
+                <div class="card-header table-header">
+                    <div>
+                        <h3>Replenishment History</h3>
+                        <p class="card-subtext">Saved requests stay here for follow-up, reprinting, or status updates when the replenishment is already released.</p>
+                    </div>
+                    <div class="history-note">Released requests add back to cash-on-hand.</div>
+                </div>
+                <div class="table-scroll">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Request</th>
+                                <th>Report Date</th>
+                                <th>Prepared By</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Entries</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requestsTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="content-card reference-card animate-in" style="animation-delay: 0.35s">
+                <div class="card-header reference-header">
+                    <div>
+                        <h3>Chart Of Accounts To Use</h3>
+                        <p class="card-subtext">This list is read-only in petty cash. The petty cash manager can choose accounts here, but cannot add, edit, or remove them from this module.</p>
+                    </div>
+                    <div class="reference-controls">
+                        <input type="search" id="accountSearchInput" class="search-input" placeholder="Search account name or meaning">
+                        <select id="accountScopeFilter" class="form-select compact-select">
+                            <option value="all">All Scopes</option>
+                            <option value="shared">Shared</option>
+                            <option value="apd">APD Only</option>
+                            <option value="pettycash">Petty Cash Relevant</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="account-guide-grid" id="accountGuideGrid"></div>
+            </section>
+        </div>
+    </main>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="../shared/js/finance-accounts.js"></script>
+    <script src="js/pettycash.js"></script>
+</body>
+</html>

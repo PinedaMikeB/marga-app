@@ -1,6 +1,6 @@
 # MARGA Handoff (Single Source of Truth)
 
-Last Updated: 2026-03-28  
+Last Updated: 2026-04-08  
 Owner: Marga App Team
 
 This file is the canonical session-to-session handoff.
@@ -18,7 +18,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Treat live MySQL as the business source of truth for office, finance, customer, machine, and contract records.
 - Prepare the next thread to design Collections and Billing against mirrored Firebase data without changing MySQL schema or workflow semantics.
 - Start finance planning for separate Accounts Payable and Disbursement (APD) and Petty Cash modules.
-- Build APD as the first finance workspace with shared chart-of-accounts guidance and local planning workflow before starting Petty Cash.
+- Keep APD and Petty Cash aligned on one shared chart-of-accounts source while petty cash stays read-only for account maintenance.
 
 ## Next Actions
 - Restart the office supervisor so commit `b9246e2` recovery logic is the code actually running on the PC.
@@ -30,7 +30,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Define APD chart-of-accounts labels and transaction classes so liabilities, assets, transfers, and expenses are not mixed.
 - Keep APD and Petty Cash as separate workflows with different controls, approvals, and reports.
 - Identify which legacy SQL tables hold check voucher, check printing, supplier payable, and OR reference history before any finance writeback is proposed.
-- Build Petty Cash after APD using the same shared chart-of-accounts reference and consistent encoder wording.
+- Verify petty cash daily report and replenishment printouts with finance users, then map the approved workflow to legacy petty cash tables.
 
 ## Open Questions
 - For Billing UI, which pages are read-only mirrors first, and which actions are allowed later as controlled writeback?
@@ -48,7 +48,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Billing | Planned | No rebuilt workflow yet; must follow SQL-originated invoice logic. | Design UI against synced billing data and office process rules. |
 | Collections | In Progress | Base records exist, but workflow design still needs stricter SQL parity. | Design queue, follow-up, and payment visibility against legacy semantics. |
 | Accounts Payable & Disbursement | In Progress | Working APD prototype page exists with shared account glossary, payable intake, and check register control board. | Connect the APD prototype to real legacy finance tables after SQL mapping review. |
-| Petty Cash | Planned | Legacy petty cash tables are identified, but the web workflow is not designed yet. | Define petty cash voucher, liquidation, replenishment, and transfer rules separate from APD. |
+| Petty Cash | In Progress | Working petty cash prototype page now exists with read-only shared chart-of-accounts selection, daily ledger entry, printable day report, and replenishment request drafting. | Validate office wording and map the approved petty cash workflow to legacy SQL tables. |
 | Customers | In Progress | Customer/branch master data now included in office sync coverage. | Continue data quality review and inactive-state parity. |
 | Machines | In Progress | Machine/model/brand are included in office sync coverage. | Verify delivery/service screens only use synced machine master rows. |
 | Contracts | In Progress | Contract tables are included in office sync coverage. | Use synced contract state as prerequisite for billing/service design. |
@@ -56,6 +56,16 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Sync Updater | In Progress | Dual-lane supervisor exists, restart shortcuts exist, and recovery logic is improved. | Validate outage recovery and extend coverage to billing/collections/payments. |
 
 ## Session Log (Top First)
+### 2026-04-08 - Petty Cash Prototype Build
+- Added a working `/pettycash/` module with:
+  - shared chart-of-accounts selection reused from APD
+  - no account add/edit/remove controls for petty cash users
+  - petty cash entry form with description or remarks field
+  - printable daily petty cash report for the selected date
+  - replenishment request drafting, request history, and printable replenishment sheet
+- Linked Petty Cash into dashboard tiles, finance navigation, and settings module routing.
+- Moved shared finance accounts into `/shared/js/finance-accounts.js` so APD and Petty Cash read the same local chart-of-accounts list.
+
 ### 2026-03-28 - APD Prototype Build
 - Added a working `/apd/` module with:
   - shared chart-of-accounts reference for encoders

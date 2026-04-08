@@ -3,7 +3,7 @@ if (!MargaAuth.requireAccess('apd')) {
 }
 
 const APD_STORAGE_KEYS = {
-    accounts: 'marga_apd_accounts_v1',
+    accounts: MargaFinanceAccounts?.getStorageKey?.() || 'marga_apd_accounts_v1',
     bills: 'marga_apd_bills_v1',
     checks: 'marga_apd_checks_v1'
 };
@@ -36,180 +36,6 @@ const STATUS_TO_BILL = {
     Cleared: 'Cleared',
     Voided: 'Voided'
 };
-
-const DEFAULT_ACCOUNTS = [
-    {
-        id: 'fuel_delivery_expense',
-        name: 'Fuel and Delivery Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Fuel used for messenger, logistics, delivery, and field business trips.',
-        useWhen: 'Use for gasoline or diesel used in company operations.',
-        avoid: 'Do not use for repairs, private use, or parts replacement.'
-    },
-    {
-        id: 'rental_service_supplies_expense',
-        name: 'Rental Service Supplies Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Parts, toner, ink, and rental-package supplies already consumed for customer support.',
-        useWhen: 'Use when the stock has already been issued and should now hit expense.',
-        avoid: 'Do not use for inventory purchases that are still on hand or for machine assets.'
-    },
-    {
-        id: 'bank_loans_payable',
-        name: 'Bank Loans (Payable)',
-        type: 'Liability',
-        scope: 'apd',
-        meaning: 'Outstanding bank loan principal still owed.',
-        useWhen: 'Use for principal amortization against a bank loan.',
-        avoid: 'Do not use for interest, penalties, or supplier installments.'
-    },
-    {
-        id: 'accounts_payable_installment_arrangement',
-        name: 'Accounts Payable - Installment Arrangement',
-        type: 'Liability',
-        scope: 'apd',
-        meaning: 'Supplier balances being paid by installments after the original due date.',
-        useWhen: 'Use when APD is tracking a supplier settlement with scheduled installments.',
-        avoid: 'Do not use for bank loans or direct daily expenses with no payable schedule.'
-    },
-    {
-        id: 'petty_cash_fund',
-        name: 'Petty Cash Fund',
-        type: 'Asset',
-        scope: 'pettycash',
-        meaning: 'Cash fund assigned to the petty cash custodian.',
-        useWhen: 'Use when creating, replenishing, or transferring to petty cash.',
-        avoid: 'Do not use as the final expense account before liquidation.'
-    },
-    {
-        id: 'cash_in_bank_savings',
-        name: 'Cash in Bank - Savings',
-        type: 'Asset',
-        scope: 'shared',
-        meaning: 'Company funds deposited and held in the savings account.',
-        useWhen: 'Use when moving money into savings or identifying funds currently held there.',
-        avoid: 'Do not use for operating expenses or owner withdrawals.'
-    },
-    {
-        id: 'owners_drawings',
-        name: "Owner's Drawings",
-        type: 'Equity',
-        scope: 'shared',
-        meaning: 'Business funds withdrawn by the owner for personal use.',
-        useWhen: 'Use only for personal withdrawals by the owner.',
-        avoid: 'Do not use for payroll, supplier bills, or operating expenses.'
-    },
-    {
-        id: 'salaries_wages_expense',
-        name: 'Salaries and Wages Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Employee compensation cost for payroll.',
-        useWhen: 'Use for payroll expense and approved wage-related payouts.',
-        avoid: 'Do not use for owner withdrawals or government contribution liabilities alone.'
-    },
-    {
-        id: 'rental_machines_equipment',
-        name: 'Rental Machines and Equipment',
-        type: 'Fixed Asset',
-        scope: 'apd',
-        meaning: 'Machine units purchased for rental deployment or change-unit pool.',
-        useWhen: 'Use when the company buys a machine unit that will stay as a business asset.',
-        avoid: 'Do not use for toner, parts, repairs, or routine maintenance.'
-    },
-    {
-        id: 'rent_expense',
-        name: 'Rent Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Cost of leasing office or operating facilities.',
-        useWhen: 'Use for monthly rental of office or premises.',
-        avoid: 'Do not use for repair work or leasehold improvements.'
-    },
-    {
-        id: 'electricity_expense',
-        name: 'Electricity Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Power cost for business facilities.',
-        useWhen: 'Use for electric utility bills.',
-        avoid: 'Do not use for fuel or internet charges.'
-    },
-    {
-        id: 'telephone_expense',
-        name: 'Telephone Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Voice call or landline communication cost.',
-        useWhen: 'Use for telephone-only subscriptions or call charges.',
-        avoid: 'Do not use for internet-only service.'
-    },
-    {
-        id: 'internet_expense',
-        name: 'Internet Expense',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Internet connectivity cost for office operations.',
-        useWhen: 'Use for broadband, fiber, or business internet subscriptions.',
-        avoid: 'Do not use for telephone-only service or device purchases.'
-    },
-    {
-        id: 'repairs_maintenance_leased_premises',
-        name: 'Repairs and Maintenance - Leased Premises',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Repair and upkeep cost for rented business premises.',
-        useWhen: 'Use for repair and maintenance of office or leased facility.',
-        avoid: 'Do not use for rent, new construction, or motorcycle repairs.'
-    },
-    {
-        id: 'repairs_maintenance_motorcycles',
-        name: 'Repairs and Maintenance - Motorcycles',
-        type: 'Expense',
-        scope: 'shared',
-        meaning: 'Repair and upkeep cost of motorcycles used by technicians or messengers.',
-        useWhen: 'Use for tire replacement, oil change, tune-up, and similar maintenance.',
-        avoid: 'Do not use for fuel or purchase of a new motorcycle.'
-    },
-    {
-        id: 'employer_philhealth_contribution_expense',
-        name: 'Employer PhilHealth Contribution Expense',
-        type: 'Expense',
-        scope: 'apd',
-        meaning: 'Employer share of PhilHealth contribution cost.',
-        useWhen: 'Use when recognizing the company share of PhilHealth contribution.',
-        avoid: 'Do not use when recording the unpaid remittance liability.'
-    },
-    {
-        id: 'philhealth_payable',
-        name: 'PhilHealth Payable',
-        type: 'Liability',
-        scope: 'apd',
-        meaning: 'Unpaid PhilHealth amount due for remittance.',
-        useWhen: 'Use when recording or paying the PhilHealth balance still owed.',
-        avoid: 'Do not use as the employer expense line.'
-    },
-    {
-        id: 'employer_pagibig_contribution_expense',
-        name: 'Employer Pag-IBIG Contribution Expense',
-        type: 'Expense',
-        scope: 'apd',
-        meaning: 'Employer share of Pag-IBIG or HDMF contribution cost.',
-        useWhen: 'Use when recognizing the company share of Pag-IBIG contribution.',
-        avoid: 'Do not use for the unpaid balance still due to HDMF.'
-    },
-    {
-        id: 'hdmf_payable',
-        name: 'HDMF Payable',
-        type: 'Liability',
-        scope: 'apd',
-        meaning: 'Unpaid Pag-IBIG or HDMF amount still owed for remittance.',
-        useWhen: 'Use when recording or paying the HDMF balance due.',
-        avoid: 'Do not use as the employer expense line.'
-    }
-];
 
 const DEFAULT_BILLS = [
     {
@@ -334,7 +160,7 @@ function loadUserHeader() {
 }
 
 function hydrateState() {
-    APD_STATE.accounts = readStorage(APD_STORAGE_KEYS.accounts, DEFAULT_ACCOUNTS).map(normalizeAccount);
+    APD_STATE.accounts = readStorage(APD_STORAGE_KEYS.accounts, MargaFinanceAccounts.getDefaultAccounts()).map(normalizeAccount);
     APD_STATE.bills = readStorage(APD_STORAGE_KEYS.bills, DEFAULT_BILLS).map(normalizeBill);
     APD_STATE.checks = readStorage(APD_STORAGE_KEYS.checks, DEFAULT_CHECKS).map(normalizeCheck);
 }
@@ -1183,7 +1009,7 @@ function normalizeBill(bill) {
 }
 
 function normalizeAccount(account) {
-    return {
+    return MargaFinanceAccounts.normalizeAccount({
         id: String(account.id || createAccountId()).trim(),
         name: String(account.name || '').trim(),
         type: String(account.type || 'Expense').trim(),
@@ -1191,7 +1017,7 @@ function normalizeAccount(account) {
         meaning: String(account.meaning || '').trim(),
         useWhen: String(account.useWhen || '').trim(),
         avoid: String(account.avoid || '').trim()
-    };
+    });
 }
 
 function normalizeCheck(check) {
@@ -1334,9 +1160,7 @@ function getDueLabel(dateValue, status) {
 }
 
 function formatScope(scope) {
-    if (scope === 'apd') return 'APD Only';
-    if (scope === 'pettycash') return 'Petty Cash Relevant';
-    return 'Shared';
+    return MargaFinanceAccounts.formatScope(scope);
 }
 
 function slugify(value) {

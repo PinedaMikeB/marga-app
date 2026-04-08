@@ -30,7 +30,7 @@ const BASE_MODULE_OPTIONS = [
     { id: 'settings', label: 'Settings Module', dashboardLabel: 'Settings', route: 'settings/index.html', note: 'Users, permissions, app config' },
     { id: 'sync', label: 'Sync Updater Module', dashboardLabel: 'Sync Updater', route: 'sync/index.html', note: 'SQL to Firebase updates' },
     { id: 'purchasing', label: 'Purchasing Module', dashboardLabel: 'Purchasing', route: '', note: 'Purchase requests, vendors, and approval flow' },
-    { id: 'pettycash', label: 'Petty Cash Module', dashboardLabel: 'Petty Cash', route: '', note: 'Petty cash releases, replenishment, and liquidation' },
+    { id: 'pettycash', label: 'Petty Cash Module', dashboardLabel: 'Petty Cash', route: 'pettycash/', note: 'Petty cash releases, replenishment, liquidation, and daily reporting' },
     { id: 'sales', label: 'Sales Module', dashboardLabel: 'Sales', route: '', note: 'Sales pipeline, quotations, and account follow-up' }
 ];
 let MODULE_OPTIONS = BASE_MODULE_OPTIONS.map((module) => ({ ...module, builtIn: true }));
