@@ -34,7 +34,7 @@ const DEFAULT_ENTRIES = [
     {
         id: 'PCV-1001',
         voucherNumber: 'PCV-1001',
-        date: offsetDate(0),
+        date: offsetDate(-2),
         payee: 'Phoenix Fuel Station',
         requestedBy: 'Messenger Team',
         accountId: 'fuel_delivery_expense',
@@ -48,7 +48,7 @@ const DEFAULT_ENTRIES = [
     {
         id: 'PCV-1002',
         voucherNumber: 'PCV-1002',
-        date: offsetDate(0),
+        date: offsetDate(-2),
         payee: 'Ace Hardware',
         requestedBy: 'Admin Office',
         accountId: 'repairs_maintenance_leased_premises',
