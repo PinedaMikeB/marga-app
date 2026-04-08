@@ -39,6 +39,24 @@ const MargaFinanceAccounts = (() => {
             avoid: 'Do not use for gasoline, diesel, or vehicle maintenance.'
         },
         {
+            id: 'fuel_expense_delivery_van',
+            name: 'Fuel Expense - Delivery Van',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Fuel cost assigned to company delivery vans or similar service vans.',
+            useWhen: 'Use for van fuel while the item group records whether the fuel was gasoline or diesel.',
+            avoid: 'Do not use for motorcycles, commute fare, or non-fuel vehicle costs.'
+        },
+        {
+            id: 'fuel_expense_motorcycle',
+            name: 'Fuel Expense - Motorcycle',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Fuel cost assigned to company motorcycles used by technicians or messengers.',
+            useWhen: 'Use for motorcycle fuel while the item group records whether the fuel was gasoline or diesel.',
+            avoid: 'Do not use for vans, commute fare, or motorcycle repairs.'
+        },
+        {
             id: 'rental_service_supplies_expense',
             name: 'Rental Service Supplies Expense',
             type: 'Expense',
@@ -100,6 +118,24 @@ const MargaFinanceAccounts = (() => {
             meaning: 'Small operating materials that do not fit the dedicated toner, ink, parts, or office supplies accounts.',
             useWhen: 'Use only when no more specific petty cash material account fits the purchase.',
             avoid: 'Do not use when the item clearly belongs to parts, toner, ink, office supplies, gasoline, diesel, or commute fare.'
+        },
+        {
+            id: 'meal_allowance_expense_field_operations',
+            name: 'Meal Allowance Expense - Field Operations',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Meal allowance released to field technicians, messengers, or other field operations staff.',
+            useWhen: 'Use for approved field meal allowance paid through petty cash.',
+            avoid: 'Do not use for snacks, personal meals without approval, or fuel.'
+        },
+        {
+            id: 'staff_welfare_snacks_expense',
+            name: 'Staff Welfare / Snacks Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Small approved snack or staff-welfare expense such as office fellowship or Bible study snacks.',
+            useWhen: 'Use for approved snacks or simple staff welfare items paid by petty cash.',
+            avoid: 'Do not use for meal allowance, office supplies, or unapproved personal purchases.'
         },
         {
             id: 'bank_loans_payable',

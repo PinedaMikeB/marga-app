@@ -27,13 +27,21 @@ const EXPENSE_GROUPS = [
     { id: 'workshop_parts', label: 'Printer Parts - Workshop Repair', accountId: 'printer_repair_parts_workshop_expense' },
     { id: 'toner', label: 'Toner', accountId: 'toner_expense' },
     { id: 'ink', label: 'Ink', accountId: 'ink_expense' },
-    { id: 'gasoline', label: 'Gasoline', accountId: 'gasoline_expense' },
-    { id: 'diesel', label: 'Diesel', accountId: 'diesel_expense' },
+    { id: 'gasoline', label: 'Gasoline', accountId: '' },
+    { id: 'diesel', label: 'Diesel', accountId: '' },
     { id: 'commute_fare', label: 'Commute Fare', accountId: 'commute_fare_expense' },
+    { id: 'meal_allowance', label: 'Meal Allowance', accountId: 'meal_allowance_expense_field_operations' },
+    { id: 'bible_study_snacks', label: 'Bible Study Snacks', accountId: 'staff_welfare_snacks_expense' },
     { id: 'office_supplies', label: 'Office Supplies', accountId: 'office_supplies_expense' },
     { id: 'other_materials', label: 'Other Materials', accountId: 'other_materials_expense' },
     { id: 'other', label: 'Other Expense', accountId: '' }
 ];
+
+const PETTY_CASH_HIDDEN_ACCOUNT_IDS = new Set([
+    'fuel_delivery_expense',
+    'gasoline_expense',
+    'diesel_expense'
+]);
 
 const EMPLOYEE_FALLBACK_OPTIONS = [
     'Michael Pineda',
@@ -75,7 +83,7 @@ const DEFAULT_ENTRIES = [
         payee: 'Phoenix Fuel Station',
         requestedBy: 'Messenger Team',
         expenseGroup: 'gasoline',
-        accountId: 'gasoline_expense',
+        accountId: 'fuel_expense_motorcycle',
         amount: 860.00,
         receiptNumber: 'OR-1182',
         description: 'Fuel for messenger and delivery runs around the south area.',
@@ -199,7 +207,7 @@ function bindControls() {
 }
 
 function populateSelects() {
-    const accountOptions = PETTY_CASH_STATE.accounts
+    const accountOptions = getSelectablePettyCashAccounts()
         .slice()
         .sort((left, right) => left.name.localeCompare(right.name))
         .map((account) => `<option value="${account.id}">${escapeHtml(account.name)} (${escapeHtml(account.type)})</option>`)
@@ -231,7 +239,12 @@ function populateSelects() {
 function onExpenseGroupChange() {
     const groupId = String(document.getElementById('entryExpenseGroupInput').value || '').trim();
     const group = EXPENSE_GROUPS.find((item) => item.id === groupId) || null;
-    if (!group?.accountId) return;
+    if (!group?.accountId) {
+        if (groupId === 'gasoline' || groupId === 'diesel') {
+            document.getElementById('entryAccountInput').value = '';
+        }
+        return;
+    }
     if (getAccountById(group.accountId)) {
         document.getElementById('entryAccountInput').value = group.accountId;
     }
@@ -631,7 +644,7 @@ function renderAccountCards() {
     const search = String(document.getElementById('accountSearchInput').value || '').trim().toLowerCase();
     const scope = String(document.getElementById('accountScopeFilter').value || 'all').trim().toLowerCase();
 
-    const accounts = PETTY_CASH_STATE.accounts
+    const accounts = getSelectablePettyCashAccounts()
         .filter((account) => {
             const haystack = [account.name, account.meaning, account.useWhen, account.avoid].join(' ').toLowerCase();
             const scopeMatch = scope === 'all' || account.scope === scope || (scope === 'pettycash' && (account.scope === 'shared' || account.scope === 'pettycash'));
@@ -1189,6 +1202,10 @@ function getAccountById(accountId) {
     return PETTY_CASH_STATE.accounts.find((account) => account.id === accountId) || null;
 }
 
+function getSelectablePettyCashAccounts() {
+    return PETTY_CASH_STATE.accounts.filter((account) => !PETTY_CASH_HIDDEN_ACCOUNT_IDS.has(account.id));
+}
+
 function getExpenseGroupLabel(groupId) {
     return EXPENSE_GROUPS.find((group) => group.id === groupId)?.label || '';
 }
@@ -1201,7 +1218,8 @@ function inferExpenseGroupFromAccount(accountId) {
     const normalized = String(accountId || '').trim();
     const direct = EXPENSE_GROUPS.find((group) => group.accountId === normalized);
     if (direct) return direct.id;
-    if (normalized === 'fuel_delivery_expense') return 'gasoline';
+    if (normalized === 'fuel_expense_delivery_van' || normalized === 'fuel_expense_motorcycle' || normalized === 'fuel_delivery_expense' || normalized === 'gasoline_expense') return 'gasoline';
+    if (normalized === 'diesel_expense') return 'diesel';
     return '';
 }
 
