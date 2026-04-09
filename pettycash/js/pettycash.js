@@ -2296,16 +2296,15 @@ function persistState() {
 
 function resetDemoData() {
     const savedSettings = cloneData(PETTY_CASH_STATE.settings);
-    localStorage.removeItem(PETTY_CASH_STORAGE_KEYS.entries);
-    localStorage.removeItem(PETTY_CASH_STORAGE_KEYS.requests);
-    hydrateState();
+    PETTY_CASH_STATE.entries = [];
+    PETTY_CASH_STATE.requests = [];
     PETTY_CASH_STATE.settings = normalizeSettings(savedSettings);
     persistState();
     fillSettingsForm();
     clearEntryForm();
     clearRequestForm();
     renderAll();
-    MargaUtils.showToast('Petty cash demo data reset, but your cash box setup was kept.', 'info');
+    MargaUtils.showToast('Petty cash entries and replenishment history were cleared. Your cash box setup was kept.', 'info');
 }
 
 function resetTrialEntries() {
