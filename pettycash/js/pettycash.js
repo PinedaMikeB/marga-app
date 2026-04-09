@@ -295,6 +295,12 @@ function getAllowedAccountsForGroup(groupId) {
     return selectable;
 }
 
+function isAccountAllowedForGroup(accountId, groupId) {
+    const normalizedAccountId = String(accountId || '').trim();
+    if (!normalizedAccountId) return false;
+    return getAllowedAccountsForGroup(groupId).some((account) => account.id === normalizedAccountId);
+}
+
 function getEntryItemAccountOptionsHtml(selectedValue = '', groupId = '') {
     const options = getAllowedAccountsForGroup(groupId)
         .slice()
@@ -557,6 +563,11 @@ function onEntrySubmit(event) {
         }
         if (!getAccountById(item.accountId)) {
             MargaUtils.showToast('Please select a valid chart of account in each voucher item row.', 'error');
+            return;
+        }
+        if (!isAccountAllowedForGroup(item.accountId, item.expenseGroup)) {
+            const groupLabel = getExpenseGroupLabel(item.expenseGroup) || 'This item group';
+            MargaUtils.showToast(`${groupLabel} must use its matching expense account.`, 'error');
             return;
         }
     }
@@ -1930,6 +1941,9 @@ function normalizeAccount(account) {
 
 function normalizeEntry(entry) {
     const baseId = String(entry.id || createEntryId()).trim();
+    const expenseGroup = String(entry.expenseGroup || inferExpenseGroupFromAccount(entry.accountId) || '').trim();
+    const rawAccountId = String(entry.accountId || getDefaultAccountForGroup(expenseGroup) || '').trim();
+    const accountId = isAccountAllowedForGroup(rawAccountId, expenseGroup) ? rawAccountId : '';
     return {
         id: baseId,
         bundleId: String(entry.bundleId || baseId).trim(),
@@ -1938,8 +1952,8 @@ function normalizeEntry(entry) {
         payee: String(entry.payee || '').trim(),
         supplier: String(entry.supplier || '').trim(),
         requestedBy: String(entry.requestedBy || '').trim(),
-        expenseGroup: String(entry.expenseGroup || inferExpenseGroupFromAccount(entry.accountId) || '').trim(),
-        accountId: String(entry.accountId || getDefaultAccountForGroup(entry.expenseGroup) || '').trim(),
+        expenseGroup,
+        accountId,
         itemNote: String(entry.itemNote || '').trim(),
         amount: Number(entry.amount || 0),
         receiptNumber: String(entry.receiptNumber || '').trim(),
