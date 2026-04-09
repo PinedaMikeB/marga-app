@@ -281,8 +281,22 @@ function getEntryItemGroupOptionsHtml(selectedValue = '') {
     `).join('')}`;
 }
 
-function getEntryItemAccountOptionsHtml(selectedValue = '') {
-    const options = getSelectablePettyCashAccounts()
+function getAllowedAccountsForGroup(groupId) {
+    const normalized = String(groupId || '').trim();
+    const selectable = getSelectablePettyCashAccounts();
+    if (normalized === 'gasoline' || normalized === 'diesel') {
+        const fuelIds = new Set(['fuel_expense_delivery_van', 'fuel_expense_motorcycle']);
+        return selectable.filter((account) => fuelIds.has(account.id));
+    }
+    const defaultAccountId = getDefaultAccountForGroup(normalized);
+    if (defaultAccountId) {
+        return selectable.filter((account) => account.id === defaultAccountId);
+    }
+    return selectable;
+}
+
+function getEntryItemAccountOptionsHtml(selectedValue = '', groupId = '') {
+    const options = getAllowedAccountsForGroup(groupId)
         .slice()
         .sort((left, right) => left.name.localeCompare(right.name))
         .map((account) => `
@@ -385,7 +399,7 @@ function renderEntryItemsTable(items = []) {
                 <input type="hidden" class="entry-item-id" value="${escapeHtml(item.entryId)}">
                 <select class="entry-item-group">${getEntryItemGroupOptionsHtml(item.expenseGroup)}</select>
             </td>
-            <td><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId)}</select></td>
+            <td><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId, item.expenseGroup)}</select></td>
             <td class="entry-item-note-cell">${buildEntryItemPickerHtml(item.expenseGroup, item.itemNote)}</td>
             <td><input type="number" class="entry-item-amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(Number(item.amount).toFixed(2)) : ''}"></td>
             <td><button type="button" class="row-btn" data-action="remove-item-row">Remove</button></td>
@@ -411,18 +425,30 @@ function applyDefaultAccountForItemRow(row, force = false) {
     const groupId = String(row.querySelector('.entry-item-group')?.value || '').trim();
     const accountInput = row.querySelector('.entry-item-account');
     if (!accountInput) return;
-    const group = EXPENSE_GROUPS.find((item) => item.id === groupId) || null;
+    const allowedAccounts = getAllowedAccountsForGroup(groupId);
+    const allowedIds = new Set(allowedAccounts.map((account) => account.id));
 
-    if (!group?.accountId) {
-        if (force && (groupId === 'gasoline' || groupId === 'diesel' || groupId === 'other')) {
-            accountInput.value = '';
-        }
+    if (!allowedAccounts.length) {
+        if (force) accountInput.value = '';
         return;
     }
 
-    if (!accountInput.value || force) {
-        accountInput.value = group.accountId;
+    if (!allowedIds.has(accountInput.value)) {
+        accountInput.value = '';
     }
+
+    if (allowedAccounts.length === 1 && (!accountInput.value || force)) {
+        accountInput.value = allowedAccounts[0].id;
+    }
+}
+
+function applyAccountOptionsForRow(row) {
+    if (!row) return;
+    const groupId = String(row.querySelector('.entry-item-group')?.value || '').trim();
+    const accountInput = row.querySelector('.entry-item-account');
+    if (!accountInput) return;
+    const currentValue = String(accountInput.value || '').trim();
+    accountInput.innerHTML = getEntryItemAccountOptionsHtml(currentValue, groupId);
 }
 
 function applyItemSourceForRow(row) {
@@ -461,6 +487,7 @@ function onEntryItemsTableChange(event) {
     const row = event.target.closest('tr[data-row-index]');
     if (!row) return;
     if (event.target.classList.contains('entry-item-group')) {
+        applyAccountOptionsForRow(row);
         applyDefaultAccountForItemRow(row, true);
         applyItemSourceForRow(row);
     }
