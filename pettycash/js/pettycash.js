@@ -535,8 +535,8 @@ function onEntrySubmit(event) {
         status: document.getElementById('entryStatusInput').value
     };
 
-    if (!sharedFields.date || !sharedFields.payee || !sharedFields.requestedBy || !sharedFields.description) {
-        MargaUtils.showToast('Date, released to, requested by, and description are required.', 'error');
+    if (!sharedFields.date || !sharedFields.payee || !sharedFields.requestedBy) {
+        MargaUtils.showToast('Date, released to, and requested by are required.', 'error');
         return;
     }
 
