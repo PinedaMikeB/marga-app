@@ -190,7 +190,7 @@
                     <div class="card-header">
                         <div>
                             <h3>Petty Cash Entry</h3>
-                            <p class="card-subtext">Encode one petty cash release or liquidation line. Use the description field for remarks or supporting notes. If one PCV has toner, ink, and parts together, save separate lines using the same voucher and split the amount per item group. For fuel, use item group for gasoline or diesel, then choose the chart of account for delivery van or motorcycle.</p>
+                            <p class="card-subtext">Encode one petty cash voucher at a time. Add item rows for parts, toner, ink, fuel, office supplies, owner withdrawal, and other purchases until the voucher total is complete. Keep the description field for the short overall note or remarks.</p>
                         </div>
                         <div class="badge-note" id="entryFormModeLabel">New Entry</div>
                     </div>
@@ -219,18 +219,6 @@
                             <select id="entryRequestedByInput"></select>
                         </label>
                         <label class="marga-field">
-                            <span>Expense Group</span>
-                            <select id="entryExpenseGroupInput"></select>
-                        </label>
-                        <label class="marga-field">
-                            <span>Chart Of Account</span>
-                            <select id="entryAccountInput" required></select>
-                        </label>
-                        <label class="marga-field">
-                            <span>Amount</span>
-                            <input type="number" id="entryAmountInput" min="0" step="0.01" placeholder="0.00" required>
-                        </label>
-                        <label class="marga-field">
                             <span>Receipt / Reference No.</span>
                             <input type="text" id="entryReceiptInput" placeholder="Optional receipt or stub number">
                         </label>
@@ -238,9 +226,36 @@
                             <span>Voucher No.</span>
                             <input type="text" id="entryVoucherInput" placeholder="Auto-generated if blank">
                         </label>
+                        <label class="marga-field">
+                            <span>Voucher Total</span>
+                            <input type="text" id="entryTotalInput" placeholder="₱0.00" readonly>
+                        </label>
+                        <section class="voucher-items-panel full-span">
+                            <div class="voucher-items-head">
+                                <div>
+                                    <h4>Voucher Item Breakdown</h4>
+                                    <p class="card-subtext">Add one row per purchased item so the voucher can contain parts, toner, ink, fuel, or other mixed expenses under the same PCV.</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" id="entryAddItemBtn">Add Item Row</button>
+                            </div>
+                            <div class="table-scroll">
+                                <table class="ledger-table compact-ledger-table voucher-items-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Item Group</th>
+                                            <th>Chart Of Account</th>
+                                            <th>Item / Part Note</th>
+                                            <th>Amount</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="entryItemsBody"></tbody>
+                                </table>
+                            </div>
+                        </section>
                         <label class="marga-field full-span">
                             <span>Description / Remarks</span>
-                            <textarea id="entryDescriptionInput" rows="4" placeholder="Add purpose, remarks, or details needed for the daily report." required></textarea>
+                            <textarea id="entryDescriptionInput" rows="3" placeholder="Short overall note for the voucher, purpose, or liquidation remarks." required></textarea>
                         </label>
                         <div class="form-actions full-span">
                             <button type="submit" class="btn btn-primary">Save Entry</button>
