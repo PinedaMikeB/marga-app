@@ -126,13 +126,22 @@
                 <h1>Petty Cash Ledger</h1>
                 <p>Encode daily petty cash expenses, keep descriptions or remarks, print the day report, and prepare a replenishment request without letting the petty cash manager edit the chart of accounts.</p>
             </div>
-            <div class="header-actions pettycash-actions">
-                <a href="../docs/APD-PC-CHART-OF-ACCOUNTS.md" class="btn btn-secondary btn-sm">Open COA Reference</a>
-                <button type="button" class="btn btn-secondary btn-sm" id="printDailyReportBtn">Print Daily Report</button>
-                <button type="button" class="btn btn-primary btn-sm" id="printReplenishmentBtn">Print Replenishment</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="resetTrialEntriesBtn">Reset Trial Entries</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="resetDemoBtn">Reset Demo Data</button>
-            </div>
+            <details class="header-actions pettycash-actions action-menu">
+                <summary class="action-menu-trigger" aria-label="Open petty cash actions">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 7h16"/>
+                        <path d="M4 12h16"/>
+                        <path d="M4 17h16"/>
+                    </svg>
+                </summary>
+                <div class="action-menu-panel">
+                    <a href="../docs/APD-PC-CHART-OF-ACCOUNTS.md" class="btn btn-secondary btn-sm">Open COA Reference</a>
+                    <button type="button" class="btn btn-secondary btn-sm" id="printDailyReportBtn">Print Daily Report</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="printReplenishmentBtn">Print Replenishment</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="resetTrialEntriesBtn">Reset Trial Entries</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="resetDemoBtn">Reset Demo Data</button>
+                </div>
+            </details>
         </header>
 
         <div class="dashboard-content pettycash-content">
