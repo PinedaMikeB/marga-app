@@ -324,7 +324,7 @@ function buildEntryItemPickerHtml(groupId, itemNote = '') {
 
     return `
         <div class="entry-item-picker">
-            <select class="entry-item-note-select" size="12">
+            <select class="entry-item-note-select">
                 <option value="">${escapeHtml(placeholderLabel)}</option>
                 ${labels.map((label) => `<option value="${escapeHtml(label)}"${label === selectedValue ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
                 <option value="__manual__"${selectedValue === '__manual__' ? ' selected' : ''}>Manual entry</option>

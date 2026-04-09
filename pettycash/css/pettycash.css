@@ -532,7 +532,8 @@ body::before {
 }
 
 .entry-item-note-select {
-    min-height: 13.5rem;
+    min-height: 2.75rem;
+    height: 2.75rem;
 }
 
 .entry-item-note-manual.hidden {
