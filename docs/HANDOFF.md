@@ -95,6 +95,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Added recurring-series edit control in APD payable intake so when a user opens a saved series item they can choose to apply corrections to `this month only` or `this and future months` in the same series; amount and other shared details now cascade forward when that option is checked.
 - Added shared finance account `Loan Amortization - Lending Institution` as an APD liability account for simplified one-check payments to non-bank lenders like Esquire, and updated the generic `Loan Amortization` preset to use it by default.
 - Added APD `Bi-Monthly PDC` payment-plan support so loans like Esquire can generate two post-dated-check payables per month using the main due date plus an additional PDC date in the same month.
+- Refined APD `Bi-Monthly PDC` input so users can now enter separate first-check and second-check amounts, not just two dates; editing one saved bi-monthly entry now updates both checks for that month and can still cascade forward through the series.
 
 ### 2026-03-28 - APD And Petty Cash Planning Thread
 - Added initial finance design guidance for separate APD and Petty Cash modules.
