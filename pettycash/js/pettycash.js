@@ -1905,15 +1905,18 @@ function formatLegacyPartLabel(row, modelMap, brandMap) {
     const brandLabel = getBrandLookupLabel(brand);
     const modelLabel = getModelLookupLabel(model);
     const primary = normalizeInlineText([brandLabel, modelLabel].filter(Boolean).join(' '));
+    const remarksLabel = normalizeInlineText(row.remarks);
+    const serialLabel = normalizeInlineText(row.serial);
+    const descriptivePrimary = primary || remarksLabel || serialLabel;
     const partId = Number(row.id || 0);
     const detailBits = [
         Number(row.category_id || 0) > 0 ? `Category ${row.category_id}` : '',
-        normalizeInlineText(row.serial),
-        normalizeInlineText(row.remarks),
+        descriptivePrimary !== serialLabel ? serialLabel : '',
+        descriptivePrimary !== remarksLabel ? remarksLabel : '',
         partId > 0 ? `Part #${partId}` : ''
     ].filter(Boolean);
-    if (!primary && !detailBits.length) return '';
-    const baseLabel = primary || 'Legacy part record';
+    if (!descriptivePrimary) return '';
+    const baseLabel = descriptivePrimary;
     return detailBits.length ? `${baseLabel} (${detailBits.join(' • ')})` : baseLabel;
 }
 
