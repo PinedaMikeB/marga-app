@@ -70,7 +70,7 @@ body::before {
 }
 
 .action-menu-trigger {
-    display: none;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 44px;
@@ -94,10 +94,28 @@ body::before {
 }
 
 .action-menu-panel {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.55rem);
+    width: min(320px, calc(100vw - 2rem));
+    padding: 0.75rem;
+    border-radius: 18px;
+    background: rgba(255, 252, 245, 0.98);
+    border: 1px solid rgba(24, 57, 47, 0.12);
+    box-shadow: 0 18px 48px rgba(24, 43, 37, 0.18);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    z-index: 80;
+}
+
+.action-menu[open] .action-menu-panel {
     display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    flex-wrap: wrap;
+}
+
+.action-menu-panel .btn {
+    width: 100%;
 }
 
 .pettycash-content {
@@ -945,33 +963,8 @@ body::before {
         line-height: 1.05;
     }
 
-    .action-menu-trigger {
-        display: inline-flex;
-    }
-
     .action-menu-panel {
-        display: none;
-        position: absolute;
-        right: 0;
-        top: calc(100% + 0.55rem);
         width: min(280px, calc(100vw - 2rem));
-        padding: 0.75rem;
-        border-radius: 18px;
-        background: rgba(255, 252, 245, 0.98);
-        border: 1px solid rgba(24, 57, 47, 0.12);
-        box-shadow: 0 18px 48px rgba(24, 43, 37, 0.18);
-        flex-direction: column;
-        align-items: stretch;
-        gap: 0.6rem;
-        z-index: 80;
-    }
-
-    .action-menu[open] .action-menu-panel {
-        display: flex;
-    }
-
-    .action-menu-panel .btn {
-        width: 100%;
     }
 
     .entry-card,
