@@ -625,40 +625,8 @@ function onSettingsSubmit(event) {
 
 function onRequestSubmit(event) {
     event.preventDefault();
-
-    const requestId = String(document.getElementById('requestIdInput').value || '').trim() || createRequestId();
-    const reportDate = String(document.getElementById('requestReportDateInput').value || '').trim();
-    const requestDate = String(document.getElementById('requestDateInput').value || '').trim();
-    const entryIds = getEligibleEntriesForRequest(reportDate, requestId).map((entry) => entry.id);
-
-    if (!reportDate || !requestDate) {
-        MargaUtils.showToast('Request date and report date are required.', 'error');
-        return;
-    }
-
-    if (!entryIds.length) {
-        MargaUtils.showToast('No liquidated petty cash entry is ready for replenishment on that date.', 'error');
-        return;
-    }
-
-    const next = normalizeRequest({
-        id: requestId,
-        requestDate,
-        reportDate,
-        requestedBy: document.getElementById('requestRequestedByInput').value,
-        approvedBy: document.getElementById('requestApprovedByInput').value,
-        status: document.getElementById('requestStatusInput').value,
-        notes: document.getElementById('requestNotesInput').value,
-        amount: sumAmounts(entryIds.map((entryId) => getEntryById(entryId)?.amount || 0)),
-        entryIds,
-        createdAt: getRequestById(requestId)?.createdAt || isoNow()
-    });
-
-    upsertById(PETTY_CASH_STATE.requests, next);
-    reconcileRequests();
-    persistState();
-    fillRequestForm(getRequestById(requestId) || next);
-    renderAll();
+    const savedRequest = saveCurrentRequestFromForm();
+    if (!savedRequest) return;
     MargaUtils.showToast('Replenishment request saved.', 'success');
 }
 
@@ -1255,10 +1223,8 @@ function printDailyReport() {
 }
 
 function printReplenishmentRequest() {
-    const currentRequestId = String(document.getElementById('requestIdInput').value || '').trim();
-    const request = currentRequestId ? getRequestById(currentRequestId) : buildDraftRequestForPrint();
+    const request = saveCurrentRequestFromForm({ allowDraftPrintSave: true, successToast: false });
     if (!request) {
-        MargaUtils.showToast('Generate or save a replenishment request first.', 'error');
         return;
     }
     printRequestDocument(request);
@@ -1688,6 +1654,52 @@ function buildDraftRequestForPrint() {
     draft.entryIds = entries.map((entry) => entry.id);
     draft.amount = sumAmounts(entries.map((entry) => entry.amount));
     return draft;
+}
+
+function saveCurrentRequestFromForm(options = {}) {
+    const { allowDraftPrintSave = false, successToast = false } = options;
+    const requestId = String(document.getElementById('requestIdInput').value || '').trim() || createRequestId();
+    const existingRequest = getRequestById(requestId);
+    const reportDate = String(document.getElementById('requestReportDateInput').value || '').trim();
+    const requestDate = String(document.getElementById('requestDateInput').value || '').trim();
+    const entryIds = getEligibleEntriesForRequest(reportDate, requestId).map((entry) => entry.id);
+
+    if (!reportDate || !requestDate) {
+        MargaUtils.showToast('Request date and report date are required.', 'error');
+        return null;
+    }
+
+    if (!entryIds.length) {
+        MargaUtils.showToast('No liquidated petty cash entry is ready for replenishment on that date.', 'error');
+        return null;
+    }
+
+    const next = normalizeRequest({
+        id: requestId,
+        requestDate,
+        reportDate,
+        requestedBy: document.getElementById('requestRequestedByInput').value,
+        approvedBy: document.getElementById('requestApprovedByInput').value,
+        status: document.getElementById('requestStatusInput').value,
+        notes: document.getElementById('requestNotesInput').value,
+        amount: sumAmounts(entryIds.map((entryId) => getEntryById(entryId)?.amount || 0)),
+        entryIds,
+        createdAt: existingRequest?.createdAt || isoNow()
+    });
+
+    upsertById(PETTY_CASH_STATE.requests, next);
+    reconcileRequests();
+    persistState();
+    fillRequestForm(getRequestById(requestId) || next);
+    renderAll();
+
+    if (successToast) {
+        MargaUtils.showToast('Replenishment request saved.', 'success');
+    } else if (allowDraftPrintSave && !existingRequest) {
+        MargaUtils.showToast('Replenishment draft was saved before printing.', 'info');
+    }
+
+    return getRequestById(requestId) || next;
 }
 
 function reconcileRequests() {
