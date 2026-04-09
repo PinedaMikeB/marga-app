@@ -392,6 +392,10 @@ body::before {
     box-shadow: 0 0 0 2px rgba(47, 98, 134, 0.28), 0 18px 42px rgba(24, 43, 37, 0.16);
 }
 
+.request-card.request-card-highlight {
+    box-shadow: 0 0 0 2px rgba(47, 134, 95, 0.24), 0 18px 42px rgba(24, 43, 37, 0.16);
+}
+
 .card-subtext {
     margin-top: 0.2rem;
     color: #65746b;
@@ -785,7 +789,8 @@ body::before {
 }
 
 .status-badge.replenished,
-.status-badge.released {
+.status-badge.released,
+.status-badge.received {
     background: rgba(47, 134, 95, 0.14);
     color: var(--pc-green);
 }

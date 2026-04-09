@@ -8,6 +8,11 @@ const APD_STORAGE_KEYS = {
     checks: 'marga_apd_checks_v1'
 };
 
+const PETTY_CASH_SYNC_STORAGE_KEYS = {
+    requests: 'marga_petty_cash_requests_v1',
+    entries: 'marga_petty_cash_entries_v1'
+};
+
 const BILL_STATUSES = [
     'Draft',
     'For Approval',
@@ -123,6 +128,7 @@ const DOC_TYPE_PRESETS = {
     'Phone Bill': { accountId: 'telephone_expense', planType: 'repeat_last_amount', label: 'Phone Bill' },
     'Electricity Bill': { accountId: 'electricity_expense', planType: 'repeat_last_amount', label: 'Electricity Bill' },
     'Utility Bill': { accountId: 'internet_expense', planType: 'repeat_last_amount', label: 'Utility Bill' },
+    'Petty Cash Replenishment': { accountId: 'petty_cash_fund', planType: 'one_time', label: 'Petty Cash Replenishment' },
     'Personal Withdrawal': { accountId: 'owners_drawings', planType: 'one_time', label: "Owner's Drawings" }
 };
 
@@ -163,6 +169,7 @@ function hydrateState() {
     APD_STATE.accounts = readStorage(APD_STORAGE_KEYS.accounts, MargaFinanceAccounts.getDefaultAccounts()).map(normalizeAccount);
     APD_STATE.bills = readStorage(APD_STORAGE_KEYS.bills, DEFAULT_BILLS).map(normalizeBill);
     APD_STATE.checks = readStorage(APD_STORAGE_KEYS.checks, DEFAULT_CHECKS).map(normalizeCheck);
+    syncPettyCashRequestsFromChecks();
 }
 
 function bindFormControls() {
@@ -599,6 +606,9 @@ function renderBillsTable() {
     tbody.innerHTML = rows.map((bill) => {
         const account = getAccountById(bill.accountId);
         const billMeta = [bill.documentType, bill.documentNumber];
+        if (bill.sourceModule === 'pettycash' && bill.sourceRequestId) {
+            billMeta.push(`Petty Cash ${bill.sourceRequestId}`);
+        }
         if (isLoanDocumentType(bill.documentType) && bill.simpleLoanMode) {
             billMeta.push('Simple Loan Mode');
         }
@@ -869,6 +879,7 @@ function onBillSubmit(event) {
     }
 
     persistState();
+    syncPettyCashRequestsFromChecks();
     focusDashboardOnDueDate(base.dueDate);
     clearBillForm();
     populateBillSelect();
@@ -915,6 +926,7 @@ function onCheckSubmit(event) {
     upsertById(APD_STATE.checks, next);
     syncBillStatusFromCheck(next);
     persistState();
+    syncPettyCashRequestsFromChecks();
     clearCheckForm();
     renderAll();
     MargaUtils.showToast('Check register updated.', 'success');
@@ -1077,6 +1089,76 @@ function readStorage(key, fallback) {
     }
 }
 
+function syncPettyCashRequestsFromChecks() {
+    const requests = readStorage(PETTY_CASH_SYNC_STORAGE_KEYS.requests, []);
+    const entries = readStorage(PETTY_CASH_SYNC_STORAGE_KEYS.entries, []);
+    let changed = false;
+
+    APD_STATE.bills.forEach((bill) => {
+        if (String(bill.sourceModule || '').trim() !== 'pettycash' || !String(bill.sourceRequestId || '').trim()) {
+            return;
+        }
+
+        const request = requests.find((item) => String(item.id || '').trim() === String(bill.sourceRequestId || '').trim());
+        if (!request) return;
+
+        const receivedCheck = APD_STATE.checks
+            .filter((check) => String(check.billId || '').trim() === String(bill.id || '').trim()
+                && ['Released', 'Cleared'].includes(String(check.status || '').trim()))
+            .sort((left, right) => `${right.issueDate} ${right.id}`.localeCompare(`${left.issueDate} ${left.id}`))[0] || null;
+
+        const nextStatus = receivedCheck ? 'Received' : mapApdBillStatusToPettyCashRequestStatus(bill.status);
+
+        if (String(request.apdBillId || '') !== String(bill.id || '')) {
+            request.apdBillId = String(bill.id || '');
+            changed = true;
+        }
+        if (String(request.apdBillStatus || '') !== String(bill.status || '')) {
+            request.apdBillStatus = String(bill.status || '');
+            changed = true;
+        }
+        if (String(request.apdCheckNumber || '') !== String(receivedCheck?.checkNumber || '')) {
+            request.apdCheckNumber = String(receivedCheck?.checkNumber || '');
+            changed = true;
+        }
+        if (String(request.receivedDate || '') !== String(receivedCheck?.issueDate || '')) {
+            request.receivedDate = String(receivedCheck?.issueDate || '');
+            changed = true;
+        }
+        if (String(request.status || '') !== nextStatus) {
+            request.status = nextStatus;
+            changed = true;
+        }
+
+        const linkedIds = new Set(Array.isArray(request.entryIds) ? request.entryIds.map((item) => String(item).trim()) : []);
+        entries.forEach((entry) => {
+            if (String(entry.replenishmentId || '').trim() !== String(request.id || '').trim() && !linkedIds.has(String(entry.id || '').trim())) {
+                return;
+            }
+            if (entry.status === 'Cancelled') return;
+            entry.replenishmentId = String(request.id || '').trim();
+            const desiredStatus = nextStatus === 'Received' ? 'Replenished' : 'Liquidated';
+            if (String(entry.status || '').trim() !== desiredStatus) {
+                entry.status = desiredStatus;
+                changed = true;
+            }
+        });
+    });
+
+    if (changed) {
+        localStorage.setItem(PETTY_CASH_SYNC_STORAGE_KEYS.requests, JSON.stringify(requests));
+        localStorage.setItem(PETTY_CASH_SYNC_STORAGE_KEYS.entries, JSON.stringify(entries));
+    }
+}
+
+function mapApdBillStatusToPettyCashRequestStatus(billStatus) {
+    const normalized = String(billStatus || '').trim();
+    if (normalized === 'Draft') return 'Draft';
+    if (normalized === 'For Approval') return 'Requested';
+    if (!normalized) return 'Draft';
+    return 'Approved';
+}
+
 function normalizeBill(bill) {
     const documentType = String(bill.documentType || 'Invoice').trim();
     const principalAmount = Number(bill.principalAmount || 0);
@@ -1112,6 +1194,8 @@ function normalizeBill(bill) {
         seriesId: String(bill.seriesId || '').trim(),
         seriesIndex: Number(bill.seriesIndex || 1),
         seriesTotal: Number(bill.seriesTotal || 1),
+        sourceModule: String(bill.sourceModule || '').trim(),
+        sourceRequestId: String(bill.sourceRequestId || '').trim(),
         notes: String(bill.notes || '').trim(),
         createdAt: String(bill.createdAt || isoNow())
     };

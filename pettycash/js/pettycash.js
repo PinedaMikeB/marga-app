@@ -8,6 +8,11 @@ const PETTY_CASH_STORAGE_KEYS = {
     settings: 'marga_petty_cash_settings_v1'
 };
 
+const APD_SYNC_STORAGE_KEYS = {
+    bills: 'marga_apd_bills_v1',
+    checks: 'marga_apd_checks_v1'
+};
+
 const ENTRY_STATUSES = [
     'Pending Liquidation',
     'Liquidated',
@@ -25,7 +30,7 @@ const REQUEST_STATUSES = [
     'Draft',
     'Requested',
     'Approved',
-    'Released'
+    'Received'
 ];
 
 const EXPENSE_GROUPS = [
@@ -137,7 +142,7 @@ const DEFAULT_REQUESTS = [
         reportDate: offsetDate(-1),
         requestedBy: 'Petty Cash Manager',
         approvedBy: 'Finance Supervisor',
-        status: 'Released',
+        status: 'Received',
         notes: 'Replenishment for prior-day emergency internet expense.',
         amount: 1899.00,
         entryIds: ['PCV-1003'],
@@ -198,6 +203,7 @@ function hydrateState() {
     PETTY_CASH_STATE.entries = readArrayStorage(PETTY_CASH_STORAGE_KEYS.entries, DEFAULT_ENTRIES).map(normalizeEntry);
     PETTY_CASH_STATE.requests = readArrayStorage(PETTY_CASH_STORAGE_KEYS.requests, DEFAULT_REQUESTS).map(normalizeRequest);
     PETTY_CASH_STATE.settings = normalizeSettings(readObjectStorage(PETTY_CASH_STORAGE_KEYS.settings, DEFAULT_SETTINGS));
+    syncRequestsFromApd();
     reconcileRequests();
 }
 
@@ -547,7 +553,7 @@ function onEntrySubmit(event) {
     }
 
     if (sharedFields.status === 'Replenished') {
-        MargaUtils.showToast('Replenished status is automatic when a replenishment request is marked Released.', 'error');
+        MargaUtils.showToast('Replenished status is automatic when a replenishment request is marked Received.', 'error');
         return;
     }
 
@@ -669,6 +675,7 @@ function onRequestsTableAction(event) {
 
     if (button.dataset.action === 'edit-request') {
         fillRequestForm(request);
+        revealRequestForm(request.id);
         return;
     }
 
@@ -709,7 +716,7 @@ function renderAll() {
 function renderOverview() {
     const selectedDate = getSelectedDateValue();
     const allSpent = sumAmounts(getActiveEntries().map((entry) => entry.amount));
-    const releasedAmount = sumAmounts(getReleasedRequests().map((request) => request.amount));
+    const releasedAmount = sumAmounts(getReceivedRequests().map((request) => request.amount));
     const cashOnHand = Math.max(PETTY_CASH_STATE.settings.openingBalance + releasedAmount - allSpent, 0);
     const spentTodayEntries = getEntriesByDate(selectedDate).filter((entry) => entry.status !== 'Cancelled');
     const spentTodayBundles = buildVoucherGroups(spentTodayEntries);
@@ -776,7 +783,7 @@ function renderDailySummary() {
     const dayOpening = calculateDayOpeningBalance(selectedDate);
     const dayEntries = getEntriesByDate(selectedDate).filter((entry) => entry.status !== 'Cancelled');
     const dayBundles = buildVoucherGroups(dayEntries);
-    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Released' && request.requestDate === selectedDate);
+    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received' && request.requestDate === selectedDate);
     const spentToday = sumAmounts(dayEntries.map((entry) => entry.amount));
     const releasedAmount = sumAmounts(releasedToday.map((request) => request.amount));
     const closingBalance = Math.max(dayOpening + releasedAmount - spentToday, 0);
@@ -792,9 +799,9 @@ function renderDailySummary() {
             meta: `${dayBundles.length} petty cash voucher(s)`
         },
         {
-            label: 'Released Back Today',
+            label: 'Received Back Today',
             value: MargaUtils.formatCurrency(releasedAmount),
-            meta: `${releasedToday.length} replenishment release(s)`
+            meta: `${releasedToday.length} replenishment receipt(s)`
         },
         {
             label: 'Closing Balance',
@@ -956,6 +963,11 @@ function renderRequestsTable() {
 
     tbody.innerHTML = rows.map((request) => {
         const linkedEntries = getEntriesByRequestId(request.id);
+        const secondaryMeta = [];
+        if (request.approvedBy) secondaryMeta.push(`Approver: ${request.approvedBy}`);
+        else secondaryMeta.push('Approver not set');
+        if (request.apdBillId) secondaryMeta.push(`APD: ${request.apdBillId}`);
+        if (request.apdCheckNumber) secondaryMeta.push(`Check: ${request.apdCheckNumber}`);
         return `
             <tr>
                 <td>
@@ -968,7 +980,7 @@ function renderRequestsTable() {
                 <td>
                     <div class="ref-cell">
                         <span>${escapeHtml(request.requestedBy || '-')}</span>
-                        <span class="ref-secondary">${escapeHtml(request.approvedBy ? `Approver: ${request.approvedBy}` : 'Approver not set')}</span>
+                        <span class="ref-secondary">${escapeHtml(secondaryMeta.join(' · '))}</span>
                     </div>
                 </td>
                 <td>${MargaUtils.formatCurrency(request.amount)}</td>
@@ -976,7 +988,7 @@ function renderRequestsTable() {
                 <td>${linkedEntries.length.toLocaleString()}</td>
                 <td>
                     <div class="row-actions">
-                        <button type="button" class="row-btn" data-action="edit-request" data-id="${request.id}">Edit</button>
+                        <button type="button" class="row-btn" data-action="edit-request" data-id="${request.id}">Edit Status</button>
                         <button type="button" class="row-btn" data-action="print-request" data-id="${request.id}">Print</button>
                         <button type="button" class="row-btn" data-action="delete-request" data-id="${request.id}">Delete</button>
                     </div>
@@ -1067,7 +1079,7 @@ function renderRequestPreview() {
         {
             label: 'Request Amount',
             value: MargaUtils.formatCurrency(total),
-            meta: status === 'Released' ? 'This request adds back to cash on hand' : 'Will remain pending until released'
+            meta: status === 'Received' ? 'This request already adds back to cash on hand' : 'Will remain pending until cash is received'
         }
     ];
 
@@ -1239,7 +1251,7 @@ function printDailyDocument(reportDate, entries) {
 
     const breakdown = buildAccountBreakdown(entries);
     const dayOpening = calculateDayOpeningBalance(reportDate);
-    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Released' && request.requestDate === reportDate);
+    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received' && request.requestDate === reportDate);
     const spentToday = sumAmounts(entries.map((entry) => entry.amount));
     const releasedAmount = sumAmounts(releasedToday.map((request) => request.amount));
     const dayClosing = Math.max(dayOpening + releasedAmount - spentToday, 0);
@@ -1298,7 +1310,7 @@ function printDailyDocument(reportDate, entries) {
             <div class="meta">
                 <div class="meta-card"><span>Opening Balance</span><strong>${MargaUtils.formatCurrency(dayOpening)}</strong></div>
                 <div class="meta-card"><span>Spent Today</span><strong>${MargaUtils.formatCurrency(spentToday)}</strong></div>
-                <div class="meta-card"><span>Released Back</span><strong>${MargaUtils.formatCurrency(releasedAmount)}</strong></div>
+                <div class="meta-card"><span>Received Back</span><strong>${MargaUtils.formatCurrency(releasedAmount)}</strong></div>
                 <div class="meta-card"><span>Closing Balance</span><strong>${MargaUtils.formatCurrency(dayClosing)}</strong></div>
             </div>
 
@@ -1636,6 +1648,20 @@ function revealEntryForm(referenceLabel = '') {
     }
 }
 
+function revealRequestForm(referenceLabel = '') {
+    const requestCard = document.querySelector('.request-card');
+    if (!requestCard) return;
+    requestCard.classList.add('request-card-highlight');
+    requestCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('requestStatusInput')?.focus();
+    window.setTimeout(() => {
+        requestCard.classList.remove('request-card-highlight');
+    }, 2400);
+    if (referenceLabel) {
+        MargaUtils.showToast(`Editing ${referenceLabel}. Update the replenishment status here.`, 'info');
+    }
+}
+
 function buildDraftRequestForPrint() {
     const draft = normalizeRequest({
         id: String(document.getElementById('requestIdInput').value || '').trim() || 'Draft',
@@ -1688,6 +1714,8 @@ function saveCurrentRequestFromForm(options = {}) {
     });
 
     upsertById(PETTY_CASH_STATE.requests, next);
+    syncRequestWithApd(getRequestById(requestId) || next);
+    syncRequestsFromApd();
     reconcileRequests();
     persistState();
     fillRequestForm(getRequestById(requestId) || next);
@@ -1700,6 +1728,183 @@ function saveCurrentRequestFromForm(options = {}) {
     }
 
     return getRequestById(requestId) || next;
+}
+
+function syncRequestWithApd(request) {
+    if (!request) return null;
+
+    const bills = readArrayStorage(APD_SYNC_STORAGE_KEYS.bills, []);
+    const checks = readArrayStorage(APD_SYNC_STORAGE_KEYS.checks, []);
+    const billIndex = bills.findIndex((bill) => isLinkedApdBillForRequest(bill, request));
+    const existingBill = billIndex >= 0 ? bills[billIndex] : null;
+    const nextBill = buildApdPayableFromRequest(request, existingBill, checks);
+
+    if (!nextBill) {
+        if (existingBill) {
+            request.apdBillId = existingBill.id || '';
+            request.apdBillStatus = existingBill.status || '';
+        }
+        return request;
+    }
+
+    if (billIndex >= 0) {
+        bills[billIndex] = nextBill;
+    } else {
+        bills.push(nextBill);
+    }
+
+    localStorage.setItem(APD_SYNC_STORAGE_KEYS.bills, JSON.stringify(bills));
+    request.apdBillId = nextBill.id;
+    request.apdBillStatus = nextBill.status;
+    return request;
+}
+
+function buildApdPayableFromRequest(request, existingBill = null, checks = []) {
+    if (!existingBill && request.status !== 'Approved') {
+        return null;
+    }
+
+    const currentStatus = String(existingBill?.status || '').trim();
+    const hasIssuedCheck = Boolean(existingBill) && checks.some((check) => (
+        check.billId === existingBill.id && ['Printed', 'Released', 'Cleared'].includes(String(check.status || '').trim())
+    ));
+    const isLocked = hasIssuedCheck || ['Released', 'Cleared', 'Voided'].includes(currentStatus);
+    const custodian = String(PETTY_CASH_STATE.settings.custodian || request.requestedBy || 'Petty Cash Manager').trim();
+
+    return {
+        ...(existingBill || {}),
+        id: String(existingBill?.id || createApdPayableId(request)).trim(),
+        dashboardLabel: 'Petty Cash Replenishment',
+        payee: isLocked ? String(existingBill?.payee || custodian).trim() : custodian,
+        documentType: 'Petty Cash Replenishment',
+        documentNumber: request.id,
+        dueDate: isLocked ? String(existingBill?.dueDate || request.requestDate).trim() : String(request.requestDate || '').trim(),
+        secondDueDate: '',
+        accountId: 'petty_cash_fund',
+        amount: isLocked ? Number(existingBill?.amount || request.amount || 0) : Number(request.amount || 0),
+        secondAmount: 0,
+        status: mapRequestStatusToApdBillStatus(request.status, currentStatus),
+        planType: 'one_time',
+        remainingYears: 0,
+        remainingMonths: 0,
+        simpleLoanMode: false,
+        breakdownPending: false,
+        principalAmount: 0,
+        interestAmount: 0,
+        penaltyAmount: 0,
+        pdcFirstDay: 0,
+        pdcSecondDay: 0,
+        pdcFirstAmount: 0,
+        pdcSecondAmount: 0,
+        pdcSlot: '',
+        seriesId: '',
+        seriesIndex: 1,
+        seriesTotal: 1,
+        notes: buildApdPayableNote(request),
+        createdAt: String(existingBill?.createdAt || isoNow()),
+        sourceModule: 'pettycash',
+        sourceRequestId: request.id
+    };
+}
+
+function mapRequestStatusToApdBillStatus(requestStatus, currentStatus = '') {
+    const normalizedRequestStatus = String(requestStatus || '').trim();
+    const normalizedCurrentStatus = String(currentStatus || '').trim();
+    if (['Printed', 'Released', 'Cleared', 'Voided'].includes(normalizedCurrentStatus)) {
+        return normalizedCurrentStatus;
+    }
+    if (normalizedRequestStatus === 'Draft') return 'Draft';
+    if (normalizedRequestStatus === 'Requested') return 'For Approval';
+    if (normalizedRequestStatus === 'Approved') {
+        if (normalizedCurrentStatus === 'For Check Printing') return normalizedCurrentStatus;
+        return 'Approved for Payment';
+    }
+    return normalizedCurrentStatus || 'Approved for Payment';
+}
+
+function buildApdPayableNote(request) {
+    const parts = [
+        `Auto-created from petty cash replenishment ${request.id}.`,
+        `Report date: ${formatLongDate(request.reportDate)}.`
+    ];
+    if (request.notes) {
+        parts.push(`Petty cash note: ${request.notes}`);
+    }
+    return parts.join(' ');
+}
+
+function createApdPayableId(request) {
+    const suffix = String(request.id || '').replace(/[^A-Za-z0-9]/g, '');
+    return `APDPC-${suffix || Date.now()}`;
+}
+
+function syncRequestsFromApd() {
+    const bills = readArrayStorage(APD_SYNC_STORAGE_KEYS.bills, []);
+    const checks = readArrayStorage(APD_SYNC_STORAGE_KEYS.checks, []);
+    let changed = false;
+
+    PETTY_CASH_STATE.requests.forEach((request) => {
+        const bill = findLinkedApdBillForRequest(request, bills);
+        const receivedCheck = bill ? getLatestReceivedApdCheck(bill.id, checks) : null;
+        const nextStatus = receivedCheck
+            ? 'Received'
+            : (bill ? mapApdBillStatusToRequestStatus(bill.status) : request.status);
+
+        if (String(request.apdBillId || '') !== String(bill?.id || '')) {
+            request.apdBillId = String(bill?.id || '');
+            changed = true;
+        }
+        if (String(request.apdBillStatus || '') !== String(bill?.status || '')) {
+            request.apdBillStatus = String(bill?.status || '');
+            changed = true;
+        }
+        if (String(request.apdCheckNumber || '') !== String(receivedCheck?.checkNumber || '')) {
+            request.apdCheckNumber = String(receivedCheck?.checkNumber || '');
+            changed = true;
+        }
+        if (String(request.receivedDate || '') !== String(receivedCheck?.issueDate || '')) {
+            request.receivedDate = String(receivedCheck?.issueDate || '');
+            changed = true;
+        }
+        if (String(nextStatus || '') !== String(request.status || '')) {
+            request.status = nextStatus;
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        persistState();
+    }
+}
+
+function findLinkedApdBillForRequest(request, bills) {
+    return bills.find((bill) => isLinkedApdBillForRequest(bill, request)) || null;
+}
+
+function isLinkedApdBillForRequest(bill, request) {
+    if (!bill || !request) return false;
+    const requestId = String(request.id || '').trim();
+    const requestBillId = String(request.apdBillId || '').trim();
+    return String(bill.id || '').trim() === requestBillId
+        || (
+            String(bill.sourceModule || '').trim() === 'pettycash'
+            && String(bill.sourceRequestId || '').trim() === requestId
+        );
+}
+
+function getLatestReceivedApdCheck(billId, checks) {
+    return checks
+        .filter((check) => String(check.billId || '').trim() === String(billId || '').trim()
+            && ['Released', 'Cleared'].includes(String(check.status || '').trim()))
+        .sort((left, right) => `${right.issueDate} ${right.id}`.localeCompare(`${left.issueDate} ${left.id}`))[0] || null;
+}
+
+function mapApdBillStatusToRequestStatus(billStatus) {
+    const normalized = String(billStatus || '').trim();
+    if (normalized === 'Draft') return 'Draft';
+    if (normalized === 'For Approval') return 'Requested';
+    if (!normalized) return 'Draft';
+    return 'Approved';
 }
 
 function reconcileRequests() {
@@ -1722,7 +1927,7 @@ function syncEntriesForRequest(request, linkedEntries) {
 
     linkedEntries.forEach((entry) => {
         entry.replenishmentId = request.id;
-        if (request.status === 'Released') {
+        if (request.status === 'Received') {
             if (entry.status !== 'Cancelled') entry.status = 'Replenished';
             return;
         }
@@ -1770,7 +1975,7 @@ function calculateCashOnHandByDate(reportDate, excludeRequestId = '') {
         isOnOrBeforeDate(entry.date, reportDate) && entry.status !== 'Cancelled'
     ));
     const releasedRequests = PETTY_CASH_STATE.requests.filter((request) => (
-        request.status === 'Released'
+        request.status === 'Received'
         && request.id !== excludeRequestId
         && isOnOrBeforeDate(request.requestDate, reportDate)
     ));
@@ -1790,7 +1995,7 @@ function calculatePendingLiquidationByDate(reportDate) {
 
 function calculateDayOpeningBalance(reportDate) {
     const priorEntries = PETTY_CASH_STATE.entries.filter((entry) => entry.date < reportDate && entry.status !== 'Cancelled');
-    const priorReleased = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Released' && request.requestDate < reportDate);
+    const priorReleased = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received' && request.requestDate < reportDate);
     return Math.max(
         PETTY_CASH_STATE.settings.openingBalance
         + sumAmounts(priorReleased.map((request) => request.amount))
@@ -1838,8 +2043,8 @@ function getEntriesByDate(dateValue) {
     return PETTY_CASH_STATE.entries.filter((entry) => entry.date === dateValue);
 }
 
-function getReleasedRequests() {
-    return PETTY_CASH_STATE.requests.filter((request) => request.status === 'Released');
+function getReceivedRequests() {
+    return PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received');
 }
 
 function getEntriesByRequestId(requestId) {
@@ -1977,16 +2182,22 @@ function normalizeEntry(entry) {
 }
 
 function normalizeRequest(request) {
+    const legacyStatus = String(request.status || '').trim();
+    const normalizedStatus = legacyStatus === 'Released' ? 'Received' : legacyStatus;
     return {
         id: String(request.id || createRequestId()).trim(),
         requestDate: String(request.requestDate || getSelectedDateValue()).trim(),
         reportDate: String(request.reportDate || getSelectedDateValue()).trim(),
         requestedBy: String(request.requestedBy || '').trim(),
         approvedBy: String(request.approvedBy || '').trim(),
-        status: REQUEST_STATUSES.includes(String(request.status || '').trim()) ? String(request.status).trim() : 'Draft',
+        status: REQUEST_STATUSES.includes(normalizedStatus) ? normalizedStatus : 'Draft',
         notes: String(request.notes || '').trim(),
         amount: Number(request.amount || 0),
         entryIds: Array.isArray(request.entryIds) ? request.entryIds.map((item) => String(item).trim()).filter(Boolean) : [],
+        apdBillId: String(request.apdBillId || '').trim(),
+        apdBillStatus: String(request.apdBillStatus || '').trim(),
+        apdCheckNumber: String(request.apdCheckNumber || '').trim(),
+        receivedDate: String(request.receivedDate || '').trim(),
         createdAt: String(request.createdAt || isoNow())
     };
 }
