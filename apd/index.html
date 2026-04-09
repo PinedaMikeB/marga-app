@@ -295,6 +295,7 @@
                                 <select class="form-select" id="billPlanTypeInput">
                                     <option value="one_time">One Time</option>
                                     <option value="monthly_term">Monthly Fixed Term</option>
+                                    <option value="bi_monthly_pdc">Bi-Monthly PDC</option>
                                     <option value="repeat_last_amount">Repeat Last Bill Amount</option>
                                 </select>
                             </label>
@@ -308,6 +309,16 @@
                                 <span class="form-label">Remaining Months</span>
                                 <input type="number" class="form-input" id="billRemainingMonthsInput" min="0" step="1" value="0">
                             </label>
+                        </div>
+                        <div class="form-row hidden" id="biMonthlyPdcRow">
+                            <label class="form-group">
+                                <span class="form-label">Other PDC Date This Month</span>
+                                <input type="date" class="form-input" id="billSecondDueDateInput">
+                            </label>
+                            <div class="form-group">
+                                <span class="form-label">PDC Guide</span>
+                                <p class="form-help compact">Use this when one loan requires two post-dated checks in the same month. APD will project both dates every month.</p>
+                            </div>
                         </div>
                         <p class="plan-hint" id="billPlanHint">Use one-time for normal invoices or SOAs. Use monthly term for loans, tuition, and fixed card payments. Use repeat last bill amount for electricity, mobile, internet, and similar bills when you want to copy the last amount forward.</p>
                         <div class="form-row">

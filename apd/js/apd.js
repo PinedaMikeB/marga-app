@@ -384,14 +384,21 @@ function updatePlanHint() {
     const planType = String(document.getElementById('billPlanTypeInput').value || 'one_time');
     const hint = document.getElementById('billPlanHint');
     const recurrenceRow = document.getElementById('recurrenceFieldsRow');
+    const biMonthlyRow = document.getElementById('biMonthlyPdcRow');
     if (planType === 'one_time') {
         recurrenceRow.classList.add('hidden');
+        biMonthlyRow.classList.add('hidden');
         hint.textContent = 'Use one-time for normal invoices, SOAs, and personal owner drawings.';
         return;
     }
     recurrenceRow.classList.remove('hidden');
+    biMonthlyRow.classList.toggle('hidden', planType !== 'bi_monthly_pdc');
     if (planType === 'monthly_term') {
         hint.textContent = 'Use monthly fixed term for housing loan, bank loan, card payment, tuition, and any fixed monthly amount. Remaining years and months will auto-generate future payables.';
+        return;
+    }
+    if (planType === 'bi_monthly_pdc') {
+        hint.textContent = 'Use bi-monthly PDC when the same loan requires two post-dated checks each month. Remaining months means how many months APD should project, and each month will generate two payable dates.';
         return;
     }
     hint.textContent = 'Use repeat last bill amount for electricity, mobile phones, internet, and similar bills when you want to copy the latest amount forward and edit later if the actual bill changes.';
@@ -690,6 +697,7 @@ function onBillSubmit(event) {
         documentType,
         documentNumber: document.getElementById('billDocNumberInput').value,
         dueDate: document.getElementById('billDueDateInput').value,
+        secondDueDate: document.getElementById('billSecondDueDateInput').value,
         accountId: document.getElementById('billAccountInput').value,
         amount: document.getElementById('billAmountInput').value,
         status: document.getElementById('billStatusInput').value,
@@ -708,6 +716,23 @@ function onBillSubmit(event) {
     if (!base.payee || !base.documentNumber || !base.accountId || !base.dueDate || !(base.amount > 0)) {
         MargaUtils.showToast('Complete the payable form before saving.', 'error');
         return;
+    }
+
+    if (base.planType === 'bi_monthly_pdc') {
+        const primaryDate = parseDateOnly(base.dueDate);
+        const secondDate = parseDateOnly(base.secondDueDate);
+        if (!primaryDate || !secondDate) {
+            MargaUtils.showToast('Enter both PDC dates for a bi-monthly PDC schedule.', 'error');
+            return;
+        }
+        if (primaryDate.getFullYear() !== secondDate.getFullYear() || primaryDate.getMonth() !== secondDate.getMonth()) {
+            MargaUtils.showToast('Both PDC dates must be inside the same month.', 'error');
+            return;
+        }
+        if (primaryDate.getDate() === secondDate.getDate()) {
+            MargaUtils.showToast('Use two different PDC dates in the same month.', 'error');
+            return;
+        }
     }
 
     if (isLoan && !base.simpleLoanMode) {
@@ -732,6 +757,7 @@ function onBillSubmit(event) {
         );
 
         if (shouldCascade) {
+            const biMonthlyPattern = getBiMonthlyPattern(base, original);
             const futureBills = APD_STATE.bills.filter((bill) => (
                 bill.seriesId === original.seriesId && bill.seriesIndex >= original.seriesIndex
             ));
@@ -744,23 +770,38 @@ function onBillSubmit(event) {
                     accountId: base.accountId,
                     amount: base.amount,
                     status: base.status,
+                    planType: base.planType,
+                    remainingYears: base.remainingYears,
+                    remainingMonths: base.remainingMonths,
                     simpleLoanMode: base.simpleLoanMode,
                     breakdownPending: base.breakdownPending,
                     principalAmount: base.principalAmount,
                     interestAmount: base.interestAmount,
                     penaltyAmount: base.penaltyAmount,
+                    dueDate: base.planType === 'bi_monthly_pdc'
+                        ? toDateInputValue(setDayWithinMonth(startOfMonth(parseDateOnly(bill.dueDate) || new Date()), bill.pdcSlot === 'second' ? biMonthlyPattern.secondDay : biMonthlyPattern.firstDay))
+                        : bill.dueDate,
+                    secondDueDate: base.planType === 'bi_monthly_pdc'
+                        ? toDateInputValue(setDayWithinMonth(startOfMonth(parseDateOnly(bill.dueDate) || new Date()), bill.pdcSlot === 'second' ? biMonthlyPattern.firstDay : biMonthlyPattern.secondDay))
+                        : '',
+                    pdcFirstDay: base.planType === 'bi_monthly_pdc' ? biMonthlyPattern.firstDay : 0,
+                    pdcSecondDay: base.planType === 'bi_monthly_pdc' ? biMonthlyPattern.secondDay : 0,
                     notes: base.notes
                 });
                 upsertById(APD_STATE.bills, updatedBill);
             });
             savedCount = futureBills.length;
         } else {
-            upsertById(APD_STATE.bills, {
+            const biMonthlyPattern = getBiMonthlyPattern(base, original);
+            upsertById(APD_STATE.bills, normalizeBill({
                 ...base,
+                pdcFirstDay: base.planType === 'bi_monthly_pdc' ? biMonthlyPattern.firstDay : 0,
+                pdcSecondDay: base.planType === 'bi_monthly_pdc' ? biMonthlyPattern.secondDay : 0,
+                pdcSlot: original?.pdcSlot || '',
                 seriesId: original?.seriesId || '',
                 seriesIndex: original?.seriesIndex || 1,
                 seriesTotal: original?.seriesTotal || 1
-            });
+            }));
         }
     } else {
         const plannedBills = createBillsFromPlan(base);
@@ -919,6 +960,7 @@ function clearBillForm() {
     document.getElementById('billPlanTypeInput').value = 'one_time';
     document.getElementById('billRemainingYearsInput').value = '0';
     document.getElementById('billRemainingMonthsInput').value = '0';
+    document.getElementById('billSecondDueDateInput').value = '';
     document.getElementById('billCascadeFutureInput').checked = false;
     document.getElementById('billSimpleLoanModeInput').checked = false;
     document.getElementById('billBreakdownPendingInput').checked = false;
@@ -989,6 +1031,7 @@ function normalizeBill(bill) {
         documentType,
         documentNumber: String(bill.documentNumber || '').trim(),
         dueDate: String(bill.dueDate || '').trim(),
+        secondDueDate: String(bill.secondDueDate || '').trim(),
         accountId: String(bill.accountId || '').trim(),
         amount: Number(bill.amount || 0),
         status: BILL_STATUSES.includes(String(bill.status || '').trim()) ? String(bill.status).trim() : 'Draft',
@@ -1000,6 +1043,9 @@ function normalizeBill(bill) {
         principalAmount,
         interestAmount,
         penaltyAmount,
+        pdcFirstDay: Number(bill.pdcFirstDay || 0),
+        pdcSecondDay: Number(bill.pdcSecondDay || 0),
+        pdcSlot: String(bill.pdcSlot || '').trim(),
         seriesId: String(bill.seriesId || '').trim(),
         seriesIndex: Number(bill.seriesIndex || 1),
         seriesTotal: Number(bill.seriesTotal || 1),
@@ -1064,6 +1110,7 @@ function fillBillForm(bill) {
     document.getElementById('billDocTypeInput').value = bill.documentType;
     document.getElementById('billDocNumberInput').value = bill.documentNumber;
     document.getElementById('billDueDateInput').value = bill.dueDate;
+    document.getElementById('billSecondDueDateInput').value = resolveBiMonthlyOtherDate(bill);
     document.getElementById('billAccountInput').value = bill.accountId;
     document.getElementById('billAmountInput').value = Number(bill.amount || 0).toFixed(2);
     document.getElementById('billStatusInput').value = bill.status;
@@ -1079,6 +1126,10 @@ function fillBillForm(bill) {
 }
 
 function createBillsFromPlan(baseBill) {
+    if (baseBill.planType === 'bi_monthly_pdc') {
+        return createBiMonthlyPdcBills(baseBill);
+    }
+
     const totalMonths = getPlannedOccurrences(baseBill.planType, baseBill.remainingYears, baseBill.remainingMonths);
     const seriesId = totalMonths > 1 ? `SER-${Date.now()}` : '';
     const due = parseDateOnly(baseBill.dueDate) || startOfDay(new Date());
@@ -1110,7 +1161,106 @@ function createBillsFromPlan(baseBill) {
 function getPlannedOccurrences(planType, years, months) {
     if (planType === 'one_time') return 1;
     const total = (Number(years || 0) * 12) + Number(months || 0);
+    if (planType === 'bi_monthly_pdc') return Math.max(total, 1) * 2;
     return Math.max(total, 1);
+}
+
+function createBiMonthlyPdcBills(baseBill) {
+    const totalMonths = Math.max((Number(baseBill.remainingYears || 0) * 12) + Number(baseBill.remainingMonths || 0), 1);
+    const firstDate = parseDateOnly(baseBill.dueDate) || startOfDay(new Date());
+    const secondDate = parseDateOnly(baseBill.secondDueDate) || firstDate;
+    const firstDay = Math.min(firstDate.getDate(), secondDate.getDate());
+    const secondDay = Math.max(firstDate.getDate(), secondDate.getDate());
+    const seriesId = `SER-${Date.now()}`;
+    const idSeed = APD_STATE.bills.reduce((max, bill) => {
+        const value = Number(String(bill.id || '').replace(/[^\d]/g, '')) || 0;
+        return Math.max(max, value);
+    }, 1000);
+    const startMonth = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
+    const bills = [];
+
+    for (let monthIndex = 0; monthIndex < totalMonths; monthIndex += 1) {
+        const monthDate = addMonths(startMonth, monthIndex);
+        const firstMonthDate = setDayWithinMonth(monthDate, firstDay);
+        const secondMonthDate = setDayWithinMonth(monthDate, secondDay);
+
+        bills.push(normalizeBill({
+            ...baseBill,
+            id: `APD-${idSeed + bills.length + 1}`,
+            dueDate: toDateInputValue(firstMonthDate),
+            secondDueDate: toDateInputValue(secondMonthDate),
+            documentNumber: `${baseBill.documentNumber}-${String(monthIndex + 1).padStart(2, '0')}-A`,
+            pdcFirstDay: firstDay,
+            pdcSecondDay: secondDay,
+            pdcSlot: 'first',
+            seriesId,
+            seriesIndex: bills.length + 1,
+            seriesTotal: totalMonths * 2
+        }));
+
+        bills.push(normalizeBill({
+            ...baseBill,
+            id: `APD-${idSeed + bills.length + 1}`,
+            dueDate: toDateInputValue(secondMonthDate),
+            secondDueDate: toDateInputValue(firstMonthDate),
+            documentNumber: `${baseBill.documentNumber}-${String(monthIndex + 1).padStart(2, '0')}-B`,
+            pdcFirstDay: firstDay,
+            pdcSecondDay: secondDay,
+            pdcSlot: 'second',
+            seriesId,
+            seriesIndex: bills.length + 1,
+            seriesTotal: totalMonths * 2
+        }));
+    }
+
+    return bills;
+}
+
+function resolveBiMonthlyOtherDate(bill) {
+    if (bill.planType !== 'bi_monthly_pdc') {
+        return bill.secondDueDate || '';
+    }
+    const sibling = APD_STATE.bills.find((item) => (
+        item.id !== bill.id
+        && item.seriesId
+        && item.seriesId === bill.seriesId
+        && item.planType === 'bi_monthly_pdc'
+        && item.dueDate
+        && bill.dueDate
+        && isSameMonth(item.dueDate, parseDateOnly(bill.dueDate))
+    ));
+    if (sibling) return sibling.dueDate;
+    if (bill.secondDueDate) return bill.secondDueDate;
+    const baseDate = parseDateOnly(bill.dueDate);
+    if (!baseDate || !(bill.pdcFirstDay > 0) || !(bill.pdcSecondDay > 0)) return '';
+    const otherDay = bill.pdcSlot === 'second' ? bill.pdcFirstDay : bill.pdcSecondDay;
+    return toDateInputValue(setDayWithinMonth(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1), otherDay));
+}
+
+function getBiMonthlyPattern(baseBill, originalBill = null) {
+    if (baseBill.planType !== 'bi_monthly_pdc') {
+        return { firstDay: 0, secondDay: 0 };
+    }
+
+    const mainDate = parseDateOnly(baseBill.dueDate);
+    const otherDate = parseDateOnly(baseBill.secondDueDate);
+    if (!mainDate || !otherDate) {
+        return {
+            firstDay: Number(originalBill?.pdcFirstDay || 0),
+            secondDay: Number(originalBill?.pdcSecondDay || 0)
+        };
+    }
+
+    if (!originalBill?.pdcSlot) {
+        return {
+            firstDay: Math.min(mainDate.getDate(), otherDate.getDate()),
+            secondDay: Math.max(mainDate.getDate(), otherDate.getDate())
+        };
+    }
+
+    return originalBill.pdcSlot === 'second'
+        ? { firstDay: otherDate.getDate(), secondDay: mainDate.getDate() }
+        : { firstDay: mainDate.getDate(), secondDay: otherDate.getDate() };
 }
 
 function onDashboardMatrixClick(event) {
@@ -1193,6 +1343,14 @@ function startOfMonth(date) {
 
 function addMonths(date, months) {
     return new Date(date.getFullYear(), date.getMonth() + Number(months || 0), date.getDate());
+}
+
+function setDayWithinMonth(monthDate, day) {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const safeDay = Math.max(1, Math.min(Number(day || 1), lastDay));
+    return new Date(year, month, safeDay);
 }
 
 function parseDateOnly(value) {
