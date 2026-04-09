@@ -157,6 +157,9 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAll();
 });
 
+window.addEventListener('storage', onExternalApdStateChange);
+window.addEventListener('focus', onExternalApdStateChange);
+
 function loadUserHeader() {
     const user = MargaAuth.getUser();
     if (!user) return;
@@ -205,6 +208,32 @@ function bindFormControls() {
     document.getElementById('accountManagerTableBody').addEventListener('click', onAccountTableAction);
     syncLoanFields();
     syncSeriesEditFields();
+}
+
+function onExternalApdStateChange(event) {
+    if (event?.key && ![
+        APD_STORAGE_KEYS.accounts,
+        APD_STORAGE_KEYS.bills,
+        APD_STORAGE_KEYS.checks,
+        PETTY_CASH_SYNC_STORAGE_KEYS.requests,
+        PETTY_CASH_SYNC_STORAGE_KEYS.entries
+    ].includes(event.key)) {
+        return;
+    }
+
+    const preserveCheckEdit = (document.activeElement?.id || '').startsWith('check');
+    const preserveBillEdit = (document.activeElement?.id || '').startsWith('bill');
+
+    hydrateState();
+    populateSelects();
+    renderAll();
+
+    if (!preserveBillEdit && !document.getElementById('billIdInput')?.value) {
+        clearBillForm();
+    }
+    if (!preserveCheckEdit && !document.getElementById('checkIdInput')?.value) {
+        clearCheckForm();
+    }
 }
 
 function bindTabControls() {

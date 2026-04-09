@@ -184,6 +184,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderAll();
 });
 
+window.addEventListener('storage', onExternalPettyCashStateChange);
+window.addEventListener('focus', onExternalPettyCashStateChange);
+
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
 }
@@ -1760,7 +1763,7 @@ function syncRequestWithApd(request) {
 }
 
 function buildApdPayableFromRequest(request, existingBill = null, checks = []) {
-    if (!existingBill && request.status !== 'Approved') {
+    if (!existingBill && !['Requested', 'Approved', 'Received'].includes(String(request.status || '').trim())) {
         return null;
     }
 
@@ -1805,6 +1808,34 @@ function buildApdPayableFromRequest(request, existingBill = null, checks = []) {
         sourceModule: 'pettycash',
         sourceRequestId: request.id
     };
+}
+
+function onExternalPettyCashStateChange(event) {
+    if (event?.key && ![
+        PETTY_CASH_STORAGE_KEYS.entries,
+        PETTY_CASH_STORAGE_KEYS.requests,
+        PETTY_CASH_STORAGE_KEYS.settings,
+        APD_SYNC_STORAGE_KEYS.bills,
+        APD_SYNC_STORAGE_KEYS.checks
+    ].includes(event.key)) {
+        return;
+    }
+
+    const activeElementId = document.activeElement?.id || '';
+    const preserveRequestEdit = activeElementId.startsWith('request');
+    const preserveEntryEdit = activeElementId.startsWith('entry');
+
+    hydrateState();
+    populateSelects();
+    fillSettingsForm();
+    renderAll();
+
+    if (!preserveEntryEdit && !document.getElementById('entryIdInput')?.value) {
+        clearEntryForm();
+    }
+    if (!preserveRequestEdit && !document.getElementById('requestIdInput')?.value) {
+        clearRequestForm();
+    }
 }
 
 function mapRequestStatusToApdBillStatus(requestStatus, currentStatus = '') {
