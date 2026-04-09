@@ -1380,6 +1380,7 @@ function printRequestDocument(request) {
     }
 
     const breakdown = buildAccountBreakdown(entries);
+    const fundAccountability = buildRequestFundAccountability(request);
         const detailRows = entries.map((entry, index) => {
             const account = getAccountById(entry.accountId);
             return `
@@ -1423,6 +1424,9 @@ function printRequestDocument(request) {
                 .section-title { margin-top: 22px; font-size: 15px; font-weight: 700; color: #17362e; }
                 .amount { text-align: right; white-space: nowrap; }
                 .notes { margin-top: 14px; padding: 12px; border: 1px solid #d3ddd7; border-radius: 12px; background: #f9fcfa; font-size: 12px; }
+                .accountability-table td:first-child { font-weight: 600; width: 38%; }
+                .accountability-status { margin-top: 10px; font-size: 12px; color: #4b6358; }
+                .accountability-status strong { color: #15392f; margin-right: 6px; }
             </style>
         </head>
         <body>
@@ -1433,6 +1437,39 @@ function printRequestDocument(request) {
                 <div class="meta-card"><span>Status</span><strong>${escapeHtml(request.status)}</strong></div>
                 <div class="meta-card"><span>Prepared By</span><strong>${escapeHtml(request.requestedBy || 'Not set')}</strong></div>
                 <div class="meta-card"><span>Approved By</span><strong>${escapeHtml(request.approvedBy || 'Not set')}</strong></div>
+            </div>
+
+            <div class="section-title">Fund Accountability</div>
+            <table class="accountability-table">
+                <tbody>
+                    <tr>
+                        <td>Remaining Cash On Hand</td>
+                        <td class="amount">${MargaUtils.formatCurrency(fundAccountability.cashOnHand)}</td>
+                    </tr>
+                    <tr>
+                        <td>Unliquidated Released Amount</td>
+                        <td class="amount">${MargaUtils.formatCurrency(fundAccountability.pendingLiquidation)}</td>
+                    </tr>
+                    <tr>
+                        <td>This Replenishment Request</td>
+                        <td class="amount">${MargaUtils.formatCurrency(fundAccountability.requestAmount)}</td>
+                    </tr>
+                    <tr>
+                        <td>Total Accountability</td>
+                        <td class="amount">${MargaUtils.formatCurrency(fundAccountability.accountabilityTotal)}</td>
+                    </tr>
+                    <tr>
+                        <td>Fund Ceiling</td>
+                        <td class="amount">${MargaUtils.formatCurrency(fundAccountability.fundCeiling)}</td>
+                    </tr>
+                    <tr>
+                        <td>Balance / Variance</td>
+                        <td class="amount">${MargaUtils.formatCurrency(fundAccountability.variance)}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="accountability-status">
+                <strong>${escapeHtml(fundAccountability.statusLabel)}</strong>${escapeHtml(fundAccountability.statusNote)}
             </div>
 
             <div class="section-title">Account Breakdown</div>
@@ -1679,6 +1716,53 @@ function getEligibleEntriesForRequest(reportDate, requestId = '') {
         if (!entry.replenishmentId) return true;
         return entry.replenishmentId === requestId;
     });
+}
+
+function buildRequestFundAccountability(request) {
+    const reportDate = request.reportDate;
+    const fundCeiling = Number(PETTY_CASH_STATE.settings.fundLimit || PETTY_CASH_STATE.settings.openingBalance || 0);
+    const requestAmount = Number(request.amount || 0);
+    const cashOnHand = calculateCashOnHandByDate(reportDate, request.id);
+    const pendingLiquidation = calculatePendingLiquidationByDate(reportDate);
+    const accountabilityTotal = cashOnHand + pendingLiquidation + requestAmount;
+    const variance = fundCeiling - accountabilityTotal;
+    const isBalanced = Math.abs(variance) < 0.005;
+
+    return {
+        cashOnHand,
+        pendingLiquidation,
+        requestAmount,
+        accountabilityTotal,
+        fundCeiling,
+        variance,
+        statusLabel: isBalanced ? 'Balanced to fund ceiling.' : 'Variance needs review.',
+        statusNote: isBalanced
+            ? `Cash on hand + unliquidated releases + replenishment equals ${MargaUtils.formatCurrency(fundCeiling)} as of ${formatLongDate(reportDate)}.`
+            : `There is a ${MargaUtils.formatCurrency(Math.abs(variance))} ${variance > 0 ? 'shortfall' : 'overage'} against the fund ceiling as of ${formatLongDate(reportDate)}.`
+    };
+}
+
+function calculateCashOnHandByDate(reportDate, excludeRequestId = '') {
+    const spentEntries = PETTY_CASH_STATE.entries.filter((entry) => (
+        isOnOrBeforeDate(entry.date, reportDate) && entry.status !== 'Cancelled'
+    ));
+    const releasedRequests = PETTY_CASH_STATE.requests.filter((request) => (
+        request.status === 'Released'
+        && request.id !== excludeRequestId
+        && isOnOrBeforeDate(request.requestDate, reportDate)
+    ));
+    return Math.max(
+        Number(PETTY_CASH_STATE.settings.openingBalance || 0)
+        + sumAmounts(releasedRequests.map((request) => request.amount))
+        - sumAmounts(spentEntries.map((entry) => entry.amount)),
+        0
+    );
+}
+
+function calculatePendingLiquidationByDate(reportDate) {
+    return sumAmounts(PETTY_CASH_STATE.entries
+        .filter((entry) => isOnOrBeforeDate(entry.date, reportDate) && entry.status === 'Pending Liquidation')
+        .map((entry) => entry.amount));
 }
 
 function calculateDayOpeningBalance(reportDate) {
@@ -2317,6 +2401,11 @@ function cloneData(value) {
 
 function sumAmounts(values) {
     return values.reduce((total, value) => total + Number(value || 0), 0);
+}
+
+function isOnOrBeforeDate(left, right) {
+    if (!left || !right) return false;
+    return String(left) <= String(right);
 }
 
 function isoNow() {
