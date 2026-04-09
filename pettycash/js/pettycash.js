@@ -1778,10 +1778,11 @@ async function loadSupplierOptions() {
 }
 
 async function loadActualItemCatalog() {
-    const [inventoryRows, partTypeRows, tonerInkRows, modelRows, brandRows] = await Promise.all([
+    const [inventoryRows, partTypeRows, tonerInkRows, partRows, modelRows, brandRows] = await Promise.all([
         safeQueryCollection('tbl_inventoryparts', 5000),
         safeQueryCollection('tbl_partstype', 500),
         safeQueryCollection('tbl_tonerink', 5000),
+        safeQueryCollection('tbl_parts', 5000),
         safeQueryCollection('tbl_model', 5000),
         safeQueryCollection('tbl_brand', 1000)
     ]);
@@ -1813,6 +1814,10 @@ async function loadActualItemCatalog() {
         .map((row) => normalizeInlineText(row.type))
         .filter(Boolean);
 
+    const partLabels = partRows
+        .map((row) => formatLegacyPartLabel(row, modelMap, brandMap))
+        .filter(Boolean);
+
     const officeSupplies = uniqueSortedLabels([
         ...inventoryLabels.filter((row) => row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label),
         ...partTypeLabels.filter((label) => label.toUpperCase().includes('OFFICE'))
@@ -1820,12 +1825,14 @@ async function loadActualItemCatalog() {
 
     const parts = uniqueSortedLabels([
         ...inventoryLabels.filter((row) => !row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label),
-        ...partTypeLabels.filter((label) => !label.toUpperCase().includes('OFFICE'))
+        ...partTypeLabels.filter((label) => !label.toUpperCase().includes('OFFICE')),
+        ...partLabels
     ]);
 
     const materials = uniqueSortedLabels([
         ...inventoryLabels.map((row) => row.label),
-        ...partTypeLabels
+        ...partTypeLabels,
+        ...partLabels
     ]);
 
     const tonerInk = uniqueSortedLabels(
@@ -1863,7 +1870,13 @@ function formatInventoryItemLabel(row, partTypeMap) {
     const code = normalizeInlineText(row.item_code);
     const typeLabel = normalizeInlineText(partTypeMap.get(String(row.item_type || '').trim()) || '');
     const supplierId = Number(row.supplier_id || 0);
-    const detailBits = [code, typeLabel, supplierId > 0 ? `Supplier ${supplierId}` : ''].filter(Boolean);
+    const itemId = Number(row.id || 0);
+    const detailBits = [
+        code,
+        typeLabel,
+        supplierId > 0 ? `Supplier ${supplierId}` : '',
+        itemId > 0 ? `Inventory #${itemId}` : ''
+    ].filter(Boolean);
     if (!name) return '';
     return detailBits.length ? `${name} (${detailBits.join(' • ')})` : name;
 }
@@ -1875,13 +1888,33 @@ function formatTonerInkItemLabel(row, modelMap, brandMap) {
     const modelLabel = getModelLookupLabel(model);
     const primary = normalizeInlineText([brandLabel, modelLabel].filter(Boolean).join(' '));
     const quantity = Number(row.quantity || 0);
+    const tonerId = Number(row.id || 0);
     const detailBits = [
         quantity > 0 ? `Qty ${quantity}` : '',
         normalizeInlineText(row.serial),
-        normalizeInlineText(row.remarks)
+        normalizeInlineText(row.remarks),
+        tonerId > 0 ? `Stock #${tonerId}` : ''
     ].filter(Boolean);
     if (!primary) return '';
     return detailBits.length ? `${primary} (${detailBits.join(' • ')})` : primary;
+}
+
+function formatLegacyPartLabel(row, modelMap, brandMap) {
+    const model = modelMap.get(String(row.model_id || '').trim()) || null;
+    const brand = brandMap.get(String(model?.brand_id || row.brand_id || '').trim()) || null;
+    const brandLabel = getBrandLookupLabel(brand);
+    const modelLabel = getModelLookupLabel(model);
+    const primary = normalizeInlineText([brandLabel, modelLabel].filter(Boolean).join(' '));
+    const partId = Number(row.id || 0);
+    const detailBits = [
+        Number(row.category_id || 0) > 0 ? `Category ${row.category_id}` : '',
+        normalizeInlineText(row.serial),
+        normalizeInlineText(row.remarks),
+        partId > 0 ? `Part #${partId}` : ''
+    ].filter(Boolean);
+    if (!primary && !detailBits.length) return '';
+    const baseLabel = primary || 'Legacy part record';
+    return detailBits.length ? `${baseLabel} (${detailBits.join(' • ')})` : baseLabel;
 }
 
 function getModelLookupLabel(model) {
