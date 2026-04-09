@@ -526,6 +526,15 @@ body::before {
     width: 100%;
 }
 
+.entry-item-picker {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.entry-item-note-manual.hidden {
+    display: none;
+}
+
 .voucher-items-table td {
     min-width: 140px;
 }

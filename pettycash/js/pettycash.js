@@ -298,12 +298,57 @@ function getEntryItemPlaceholder(groupId) {
     return 'Select item group first, then choose actual item';
 }
 
+function getCatalogLabelsForGroup(groupId) {
+    if (groupId === 'field_parts' || groupId === 'workshop_parts') return PETTY_CASH_STATE.itemCatalog.parts;
+    if (groupId === 'office_supplies') return PETTY_CASH_STATE.itemCatalog.officeSupplies;
+    if (groupId === 'toner' || groupId === 'ink') return PETTY_CASH_STATE.itemCatalog.tonerInk;
+    if (groupId === 'other_materials') return PETTY_CASH_STATE.itemCatalog.materials;
+    return [];
+}
+
+function buildEntryItemPickerHtml(groupId, itemNote = '') {
+    const labels = getCatalogLabelsForGroup(groupId);
+    const normalizedNote = String(itemNote || '').trim();
+    const hasGroup = Boolean(groupId);
+    const matchedLabel = labels.find((label) => label === normalizedNote) || '';
+    const forceManual = hasGroup && (!labels.length || (normalizedNote && !matchedLabel));
+    const selectedValue = matchedLabel || (forceManual ? '__manual__' : '');
+    const placeholderLabel = hasGroup
+        ? (labels.length ? 'Select actual item' : 'No master item found')
+        : 'Select item group first';
+    const manualPlaceholder = getEntryItemPlaceholder(groupId);
+
+    return `
+        <div class="entry-item-picker">
+            <select class="entry-item-note-select"${hasGroup ? '' : ' disabled'}>
+                <option value="">${escapeHtml(placeholderLabel)}</option>
+                ${labels.map((label) => `<option value="${escapeHtml(label)}"${label === selectedValue ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+                ${hasGroup ? `<option value="__manual__"${selectedValue === '__manual__' ? ' selected' : ''}>Manual entry</option>` : ''}
+            </select>
+            <input
+                type="text"
+                class="entry-item-note-manual${selectedValue === '__manual__' ? '' : ' hidden'}"
+                placeholder="${escapeHtml(manualPlaceholder)}"
+                value="${escapeHtml(selectedValue === '__manual__' ? normalizedNote : '')}"
+            >
+        </div>
+    `;
+}
+
+function resolveEntryItemNoteFromRow(row) {
+    if (!row) return '';
+    const selectedValue = String(row.querySelector('.entry-item-note-select')?.value || '').trim();
+    const manualValue = String(row.querySelector('.entry-item-note-manual')?.value || '').trim();
+    if (selectedValue && selectedValue !== '__manual__') return selectedValue;
+    return manualValue;
+}
+
 function readEntryItemsFromForm() {
     return [...document.querySelectorAll('#entryItemsBody tr[data-row-index]')].map((row) => createEntryItem({
         entryId: row.querySelector('.entry-item-id')?.value,
         expenseGroup: row.querySelector('.entry-item-group')?.value,
         accountId: row.querySelector('.entry-item-account')?.value,
-        itemNote: row.querySelector('.entry-item-note')?.value,
+        itemNote: resolveEntryItemNoteFromRow(row),
         amount: row.querySelector('.entry-item-amount')?.value
     }));
 }
@@ -319,7 +364,7 @@ function renderEntryItemsTable(items = []) {
                 <select class="entry-item-group">${getEntryItemGroupOptionsHtml(item.expenseGroup)}</select>
             </td>
             <td><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId)}</select></td>
-            <td><input type="text" class="entry-item-note" ${buildItemNoteListAttribute(item.expenseGroup)} placeholder="${escapeHtml(getEntryItemPlaceholder(item.expenseGroup))}" value="${escapeHtml(item.itemNote)}"></td>
+            <td class="entry-item-note-cell">${buildEntryItemPickerHtml(item.expenseGroup, item.itemNote)}</td>
             <td><input type="number" class="entry-item-amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(Number(item.amount).toFixed(2)) : ''}"></td>
             <td><button type="button" class="row-btn" data-action="remove-item-row">Remove</button></td>
         </tr>
@@ -361,12 +406,20 @@ function applyDefaultAccountForItemRow(row, force = false) {
 function applyItemSourceForRow(row) {
     if (!row) return;
     const groupId = String(row.querySelector('.entry-item-group')?.value || '').trim();
-    const noteInput = row.querySelector('.entry-item-note');
-    if (!noteInput) return;
-    const datalistId = getEntryItemDatalistId(groupId);
-    if (datalistId) noteInput.setAttribute('list', datalistId);
-    else noteInput.removeAttribute('list');
-    noteInput.setAttribute('placeholder', getEntryItemPlaceholder(groupId));
+    const currentValue = resolveEntryItemNoteFromRow(row);
+    const cell = row.querySelector('.entry-item-note-cell');
+    if (!cell) return;
+    cell.innerHTML = buildEntryItemPickerHtml(groupId, currentValue);
+}
+
+function toggleManualItemInput(row) {
+    if (!row) return;
+    const select = row.querySelector('.entry-item-note-select');
+    const input = row.querySelector('.entry-item-note-manual');
+    if (!select || !input) return;
+    const showManual = select.value === '__manual__';
+    input.classList.toggle('hidden', !showManual);
+    if (!showManual) input.value = '';
 }
 
 function onEntryItemsTableClick(event) {
@@ -388,6 +441,9 @@ function onEntryItemsTableChange(event) {
     if (event.target.classList.contains('entry-item-group')) {
         applyDefaultAccountForItemRow(row, true);
         applyItemSourceForRow(row);
+    }
+    if (event.target.classList.contains('entry-item-note-select')) {
+        toggleManualItemInput(row);
     }
     syncEntryTotal();
 }
