@@ -147,6 +147,7 @@ const PETTY_CASH_STATE = {
     payees: [],
     suppliers: [],
     itemCatalog: {
+        all: [],
         parts: [],
         officeSupplies: [],
         tonerInk: [],
@@ -299,11 +300,12 @@ function getEntryItemPlaceholder(groupId) {
 }
 
 function getCatalogLabelsForGroup(groupId) {
+    if (!groupId) return PETTY_CASH_STATE.itemCatalog.all;
     if (groupId === 'field_parts' || groupId === 'workshop_parts') return PETTY_CASH_STATE.itemCatalog.parts;
     if (groupId === 'office_supplies') return PETTY_CASH_STATE.itemCatalog.officeSupplies;
     if (groupId === 'toner' || groupId === 'ink') return PETTY_CASH_STATE.itemCatalog.tonerInk;
     if (groupId === 'other_materials') return PETTY_CASH_STATE.itemCatalog.materials;
-    return [];
+    return PETTY_CASH_STATE.itemCatalog.all;
 }
 
 function buildEntryItemPickerHtml(groupId, itemNote = '') {
@@ -311,19 +313,21 @@ function buildEntryItemPickerHtml(groupId, itemNote = '') {
     const normalizedNote = String(itemNote || '').trim();
     const hasGroup = Boolean(groupId);
     const matchedLabel = labels.find((label) => label === normalizedNote) || '';
-    const forceManual = hasGroup && (!labels.length || (normalizedNote && !matchedLabel));
+    const forceManual = !labels.length || (normalizedNote && !matchedLabel);
     const selectedValue = matchedLabel || (forceManual ? '__manual__' : '');
     const placeholderLabel = hasGroup
         ? (labels.length ? 'Select actual item' : 'No master item found')
-        : 'Select item group first';
-    const manualPlaceholder = getEntryItemPlaceholder(groupId);
+        : (labels.length ? 'Select item or choose manual' : 'No master item found');
+    const manualPlaceholder = hasGroup
+        ? getEntryItemPlaceholder(groupId)
+        : 'Type item manually if not in the list';
 
     return `
         <div class="entry-item-picker">
-            <select class="entry-item-note-select"${hasGroup ? '' : ' disabled'}>
+            <select class="entry-item-note-select">
                 <option value="">${escapeHtml(placeholderLabel)}</option>
                 ${labels.map((label) => `<option value="${escapeHtml(label)}"${label === selectedValue ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
-                ${hasGroup ? `<option value="__manual__"${selectedValue === '__manual__' ? ' selected' : ''}>Manual entry</option>` : ''}
+                <option value="__manual__"${selectedValue === '__manual__' ? ' selected' : ''}>Manual entry</option>
             </select>
             <input
                 type="text"
@@ -1052,6 +1056,7 @@ function renderItemDatalists() {
     const holder = document.getElementById('entryItemDatalists');
     if (!holder) return;
     holder.innerHTML = [
+        buildItemDatalistHtml('entryItemOptionsAll', PETTY_CASH_STATE.itemCatalog.all),
         buildItemDatalistHtml('entryItemOptionsParts', PETTY_CASH_STATE.itemCatalog.parts),
         buildItemDatalistHtml('entryItemOptionsOffice', PETTY_CASH_STATE.itemCatalog.officeSupplies),
         buildItemDatalistHtml('entryItemOptionsTonerInk', PETTY_CASH_STATE.itemCatalog.tonerInk),
@@ -1829,7 +1834,14 @@ async function loadActualItemCatalog() {
             .filter(Boolean)
     );
 
-    PETTY_CASH_STATE.itemCatalog = { parts, officeSupplies, tonerInk, materials };
+    const all = uniqueSortedLabels([
+        ...parts,
+        ...officeSupplies,
+        ...tonerInk,
+        ...materials
+    ]);
+
+    PETTY_CASH_STATE.itemCatalog = { all, parts, officeSupplies, tonerInk, materials };
 }
 
 async function safeQueryCollection(collectionId, limit = 5000) {
