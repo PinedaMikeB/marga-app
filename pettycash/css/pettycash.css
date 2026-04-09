@@ -531,6 +531,10 @@ body::before {
     gap: 0.45rem;
 }
 
+.entry-item-note-select {
+    min-height: 13.5rem;
+}
+
 .entry-item-note-manual.hidden {
     display: none;
 }
