@@ -15,6 +15,12 @@ const ENTRY_STATUSES = [
     'Cancelled'
 ];
 
+const MANUAL_ENTRY_STATUSES = [
+    'Pending Liquidation',
+    'Liquidated',
+    'Cancelled'
+];
+
 const REQUEST_STATUSES = [
     'Draft',
     'Requested',
@@ -242,9 +248,21 @@ function populateSelects() {
     document.getElementById('requestRequestedByInput').innerHTML = `<option value="">Select employee/requester</option>${employeeOptions}`;
     document.getElementById('entryPayeeList').innerHTML = payeeOptions;
     document.getElementById('entrySupplierList').innerHTML = supplierOptions;
-    document.getElementById('entryStatusInput').innerHTML = ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
+    document.getElementById('entryStatusInput').innerHTML = getEntryStatusOptionsHtml();
     document.getElementById('entryStatusFilter').innerHTML = '<option value="all">All Entry Statuses</option>' + ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('requestStatusInput').innerHTML = REQUEST_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
+}
+
+function getEntryStatusOptionsHtml(selectedValue = '') {
+    const normalized = String(selectedValue || '').trim();
+    return ENTRY_STATUSES.map((status) => {
+        const isManual = MANUAL_ENTRY_STATUSES.includes(status);
+        const isSelected = status === normalized;
+        const disabled = !isManual ? ' disabled' : '';
+        const selected = isSelected ? ' selected' : '';
+        const suffix = !isManual ? ' (automatic)' : '';
+        return `<option value="${status}"${selected}${disabled}>${escapeHtml(`${status}${suffix}`)}</option>`;
+    }).join('');
 }
 
 function createEntryItem(item = {}) {
@@ -492,6 +510,11 @@ function onEntrySubmit(event) {
 
     if (!sharedFields.date || !sharedFields.payee || !sharedFields.requestedBy || !sharedFields.description) {
         MargaUtils.showToast('Date, released to, requested by, and description are required.', 'error');
+        return;
+    }
+
+    if (sharedFields.status === 'Replenished') {
+        MargaUtils.showToast('Replenished status is automatic when a replenishment request is marked Released.', 'error');
         return;
     }
 
@@ -1097,6 +1120,7 @@ function fillEntryForm(entry) {
     document.getElementById('entryIdInput').value = getBundleKey(primary);
     document.getElementById('entryVoucherInput').value = primary.voucherNumber || '';
     document.getElementById('entryDateInput').value = primary.date;
+    document.getElementById('entryStatusInput').innerHTML = getEntryStatusOptionsHtml(primary.status);
     document.getElementById('entryStatusInput').value = primary.status;
     ensurePayeeOption(primary.payee || '');
     document.getElementById('entryPayeeInput').value = primary.payee;
@@ -1136,6 +1160,7 @@ function clearEntryForm() {
     document.getElementById('entryIdInput').value = '';
     document.getElementById('entryVoucherInput').value = '';
     document.getElementById('entryDateInput').value = getSelectedDateValue();
+    document.getElementById('entryStatusInput').innerHTML = getEntryStatusOptionsHtml('Pending Liquidation');
     document.getElementById('entryStatusInput').value = 'Pending Liquidation';
     document.getElementById('entrySupplierInput').value = '';
     ensureEmployeeOption(currentUser?.name || '');
