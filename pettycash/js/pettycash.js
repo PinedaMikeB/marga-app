@@ -1778,13 +1778,13 @@ async function loadSupplierOptions() {
 }
 
 async function loadActualItemCatalog() {
-    const [inventoryRows, partTypeRows, tonerInkRows, partRows, modelRows, brandRows] = await Promise.all([
+    const [inventoryRows, partTypeRows, tonerInkRows, modelRows, brandRows, supplierRows] = await Promise.all([
         safeQueryCollection('tbl_inventoryparts', 5000),
         safeQueryCollection('tbl_partstype', 500),
         safeQueryCollection('tbl_tonerink', 5000),
-        safeQueryCollection('tbl_parts', 5000),
         safeQueryCollection('tbl_model', 5000),
-        safeQueryCollection('tbl_brand', 1000)
+        safeQueryCollection('tbl_brand', 1000),
+        safeQueryCollection('tbl_supplier', 5000)
     ]);
 
     const partTypeMap = new Map(
@@ -1802,42 +1802,34 @@ async function loadActualItemCatalog() {
             .map((row) => [String(row.id || '').trim(), row])
             .filter(([id]) => id)
     );
+    const supplierMap = new Map(
+        supplierRows
+            .map((row) => [String(row.id || '').trim(), formatSupplierName(row)])
+            .filter(([id, name]) => id && name && name.toUpperCase() !== 'N/A')
+    );
 
     const inventoryLabels = inventoryRows
         .map((row) => ({
-            label: formatInventoryItemLabel(row, partTypeMap),
+            label: formatInventoryItemLabel(row, partTypeMap, supplierMap),
             typeLabel: String(partTypeMap.get(String(row.item_type || '').trim()) || '').trim()
         }))
         .filter((row) => row.label);
 
-    const partTypeLabels = partTypeRows
-        .map((row) => normalizeInlineText(row.type))
-        .filter(Boolean);
-
-    const partLabels = partRows
-        .map((row) => formatLegacyPartLabel(row, modelMap, brandMap))
-        .filter(Boolean);
-
     const officeSupplies = uniqueSortedLabels([
-        ...inventoryLabels.filter((row) => row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label),
-        ...partTypeLabels.filter((label) => label.toUpperCase().includes('OFFICE'))
+        ...inventoryLabels.filter((row) => row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label)
     ]);
 
     const parts = uniqueSortedLabels([
-        ...inventoryLabels.filter((row) => !row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label),
-        ...partTypeLabels.filter((label) => !label.toUpperCase().includes('OFFICE')),
-        ...partLabels
+        ...inventoryLabels.filter((row) => !row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label)
     ]);
 
     const materials = uniqueSortedLabels([
-        ...inventoryLabels.map((row) => row.label),
-        ...partTypeLabels,
-        ...partLabels
+        ...inventoryLabels.map((row) => row.label)
     ]);
 
     const tonerInk = uniqueSortedLabels(
         tonerInkRows
-            .map((row) => formatTonerInkItemLabel(row, modelMap, brandMap))
+            .map((row) => formatTonerInkItemLabel(row, modelMap, brandMap, supplierMap))
             .filter(Boolean)
     );
 
@@ -1865,59 +1857,36 @@ async function safeQueryCollection(collectionId, limit = 5000) {
     }
 }
 
-function formatInventoryItemLabel(row, partTypeMap) {
+function formatInventoryItemLabel(row, partTypeMap, supplierMap) {
     const name = normalizeInlineText(row.item_name || row.description);
     const code = normalizeInlineText(row.item_code);
     const typeLabel = normalizeInlineText(partTypeMap.get(String(row.item_type || '').trim()) || '');
-    const supplierId = Number(row.supplier_id || 0);
-    const itemId = Number(row.id || 0);
+    const supplierLabel = normalizeInlineText(supplierMap.get(String(row.supplier_id || '').trim()) || '');
     const detailBits = [
         code,
         typeLabel,
-        supplierId > 0 ? `Supplier ${supplierId}` : '',
-        itemId > 0 ? `Inventory #${itemId}` : ''
+        supplierLabel
     ].filter(Boolean);
     if (!name) return '';
     return detailBits.length ? `${name} (${detailBits.join(' • ')})` : name;
 }
 
-function formatTonerInkItemLabel(row, modelMap, brandMap) {
+function formatTonerInkItemLabel(row, modelMap, brandMap, supplierMap) {
     const model = modelMap.get(String(row.model_id || '').trim()) || null;
     const brand = brandMap.get(String(model?.brand_id || row.brand_id || '').trim()) || null;
     const brandLabel = getBrandLookupLabel(brand);
     const modelLabel = getModelLookupLabel(model);
     const primary = normalizeInlineText([brandLabel, modelLabel].filter(Boolean).join(' '));
     const quantity = Number(row.quantity || 0);
-    const tonerId = Number(row.id || 0);
+    const supplierLabel = normalizeInlineText(supplierMap.get(String(row.supplier_id || '').trim()) || '');
     const detailBits = [
         quantity > 0 ? `Qty ${quantity}` : '',
+        supplierLabel,
         normalizeInlineText(row.serial),
-        normalizeInlineText(row.remarks),
-        tonerId > 0 ? `Stock #${tonerId}` : ''
+        normalizeInlineText(row.remarks)
     ].filter(Boolean);
     if (!primary) return '';
     return detailBits.length ? `${primary} (${detailBits.join(' • ')})` : primary;
-}
-
-function formatLegacyPartLabel(row, modelMap, brandMap) {
-    const model = modelMap.get(String(row.model_id || '').trim()) || null;
-    const brand = brandMap.get(String(model?.brand_id || row.brand_id || '').trim()) || null;
-    const brandLabel = getBrandLookupLabel(brand);
-    const modelLabel = getModelLookupLabel(model);
-    const primary = normalizeInlineText([brandLabel, modelLabel].filter(Boolean).join(' '));
-    const remarksLabel = normalizeInlineText(row.remarks);
-    const serialLabel = normalizeInlineText(row.serial);
-    const descriptivePrimary = primary || remarksLabel || serialLabel;
-    const partId = Number(row.id || 0);
-    const detailBits = [
-        Number(row.category_id || 0) > 0 ? `Category ${row.category_id}` : '',
-        descriptivePrimary !== serialLabel ? serialLabel : '',
-        descriptivePrimary !== remarksLabel ? remarksLabel : '',
-        partId > 0 ? `Part #${partId}` : ''
-    ].filter(Boolean);
-    if (!descriptivePrimary) return '';
-    const baseLabel = descriptivePrimary;
-    return detailBits.length ? `${baseLabel} (${detailBits.join(' • ')})` : baseLabel;
 }
 
 function getModelLookupLabel(model) {
