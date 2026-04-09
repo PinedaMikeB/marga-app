@@ -146,6 +146,12 @@ const PETTY_CASH_STATE = {
     employees: [],
     payees: [],
     suppliers: [],
+    itemCatalog: {
+        parts: [],
+        officeSupplies: [],
+        tonerInk: [],
+        materials: []
+    },
     settings: normalizeSettings(DEFAULT_SETTINGS)
 };
 
@@ -155,9 +161,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadEmployeeOptions();
     await loadPayeeOptions();
     await loadSupplierOptions();
+    await loadActualItemCatalog();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindControls();
     populateSelects();
+    renderItemDatalists();
     fillSettingsForm();
     clearEntryForm();
     clearRequestForm();
@@ -265,6 +273,31 @@ function getEntryItemAccountOptionsHtml(selectedValue = '') {
     return `<option value="">Select account</option>${options}`;
 }
 
+function buildItemDatalistHtml(id, labels) {
+    return `<datalist id="${id}">${labels.map((label) => `<option value="${escapeHtml(label)}"></option>`).join('')}</datalist>`;
+}
+
+function getEntryItemDatalistId(groupId) {
+    if (groupId === 'field_parts' || groupId === 'workshop_parts') return 'entryItemOptionsParts';
+    if (groupId === 'office_supplies') return 'entryItemOptionsOffice';
+    if (groupId === 'toner' || groupId === 'ink') return 'entryItemOptionsTonerInk';
+    if (groupId === 'other_materials') return 'entryItemOptionsMaterials';
+    return '';
+}
+
+function buildItemNoteListAttribute(groupId) {
+    const datalistId = getEntryItemDatalistId(groupId);
+    return datalistId ? `list="${datalistId}"` : '';
+}
+
+function getEntryItemPlaceholder(groupId) {
+    if (groupId === 'field_parts' || groupId === 'workshop_parts') return 'Choose actual part or type manually';
+    if (groupId === 'office_supplies') return 'Choose office supply or type manually';
+    if (groupId === 'toner' || groupId === 'ink') return 'Choose actual toner/ink item or type manually';
+    if (groupId === 'other_materials') return 'Choose inventory item/material or type manually';
+    return 'Select item group first, then choose actual item';
+}
+
 function readEntryItemsFromForm() {
     return [...document.querySelectorAll('#entryItemsBody tr[data-row-index]')].map((row) => createEntryItem({
         entryId: row.querySelector('.entry-item-id')?.value,
@@ -286,7 +319,7 @@ function renderEntryItemsTable(items = []) {
                 <select class="entry-item-group">${getEntryItemGroupOptionsHtml(item.expenseGroup)}</select>
             </td>
             <td><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId)}</select></td>
-            <td><input type="text" class="entry-item-note" placeholder="Part, toner model, fuel station, or item note" value="${escapeHtml(item.itemNote)}"></td>
+            <td><input type="text" class="entry-item-note" ${buildItemNoteListAttribute(item.expenseGroup)} placeholder="${escapeHtml(getEntryItemPlaceholder(item.expenseGroup))}" value="${escapeHtml(item.itemNote)}"></td>
             <td><input type="number" class="entry-item-amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(Number(item.amount).toFixed(2)) : ''}"></td>
             <td><button type="button" class="row-btn" data-action="remove-item-row">Remove</button></td>
         </tr>
@@ -325,6 +358,17 @@ function applyDefaultAccountForItemRow(row, force = false) {
     }
 }
 
+function applyItemSourceForRow(row) {
+    if (!row) return;
+    const groupId = String(row.querySelector('.entry-item-group')?.value || '').trim();
+    const noteInput = row.querySelector('.entry-item-note');
+    if (!noteInput) return;
+    const datalistId = getEntryItemDatalistId(groupId);
+    if (datalistId) noteInput.setAttribute('list', datalistId);
+    else noteInput.removeAttribute('list');
+    noteInput.setAttribute('placeholder', getEntryItemPlaceholder(groupId));
+}
+
 function onEntryItemsTableClick(event) {
     const button = event.target.closest('[data-action]');
     if (!button) return;
@@ -343,6 +387,7 @@ function onEntryItemsTableChange(event) {
     if (!row) return;
     if (event.target.classList.contains('entry-item-group')) {
         applyDefaultAccountForItemRow(row, true);
+        applyItemSourceForRow(row);
     }
     syncEntryTotal();
 }
@@ -945,6 +990,17 @@ function fillSettingsForm() {
     document.getElementById('fundLimitInput').value = Number(PETTY_CASH_STATE.settings.fundLimit || 0).toFixed(2);
     document.getElementById('openingBalanceInput').value = Number(PETTY_CASH_STATE.settings.openingBalance || 0).toFixed(2);
     document.getElementById('thresholdInput').value = Number(PETTY_CASH_STATE.settings.threshold || 0).toFixed(2);
+}
+
+function renderItemDatalists() {
+    const holder = document.getElementById('entryItemDatalists');
+    if (!holder) return;
+    holder.innerHTML = [
+        buildItemDatalistHtml('entryItemOptionsParts', PETTY_CASH_STATE.itemCatalog.parts),
+        buildItemDatalistHtml('entryItemOptionsOffice', PETTY_CASH_STATE.itemCatalog.officeSupplies),
+        buildItemDatalistHtml('entryItemOptionsTonerInk', PETTY_CASH_STATE.itemCatalog.tonerInk),
+        buildItemDatalistHtml('entryItemOptionsMaterials', PETTY_CASH_STATE.itemCatalog.materials)
+    ].join('');
 }
 
 function fillEntryForm(entry) {
@@ -1658,6 +1714,123 @@ async function loadSupplierOptions() {
     }
 
     PETTY_CASH_STATE.suppliers = [...names].map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+async function loadActualItemCatalog() {
+    const [inventoryRows, partTypeRows, tonerInkRows, modelRows, brandRows] = await Promise.all([
+        safeQueryCollection('tbl_inventoryparts', 5000),
+        safeQueryCollection('tbl_partstype', 500),
+        safeQueryCollection('tbl_tonerink', 5000),
+        safeQueryCollection('tbl_model', 5000),
+        safeQueryCollection('tbl_brand', 1000)
+    ]);
+
+    const partTypeMap = new Map(
+        partTypeRows
+            .map((row) => [String(row.id || '').trim(), normalizeInlineText(row.type)])
+            .filter(([, label]) => label)
+    );
+    const modelMap = new Map(
+        modelRows
+            .map((row) => [String(row.id || '').trim(), row])
+            .filter(([id]) => id)
+    );
+    const brandMap = new Map(
+        brandRows
+            .map((row) => [String(row.id || '').trim(), row])
+            .filter(([id]) => id)
+    );
+
+    const inventoryLabels = inventoryRows
+        .map((row) => ({
+            label: formatInventoryItemLabel(row, partTypeMap),
+            typeLabel: String(partTypeMap.get(String(row.item_type || '').trim()) || '').trim()
+        }))
+        .filter((row) => row.label);
+
+    const partTypeLabels = partTypeRows
+        .map((row) => normalizeInlineText(row.type))
+        .filter(Boolean);
+
+    const officeSupplies = uniqueSortedLabels([
+        ...inventoryLabels.filter((row) => row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label),
+        ...partTypeLabels.filter((label) => label.toUpperCase().includes('OFFICE'))
+    ]);
+
+    const parts = uniqueSortedLabels([
+        ...inventoryLabels.filter((row) => !row.typeLabel.toUpperCase().includes('OFFICE')).map((row) => row.label),
+        ...partTypeLabels.filter((label) => !label.toUpperCase().includes('OFFICE'))
+    ]);
+
+    const materials = uniqueSortedLabels([
+        ...inventoryLabels.map((row) => row.label),
+        ...partTypeLabels
+    ]);
+
+    const tonerInk = uniqueSortedLabels(
+        tonerInkRows
+            .map((row) => formatTonerInkItemLabel(row, modelMap, brandMap))
+            .filter(Boolean)
+    );
+
+    PETTY_CASH_STATE.itemCatalog = { parts, officeSupplies, tonerInk, materials };
+}
+
+async function safeQueryCollection(collectionId, limit = 5000) {
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+            limit
+        });
+        return docs.map((doc) => MargaAuth.parseFirestoreDoc(doc)).filter(Boolean);
+    } catch (error) {
+        console.warn(`Unable to load ${collectionId} for petty cash item suggestions:`, error);
+        return [];
+    }
+}
+
+function formatInventoryItemLabel(row, partTypeMap) {
+    const name = normalizeInlineText(row.item_name || row.description);
+    const code = normalizeInlineText(row.item_code);
+    const typeLabel = normalizeInlineText(partTypeMap.get(String(row.item_type || '').trim()) || '');
+    const supplierId = Number(row.supplier_id || 0);
+    const detailBits = [code, typeLabel, supplierId > 0 ? `Supplier ${supplierId}` : ''].filter(Boolean);
+    if (!name) return '';
+    return detailBits.length ? `${name} (${detailBits.join(' • ')})` : name;
+}
+
+function formatTonerInkItemLabel(row, modelMap, brandMap) {
+    const model = modelMap.get(String(row.model_id || '').trim()) || null;
+    const brand = brandMap.get(String(model?.brand_id || row.brand_id || '').trim()) || null;
+    const brandLabel = getBrandLookupLabel(brand);
+    const modelLabel = getModelLookupLabel(model);
+    const primary = normalizeInlineText([brandLabel, modelLabel].filter(Boolean).join(' '));
+    const quantity = Number(row.quantity || 0);
+    const detailBits = [
+        quantity > 0 ? `Qty ${quantity}` : '',
+        normalizeInlineText(row.serial),
+        normalizeInlineText(row.remarks)
+    ].filter(Boolean);
+    if (!primary) return '';
+    return detailBits.length ? `${primary} (${detailBits.join(' • ')})` : primary;
+}
+
+function getModelLookupLabel(model) {
+    return normalizeInlineText(model?.modelname || model?.model || model?.model_name || '');
+}
+
+function getBrandLookupLabel(brand) {
+    return normalizeInlineText(brand?.brandname || brand?.brand_name || brand?.brand || '');
+}
+
+function normalizeInlineText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function uniqueSortedLabels(labels) {
+    return [...new Set(labels.map((label) => normalizeInlineText(label)).filter(Boolean))]
+        .sort((left, right) => left.localeCompare(right));
 }
 
 function formatEmployeeName(employee) {
