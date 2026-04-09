@@ -185,7 +185,55 @@
                 </div>
             </section>
 
-            <section class="workspace-grid">
+            <section class="content-card setup-card animate-in" style="animation-delay: 0.08s">
+                <details class="setup-details" id="fundControlDrawer">
+                    <summary class="setup-summary">
+                        <div class="setup-copy">
+                            <span class="setup-chip">One-Time Setup</span>
+                            <h3>Fund Control</h3>
+                            <p>Keep this tucked away for day-to-day work. Open it only when you need to update the custodian, fund ceiling, opening balance, or warning level.</p>
+                        </div>
+                        <span class="setup-toggle" aria-hidden="true"></span>
+                    </summary>
+                    <div class="setup-body">
+                        <div class="card-header">
+                            <div>
+                                <h3>Cash Box Setup</h3>
+                                <p class="card-subtext">These saved values feed the dashboard cards, cash warnings, and printouts, but you should only need them occasionally.</p>
+                            </div>
+                            <div class="badge-note muted">Hidden Until Needed</div>
+                        </div>
+                        <form id="settingsForm" class="marga-form-grid settings-form-grid">
+                            <label class="marga-field">
+                                <span>Custodian</span>
+                                <input type="text" id="custodianInput" placeholder="Petty cash custodian name">
+                            </label>
+                            <label class="marga-field">
+                                <span>Department</span>
+                                <input type="text" id="departmentInput" placeholder="Office or department">
+                            </label>
+                            <label class="marga-field">
+                                <span>Fund Ceiling</span>
+                                <input type="number" id="fundLimitInput" min="0" step="0.01" placeholder="0.00">
+                            </label>
+                            <label class="marga-field">
+                                <span>Opening Balance</span>
+                                <input type="number" id="openingBalanceInput" min="0" step="0.01" placeholder="0.00">
+                            </label>
+                            <label class="marga-field full-span">
+                                <span>Low Balance Alert Threshold</span>
+                                <input type="number" id="thresholdInput" min="0" step="0.01" placeholder="0.00">
+                            </label>
+                            <div class="form-actions full-span">
+                                <button type="submit" class="btn btn-primary">Save Fund Setup</button>
+                            </div>
+                        </form>
+                        <div class="snapshot-grid" id="fundSnapshotGrid"></div>
+                    </div>
+                </details>
+            </section>
+
+            <section class="entry-stage">
                 <article class="content-card entry-card animate-in" style="animation-delay: 0.1s">
                     <div class="card-header">
                         <div>
@@ -262,42 +310,6 @@
                             <button type="button" class="btn btn-secondary" id="entryFormClearBtn">Clear</button>
                         </div>
                     </form>
-                </article>
-
-                <article class="content-card fund-card animate-in" style="animation-delay: 0.15s">
-                    <div class="card-header">
-                        <div>
-                            <h3>Fund Control</h3>
-                            <p class="card-subtext">Set the petty cash custodian, fund ceiling, opening balance, and warning level used in the dashboard and printouts.</p>
-                        </div>
-                        <div class="badge-note muted">Cash Box Setup</div>
-                    </div>
-                    <form id="settingsForm" class="marga-form-grid">
-                        <label class="marga-field">
-                            <span>Custodian</span>
-                            <input type="text" id="custodianInput" placeholder="Petty cash custodian name">
-                        </label>
-                        <label class="marga-field">
-                            <span>Department</span>
-                            <input type="text" id="departmentInput" placeholder="Office or department">
-                        </label>
-                        <label class="marga-field">
-                            <span>Fund Ceiling</span>
-                            <input type="number" id="fundLimitInput" min="0" step="0.01" placeholder="0.00">
-                        </label>
-                        <label class="marga-field">
-                            <span>Opening Balance</span>
-                            <input type="number" id="openingBalanceInput" min="0" step="0.01" placeholder="0.00">
-                        </label>
-                        <label class="marga-field full-span">
-                            <span>Low Balance Alert Threshold</span>
-                            <input type="number" id="thresholdInput" min="0" step="0.01" placeholder="0.00">
-                        </label>
-                        <div class="form-actions full-span">
-                            <button type="submit" class="btn btn-primary">Save Fund Setup</button>
-                        </div>
-                    </form>
-                    <div class="snapshot-grid" id="fundSnapshotGrid"></div>
                 </article>
             </section>
 
