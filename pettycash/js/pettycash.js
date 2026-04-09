@@ -538,10 +538,12 @@ function onEntrySubmit(event) {
 
     ensurePayeeOption(sharedFields.payee);
     ensureSupplierOption(sharedFields.supplier);
+    document.getElementById('reportDateInput').value = sharedFields.date;
     reconcileRequests();
     persistState();
     clearEntryForm();
     renderAll();
+    revealSavedVoucher(bundleId);
     MargaUtils.showToast('Petty cash voucher saved.', 'success');
 }
 
@@ -809,7 +811,7 @@ function renderEntriesTable() {
     tbody.innerHTML = rows.map((group) => {
         const request = getRequestById(group.requestId);
         return `
-            <tr>
+            <tr data-bundle-id="${group.bundleId}">
                 <td>
                     <div class="ref-cell">
                         <span class="ref-primary">${escapeHtml(group.voucherNumber || group.bundleId)}</span>
@@ -843,6 +845,23 @@ function renderEntriesTable() {
             </tr>
         `;
     }).join('');
+}
+
+function revealSavedVoucher(bundleId) {
+    const normalized = String(bundleId || '').trim();
+    if (!normalized) return;
+    const registerCard = document.querySelector('.register-card');
+    const row = document.querySelector(`#entriesTableBody tr[data-bundle-id="${CSS.escape(normalized)}"]`);
+    if (!row) {
+        registerCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+    }
+    row.classList.add('voucher-saved-highlight');
+    registerCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+        row.classList.remove('voucher-saved-highlight');
+    }, 2600);
 }
 
 function renderSupplierSummary() {

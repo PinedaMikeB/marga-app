@@ -716,6 +716,11 @@ body::before {
     background: rgba(255, 255, 255, 0.44);
 }
 
+.ledger-table tbody tr.voucher-saved-highlight,
+.ledger-table tbody tr.voucher-saved-highlight:nth-child(even) {
+    background: rgba(47, 134, 95, 0.18);
+}
+
 .ref-cell {
     display: grid;
     gap: 0.18rem;
