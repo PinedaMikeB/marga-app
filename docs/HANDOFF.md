@@ -93,6 +93,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Corrected APD dashboard summary logic so it now shows `Paid` amounts and computes `Net Payables = Total Payables - Paid`, while the matrix keeps non-voided payables visible and marks fully paid cells differently.
 - Tightened APD payment-state rules so only `Cleared` counts as paid/closed in dashboard totals and cell coloring; `Released` and `Printed` remain visible as still-open obligations until the supplier deposits and the check clears.
 - Added recurring-series edit control in APD payable intake so when a user opens a saved series item they can choose to apply corrections to `this month only` or `this and future months` in the same series; amount and other shared details now cascade forward when that option is checked.
+- Added shared finance account `Loan Amortization - Lending Institution` as an APD liability account for simplified one-check payments to non-bank lenders like Esquire, and updated the generic `Loan Amortization` preset to use it by default.
 
 ### 2026-03-28 - APD And Petty Cash Planning Thread
 - Added initial finance design guidance for separate APD and Petty Cash modules.

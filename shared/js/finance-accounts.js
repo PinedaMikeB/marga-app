@@ -147,6 +147,15 @@ const MargaFinanceAccounts = (() => {
             avoid: 'Do not use for interest, penalties, or supplier installments.'
         },
         {
+            id: 'loan_amortization_lending_institution',
+            name: 'Loan Amortization - Lending Institution',
+            type: 'Liability',
+            scope: 'apd',
+            meaning: 'Total monthly amortization still due to a lending institution or financing company when APD tracks the full check amount as one simplified loan payment.',
+            useWhen: 'Use for one-check monthly amortization to Esquire or similar non-bank lenders when principal and interest are intentionally kept together in APD.',
+            avoid: 'Do not use for supplier installment balances, separate bank loans, or individual interest and penalty breakdown accounts.'
+        },
+        {
             id: 'accounts_payable_installment_arrangement',
             name: 'Accounts Payable - Installment Arrangement',
             type: 'Liability',

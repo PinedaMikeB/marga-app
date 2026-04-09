@@ -115,7 +115,7 @@ const VIEW_STATE = {
 };
 
 const DOC_TYPE_PRESETS = {
-    'Loan Amortization': { accountId: 'bank_loans_payable', planType: 'monthly_term', label: 'Loan Amortization' },
+    'Loan Amortization': { accountId: 'loan_amortization_lending_institution', planType: 'monthly_term', label: 'Loan Amortization' },
     'Housing Loan': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Housing Loan' },
     'Bank Loan': { accountId: 'bank_loans_payable', planType: 'monthly_term', label: 'Bank Loan' },
     'Credit Card Payment': { accountId: 'accounts_payable_installment_arrangement', planType: 'monthly_term', label: 'Card Payment' },
