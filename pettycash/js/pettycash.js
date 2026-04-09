@@ -614,6 +614,11 @@ function onEntriesTableAction(event) {
         return;
     }
 
+    if (button.dataset.action === 'print-entry') {
+        printVoucherDocument(bundleEntries);
+        return;
+    }
+
     if (button.dataset.action === 'delete-entry') {
         const ok = confirm(`Delete petty cash voucher ${entry.voucherNumber || entry.id} and all of its item rows?`);
         if (!ok) return;
@@ -839,6 +844,7 @@ function renderEntriesTable() {
                 <td>
                     <div class="row-actions">
                         <button type="button" class="row-btn" data-action="edit-entry" data-bundle-id="${group.bundleId}">Edit</button>
+                        <button type="button" class="row-btn" data-action="print-entry" data-bundle-id="${group.bundleId}">Print</button>
                         <button type="button" class="row-btn" data-action="delete-entry" data-bundle-id="${group.bundleId}">Delete</button>
                     </div>
                 </td>
@@ -1087,6 +1093,7 @@ function fillEntryForm(entry) {
     const bundleEntries = getEntriesByBundleId(getBundleKey(entry));
     const primary = bundleEntries[0] || entry;
 
+    document.getElementById('reportDateInput').value = primary.date;
     document.getElementById('entryIdInput').value = getBundleKey(primary);
     document.getElementById('entryVoucherInput').value = primary.voucherNumber || '';
     document.getElementById('entryDateInput').value = primary.date;
@@ -1107,6 +1114,7 @@ function fillEntryForm(entry) {
         amount: item.amount
     })));
     document.getElementById('entryFormModeLabel').textContent = `Editing ${primary.voucherNumber || primary.id}`;
+    revealEntryForm(primary.voucherNumber || primary.id);
 }
 
 function fillRequestForm(request) {
@@ -1413,6 +1421,153 @@ function printRequestDocument(request) {
     popup.document.close();
     popup.focus();
     popup.print();
+}
+
+function printVoucherDocument(bundleEntries) {
+    const entries = Array.isArray(bundleEntries) ? bundleEntries.slice() : [];
+    const primary = entries[0];
+    if (!primary || !entries.length) {
+        MargaUtils.showToast('No petty cash voucher is available to print.', 'error');
+        return;
+    }
+
+    const popup = window.open('', '_blank', 'width=960,height=820');
+    if (!popup) {
+        MargaUtils.showToast('Popup blocked. Please allow popups and try again.', 'error');
+        return;
+    }
+
+    const total = sumAmounts(entries.map((entry) => entry.amount));
+    const itemRows = entries.map((entry, index) => {
+        const account = getAccountById(entry.accountId);
+        return `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
+                <td>${escapeHtml(account?.name || '-')}</td>
+                <td>${escapeHtml(entry.itemNote || '-')}</td>
+                <td class="amount">${MargaUtils.formatCurrency(entry.amount)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const copyMarkup = (label) => `
+        <section class="pcv-copy">
+            <div class="copy-head">
+                <div>
+                    <h1>Petty Cash Voucher</h1>
+                    <p>${escapeHtml(label)}</p>
+                </div>
+                <div class="copy-ref">
+                    <strong>${escapeHtml(primary.voucherNumber || primary.id)}</strong>
+                    <span>${escapeHtml(formatLongDate(primary.date))}</span>
+                </div>
+            </div>
+
+            <div class="meta-grid">
+                <div class="meta-card"><span>Released To / Paid To</span><strong>${escapeHtml(primary.payee || '-')}</strong></div>
+                <div class="meta-card"><span>Requested By</span><strong>${escapeHtml(primary.requestedBy || '-')}</strong></div>
+                <div class="meta-card"><span>Supplier / Store</span><strong>${escapeHtml(primary.supplier || '-')}</strong></div>
+                <div class="meta-card"><span>Receipt / Ref No.</span><strong>${escapeHtml(primary.receiptNumber || '-')}</strong></div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Item Group</th>
+                        <th>Account</th>
+                        <th>Item / Part Note</th>
+                        <th class="amount">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>${itemRows}</tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="4">Voucher Total</td>
+                        <td class="amount">${MargaUtils.formatCurrency(total)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <div class="remarks-box">
+                <strong>Description / Remarks</strong>
+                <p>${escapeHtml(primary.description || '-')}</p>
+            </div>
+
+            <div class="signature-grid">
+                <div class="signature-box">
+                    <span>Received By</span>
+                    <strong>${escapeHtml(primary.payee || '')}</strong>
+                </div>
+                <div class="signature-box">
+                    <span>Prepared By / PC Manager</span>
+                    <strong>${escapeHtml(PETTY_CASH_STATE.settings.custodian || '')}</strong>
+                </div>
+            </div>
+        </section>
+    `;
+
+    popup.document.write(`
+        <html>
+        <head>
+            <title>PCV ${escapeHtml(primary.voucherNumber || primary.id)}</title>
+            <style>
+                @page { size: letter portrait; margin: 0.35in; }
+                body { font-family: Arial, sans-serif; margin: 0; color: #17362e; }
+                .sheet { display: grid; gap: 0.18in; }
+                .pcv-copy { min-height: 4.7in; border: 1px solid #9bb5aa; border-radius: 14px; padding: 0.18in; box-sizing: border-box; }
+                .pcv-copy + .pcv-copy { border-style: dashed; }
+                .copy-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 0.12in; }
+                h1 { margin: 0; font-size: 18px; }
+                .copy-head p { margin: 4px 0 0; font-size: 11px; color: #5b7168; }
+                .copy-ref { text-align: right; }
+                .copy-ref strong { display: block; font-size: 16px; }
+                .copy-ref span { font-size: 11px; color: #5b7168; }
+                .meta-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 0.12in; }
+                .meta-card { border: 1px solid #d4e1da; border-radius: 10px; padding: 8px; background: #f8fbf9; }
+                .meta-card span { display: block; font-size: 10px; color: #637970; text-transform: uppercase; letter-spacing: 0.05em; }
+                .meta-card strong { display: block; margin-top: 3px; font-size: 12px; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 0.12in; }
+                th, td { border: 1px solid #d4e1da; padding: 6px; font-size: 11px; vertical-align: top; text-align: left; }
+                th { background: #ecf4f0; }
+                tfoot td { font-weight: 700; background: #f7fbf8; }
+                .amount { text-align: right; white-space: nowrap; }
+                .remarks-box { min-height: 0.7in; border: 1px solid #d4e1da; border-radius: 10px; padding: 8px; margin-bottom: 0.14in; }
+                .remarks-box strong { display: block; font-size: 11px; margin-bottom: 4px; }
+                .remarks-box p { margin: 0; font-size: 11px; line-height: 1.35; }
+                .signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+                .signature-box { padding-top: 18px; border-top: 1px solid #8ba59b; }
+                .signature-box span { display: block; font-size: 10px; color: #637970; text-transform: uppercase; letter-spacing: 0.05em; }
+                .signature-box strong { display: block; margin-top: 5px; font-size: 12px; min-height: 16px; }
+            </style>
+        </head>
+        <body>
+            <div class="sheet">
+                ${copyMarkup('Recipient Copy')}
+                ${copyMarkup('Petty Cash Manager Copy')}
+            </div>
+        </body>
+        </html>
+    `);
+
+    popup.document.close();
+    popup.focus();
+    popup.print();
+}
+
+function revealEntryForm(referenceLabel = '') {
+    const entryCard = document.querySelector('.entry-card');
+    if (!entryCard) return;
+    entryCard.classList.add('entry-card-highlight');
+    entryCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('entryPayeeInput')?.focus();
+    window.setTimeout(() => {
+        entryCard.classList.remove('entry-card-highlight');
+    }, 2400);
+    if (referenceLabel) {
+        MargaUtils.showToast(`Editing ${referenceLabel}.`, 'info');
+    }
 }
 
 function buildDraftRequestForPrint() {
