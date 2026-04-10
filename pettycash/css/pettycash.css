@@ -428,6 +428,18 @@ body::before {
     min-width: 0;
 }
 
+.field-inline-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.field-inline-btn {
+    align-self: flex-start;
+}
+
 .marga-field span {
     font-size: 0.72rem;
     text-transform: uppercase;
@@ -460,6 +472,12 @@ body::before {
 .marga-field input[readonly] {
     background: rgba(242, 247, 244, 0.9);
     color: #466359;
+}
+
+.field-helper {
+    color: #65746b;
+    font-size: 0.8rem;
+    line-height: 1.35;
 }
 
 .badge-note {
@@ -507,6 +525,34 @@ body::before {
     border-radius: 18px;
     background: rgba(21, 57, 47, 0.05);
     border: 1px solid rgba(21, 57, 47, 0.12);
+}
+
+.quick-supplier-panel {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border-radius: 18px;
+    background: rgba(47, 98, 134, 0.06);
+    border: 1px solid rgba(47, 98, 134, 0.14);
+}
+
+.quick-supplier-head {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.quick-supplier-head h4 {
+    margin: 0.45rem 0 0.25rem;
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.25rem;
+    color: var(--pc-forest);
+}
+
+.quick-supplier-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .voucher-items-head {
@@ -963,7 +1009,9 @@ body::before {
     .toolbar-card,
     .table-header,
     .reference-header,
-    .voucher-items-head {
+    .voucher-items-head,
+    .quick-supplier-head,
+    .field-inline-head {
         flex-direction: column;
         align-items: stretch;
     }
@@ -1012,7 +1060,8 @@ body::before {
     .marga-form-grid,
     .entry-form-grid,
     .settings-form-grid,
-    .request-form-grid {
+    .request-form-grid,
+    .quick-supplier-grid {
         grid-template-columns: 1fr;
     }
 

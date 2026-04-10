@@ -339,25 +339,91 @@
                     <div>
                         <span class="panel-chip">Supplier Master</span>
                         <h3>Suppliers</h3>
-                        <p class="card-subtext">Read the current supplier registry before tying purchases and inventory rows back to a vendor.</p>
+                        <p class="card-subtext">Use one live supplier master for petty cash, inventory, and purchasing. Save the minimum now, then expand the profile later.</p>
                     </div>
                     <div class="panel-meta" id="suppliersResultMeta">Loading suppliers…</div>
                 </div>
-                <div class="panel-controls">
+                <div class="panel-controls supplier-controls">
                     <label class="marga-field">
                         <span>Search Suppliers</span>
-                        <input type="search" id="supplierSearchInput" placeholder="Search name, contact person, product, or phone">
+                        <input type="search" id="supplierSearchInput" placeholder="Search name, products offered, TIN, address, or contact person">
                     </label>
+                    <div class="supplier-controls-copy">
+                        <span class="panel-chip">Shared With Petty Cash</span>
+                        <button type="button" class="btn btn-primary btn-sm" id="supplierAddBtn">Add Supplier</button>
+                    </div>
                 </div>
+                <section class="supplier-form-shell hidden" id="supplierFormShell" aria-live="polite">
+                    <div class="supplier-form-head">
+                        <div>
+                            <span class="panel-chip">Purchasing Ready</span>
+                            <h4 id="supplierFormTitle">Add Supplier</h4>
+                            <p class="card-subtext">Supplier name is the only required field. Petty cash can leave the rest blank and purchasing can complete the record later.</p>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="supplierFormCancelBtn">Close</button>
+                    </div>
+                    <form id="supplierForm" class="marga-form-grid supplier-form-grid">
+                        <input type="hidden" id="supplierDocIdInput">
+                        <input type="hidden" id="supplierRecordIdInput">
+                        <label class="marga-field">
+                            <span>Supplier Name</span>
+                            <input type="text" id="supplierNameInput" placeholder="Company or store name" required>
+                        </label>
+                        <label class="marga-field">
+                            <span>TIN Number</span>
+                            <input type="text" id="supplierTinInput" placeholder="Optional TIN">
+                        </label>
+                        <label class="marga-field full-span">
+                            <span>Address</span>
+                            <input type="text" id="supplierAddressInput" placeholder="Business or receipt address">
+                        </label>
+                        <label class="marga-field">
+                            <span>Contact Person</span>
+                            <input type="text" id="supplierContactPersonInput" placeholder="Optional contact person">
+                        </label>
+                        <label class="marga-field">
+                            <span>Mobile</span>
+                            <input type="text" id="supplierMobileInput" placeholder="09xx xxx xxxx">
+                        </label>
+                        <label class="marga-field">
+                            <span>Landline</span>
+                            <input type="text" id="supplierLandlineInput" placeholder="Optional landline">
+                        </label>
+                        <label class="marga-field">
+                            <span>Email</span>
+                            <input type="email" id="supplierEmailInput" placeholder="name@company.com">
+                        </label>
+                        <label class="marga-field full-span">
+                            <span>Products Offered / Scope</span>
+                            <textarea id="supplierProductInput" rows="3" placeholder="Parts, toner, ink, office supplies, machines, field service items, or other offerings"></textarea>
+                        </label>
+                        <label class="marga-field">
+                            <span>Department</span>
+                            <input type="text" id="supplierDepartmentInput" placeholder="Purchasing, service, office admin, etc.">
+                        </label>
+                        <label class="marga-field">
+                            <span>Status</span>
+                            <select id="supplierStatusInput">
+                                <option value="0">Active</option>
+                                <option value="1">Inactive</option>
+                            </select>
+                        </label>
+                        <div class="form-actions full-span">
+                            <button type="submit" class="btn btn-primary" id="supplierFormSaveBtn">Save Supplier</button>
+                            <button type="button" class="btn btn-secondary" id="supplierFormClearBtn">Clear</button>
+                        </div>
+                    </form>
+                </section>
                 <div class="table-shell">
                     <table class="inventory-table">
                         <thead>
                             <tr>
                                 <th>Supplier</th>
-                                <th>Contact Person</th>
-                                <th>Phones</th>
-                                <th>Email</th>
-                                <th>Product / Scope</th>
+                                <th>TIN</th>
+                                <th>Address</th>
+                                <th>Contact Details</th>
+                                <th>Products Offered / Scope</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="suppliersTableBody"></tbody>

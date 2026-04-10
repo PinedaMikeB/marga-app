@@ -4,6 +4,7 @@ if (!MargaAuth.requireAccess('inventory')) {
 
 const INVENTORY_STATE = {
     loading: false,
+    savingSupplier: false,
     parts: [],
     tonerInk: [],
     machines: [],
@@ -83,6 +84,11 @@ function bindInventoryControls() {
     document.getElementById('machineDeploymentFilter').addEventListener('change', () => resetPageAndRender('machines'));
     document.getElementById('machineStatusFilter').addEventListener('change', () => resetPageAndRender('machines'));
     document.getElementById('supplierSearchInput').addEventListener('input', () => resetPageAndRender('suppliers'));
+    document.getElementById('supplierAddBtn').addEventListener('click', () => openSupplierForm());
+    document.getElementById('supplierForm').addEventListener('submit', onSupplierSubmit);
+    document.getElementById('supplierFormCancelBtn').addEventListener('click', closeSupplierForm);
+    document.getElementById('supplierFormClearBtn').addEventListener('click', () => resetSupplierForm());
+    document.getElementById('suppliersTableBody').addEventListener('click', onSuppliersTableAction);
 
     bindPager('parts');
     bindPager('toner');
@@ -145,7 +151,8 @@ async function loadInventoryData() {
 
         INVENTORY_STATE.suppliers = supplierRows
             .map((row) => normalizeSupplierRow(row))
-            .filter((row) => row.name);
+            .filter((row) => row.name)
+            .sort((left, right) => left.name.localeCompare(right.name));
 
         INVENTORY_STATE.parts = inventoryRows
             .map((row) => normalizePartRow(row, supplierMap, INVENTORY_STATE.partTypes))
@@ -309,15 +316,21 @@ function renderSuppliersTable() {
         tbodyId: 'suppliersTableBody',
         metaId: 'suppliersResultMeta',
         pageMetaId: 'suppliersPageMeta',
-        columnCount: 5,
+        columnCount: 6,
         empty: 'No supplier rows matched the search.',
         rowRenderer: (row) => `
             <tr>
-                <td><div class="item-main"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.inactive ? 'Inactive' : 'Active')}</small></div></td>
-                <td>${escapeHtml(row.contactPerson || '-')}</td>
-                <td>${escapeHtml(row.phoneLabel || '-')}</td>
-                <td>${escapeHtml(row.email || '-')}</td>
-                <td class="muted-copy">${escapeHtml(row.product || row.department || '-')}</td>
+                <td>
+                    <div class="item-main">
+                        <strong>${escapeHtml(row.name)}</strong>
+                        <small>${escapeHtml(row.inactive ? 'Inactive' : 'Active')}${row.department ? ` • ${escapeHtml(row.department)}` : ''}</small>
+                    </div>
+                </td>
+                <td>${escapeHtml(row.tin || '-')}</td>
+                <td class="muted-copy">${escapeHtml(row.address || '-')}</td>
+                <td class="muted-copy">${escapeHtml([row.contactPerson, row.phoneLabel, row.email].filter(Boolean).join(' • ') || '-')}</td>
+                <td class="muted-copy">${escapeHtml(row.product || '-')}</td>
+                <td><button type="button" class="btn btn-secondary btn-sm" data-action="edit-supplier" data-supplier-id="${escapeHtml(String(row.id || ''))}">Edit</button></td>
             </tr>
         `
     });
@@ -388,7 +401,7 @@ function getFilteredSuppliers() {
     const query = normalizeSearch(document.getElementById('supplierSearchInput').value);
     return INVENTORY_STATE.suppliers.filter((row) => {
         if (!query) return true;
-        return [row.name, row.contactPerson, row.phoneLabel, row.email, row.product, row.department]
+        return [row.name, row.tin, row.address, row.contactPerson, row.phoneLabel, row.email, row.product, row.department]
             .some((value) => normalizeSearch(value).includes(query));
     });
 }
@@ -488,11 +501,16 @@ function normalizeMachineRow(row, supplierMap) {
 function normalizeSupplierRow(row) {
     return {
         id: Number(row.id || 0),
+        docId: String(row._docId || row.id || '').trim(),
         name: formatSupplierName(row),
+        tin: normalizeText(row.tin || row.tin_number || row.tin_no),
+        address: normalizeText(row.address || row.supplier_address || row.full_address || row.street_address),
         contactPerson: normalizeText(row.contact_person),
+        mobile: normalizeText(row.mobile),
+        landline: normalizeText(row.landline),
         phoneLabel: [normalizeText(row.mobile), normalizeText(row.landline)].filter(Boolean).join(' / '),
         email: normalizeText(row.email),
-        product: normalizeText(row.product),
+        product: normalizeText(row.product || row.products_offered || row.scope),
         department: normalizeText(row.department_name),
         inactive: Number(row.isinactive || 0) === 1
     };
@@ -591,7 +609,7 @@ function renderLoadingStates() {
     document.getElementById('partsTableBody').innerHTML = '<tr><td colspan="6" class="loading-state">Loading live inventory data…</td></tr>';
     document.getElementById('tonerTableBody').innerHTML = '<tr><td colspan="5" class="loading-state">Loading live inventory data…</td></tr>';
     document.getElementById('machinesTableBody').innerHTML = '<tr><td colspan="7" class="loading-state">Loading live inventory data…</td></tr>';
-    document.getElementById('suppliersTableBody').innerHTML = '<tr><td colspan="5" class="loading-state">Loading live inventory data…</td></tr>';
+    document.getElementById('suppliersTableBody').innerHTML = '<tr><td colspan="6" class="loading-state">Loading live inventory data…</td></tr>';
     document.getElementById('deploymentBoard').innerHTML = '<div class="loading-state">Loading deployment board…</div>';
 }
 
@@ -599,6 +617,192 @@ function renderErrorStates() {
     document.getElementById('partsTableBody').innerHTML = '<tr><td colspan="6" class="empty-state danger-note">Inventory data failed to load. Try refresh.</td></tr>';
     document.getElementById('tonerTableBody').innerHTML = '<tr><td colspan="5" class="empty-state danger-note">Inventory data failed to load. Try refresh.</td></tr>';
     document.getElementById('machinesTableBody').innerHTML = '<tr><td colspan="7" class="empty-state danger-note">Inventory data failed to load. Try refresh.</td></tr>';
-    document.getElementById('suppliersTableBody').innerHTML = '<tr><td colspan="5" class="empty-state danger-note">Inventory data failed to load. Try refresh.</td></tr>';
+    document.getElementById('suppliersTableBody').innerHTML = '<tr><td colspan="6" class="empty-state danger-note">Inventory data failed to load. Try refresh.</td></tr>';
     document.getElementById('deploymentBoard').innerHTML = '<div class="empty-state danger-note">Deployment board unavailable until data reload succeeds.</div>';
+}
+
+function onSuppliersTableAction(event) {
+    const button = event.target.closest('[data-action="edit-supplier"]');
+    if (!button) return;
+    const supplierId = Number(button.dataset.supplierId || 0);
+    const supplier = INVENTORY_STATE.suppliers.find((row) => Number(row.id || 0) === supplierId);
+    if (!supplier) {
+        MargaUtils.showToast('Supplier row could not be loaded for editing.', 'error');
+        return;
+    }
+    openSupplierForm(supplier);
+}
+
+function openSupplierForm(supplier = null) {
+    const shell = document.getElementById('supplierFormShell');
+    shell.classList.remove('hidden');
+    fillSupplierForm(supplier);
+    shell.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('supplierNameInput').focus();
+}
+
+function closeSupplierForm() {
+    document.getElementById('supplierFormShell').classList.add('hidden');
+    resetSupplierForm();
+}
+
+function resetSupplierForm() {
+    document.getElementById('supplierForm').reset();
+    document.getElementById('supplierDocIdInput').value = '';
+    document.getElementById('supplierRecordIdInput').value = '';
+    document.getElementById('supplierStatusInput').value = '0';
+    document.getElementById('supplierFormTitle').textContent = 'Add Supplier';
+    document.getElementById('supplierFormSaveBtn').textContent = 'Save Supplier';
+}
+
+function fillSupplierForm(supplier = null) {
+    resetSupplierForm();
+    if (!supplier) return;
+    document.getElementById('supplierDocIdInput').value = supplier.docId || String(supplier.id || '');
+    document.getElementById('supplierRecordIdInput').value = String(supplier.id || '');
+    document.getElementById('supplierNameInput').value = supplier.name || '';
+    document.getElementById('supplierTinInput').value = supplier.tin || '';
+    document.getElementById('supplierAddressInput').value = supplier.address || '';
+    document.getElementById('supplierContactPersonInput').value = supplier.contactPerson || '';
+    document.getElementById('supplierMobileInput').value = supplier.mobile || '';
+    document.getElementById('supplierLandlineInput').value = supplier.landline || '';
+    document.getElementById('supplierEmailInput').value = supplier.email || '';
+    document.getElementById('supplierProductInput').value = supplier.product || '';
+    document.getElementById('supplierDepartmentInput').value = supplier.department || '';
+    document.getElementById('supplierStatusInput').value = supplier.inactive ? '1' : '0';
+    document.getElementById('supplierFormTitle').textContent = `Edit ${supplier.name}`;
+    document.getElementById('supplierFormSaveBtn').textContent = 'Update Supplier';
+}
+
+async function onSupplierSubmit(event) {
+    event.preventDefault();
+    if (INVENTORY_STATE.savingSupplier) return;
+
+    const supplierName = normalizeText(document.getElementById('supplierNameInput').value);
+    if (!supplierName) {
+        MargaUtils.showToast('Supplier name is required.', 'error');
+        return;
+    }
+
+    const currentDocId = String(document.getElementById('supplierDocIdInput').value || '').trim();
+    const currentRecordId = Number(document.getElementById('supplierRecordIdInput').value || 0);
+    const duplicate = INVENTORY_STATE.suppliers.find((row) => (
+        normalizeSearch(row.name) === normalizeSearch(supplierName)
+        && Number(row.id || 0) !== currentRecordId
+    ));
+    if (duplicate) {
+        MargaUtils.showToast(`Supplier "${supplierName}" already exists. Open that row and update it instead.`, 'error');
+        return;
+    }
+
+    const nextId = currentRecordId || getNextSupplierNumericId();
+    const payload = {
+        id: nextId,
+        supplier: supplierName,
+        tin: normalizeText(document.getElementById('supplierTinInput').value),
+        address: normalizeText(document.getElementById('supplierAddressInput').value),
+        contact_person: normalizeText(document.getElementById('supplierContactPersonInput').value),
+        mobile: normalizeText(document.getElementById('supplierMobileInput').value),
+        landline: normalizeText(document.getElementById('supplierLandlineInput').value),
+        email: normalizeText(document.getElementById('supplierEmailInput').value),
+        product: normalizeText(document.getElementById('supplierProductInput').value),
+        department_name: normalizeText(document.getElementById('supplierDepartmentInput').value),
+        isinactive: Number(document.getElementById('supplierStatusInput').value || 0)
+    };
+
+    setSupplierFormSaving(true);
+    try {
+        if (currentDocId) {
+            await patchDocument('tbl_supplier', currentDocId, payload);
+        } else {
+            await setDocument('tbl_supplier', String(nextId), payload);
+        }
+        MargaUtils.showToast(currentDocId ? 'Supplier updated.' : 'Supplier saved.', 'success');
+        closeSupplierForm();
+        await loadInventoryData();
+        document.getElementById('supplierSearchInput').value = supplierName;
+        resetPageAndRender('suppliers');
+    } catch (error) {
+        console.error('Failed to save supplier:', error);
+        MargaUtils.showToast('Supplier save failed. Please try again.', 'error');
+    } finally {
+        setSupplierFormSaving(false);
+    }
+}
+
+function setSupplierFormSaving(isSaving) {
+    INVENTORY_STATE.savingSupplier = Boolean(isSaving);
+    const saveButton = document.getElementById('supplierFormSaveBtn');
+    const clearButton = document.getElementById('supplierFormClearBtn');
+    const cancelButton = document.getElementById('supplierFormCancelBtn');
+    saveButton.disabled = isSaving;
+    clearButton.disabled = isSaving;
+    cancelButton.disabled = isSaving;
+    saveButton.textContent = isSaving ? 'Saving…' : (document.getElementById('supplierDocIdInput').value ? 'Update Supplier' : 'Save Supplier');
+}
+
+function getNextSupplierNumericId() {
+    return INVENTORY_STATE.suppliers.reduce((maxId, row) => Math.max(maxId, Number(row.id || 0)), 0) + 1;
+}
+
+function toFirestoreFieldValue(value) {
+    if (value === null) return { nullValue: null };
+    if (Array.isArray(value)) {
+        return { arrayValue: { values: value.map((entry) => toFirestoreFieldValue(entry)) } };
+    }
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        if (Number.isInteger(value)) return { integerValue: String(value) };
+        return { doubleValue: value };
+    }
+    return { stringValue: String(value ?? '') };
+}
+
+async function patchDocument(collection, docId, fields) {
+    const updateKeys = Object.keys(fields);
+    if (!updateKeys.length) return null;
+
+    const params = updateKeys
+        .map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`)
+        .join('&');
+
+    const body = { fields: {} };
+    updateKeys.forEach((key) => {
+        body.fields[key] = toFirestoreFieldValue(fields[key]);
+    });
+
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}&${params}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to update ${collection}/${docId}`);
+    }
+    return payload;
+}
+
+async function setDocument(collection, docId, fields) {
+    const body = { fields: {} };
+    Object.entries(fields).forEach(([key, value]) => {
+        body.fields[key] = toFirestoreFieldValue(value);
+    });
+
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to set ${collection}/${docId}`);
+    }
+    return payload;
 }

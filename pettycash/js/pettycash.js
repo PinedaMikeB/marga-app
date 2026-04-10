@@ -157,6 +157,7 @@ const PETTY_CASH_STATE = {
     employees: [],
     payees: [],
     suppliers: [],
+    supplierRecords: [],
     itemCatalog: {
         all: [],
         parts: [],
@@ -234,6 +235,38 @@ function bindControls() {
     document.getElementById('printReplenishmentBtn').addEventListener('click', printReplenishmentRequest);
     document.getElementById('resetTrialEntriesBtn').addEventListener('click', resetTrialEntries);
     document.getElementById('resetDemoBtn').addEventListener('click', resetDemoData);
+    document.getElementById('quickSupplierToggleBtn').addEventListener('click', openQuickSupplierPanel);
+    document.getElementById('quickSupplierCancelBtn').addEventListener('click', closeQuickSupplierPanel);
+    document.getElementById('quickSupplierClearBtn').addEventListener('click', resetQuickSupplierForm);
+    document.getElementById('quickSupplierSaveBtn').addEventListener('click', onQuickSupplierSave);
+    document.getElementById('entrySupplierInput').addEventListener('input', syncQuickSupplierNameFromEntry);
+}
+
+function openQuickSupplierPanel() {
+    syncQuickSupplierNameFromEntry(true);
+    document.getElementById('quickSupplierPanel').classList.remove('hidden');
+    document.getElementById('quickSupplierNameInput').focus();
+}
+
+function closeQuickSupplierPanel() {
+    document.getElementById('quickSupplierPanel').classList.add('hidden');
+    resetQuickSupplierForm();
+}
+
+function resetQuickSupplierForm() {
+    document.getElementById('quickSupplierNameInput').value = '';
+    document.getElementById('quickSupplierTinInput').value = '';
+    document.getElementById('quickSupplierAddressInput').value = '';
+    document.getElementById('quickSupplierProductInput').value = '';
+}
+
+function syncQuickSupplierNameFromEntry(force = false) {
+    const sourceValue = String(document.getElementById('entrySupplierInput').value || '').trim();
+    const input = document.getElementById('quickSupplierNameInput');
+    if (!input) return;
+    if (force || !String(input.value || '').trim()) {
+        input.value = sourceValue;
+    }
 }
 
 function populateSelects() {
@@ -1184,6 +1217,7 @@ function clearEntryForm() {
     document.getElementById('entryStatusInput').innerHTML = getEntryStatusOptionsHtml('Pending Liquidation');
     document.getElementById('entryStatusInput').value = 'Pending Liquidation';
     document.getElementById('entrySupplierInput').value = '';
+    closeQuickSupplierPanel();
     ensureEmployeeOption(currentUser?.name || '');
     document.getElementById('entryRequestedByInput').value = currentUser?.name || '';
     document.getElementById('entryTotalInput').value = MargaUtils.formatCurrency(0);
@@ -2300,15 +2334,17 @@ async function loadPayeeOptions() {
             orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
             limit: 5000
         });
-        docs
+        PETTY_CASH_STATE.supplierRecords = docs
             .map((doc) => MargaAuth.parseFirestoreDoc(doc))
             .filter(Boolean)
-            .forEach((supplier) => {
-                const name = formatSupplierName(supplier);
-                if (name) names.add(name);
-            });
+            .map((supplier) => normalizeSupplierRecord(supplier));
+        PETTY_CASH_STATE.supplierRecords.forEach((supplier) => {
+            const name = formatSupplierName(supplier);
+            if (name) names.add(name);
+        });
     } catch (error) {
         console.warn('Unable to load supplier suggestions for petty cash:', error);
+        PETTY_CASH_STATE.supplierRecords = [];
     }
 
     PETTY_CASH_STATE.payees = [...names].map((item) => String(item || '').trim()).filter(Boolean);
@@ -2341,15 +2377,17 @@ async function loadSupplierOptions() {
             orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
             limit: 5000
         });
-        docs
+        PETTY_CASH_STATE.supplierRecords = docs
             .map((doc) => MargaAuth.parseFirestoreDoc(doc))
             .filter(Boolean)
-            .forEach((supplier) => {
-                const name = formatSupplierName(supplier);
-                if (name) names.add(name);
-            });
+            .map((supplier) => normalizeSupplierRecord(supplier));
+        PETTY_CASH_STATE.supplierRecords.forEach((supplier) => {
+            const name = formatSupplierName(supplier);
+            if (name) names.add(name);
+        });
     } catch (error) {
         console.warn('Unable to load supplier suggestions for petty cash:', error);
+        PETTY_CASH_STATE.supplierRecords = [];
     }
 
     PETTY_CASH_STATE.suppliers = [...names].map((item) => String(item || '').trim()).filter(Boolean);
@@ -2511,6 +2549,34 @@ function formatSupplierName(supplier) {
     ).trim();
 }
 
+function normalizeSupplierRecord(supplier) {
+    return {
+        ...supplier,
+        _docId: String(supplier?._docId || supplier?.id || '').trim(),
+        id: Number(supplier?.id || 0),
+        supplier: formatSupplierName(supplier),
+        tin: normalizeInlineText(supplier?.tin || supplier?.tin_number || supplier?.tin_no),
+        address: normalizeInlineText(supplier?.address || supplier?.supplier_address || supplier?.full_address || supplier?.street_address),
+        product: normalizeInlineText(supplier?.product || supplier?.products_offered || supplier?.scope),
+        contact_person: normalizeInlineText(supplier?.contact_person),
+        mobile: normalizeInlineText(supplier?.mobile),
+        landline: normalizeInlineText(supplier?.landline),
+        email: normalizeInlineText(supplier?.email),
+        department_name: normalizeInlineText(supplier?.department_name),
+        isinactive: Number(supplier?.isinactive || 0)
+    };
+}
+
+function findSupplierRecordByName(name) {
+    const needle = normalizeSearch(name);
+    if (!needle) return null;
+    return PETTY_CASH_STATE.supplierRecords.find((supplier) => normalizeSearch(formatSupplierName(supplier)) === needle) || null;
+}
+
+function getNextSupplierId() {
+    return PETTY_CASH_STATE.supplierRecords.reduce((maxId, supplier) => Math.max(maxId, Number(supplier.id || 0)), 0) + 1;
+}
+
 function ensureEmployeeOption(name) {
     const normalized = String(name || '').trim();
     if (!normalized) return;
@@ -2538,6 +2604,71 @@ function ensureSupplierOption(name) {
     }
 }
 
+async function onQuickSupplierSave() {
+    const supplierName = normalizeInlineText(document.getElementById('quickSupplierNameInput').value || document.getElementById('entrySupplierInput').value);
+    const tin = normalizeInlineText(document.getElementById('quickSupplierTinInput').value);
+    const address = normalizeInlineText(document.getElementById('quickSupplierAddressInput').value);
+    const product = normalizeInlineText(document.getElementById('quickSupplierProductInput').value);
+    const currentEntryStatus = document.getElementById('entryStatusInput').value;
+    const currentRequestedBy = document.getElementById('entryRequestedByInput').value;
+    const currentRequestStatus = document.getElementById('requestStatusInput').value;
+    const currentRequestRequestedBy = document.getElementById('requestRequestedByInput').value;
+
+    if (!supplierName) {
+        MargaUtils.showToast('Supplier name is required.', 'error');
+        return;
+    }
+
+    const existing = findSupplierRecordByName(supplierName);
+
+    try {
+        if (existing) {
+            const patchFields = { supplier: supplierName };
+            if (tin) patchFields.tin = tin;
+            if (address) patchFields.address = address;
+            if (product) patchFields.product = product;
+
+            if (Object.keys(patchFields).length > 1) {
+                await patchDocument('tbl_supplier', existing._docId || String(existing.id), patchFields);
+                MargaUtils.showToast('Existing supplier was updated with the new details.', 'success');
+            } else {
+                MargaUtils.showToast('Supplier already exists in the master list.', 'info');
+            }
+        } else {
+            const nextId = getNextSupplierId();
+            await setDocument('tbl_supplier', String(nextId), {
+                id: nextId,
+                supplier: supplierName,
+                tin,
+                address,
+                contact_person: '',
+                mobile: '',
+                landline: '',
+                email: '',
+                product,
+                department_name: '',
+                isinactive: 0
+            });
+            MargaUtils.showToast('Supplier saved to the master list.', 'success');
+        }
+
+        await loadSupplierOptions();
+        if (!PETTY_CASH_STATE.payees.includes(supplierName)) {
+            PETTY_CASH_STATE.payees.push(supplierName);
+        }
+        populateSelects();
+        document.getElementById('entryStatusInput').value = currentEntryStatus || 'Pending Liquidation';
+        document.getElementById('entryRequestedByInput').value = currentRequestedBy || '';
+        document.getElementById('requestStatusInput').value = currentRequestStatus || 'Draft';
+        document.getElementById('requestRequestedByInput').value = currentRequestRequestedBy || '';
+        document.getElementById('entrySupplierInput').value = supplierName;
+        closeQuickSupplierPanel();
+    } catch (error) {
+        console.error('Failed to save quick supplier:', error);
+        MargaUtils.showToast('Supplier save failed. Please try again.', 'error');
+    }
+}
+
 async function runQuery(structuredQuery) {
     const response = await fetch(
         `${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`,
@@ -2554,6 +2685,68 @@ async function runQuery(structuredQuery) {
     }
     if (!Array.isArray(payload)) return [];
     return payload.map((row) => row.document).filter(Boolean);
+}
+
+function toFirestoreFieldValue(value) {
+    if (value === null) return { nullValue: null };
+    if (Array.isArray(value)) {
+        return { arrayValue: { values: value.map((entry) => toFirestoreFieldValue(entry)) } };
+    }
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        if (Number.isInteger(value)) return { integerValue: String(value) };
+        return { doubleValue: value };
+    }
+    return { stringValue: String(value ?? '') };
+}
+
+async function patchDocument(collection, docId, fields) {
+    const updateKeys = Object.keys(fields);
+    if (!updateKeys.length) return null;
+
+    const params = updateKeys
+        .map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`)
+        .join('&');
+
+    const body = { fields: {} };
+    updateKeys.forEach((key) => {
+        body.fields[key] = toFirestoreFieldValue(fields[key]);
+    });
+
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}&${params}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to update ${collection}/${docId}`);
+    }
+    return payload;
+}
+
+async function setDocument(collection, docId, fields) {
+    const body = { fields: {} };
+    Object.entries(fields).forEach(([key, value]) => {
+        body.fields[key] = toFirestoreFieldValue(value);
+    });
+
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to set ${collection}/${docId}`);
+    }
+    return payload;
 }
 
 function persistState() {

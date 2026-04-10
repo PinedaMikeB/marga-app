@@ -273,11 +273,15 @@
                             <input type="text" id="entryPayeeInput" list="entryPayeeList" placeholder="Employee, supplier, Lazada, Shopee, Globe Telecom" required>
                             <datalist id="entryPayeeList"></datalist>
                         </label>
-                        <label class="marga-field">
-                            <span>Supplier / Store</span>
+                        <div class="marga-field supplier-entry-shell">
+                            <div class="field-inline-head">
+                                <span>Supplier / Store</span>
+                                <button type="button" class="btn btn-secondary btn-sm field-inline-btn" id="quickSupplierToggleBtn">Add Supplier</button>
+                            </div>
                             <input type="text" id="entrySupplierInput" list="entrySupplierList" placeholder="Toner Pro, Lazada, Shopee, Globe Telecom">
                             <datalist id="entrySupplierList"></datalist>
-                        </label>
+                            <small class="field-helper">Save the supplier name now. Purchasing can complete the rest of the profile later.</small>
+                        </div>
                         <label class="marga-field">
                             <span>Requested By</span>
                             <select id="entryRequestedByInput"></select>
@@ -317,6 +321,38 @@
                                 </table>
                             </div>
                             <div id="entryItemDatalists" aria-hidden="true"></div>
+                        </section>
+                        <section class="quick-supplier-panel full-span hidden" id="quickSupplierPanel" aria-live="polite">
+                            <div class="quick-supplier-head">
+                                <div>
+                                    <span class="setup-chip">Supplier Quick Add</span>
+                                    <h4>Save Supplier To Master</h4>
+                                    <p class="card-subtext">Only supplier name is required here. TIN, address, and products offered can be completed later in Inventory or Purchasing.</p>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" id="quickSupplierCancelBtn">Close</button>
+                            </div>
+                            <div class="marga-form-grid quick-supplier-grid">
+                                <label class="marga-field">
+                                    <span>Supplier Name</span>
+                                    <input type="text" id="quickSupplierNameInput" placeholder="Company or store name">
+                                </label>
+                                <label class="marga-field">
+                                    <span>TIN Number</span>
+                                    <input type="text" id="quickSupplierTinInput" placeholder="Optional TIN">
+                                </label>
+                                <label class="marga-field full-span">
+                                    <span>Address</span>
+                                    <input type="text" id="quickSupplierAddressInput" placeholder="Business or receipt address">
+                                </label>
+                                <label class="marga-field full-span">
+                                    <span>Products Offered / Scope</span>
+                                    <textarea id="quickSupplierProductInput" rows="2" placeholder="Parts, toner, ink, office supplies, machines, or other products offered"></textarea>
+                                </label>
+                                <div class="form-actions full-span">
+                                    <button type="button" class="btn btn-primary" id="quickSupplierSaveBtn">Save Supplier</button>
+                                    <button type="button" class="btn btn-secondary" id="quickSupplierClearBtn">Clear</button>
+                                </div>
+                            </div>
                         </section>
                         <label class="marga-field full-span">
                             <span>Description / Remarks</span>
