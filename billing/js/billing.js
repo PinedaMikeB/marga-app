@@ -157,7 +157,7 @@ function buildRequestContext() {
     params.set('end_year', String(end.year));
     params.set('end_month', String(end.month));
     params.set('months_back', '6');
-    params.set('row_limit', String(Math.max(1, Math.min(1200, Number(els.rowLimitInput.value || 1000)))));
+    params.set('row_limit', String(Math.max(1, Math.min(1200, Number(els.rowLimitInput.value || 100)))));
     params.set('latest_limit', '100');
     params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 10))));
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 10))));
@@ -167,7 +167,6 @@ function buildRequestContext() {
     const search = String(els.matrixSearchInput?.value || '').trim();
     if (search.length >= 2) {
         params.set('search', search);
-        params.set('include_machine_history', 'true');
     }
 
     const apiKey = String(els.apiKeyInput.value || '').trim();
