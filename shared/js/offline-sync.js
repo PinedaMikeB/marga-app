@@ -1,7 +1,9 @@
 (function () {
-    const QUEUE_KEY = 'marga_firestore_offline_queue_v1';
+    const QUEUE_KEY = 'marga_firestore_offline_queue_v2';
+    const RESPONSE_CACHE_PREFIX = 'marga_firestore_response_cache_v1:';
     const STATUS_ID = 'margaOfflineStatus';
     const STYLE_ID = 'margaOfflineStatusStyles';
+    const originalFetch = window.fetch.bind(window);
 
     function uid(prefix = 'offline') {
         if (window.crypto?.randomUUID) return `${prefix}_${window.crypto.randomUUID()}`;
@@ -10,6 +12,18 @@
 
     function normalizeText(value) {
         return String(value || '').trim();
+    }
+
+    function isFirestoreUrl(url) {
+        return normalizeText(url).startsWith(normalizeText(window.FIREBASE_CONFIG?.baseUrl));
+    }
+
+    function safeJsonParse(value, fallback = null) {
+        try {
+            return JSON.parse(value);
+        } catch (error) {
+            return fallback;
+        }
     }
 
     function readQueue() {
@@ -46,6 +60,35 @@
         return { stringValue: String(value ?? '') };
     }
 
+    function parseFirestoreFieldValue(value) {
+        if (!value || typeof value !== 'object') return null;
+        if (value.stringValue !== undefined) return value.stringValue;
+        if (value.integerValue !== undefined) return parseInt(value.integerValue, 10);
+        if (value.doubleValue !== undefined) return Number(value.doubleValue);
+        if (value.booleanValue !== undefined) return value.booleanValue;
+        if (value.nullValue !== undefined) return null;
+        if (value.timestampValue !== undefined) return value.timestampValue;
+        if (value.arrayValue !== undefined) {
+            return (value.arrayValue.values || []).map((entry) => parseFirestoreFieldValue(entry));
+        }
+        if (value.mapValue !== undefined) {
+            const out = {};
+            Object.entries(value.mapValue.fields || {}).forEach(([key, child]) => {
+                out[key] = parseFirestoreFieldValue(child);
+            });
+            return out;
+        }
+        return null;
+    }
+
+    function firestoreFieldsToObject(fields) {
+        const parsed = {};
+        Object.entries(fields || {}).forEach(([key, value]) => {
+            parsed[key] = parseFirestoreFieldValue(value);
+        });
+        return parsed;
+    }
+
     function isNetworkLikeError(error) {
         const message = String(error?.message || error || '').toLowerCase();
         return !message
@@ -56,6 +99,87 @@
             || message.includes('http 503')
             || message.includes('http 502')
             || message.includes('http 504');
+    }
+
+    function shouldQueueResponse(response) {
+        return !response?.ok && [408, 425, 429, 500, 502, 503, 504].includes(Number(response?.status || 0));
+    }
+
+    function buildRequestInfo(input, init = {}) {
+        const isRequestObject = typeof Request !== 'undefined' && input instanceof Request;
+        const url = isRequestObject ? input.url : String(input || '');
+        const method = normalizeText(init.method || (isRequestObject ? input.method : '') || 'GET').toUpperCase();
+        const headers = new Headers(init.headers || (isRequestObject ? input.headers : undefined) || {});
+        const body = init.body !== undefined ? init.body : null;
+        return {
+            url,
+            method,
+            headers,
+            body: typeof body === 'string' ? body : null
+        };
+    }
+
+    function isRunQueryRequest(info) {
+        return info.method === 'POST' && info.url.includes(':runQuery');
+    }
+
+    function isReadRequest(info) {
+        return info.method === 'GET' || isRunQueryRequest(info);
+    }
+
+    function buildResponseCacheKey(info) {
+        const bodyPart = isRunQueryRequest(info) ? `::${info.body || ''}` : '';
+        return `${RESPONSE_CACHE_PREFIX}${info.method}::${info.url}${bodyPart}`;
+    }
+
+    function readCachedResponse(info) {
+        try {
+            const raw = localStorage.getItem(buildResponseCacheKey(info));
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            return parsed.payload;
+        } catch (error) {
+            console.warn('Unable to read cached Firestore response.', error);
+            return null;
+        }
+    }
+
+    function writeCachedResponse(info, payload) {
+        try {
+            localStorage.setItem(buildResponseCacheKey(info), JSON.stringify({
+                cachedAt: new Date().toISOString(),
+                payload
+            }));
+        } catch (error) {
+            console.warn('Unable to cache Firestore response.', error);
+        }
+    }
+
+    function buildJsonResponse(payload, status = 200) {
+        return new Response(JSON.stringify(payload), {
+            status,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+    }
+
+    function parseFirestoreWriteInfo(url, bodyText) {
+        try {
+            const parsedUrl = new URL(url);
+            const afterDocuments = parsedUrl.pathname.split('/documents/')[1] || '';
+            const pathBits = afterDocuments.split('/').filter(Boolean);
+            const collection = pathBits[0] || '';
+            const pathDocId = pathBits.length > 1 ? decodeURIComponent(pathBits[1]) : '';
+            const docId = normalizeText(parsedUrl.searchParams.get('documentId') || pathDocId);
+            const payload = safeJsonParse(bodyText, {});
+            const fields = firestoreFieldsToObject(payload?.fields || {});
+            if (!collection || !docId) return null;
+            return { collection, docId, fields };
+        } catch (error) {
+            return null;
+        }
     }
 
     function ensureStatusStyles() {
@@ -197,12 +321,17 @@
         const nextItem = {
             id: uid('queue'),
             queuedAt: new Date().toISOString(),
+            kind: action.kind || 'structured',
             mode: action.mode === 'patch' ? 'patch' : 'set',
             collection: normalizeText(action.collection),
             docId: normalizeText(action.docId),
             fields: action.fields || {},
             label: normalizeText(action.label),
-            dedupeKey
+            dedupeKey,
+            url: action.url || '',
+            method: normalizeText(action.method || '').toUpperCase(),
+            headers: action.headers || {},
+            body: action.body || ''
         };
 
         if (dedupeKey) {
@@ -220,7 +349,7 @@
         return nextItem;
     }
 
-    async function executeFirestoreWrite(action) {
+    async function executeStructuredWrite(action) {
         const collection = normalizeText(action.collection);
         const docId = encodeURIComponent(normalizeText(action.docId));
         const mode = action.mode === 'patch' ? 'patch' : 'set';
@@ -235,7 +364,7 @@
             ? `&${Object.keys(fields).map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`).join('&')}`
             : '';
 
-        const response = await fetch(
+        const response = await originalFetch(
             `${FIREBASE_CONFIG.baseUrl}/${collection}/${docId}?key=${FIREBASE_CONFIG.apiKey}${params}`,
             {
                 method: 'PATCH',
@@ -250,8 +379,27 @@
         return payload;
     }
 
+    async function executeRawWrite(action) {
+        const response = await originalFetch(action.url, {
+            method: action.method,
+            headers: action.headers || {},
+            body: action.body || undefined
+        });
+        let payload = null;
+        try {
+            payload = await response.clone().json();
+        } catch (error) {
+            payload = null;
+        }
+        if (!response.ok || payload?.error) {
+            throw new Error(payload?.error?.message || `Failed to replay ${action.method} ${action.url}`);
+        }
+        return payload;
+    }
+
     async function writeFirestoreDoc({ mode = 'set', collection, docId, fields, label = '', dedupeKey = '' }) {
         const action = {
+            kind: 'structured',
             mode,
             collection,
             docId,
@@ -266,7 +414,7 @@
         }
 
         try {
-            await executeFirestoreWrite(action);
+            await executeStructuredWrite(action);
             updateStatusChip();
             return { ok: true, queued: false };
         } catch (error) {
@@ -274,6 +422,22 @@
             enqueueWrite(action);
             return { ok: true, queued: true };
         }
+    }
+
+    function queueRawFirestoreRequest(info, writeMeta = null) {
+        return enqueueWrite({
+            kind: 'raw',
+            mode: 'set',
+            collection: writeMeta?.collection || '',
+            docId: writeMeta?.docId || '',
+            fields: writeMeta?.fields || {},
+            label: writeMeta?.collection || 'Firestore request',
+            dedupeKey: writeMeta?.collection && writeMeta?.docId ? `raw:${writeMeta.collection}:${writeMeta.docId}` : `raw:${info.method}:${info.url}`,
+            url: info.url,
+            method: info.method,
+            headers: Object.fromEntries(info.headers.entries()),
+            body: info.body || ''
+        });
     }
 
     async function flushQueue() {
@@ -289,7 +453,11 @@
 
         for (const item of queue) {
             try {
-                await executeFirestoreWrite(item);
+                if (item.kind === 'raw') {
+                    await executeRawWrite(item);
+                } else {
+                    await executeStructuredWrite(item);
+                }
                 processed += 1;
             } catch (error) {
                 if (isNetworkLikeError(error)) {
@@ -332,6 +500,65 @@
         return [...rowMap.values()];
     }
 
+    async function handleFirestoreRead(info, input, init) {
+        try {
+            const response = await originalFetch(input, init);
+            try {
+                const payload = await response.clone().json();
+                writeCachedResponse(info, payload);
+            } catch (error) {
+                /* ignore non-json */
+            }
+            return response;
+        } catch (error) {
+            const cached = readCachedResponse(info);
+            if (cached !== null && cached !== undefined) {
+                return buildJsonResponse(cached, 200);
+            }
+            throw error;
+        }
+    }
+
+    async function handleFirestoreWrite(info, input, init) {
+        const writeMeta = parseFirestoreWriteInfo(info.url, info.body);
+
+        if (navigator.onLine === false) {
+            queueRawFirestoreRequest(info, writeMeta);
+            return buildJsonResponse({ queuedOffline: true, ok: true }, 200);
+        }
+
+        try {
+            const response = await originalFetch(input, init);
+            if (shouldQueueResponse(response)) {
+                queueRawFirestoreRequest(info, writeMeta);
+                return buildJsonResponse({ queuedOffline: true, ok: true, retryStatus: response.status }, 200);
+            }
+            return response;
+        } catch (error) {
+            if (!isNetworkLikeError(error)) throw error;
+            queueRawFirestoreRequest(info, writeMeta);
+            return buildJsonResponse({ queuedOffline: true, ok: true }, 200);
+        }
+    }
+
+    function installFetchInterceptor() {
+        if (window.__margaOfflineFetchInstalled) return;
+        window.__margaOfflineFetchInstalled = true;
+
+        window.fetch = async function margaOfflineAwareFetch(input, init = {}) {
+            const info = buildRequestInfo(input, init);
+            if (!isFirestoreUrl(info.url)) {
+                return originalFetch(input, init);
+            }
+
+            if (isReadRequest(info)) {
+                return handleFirestoreRead(info, input, init);
+            }
+
+            return handleFirestoreWrite(info, input, init);
+        };
+    }
+
     function registerServiceWorker() {
         if (!('serviceWorker' in navigator)) return;
         navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
@@ -340,6 +567,7 @@
     }
 
     function init() {
+        installFetchInterceptor();
         registerServiceWorker();
         updateStatusChip();
         window.addEventListener('online', async () => {
