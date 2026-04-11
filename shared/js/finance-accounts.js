@@ -39,6 +39,15 @@ const MargaFinanceAccounts = (() => {
             avoid: 'Do not use for gasoline, diesel, or vehicle maintenance.'
         },
         {
+            id: 'parking_expense',
+            name: 'Parking Expense',
+            type: 'Expense',
+            scope: 'pettycash',
+            meaning: 'Parking fees paid for company motorcycles, delivery vans, or other business vehicles during operations.',
+            useWhen: 'Use for daily parking charges related to delivery, messenger trips, collection runs, or field service work.',
+            avoid: 'Do not use for fuel, repairs, toll fees, or personal parking.'
+        },
+        {
             id: 'fuel_expense_delivery_van',
             name: 'Fuel Expense - Delivery Van',
             type: 'Expense',

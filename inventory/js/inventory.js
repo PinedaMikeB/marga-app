@@ -709,19 +709,34 @@ async function onSupplierSubmit(event) {
         department_name: normalizeText(document.getElementById('supplierDepartmentInput').value),
         isinactive: Number(document.getElementById('supplierStatusInput').value || 0)
     };
+    const targetDocId = currentDocId || String(nextId);
 
     setSupplierFormSaving(true);
     try {
+        let result;
         if (currentDocId) {
-            await patchDocument('tbl_supplier', currentDocId, payload);
+            result = await patchDocument('tbl_supplier', targetDocId, payload, {
+                label: `Supplier ${supplierName}`,
+                dedupeKey: `tbl_supplier:${targetDocId}`
+            });
         } else {
-            await setDocument('tbl_supplier', String(nextId), payload);
+            result = await setDocument('tbl_supplier', targetDocId, payload, {
+                label: `Supplier ${supplierName}`,
+                dedupeKey: `tbl_supplier:${targetDocId}`
+            });
         }
-        MargaUtils.showToast(currentDocId ? 'Supplier updated.' : 'Supplier saved.', 'success');
+        upsertLocalSupplierRow(targetDocId, payload);
         closeSupplierForm();
-        await loadInventoryData();
         document.getElementById('supplierSearchInput').value = supplierName;
+        renderOverview();
         resetPageAndRender('suppliers');
+        if (result?.queued) {
+            setStatus('Offline mode: supplier save queued until connection returns.');
+            MargaUtils.showToast(currentDocId ? 'Supplier update saved offline and queued.' : 'Supplier saved offline and queued.', 'info');
+        } else {
+            MargaUtils.showToast(currentDocId ? 'Supplier updated.' : 'Supplier saved.', 'success');
+            await loadInventoryData();
+        }
     } catch (error) {
         console.error('Failed to save supplier:', error);
         MargaUtils.showToast('Supplier save failed. Please try again.', 'error');
@@ -745,6 +760,21 @@ function getNextSupplierNumericId() {
     return INVENTORY_STATE.suppliers.reduce((maxId, row) => Math.max(maxId, Number(row.id || 0)), 0) + 1;
 }
 
+function upsertLocalSupplierRow(docId, payload) {
+    const normalized = normalizeSupplierRow({
+        ...payload,
+        _docId: docId
+    });
+    const nextRows = INVENTORY_STATE.suppliers.slice();
+    const index = nextRows.findIndex((row) => row.docId === normalized.docId || Number(row.id || 0) === Number(normalized.id || 0));
+    if (index >= 0) {
+        nextRows[index] = normalized;
+    } else {
+        nextRows.push(normalized);
+    }
+    INVENTORY_STATE.suppliers = nextRows.sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function toFirestoreFieldValue(value) {
     if (value === null) return { nullValue: null };
     if (Array.isArray(value)) {
@@ -758,7 +788,17 @@ function toFirestoreFieldValue(value) {
     return { stringValue: String(value ?? '') };
 }
 
-async function patchDocument(collection, docId, fields) {
+async function patchDocument(collection, docId, fields, options = {}) {
+    if (window.MargaOfflineSync?.writeFirestoreDoc) {
+        return window.MargaOfflineSync.writeFirestoreDoc({
+            mode: 'patch',
+            collection,
+            docId,
+            fields,
+            label: options.label,
+            dedupeKey: options.dedupeKey
+        });
+    }
     const updateKeys = Object.keys(fields);
     if (!updateKeys.length) return null;
 
@@ -786,7 +826,17 @@ async function patchDocument(collection, docId, fields) {
     return payload;
 }
 
-async function setDocument(collection, docId, fields) {
+async function setDocument(collection, docId, fields, options = {}) {
+    if (window.MargaOfflineSync?.writeFirestoreDoc) {
+        return window.MargaOfflineSync.writeFirestoreDoc({
+            mode: 'set',
+            collection,
+            docId,
+            fields,
+            label: options.label,
+            dedupeKey: options.dedupeKey
+        });
+    }
     const body = { fields: {} };
     Object.entries(fields).forEach(([key, value]) => {
         body.fields[key] = toFirestoreFieldValue(value);

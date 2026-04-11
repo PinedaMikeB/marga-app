@@ -41,6 +41,7 @@ const EXPENSE_GROUPS = [
     { id: 'gasoline', label: 'Gasoline', accountId: '' },
     { id: 'diesel', label: 'Diesel', accountId: '' },
     { id: 'commute_fare', label: 'Commute Fare', accountId: 'commute_fare_expense' },
+    { id: 'parking', label: 'Parking', accountId: 'parking_expense' },
     { id: 'meal_allowance', label: 'Meal Allowance', accountId: 'meal_allowance_expense_field_operations' },
     { id: 'bible_study_snacks', label: 'Bible Study Snacks', accountId: 'staff_welfare_snacks_expense' },
     { id: 'owner_withdrawal', label: "Owner's Withdrawal", accountId: 'owners_drawings' },
@@ -2213,6 +2214,7 @@ function inferExpenseGroupFromAccount(accountId) {
     if (direct) return direct.id;
     if (normalized === 'fuel_expense_delivery_van' || normalized === 'fuel_expense_motorcycle' || normalized === 'fuel_delivery_expense' || normalized === 'gasoline_expense') return 'gasoline';
     if (normalized === 'diesel_expense') return 'diesel';
+    if (normalized === 'parking_expense') return 'parking';
     if (normalized === 'owners_drawings') return 'owner_withdrawal';
     return '';
 }
@@ -2284,14 +2286,8 @@ async function loadEmployeeOptions() {
     names.add('Michael Pineda');
 
     try {
-        const docs = await runQuery({
-            from: [{ collectionId: 'tbl_employee' }],
-            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
-            limit: 5000
-        });
-        docs
-            .map((doc) => MargaAuth.parseFirestoreDoc(doc))
-            .filter(Boolean)
+        const employees = await safeQueryCollection('tbl_employee', 5000);
+        employees
             .filter((employee) => employee.marga_active !== false && employee.active !== false && Number(employee.estatus || 1) !== 0)
             .forEach((employee) => {
                 const name = formatEmployeeName(employee);
@@ -2329,14 +2325,7 @@ async function loadPayeeOptions() {
     }
 
     try {
-        const docs = await runQuery({
-            from: [{ collectionId: 'tbl_supplier' }],
-            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
-            limit: 5000
-        });
-        PETTY_CASH_STATE.supplierRecords = docs
-            .map((doc) => MargaAuth.parseFirestoreDoc(doc))
-            .filter(Boolean)
+        PETTY_CASH_STATE.supplierRecords = (await safeQueryCollection('tbl_supplier', 5000))
             .map((supplier) => normalizeSupplierRecord(supplier));
         PETTY_CASH_STATE.supplierRecords.forEach((supplier) => {
             const name = formatSupplierName(supplier);
@@ -2372,14 +2361,7 @@ async function loadSupplierOptions() {
     }
 
     try {
-        const docs = await runQuery({
-            from: [{ collectionId: 'tbl_supplier' }],
-            orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
-            limit: 5000
-        });
-        PETTY_CASH_STATE.supplierRecords = docs
-            .map((doc) => MargaAuth.parseFirestoreDoc(doc))
-            .filter(Boolean)
+        PETTY_CASH_STATE.supplierRecords = (await safeQueryCollection('tbl_supplier', 5000))
             .map((supplier) => normalizeSupplierRecord(supplier));
         PETTY_CASH_STATE.supplierRecords.forEach((supplier) => {
             const name = formatSupplierName(supplier);
@@ -2468,8 +2450,17 @@ async function safeQueryCollection(collectionId, limit = 5000) {
         });
         return docs.map((doc) => MargaAuth.parseFirestoreDoc(doc)).filter(Boolean);
     } catch (error) {
-        console.warn(`Unable to load ${collectionId} for petty cash item suggestions:`, error);
-        return [];
+        try {
+            const cachedRows = await MargaUtils.fetchCollection(collectionId, limit);
+            return cachedRows
+                .slice()
+                .sort((left, right) => Number(left?.id || 0) - Number(right?.id || 0))
+                .slice(0, limit);
+        } catch (cacheError) {
+            console.warn(`Unable to load ${collectionId} for petty cash item suggestions:`, error);
+            console.warn(`Offline cache fallback also failed for ${collectionId}:`, cacheError);
+            return [];
+        }
     }
 }
 
@@ -2604,6 +2595,33 @@ function ensureSupplierOption(name) {
     }
 }
 
+function upsertLocalSupplierRecord(docId, payload) {
+    const normalized = normalizeSupplierRecord({
+        ...payload,
+        _docId: docId
+    });
+    const nextRecords = PETTY_CASH_STATE.supplierRecords.slice();
+    const index = nextRecords.findIndex((row) => row._docId === normalized._docId || Number(row.id || 0) === Number(normalized.id || 0));
+    if (index >= 0) {
+        nextRecords[index] = { ...nextRecords[index], ...normalized };
+    } else {
+        nextRecords.push(normalized);
+    }
+    PETTY_CASH_STATE.supplierRecords = nextRecords.sort((left, right) => formatSupplierName(left).localeCompare(formatSupplierName(right)));
+
+    const supplierNames = new Set(PETTY_CASH_STATE.suppliers);
+    const payeeNames = new Set(PETTY_CASH_STATE.payees);
+    PETTY_CASH_STATE.supplierRecords.forEach((supplier) => {
+        const name = formatSupplierName(supplier);
+        if (name) {
+            supplierNames.add(name);
+            payeeNames.add(name);
+        }
+    });
+    PETTY_CASH_STATE.suppliers = [...supplierNames].sort((left, right) => left.localeCompare(right));
+    PETTY_CASH_STATE.payees = [...payeeNames].sort((left, right) => left.localeCompare(right));
+}
+
 async function onQuickSupplierSave() {
     const supplierName = normalizeInlineText(document.getElementById('quickSupplierNameInput').value || document.getElementById('entrySupplierInput').value);
     const tin = normalizeInlineText(document.getElementById('quickSupplierTinInput').value);
@@ -2622,21 +2640,31 @@ async function onQuickSupplierSave() {
     const existing = findSupplierRecordByName(supplierName);
 
     try {
+        let result;
         if (existing) {
             const patchFields = { supplier: supplierName };
             if (tin) patchFields.tin = tin;
             if (address) patchFields.address = address;
             if (product) patchFields.product = product;
+            const existingDocId = existing._docId || String(existing.id);
 
             if (Object.keys(patchFields).length > 1) {
-                await patchDocument('tbl_supplier', existing._docId || String(existing.id), patchFields);
-                MargaUtils.showToast('Existing supplier was updated with the new details.', 'success');
+                result = await patchDocument('tbl_supplier', existingDocId, patchFields, {
+                    label: `Supplier ${supplierName}`,
+                    dedupeKey: `tbl_supplier:${existingDocId}`
+                });
+                upsertLocalSupplierRecord(existingDocId, { ...existing, ...patchFields });
+                MargaUtils.showToast(
+                    result?.queued ? 'Existing supplier update was saved offline and queued.' : 'Existing supplier was updated with the new details.',
+                    result?.queued ? 'info' : 'success'
+                );
             } else {
                 MargaUtils.showToast('Supplier already exists in the master list.', 'info');
             }
         } else {
             const nextId = getNextSupplierId();
-            await setDocument('tbl_supplier', String(nextId), {
+            const targetDocId = String(nextId);
+            const newPayload = {
                 id: nextId,
                 supplier: supplierName,
                 tin,
@@ -2648,14 +2676,18 @@ async function onQuickSupplierSave() {
                 product,
                 department_name: '',
                 isinactive: 0
+            };
+            result = await setDocument('tbl_supplier', targetDocId, newPayload, {
+                label: `Supplier ${supplierName}`,
+                dedupeKey: `tbl_supplier:${targetDocId}`
             });
-            MargaUtils.showToast('Supplier saved to the master list.', 'success');
+            upsertLocalSupplierRecord(targetDocId, newPayload);
+            MargaUtils.showToast(
+                result?.queued ? 'Supplier was saved offline and queued for sync.' : 'Supplier saved to the master list.',
+                result?.queued ? 'info' : 'success'
+            );
         }
 
-        await loadSupplierOptions();
-        if (!PETTY_CASH_STATE.payees.includes(supplierName)) {
-            PETTY_CASH_STATE.payees.push(supplierName);
-        }
         populateSelects();
         document.getElementById('entryStatusInput').value = currentEntryStatus || 'Pending Liquidation';
         document.getElementById('entryRequestedByInput').value = currentRequestedBy || '';
@@ -2700,7 +2732,17 @@ function toFirestoreFieldValue(value) {
     return { stringValue: String(value ?? '') };
 }
 
-async function patchDocument(collection, docId, fields) {
+async function patchDocument(collection, docId, fields, options = {}) {
+    if (window.MargaOfflineSync?.writeFirestoreDoc) {
+        return window.MargaOfflineSync.writeFirestoreDoc({
+            mode: 'patch',
+            collection,
+            docId,
+            fields,
+            label: options.label,
+            dedupeKey: options.dedupeKey
+        });
+    }
     const updateKeys = Object.keys(fields);
     if (!updateKeys.length) return null;
 
@@ -2728,7 +2770,17 @@ async function patchDocument(collection, docId, fields) {
     return payload;
 }
 
-async function setDocument(collection, docId, fields) {
+async function setDocument(collection, docId, fields, options = {}) {
+    if (window.MargaOfflineSync?.writeFirestoreDoc) {
+        return window.MargaOfflineSync.writeFirestoreDoc({
+            mode: 'set',
+            collection,
+            docId,
+            fields,
+            label: options.label,
+            dedupeKey: options.dedupeKey
+        });
+    }
     const body = { fields: {} };
     Object.entries(fields).forEach(([key, value]) => {
         body.fields[key] = toFirestoreFieldValue(value);

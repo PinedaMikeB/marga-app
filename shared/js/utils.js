@@ -4,6 +4,21 @@
  */
 
 const MargaUtils = {
+    OFFLINE_CACHE_PREFIX: 'marga_firestore_cache_v1:',
+    OFFLINE_CACHEABLE_COLLECTIONS: new Set([
+        'tbl_supplier',
+        'tbl_employee',
+        'tbl_inventoryparts',
+        'tbl_partstype',
+        'tbl_tonerink',
+        'tbl_model',
+        'tbl_brand',
+        'tbl_machine',
+        'tbl_ownership',
+        'tbl_branchinfo',
+        'tbl_companylist'
+    ]),
+
     /**
      * Parse Firestore document to regular object
      */
@@ -42,22 +57,71 @@ const MargaUtils = {
     async fetchCollection(collection, pageSize = 300) {
         const allDocs = [];
         let pageToken = null;
-        
-        do {
-            let url = `${FIREBASE_CONFIG.baseUrl}/${collection}?pageSize=${pageSize}&key=${FIREBASE_CONFIG.apiKey}`;
-            if (pageToken) url += `&pageToken=${pageToken}`;
-            
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const data = await response.json();
-            if (data.documents) {
-                allDocs.push(...data.documents.map(doc => this.parseFirestoreDoc(doc)));
+
+        try {
+            do {
+                let url = `${FIREBASE_CONFIG.baseUrl}/${collection}?pageSize=${pageSize}&key=${FIREBASE_CONFIG.apiKey}`;
+                if (pageToken) url += `&pageToken=${pageToken}`;
+
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const data = await response.json();
+                if (data.documents) {
+                    allDocs.push(...data.documents.map(doc => this.parseFirestoreDoc(doc)));
+                }
+                pageToken = data.nextPageToken;
+            } while (pageToken);
+
+            const mergedRows = this.mergePendingOfflineRows(collection, allDocs);
+            this.writeCollectionCache(collection, mergedRows);
+            return mergedRows;
+        } catch (error) {
+            const cachedRows = this.readCollectionCache(collection);
+            if (cachedRows.length) {
+                console.warn(`Using cached ${collection} rows while offline or unreachable.`, error);
+                return this.mergePendingOfflineRows(collection, cachedRows);
             }
-            pageToken = data.nextPageToken;
-        } while (pageToken);
-        
-        return allDocs;
+            throw error;
+        }
+    },
+
+    getCollectionCacheKey(collection) {
+        return `${this.OFFLINE_CACHE_PREFIX}${collection}`;
+    },
+
+    shouldCacheCollection(collection) {
+        return this.OFFLINE_CACHEABLE_COLLECTIONS.has(String(collection || '').trim());
+    },
+
+    readCollectionCache(collection) {
+        if (!this.shouldCacheCollection(collection)) return [];
+        try {
+            const raw = localStorage.getItem(this.getCollectionCacheKey(collection));
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.warn(`Unable to read offline cache for ${collection}.`, error);
+            return [];
+        }
+    },
+
+    writeCollectionCache(collection, rows) {
+        if (!this.shouldCacheCollection(collection)) return;
+        try {
+            const safeRows = Array.isArray(rows) ? rows : [];
+            const payload = JSON.stringify(safeRows);
+            if (payload.length > 3_500_000) return;
+            localStorage.setItem(this.getCollectionCacheKey(collection), payload);
+        } catch (error) {
+            console.warn(`Unable to write offline cache for ${collection}.`, error);
+        }
+    },
+
+    mergePendingOfflineRows(collection, rows) {
+        if (!window.MargaOfflineSync?.mergePendingCollectionRows) return Array.isArray(rows) ? rows : [];
+        return window.MargaOfflineSync.mergePendingCollectionRows(collection, rows);
     },
 
     /**
