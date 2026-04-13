@@ -8,6 +8,13 @@ const PETTY_CASH_STORAGE_KEYS = {
     settings: 'marga_petty_cash_settings_v1'
 };
 
+const PETTY_CASH_FIRESTORE = {
+    entries: 'tbl_pettycash_entries',
+    requests: 'tbl_pettycash_requests',
+    settings: 'tbl_pettycash_settings',
+    settingsDocId: 'main'
+};
+
 const APD_SYNC_STORAGE_KEYS = {
     bills: 'marga_apd_bills_v1',
     checks: 'marga_apd_checks_v1'
@@ -169,9 +176,13 @@ const PETTY_CASH_STATE = {
     settings: normalizeSettings(DEFAULT_SETTINGS)
 };
 
+let pettyCashCloudSyncPromise = null;
+let pettyCashCloudSyncQueued = false;
+let pettyCashDeletePassRequested = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
     loadUserHeader();
-    hydrateState();
+    await hydrateState();
     await loadEmployeeOptions();
     await loadPayeeOptions();
     await loadSupplierOptions();
@@ -188,6 +199,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 window.addEventListener('storage', onExternalPettyCashStateChange);
 window.addEventListener('focus', onExternalPettyCashStateChange);
+window.addEventListener('online', () => {
+    queuePettyCashCloudSync({ deleteRemoved: true });
+});
 
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
@@ -203,13 +217,46 @@ function loadUserHeader() {
     document.getElementById('userAvatar').textContent = String(user.name || 'A').charAt(0).toUpperCase();
 }
 
-function hydrateState() {
+async function hydrateState() {
     PETTY_CASH_STATE.accounts = MargaFinanceAccounts.getStoredAccounts().map(normalizeAccount);
-    PETTY_CASH_STATE.entries = readArrayStorage(PETTY_CASH_STORAGE_KEYS.entries, DEFAULT_ENTRIES).map(normalizeEntry);
-    PETTY_CASH_STATE.requests = readArrayStorage(PETTY_CASH_STORAGE_KEYS.requests, DEFAULT_REQUESTS).map(normalizeRequest);
-    PETTY_CASH_STATE.settings = normalizeSettings(readObjectStorage(PETTY_CASH_STORAGE_KEYS.settings, DEFAULT_SETTINGS));
+    const localSnapshot = readLocalPettyCashSnapshot();
+    let entries = localSnapshot.entries.map(normalizeEntry);
+    let requests = localSnapshot.requests.map(normalizeRequest);
+    let settings = normalizeSettings(localSnapshot.settings);
+    let migrateLocalToCloud = false;
+
+    try {
+        const cloudSnapshot = await loadPettyCashCloudSnapshot();
+        if (cloudSnapshot.hasSharedData) {
+            entries = cloudSnapshot.entries.map(normalizeEntry);
+            requests = cloudSnapshot.requests.map(normalizeRequest);
+            settings = normalizeSettings(cloudSnapshot.settings);
+        } else if (localSnapshot.hasSavedData) {
+            migrateLocalToCloud = true;
+        } else {
+            entries = [];
+            requests = [];
+            settings = normalizeSettings(DEFAULT_SETTINGS);
+        }
+    } catch (error) {
+        console.warn('Unable to load shared petty cash state. Using browser cache instead.', error);
+        if (!localSnapshot.hasSavedData) {
+            entries = [];
+            requests = [];
+            settings = normalizeSettings(DEFAULT_SETTINGS);
+        }
+    }
+
+    PETTY_CASH_STATE.entries = entries;
+    PETTY_CASH_STATE.requests = requests;
+    PETTY_CASH_STATE.settings = settings;
     syncRequestsFromApd();
     reconcileRequests();
+    writeLocalPettyCashSnapshot();
+
+    if (migrateLocalToCloud) {
+        queuePettyCashCloudSync({ deleteRemoved: true, silent: true });
+    }
 }
 
 function bindControls() {
@@ -1845,7 +1892,7 @@ function buildApdPayableFromRequest(request, existingBill = null, checks = []) {
     };
 }
 
-function onExternalPettyCashStateChange(event) {
+async function onExternalPettyCashStateChange(event) {
     if (event?.key && ![
         PETTY_CASH_STORAGE_KEYS.entries,
         PETTY_CASH_STORAGE_KEYS.requests,
@@ -1860,7 +1907,7 @@ function onExternalPettyCashStateChange(event) {
     const preserveRequestEdit = activeElementId.startsWith('request');
     const preserveEntryEdit = activeElementId.startsWith('entry');
 
-    hydrateState();
+    await hydrateState();
     populateSelects();
     fillSettingsForm();
     renderAll();
@@ -2801,10 +2848,178 @@ async function setDocument(collection, docId, fields, options = {}) {
     return payload;
 }
 
-function persistState() {
+async function deleteDocument(collection, docId, options = {}) {
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`,
+        { method: 'DELETE' }
+    );
+    let payload = null;
+    try {
+        payload = await response.json();
+    } catch (error) {
+        payload = null;
+    }
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to delete ${collection}/${docId}`);
+    }
+    return { ok: true, queued: Boolean(payload?.queuedOffline), ...payload, label: options.label || '' };
+}
+
+function persistState(options = {}) {
+    writeLocalPettyCashSnapshot();
+    queuePettyCashCloudSync(options);
+}
+
+function writeLocalPettyCashSnapshot() {
     localStorage.setItem(PETTY_CASH_STORAGE_KEYS.entries, JSON.stringify(PETTY_CASH_STATE.entries));
     localStorage.setItem(PETTY_CASH_STORAGE_KEYS.requests, JSON.stringify(PETTY_CASH_STATE.requests));
     localStorage.setItem(PETTY_CASH_STORAGE_KEYS.settings, JSON.stringify(PETTY_CASH_STATE.settings));
+}
+
+function readLocalPettyCashSnapshot() {
+    const hasEntries = hasLocalStorageKey(PETTY_CASH_STORAGE_KEYS.entries);
+    const hasRequests = hasLocalStorageKey(PETTY_CASH_STORAGE_KEYS.requests);
+    const hasSettings = hasLocalStorageKey(PETTY_CASH_STORAGE_KEYS.settings);
+    return {
+        hasEntries,
+        hasRequests,
+        hasSettings,
+        hasSavedData: hasEntries || hasRequests || hasSettings,
+        entries: readArrayStorage(PETTY_CASH_STORAGE_KEYS.entries, []),
+        requests: readArrayStorage(PETTY_CASH_STORAGE_KEYS.requests, []),
+        settings: readObjectStorage(PETTY_CASH_STORAGE_KEYS.settings, DEFAULT_SETTINGS)
+    };
+}
+
+function hasLocalStorageKey(key) {
+    try {
+        return localStorage.getItem(key) !== null;
+    } catch (error) {
+        return false;
+    }
+}
+
+async function loadPettyCashCloudSnapshot() {
+    const [entryRows, requestRows, settingRows] = await Promise.all([
+        loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.entries),
+        loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.requests),
+        loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.settings)
+    ]);
+    const settingsDoc = settingRows.find((row) => String(row._docId || row.id || '').trim() === PETTY_CASH_FIRESTORE.settingsDocId)
+        || settingRows[0]
+        || null;
+    return {
+        entries: entryRows,
+        requests: requestRows,
+        settings: settingsDoc || DEFAULT_SETTINGS,
+        hasSharedData: Boolean(entryRows.length || requestRows.length || settingsDoc)
+    };
+}
+
+async function loadPettyCashCloudCollection(collection) {
+    const rows = await MargaUtils.fetchCollection(collection, 250);
+    return Array.isArray(rows) ? rows : [];
+}
+
+function queuePettyCashCloudSync(options = {}) {
+    pettyCashDeletePassRequested = pettyCashDeletePassRequested || options.deleteRemoved !== false;
+    if (pettyCashCloudSyncPromise) {
+        pettyCashCloudSyncQueued = true;
+        return pettyCashCloudSyncPromise;
+    }
+
+    pettyCashCloudSyncPromise = (async () => {
+        do {
+            pettyCashCloudSyncQueued = false;
+            const deleteRemoved = pettyCashDeletePassRequested;
+            pettyCashDeletePassRequested = false;
+            try {
+                await syncPettyCashStateToCloud({ deleteRemoved, silent: options.silent === true });
+            } catch (error) {
+                console.error('Petty cash cloud sync failed:', error);
+                if (options.silent !== true) {
+                    MargaUtils.showToast('Petty cash shared sync is still pending. Local browser copy is safe.', 'info');
+                }
+            }
+        } while (pettyCashCloudSyncQueued);
+    })().finally(() => {
+        pettyCashCloudSyncPromise = null;
+    });
+
+    return pettyCashCloudSyncPromise;
+}
+
+async function syncPettyCashStateToCloud({ deleteRemoved = true } = {}) {
+    const entryDocs = PETTY_CASH_STATE.entries.map((entry) => buildPettyCashEntryPayload(entry));
+    const requestDocs = PETTY_CASH_STATE.requests.map((request) => buildPettyCashRequestPayload(request));
+    const settingsDoc = buildPettyCashSettingsPayload(PETTY_CASH_STATE.settings);
+
+    for (const entry of entryDocs) {
+        await setDocument(PETTY_CASH_FIRESTORE.entries, entry.id, entry, {
+            label: `Petty cash voucher ${entry.voucherNumber || entry.id}`,
+            dedupeKey: `${PETTY_CASH_FIRESTORE.entries}:${entry.id}`
+        });
+    }
+
+    for (const request of requestDocs) {
+        await setDocument(PETTY_CASH_FIRESTORE.requests, request.id, request, {
+            label: `Petty cash replenishment ${request.id}`,
+            dedupeKey: `${PETTY_CASH_FIRESTORE.requests}:${request.id}`
+        });
+    }
+
+    await setDocument(PETTY_CASH_FIRESTORE.settings, PETTY_CASH_FIRESTORE.settingsDocId, settingsDoc, {
+        label: 'Petty cash fund setup',
+        dedupeKey: `${PETTY_CASH_FIRESTORE.settings}:${PETTY_CASH_FIRESTORE.settingsDocId}`
+    });
+
+    if (deleteRemoved && navigator.onLine !== false) {
+        const [remoteEntries, remoteRequests] = await Promise.all([
+            loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.entries),
+            loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.requests)
+        ]);
+        const entryIds = new Set(entryDocs.map((entry) => String(entry.id || '').trim()).filter(Boolean));
+        const requestIds = new Set(requestDocs.map((request) => String(request.id || '').trim()).filter(Boolean));
+
+        for (const remoteEntry of remoteEntries) {
+            const remoteId = String(remoteEntry._docId || remoteEntry.id || '').trim();
+            if (remoteId && !entryIds.has(remoteId)) {
+                await deleteDocument(PETTY_CASH_FIRESTORE.entries, remoteId, { label: `Delete petty cash voucher ${remoteId}` });
+            }
+        }
+
+        for (const remoteRequest of remoteRequests) {
+            const remoteId = String(remoteRequest._docId || remoteRequest.id || '').trim();
+            if (remoteId && !requestIds.has(remoteId)) {
+                await deleteDocument(PETTY_CASH_FIRESTORE.requests, remoteId, { label: `Delete petty cash request ${remoteId}` });
+            }
+        }
+    }
+}
+
+function buildPettyCashEntryPayload(entry) {
+    const normalized = normalizeEntry(entry);
+    return {
+        ...normalized,
+        updatedAt: isoNow()
+    };
+}
+
+function buildPettyCashRequestPayload(request) {
+    const normalized = normalizeRequest(request);
+    return {
+        ...normalized,
+        updatedAt: isoNow()
+    };
+}
+
+function buildPettyCashSettingsPayload(settings) {
+    const normalized = normalizeSettings(settings);
+    return {
+        id: PETTY_CASH_FIRESTORE.settingsDocId,
+        ...normalized,
+        updatedAt: isoNow()
+    };
 }
 
 function resetDemoData() {

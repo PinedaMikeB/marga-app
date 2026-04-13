@@ -16,7 +16,10 @@ const MargaUtils = {
         'tbl_machine',
         'tbl_ownership',
         'tbl_branchinfo',
-        'tbl_companylist'
+        'tbl_companylist',
+        'tbl_pettycash_entries',
+        'tbl_pettycash_requests',
+        'tbl_pettycash_settings'
     ]),
 
     /**
