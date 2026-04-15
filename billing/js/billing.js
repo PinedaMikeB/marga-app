@@ -1072,7 +1072,7 @@ const RTP_PRINT_CALIBRATION = {
         header: { xMm: 0, yMm: 0, fontScale: 1 },
         description: { xMm: 0, yMm: 0, fontScale: 1 },
         meta: { xMm: 0, yMm: 0, fontScale: 1 },
-        totals: { xMm: 0, yMm: 0, fontScale: 1, amountWidthMm: 34, amountScaleX: 0.92, amountDueFontScale: 1.2 }
+        totals: { xMm: 0, yMm: 0, fontScale: 1, amountWidthMm: 34, amountScaleX: 0.92, amountRightPadMm: 2, amountDueFontScale: 1.2 }
     }
 };
 
@@ -1118,9 +1118,11 @@ function normalizeRtpPrintCalibration(value = {}) {
             if (sectionKey === 'totals') {
                 const amountWidthMm = Number(current?.amountWidthMm ?? defaults.amountWidthMm ?? 34);
                 const amountScaleX = Number(current?.amountScaleX ?? defaults.amountScaleX ?? 0.92);
+                const amountRightPadMm = Number(current?.amountRightPadMm ?? defaults.amountRightPadMm ?? 2);
                 const amountDueFontScale = Number(current?.amountDueFontScale ?? defaults.amountDueFontScale ?? 1.2);
                 normalizedSection.amountWidthMm = Number.isFinite(amountWidthMm) ? Math.max(20, Math.min(60, amountWidthMm)) : (defaults.amountWidthMm || 34);
                 normalizedSection.amountScaleX = Number.isFinite(amountScaleX) ? Math.max(0.75, Math.min(1.15, amountScaleX)) : (defaults.amountScaleX || 0.92);
+                normalizedSection.amountRightPadMm = Number.isFinite(amountRightPadMm) ? Math.max(0, Math.min(12, amountRightPadMm)) : (defaults.amountRightPadMm || 2);
                 normalizedSection.amountDueFontScale = Number.isFinite(amountDueFontScale) ? Math.max(0.8, Math.min(2.2, amountDueFontScale)) : (defaults.amountDueFontScale || 1.2);
             }
             return [sectionKey, normalizedSection];
@@ -1258,6 +1260,9 @@ function getRtpPrintPaperDimensions(calibration = currentRtpPrintCalibration) {
     let widthCm = Number.isFinite(rawWidthCm) ? rawWidthCm : RTP_PRINT_CALIBRATION.paperWidthCm;
     let heightCm = Number.isFinite(rawHeightCm) ? rawHeightCm : RTP_PRINT_CALIBRATION.paperHeightCm;
     const orientation = calibration?.orientation === 'landscape' ? 'landscape' : 'portrait';
+    if (orientation === 'portrait' && widthCm > heightCm) {
+        [widthCm, heightCm] = [heightCm, widthCm];
+    }
     if (orientation === 'landscape' && widthCm < heightCm) {
         [widthCm, heightCm] = [heightCm, widthCm];
     }
@@ -1525,7 +1530,8 @@ function buildRtpTotalsAmountStyle(yMm, mode = 'print', options = {}) {
     const baseWidthMm = 27;
     const amountWidthMm = Number(totalsCalibration?.amountWidthMm || 34) || 34;
     const amountScaleX = Number(totalsCalibration?.amountScaleX || 1) || 1;
-    const xMm = baseWidthMm - amountWidthMm;
+    const amountRightPadMm = Number(totalsCalibration?.amountRightPadMm || 0) || 0;
+    const xMm = baseWidthMm - amountRightPadMm - amountWidthMm;
     const parts = [
         buildRtpPositionStyle({ xMm, yMm, widthMm: amountWidthMm, textAlign: 'right' }, mode),
         'transform-origin:right center',
@@ -1629,6 +1635,10 @@ function renderRtpSectionCalibrationControls() {
                                 <div class="calc-field">
                                     <label for="rtpSection${sectionKey}AmountFit">Amount Fit</label>
                                     <input type="number" id="rtpSection${sectionKey}AmountFit" data-rtp-section-key="${sectionKey}" data-rtp-section-field="amountScaleX" step="0.01" min="0.75" max="1.15" value="${escapeHtml(String(calibration.amountScaleX || 0.92))}">
+                                </div>
+                                <div class="calc-field">
+                                    <label for="rtpSection${sectionKey}RightPad">Right Padding</label>
+                                    <input type="number" id="rtpSection${sectionKey}RightPad" data-rtp-section-key="${sectionKey}" data-rtp-section-field="amountRightPadMm" step="0.5" min="0" max="12" value="${escapeHtml(String(calibration.amountRightPadMm ?? 2))}">
                                 </div>
                                 <div class="calc-field">
                                     <label for="rtpSection${sectionKey}DueFont">Final Amount Size</label>
@@ -2678,11 +2688,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                                     </select>
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintPaperWidthInput">Paper Width (cm)</label>
+                                    <label for="calcPrintPaperWidthInput">Paper Side A (cm)</label>
                                     <input type="number" id="calcPrintPaperWidthInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperWidthCm))}">
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintPaperHeightInput">Paper Height (cm)</label>
+                                    <label for="calcPrintPaperHeightInput">Paper Side B (cm)</label>
                                     <input type="number" id="calcPrintPaperHeightInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperHeightCm))}">
                                 </div>
                                 <div class="calc-field">
