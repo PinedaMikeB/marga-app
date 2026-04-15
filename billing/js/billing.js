@@ -2227,6 +2227,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const warningValue = document.getElementById('calcWarningValue');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
+    const inlinePrintHint = document.getElementById('calcInlinePrintHint');
     const templateSelect = document.getElementById('calcPrintTemplateSelect');
     const templateNameInput = document.getElementById('calcPrintTemplateNameInput');
     const saveTemplateBtn = document.getElementById('calcPrintSaveTemplateBtn');
@@ -2243,6 +2244,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     let previewReady = false;
     let savedSnapshot = savedBillingDoc ? billingSnapshotFromDoc(savedBillingDoc, initialSnapshot) : null;
     let savedDocExists = Boolean(savedBillingDoc);
+    let workflowError = '';
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
 
@@ -2260,7 +2262,10 @@ async function openBillingCalcModal(rowId, monthKey) {
 
         if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
         if (saveStatus) {
-            if (!savedDocExists) {
+            saveStatus.classList.toggle('error', Boolean(workflowError));
+            if (workflowError) {
+                saveStatus.textContent = workflowError;
+            } else if (!savedDocExists) {
                 saveStatus.textContent = `Save this billing first so it lands in ${savedMonthLabel} and unlocks printing.`;
             } else if (isDirty) {
                 saveStatus.textContent = `You changed the billing values. Save again to update ${savedMonthLabel} and re-enable printing.`;
@@ -2273,7 +2278,9 @@ async function openBillingCalcModal(rowId, monthKey) {
         const printEnabled = previewReady && matchesSaved;
         let printHint = 'Preparing preview...';
         if (previewReady) {
-            if (!savedDocExists) {
+            if (workflowError) {
+                printHint = workflowError;
+            } else if (!savedDocExists) {
                 printHint = 'Save billing first to enable Print RTP.';
             } else if (isDirty) {
                 printHint = 'Save your changes first so the printed RTP matches the saved invoice.';
@@ -2405,7 +2412,11 @@ async function openBillingCalcModal(rowId, monthKey) {
         syncCalcWorkflowState();
     };
 
-    invoiceInput?.addEventListener('input', syncCalcWorkflowState);
+    invoiceInput?.addEventListener('input', () => {
+        workflowError = '';
+        invoiceInput.classList.remove('input-error');
+        syncCalcWorkflowState();
+    });
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
     spoilageInput?.addEventListener('input', recompute);
@@ -2443,6 +2454,10 @@ async function openBillingCalcModal(rowId, monthKey) {
     });
     saveBillingBtn?.addEventListener('click', async () => {
         const currentSnapshot = buildCurrentSnapshot();
+        workflowError = '';
+        invoiceInput?.classList.remove('input-error');
+        saveStatus?.classList.remove('error');
+        if (inlinePrintHint) inlinePrintHint.classList.remove('error');
         saveBillingBtn.disabled = true;
         if (deleteBillingBtn) deleteBillingBtn.disabled = true;
         try {
@@ -2480,8 +2495,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                 return;
             }
         } catch (error) {
-            if (saveStatus) saveStatus.textContent = String(error?.message || 'Unable to save billing.');
-            MargaUtils.showToast(String(error?.message || 'Unable to save billing.'), 'error');
+            workflowError = String(error?.message || 'Unable to save billing.');
+            invoiceInput?.classList.add('input-error');
+            saveStatus?.classList.add('error');
+            if (inlinePrintHint) inlinePrintHint.classList.add('error');
+            MargaUtils.showToast(workflowError, 'error');
         } finally {
             saveBillingBtn.disabled = false;
             if (deleteBillingBtn) deleteBillingBtn.disabled = false;

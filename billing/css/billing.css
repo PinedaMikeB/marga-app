@@ -758,6 +758,16 @@
     max-width: 62ch;
 }
 
+.calc-save-status.error,
+.calc-print-hint.error {
+    color: var(--bill-danger);
+}
+
+.calc-field input.input-error {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
 .detail-action-link {
     display: inline-flex;
     align-items: center;
