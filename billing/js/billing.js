@@ -1068,6 +1068,7 @@ const RTP_PRINT_CALIBRATION = {
     scale: 0.54,
     offsetXmm: 1.5,
     offsetYmm: 18,
+    rightMarginMm: 0,
     sections: {
         header: { xMm: 0, yMm: 0, fontScale: 1 },
         description: { xMm: 0, yMm: 0, fontScale: 1 },
@@ -1096,6 +1097,7 @@ function normalizeRtpPrintCalibration(value = {}) {
     const scale = Number(value?.scale ?? RTP_PRINT_CALIBRATION.scale);
     const offsetXmm = Number(value?.offsetXmm ?? RTP_PRINT_CALIBRATION.offsetXmm);
     const offsetYmm = Number(value?.offsetYmm ?? RTP_PRINT_CALIBRATION.offsetYmm);
+    const rightMarginMm = Number(value?.rightMarginMm ?? RTP_PRINT_CALIBRATION.rightMarginMm);
     const rawSections = value?.sections || {};
     return {
         paperWidthCm: Number.isFinite(paperWidthCm) ? Math.max(10, Math.min(40, paperWidthCm)) : RTP_PRINT_CALIBRATION.paperWidthCm,
@@ -1104,6 +1106,7 @@ function normalizeRtpPrintCalibration(value = {}) {
         scale: Number.isFinite(scale) ? Math.max(0.35, Math.min(0.9, scale)) : RTP_PRINT_CALIBRATION.scale,
         offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-40, Math.min(40, offsetXmm)) : RTP_PRINT_CALIBRATION.offsetXmm,
         offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(80, offsetYmm)) : RTP_PRINT_CALIBRATION.offsetYmm,
+        rightMarginMm: Number.isFinite(rightMarginMm) ? Math.max(0, Math.min(40, rightMarginMm)) : RTP_PRINT_CALIBRATION.rightMarginMm,
         sections: Object.fromEntries(Object.keys(RTP_PRINT_SECTION_LAYOUT).map((sectionKey) => {
             const defaults = RTP_PRINT_CALIBRATION.sections[sectionKey];
             const current = rawSections?.[sectionKey] || {};
@@ -1266,11 +1269,20 @@ function getRtpPrintPaperDimensions(calibration = currentRtpPrintCalibration) {
     if (orientation === 'landscape' && widthCm < heightCm) {
         [widthCm, heightCm] = [heightCm, widthCm];
     }
+    const rawRightMarginMm = Number(calibration?.rightMarginMm ?? RTP_PRINT_CALIBRATION.rightMarginMm);
+    const requestedRightMarginMm = Number.isFinite(rawRightMarginMm) ? Math.max(0, Math.min(40, rawRightMarginMm)) : 0;
+    const baseWidthMm = widthCm * 10;
+    const heightMm = heightCm * 10;
+    const maxPortraitRightMarginMm = Math.max(0, heightMm - baseWidthMm - 1);
+    const effectiveRightMarginMm = orientation === 'portrait'
+        ? Math.min(requestedRightMarginMm, maxPortraitRightMarginMm)
+        : requestedRightMarginMm;
+    const widthMm = baseWidthMm + effectiveRightMarginMm;
     return {
-        widthCm,
+        widthCm: widthMm / 10,
         heightCm,
-        widthMm: widthCm * 10,
-        heightMm: heightCm * 10
+        widthMm,
+        heightMm
     };
 }
 
@@ -2700,6 +2712,10 @@ async function openBillingCalcModal(rowId, monthKey) {
                                     <input type="number" id="calcPrintOffsetXInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetXmm))}">
                                 </div>
                                 <div class="calc-field">
+                                    <label for="calcPrintRightMarginInput">Right Margin (mm)</label>
+                                    <input type="number" id="calcPrintRightMarginInput" step="0.5" min="0" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.rightMarginMm || 0))}">
+                                </div>
+                                <div class="calc-field">
                                     <label for="calcPrintOffsetYInput">Top Margin (mm)</label>
                                     <input type="number" id="calcPrintOffsetYInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetYmm))}">
                                 </div>
@@ -2754,6 +2770,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const paperWidthInput = document.getElementById('calcPrintPaperWidthInput');
     const paperHeightInput = document.getElementById('calcPrintPaperHeightInput');
     const offsetXInput = document.getElementById('calcPrintOffsetXInput');
+    const rightMarginInput = document.getElementById('calcPrintRightMarginInput');
     const offsetYInput = document.getElementById('calcPrintOffsetYInput');
     const scaleInput = document.getElementById('calcPrintScaleInput');
     const resetPrintBtn = document.getElementById('calcPrintResetBtn');
@@ -2862,6 +2879,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (paperWidthInput) paperWidthInput.value = String(calibration.paperWidthCm);
         if (paperHeightInput) paperHeightInput.value = String(calibration.paperHeightCm);
         if (offsetXInput) offsetXInput.value = String(calibration.offsetXmm);
+        if (rightMarginInput) rightMarginInput.value = String(calibration.rightMarginMm || 0);
         if (offsetYInput) offsetYInput.value = String(calibration.offsetYmm);
         if (scaleInput) scaleInput.value = String(calibration.scale);
         sectionInputs.forEach((input) => {
@@ -2891,6 +2909,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             paperWidthCm: paperWidthInput ? Number(paperWidthInput.value || 0) : currentRtpPrintCalibration.paperWidthCm,
             paperHeightCm: paperHeightInput ? Number(paperHeightInput.value || 0) : currentRtpPrintCalibration.paperHeightCm,
             offsetXmm: offsetXInput ? Number(offsetXInput.value || 0) : currentRtpPrintCalibration.offsetXmm,
+            rightMarginMm: rightMarginInput ? Number(rightMarginInput.value || 0) : currentRtpPrintCalibration.rightMarginMm,
             offsetYmm: offsetYInput ? Number(offsetYInput.value || 0) : currentRtpPrintCalibration.offsetYmm,
             scale: scaleInput ? Number(scaleInput.value || 0) : currentRtpPrintCalibration.scale,
             sections: nextSections
@@ -2943,6 +2962,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     paperHeightInput?.addEventListener('input', updateCalibration);
     orientationInput?.addEventListener('change', updateCalibration);
     offsetXInput?.addEventListener('input', updateCalibration);
+    rightMarginInput?.addEventListener('input', updateCalibration);
     offsetYInput?.addEventListener('input', updateCalibration);
     scaleInput?.addEventListener('input', updateCalibration);
     sectionInputs.forEach((input) => input.addEventListener('input', updateCalibration));
