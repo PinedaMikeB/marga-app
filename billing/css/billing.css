@@ -628,6 +628,13 @@
     border-bottom: 1px solid var(--bill-line);
 }
 
+.billing-modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
 .billing-modal-body {
     padding: 1rem 1.25rem 1.25rem;
     overflow: auto;
@@ -788,6 +795,24 @@
     gap: 1rem;
 }
 
+.calc-print-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.calc-print-hint {
+    color: var(--bill-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
 .calc-form-grid {
     display: grid;
     gap: 0.8rem;
@@ -875,6 +900,166 @@
     font-weight: 700;
 }
 
+.rtp-preview-shell {
+    display: grid;
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+}
+
+.rtp-preview-note {
+    color: var(--bill-muted);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.rtp-preview-paper {
+    overflow: auto;
+    border: 1px solid #d7bfd0;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #f8e6ee, #f3d5e2);
+    padding: 1rem;
+}
+
+.rtp-print-sheet {
+    position: relative;
+    width: min(100%, 950px);
+    min-height: 830px;
+    margin: 0 auto;
+    background: rgba(255, 252, 253, 0.44);
+    color: #1f2937;
+    font-size: 1.06rem;
+    font-weight: 600;
+    line-height: 1.18;
+}
+
+.rtp-field {
+    position: absolute;
+    white-space: pre-wrap;
+}
+
+.rtp-customer-name {
+    top: 112px;
+    left: 76px;
+    width: 560px;
+    font-weight: 700;
+}
+
+.rtp-customer-tin {
+    top: 151px;
+    left: 76px;
+    width: 320px;
+}
+
+.rtp-customer-address {
+    top: 187px;
+    left: 76px;
+    width: 575px;
+}
+
+.rtp-meta-date,
+.rtp-meta-code,
+.rtp-meta-month,
+.rtp-meta-type {
+    left: 748px;
+    width: 110px;
+}
+
+.rtp-meta-date {
+    top: 112px;
+}
+
+.rtp-meta-code {
+    top: 151px;
+}
+
+.rtp-meta-month {
+    top: 187px;
+}
+
+.rtp-meta-type {
+    top: 227px;
+}
+
+.rtp-business-style {
+    top: 292px;
+    left: 76px;
+    width: 640px;
+}
+
+.rtp-printer-model {
+    top: 332px;
+    left: 76px;
+    width: 640px;
+}
+
+.rtp-billing-from,
+.rtp-billing-to,
+.rtp-total-pages {
+    text-align: center;
+}
+
+.rtp-billing-from {
+    top: 372px;
+    left: 356px;
+    width: 120px;
+}
+
+.rtp-billing-to {
+    top: 372px;
+    left: 515px;
+    width: 120px;
+}
+
+.rtp-total-pages {
+    top: 412px;
+    left: 390px;
+    width: 76px;
+}
+
+.rtp-rate {
+    top: 448px;
+    left: 110px;
+    width: 80px;
+}
+
+.rtp-amount {
+    left: 772px;
+    width: 110px;
+    text-align: right;
+}
+
+.rtp-amount-total {
+    top: 537px;
+}
+
+.rtp-amount-vat {
+    top: 577px;
+}
+
+.rtp-amount-vatable {
+    top: 617px;
+}
+
+.rtp-amount-exempt {
+    top: 657px;
+}
+
+.rtp-amount-zero {
+    top: 697px;
+}
+
+.rtp-amount-less-vat {
+    top: 737px;
+}
+
+.rtp-amount-due {
+    top: 777px;
+    font-size: 1.22rem;
+    font-weight: 800;
+}
+
 @media (max-width: 1024px) {
     .sheet-header,
     .selection-grid {
@@ -903,5 +1088,26 @@
     .billing-modal-header {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .billing-modal-actions {
+        justify-content: stretch;
+    }
+
+    .billing-modal-actions .btn {
+        width: 100%;
+    }
+
+    .rtp-preview-paper {
+        padding: 0.75rem;
+    }
+
+    .rtp-print-sheet {
+        transform-origin: top left;
+        transform: scale(0.78);
+        width: 950px;
+        min-height: 830px;
+        margin-right: -210px;
+        margin-bottom: -180px;
     }
 }

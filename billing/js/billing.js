@@ -23,6 +23,7 @@ const els = {
     invoiceDetailTitle: null,
     invoiceDetailSubtitle: null,
     invoiceDetailContent: null,
+    rtpInvoicePrintBtn: null,
     invoiceDetailCloseBtn: null,
     serialDetailModal: null,
     serialDetailTitle: null,
@@ -33,12 +34,18 @@ const els = {
     billingCalcTitle: null,
     billingCalcSubtitle: null,
     billingCalcContent: null,
+    billingCalcPrintBtn: null,
     billingCalcCloseBtn: null
 };
 
 let lastPayload = null;
 let renderedMatrixRows = [];
 let searchReloadTimer = null;
+let invoiceDetailRequestToken = 0;
+let billingCalcRequestToken = 0;
+let invoicePreviewReferenceData = null;
+let invoicePreviewReferencePromise = null;
+let currentRtpPrintPayload = null;
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const CONTRACT_CATEGORY_META = {
@@ -98,6 +105,13 @@ function formatAmount(value) {
     });
 }
 
+function formatFixedAmount(value) {
+    return Number(value || 0).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
 function formatMetricCount(value, singular, plural = `${singular}s`) {
     const count = Number(value || 0);
     return `${formatCount(count)} ${count === 1 ? singular : plural}`;
@@ -151,6 +165,13 @@ function formatMonthLabel(monthKey, fallback = '') {
     return date.toLocaleString('en-PH', { month: 'short', year: '2-digit' });
 }
 
+function formatMonthLongLabel(monthKey, fallback = '') {
+    const match = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return fallback || String(monthKey || '');
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+    return date.toLocaleString('en-PH', { month: 'long' });
+}
+
 function parseMonthInput(value) {
     const match = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
     if (!match) return null;
@@ -164,6 +185,410 @@ function monthInputValue(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     return `${y}-${m}`;
+}
+
+function formatIsoDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatUsDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${month}/${day}/${date.getFullYear()}`;
+}
+
+function asValidDate(value) {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function clampMonthDay(year, monthIndex, day) {
+    const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+    return Math.max(1, Math.min(lastDay, Number(day || 1) || 1));
+}
+
+function buildBillingPeriod(monthKey, readingDay) {
+    const parsed = parseMonthInput(monthKey);
+    if (!parsed) return { from: '', to: '' };
+
+    const safeReadingDay = Math.max(1, Math.min(31, Number(readingDay || 1) || 1));
+    const endMonthIndex = parsed.month - 1;
+    const startMonthDate = new Date(parsed.year, endMonthIndex - 1, 1);
+    const endDate = new Date(parsed.year, endMonthIndex, clampMonthDay(parsed.year, endMonthIndex, safeReadingDay));
+    const startDate = new Date(
+        startMonthDate.getFullYear(),
+        startMonthDate.getMonth(),
+        clampMonthDay(startMonthDate.getFullYear(), startMonthDate.getMonth(), safeReadingDay)
+    );
+    return {
+        from: formatIsoDate(startDate),
+        to: formatIsoDate(endDate),
+        endDate
+    };
+}
+
+function buildBranchAddress(branch) {
+    const parts = [
+        branch?.room,
+        branch?.floor,
+        branch?.bldg,
+        branch?.street,
+        branch?.brgy,
+        branch?.city
+    ].filter(Boolean);
+    return parts.join(', ');
+}
+
+function setRtpPrintPayload(payload) {
+    currentRtpPrintPayload = payload || null;
+    els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
+    els.billingCalcPrintBtn?.classList.toggle('hidden', !payload);
+}
+
+function isRtpBillingCell(row, cell) {
+    const profileCode = String(getRowBillingProfile(row)?.category_code || '').trim().toUpperCase();
+    if (profileCode === 'RTP') return true;
+    return (Array.isArray(cell?.reading_groups) ? cell.reading_groups : []).some((group) => {
+        return String(getContractCategoryMeta(group?.category_id)?.code || '').trim().toUpperCase() === 'RTP';
+    });
+}
+
+function getPrimaryRtpReadingGroup(row, cell) {
+    const readingGroups = Array.isArray(cell?.reading_groups) ? cell.reading_groups : [];
+    return readingGroups.find((group) => String(getContractCategoryMeta(group?.category_id)?.code || '').trim().toUpperCase() === 'RTP')
+        || readingGroups[0]
+        || null;
+}
+
+function mapRowsById(rows) {
+    const map = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const key = String(row?.id || row?._docId || '').trim();
+        if (key) map.set(key, row);
+    });
+    return map;
+}
+
+async function loadInvoicePreviewReferenceData() {
+    if (invoicePreviewReferenceData) return invoicePreviewReferenceData;
+    if (invoicePreviewReferencePromise) return invoicePreviewReferencePromise;
+
+    invoicePreviewReferencePromise = Promise.all([
+        MargaUtils.fetchCollection('tbl_companylist'),
+        MargaUtils.fetchCollection('tbl_branchinfo'),
+        MargaUtils.fetchCollection('tbl_billinfo'),
+        MargaUtils.fetchCollection('tbl_machine'),
+        MargaUtils.fetchCollection('tbl_model')
+    ]).then(([companies, branches, billInfoRows, machines, models]) => {
+        invoicePreviewReferenceData = {
+            companies: mapRowsById(companies),
+            branches: mapRowsById(branches),
+            billInfoByBranchId: (Array.isArray(billInfoRows) ? billInfoRows : []).reduce((map, row) => {
+                const key = String(row?.branch_id || '').trim();
+                if (!key) return map;
+                if (!map.has(key)) map.set(key, []);
+                map.get(key).push(row);
+                return map;
+            }, new Map()),
+            machines: mapRowsById(machines),
+            models: mapRowsById(models)
+        };
+        return invoicePreviewReferenceData;
+    }).finally(() => {
+        invoicePreviewReferencePromise = null;
+    });
+
+    return invoicePreviewReferencePromise;
+}
+
+function computePreviewAmounts(totalAmount, readingGroup) {
+    const total = Number(totalAmount || 0) || 0;
+    const vatAmount = Number(readingGroup?.vat_amount || 0) || 0;
+    const withVat = Boolean(readingGroup?.with_vat);
+    let vatableSales = total;
+    let computedVat = 0;
+
+    if (vatAmount > 0 && total >= vatAmount) {
+        computedVat = vatAmount;
+        vatableSales = Math.max(0, total - vatAmount);
+    } else if (withVat && total > 0) {
+        vatableSales = total / 1.12;
+        computedVat = total - vatableSales;
+    }
+
+    return {
+        total,
+        vatableSales,
+        vatAmount: computedVat,
+        vatExempt: 0,
+        zeroRated: 0,
+        lessVat: 0,
+        amountDue: total
+    };
+}
+
+function computePreviewAmountsFromEstimate(estimate) {
+    return {
+        total: Number(estimate?.amountDue || 0) || 0,
+        vatableSales: Number(estimate?.netAmount || 0) || 0,
+        vatAmount: Number(estimate?.vatAmount || 0) || 0,
+        vatExempt: 0,
+        zeroRated: 0,
+        lessVat: 0,
+        amountDue: Number(estimate?.amountDue || 0) || 0
+    };
+}
+
+function setCalcInlinePrintState(state = {}) {
+    const button = document.getElementById('calcInlinePrintBtn');
+    const hint = document.getElementById('calcInlinePrintHint');
+    if (!button && !hint) return;
+
+    const visible = state.visible !== false;
+    if (button) {
+        button.classList.toggle('hidden', !visible);
+        button.disabled = Boolean(state.disabled);
+    }
+    if (hint) {
+        hint.textContent = state.hint || '';
+    }
+}
+
+async function buildRtpPreviewPayload(row, cell, monthKey) {
+    if (!isRtpBillingCell(row, cell)) return null;
+
+    const references = await loadInvoicePreviewReferenceData();
+    const company = references.companies.get(String(row?.company_id || '').trim()) || null;
+    const branch = references.branches.get(String(row?.branch_id || '').trim()) || null;
+    const billInfoRows = references.billInfoByBranchId.get(String(row?.branch_id || '').trim()) || [];
+    const billInfo = billInfoRows[0] || null;
+    const machine = references.machines.get(String(row?.machine_id || '').trim()) || null;
+    const model = references.models.get(String(machine?.model_id || '').trim()) || null;
+    const readingGroup = getPrimaryRtpReadingGroup(row, cell);
+    const period = buildBillingPeriod(monthKey, row?.reading_day);
+    const invoiceDate = asValidDate(cell?.latest_invoice_date) || period.endDate || new Date();
+    const totals = computePreviewAmounts(
+        cell?.display_amount_total || cell?.amount_total || cell?.reading_amount_total || 0,
+        readingGroup
+    );
+    const serialNumber = String(machine?.serial || row?.serial_number || '').trim();
+    const modelName = String(model?.modelname || machine?.description || row?.machine_label || '').trim();
+    const accountName = String(
+        row?.display_name
+        || row?.account_name
+        || billInfo?.payeename
+        || billInfo?.endusername
+        || company?.companyname
+        || row?.company_name
+        || ''
+    ).trim();
+    const address = String(
+        billInfo?.payeeadd
+        || billInfo?.enduseradd
+        || buildBranchAddress(branch)
+        || ''
+    ).trim();
+
+    return {
+        customerName: accountName || 'Unknown Customer',
+        tin: String(company?.company_tin || '').trim() || 'N/A',
+        address: address || 'N/A',
+        invoiceDate: formatUsDate(invoiceDate),
+        readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
+        monthLabel: formatMonthLongLabel(monthKey, monthKey),
+        contractCode: 'RTP',
+        businessStyle: String(company?.business_style || '').trim() || 'N/A',
+        printerModel: modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A'),
+        billingFrom: period.from || 'N/A',
+        billingTo: period.to || 'N/A',
+        totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
+        rate: Number(readingGroup?.page_rate || getRowBillingProfile(row)?.page_rate || 0) || 0,
+        totals
+    };
+}
+
+async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
+    if (String(context?.profile?.category_code || '').trim().toUpperCase() !== 'RTP') return null;
+
+    const references = await loadInvoicePreviewReferenceData();
+    const company = references.companies.get(String(row?.company_id || '').trim()) || null;
+    const branch = references.branches.get(String(row?.branch_id || '').trim()) || null;
+    const billInfoRows = references.billInfoByBranchId.get(String(row?.branch_id || '').trim()) || [];
+    const billInfo = billInfoRows[0] || null;
+    const machine = references.machines.get(String(row?.machine_id || '').trim()) || null;
+    const model = references.models.get(String(machine?.model_id || '').trim()) || null;
+    const period = buildBillingPeriod(context?.monthKey, row?.reading_day);
+    const invoiceDate = period.endDate || new Date();
+    const serialNumber = String(machine?.serial || row?.serial_number || '').trim();
+    const modelName = String(model?.modelname || machine?.description || row?.machine_label || '').trim();
+    const accountName = String(
+        row?.display_name
+        || row?.account_name
+        || billInfo?.payeename
+        || billInfo?.endusername
+        || company?.companyname
+        || row?.company_name
+        || ''
+    ).trim();
+    const address = String(
+        billInfo?.payeeadd
+        || billInfo?.enduseradd
+        || buildBranchAddress(branch)
+        || ''
+    ).trim();
+
+    return {
+        customerName: accountName || 'Unknown Customer',
+        tin: String(company?.company_tin || '').trim() || 'N/A',
+        address: address || 'N/A',
+        invoiceDate: formatUsDate(invoiceDate),
+        readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
+        monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
+        contractCode: 'RTP',
+        businessStyle: String(company?.business_style || '').trim() || 'N/A',
+        printerModel: modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A'),
+        billingFrom: period.from || 'N/A',
+        billingTo: period.to || 'N/A',
+        totalPages: Number(estimate?.netPages || 0) || 0,
+        rate: Number(context?.profile?.page_rate || 0) || 0,
+        totals: computePreviewAmountsFromEstimate(estimate)
+    };
+}
+
+function buildRtpPreviewHtml(preview) {
+    const totals = preview?.totals || {};
+    return `
+        <section class="rtp-preview-shell" aria-label="RTP print preview">
+            <div class="rtp-preview-note">RTP</div>
+            <div class="rtp-preview-paper">
+                <div class="rtp-print-sheet">
+                    <div class="rtp-field rtp-customer-name">${escapeHtml(preview?.customerName || 'Unknown Customer')}</div>
+                    <div class="rtp-field rtp-customer-tin">${escapeHtml(preview?.tin || 'N/A')}</div>
+                    <div class="rtp-field rtp-customer-address">${escapeHtml(preview?.address || 'N/A')}</div>
+
+                    <div class="rtp-field rtp-meta-date">${escapeHtml(preview?.invoiceDate || '')}</div>
+                    <div class="rtp-field rtp-meta-code">${escapeHtml(preview?.readingCode || '')}</div>
+                    <div class="rtp-field rtp-meta-month">${escapeHtml(preview?.monthLabel || '')}</div>
+                    <div class="rtp-field rtp-meta-type">${escapeHtml(preview?.contractCode || 'RTP')}</div>
+
+                    <div class="rtp-field rtp-business-style">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
+                    <div class="rtp-field rtp-printer-model">${escapeHtml(preview?.printerModel || 'N/A')}</div>
+                    <div class="rtp-field rtp-billing-from">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
+                    <div class="rtp-field rtp-billing-to">${escapeHtml(preview?.billingTo || 'N/A')}</div>
+                    <div class="rtp-field rtp-total-pages">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
+                    <div class="rtp-field rtp-rate">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+
+                    <div class="rtp-field rtp-amount rtp-amount-total">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
+                    <div class="rtp-field rtp-amount rtp-amount-vat">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
+                    <div class="rtp-field rtp-amount rtp-amount-vatable">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
+                    <div class="rtp-field rtp-amount rtp-amount-exempt">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
+                    <div class="rtp-field rtp-amount rtp-amount-zero">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
+                    <div class="rtp-field rtp-amount rtp-amount-less-vat">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
+                    <div class="rtp-field rtp-amount rtp-amount-due">${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</div>
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function buildRtpPrintDocument(preview) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>RTP Print</title>
+    <style>
+        @page { size: landscape; margin: 0; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        body { font-family: "Arial", "Helvetica Neue", sans-serif; }
+        .print-wrap {
+            width: 279mm;
+            min-height: 216mm;
+            padding: 6mm 8mm;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .rtp-preview-shell {
+            display: block;
+            width: 255mm;
+        }
+        .rtp-preview-note {
+            display: none;
+        }
+        .rtp-preview-paper {
+            padding: 0;
+            border: 0;
+            background: transparent;
+        }
+        .rtp-print-sheet {
+            position: relative;
+            width: 255mm;
+            height: 190mm;
+            color: #111827;
+            font-size: 4.6mm;
+            font-weight: 600;
+            line-height: 1.18;
+        }
+        .rtp-field { position: absolute; white-space: pre-wrap; }
+        .rtp-customer-name { top: 26mm; left: 18mm; width: 150mm; font-weight: 700; }
+        .rtp-customer-tin { top: 35mm; left: 18mm; width: 90mm; }
+        .rtp-customer-address { top: 43mm; left: 18mm; width: 150mm; }
+        .rtp-meta-date { top: 26mm; left: 205mm; width: 32mm; text-align: left; }
+        .rtp-meta-code { top: 35mm; left: 205mm; width: 32mm; text-align: left; }
+        .rtp-meta-month { top: 43mm; left: 205mm; width: 32mm; text-align: left; }
+        .rtp-meta-type { top: 53mm; left: 205mm; width: 32mm; text-align: left; }
+        .rtp-business-style { top: 68mm; left: 18mm; width: 175mm; }
+        .rtp-printer-model { top: 78mm; left: 18mm; width: 175mm; }
+        .rtp-billing-from { top: 89mm; left: 104mm; width: 34mm; text-align: center; }
+        .rtp-billing-to { top: 89mm; left: 164mm; width: 34mm; text-align: center; }
+        .rtp-total-pages { top: 100mm; left: 113mm; width: 26mm; text-align: center; }
+        .rtp-rate { top: 109mm; left: 33mm; width: 24mm; text-align: left; }
+        .rtp-amount { left: 211mm; width: 27mm; text-align: right; }
+        .rtp-amount-total { top: 128mm; }
+        .rtp-amount-vat { top: 137mm; }
+        .rtp-amount-vatable { top: 145mm; }
+        .rtp-amount-exempt { top: 154mm; }
+        .rtp-amount-zero { top: 163mm; }
+        .rtp-amount-less-vat { top: 172mm; }
+        .rtp-amount-due { top: 181mm; font-size: 5.6mm; font-weight: 800; }
+    </style>
+</head>
+<body>
+    <div class="print-wrap">
+        ${buildRtpPreviewHtml(preview)}
+    </div>
+</body>
+</html>`;
+}
+
+function printCurrentRtpInvoice() {
+    if (!currentRtpPrintPayload) {
+        MargaUtils.showToast('Open an RTP invoice first.', 'error');
+        return;
+    }
+
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1180,height=860');
+    if (!printWindow) {
+        MargaUtils.showToast('The print window was blocked.', 'error');
+        return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildRtpPrintDocument(currentRtpPrintPayload));
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => {
+        printWindow.print();
+    }, 250);
 }
 
 function setStatus(text, type = 'idle') {
@@ -734,10 +1159,12 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
 }
 
 function closeBillingCalcModal() {
+    billingCalcRequestToken += 1;
+    setRtpPrintPayload(null);
     els.billingCalcModal?.classList.add('hidden');
 }
 
-function openBillingCalcModal(rowId, monthKey) {
+async function openBillingCalcModal(rowId, monthKey) {
     const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
         || (lastPayload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
     const context = buildBillingCalculationContext(row, monthKey);
@@ -750,9 +1177,12 @@ function openBillingCalcModal(rowId, monthKey) {
     const latest = context.latestPriorGroup;
     const latestInvoice = context.latestInvoice;
     const estimate = calculateBillingEstimate(context, context.previousMeter, context.presentMeter);
+    const canPrintRtp = String(profile.category_code || '').trim().toUpperCase() === 'RTP';
+    const requestToken = ++billingCalcRequestToken;
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
+    setRtpPrintPayload(null);
 
     els.billingCalcContent.innerHTML = `
         <div class="calc-layout">
@@ -769,6 +1199,22 @@ function openBillingCalcModal(rowId, monthKey) {
                         : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
                 }
             </div>
+            ${
+                canPrintRtp
+                    ? `
+                        <div>
+                            <div class="calc-print-row">
+                                <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print RTP</button>
+                                <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
+                            </div>
+                            <div class="detail-section-title">RTP Print Preview</div>
+                            <div id="calcRtpPreviewMount">
+                                <div class="detail-empty">Loading printable RTP preview...</div>
+                            </div>
+                        </div>
+                    `
+                    : ''
+            }
             <div class="calc-form-grid">
                 <div class="calc-field">
                     <label for="calcInvoiceInput">Invoice</label>
@@ -901,6 +1347,52 @@ function openBillingCalcModal(rowId, monthKey) {
     const quotaValue = document.getElementById('calcQuotaValue');
     const flowValue = document.getElementById('calcFlowValue');
     const warningValue = document.getElementById('calcWarningValue');
+    const previewMount = document.getElementById('calcRtpPreviewMount');
+    const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
+
+    inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
+    if (canPrintRtp) {
+        setCalcInlinePrintState({
+            visible: true,
+            disabled: true,
+            hint: 'Preparing preview...'
+        });
+    }
+
+    const renderCalcPreview = async (nextEstimate) => {
+        if (!canPrintRtp || !previewMount) return;
+        try {
+            const preview = await buildRtpPreviewPayloadFromCalculation(row, context, nextEstimate);
+            if (requestToken !== billingCalcRequestToken) return;
+            if (!preview) {
+                previewMount.innerHTML = '<div class="detail-empty">This contract does not have an RTP print preview.</div>';
+                setRtpPrintPayload(null);
+                setCalcInlinePrintState({
+                    visible: true,
+                    disabled: true,
+                    hint: 'Preview unavailable for this row.'
+                });
+                return;
+            }
+            previewMount.innerHTML = buildRtpPreviewHtml(preview);
+            setRtpPrintPayload(preview);
+            setCalcInlinePrintState({
+                visible: true,
+                disabled: false,
+                hint: 'Ready to print on the preprinted RTP form.'
+            });
+        } catch (error) {
+            console.warn('Unable to build RTP calculator preview.', error);
+            if (requestToken !== billingCalcRequestToken) return;
+            previewMount.innerHTML = '<div class="detail-empty">The printable RTP preview could not load the extra customer data right now.</div>';
+            setRtpPrintPayload(null);
+            setCalcInlinePrintState({
+                visible: true,
+                disabled: true,
+                hint: 'Preview failed to load.'
+            });
+        }
+    };
 
     const recompute = () => {
         const next = calculateBillingEstimate(
@@ -928,12 +1420,14 @@ function openBillingCalcModal(rowId, monthKey) {
                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
         }
         if (warningValue) warningValue.textContent = next.warning || '';
+        renderCalcPreview(next);
     };
 
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
     spoilageInput?.addEventListener('input', recompute);
     els.billingCalcModal.classList.remove('hidden');
+    await renderCalcPreview(estimate);
 }
 
 function renderMatrixTable(payload) {
@@ -1160,6 +1654,8 @@ function renderMatrixTable(payload) {
 }
 
 function closeInvoiceDetailModal() {
+    invoiceDetailRequestToken += 1;
+    setRtpPrintPayload(null);
     els.invoiceDetailModal?.classList.add('hidden');
 }
 
@@ -1228,7 +1724,7 @@ function openSerialDetailModal(rowId) {
     els.serialDetailModal.classList.remove('hidden');
 }
 
-function openInvoiceDetailModal(rowId, monthKey) {
+async function openInvoiceDetailModal(rowId, monthKey) {
     if (!lastPayload) return;
 
     const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
@@ -1242,11 +1738,38 @@ function openInvoiceDetailModal(rowId, monthKey) {
     const readingGroups = Array.isArray(cell.reading_groups) ? cell.reading_groups : [];
     const shownAmount = Number(cell.display_amount_total || cell.amount_total || cell.reading_amount_total || 0);
     const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
+    const requestToken = ++invoiceDetailRequestToken;
 
     els.invoiceDetailTitle.textContent = title;
     els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter breakdown amount'}`;
+    els.invoiceDetailContent.innerHTML = '<div class="detail-empty">Loading invoice detail...</div>';
+    setRtpPrintPayload(null);
+    els.invoiceDetailModal.classList.remove('hidden');
+
+    let rtpPreviewBlock = '';
+    if (isRtpBillingCell(row, cell)) {
+        try {
+            const preview = await buildRtpPreviewPayload(row, cell, monthKey);
+            if (requestToken !== invoiceDetailRequestToken) return;
+            if (preview) {
+                setRtpPrintPayload(preview);
+                rtpPreviewBlock = `
+                    <div class="detail-section-title">RTP Print Preview</div>
+                    ${buildRtpPreviewHtml(preview)}
+                `;
+            }
+        } catch (error) {
+            console.warn('Unable to build RTP preview.', error);
+            if (requestToken !== invoiceDetailRequestToken) return;
+            rtpPreviewBlock = `
+                <div class="detail-section-title">RTP Print Preview</div>
+                <div class="detail-empty">The printable RTP preview could not load the extra customer data right now.</div>
+            `;
+        }
+    }
 
     els.invoiceDetailContent.innerHTML = `
+        ${rtpPreviewBlock}
         <div class="detail-summary-grid">
             <article class="detail-summary-card">
                 <span class="label">Shown Amount</span>
@@ -1361,8 +1884,6 @@ function openInvoiceDetailModal(rowId, monthKey) {
                 : '<div class="detail-empty">No meter-reading breakdown was returned for this cell.</div>'
         }
     `;
-
-    els.invoiceDetailModal.classList.remove('hidden');
 }
 
 function renderAll(payload) {
@@ -1450,10 +1971,12 @@ function bindEvents() {
         openInvoiceDetailModal(trigger.dataset.rowId, trigger.dataset.monthKey);
     });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
+    els.rtpInvoicePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
     });
     els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
+    els.billingCalcPrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     els.billingCalcModal?.addEventListener('click', (event) => {
         if (event.target === els.billingCalcModal) closeBillingCalcModal();
     });

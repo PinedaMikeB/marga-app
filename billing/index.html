@@ -250,7 +250,10 @@
                     <div class="sheet-title" id="invoiceDetailTitle">Invoice Detail</div>
                     <p class="sheet-copy" id="invoiceDetailSubtitle">Invoice and machine breakdown for this billed month.</p>
                 </div>
-                <button class="btn btn-secondary" type="button" id="invoiceDetailCloseBtn">Close</button>
+                <div class="billing-modal-actions">
+                    <button class="btn btn-primary hidden" type="button" id="rtpInvoicePrintBtn">Print RTP</button>
+                    <button class="btn btn-secondary" type="button" id="invoiceDetailCloseBtn">Close</button>
+                </div>
             </div>
             <div class="billing-modal-body" id="invoiceDetailContent"></div>
         </div>
@@ -276,7 +279,10 @@
                     <div class="sheet-title" id="billingCalcTitle">Billing Calculation</div>
                     <p class="sheet-copy" id="billingCalcSubtitle">Contract type, rate, and meter context for this billing month.</p>
                 </div>
-                <button class="btn btn-secondary" type="button" id="billingCalcCloseBtn">Close</button>
+                <div class="billing-modal-actions">
+                    <button class="btn btn-primary hidden" type="button" id="billingCalcPrintBtn">Print RTP</button>
+                    <button class="btn btn-secondary" type="button" id="billingCalcCloseBtn">Close</button>
+                </div>
             </div>
             <div class="billing-modal-body" id="billingCalcContent"></div>
         </div>
