@@ -7,9 +7,10 @@ Start every new chat by reading:
 3. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`
 
 ## Current Stable Billing Baseline
-- Billing dashboard is pinned to the April 6-equivalent snapshot.
-- Current safe commit on `main`: `77ff141` `Rollback billing dashboard to April 6 snapshot`
-- This was restored because later April 7 to April 15 billing changes caused blank matrices, false billed states, or `502` errors.
+- Billing dashboard is currently live on `main` with the save-first billing workflow and RTP/RTF invoice print preview work.
+- Current safe commit on `main`: `e9338ab` `Add invoice right margin control`
+- Older rollback reference: `77ff141` `Rollback billing dashboard to April 6 snapshot`
+- If Billing breaks again, inspect the live Netlify function payload and Firestore data before doing another rollback.
 
 ## Do Not Reintroduce Without Review
 - `6ac79f7` `Add missed reading and catch-up billing states`
@@ -21,9 +22,33 @@ Start every new chat by reading:
 These may be useful ideas, but they must not be reapplied blindly. Re-test against the current live API first.
 
 ## What The Next Chat Should Protect
-- Keep the current billing dashboard working before adding new states or filters.
-- Treat the live Billing UI behavior at commit `77ff141` as the protected baseline.
-- If Billing breaks again, inspect the live Netlify function payload before doing another rollback.
+- Keep the current Billing dashboard working before adding new states or filters.
+- Treat the live Billing UI behavior at commit `e9338ab` as the protected baseline for billing save, invoice lookup, and RTP/RTF printing.
+- If the current chat/thread is for `marga-biz`, future Marga App implementation should continue in the Marga-App thread. If a future chat is in the wrong repo/thread, stop and redirect before editing.
+- Never mix `marga-biz` SEO/site work with `Marga-App` billing/application changes in the same commit.
+
+## Billing Print Template Protection
+- Invoice print templates must be saved in Firebase, not only in Chrome/localStorage.
+- Firestore source of truth:
+  - collection: `tbl_app_settings`
+  - document: `billing_invoice_print_templates_v1`
+  - key: `billing_invoice_print_templates`
+- Chrome/localStorage is only a cache, fallback, and migration source.
+- `Save Template` must persist the full layout object to Firebase, including:
+  - `paperWidthCm`, `paperHeightCm`, `orientation`
+  - `offsetXmm` left margin, `offsetYmm` top margin, `rightMarginMm` right-side paper allowance
+  - `scale`
+  - section positions and font sizes for `header`, `description`, `meta`, and `totals`
+  - totals controls: `amountWidthMm`, `amountScaleX`, `amountRightPadMm`, `amountDueFontScale`
+- Do not remove the portrait-safe right-margin clamp; it prevents Chrome from flipping the preview back to landscape.
+- Chrome print preview must have `Headers and footers` turned off and browser margins should stay at none/default zero behavior from the app `@page` rule.
+
+## Billing Workflow Protection
+- Billing calculation modal should save the invoice first.
+- Print button should stay disabled until the saved billing snapshot matches the current modal values.
+- April 26 or the target month cell must show the saved billing after save.
+- Invoice numbers must be unique. If a bill is deleted/cancelled, that invoice number should become available again only after the billing record is actually removed or marked cancelled according to the agreed workflow.
+- Keep the invoice number search box so an invoice can be traced before deletion.
 
 ## Petty Cash Status
 - Petty Cash module files were not rolled back.
@@ -33,6 +58,6 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 - APD still contains Petty Cash references and the Petty Cash module itself was not deleted.
 
 ## Safe Next Step
-- Do not change billing logic first.
-- If needed, re-add the Billing sidebar `Petty Cash` link as a separate UI-only patch after Billing is confirmed stable.
-
+- Continue Marga-App work in the Marga-App thread.
+- For print-layout tuning, adjust the Firebase `Invoice RTP` or `Invoice RTF` template through the Billing modal, click `Save Template`, then verify it reloads from the dropdown after refresh.
+- For any billing-data change, test one customer/month first before broad dashboard changes.

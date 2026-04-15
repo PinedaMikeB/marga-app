@@ -21,6 +21,8 @@ MARGA is a modern web-based enterprise management system intended to replace the
 - Hosted on Netlify, developed locally then pushed to GitHub.
 - Firestore is the operational datastore for the web app.
 - Legacy database remains the source of truth during Phase 1.
+- Keep Marga App implementation in the `Marga-App` repo/thread. If the active thread or cwd is `marga-biz`, stop and redirect before editing app code.
+- User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
 
 ## Phased Migration Strategy
 ### Phase 1: Mirror + Monitor (Current)
@@ -77,6 +79,28 @@ Security reminder:
 - Each table should track a watermark:
   - preferred: `max(id)` for the table
   - fallback: a stable datetime or composite key if table has no numeric ID
+- App settings that users tune in the web app must be stored in Firebase, not only in browser storage.
+- Browser localStorage may be used only as cache, fallback, or migration source for durable settings.
+
+## Billing Invoice Print Layout Rules
+- Current protected Billing print/save baseline: `e9338ab`.
+- Billing invoice print layouts are operational settings and must be durable in Firebase.
+- Firestore source of truth:
+  - collection: `tbl_app_settings`
+  - document: `billing_invoice_print_templates_v1`
+  - setting key: `billing_invoice_print_templates`
+- Template save/load must preserve the complete calibration object:
+  - paper size: `paperWidthCm`, `paperHeightCm`
+  - `orientation`
+  - margins/placement: `offsetXmm` left margin, `offsetYmm` top margin, `rightMarginMm` right-side printable allowance
+  - `scale`
+  - section settings for `header`, `description`, `meta`, and `totals`
+  - section `xMm`, `yMm`, and `fontScale`
+  - totals controls: `amountWidthMm`, `amountScaleX`, `amountRightPadMm`, `amountDueFontScale`
+- `Save Template` must write the full template library to Firebase `templates_json` and preserve `active_template_name`.
+- Do not make Chrome/localStorage the source of truth for invoice templates.
+- Keep the portrait-safe right-margin clamp so adding right-side paper room does not cause Chrome print preview to become landscape.
+- Keep the print document using `@page` margin `0`; instruct users to turn off Chrome `Headers and footers`.
 
 ## Key UX Principles
 - Default views should be department-scoped (Billing / Collection / Service).

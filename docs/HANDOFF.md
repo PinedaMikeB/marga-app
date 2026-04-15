@@ -14,15 +14,18 @@ Each thread should update only the relevant module sections plus `Current Focus`
 5. Do not rewrite legacy-history sections unless they are wrong.
 
 ## Current Focus
-- Protect the current Billing dashboard rollback baseline before adding any new Billing logic.
-- Treat commit `77ff141` as the protected Billing snapshot until a better stable state is proven.
+- Protect the current Billing dashboard print/save baseline before adding any new Billing logic.
+- Treat commit `e9338ab` as the protected Billing snapshot for the save-first workflow, invoice lookup, and RTP/RTF print layout.
+- Keep Marga App implementation inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
 - Keep the dual-lane office sync reliable after downtime or network loss.
 - Treat live MySQL as the business source of truth for office, finance, customer, machine, and contract records.
 - Keep APD and Petty Cash aligned on one shared chart-of-accounts source while petty cash stays read-only for account maintenance.
 
 ## Next Actions
-- Confirm Billing behavior at commit `77ff141` after Netlify finishes deploying.
-- If Billing still errors, inspect the live Billing API payload and runtime path before doing more rollbacks.
+- Continue Marga-App work in the Marga-App thread, not a `marga-biz` SEO/site thread.
+- Confirm Billing behavior at commit `e9338ab` after Netlify finishes deploying.
+- For invoice print tuning, adjust through the Billing modal, click `Save Template`, refresh, and verify the template reloads from Firebase.
+- If Billing still errors, inspect the live Billing API payload, runtime path, and Firestore data before doing more rollbacks.
 - Do not reapply April 7 to April 15 Billing commits blindly.
 - Restart the office supervisor so commit `b9246e2` recovery logic is the code actually running on the PC.
 - Verify both lanes recover automatically after temporary outage and catch up missed rows.
@@ -46,7 +49,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | --- | --- | --- | --- |
 | Service Dispatch | In Progress | Printed-route behavior now mirrors legacy more closely and field close/time writeback works. | Continue exact legacy parity checks for route status/count summaries. |
 | Field App (Tech/Messenger) | In Progress | Time in/out, finish, pending, signer, meter, notes, and safe writeback are live. | Add photo upload and admin queue UX. |
-| Billing | Planned | No rebuilt workflow yet; must follow SQL-originated invoice logic. | Design UI against synced billing data and office process rules. |
+| Billing | In Progress | Save-first billing modal, invoice lookup/delete controls, and RTP/RTF print preview/layout calibration are live on `main`. | Protect current behavior, keep templates in Firebase, and test one customer/month before broad logic changes. |
 | Collections | In Progress | Base records exist, but workflow design still needs stricter SQL parity. | Design queue, follow-up, and payment visibility against legacy semantics. |
 | Accounts Payable & Disbursement | In Progress | Working APD prototype page exists with shared account glossary, payable intake, and check register control board. | Connect the APD prototype to real legacy finance tables after SQL mapping review. |
 | Petty Cash | In Progress | Working petty cash prototype page now exists with read-only shared chart-of-accounts selection, daily ledger entry, printable day report, and replenishment request drafting. | Validate office wording and map the approved petty cash workflow to legacy SQL tables. |
@@ -57,6 +60,36 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Sync Updater | In Progress | Dual-lane supervisor exists, restart shortcuts exist, and recovery logic is improved. | Validate outage recovery and extend coverage to billing/collections/payments. |
 
 ## Session Log (Top First)
+### 2026-04-15 - Billing Save And Invoice Print Calibration
+- Built and pushed the current Billing save-first workflow and print-layout baseline through commit `e9338ab`.
+- Current protected Billing baseline:
+  - save billing first before printing
+  - print button enables only when modal values match the saved billing snapshot
+  - target month cell should show the saved billing after save
+  - invoice lookup/search remains available to trace invoice numbers before delete/cancel
+  - invoice numbers must stay unique
+- Added RTP and RTF invoice print preview/print support for preprinted invoice paper.
+- Added calibration controls for:
+  - paper side A/B, orientation, scale
+  - left margin `offsetXmm`, top margin `offsetYmm`, and right-side printable allowance `rightMarginMm`
+  - section x/y/font-size for Header, Service Block, Date/Terms, and Totals
+  - totals amount width, horizontal fit, right padding, and final amount size
+- Print-template source of truth is Firebase:
+  - collection: `tbl_app_settings`
+  - document: `billing_invoice_print_templates_v1`
+  - field: `templates_json`
+  - active template field: `active_template_name`
+- `Save Template` must save all layout fields to Firebase, including top margin, left margin, right margin, scale, paper size, orientation, and section settings.
+- Chrome/localStorage is only a cache/fallback/migration source and must not be the only durable copy.
+- Preserve the portrait-safe right-margin clamp so adding right-side paper space does not make Chrome switch back to landscape.
+- Operational reminder:
+  - Chrome print preview must have `Headers and footers` turned off
+  - keep app `@page` margin at `0`
+  - use the Billing modal dropdown to load `Invoice RTP` or `Invoice RTF`; do not recalibrate from scratch if a template exists
+- Thread/repo protection:
+  - this work belongs in `Marga-App`
+  - if the user asks for Marga App work inside a `marga-biz` thread, stop and redirect before editing
+
 ### 2026-04-15 - Billing Rollback Protection
 - Traced Billing rollback points from chat history and git history instead of doing blind resets.
 - Identified that the April 13 rollback target was not the last stable user-confirmed state.
