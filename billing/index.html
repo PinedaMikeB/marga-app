@@ -269,6 +269,19 @@
         </div>
     </div>
 
+    <div class="billing-modal-overlay hidden" id="billingCalcModal">
+        <div class="billing-modal-card billing-calc-card">
+            <div class="billing-modal-header">
+                <div>
+                    <div class="sheet-title" id="billingCalcTitle">Billing Calculation</div>
+                    <p class="sheet-copy" id="billingCalcSubtitle">Contract type, rate, and meter context for this billing month.</p>
+                </div>
+                <button class="btn btn-secondary" type="button" id="billingCalcCloseBtn">Close</button>
+            </div>
+            <div class="billing-modal-body" id="billingCalcContent"></div>
+        </div>
+    </div>
+
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>
     <script src="../shared/js/utils.js"></script>

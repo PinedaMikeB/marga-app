@@ -11,6 +11,18 @@ const READING_PURPOSE_ID = 8;
 const DEFAULT_MONTHS_BACK = 6;
 const DETAIL_ID_PREVIEW_LIMIT = 12;
 const READING_CATEGORY_IDS = new Set([1, 3, 8]);
+const CONTRACT_CATEGORY_META = {
+    1: { code: 'RTP', label: 'Rental Per Page' },
+    2: { code: 'RTF', label: 'Rental Fixed Rate' },
+    3: { code: 'STP', label: 'Straight Per Page' },
+    4: { code: 'MAT', label: 'Materials' },
+    5: { code: 'RTC', label: 'Rental Toner Covered' },
+    6: { code: 'STC', label: 'Straight Toner Covered' },
+    7: { code: 'MAC', label: 'Machine Account' },
+    8: { code: 'MAP', label: 'Metered Account Plan' },
+    9: { code: 'REF', label: 'Refill' },
+    10: { code: 'RD', label: 'Reading Only' }
+};
 const BRANCH_METADATA_OVERRIDES = {
     '152': { company: 'China Bank Savings - Branches', branch: 'San Fernando - Bayan (CBS)' },
     '169': { company: 'China Bank Savings - Branches', branch: 'Subic (CBS)' },
@@ -613,6 +625,14 @@ function roundCurrency(value) {
     return Number(Number(value || 0).toFixed(2));
 }
 
+function getContractCategoryMeta(categoryId) {
+    const normalized = Number(categoryId || 0) || 0;
+    return CONTRACT_CATEGORY_META[normalized] || {
+        code: normalized ? `CAT ${normalized}` : 'N/A',
+        label: normalized ? 'Unmapped Contract Type' : 'Unclassified Contract'
+    };
+}
+
 function isReadingContract(contract) {
     return READING_CATEGORY_IDS.has(Number(contract?.categoryId || 0));
 }
@@ -760,6 +780,9 @@ function serializeReadingGroups(groups) {
             task_date: group.task_date,
             machine_id: group.machine_id,
             contractmain_id: group.contractmain_id,
+            previous_meter: Number(group.previous_meter || 0) || 0,
+            present_meter: Number(group.present_meter || 0) || 0,
+            total_consumed: Number(group.total_consumed || 0) || 0,
             pages: Number(group.pages || 0),
             page_rate: Number(group.page_rate || 0),
             monthly_quota: Number(group.monthly_quota || 0),
@@ -865,11 +888,38 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
             latest_billed_month: null,
             reading_day: null,
             reading_day_source: null,
-            expected_start_month: null
+            expected_start_month: null,
+            billing_profile: null
         };
         machineRows.set(rowId, row);
     }
     return row;
+}
+
+function buildContractProfile(contract) {
+    const categoryId = Number(contract?.categoryId || 0) || 0;
+    const categoryMeta = getContractCategoryMeta(categoryId);
+    const pricingMode = isReadingContract(contract)
+        ? 'reading'
+        : ((Number(contract?.monthlyRate || 0) || 0) > 0 ? 'fixed' : 'other');
+    return {
+        category_id: categoryId,
+        category_code: categoryMeta.code,
+        category_label: categoryMeta.label,
+        pricing_mode: pricingMode,
+        page_rate: Number(contract?.pageRate || 0) || 0,
+        monthly_quota: Number(contract?.monthlyQuota || 0) || 0,
+        monthly_rate: Number(contract?.monthlyRate || 0) || 0,
+        page_rate2: Number(contract?.pageRate2 || 0) || 0,
+        monthly_quota2: Number(contract?.monthlyQuota2 || 0) || 0,
+        monthly_rate2: Number(contract?.monthlyRate2 || 0) || 0,
+        with_vat: Number(contract?.withVat || 0) === 1
+    };
+}
+
+function applyContractProfile(row, contract) {
+    if (!row || !contract || row.billing_profile) return;
+    row.billing_profile = buildContractProfile(contract);
 }
 
 function resolveContractBranch(cache, contract) {
@@ -1111,6 +1161,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             serialNumber,
             months
         );
+        applyContractProfile(machineRow, contract);
         const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
         if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
             machineRow.expected_start_month = expectedStartMonth;
@@ -1201,6 +1252,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             serialNumber,
             months
         );
+        applyContractProfile(machineRow, contract);
         const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
         if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
             machineRow.expected_start_month = expectedStartMonth;
@@ -1301,6 +1353,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 serialNumber,
                 months
             );
+            applyContractProfile(machineRow, matchedContract);
             const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
             if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
                 machineRow.expected_start_month = expectedStartMonth;
@@ -1313,12 +1366,18 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 const scheduleId = String(getField(f, ['id']) || '').trim() || `schedule:${monthKey}:${machineRowId}`;
                 const invoiceNum = String(getField(f, ['invoice_num']) || '').trim();
                 const taskDate = toIso(getField(f, ['task_datetime']));
+                const previousMeter = Number(getField(f, ['field_previous_meter']) || 0) || 0;
+                const presentMeter = Number(getField(f, ['field_present_meter', 'meter_reading']) || 0) || 0;
+                const totalConsumed = Number(getField(f, ['field_total_consumed']) || 0) || 0;
                 const readingEntry = {
                     schedule_id: scheduleId,
                     invoice_num: invoiceNum || null,
                     task_date: taskDate,
                     machine_id: String(matchedContract.machId || '').trim(),
                     contractmain_id: String(matchedContract.id || '').trim(),
+                    previous_meter: previousMeter,
+                    present_meter: presentMeter,
+                    total_consumed: totalConsumed > 0 ? totalConsumed : Math.max(0, presentMeter - previousMeter),
                     pages: reading.pages,
                     page_rate: reading.pageRate,
                     monthly_quota: reading.monthlyQuota,
@@ -1393,6 +1452,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 serialNumber,
                 months
             );
+            applyContractProfile(machineRow, matchedContract);
             const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
             if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
                 machineRow.expected_start_month = expectedStartMonth;
@@ -1480,6 +1540,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             serialNumber,
             months
         );
+        applyContractProfile(machineRow, matchedContract);
         const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
         if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
             machineRow.expected_start_month = expectedStartMonth;
@@ -1509,6 +1570,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     task_date: currentEntry.task_date,
                     machine_id: machineId,
                     contractmain_id: contractId,
+                    previous_meter: Number(previousEntry.meter_reading || 0) || 0,
+                    present_meter: Number(currentEntry.meter_reading || 0) || 0,
+                    total_consumed: Math.max(0, Number(currentEntry.meter_reading || 0) - Number(previousEntry.meter_reading || 0)),
                     pages: reading.pages,
                     page_rate: reading.pageRate,
                     monthly_quota: reading.monthlyQuota,
@@ -1797,6 +1861,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             confirmed_received_months_count: row.confirmed_received_months_count,
             unconfirmed_billed_months_count: row.unconfirmed_billed_months_count,
             latest_billed_month: row.latest_billed_month,
+            billing_profile: row.billing_profile || null,
             months: serializedMonths
         });
     });

@@ -28,13 +28,30 @@ const els = {
     serialDetailTitle: null,
     serialDetailSubtitle: null,
     serialDetailContent: null,
-    serialDetailCloseBtn: null
+    serialDetailCloseBtn: null,
+    billingCalcModal: null,
+    billingCalcTitle: null,
+    billingCalcSubtitle: null,
+    billingCalcContent: null,
+    billingCalcCloseBtn: null
 };
 
 let lastPayload = null;
 let renderedMatrixRows = [];
 let searchReloadTimer = null;
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
+const CONTRACT_CATEGORY_META = {
+    1: { code: 'RTP', label: 'Rental Per Page' },
+    2: { code: 'RTF', label: 'Rental Fixed Rate' },
+    3: { code: 'STP', label: 'Straight Per Page' },
+    4: { code: 'MAT', label: 'Materials' },
+    5: { code: 'RTC', label: 'Rental Toner Covered' },
+    6: { code: 'STC', label: 'Straight Toner Covered' },
+    7: { code: 'MAC', label: 'Machine Account' },
+    8: { code: 'MAP', label: 'Metered Account Plan' },
+    9: { code: 'REF', label: 'Refill' },
+    10: { code: 'RD', label: 'Reading Only' }
+};
 
 function getMatrixSearchTerm() {
     return String(els.matrixSearchInput?.value || '').trim().toLowerCase();
@@ -83,6 +100,54 @@ function formatAmount(value) {
 function formatMetricCount(value, singular, plural = `${singular}s`) {
     const count = Number(value || 0);
     return `${formatCount(count)} ${count === 1 ? singular : plural}`;
+}
+
+function getContractCategoryMeta(categoryId) {
+    const normalized = Number(categoryId || 0) || 0;
+    return CONTRACT_CATEGORY_META[normalized] || {
+        code: normalized ? `CAT ${normalized}` : 'N/A',
+        label: normalized ? 'Unclassified Contract' : 'Unclassified Contract'
+    };
+}
+
+function getRowBillingProfile(row) {
+    const profile = row?.billing_profile || null;
+    if (profile) {
+        const categoryMeta = getContractCategoryMeta(profile.category_id);
+        return {
+            ...profile,
+            category_code: profile.category_code || categoryMeta.code,
+            category_label: profile.category_label || categoryMeta.label
+        };
+    }
+
+    const fallbackGroup = Object.values(row?.months || {})
+        .flatMap((cell) => Array.isArray(cell?.reading_groups) ? cell.reading_groups : [])
+        .sort((left, right) => String(right.task_date || '').localeCompare(String(left.task_date || '')))[0];
+    if (!fallbackGroup) return null;
+
+    const categoryMeta = getContractCategoryMeta(fallbackGroup.category_id);
+    return {
+        category_id: Number(fallbackGroup.category_id || 0) || 0,
+        category_code: categoryMeta.code,
+        category_label: categoryMeta.label,
+        pricing_mode: Number(fallbackGroup.page_rate || 0) > 0 ? 'reading' : (Number(fallbackGroup.monthly_rate || 0) > 0 ? 'fixed' : 'other'),
+        page_rate: Number(fallbackGroup.page_rate || 0) || 0,
+        monthly_quota: Number(fallbackGroup.monthly_quota || 0) || 0,
+        monthly_rate: Number(fallbackGroup.monthly_rate || 0) || 0,
+        with_vat: Boolean(fallbackGroup.with_vat)
+    };
+}
+
+function isReadingPricing(profile) {
+    return String(profile?.pricing_mode || '').toLowerCase() === 'reading';
+}
+
+function formatMonthLabel(monthKey, fallback = '') {
+    const match = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return fallback || String(monthKey || '');
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+    return date.toLocaleString('en-PH', { month: 'short', year: '2-digit' });
 }
 
 function parseMonthInput(value) {
@@ -371,6 +436,9 @@ function mergeReadingGroups(groups) {
             task_date: group.task_date,
             machine_id: group.machine_id,
             contractmain_id: group.contractmain_id,
+            previous_meter: Number(group.previous_meter || 0),
+            present_meter: Number(group.present_meter || 0),
+            total_consumed: Number(group.total_consumed || 0),
             pages: Number(group.pages || 0),
             page_rate: Number(group.page_rate || 0),
             monthly_quota: Number(group.monthly_quota || 0),
@@ -501,6 +569,275 @@ function buildCompanySummaryRows(rows, months) {
     return displayRows;
 }
 
+function renderBranchMain(row) {
+    if (row.is_summary_row) return escapeHtml(row.branch_name || 'Main');
+    const profile = getRowBillingProfile(row);
+    const badge = profile?.category_code
+        ? `<span class="billing-code-badge" title="${escapeHtml(profile.category_label || profile.category_code)}">${escapeHtml(profile.category_code)}</span>`
+        : '';
+    return `
+        <span class="branch-head">
+            <span>${escapeHtml(row.branch_name || 'Main')}</span>
+            ${badge}
+        </span>
+    `;
+}
+
+function renderBranchSub(row) {
+    if (row.is_summary_row) return 'Search subtotal across loaded machine rows';
+    const profile = getRowBillingProfile(row);
+    if (profile?.category_label) {
+        return `${profile.category_label} • ${row.account_name || row.company_name || ''}`;
+    }
+    return row.account_name || row.company_name || '';
+}
+
+function collectPriorReadingGroups(row, monthKey) {
+    return Object.entries(row?.months || {})
+        .filter(([key]) => key < monthKey)
+        .flatMap(([key, cell]) => (
+            Array.isArray(cell?.reading_groups)
+                ? cell.reading_groups.map((group) => ({
+                    ...group,
+                    month_key: key,
+                    month_label: cell.month_label_short || formatMonthLabel(key, key)
+                }))
+                : []
+        ))
+        .sort((left, right) => {
+            const leftDate = String(left.task_date || left.month_key || '');
+            const rightDate = String(right.task_date || right.month_key || '');
+            return rightDate.localeCompare(leftDate);
+        });
+}
+
+function buildBillingCalculationContext(row, monthKey) {
+    if (!row || row.is_summary_row) return null;
+    const profile = getRowBillingProfile(row);
+    if (!profile) return null;
+
+    const targetCell = row.months?.[monthKey] || {};
+    const latestPriorGroup = collectPriorReadingGroups(row, monthKey)[0] || null;
+    const previousMeter = latestPriorGroup
+        ? Number(latestPriorGroup.present_meter || latestPriorGroup.previous_meter || 0) || 0
+        : 0;
+
+    return {
+        row,
+        monthKey,
+        monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
+        profile,
+        latestPriorGroup,
+        previousMeter,
+        presentMeter: previousMeter,
+        isReading: isReadingPricing(profile),
+        isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0
+    };
+}
+
+function calculateBillingEstimate(context, previousMeterValue, presentMeterValue) {
+    const profile = context?.profile || {};
+    const previousMeter = Math.max(0, Number(previousMeterValue || 0) || 0);
+    const presentMeter = Math.max(0, Number(presentMeterValue || 0) || 0);
+    const pageRate = Number(profile.page_rate || 0) || 0;
+    const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
+    const monthlyRate = Number(profile.monthly_rate || 0) || 0;
+    const withVat = Boolean(profile.with_vat);
+    let pages = 0;
+    let amountDue = 0;
+    let formula = 'not_available';
+    let warning = '';
+
+    if (context?.isReading) {
+        if (presentMeter < previousMeter) {
+            warning = 'Present meter cannot be lower than the previous meter.';
+        } else {
+            pages = presentMeter - previousMeter;
+            if (pages > 0 && pageRate > 0) {
+                amountDue = pages * pageRate;
+                formula = 'pages_x_rate';
+            } else if (monthlyRate > 0) {
+                amountDue = monthlyRate;
+                formula = 'monthly_rate_fallback';
+            } else {
+                formula = 'missing_rate';
+            }
+        }
+    } else if (context?.isFixed) {
+        amountDue = monthlyRate;
+        formula = 'fixed_monthly_rate';
+    }
+
+    amountDue = Number(amountDue.toFixed(2));
+    const netAmount = withVat ? Number((amountDue / 1.12).toFixed(2)) : amountDue;
+    const vatAmount = withVat ? Number((amountDue - netAmount).toFixed(2)) : Number((amountDue * 0.12).toFixed(2));
+
+    return {
+        previousMeter,
+        presentMeter,
+        pages,
+        amountDue,
+        netAmount,
+        vatAmount,
+        quotaVariance: monthlyQuota > 0 ? pages - monthlyQuota : null,
+        formula,
+        warning
+    };
+}
+
+function closeBillingCalcModal() {
+    els.billingCalcModal?.classList.add('hidden');
+}
+
+function openBillingCalcModal(rowId, monthKey) {
+    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
+        || (lastPayload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    const context = buildBillingCalculationContext(row, monthKey);
+    if (!context) {
+        MargaUtils.showToast('No billing profile is available for this row yet.', 'error');
+        return;
+    }
+
+    const profile = context.profile;
+    const latest = context.latestPriorGroup;
+    const estimate = calculateBillingEstimate(context, context.previousMeter, context.presentMeter);
+
+    els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
+    els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
+
+    els.billingCalcContent.innerHTML = `
+        <div class="calc-layout">
+            <div class="calc-flag-row">
+                <span class="calc-flag">${escapeHtml(profile.category_code || 'N/A')} • ${escapeHtml(profile.category_label || 'Unclassified Contract')}</span>
+                <span class="calc-flag">${escapeHtml(context.isReading ? 'Meter-Based Billing' : (context.isFixed ? 'Fixed Monthly Billing' : 'Reference Only'))}</span>
+                <span class="calc-flag">${escapeHtml(profile.with_vat ? 'VAT Inclusive' : 'VAT Exclusive')}</span>
+                ${latest ? `<span class="calc-flag">Latest meter context: ${escapeHtml(latest.month_label || latest.month_key || 'Previous month')}</span>` : ''}
+            </div>
+            <div class="calc-note">
+                ${
+                    context.isReading
+                        ? `This estimate follows the current dashboard formula: pages x page rate, with monthly rate fallback when page rate is not available. Quota is shown as contract reference.`
+                        : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
+                }
+            </div>
+            <div class="detail-summary-grid">
+                <article class="detail-summary-card">
+                    <span class="label">Page Rate</span>
+                    <span class="value">${escapeHtml(formatAmount(profile.page_rate || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Monthly Quota</span>
+                    <span class="value">${escapeHtml(formatCount(profile.monthly_quota || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Monthly Rate</span>
+                    <span class="value">${escapeHtml(formatAmount(profile.monthly_rate || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Latest Meter</span>
+                    <span class="value">${escapeHtml(latest ? formatCount(latest.present_meter || latest.previous_meter || 0) : 'Not found')}</span>
+                </article>
+            </div>
+            ${
+                context.isReading
+                    ? `
+                        <div class="calc-form-grid">
+                            <div class="calc-field">
+                                <label for="calcPreviousMeterInput">Previous Meter</label>
+                                <input type="number" id="calcPreviousMeterInput" min="0" step="1" value="${escapeHtml(String(context.previousMeter || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label for="calcPresentMeterInput">Present Meter</label>
+                                <input type="number" id="calcPresentMeterInput" min="0" step="1" value="${escapeHtml(String(context.presentMeter || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Latest Month Used</label>
+                                <input type="text" readonly value="${escapeHtml(latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading in current window')}">
+                            </div>
+                        </div>
+                    `
+                    : ''
+            }
+            <div class="calc-inline-grid">
+                <article class="calc-total-card">
+                    <span class="label">Estimated Amount</span>
+                    <span class="value" id="calcAmountValue">${escapeHtml(formatAmount(estimate.amountDue))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Net Pages</span>
+                    <span class="value" id="calcPagesValue">${escapeHtml(formatCount(estimate.pages || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Net Amount</span>
+                    <span class="value" id="calcNetValue">${escapeHtml(formatAmount(estimate.netAmount || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">VAT Amount</span>
+                    <span class="value" id="calcVatValue">${escapeHtml(formatAmount(estimate.vatAmount || 0))}</span>
+                </article>
+            </div>
+            <div class="invoice-detail-card">
+                <div class="invoice-detail-head">
+                    <div class="invoice-detail-ref">Computation Detail</div>
+                    <div class="invoice-detail-amount" id="calcFormulaValue">${escapeHtml(estimate.formula)}</div>
+                </div>
+                <div class="detail-list-block">
+                    <span class="detail-list-label">Previous Meter Context</span>
+                    <div class="detail-list-value" id="calcContextValue">
+                        ${
+                            latest
+                                ? escapeHtml(`Previous ${formatCount(latest.previous_meter || 0)} • Present ${formatCount(latest.present_meter || 0)} • ${formatCount(latest.pages || latest.total_consumed || 0)} pages`)
+                                : 'No previous meter reading was found in the current 6-month window.'
+                        }
+                    </div>
+                </div>
+                <div class="detail-list-block">
+                    <span class="detail-list-label">Quota Reference</span>
+                    <div class="detail-list-value" id="calcQuotaValue">${escapeHtml(
+                        estimate.quotaVariance === null
+                            ? 'No quota saved on this contract.'
+                            : `${formatCount(profile.monthly_quota || 0)} quota • ${estimate.quotaVariance >= 0 ? '+' : ''}${formatCount(estimate.quotaVariance)} vs usage`
+                    )}</div>
+                </div>
+                <div class="calc-warning" id="calcWarningValue">${escapeHtml(estimate.warning || '')}</div>
+            </div>
+        </div>
+    `;
+
+    const previousInput = document.getElementById('calcPreviousMeterInput');
+    const presentInput = document.getElementById('calcPresentMeterInput');
+    const amountValue = document.getElementById('calcAmountValue');
+    const pagesValue = document.getElementById('calcPagesValue');
+    const netValue = document.getElementById('calcNetValue');
+    const vatValue = document.getElementById('calcVatValue');
+    const formulaValue = document.getElementById('calcFormulaValue');
+    const quotaValue = document.getElementById('calcQuotaValue');
+    const warningValue = document.getElementById('calcWarningValue');
+
+    const recompute = () => {
+        const next = calculateBillingEstimate(
+            context,
+            previousInput ? previousInput.value : context.previousMeter,
+            presentInput ? presentInput.value : context.presentMeter
+        );
+        if (amountValue) amountValue.textContent = formatAmount(next.amountDue || 0);
+        if (pagesValue) pagesValue.textContent = formatCount(next.pages || 0);
+        if (netValue) netValue.textContent = formatAmount(next.netAmount || 0);
+        if (vatValue) vatValue.textContent = formatAmount(next.vatAmount || 0);
+        if (formulaValue) formulaValue.textContent = next.formula;
+        if (quotaValue) {
+            quotaValue.textContent = next.quotaVariance === null
+                ? 'No quota saved on this contract.'
+                : `${formatCount(profile.monthly_quota || 0)} quota • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs usage`;
+        }
+        if (warningValue) warningValue.textContent = next.warning || '';
+    };
+
+    previousInput?.addEventListener('input', recompute);
+    presentInput?.addEventListener('input', recompute);
+    els.billingCalcModal.classList.remove('hidden');
+}
+
 function renderMatrixTable(payload) {
     const matrix = payload.month_matrix || {};
     const months = matrix.months || [];
@@ -594,6 +931,7 @@ function renderMatrixTable(payload) {
             const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
             const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
             const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
+            const canOpenCalculator = !row.is_summary_row && Boolean(getRowBillingProfile(row));
             if (cell.billed || shownAmount > 0) {
                 const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
                 const machineMeta = `${formatCount(cell.machine_count || 0)} mach`;
@@ -620,15 +958,33 @@ function renderMatrixTable(payload) {
                 `;
             }
             if (cell.pending) {
+                if (!canOpenCalculator) {
+                    return `<td class="month-cell pending-cell ${isSelected ? 'selected-cell' : ''}"></td>`;
+                }
                 return `
                     <td class="month-cell pending-cell ${isSelected ? 'selected-cell' : ''}">
-                        <a
-                            class="pending-link"
-                            href="${escapeHtml(pendingHref(rowId, monthKey))}"
+                        <button
+                            class="pending-link calc-link"
+                            type="button"
                             data-row-id="${escapeHtml(String(rowId))}"
                             data-month-key="${escapeHtml(monthKey)}"
-                            title="Pending reading or billing. Open billing context."
-                        ></a>
+                            title="Pending reading or billing. Open billing calculation."
+                            aria-label="Open billing calculation for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
+                        ></button>
+                    </td>
+                `;
+            }
+            if (canOpenCalculator) {
+                return `
+                    <td class="month-cell empty-cell ${isSelected ? 'selected-cell' : ''}">
+                        <button
+                            class="empty-link calc-link"
+                            type="button"
+                            data-row-id="${escapeHtml(String(rowId))}"
+                            data-month-key="${escapeHtml(monthKey)}"
+                            title="Open billing calculation for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
+                            aria-label="Open billing calculation for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
+                        ></button>
                     </td>
                 `;
             }
@@ -659,8 +1015,8 @@ function renderMatrixTable(payload) {
                     <div class="customer-sub">${escapeHtml(row.is_summary_row ? (row.machine_label || '') : (row.machine_label || row.machine_id || ''))}</div>
                 </td>
                 <td class="branch-col">
-                    <div class="branch-main">${escapeHtml(row.branch_name || 'Main')}</div>
-                    <div class="branch-sub">${escapeHtml(row.is_summary_row ? 'Search subtotal across loaded machine rows' : (row.account_name || row.company_name || ''))}</div>
+                    <div class="branch-main">${renderBranchMain(row)}</div>
+                    <div class="branch-sub">${escapeHtml(renderBranchSub(row))}</div>
                 </td>
                 ${monthCells}
             </tr>
@@ -980,10 +1336,10 @@ function bindEvents() {
         if (lastPayload) renderMatrixTable(lastPayload);
     });
     els.matrixTableWrap?.addEventListener('click', (event) => {
-        const pendingTrigger = event.target.closest('.pending-link');
-        if (pendingTrigger) {
+        const calcTrigger = event.target.closest('.calc-link');
+        if (calcTrigger) {
             event.preventDefault();
-            updatePendingSelection(pendingTrigger.dataset.rowId, pendingTrigger.dataset.monthKey);
+            openBillingCalcModal(calcTrigger.dataset.rowId, calcTrigger.dataset.monthKey);
             return;
         }
         const serialTrigger = event.target.closest('.serial-link');
@@ -998,6 +1354,10 @@ function bindEvents() {
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
+    });
+    els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
+    els.billingCalcModal?.addEventListener('click', (event) => {
+        if (event.target === els.billingCalcModal) closeBillingCalcModal();
     });
     els.clearSelectionBtn?.addEventListener('click', (event) => {
         event.preventDefault();
@@ -1017,6 +1377,7 @@ function bindEvents() {
         if (event.key === 'Escape') {
             closeInvoiceDetailModal();
             closeSerialDetailModal();
+            closeBillingCalcModal();
         }
     });
 }
