@@ -515,6 +515,7 @@ const RTP_PRINT_SECTION_LAYOUT = {
 const RTP_PRINT_CALIBRATION = {
     paperWidthCm: 20,
     paperHeightCm: 18,
+    orientation: 'portrait',
     scale: 0.54,
     offsetXmm: 1.5,
     offsetYmm: 18,
@@ -527,11 +528,16 @@ const RTP_PRINT_CALIBRATION = {
 };
 
 const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
-let currentRtpPrintCalibration = loadRtpPrintCalibration();
+const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v1';
+const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v1';
+let currentRtpPrintCalibration = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+let currentRtpPrintTemplates = {};
+let currentRtpPrintTemplateName = 'Default';
 
 function normalizeRtpPrintCalibration(value = {}) {
     const paperWidthCm = Number(value?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
     const paperHeightCm = Number(value?.paperHeightCm ?? RTP_PRINT_CALIBRATION.paperHeightCm);
+    const orientation = String(value?.orientation || RTP_PRINT_CALIBRATION.orientation).trim().toLowerCase();
     const scale = Number(value?.scale ?? RTP_PRINT_CALIBRATION.scale);
     const offsetXmm = Number(value?.offsetXmm ?? RTP_PRINT_CALIBRATION.offsetXmm);
     const offsetYmm = Number(value?.offsetYmm ?? RTP_PRINT_CALIBRATION.offsetYmm);
@@ -539,6 +545,7 @@ function normalizeRtpPrintCalibration(value = {}) {
     return {
         paperWidthCm: Number.isFinite(paperWidthCm) ? Math.max(10, Math.min(40, paperWidthCm)) : RTP_PRINT_CALIBRATION.paperWidthCm,
         paperHeightCm: Number.isFinite(paperHeightCm) ? Math.max(10, Math.min(40, paperHeightCm)) : RTP_PRINT_CALIBRATION.paperHeightCm,
+        orientation: orientation === 'landscape' ? 'landscape' : 'portrait',
         scale: Number.isFinite(scale) ? Math.max(0.35, Math.min(0.9, scale)) : RTP_PRINT_CALIBRATION.scale,
         offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-40, Math.min(40, offsetXmm)) : RTP_PRINT_CALIBRATION.offsetXmm,
         offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(80, offsetYmm)) : RTP_PRINT_CALIBRATION.offsetYmm,
@@ -557,22 +564,114 @@ function normalizeRtpPrintCalibration(value = {}) {
     };
 }
 
-function loadRtpPrintCalibration() {
+function readRtpPrintCalibration() {
     try {
         const raw = localStorage.getItem(RTP_PRINT_CALIBRATION_STORAGE_KEY);
-        if (!raw) return normalizeRtpPrintCalibration();
+        if (!raw) return null;
         return normalizeRtpPrintCalibration(JSON.parse(raw));
     } catch (error) {
-        return normalizeRtpPrintCalibration();
+        return null;
     }
 }
 
-function saveRtpPrintCalibration(nextValue) {
+function loadRtpPrintCalibration() {
+    return readRtpPrintCalibration() || normalizeRtpPrintCalibration();
+}
+
+function normalizeRtpPrintTemplateName(value = '') {
+    const normalized = String(value || '').trim().replace(/\s+/g, ' ');
+    return normalized.slice(0, 48) || 'Default';
+}
+
+function loadRtpPrintTemplates() {
+    try {
+        const raw = localStorage.getItem(RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY);
+        if (!raw) {
+            return {
+                Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
+            };
+        }
+        const parsed = JSON.parse(raw);
+        const entries = Object.entries(parsed || {}).map(([templateName, calibration]) => [
+            normalizeRtpPrintTemplateName(templateName),
+            normalizeRtpPrintCalibration(calibration)
+        ]);
+        if (!entries.length) {
+            return {
+                Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
+            };
+        }
+        return Object.fromEntries(entries);
+    } catch (error) {
+        return {
+            Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
+        };
+    }
+}
+
+function saveRtpPrintTemplates(nextTemplates) {
+    currentRtpPrintTemplates = Object.fromEntries(Object.entries(nextTemplates || {}).map(([templateName, calibration]) => [
+        normalizeRtpPrintTemplateName(templateName),
+        normalizeRtpPrintCalibration(calibration)
+    ]));
+    if (!Object.keys(currentRtpPrintTemplates).length) {
+        currentRtpPrintTemplates.Default = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+    }
+    try {
+        localStorage.setItem(RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(currentRtpPrintTemplates));
+    } catch (error) {
+        console.warn('Unable to save RTP print templates.', error);
+    }
+    return currentRtpPrintTemplates;
+}
+
+function loadRtpPrintActiveTemplateName() {
+    try {
+        return normalizeRtpPrintTemplateName(localStorage.getItem(RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY) || 'Default');
+    } catch (error) {
+        return 'Default';
+    }
+}
+
+function saveRtpPrintActiveTemplateName(templateName) {
+    currentRtpPrintTemplateName = normalizeRtpPrintTemplateName(templateName);
+    try {
+        localStorage.setItem(RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY, currentRtpPrintTemplateName);
+    } catch (error) {
+        console.warn('Unable to save active RTP template name.', error);
+    }
+    return currentRtpPrintTemplateName;
+}
+
+function getRtpPrintPaperDimensions(calibration = currentRtpPrintCalibration) {
+    const sideA = Number(calibration?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
+    const sideB = Number(calibration?.paperHeightCm ?? RTP_PRINT_CALIBRATION.paperHeightCm);
+    const shortSideCm = Math.min(sideA, sideB);
+    const longSideCm = Math.max(sideA, sideB);
+    const orientation = calibration?.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const widthCm = orientation === 'portrait' ? shortSideCm : longSideCm;
+    const heightCm = orientation === 'portrait' ? longSideCm : shortSideCm;
+    return {
+        widthCm,
+        heightCm,
+        widthMm: widthCm * 10,
+        heightMm: heightCm * 10
+    };
+}
+
+function saveRtpPrintCalibration(nextValue, options = {}) {
+    const { persistTemplate = true } = options;
     currentRtpPrintCalibration = normalizeRtpPrintCalibration(nextValue);
     try {
         localStorage.setItem(RTP_PRINT_CALIBRATION_STORAGE_KEY, JSON.stringify(currentRtpPrintCalibration));
     } catch (error) {
         console.warn('Unable to save RTP print calibration.', error);
+    }
+    if (persistTemplate) {
+        saveRtpPrintTemplates({
+            ...currentRtpPrintTemplates,
+            [currentRtpPrintTemplateName]: currentRtpPrintCalibration
+        });
     }
     return currentRtpPrintCalibration;
 }
@@ -580,6 +679,54 @@ function saveRtpPrintCalibration(nextValue) {
 function resetRtpPrintCalibration() {
     return saveRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 }
+
+function saveCurrentRtpPrintTemplate(templateName) {
+    const normalizedName = normalizeRtpPrintTemplateName(templateName || currentRtpPrintTemplateName);
+    saveRtpPrintActiveTemplateName(normalizedName);
+    saveRtpPrintTemplates({
+        ...currentRtpPrintTemplates,
+        [normalizedName]: currentRtpPrintCalibration
+    });
+    return saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
+}
+
+function applyRtpPrintTemplate(templateName) {
+    const normalizedName = normalizeRtpPrintTemplateName(templateName);
+    const nextCalibration = currentRtpPrintTemplates[normalizedName];
+    if (!nextCalibration) return currentRtpPrintCalibration;
+    saveRtpPrintActiveTemplateName(normalizedName);
+    return saveRtpPrintCalibration(nextCalibration, { persistTemplate: false });
+}
+
+function deleteRtpPrintTemplate(templateName) {
+    const normalizedName = normalizeRtpPrintTemplateName(templateName);
+    const nextTemplates = { ...currentRtpPrintTemplates };
+    delete nextTemplates[normalizedName];
+    const savedTemplates = saveRtpPrintTemplates(nextTemplates);
+    const nextActiveTemplate = savedTemplates[normalizedName]
+        ? normalizedName
+        : (savedTemplates.Default ? 'Default' : Object.keys(savedTemplates)[0]);
+    saveRtpPrintActiveTemplateName(nextActiveTemplate);
+    return saveRtpPrintCalibration(savedTemplates[nextActiveTemplate], { persistTemplate: false });
+}
+
+function initializeRtpPrintCalibrationState() {
+    currentRtpPrintTemplates = loadRtpPrintTemplates();
+    const storedCalibration = readRtpPrintCalibration();
+    const storedActiveTemplate = loadRtpPrintActiveTemplateName();
+    const activeTemplateName = currentRtpPrintTemplates[storedActiveTemplate]
+        ? storedActiveTemplate
+        : (currentRtpPrintTemplates.Default ? 'Default' : Object.keys(currentRtpPrintTemplates)[0]);
+    saveRtpPrintActiveTemplateName(activeTemplateName);
+    currentRtpPrintCalibration = storedCalibration || currentRtpPrintTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+    saveRtpPrintTemplates({
+        ...currentRtpPrintTemplates,
+        [activeTemplateName]: currentRtpPrintCalibration
+    });
+    saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
+}
+
+initializeRtpPrintCalibrationState();
 
 function getRtpPrintSectionCalibration(sectionKey) {
     return currentRtpPrintCalibration.sections?.[sectionKey] || RTP_PRINT_CALIBRATION.sections[sectionKey];
@@ -677,14 +824,38 @@ function renderRtpSectionCalibrationControls() {
     `;
 }
 
+function renderRtpPrintTemplateControls() {
+    const templateOptions = Object.keys(currentRtpPrintTemplates)
+        .sort((left, right) => left.localeCompare(right))
+        .map((templateName) => `<option value="${escapeHtml(templateName)}"${templateName === currentRtpPrintTemplateName ? ' selected' : ''}>${escapeHtml(templateName)}</option>`)
+        .join('');
+    return `
+        <div class="calc-print-calibration calc-print-template-grid">
+            <div class="calc-field">
+                <label for="calcPrintTemplateSelect">Template</label>
+                <select id="calcPrintTemplateSelect">${templateOptions}</select>
+            </div>
+            <div class="calc-field">
+                <label for="calcPrintTemplateNameInput">Template Name</label>
+                <input type="text" id="calcPrintTemplateNameInput" value="${escapeHtml(currentRtpPrintTemplateName)}" placeholder="Invoice 1 template">
+            </div>
+            <div class="calc-print-actions">
+                <button class="btn btn-secondary" type="button" id="calcPrintSaveTemplateBtn">Save Template</button>
+            </div>
+            <div class="calc-print-actions">
+                <button class="btn btn-secondary" type="button" id="calcPrintDeleteTemplateBtn"${currentRtpPrintTemplateName === 'Default' ? ' disabled' : ''}>Delete Template</button>
+            </div>
+        </div>
+    `;
+}
+
 function buildRtpCalibratedPreviewHtml(preview) {
-    const paperWidthMm = currentRtpPrintCalibration.paperWidthCm * 10;
-    const paperHeightMm = currentRtpPrintCalibration.paperHeightCm * 10;
+    const paper = getRtpPrintPaperDimensions(currentRtpPrintCalibration);
     return `
         <section class="rtp-calibration-shell" aria-label="RTP print calibration preview">
             <div
                 class="rtp-calibration-paper"
-                style="--paper-width-mm:${paperWidthMm}; --paper-height-mm:${paperHeightMm};"
+                style="--paper-width-mm:${paper.widthMm}; --paper-height-mm:${paper.heightMm};"
             >
                 <div
                     class="rtp-calibration-sheet"
@@ -698,8 +869,9 @@ function buildRtpCalibratedPreviewHtml(preview) {
 }
 
 function buildRtpPrintDocument(preview) {
-    const paperWidth = `${currentRtpPrintCalibration.paperWidthCm}cm`;
-    const paperHeight = `${currentRtpPrintCalibration.paperHeightCm}cm`;
+    const paper = getRtpPrintPaperDimensions(currentRtpPrintCalibration);
+    const paperWidth = `${paper.widthCm}cm`;
+    const paperHeight = `${paper.heightCm}cm`;
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1419,13 +1591,21 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print RTP</button>
                                 <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
                             </div>
+                            ${renderRtpPrintTemplateControls()}
                             <div class="calc-print-calibration">
                                 <div class="calc-field">
-                                    <label for="calcPrintPaperWidthInput">Paper Width (cm)</label>
+                                    <label for="calcPrintOrientationInput">Orientation</label>
+                                    <select id="calcPrintOrientationInput">
+                                        <option value="portrait"${currentRtpPrintCalibration.orientation === 'portrait' ? ' selected' : ''}>Portrait</option>
+                                        <option value="landscape"${currentRtpPrintCalibration.orientation === 'landscape' ? ' selected' : ''}>Landscape</option>
+                                    </select>
+                                </div>
+                                <div class="calc-field">
+                                    <label for="calcPrintPaperWidthInput">Paper Side A (cm)</label>
                                     <input type="number" id="calcPrintPaperWidthInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperWidthCm))}">
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintPaperHeightInput">Paper Height (cm)</label>
+                                    <label for="calcPrintPaperHeightInput">Paper Side B (cm)</label>
                                     <input type="number" id="calcPrintPaperHeightInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperHeightCm))}">
                                 </div>
                                 <div class="calc-field">
@@ -1588,6 +1768,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const warningValue = document.getElementById('calcWarningValue');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
+    const templateSelect = document.getElementById('calcPrintTemplateSelect');
+    const templateNameInput = document.getElementById('calcPrintTemplateNameInput');
+    const saveTemplateBtn = document.getElementById('calcPrintSaveTemplateBtn');
+    const deleteTemplateBtn = document.getElementById('calcPrintDeleteTemplateBtn');
+    const orientationInput = document.getElementById('calcPrintOrientationInput');
     const paperWidthInput = document.getElementById('calcPrintPaperWidthInput');
     const paperHeightInput = document.getElementById('calcPrintPaperHeightInput');
     const offsetXInput = document.getElementById('calcPrintOffsetXInput');
@@ -1642,6 +1827,15 @@ async function openBillingCalcModal(rowId, monthKey) {
     };
 
     const syncCalibrationInputs = (calibration) => {
+        if (templateSelect) {
+            templateSelect.innerHTML = Object.keys(currentRtpPrintTemplates)
+                .sort((left, right) => left.localeCompare(right))
+                .map((templateName) => `<option value="${escapeHtml(templateName)}"${templateName === currentRtpPrintTemplateName ? ' selected' : ''}>${escapeHtml(templateName)}</option>`)
+                .join('');
+        }
+        if (templateNameInput) templateNameInput.value = currentRtpPrintTemplateName;
+        if (deleteTemplateBtn) deleteTemplateBtn.disabled = currentRtpPrintTemplateName === 'Default';
+        if (orientationInput) orientationInput.value = calibration.orientation || 'portrait';
         if (paperWidthInput) paperWidthInput.value = String(calibration.paperWidthCm);
         if (paperHeightInput) paperHeightInput.value = String(calibration.paperHeightCm);
         if (offsetXInput) offsetXInput.value = String(calibration.offsetXmm);
@@ -1670,6 +1864,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             return [sectionKey, sectionValues];
         }));
         const calibration = saveRtpPrintCalibration({
+            orientation: orientationInput ? orientationInput.value : currentRtpPrintCalibration.orientation,
             paperWidthCm: paperWidthInput ? Number(paperWidthInput.value || 0) : currentRtpPrintCalibration.paperWidthCm,
             paperHeightCm: paperHeightInput ? Number(paperHeightInput.value || 0) : currentRtpPrintCalibration.paperHeightCm,
             offsetXmm: offsetXInput ? Number(offsetXInput.value || 0) : currentRtpPrintCalibration.offsetXmm,
@@ -1716,10 +1911,31 @@ async function openBillingCalcModal(rowId, monthKey) {
     spoilageInput?.addEventListener('input', recompute);
     paperWidthInput?.addEventListener('input', updateCalibration);
     paperHeightInput?.addEventListener('input', updateCalibration);
+    orientationInput?.addEventListener('change', updateCalibration);
     offsetXInput?.addEventListener('input', updateCalibration);
     offsetYInput?.addEventListener('input', updateCalibration);
     scaleInput?.addEventListener('input', updateCalibration);
     sectionInputs.forEach((input) => input.addEventListener('input', updateCalibration));
+    templateSelect?.addEventListener('change', () => {
+        const calibration = applyRtpPrintTemplate(templateSelect.value);
+        syncCalibrationInputs(calibration);
+        renderCalcPreview(activeEstimate);
+    });
+    saveTemplateBtn?.addEventListener('click', () => {
+        const templateName = normalizeRtpPrintTemplateName(templateNameInput?.value || currentRtpPrintTemplateName);
+        saveCurrentRtpPrintTemplate(templateName);
+        syncCalibrationInputs(currentRtpPrintCalibration);
+        renderCalcPreview(activeEstimate);
+        MargaUtils.showToast(`Saved RTP template: ${templateName}`, 'success');
+    });
+    deleteTemplateBtn?.addEventListener('click', () => {
+        if (currentRtpPrintTemplateName === 'Default') return;
+        const deletedTemplate = currentRtpPrintTemplateName;
+        const calibration = deleteRtpPrintTemplate(deletedTemplate);
+        syncCalibrationInputs(calibration);
+        renderCalcPreview(activeEstimate);
+        MargaUtils.showToast(`Deleted RTP template: ${deletedTemplate}`, 'success');
+    });
     resetPrintBtn?.addEventListener('click', () => {
         const calibration = resetRtpPrintCalibration();
         syncCalibrationInputs(calibration);

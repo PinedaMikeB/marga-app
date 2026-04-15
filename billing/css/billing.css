@@ -832,6 +832,11 @@
     margin-bottom: 1rem;
 }
 
+.calc-print-template-grid {
+    margin-bottom: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .calc-section-card {
     border: 1px solid var(--bill-line);
     border-radius: 8px;
