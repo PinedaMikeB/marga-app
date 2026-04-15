@@ -1253,13 +1253,14 @@ function saveRtpPrintActiveTemplateName(templateName) {
 }
 
 function getRtpPrintPaperDimensions(calibration = currentRtpPrintCalibration) {
-    const sideA = Number(calibration?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
-    const sideB = Number(calibration?.paperHeightCm ?? RTP_PRINT_CALIBRATION.paperHeightCm);
-    const shortSideCm = Math.min(sideA, sideB);
-    const longSideCm = Math.max(sideA, sideB);
+    const rawWidthCm = Number(calibration?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
+    const rawHeightCm = Number(calibration?.paperHeightCm ?? RTP_PRINT_CALIBRATION.paperHeightCm);
+    let widthCm = Number.isFinite(rawWidthCm) ? rawWidthCm : RTP_PRINT_CALIBRATION.paperWidthCm;
+    let heightCm = Number.isFinite(rawHeightCm) ? rawHeightCm : RTP_PRINT_CALIBRATION.paperHeightCm;
     const orientation = calibration?.orientation === 'landscape' ? 'landscape' : 'portrait';
-    const widthCm = orientation === 'portrait' ? shortSideCm : longSideCm;
-    const heightCm = orientation === 'portrait' ? longSideCm : shortSideCm;
+    if (orientation === 'landscape' && widthCm < heightCm) {
+        [widthCm, heightCm] = [heightCm, widthCm];
+    }
     return {
         widthCm,
         heightCm,
@@ -2677,11 +2678,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                                     </select>
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintPaperWidthInput">Paper Side A (cm)</label>
+                                    <label for="calcPrintPaperWidthInput">Paper Width (cm)</label>
                                     <input type="number" id="calcPrintPaperWidthInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperWidthCm))}">
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintPaperHeightInput">Paper Side B (cm)</label>
+                                    <label for="calcPrintPaperHeightInput">Paper Height (cm)</label>
                                     <input type="number" id="calcPrintPaperHeightInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperHeightCm))}">
                                 </div>
                                 <div class="calc-field">
