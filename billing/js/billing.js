@@ -498,40 +498,48 @@ function buildRtpPreviewHtml(preview) {
     `;
 }
 
+const RTP_PRINT_CALIBRATION = {
+    paperWidthIn: 5.5,
+    paperHeightIn: 8.5,
+    scale: 0.54,
+    offsetXmm: 1.5,
+    offsetYmm: 18
+};
+
 function buildRtpPrintDocument(preview) {
+    const paperWidth = `${RTP_PRINT_CALIBRATION.paperWidthIn}in`;
+    const paperHeight = `${RTP_PRINT_CALIBRATION.paperHeightIn}in`;
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <title>RTP Print</title>
     <style>
-        @page { size: Letter portrait; margin: 0; }
+        @page { size: ${paperWidth} ${paperHeight}; margin: 0; }
         * { box-sizing: border-box; }
         html, body {
             margin: 0;
             padding: 0;
-            width: 8.5in;
-            height: 11in;
+            width: ${paperWidth};
+            height: ${paperHeight};
             background: #fff;
             overflow: hidden;
         }
         body { font-family: "Arial", "Helvetica Neue", sans-serif; }
         .print-wrap {
             position: relative;
-            width: 8.5in;
-            height: 11in;
-            padding: 0.3in 0 0;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
+            width: ${paperWidth};
+            height: ${paperHeight};
             overflow: hidden;
             page-break-after: avoid;
         }
         .rtp-preview-shell {
-            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 255mm;
             transform-origin: top center;
-            transform: scale(0.8);
+            transform: translate(${RTP_PRINT_CALIBRATION.offsetXmm}mm, ${RTP_PRINT_CALIBRATION.offsetYmm}mm) scale(${RTP_PRINT_CALIBRATION.scale});
         }
         .rtp-preview-note {
             display: none;
