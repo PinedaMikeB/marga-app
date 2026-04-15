@@ -960,6 +960,7 @@ const RTP_PRINT_CALIBRATION = {
 const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
 const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v1';
 const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v1';
+const RTP_PRINT_RECOVERED_TEMPLATE_NAME = 'Saved Invoice Layout';
 let currentRtpPrintCalibration = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 let currentRtpPrintTemplates = {};
 let currentRtpPrintTemplateName = 'Default';
@@ -1013,29 +1014,53 @@ function normalizeRtpPrintTemplateName(value = '') {
     return normalized.slice(0, 48) || 'Default';
 }
 
+function rtpPrintCalibrationsEqual(left, right) {
+    return JSON.stringify(normalizeRtpPrintCalibration(left)) === JSON.stringify(normalizeRtpPrintCalibration(right));
+}
+
+function getUniqueRtpPrintTemplateName(baseName, templates = {}) {
+    const normalizedBase = normalizeRtpPrintTemplateName(baseName);
+    if (!templates[normalizedBase]) return normalizedBase;
+    for (let index = 2; index < 100; index += 1) {
+        const candidate = normalizeRtpPrintTemplateName(`${normalizedBase} ${index}`);
+        if (!templates[candidate]) return candidate;
+    }
+    return normalizeRtpPrintTemplateName(`${normalizedBase} ${Date.now()}`);
+}
+
+function extractRtpPrintTemplateEntries(parsed) {
+    if (Array.isArray(parsed)) {
+        return parsed.map((entry, index) => [
+            normalizeRtpPrintTemplateName(entry?.name || entry?.templateName || `Template ${index + 1}`),
+            normalizeRtpPrintCalibration(entry?.calibration || entry?.settings || entry)
+        ]);
+    }
+
+    const source = parsed?.templates && typeof parsed.templates === 'object'
+        ? parsed.templates
+        : parsed;
+    if (!source || typeof source !== 'object') return [];
+
+    return Object.entries(source).map(([templateName, calibration]) => [
+        normalizeRtpPrintTemplateName(templateName),
+        normalizeRtpPrintCalibration(calibration?.calibration || calibration)
+    ]);
+}
+
 function loadRtpPrintTemplates() {
+    const templates = {
+        Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
+    };
     try {
         const raw = localStorage.getItem(RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY);
-        if (!raw) {
-            return {
-                Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
-            };
-        }
+        if (!raw) return templates;
         const parsed = JSON.parse(raw);
-        const entries = Object.entries(parsed || {}).map(([templateName, calibration]) => [
-            normalizeRtpPrintTemplateName(templateName),
-            normalizeRtpPrintCalibration(calibration)
-        ]);
-        if (!entries.length) {
-            return {
-                Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
-            };
-        }
-        return Object.fromEntries(entries);
+        extractRtpPrintTemplateEntries(parsed).forEach(([templateName, calibration]) => {
+            templates[templateName] = calibration;
+        });
+        return templates;
     } catch (error) {
-        return {
-            Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
-        };
+        return templates;
     }
 }
 
@@ -1140,15 +1165,53 @@ function deleteRtpPrintTemplate(templateName) {
     return saveRtpPrintCalibration(savedTemplates[nextActiveTemplate], { persistTemplate: false });
 }
 
+function recoverStoredRtpPrintTemplate(templates, storedCalibration, storedActiveTemplate) {
+    if (!storedCalibration) {
+        return { templates, recoveredTemplateName: null };
+    }
+
+    const normalizedStoredCalibration = normalizeRtpPrintCalibration(storedCalibration);
+    if (storedActiveTemplate && storedActiveTemplate !== 'Default' && templates[storedActiveTemplate]) {
+        return {
+            templates: {
+                ...templates,
+                [storedActiveTemplate]: normalizedStoredCalibration
+            },
+            recoveredTemplateName: storedActiveTemplate
+        };
+    }
+
+    const matchingTemplateName = Object.entries(templates).find(([, calibration]) => (
+        rtpPrintCalibrationsEqual(calibration, normalizedStoredCalibration)
+    ))?.[0];
+    if (matchingTemplateName) {
+        return { templates, recoveredTemplateName: matchingTemplateName === 'Default' ? null : matchingTemplateName };
+    }
+
+    const preferredName = storedActiveTemplate && storedActiveTemplate !== 'Default'
+        ? storedActiveTemplate
+        : RTP_PRINT_RECOVERED_TEMPLATE_NAME;
+    const recoveredTemplateName = getUniqueRtpPrintTemplateName(preferredName, templates);
+    return {
+        templates: {
+            ...templates,
+            [recoveredTemplateName]: normalizedStoredCalibration
+        },
+        recoveredTemplateName
+    };
+}
+
 function initializeRtpPrintCalibrationState() {
-    currentRtpPrintTemplates = loadRtpPrintTemplates();
+    const loadedTemplates = loadRtpPrintTemplates();
     const storedCalibration = readRtpPrintCalibration();
     const storedActiveTemplate = loadRtpPrintActiveTemplateName();
-    const activeTemplateName = currentRtpPrintTemplates[storedActiveTemplate]
+    const recoveredState = recoverStoredRtpPrintTemplate(loadedTemplates, storedCalibration, storedActiveTemplate);
+    currentRtpPrintTemplates = saveRtpPrintTemplates(recoveredState.templates);
+    const activeTemplateName = recoveredState.recoveredTemplateName || (currentRtpPrintTemplates[storedActiveTemplate]
         ? storedActiveTemplate
-        : (currentRtpPrintTemplates.Default ? 'Default' : Object.keys(currentRtpPrintTemplates)[0]);
+        : (currentRtpPrintTemplates.Default ? 'Default' : Object.keys(currentRtpPrintTemplates)[0]));
     saveRtpPrintActiveTemplateName(activeTemplateName);
-    currentRtpPrintCalibration = storedCalibration || currentRtpPrintTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+    currentRtpPrintCalibration = currentRtpPrintTemplates[activeTemplateName] || storedCalibration || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
     saveRtpPrintTemplates({
         ...currentRtpPrintTemplates,
         [activeTemplateName]: currentRtpPrintCalibration
