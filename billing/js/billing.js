@@ -463,38 +463,44 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
 }
 
 function buildRtpPreviewHtml(preview) {
-    const totals = preview?.totals || {};
     return `
         <section class="rtp-preview-shell" aria-label="RTP print preview">
             <div class="rtp-preview-note">RTP</div>
             <div class="rtp-preview-paper">
                 <div class="rtp-print-sheet">
-                    <div class="rtp-field rtp-customer-name">${escapeHtml(preview?.customerName || 'Unknown Customer')}</div>
-                    <div class="rtp-field rtp-customer-tin">${escapeHtml(preview?.tin || 'N/A')}</div>
-                    <div class="rtp-field rtp-customer-address">${escapeHtml(preview?.address || 'N/A')}</div>
-
-                    <div class="rtp-field rtp-meta-date">${escapeHtml(preview?.invoiceDate || '')}</div>
-                    <div class="rtp-field rtp-meta-code">${escapeHtml(preview?.readingCode || '')}</div>
-                    <div class="rtp-field rtp-meta-month">${escapeHtml(preview?.monthLabel || '')}</div>
-                    <div class="rtp-field rtp-meta-type">${escapeHtml(preview?.contractCode || 'RTP')}</div>
-
-                    <div class="rtp-field rtp-business-style">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
-                    <div class="rtp-field rtp-printer-model">${escapeHtml(preview?.printerModel || 'N/A')}</div>
-                    <div class="rtp-field rtp-billing-from">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
-                    <div class="rtp-field rtp-billing-to">${escapeHtml(preview?.billingTo || 'N/A')}</div>
-                    <div class="rtp-field rtp-total-pages">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
-                    <div class="rtp-field rtp-rate">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
-
-                    <div class="rtp-field rtp-amount rtp-amount-total">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
-                    <div class="rtp-field rtp-amount rtp-amount-vat">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
-                    <div class="rtp-field rtp-amount rtp-amount-vatable">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
-                    <div class="rtp-field rtp-amount rtp-amount-exempt">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
-                    <div class="rtp-field rtp-amount rtp-amount-zero">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
-                    <div class="rtp-field rtp-amount rtp-amount-less-vat">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
-                    <div class="rtp-field rtp-amount rtp-amount-due">${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</div>
+                    ${buildRtpSheetFieldsHtml(preview)}
                 </div>
             </div>
         </section>
+    `;
+}
+
+function buildRtpSheetFieldsHtml(preview) {
+    const totals = preview?.totals || {};
+    return `
+        <div class="rtp-field rtp-customer-name">${escapeHtml(preview?.customerName || 'Unknown Customer')}</div>
+        <div class="rtp-field rtp-customer-tin">${escapeHtml(preview?.tin || 'N/A')}</div>
+        <div class="rtp-field rtp-customer-address">${escapeHtml(preview?.address || 'N/A')}</div>
+
+        <div class="rtp-field rtp-meta-date">${escapeHtml(preview?.invoiceDate || '')}</div>
+        <div class="rtp-field rtp-meta-code">${escapeHtml(preview?.readingCode || '')}</div>
+        <div class="rtp-field rtp-meta-month">${escapeHtml(preview?.monthLabel || '')}</div>
+        <div class="rtp-field rtp-meta-type">${escapeHtml(preview?.contractCode || 'RTP')}</div>
+
+        <div class="rtp-field rtp-business-style">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
+        <div class="rtp-field rtp-printer-model">${escapeHtml(preview?.printerModel || 'N/A')}</div>
+        <div class="rtp-field rtp-billing-from">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
+        <div class="rtp-field rtp-billing-to">${escapeHtml(preview?.billingTo || 'N/A')}</div>
+        <div class="rtp-field rtp-total-pages">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
+        <div class="rtp-field rtp-rate">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+
+        <div class="rtp-field rtp-amount rtp-amount-total">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
+        <div class="rtp-field rtp-amount rtp-amount-vat">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
+        <div class="rtp-field rtp-amount rtp-amount-vatable">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
+        <div class="rtp-field rtp-amount rtp-amount-exempt">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
+        <div class="rtp-field rtp-amount rtp-amount-zero">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
+        <div class="rtp-field rtp-amount rtp-amount-less-vat">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
+        <div class="rtp-field rtp-amount rtp-amount-due">${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</div>
     `;
 }
 
@@ -506,9 +512,64 @@ const RTP_PRINT_CALIBRATION = {
     offsetYmm: 18
 };
 
+const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
+let currentRtpPrintCalibration = loadRtpPrintCalibration();
+
+function normalizeRtpPrintCalibration(value = {}) {
+    const scale = Number(value?.scale ?? RTP_PRINT_CALIBRATION.scale);
+    const offsetXmm = Number(value?.offsetXmm ?? RTP_PRINT_CALIBRATION.offsetXmm);
+    const offsetYmm = Number(value?.offsetYmm ?? RTP_PRINT_CALIBRATION.offsetYmm);
+    return {
+        paperWidthIn: RTP_PRINT_CALIBRATION.paperWidthIn,
+        paperHeightIn: RTP_PRINT_CALIBRATION.paperHeightIn,
+        scale: Number.isFinite(scale) ? Math.max(0.35, Math.min(0.9, scale)) : RTP_PRINT_CALIBRATION.scale,
+        offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-40, Math.min(40, offsetXmm)) : RTP_PRINT_CALIBRATION.offsetXmm,
+        offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(80, offsetYmm)) : RTP_PRINT_CALIBRATION.offsetYmm
+    };
+}
+
+function loadRtpPrintCalibration() {
+    try {
+        const raw = localStorage.getItem(RTP_PRINT_CALIBRATION_STORAGE_KEY);
+        if (!raw) return normalizeRtpPrintCalibration();
+        return normalizeRtpPrintCalibration(JSON.parse(raw));
+    } catch (error) {
+        return normalizeRtpPrintCalibration();
+    }
+}
+
+function saveRtpPrintCalibration(nextValue) {
+    currentRtpPrintCalibration = normalizeRtpPrintCalibration(nextValue);
+    try {
+        localStorage.setItem(RTP_PRINT_CALIBRATION_STORAGE_KEY, JSON.stringify(currentRtpPrintCalibration));
+    } catch (error) {
+        console.warn('Unable to save RTP print calibration.', error);
+    }
+    return currentRtpPrintCalibration;
+}
+
+function resetRtpPrintCalibration() {
+    return saveRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+}
+
+function buildRtpCalibratedPreviewHtml(preview) {
+    return `
+        <section class="rtp-calibration-shell" aria-label="RTP print calibration preview">
+            <div class="rtp-calibration-paper">
+                <div
+                    class="rtp-print-sheet rtp-print-sheet-calibrated"
+                    style="transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});"
+                >
+                    ${buildRtpSheetFieldsHtml(preview)}
+                </div>
+            </div>
+        </section>
+    `;
+}
+
 function buildRtpPrintDocument(preview) {
-    const paperWidth = `${RTP_PRINT_CALIBRATION.paperWidthIn}in`;
-    const paperHeight = `${RTP_PRINT_CALIBRATION.paperHeightIn}in`;
+    const paperWidth = `${currentRtpPrintCalibration.paperWidthIn}in`;
+    const paperHeight = `${currentRtpPrintCalibration.paperHeightIn}in`;
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -539,7 +600,7 @@ function buildRtpPrintDocument(preview) {
             left: 0;
             width: 255mm;
             transform-origin: top center;
-            transform: translate(${RTP_PRINT_CALIBRATION.offsetXmm}mm, ${RTP_PRINT_CALIBRATION.offsetYmm}mm) scale(${RTP_PRINT_CALIBRATION.scale});
+            transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});
         }
         .rtp-preview-note {
             display: none;
@@ -1236,6 +1297,23 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print RTP</button>
                                 <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
                             </div>
+                            <div class="calc-print-calibration">
+                                <div class="calc-field">
+                                    <label for="calcPrintOffsetXInput">X Offset (mm)</label>
+                                    <input type="number" id="calcPrintOffsetXInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetXmm))}">
+                                </div>
+                                <div class="calc-field">
+                                    <label for="calcPrintOffsetYInput">Y Offset (mm)</label>
+                                    <input type="number" id="calcPrintOffsetYInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetYmm))}">
+                                </div>
+                                <div class="calc-field">
+                                    <label for="calcPrintScaleInput">Scale</label>
+                                    <input type="number" id="calcPrintScaleInput" step="0.01" min="0.35" max="0.9" value="${escapeHtml(String(currentRtpPrintCalibration.scale))}">
+                                </div>
+                                <div class="calc-print-actions">
+                                    <button class="btn btn-secondary" type="button" id="calcPrintResetBtn">Reset</button>
+                                </div>
+                            </div>
                             <div class="detail-section-title">RTP Print Preview</div>
                             <div id="calcRtpPreviewMount">
                                 <div class="detail-empty">Loading printable RTP preview...</div>
@@ -1378,6 +1456,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const warningValue = document.getElementById('calcWarningValue');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
+    const offsetXInput = document.getElementById('calcPrintOffsetXInput');
+    const offsetYInput = document.getElementById('calcPrintOffsetYInput');
+    const scaleInput = document.getElementById('calcPrintScaleInput');
+    const resetPrintBtn = document.getElementById('calcPrintResetBtn');
+    let activeEstimate = estimate;
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     if (canPrintRtp) {
@@ -1403,7 +1486,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                 });
                 return;
             }
-            previewMount.innerHTML = buildRtpPreviewHtml(preview);
+            previewMount.innerHTML = buildRtpCalibratedPreviewHtml(preview);
             setRtpPrintPayload(preview);
             setCalcInlinePrintState({
                 visible: true,
@@ -1421,6 +1504,22 @@ async function openBillingCalcModal(rowId, monthKey) {
                 hint: 'Preview failed to load.'
             });
         }
+    };
+
+    const syncCalibrationInputs = (calibration) => {
+        if (offsetXInput) offsetXInput.value = String(calibration.offsetXmm);
+        if (offsetYInput) offsetYInput.value = String(calibration.offsetYmm);
+        if (scaleInput) scaleInput.value = String(calibration.scale);
+    };
+
+    const updateCalibration = () => {
+        const calibration = saveRtpPrintCalibration({
+            offsetXmm: offsetXInput ? Number(offsetXInput.value || 0) : currentRtpPrintCalibration.offsetXmm,
+            offsetYmm: offsetYInput ? Number(offsetYInput.value || 0) : currentRtpPrintCalibration.offsetYmm,
+            scale: scaleInput ? Number(scaleInput.value || 0) : currentRtpPrintCalibration.scale
+        });
+        syncCalibrationInputs(calibration);
+        renderCalcPreview(activeEstimate);
     };
 
     const recompute = () => {
@@ -1449,12 +1548,21 @@ async function openBillingCalcModal(rowId, monthKey) {
                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
         }
         if (warningValue) warningValue.textContent = next.warning || '';
-        renderCalcPreview(next);
+        activeEstimate = next;
+        renderCalcPreview(activeEstimate);
     };
 
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
     spoilageInput?.addEventListener('input', recompute);
+    offsetXInput?.addEventListener('input', updateCalibration);
+    offsetYInput?.addEventListener('input', updateCalibration);
+    scaleInput?.addEventListener('input', updateCalibration);
+    resetPrintBtn?.addEventListener('click', () => {
+        const calibration = resetRtpPrintCalibration();
+        syncCalibrationInputs(calibration);
+        renderCalcPreview(activeEstimate);
+    });
     els.billingCalcModal.classList.remove('hidden');
     await renderCalcPreview(estimate);
 }
