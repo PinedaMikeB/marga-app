@@ -1,6 +1,6 @@
 # MARGA Handoff (Single Source of Truth)
 
-Last Updated: 2026-04-08  
+Last Updated: 2026-04-15  
 Owner: Marga App Team
 
 This file is the canonical session-to-session handoff.
@@ -14,18 +14,19 @@ Each thread should update only the relevant module sections plus `Current Focus`
 5. Do not rewrite legacy-history sections unless they are wrong.
 
 ## Current Focus
+- Protect the current Billing dashboard rollback baseline before adding any new Billing logic.
+- Treat commit `77ff141` as the protected Billing snapshot until a better stable state is proven.
 - Keep the dual-lane office sync reliable after downtime or network loss.
 - Treat live MySQL as the business source of truth for office, finance, customer, machine, and contract records.
-- Prepare the next thread to design Collections and Billing against mirrored Firebase data without changing MySQL schema or workflow semantics.
-- Start finance planning for separate Accounts Payable and Disbursement (APD) and Petty Cash modules.
 - Keep APD and Petty Cash aligned on one shared chart-of-accounts source while petty cash stays read-only for account maintenance.
 
 ## Next Actions
+- Confirm Billing behavior at commit `77ff141` after Netlify finishes deploying.
+- If Billing still errors, inspect the live Billing API payload and runtime path before doing more rollbacks.
+- Do not reapply April 7 to April 15 Billing commits blindly.
 - Restart the office supervisor so commit `b9246e2` recovery logic is the code actually running on the PC.
 - Verify both lanes recover automatically after temporary outage and catch up missed rows.
 - Design Collections web flows against the existing SQL-originated collection/payment lifecycle.
-- Design Billing web flows against existing invoice/unpaid/DR lifecycle, not against new ad hoc web-only states.
-- Onboard Tier 1 billing and collection tables into executable sync manifest after UI/data-flow design is agreed.
 - Add clearer office-friendly wording to the sync supervisor UI.
 - Define APD chart-of-accounts labels and transaction classes so liabilities, assets, transfers, and expenses are not mixed.
 - Keep APD and Petty Cash as separate workflows with different controls, approvals, and reports.
@@ -56,6 +57,19 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Sync Updater | In Progress | Dual-lane supervisor exists, restart shortcuts exist, and recovery logic is improved. | Validate outage recovery and extend coverage to billing/collections/payments. |
 
 ## Session Log (Top First)
+### 2026-04-15 - Billing Rollback Protection
+- Traced Billing rollback points from chat history and git history instead of doing blind resets.
+- Identified that the April 13 rollback target was not the last stable user-confirmed state.
+- Restored Billing dashboard files to the April 6-equivalent snapshot and pushed commit `77ff141`.
+- Important protection note for next threads:
+  - treat `77ff141` as the protected Billing baseline
+  - do not casually reapply April 7 to April 15 Billing commits
+  - if Billing fails again, inspect live function payload/runtime behavior before changing history
+- Verified Petty Cash module files were not removed by the Billing rollback.
+- Current Petty Cash caveat:
+  - the Billing page sidebar no longer shows the `Petty Cash` nav link because Billing was rolled back to an older shell
+  - the Petty Cash module itself still exists
+
 ### 2026-04-08 - Petty Cash Prototype Build
 - Added a working `/pettycash/` module with:
   - shared chart-of-accounts selection reused from APD
