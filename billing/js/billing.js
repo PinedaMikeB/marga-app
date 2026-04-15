@@ -92,6 +92,15 @@ function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
+function setElementDisplayValue(element, value) {
+    if (!element) return;
+    if ('value' in element) {
+        element.value = String(value ?? '');
+        return;
+    }
+    element.textContent = String(value ?? '');
+}
+
 function formatCount(value) {
     return Number(value || 0).toLocaleString('en-PH');
 }
@@ -1466,6 +1475,7 @@ function buildBillingCalculationContext(row, monthKey) {
     return {
         row,
         monthKey,
+        targetCell,
         monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
         profile,
         latestPriorGroup,
@@ -1563,30 +1573,191 @@ async function openBillingCalcModal(rowId, monthKey) {
     const estimate = calculateBillingEstimate(context, context.previousMeter, context.presentMeter);
     const canPrintRtp = String(profile.category_code || '').trim().toUpperCase() === 'RTP';
     const requestToken = ++billingCalcRequestToken;
+    const companyName = row.display_name || row.account_name || row.company_name || 'Unknown Customer';
+    const branchName = row.branch_name || 'Main';
+    const machineModel = row.machine_label || 'N/A';
+    const serialNumber = row.serial_number || 'N/A';
+    const presentReadingDate = context.targetCell?.task_date
+        ? formatUsDate(asValidDate(context.targetCell.task_date))
+        : context.monthLabel;
+    const previousReadingDate = latest?.task_date
+        ? formatUsDate(asValidDate(latest.task_date))
+        : 'Not recorded';
+    const latestMonthUsed = latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading';
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
     setRtpPrintPayload(null);
 
     els.billingCalcContent.innerHTML = `
-        <div class="calc-layout">
+        <div class="calc-layout calc-ledger-layout">
             <div class="calc-flag-row">
                 <span class="calc-flag">${escapeHtml(profile.category_code || 'N/A')} • ${escapeHtml(profile.category_label || 'Unclassified Contract')}</span>
                 <span class="calc-flag">${escapeHtml(context.isReading ? 'Meter-Based Billing' : (context.isFixed ? 'Fixed Monthly Billing' : 'Reference Only'))}</span>
                 <span class="calc-flag">${escapeHtml(profile.with_vat ? 'VAT Inclusive' : 'VAT Exclusive')}</span>
-                ${latest ? `<span class="calc-flag">Latest meter context: ${escapeHtml(latest.month_label || latest.month_key || 'Previous month')}</span>` : ''}
+                <span class="calc-flag">Latest meter context: ${escapeHtml(latestMonthUsed)}</span>
             </div>
-            <div class="calc-note">
-                ${
-                    context.isReading
-                        ? `This estimate now applies spoilage first, then charges the contract quota when net pages fall below quota. If no page-rate computation can run, the monthly rate is used as fallback.`
-                        : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
-                }
+            <div class="calc-ledger-grid">
+                <section class="calc-panel calc-panel-wide">
+                    <div class="calc-panel-title">Contract Info</div>
+                    <div class="calc-panel-grid calc-contract-grid">
+                        <div class="calc-field calc-field-span-2">
+                            <label>Company Name</label>
+                            <input type="text" readonly value="${escapeHtml(companyName)}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Branch</label>
+                            <input type="text" readonly value="${escapeHtml(branchName)}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Invoice #</label>
+                            <input type="text" id="calcInvoiceInput" value="${escapeHtml(latestInvoice?.invoice_ref || '')}" placeholder="Invoice number">
+                        </div>
+                        <div class="calc-field">
+                            <label>Category</label>
+                            <input type="text" readonly value="${escapeHtml(profile.category_code || 'N/A')}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Machine Model</label>
+                            <input type="text" readonly value="${escapeHtml(machineModel)}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Machine Serial</label>
+                            <input type="text" readonly value="${escapeHtml(serialNumber)}">
+                        </div>
+                    </div>
+                </section>
+                <section class="calc-panel">
+                    <div class="calc-panel-title">Billing Details</div>
+                    <div class="calc-panel-grid calc-cycle-grid">
+                        <div class="calc-field">
+                            <label>Reading Month</label>
+                            <input type="text" id="calcBillingMonthInput" readonly value="${escapeHtml(context.monthLabel)}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Latest Month Used</label>
+                            <input type="text" readonly value="${escapeHtml(latestMonthUsed)}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Present Reading Date</label>
+                            <input type="text" readonly value="${escapeHtml(presentReadingDate)}">
+                        </div>
+                        <div class="calc-field">
+                            <label>Previous Reading Date</label>
+                            <input type="text" readonly value="${escapeHtml(previousReadingDate)}">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="calc-ledger-grid calc-ledger-grid-bottom">
+                <section class="calc-panel calc-panel-wide">
+                    <div class="calc-panel-title">Reading Information</div>
+                    <div class="calc-reading-grid">
+                        <div class="calc-reading-column">
+                            <div class="calc-field">
+                                <label for="calcPresentMeterInput">Present Reading</label>
+                                <input type="number" id="calcPresentMeterInput" min="0" step="1" value="${escapeHtml(String(context.presentMeter || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label for="calcPreviousMeterInput">Previous Reading</label>
+                                <input type="number" id="calcPreviousMeterInput" min="0" step="1" value="${escapeHtml(String(context.previousMeter || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Gross Total Cons.</label>
+                                <input type="text" id="calcRawPagesValue" readonly value="${escapeHtml(formatCount(estimate.rawPages || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label for="calcSpoilageInput">Spoilage %</label>
+                                <input type="number" id="calcSpoilageInput" min="0" step="0.01" value="${escapeHtml(String((context.spoilageRate || 0) * 100))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Spoilage Pages</label>
+                                <input type="text" id="calcSpoilagePagesValue" readonly value="${escapeHtml(formatCount(estimate.spoilagePages || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Net Consumption</label>
+                                <input type="text" id="calcNetPagesValue" readonly value="${escapeHtml(formatCount(estimate.netPages || 0))}">
+                            </div>
+                        </div>
+                        <div class="calc-reading-column">
+                            <div class="calc-field">
+                                <label>Quota</label>
+                                <input type="text" readonly value="${escapeHtml(formatCount(profile.monthly_quota || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Page Rate</label>
+                                <input type="text" readonly value="${escapeHtml(formatAmount(profile.page_rate || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Monthly Rate</label>
+                                <input type="text" readonly value="${escapeHtml(formatAmount(profile.monthly_rate || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Billed Pages</label>
+                                <input type="text" id="calcBilledPagesValue" readonly value="${escapeHtml(formatCount(estimate.billedPages || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>VAT Amount</label>
+                                <input type="text" id="calcVatValue" readonly value="${escapeHtml(formatAmount(estimate.vatAmount || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Net Amount</label>
+                                <input type="text" id="calcNetValue" readonly value="${escapeHtml(formatAmount(estimate.netAmount || 0))}">
+                            </div>
+                            <div class="calc-field calc-field-strong">
+                                <label>Amount Due</label>
+                                <input type="text" id="calcAmountValue" readonly value="${escapeHtml(formatAmount(estimate.amountDue || 0))}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="calc-note calc-note-tight">
+                        ${
+                            context.isReading
+                                ? `This estimate applies spoilage first, then charges the contract quota when net pages fall below quota. If no page-rate computation can run, the monthly rate is used as fallback.`
+                                : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
+                        }
+                    </div>
+                    <div class="calc-warning" id="calcWarningValue">${escapeHtml(estimate.warning || '')}</div>
+                </section>
+                <section class="calc-panel">
+                    <div class="calc-panel-title">Computation Detail</div>
+                    <div class="detail-list-block calc-detail-block calc-detail-block-first">
+                        <span class="detail-list-label">Formula</span>
+                        <div class="detail-list-value" id="calcFormulaValue">${escapeHtml(estimate.formula)}</div>
+                    </div>
+                    <div class="detail-list-block calc-detail-block">
+                        <span class="detail-list-label">Previous Meter Context</span>
+                        <div class="detail-list-value" id="calcContextValue">
+                            ${
+                                latest
+                                    ? escapeHtml(`Previous ${formatCount(latest.previous_meter || 0)} • Present ${formatCount(latest.present_meter || 0)} • ${formatCount(latest.pages || latest.total_consumed || 0)} pages`)
+                                    : 'No previous meter reading was found in the current 6-month window.'
+                            }
+                        </div>
+                    </div>
+                    <div class="detail-list-block calc-detail-block">
+                        <span class="detail-list-label">Computation Flow</span>
+                        <div class="detail-list-value" id="calcFlowValue">${escapeHtml(
+                            context.isReading
+                                ? `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(estimate.spoilagePages || 0)} spoilage = ${formatCount(estimate.netPages || 0)} net, then quota floor ${formatCount(profile.monthly_quota || 0)} gives ${formatCount(estimate.billedPages || 0)} billed pages.`
+                                : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`
+                        )}</div>
+                    </div>
+                    <div class="detail-list-block calc-detail-block">
+                        <span class="detail-list-label">Quota Reference</span>
+                        <div class="detail-list-value" id="calcQuotaValue">${escapeHtml(
+                            estimate.quotaVariance === null
+                                ? 'No quota saved on this contract.'
+                                : `${formatCount(profile.monthly_quota || 0)} quota floor • ${estimate.quotaVariance >= 0 ? '+' : ''}${formatCount(estimate.quotaVariance)} vs net pages`
+                        )}</div>
+                    </div>
+                </section>
             </div>
             ${
                 canPrintRtp
                     ? `
-                        <div>
+                        <section class="calc-panel">
+                            <div class="calc-panel-title">RTP Print</div>
                             <div class="calc-print-row">
                                 <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print RTP</button>
                                 <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
@@ -1609,11 +1780,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                                     <input type="number" id="calcPrintPaperHeightInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperHeightCm))}">
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintOffsetXInput">X Offset (mm)</label>
+                                    <label for="calcPrintOffsetXInput">Left Margin (mm)</label>
                                     <input type="number" id="calcPrintOffsetXInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetXmm))}">
                                 </div>
                                 <div class="calc-field">
-                                    <label for="calcPrintOffsetYInput">Y Offset (mm)</label>
+                                    <label for="calcPrintOffsetYInput">Top Margin (mm)</label>
                                     <input type="number" id="calcPrintOffsetYInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetYmm))}">
                                 </div>
                                 <div class="calc-field">
@@ -1630,125 +1801,10 @@ async function openBillingCalcModal(rowId, monthKey) {
                             <div id="calcRtpPreviewMount">
                                 <div class="detail-empty">Loading printable RTP preview...</div>
                             </div>
-                        </div>
+                        </section>
                     `
                     : ''
             }
-            <div class="calc-form-grid">
-                <div class="calc-field">
-                    <label for="calcInvoiceInput">Invoice</label>
-                    <input type="text" id="calcInvoiceInput" value="${escapeHtml(latestInvoice?.invoice_ref || '')}" placeholder="Invoice number">
-                </div>
-                <div class="calc-field">
-                    <label for="calcBillingMonthInput">Billing Month</label>
-                    <input type="text" id="calcBillingMonthInput" readonly value="${escapeHtml(context.monthLabel)}">
-                </div>
-                <div class="calc-field">
-                    <label for="calcSpoilageInput">Spoilage %</label>
-                    <input type="number" id="calcSpoilageInput" min="0" step="0.01" value="${escapeHtml(String((context.spoilageRate || 0) * 100))}">
-                </div>
-            </div>
-            <div class="detail-summary-grid">
-                <article class="detail-summary-card">
-                    <span class="label">Page Rate</span>
-                    <span class="value">${escapeHtml(formatAmount(profile.page_rate || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Monthly Quota</span>
-                    <span class="value">${escapeHtml(formatCount(profile.monthly_quota || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Monthly Rate</span>
-                    <span class="value">${escapeHtml(formatAmount(profile.monthly_rate || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Latest Meter</span>
-                    <span class="value">${escapeHtml(latest ? formatCount(latest.present_meter || latest.previous_meter || 0) : 'Not found')}</span>
-                </article>
-            </div>
-            ${
-                context.isReading
-                    ? `
-                        <div class="calc-form-grid">
-                            <div class="calc-field">
-                                <label for="calcPreviousMeterInput">Previous Meter</label>
-                                <input type="number" id="calcPreviousMeterInput" min="0" step="1" value="${escapeHtml(String(context.previousMeter || 0))}">
-                            </div>
-                            <div class="calc-field">
-                                <label for="calcPresentMeterInput">Present Meter</label>
-                                <input type="number" id="calcPresentMeterInput" min="0" step="1" value="${escapeHtml(String(context.presentMeter || 0))}">
-                            </div>
-                            <div class="calc-field">
-                                <label>Latest Month Used</label>
-                                <input type="text" readonly value="${escapeHtml(latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading in current window')}">
-                            </div>
-                        </div>
-                    `
-                    : ''
-            }
-            <div class="calc-inline-grid">
-                <article class="calc-total-card">
-                    <span class="label">Estimated Amount</span>
-                    <span class="value" id="calcAmountValue">${escapeHtml(formatAmount(estimate.amountDue))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Raw Pages</span>
-                    <span class="value" id="calcRawPagesValue">${escapeHtml(formatCount(estimate.rawPages || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Spoilage Pages</span>
-                    <span class="value" id="calcSpoilagePagesValue">${escapeHtml(formatCount(estimate.spoilagePages || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Net Pages</span>
-                    <span class="value" id="calcNetPagesValue">${escapeHtml(formatCount(estimate.netPages || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Billed Pages</span>
-                    <span class="value" id="calcBilledPagesValue">${escapeHtml(formatCount(estimate.billedPages || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Net Amount</span>
-                    <span class="value" id="calcNetValue">${escapeHtml(formatAmount(estimate.netAmount || 0))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">VAT Amount</span>
-                    <span class="value" id="calcVatValue">${escapeHtml(formatAmount(estimate.vatAmount || 0))}</span>
-                </article>
-            </div>
-            <div class="invoice-detail-card">
-                <div class="invoice-detail-head">
-                    <div class="invoice-detail-ref">Computation Detail</div>
-                    <div class="invoice-detail-amount" id="calcFormulaValue">${escapeHtml(estimate.formula)}</div>
-                </div>
-                <div class="detail-list-block">
-                    <span class="detail-list-label">Previous Meter Context</span>
-                    <div class="detail-list-value" id="calcContextValue">
-                        ${
-                            latest
-                                ? escapeHtml(`Previous ${formatCount(latest.previous_meter || 0)} • Present ${formatCount(latest.present_meter || 0)} • ${formatCount(latest.pages || latest.total_consumed || 0)} pages`)
-                                : 'No previous meter reading was found in the current 6-month window.'
-                        }
-                    </div>
-                </div>
-                <div class="detail-list-block">
-                    <span class="detail-list-label">Computation Flow</span>
-                    <div class="detail-list-value" id="calcFlowValue">${escapeHtml(
-                        context.isReading
-                            ? `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(estimate.spoilagePages || 0)} spoilage = ${formatCount(estimate.netPages || 0)} net, then quota floor ${formatCount(profile.monthly_quota || 0)} gives ${formatCount(estimate.billedPages || 0)} billed pages.`
-                            : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`
-                    )}</div>
-                </div>
-                <div class="detail-list-block">
-                    <span class="detail-list-label">Quota Reference</span>
-                    <div class="detail-list-value" id="calcQuotaValue">${escapeHtml(
-                        estimate.quotaVariance === null
-                            ? 'No quota saved on this contract.'
-                            : `${formatCount(profile.monthly_quota || 0)} quota floor • ${estimate.quotaVariance >= 0 ? '+' : ''}${formatCount(estimate.quotaVariance)} vs net pages`
-                    )}</div>
-                </div>
-                <div class="calc-warning" id="calcWarningValue">${escapeHtml(estimate.warning || '')}</div>
-            </div>
         </div>
     `;
 
@@ -1883,13 +1939,13 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentInput ? presentInput.value : context.presentMeter,
             spoilageInput ? Number(spoilageInput.value || 0) / 100 : context.spoilageRate
         );
-        if (amountValue) amountValue.textContent = formatAmount(next.amountDue || 0);
-        if (rawPagesValue) rawPagesValue.textContent = formatCount(next.rawPages || 0);
-        if (spoilagePagesValue) spoilagePagesValue.textContent = formatCount(next.spoilagePages || 0);
-        if (netPagesValue) netPagesValue.textContent = formatCount(next.netPages || 0);
-        if (billedPagesValue) billedPagesValue.textContent = formatCount(next.billedPages || 0);
-        if (netValue) netValue.textContent = formatAmount(next.netAmount || 0);
-        if (vatValue) vatValue.textContent = formatAmount(next.vatAmount || 0);
+        setElementDisplayValue(amountValue, formatAmount(next.amountDue || 0));
+        setElementDisplayValue(rawPagesValue, formatCount(next.rawPages || 0));
+        setElementDisplayValue(spoilagePagesValue, formatCount(next.spoilagePages || 0));
+        setElementDisplayValue(netPagesValue, formatCount(next.netPages || 0));
+        setElementDisplayValue(billedPagesValue, formatCount(next.billedPages || 0));
+        setElementDisplayValue(netValue, formatAmount(next.netAmount || 0));
+        setElementDisplayValue(vatValue, formatAmount(next.vatAmount || 0));
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
             quotaValue.textContent = next.quotaVariance === null

@@ -795,6 +795,77 @@
     gap: 1rem;
 }
 
+.calc-ledger-layout {
+    gap: 1rem;
+}
+
+.calc-ledger-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+    align-items: start;
+}
+
+.calc-ledger-grid-bottom {
+    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.95fr);
+}
+
+.calc-panel {
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0.95rem 1rem;
+}
+
+.calc-panel-wide {
+    min-width: 0;
+}
+
+.calc-panel-title {
+    margin-bottom: 0.75rem;
+    color: var(--bill-ink);
+    font-size: 0.96rem;
+    font-weight: 800;
+}
+
+.calc-panel-grid {
+    display: grid;
+    gap: 0.8rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.calc-field-span-2 {
+    grid-column: span 2;
+}
+
+.calc-reading-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.calc-reading-column {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.calc-field-strong input {
+    border-color: #90baf4;
+    background: #eff6ff;
+    color: var(--bill-accent);
+    font-weight: 800;
+}
+
+.calc-note-tight {
+    margin: 1rem 0 0.75rem;
+}
+
+.calc-detail-block-first {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
 .calc-print-row {
     display: flex;
     flex-wrap: wrap;
@@ -1042,7 +1113,8 @@
     letter-spacing: 0.03em;
 }
 
-.calc-field input {
+.calc-field input,
+.calc-field select {
     width: 100%;
     padding: 0.72rem 0.8rem;
     border: 1px solid var(--bill-line);
@@ -1052,7 +1124,8 @@
     font-size: 0.94rem;
 }
 
-.calc-field input[readonly] {
+.calc-field input[readonly],
+.calc-field select[disabled] {
     background: #f8fbff;
 }
 
@@ -1282,6 +1355,12 @@
     .legend-row {
         justify-content: flex-start;
     }
+
+    .calc-ledger-grid,
+    .calc-ledger-grid-bottom,
+    .calc-reading-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 768px) {
@@ -1300,6 +1379,14 @@
     .billing-modal-header {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .calc-panel-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .calc-field-span-2 {
+        grid-column: auto;
     }
 
     .billing-modal-actions {
