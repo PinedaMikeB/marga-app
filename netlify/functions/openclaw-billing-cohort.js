@@ -1119,6 +1119,41 @@ function rowMatchesSearch(searchTerm, values) {
         .includes(needle);
 }
 
+function compareMatrixRows(left, right, months) {
+    const amountStats = (row) => {
+        const cells = months.map((monthKey) => row?.months?.[monthKey] || {});
+        return {
+            amountCount: cells.reduce((sum, cell) => sum + (Number(cell.display_amount_total || 0) > 0 ? 1 : 0), 0),
+            latestAmount: cells.reduce((max, cell) => Math.max(max, Number(cell.display_amount_total || 0)), 0)
+        };
+    };
+
+    const leftStats = amountStats(left);
+    const rightStats = amountStats(right);
+    if (rightStats.amountCount !== leftStats.amountCount) return rightStats.amountCount - leftStats.amountCount;
+    if (rightStats.latestAmount !== leftStats.latestAmount) return rightStats.latestAmount - leftStats.latestAmount;
+
+    const latestMonth = months[months.length - 1];
+    const leftPending = left?.months?.[latestMonth]?.pending ? 1 : 0;
+    const rightPending = right?.months?.[latestMonth]?.pending ? 1 : 0;
+    if (rightPending !== leftPending) return rightPending - leftPending;
+    if (Number(right?.pending_months_count || 0) !== Number(left?.pending_months_count || 0)) {
+        return Number(right?.pending_months_count || 0) - Number(left?.pending_months_count || 0);
+    }
+
+    const leftRd = Number(left?.reading_day || 0) || Number.MAX_SAFE_INTEGER;
+    const rightRd = Number(right?.reading_day || 0) || Number.MAX_SAFE_INTEGER;
+    if (leftRd !== rightRd) return leftRd - rightRd;
+
+    const accountCompare = String(left?.account_name || left?.company_name || '').localeCompare(String(right?.account_name || right?.company_name || ''));
+    if (accountCompare !== 0) return accountCompare;
+
+    const branchCompare = String(left?.branch_name || '').localeCompare(String(right?.branch_name || ''));
+    if (branchCompare !== 0) return branchCompare;
+
+    return String(left?.machine_label || left?.machine_id || left?.row_id || '').localeCompare(String(right?.machine_label || right?.machine_id || right?.row_id || ''));
+}
+
 function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}) {
     const includeActiveRows = Boolean(options.includeActiveRows);
     const searchTerm = String(options.searchTerm || '').trim();
@@ -1898,19 +1933,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         ]))
         : matrixRows;
 
-    visibleMatrixRows.sort((a, b) => {
-        const latestMonth = months[months.length - 1];
-        const leftPending = a.months[latestMonth]?.pending ? 1 : 0;
-        const rightPending = b.months[latestMonth]?.pending ? 1 : 0;
-        if (rightPending !== leftPending) return rightPending - leftPending;
-        if (b.pending_months_count !== a.pending_months_count) return b.pending_months_count - a.pending_months_count;
-        const leftRd = Number(a.reading_day || 99);
-        const rightRd = Number(b.reading_day || 99);
-        if (leftRd !== rightRd) return leftRd - rightRd;
-        const accountCompare = (a.account_name || a.company_name).localeCompare(b.account_name || b.company_name);
-        if (accountCompare !== 0) return accountCompare;
-        return String(a.machine_label || a.machine_id || a.row_id).localeCompare(String(b.machine_label || b.machine_id || b.row_id));
-    });
+    visibleMatrixRows.sort((a, b) => compareMatrixRows(a, b, months));
 
     const monthTotals = months.map((monthKey) => ({
         month_key: monthKey,
