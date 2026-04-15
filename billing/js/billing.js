@@ -555,15 +555,17 @@ function resetRtpPrintCalibration() {
 }
 
 function buildRtpCalibratedPreviewHtml(preview) {
+    const paperWidthMm = currentRtpPrintCalibration.paperWidthCm * 10;
+    const paperHeightMm = currentRtpPrintCalibration.paperHeightCm * 10;
     return `
         <section class="rtp-calibration-shell" aria-label="RTP print calibration preview">
             <div
                 class="rtp-calibration-paper"
-                style="aspect-ratio:${currentRtpPrintCalibration.paperWidthCm} / ${currentRtpPrintCalibration.paperHeightCm};"
+                style="--paper-width-mm:${paperWidthMm}; --paper-height-mm:${paperHeightMm};"
             >
                 <div
-                    class="rtp-print-sheet rtp-print-sheet-calibrated"
-                    style="transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});"
+                    class="rtp-calibration-sheet"
+                    style="transform: translate(calc(${currentRtpPrintCalibration.offsetXmm} * var(--rtp-mm-px) * 1px), calc(${currentRtpPrintCalibration.offsetYmm} * var(--rtp-mm-px) * 1px)) scale(${currentRtpPrintCalibration.scale});"
                 >
                     ${buildRtpSheetFieldsHtml(preview)}
                 </div>

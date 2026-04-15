@@ -831,10 +831,12 @@
 }
 
 .rtp-calibration-paper {
+    --rtp-mm-px: 1.8;
     position: relative;
-    width: min(100%, 396px) !important;
-    max-width: 100%;
-    aspect-ratio: 11 / 17;
+    width: calc(var(--paper-width-mm) * var(--rtp-mm-px) * 1px);
+    height: calc(var(--paper-height-mm) * var(--rtp-mm-px) * 1px);
+    max-width: min(100%, 540px);
+    max-height: 70vh;
     border: 1px solid var(--bill-line);
     border-radius: 8px;
     background: #fff;
@@ -842,11 +844,142 @@
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
-.rtp-print-sheet-calibrated {
+.rtp-calibration-sheet {
     position: absolute;
     top: 0;
     left: 0;
     transform-origin: top left;
+    width: calc(255 * var(--rtp-mm-px) * 1px);
+    height: calc(190 * var(--rtp-mm-px) * 1px);
+    color: #1f2937;
+    font-size: calc(4.6 * var(--rtp-mm-px) * 1px);
+    font-weight: 600;
+    line-height: 1.18;
+}
+
+.rtp-calibration-paper .rtp-field {
+    position: absolute;
+    white-space: pre-wrap;
+}
+
+.rtp-calibration-paper .rtp-customer-name {
+    top: calc(26 * var(--rtp-mm-px) * 1px);
+    left: calc(18 * var(--rtp-mm-px) * 1px);
+    width: calc(150 * var(--rtp-mm-px) * 1px);
+    font-weight: 700;
+}
+
+.rtp-calibration-paper .rtp-customer-tin {
+    top: calc(35 * var(--rtp-mm-px) * 1px);
+    left: calc(18 * var(--rtp-mm-px) * 1px);
+    width: calc(90 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-customer-address {
+    top: calc(43 * var(--rtp-mm-px) * 1px);
+    left: calc(18 * var(--rtp-mm-px) * 1px);
+    width: calc(150 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-meta-date,
+.rtp-calibration-paper .rtp-meta-code,
+.rtp-calibration-paper .rtp-meta-month,
+.rtp-calibration-paper .rtp-meta-type {
+    left: calc(205 * var(--rtp-mm-px) * 1px);
+    width: calc(32 * var(--rtp-mm-px) * 1px);
+    text-align: left;
+}
+
+.rtp-calibration-paper .rtp-meta-date {
+    top: calc(26 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-meta-code {
+    top: calc(35 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-meta-month {
+    top: calc(43 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-meta-type {
+    top: calc(53 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-business-style {
+    top: calc(68 * var(--rtp-mm-px) * 1px);
+    left: calc(18 * var(--rtp-mm-px) * 1px);
+    width: calc(175 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-printer-model {
+    top: calc(78 * var(--rtp-mm-px) * 1px);
+    left: calc(18 * var(--rtp-mm-px) * 1px);
+    width: calc(175 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-billing-from {
+    top: calc(89 * var(--rtp-mm-px) * 1px);
+    left: calc(104 * var(--rtp-mm-px) * 1px);
+    width: calc(34 * var(--rtp-mm-px) * 1px);
+    text-align: center;
+}
+
+.rtp-calibration-paper .rtp-billing-to {
+    top: calc(89 * var(--rtp-mm-px) * 1px);
+    left: calc(164 * var(--rtp-mm-px) * 1px);
+    width: calc(34 * var(--rtp-mm-px) * 1px);
+    text-align: center;
+}
+
+.rtp-calibration-paper .rtp-total-pages {
+    top: calc(100 * var(--rtp-mm-px) * 1px);
+    left: calc(113 * var(--rtp-mm-px) * 1px);
+    width: calc(26 * var(--rtp-mm-px) * 1px);
+    text-align: center;
+}
+
+.rtp-calibration-paper .rtp-rate {
+    top: calc(109 * var(--rtp-mm-px) * 1px);
+    left: calc(33 * var(--rtp-mm-px) * 1px);
+    width: calc(24 * var(--rtp-mm-px) * 1px);
+    text-align: left;
+}
+
+.rtp-calibration-paper .rtp-amount {
+    left: calc(211 * var(--rtp-mm-px) * 1px);
+    width: calc(27 * var(--rtp-mm-px) * 1px);
+    text-align: right;
+}
+
+.rtp-calibration-paper .rtp-amount-total {
+    top: calc(128 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-amount-vat {
+    top: calc(137 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-amount-vatable {
+    top: calc(145 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-amount-exempt {
+    top: calc(154 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-amount-zero {
+    top: calc(163 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-amount-less-vat {
+    top: calc(172 * var(--rtp-mm-px) * 1px);
+}
+
+.rtp-calibration-paper .rtp-amount-due {
+    top: calc(181 * var(--rtp-mm-px) * 1px);
+    font-size: calc(5.6 * var(--rtp-mm-px) * 1px);
+    font-weight: 800;
 }
 
 .calc-form-grid {
