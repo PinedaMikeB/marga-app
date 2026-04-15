@@ -1395,7 +1395,7 @@ function applyUserContext() {
     return true;
 }
 
-function buildRequestContext() {
+function buildRequestContext(options = {}) {
     const end = parseMonthInput(els.endMonthInput.value);
     if (!end) throw new Error('Please set the last month.');
 
@@ -1409,7 +1409,8 @@ function buildRequestContext() {
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 10))));
     params.set('include_rows', 'true');
     params.set('include_active_rows', 'true');
-    params.set('refresh_cache', String(Boolean(els.refreshCacheInput.checked)));
+    const forceRefresh = Boolean(options.forceRefresh);
+    params.set('refresh_cache', String(forceRefresh || Boolean(els.refreshCacheInput.checked)));
     const search = String(els.matrixSearchInput?.value || '').trim();
     if (search.length >= 2) {
         params.set('search', search);
@@ -1935,13 +1936,13 @@ async function openBillingCalcModal(rowId, monthKey) {
     const savedBillingDoc = pickPrimaryBillingDoc(existingBillingDocs);
     const initialSnapshot = savedBillingDoc
         ? billingSnapshotFromDoc(savedBillingDoc, {
-            invoiceNo: latestInvoice?.invoice_ref || '',
+            invoiceNo: '',
             previousMeter: context.previousMeter,
             presentMeter: context.presentMeter,
             spoilagePercent: (context.spoilageRate || 0) * 100
         })
         : billingSnapshotFromValues({
-            invoiceNo: latestInvoice?.invoice_ref || '',
+            invoiceNo: '',
             previousMeter: context.previousMeter,
             presentMeter: context.presentMeter,
             spoilagePercent: (context.spoilageRate || 0) * 100
@@ -2003,6 +2004,10 @@ async function openBillingCalcModal(rowId, monthKey) {
                         <div class="calc-field">
                             <label>Invoice #</label>
                             <input type="text" id="calcInvoiceInput" value="${escapeHtml(initialSnapshot.invoiceNo || '')}" placeholder="Invoice number">
+                        </div>
+                        <div class="calc-field">
+                            <label>Latest Invoice Used</label>
+                            <input type="text" readonly value="${escapeHtml(latestInvoice?.invoice_ref || 'No prior invoice')}">
                         </div>
                         <div class="calc-field">
                             <label>Category</label>
@@ -2469,12 +2474,13 @@ async function openBillingCalcModal(rowId, monthKey) {
                 'success'
             );
             if (!result.queued) {
-                await loadDashboard();
+                await loadDashboard({ forceRefresh: true });
                 if (requestToken !== billingCalcRequestToken) return;
                 await openBillingCalcModal(rowId, monthKey);
                 return;
             }
         } catch (error) {
+            if (saveStatus) saveStatus.textContent = String(error?.message || 'Unable to save billing.');
             MargaUtils.showToast(String(error?.message || 'Unable to save billing.'), 'error');
         } finally {
             saveBillingBtn.disabled = false;
@@ -2503,7 +2509,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                     : 'No saved billing record was found for this month.',
                 'success'
             );
-            await loadDashboard();
+            await loadDashboard({ forceRefresh: true });
             closeBillingCalcModal();
         } catch (error) {
             MargaUtils.showToast(String(error?.message || 'Unable to delete billing.'), 'error');
@@ -3009,7 +3015,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
                 'success'
             );
             closeInvoiceDetailModal();
-            await loadDashboard();
+            await loadDashboard({ forceRefresh: true });
         } catch (error) {
             MargaUtils.showToast(String(error?.message || 'Unable to delete billing.'), 'error');
             if (deleteButton) deleteButton.disabled = false;
@@ -3033,9 +3039,9 @@ function renderError(message) {
     els.rawJson.textContent = String(message || 'Unknown error');
 }
 
-async function loadDashboard() {
+async function loadDashboard(options = {}) {
     try {
-        const { url, apiKey } = buildRequestContext();
+        const { url, apiKey } = buildRequestContext(options);
         setStatus('Loading...', 'loading');
         els.runBtn.disabled = true;
 
