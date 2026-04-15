@@ -780,66 +780,6 @@ function serializeReadingGroups(groups) {
         });
 }
 
-function serializeMonthCell(cell) {
-    return {
-        month_key: cell.month_key,
-        month_label: cell.month_label,
-        month_label_short: cell.month_label_short,
-        billed: cell.billed,
-        pending: cell.pending,
-        skipped: cell.skipped,
-        invoice_count: cell.invoice_count,
-        billing_line_count: cell.billing_line_count,
-        machine_count: cell.machine_count,
-        amount_total: Number(cell.amount_total.toFixed(2)),
-        display_amount_total: roundCurrency(cell.display_amount_total || 0),
-        reading_amount_total: roundCurrency(cell.reading_amount_total || 0),
-        reading_pages_total: Number(cell.reading_pages_total || 0) || 0,
-        reading_task_count: Number(cell.reading_task_count || 0) || 0,
-        reading_formula: cell.reading_formula || null,
-        billed_basis: cell.billed_basis || 'none',
-        missed_reading: Boolean(cell.missed_reading),
-        catch_up_billing: Boolean(cell.catch_up_billing),
-        catch_up_gap_months: Number(cell.catch_up_gap_months || 0) || 0,
-        billing_task_count: cell.billing_task_count,
-        received_task_count: cell.received_task_count,
-        receipt_status: cell.receipt_status,
-        latest_invoice_date: cell.latest_invoice_date,
-        received_by_names: sortedUnique(Array.from(cell.received_by_names)),
-        invoice_groups: serializeInvoiceGroups(cell.invoice_groups),
-        reading_groups: serializeReadingGroups(cell.reading_groups)
-    };
-}
-
-function serializeMatrixRow(row, months) {
-    const serializedMonths = {};
-    months.forEach((monthKey) => {
-        serializedMonths[monthKey] = serializeMonthCell(row.months[monthKey]);
-    });
-
-    return {
-        row_id: row.row_id,
-        company_id: row.company_id,
-        branch_id: row.branch_id,
-        company_name: row.company_name,
-        branch_name: row.branch_name,
-        account_name: row.account_name,
-        serial_number: row.serial_number,
-        machine_id: row.machine_id,
-        contractmain_id: row.contractmain_id,
-        machine_label: row.machine_label,
-        display_name: row.display_name,
-        reading_day: row.reading_day,
-        reading_day_source: row.reading_day_source,
-        billed_months_count: row.billed_months_count,
-        pending_months_count: row.pending_months_count,
-        confirmed_received_months_count: row.confirmed_received_months_count,
-        unconfirmed_billed_months_count: row.unconfirmed_billed_months_count,
-        latest_billed_month: row.latest_billed_month,
-        months: serializedMonths
-    };
-}
-
 function buildAccountLabel(companyName, branchName) {
     const company = String(companyName || '').trim();
     const branch = String(branchName || '').trim();
@@ -1640,7 +1580,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         additional_customers_total: 0,
         inactive_customers_total: 0,
         to_bill_customers_total: 0,
-        pending_customers_total: 0
+        pending_customers_total: 0,
+        skipped_companies: [],
+        receipt_gap_companies: []
     }]));
 
     const topSummaryRows = [];
@@ -1732,6 +1674,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
 
         const pendingLabels = [];
         const receiptStatuses = [];
+        const serializedMonths = {};
 
         months.forEach((monthKey) => {
             const cell = row.months[monthKey];
@@ -1821,6 +1764,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     machine_count: cell.machine_count,
                     amount_total: Number(cell.amount_total.toFixed(2))
                 });
+                if (cell.billed) summary.receipt_gap_companies.push({ row_id: rowId, company_id: row.company_id, company_name: row.company_name, branch_name: row.branch_name, account_name: row.account_name, receipt_status: cell.receipt_status });
             }
 
             if (cell.billed) {
@@ -1830,6 +1774,35 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 if (cell.receipt_status === 'partial') summary.partial_received_customers_total += 1;
                 if (cell.receipt_status === 'not_confirmed') summary.not_confirmed_customers_total += 1;
             }
+
+            serializedMonths[monthKey] = {
+                month_key: monthKey,
+                month_label: cell.month_label,
+                month_label_short: cell.month_label_short,
+                billed: cell.billed,
+                pending: cell.pending,
+                skipped: cell.skipped,
+                invoice_count: cell.invoice_count,
+                billing_line_count: cell.billing_line_count,
+                machine_count: cell.machine_count,
+                amount_total: Number(cell.amount_total.toFixed(2)),
+                display_amount_total: roundCurrency(cell.display_amount_total || 0),
+                reading_amount_total: roundCurrency(cell.reading_amount_total || 0),
+                reading_pages_total: Number(cell.reading_pages_total || 0) || 0,
+                reading_task_count: Number(cell.reading_task_count || 0) || 0,
+                reading_formula: cell.reading_formula || null,
+                billed_basis: cell.billed_basis || 'none',
+                missed_reading: Boolean(cell.missed_reading),
+                catch_up_billing: Boolean(cell.catch_up_billing),
+                catch_up_gap_months: Number(cell.catch_up_gap_months || 0) || 0,
+                billing_task_count: cell.billing_task_count,
+                received_task_count: cell.received_task_count,
+                receipt_status: cell.receipt_status,
+                latest_invoice_date: cell.latest_invoice_date,
+                received_by_names: sortedUnique(Array.from(cell.received_by_names)),
+                invoice_groups: serializeInvoiceGroups(cell.invoice_groups),
+                reading_groups: serializeReadingGroups(cell.reading_groups)
+            };
         });
 
         if (pendingLabels.length) {
@@ -1881,7 +1854,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             confirmed_received_months_count: row.confirmed_received_months_count,
             unconfirmed_billed_months_count: row.unconfirmed_billed_months_count,
             latest_billed_month: row.latest_billed_month,
-            months: row.months
+            months: serializedMonths
         });
     });
 
@@ -1919,6 +1892,28 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         amount_total: Number(visibleMatrixRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0).toFixed(2))
     }));
 
+    const latestBilledRows = visibleMatrixRows
+        .flatMap((row) => months.map((monthKey) => ({
+            company_id: row.company_id,
+            branch_id: row.branch_id,
+            company_name: row.company_name,
+            branch_name: row.branch_name,
+            account_name: row.account_name,
+            machine_id: row.machine_id,
+            machine_label: row.machine_label,
+            month_key: monthKey,
+            month_label: monthLabelFromKey(monthKey),
+            latest_invoice_date: row.months[monthKey].latest_invoice_date,
+            invoice_count: row.months[monthKey].invoice_count,
+            machine_count: row.months[monthKey].machine_count,
+            amount_total: row.months[monthKey].amount_total,
+            receipt_status: row.months[monthKey].receipt_status
+        })))
+        .filter((row) => row.latest_invoice_date)
+        .sort((a, b) => new Date(b.latest_invoice_date).getTime() - new Date(a.latest_invoice_date).getTime())
+        .slice(0, latestListLimit)
+        .map((row) => ({ ...row, amount_total: Number(Number(row.amount_total || 0).toFixed(2)) }));
+
     const comparisons = months.slice(1).map((monthKey, index) => {
         const previousKey = months[index];
         const left = summaryByMonth.get(previousKey);
@@ -1949,7 +1944,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         matrixRows: visibleMatrixRows,
         monthTotals,
         skippedRows,
-        receiptGapRows
+        receiptGapRows,
+        latestBilledRows
     };
 }
 
@@ -1987,7 +1983,7 @@ exports.handler = async (event) => {
         const schedulePages = intParam(searchParams.get('max_schedule_pages') || DEFAULT_SCHEDULE_MAX_PAGES, DEFAULT_SCHEDULE_MAX_PAGES, 10, 600);
         const searchTerm = String(searchParams.get('search') || '').trim();
         const includeActiveRows = boolParam(searchParams.get('include_active_rows'), true);
-        const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), false);
+        const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm));
 
         if (!startKey || !endKey || startKey > endKey) {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
@@ -2031,13 +2027,13 @@ exports.handler = async (event) => {
                 include_active_rows: includeActiveRows
             },
             billing_last_6_months: result.topSummaryRows,
+            month_summaries: result.monthSummaries,
+            month_to_month_comparison: result.comparisons,
             month_matrix: {
                 months: result.months,
                 month_labels_short: result.months.map(shortMonthLabelFromKey),
                 totals: result.monthTotals,
-                rows: includeRows
-                    ? result.matrixRows.slice(0, rowLimit).map((row) => serializeMatrixRow(row, result.months))
-                    : []
+                rows: includeRows ? result.matrixRows.slice(0, rowLimit) : []
             }
         });
     } catch (error) {
