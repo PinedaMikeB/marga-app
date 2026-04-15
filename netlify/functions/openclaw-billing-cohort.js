@@ -702,9 +702,6 @@ function createMonthCell(monthKey) {
         reading_task_count: 0,
         reading_formula: null,
         billed_basis: 'none',
-        missed_reading: false,
-        catch_up_billing: false,
-        catch_up_gap_months: 0,
         billed_branch_ids: new Set(),
         invoice_keys: new Set(),
         machine_ids: new Set(),
@@ -1431,6 +1428,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const bucketKey = `${contractId}::${machineId}`;
         if (!monthlyReadingByContractMachine.has(bucketKey)) monthlyReadingByContractMachine.set(bucketKey, new Map());
         const monthBucket = monthlyReadingByContractMachine.get(bucketKey);
+        const existing = monthBucket.get(monthKey);
         const nextEntry = {
             schedule_id: `reading:${String(getField(f, ['id']) || '').trim() || `${bucketKey}:${monthKey}`}`,
             invoice_num: String(getField(f, ['invoice_id']) || '').trim() || null,
@@ -1439,13 +1437,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             contractmain_id: contractId,
             meter_reading: meterReading
         };
-        const existing = monthBucket.get(monthKey);
-        if (!existing) {
-            monthBucket.set(monthKey, { earliest: nextEntry, latest: nextEntry });
-            return;
+        if (!existing || new Date(existing.task_date).getTime() < readingStamp.getTime()) {
+            monthBucket.set(monthKey, nextEntry);
         }
-        if (new Date(existing.earliest.task_date).getTime() > readingStamp.getTime()) existing.earliest = nextEntry;
-        if (new Date(existing.latest.task_date).getTime() < readingStamp.getTime()) existing.latest = nextEntry;
     });
 
     monthlyReadingByContractMachine.forEach((monthBucket, bucketKey) => {
@@ -1494,36 +1488,25 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const orderedMonths = Array.from(monthBucket.keys()).sort((a, b) => a.localeCompare(b));
         let previousEntry = null;
         orderedMonths.forEach((readingMonthKey) => {
-            const readingSet = monthBucket.get(readingMonthKey);
-            if (!readingSet) return;
-            const currentLatest = readingSet.latest;
-            const currentEarliest = readingSet.earliest;
+            const currentEntry = monthBucket.get(readingMonthKey);
+            if (!currentEntry) return;
             if (readingMonthKey < startKey || readingMonthKey > endKey) {
-                previousEntry = currentLatest;
+                previousEntry = currentEntry;
                 return;
             }
-            let reading = null;
-            let sourceEntry = currentLatest;
-            let meterSource = null;
-            if (previousEntry) {
-                reading = buildReadingFromMeters(matchedContract, currentLatest.meter_reading, previousEntry.meter_reading);
-                meterSource = 'prior_month_latest';
-            } else if (currentEarliest && currentLatest && Number(currentLatest.meter_reading || 0) > Number(currentEarliest.meter_reading || 0)) {
-                reading = buildReadingFromMeters(matchedContract, currentLatest.meter_reading, currentEarliest.meter_reading);
-                sourceEntry = currentLatest;
-                meterSource = 'same_month_delta';
-            }
-            if (!reading) {
-                previousEntry = currentLatest;
+            if (!previousEntry) {
+                previousEntry = currentEntry;
                 return;
             }
+
+            const reading = buildReadingFromMeters(matchedContract, currentEntry.meter_reading, previousEntry.meter_reading);
             if (reading.amountDue > 0 || reading.pages > 0) {
                 const companyCell = row.months[readingMonthKey];
                 const machineCell = machineRow.months[readingMonthKey];
                 const readingEntry = {
-                    schedule_id: sourceEntry.schedule_id,
-                    invoice_num: sourceEntry.invoice_num,
-                    task_date: sourceEntry.task_date,
+                    schedule_id: currentEntry.schedule_id,
+                    invoice_num: currentEntry.invoice_num,
+                    task_date: currentEntry.task_date,
                     machine_id: machineId,
                     contractmain_id: contractId,
                     pages: reading.pages,
@@ -1535,20 +1518,20 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     vat_amount: reading.vatAmount,
                     with_vat: reading.withVat,
                     category_id: reading.categoryId,
-                    formula: `tbl_machinereading:${meterSource || 'unknown'}:${reading.formula}`
+                    formula: `tbl_machinereading:${reading.formula}`
                 };
 
-                if (!companyCell.reading_groups.has(sourceEntry.schedule_id)) {
+                if (!companyCell.reading_groups.has(currentEntry.schedule_id)) {
                     companyCell.reading_task_count += 1;
                     companyCell.reading_amount_total += reading.amountDue;
                     companyCell.reading_pages_total += reading.pages;
                     companyCell.display_amount_total = companyCell.amount_total > 0 ? companyCell.amount_total : companyCell.reading_amount_total;
                     companyCell.reading_formula = companyCell.reading_formula || readingEntry.formula;
                     companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice' : 'meter_reading';
-                    companyCell.reading_groups.set(sourceEntry.schedule_id, readingEntry);
+                    companyCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
                 }
 
-                if (!machineCell.reading_groups.has(sourceEntry.schedule_id)) {
+                if (!machineCell.reading_groups.has(currentEntry.schedule_id)) {
                     machineCell.reading_task_count += 1;
                     machineCell.reading_amount_total += reading.amountDue;
                     machineCell.reading_pages_total += reading.pages;
@@ -1557,10 +1540,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice' : 'meter_reading';
                     if (machineId) machineCell.machine_ids.add(machineId);
                     machineCell.machine_count = machineCell.machine_ids.size || 1;
-                    machineCell.reading_groups.set(sourceEntry.schedule_id, readingEntry);
+                    machineCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
                 }
             }
-            previousEntry = currentLatest;
+            previousEntry = currentEntry;
         });
     });
 
@@ -1679,6 +1662,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         months.forEach((monthKey) => {
             const cell = row.months[monthKey];
             const accountCell = accountRow?.months?.[monthKey];
+            const summary = summaryByMonth.get(monthKey);
 
             if (!cell.billed) {
                 const monthIndex = months.indexOf(monthKey);
@@ -1709,44 +1693,6 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             }
 
             finalizeReceiptStatus(cell);
-        });
-
-        months.forEach((monthKey, monthIndex) => {
-            const cell = row.months[monthKey];
-            cell.missed_reading = false;
-            cell.catch_up_billing = false;
-            cell.catch_up_gap_months = 0;
-
-            if (cell.pending) {
-                const hasLaterBilled = months.slice(monthIndex + 1).some((nextKey) => {
-                    const nextCell = row.months[nextKey];
-                    return Boolean(nextCell?.billed || Number(nextCell?.display_amount_total || 0) > 0);
-                });
-                if (hasLaterBilled) cell.missed_reading = true;
-                return;
-            }
-
-            if (!(cell.billed || Number(cell.display_amount_total || 0) > 0)) return;
-
-            let gapMonths = 0;
-            for (let priorIndex = monthIndex - 1; priorIndex >= 0; priorIndex -= 1) {
-                const priorCell = row.months[months[priorIndex]];
-                if (priorCell?.pending) {
-                    gapMonths += 1;
-                    continue;
-                }
-                if (priorCell?.billed || Number(priorCell?.display_amount_total || 0) > 0) break;
-                break;
-            }
-            if (gapMonths > 0) {
-                cell.catch_up_billing = true;
-                cell.catch_up_gap_months = gapMonths;
-            }
-        });
-
-        months.forEach((monthKey) => {
-            const cell = row.months[monthKey];
-            const summary = summaryByMonth.get(monthKey);
 
             if (cell.billed) row.billed_months_count += 1;
             if (cell.pending) {
@@ -1792,9 +1738,6 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 reading_task_count: Number(cell.reading_task_count || 0) || 0,
                 reading_formula: cell.reading_formula || null,
                 billed_basis: cell.billed_basis || 'none',
-                missed_reading: Boolean(cell.missed_reading),
-                catch_up_billing: Boolean(cell.catch_up_billing),
-                catch_up_gap_months: Number(cell.catch_up_gap_months || 0) || 0,
                 billing_task_count: cell.billing_task_count,
                 received_task_count: cell.received_task_count,
                 receipt_status: cell.receipt_status,

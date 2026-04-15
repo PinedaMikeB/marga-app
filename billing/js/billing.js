@@ -192,11 +192,6 @@ function receiptDot(status) {
     return `<span class="receipt-dot ${className}" title="${escapeHtml(label)}"></span>`;
 }
 
-function catchUpLabel(cell) {
-    const gapMonths = Number(cell?.catch_up_gap_months || 0);
-    return gapMonths > 1 ? `Catch-up Billing (${gapMonths} months)` : 'Catch-up Billing';
-}
-
 function pendingHref(companyId, monthKey) {
     const url = new URL(MargaAuth.buildAppUrl('billing/index.html'), window.location.origin);
     url.searchParams.set('row_id', companyId);
@@ -418,9 +413,6 @@ function buildCompanySummaryRows(rows, months) {
                     billed: billedCells.length > 0,
                     pending: billedCells.length === 0 && pendingCount > 0,
                     skipped: billedCells.length === 0 && pendingCount > 0,
-                    missed_reading: childCells.some((cell) => cell.missed_reading),
-                    catch_up_billing: billedCells.some((cell) => cell.catch_up_billing),
-                    catch_up_gap_months: Math.max(0, ...childCells.map((cell) => Number(cell.catch_up_gap_months || 0))),
                     invoice_count: invoiceCount,
                     billing_line_count: billingLineCount,
                     machine_count: machineIds.size || billedCells.length,
@@ -563,23 +555,17 @@ function renderMatrixTable(payload) {
             const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
             const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
             const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
-            const missedReading = Boolean(cell.missed_reading);
-            const catchUpBilling = Boolean(cell.catch_up_billing);
             if (cell.billed || shownAmount > 0) {
                 const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
                 const machineMeta = `${formatCount(cell.machine_count || 0)} mach`;
                 const pendingMeta = row.is_summary_row && Number(cell.pending_count || 0) > 0
                     ? ` • ${formatCount(cell.pending_count || 0)} pending`
                     : '';
-                const stateMeta = catchUpBilling ? ` • ${catchUpLabel(cell)}` : '';
                 const cellMeta = hasInvoiceAmount
-                    ? `${invoiceMeta} • ${machineMeta}${pendingMeta}${stateMeta}`
-                    : `${formatCount(cell.reading_task_count || 0)} meter form • ${formatCount(cell.reading_pages_total || 0)} pg${pendingMeta}${stateMeta}`;
-                const cellTitle = catchUpBilling
-                    ? catchUpLabel(cell)
-                    : (hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter reading breakdown amount');
+                    ? `${invoiceMeta} • ${machineMeta}${pendingMeta}`
+                    : `${formatCount(cell.reading_task_count || 0)} meter form • ${formatCount(cell.reading_pages_total || 0)} pg${pendingMeta}`;
                 return `
-                    <td class="month-cell billed-cell ${!hasInvoiceAmount && hasReadingBreakdown ? 'meter-cell' : ''} ${catchUpBilling ? 'catch-up-cell' : ''} ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(cellTitle)}">
+                    <td class="month-cell billed-cell ${!hasInvoiceAmount && hasReadingBreakdown ? 'meter-cell' : ''} ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter reading breakdown amount')}">
                         <button
                             class="billed-link ${row.is_summary_row ? 'summary-billed-link' : ''}"
                             type="button"
@@ -596,10 +582,8 @@ function renderMatrixTable(payload) {
             }
             if (cell.pending) {
                 return `
-                    <td class="month-cell pending-cell ${missedReading ? 'missed-reading-cell' : ''} ${isSelected ? 'selected-cell' : ''}">
-                        <a class="pending-link" href="${escapeHtml(pendingHref(rowId, monthKey))}" title="${escapeHtml(missedReading ? 'Missed Reading. Open billing context.' : 'Pending reading or billing. Open billing context.')}">
-                            ${missedReading ? '<span class="pending-state-label">Missed Reading</span>' : ''}
-                        </a>
+                    <td class="month-cell pending-cell ${isSelected ? 'selected-cell' : ''}">
+                        <a class="pending-link" href="${escapeHtml(pendingHref(rowId, monthKey))}" title="Pending reading or billing. Open billing context."></a>
                     </td>
                 `;
             }
@@ -761,10 +745,7 @@ function openInvoiceDetailModal(rowId, monthKey) {
     const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
 
     els.invoiceDetailTitle.textContent = title;
-    const stateLabel = cell.catch_up_billing
-        ? catchUpLabel(cell)
-        : (hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter breakdown amount');
-    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${stateLabel}`;
+    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter breakdown amount'}`;
 
     els.invoiceDetailContent.innerHTML = `
         <div class="detail-summary-grid">
