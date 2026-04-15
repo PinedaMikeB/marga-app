@@ -318,6 +318,16 @@ async function queryFirestoreEquals(collection, fieldPath, value) {
     });
 }
 
+async function getFirestoreDocument(collection, docId) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`);
+    if (response.status === 404) return null;
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to load ${collection}/${docId}.`);
+    }
+    return MargaUtils.parseFirestoreDoc(payload);
+}
+
 async function setFirestoreDocument(collection, docId, fields, options = {}) {
     if (window.MargaOfflineSync?.writeFirestoreDoc) {
         return window.MargaOfflineSync.writeFirestoreDoc({
@@ -961,9 +971,14 @@ const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
 const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v1';
 const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v1';
 const RTP_PRINT_RECOVERED_TEMPLATE_NAME = 'Saved Invoice Layout';
+const RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION = 'tbl_app_settings';
+const RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID = 'billing_invoice_print_templates_v1';
+const RTP_PRINT_TEMPLATE_SETTING_KEY = 'billing_invoice_print_templates';
 let currentRtpPrintCalibration = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 let currentRtpPrintTemplates = {};
 let currentRtpPrintTemplateName = 'Default';
+let rtpPrintTemplatesFirebasePromise = null;
+let rtpPrintTemplatesLoadedFromFirebase = false;
 
 function normalizeRtpPrintCalibration(value = {}) {
     const paperWidthCm = Number(value?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
@@ -1016,6 +1031,10 @@ function normalizeRtpPrintTemplateName(value = '') {
 
 function rtpPrintCalibrationsEqual(left, right) {
     return JSON.stringify(normalizeRtpPrintCalibration(left)) === JSON.stringify(normalizeRtpPrintCalibration(right));
+}
+
+function isDefaultRtpPrintCalibration(calibration) {
+    return rtpPrintCalibrationsEqual(calibration, RTP_PRINT_CALIBRATION);
 }
 
 function getUniqueRtpPrintTemplateName(baseName, templates = {}) {
@@ -1078,6 +1097,23 @@ function saveRtpPrintTemplates(nextTemplates) {
         console.warn('Unable to save RTP print templates.', error);
     }
     return currentRtpPrintTemplates;
+}
+
+function mergeRtpPrintTemplateLibraries(primaryTemplates = {}, secondaryTemplates = {}) {
+    const merged = saveRtpPrintTemplates(primaryTemplates);
+    Object.entries(secondaryTemplates || {}).forEach(([templateName, calibration]) => {
+        const normalizedCalibration = normalizeRtpPrintCalibration(calibration);
+        if (templateName === 'Default' && isDefaultRtpPrintCalibration(normalizedCalibration)) return;
+        const alreadyExists = Object.values(merged).some((existingCalibration) => (
+            rtpPrintCalibrationsEqual(existingCalibration, normalizedCalibration)
+        ));
+        if (alreadyExists) return;
+
+        const preferredName = templateName === 'Default' ? RTP_PRINT_RECOVERED_TEMPLATE_NAME : templateName;
+        const uniqueName = getUniqueRtpPrintTemplateName(preferredName, merged);
+        merged[uniqueName] = normalizedCalibration;
+    });
+    return saveRtpPrintTemplates(merged);
 }
 
 function loadRtpPrintActiveTemplateName() {
@@ -1185,7 +1221,9 @@ function recoverStoredRtpPrintTemplate(templates, storedCalibration, storedActiv
         rtpPrintCalibrationsEqual(calibration, normalizedStoredCalibration)
     ))?.[0];
     if (matchingTemplateName) {
-        return { templates, recoveredTemplateName: matchingTemplateName === 'Default' ? null : matchingTemplateName };
+        if (matchingTemplateName !== 'Default' || isDefaultRtpPrintCalibration(normalizedStoredCalibration)) {
+            return { templates, recoveredTemplateName: matchingTemplateName === 'Default' ? null : matchingTemplateName };
+        }
     }
 
     const preferredName = storedActiveTemplate && storedActiveTemplate !== 'Default'
@@ -1220,6 +1258,116 @@ function initializeRtpPrintCalibrationState() {
 }
 
 initializeRtpPrintCalibrationState();
+
+function buildRtpPrintLocalTemplateState() {
+    const loadedTemplates = loadRtpPrintTemplates();
+    const storedCalibration = readRtpPrintCalibration();
+    const storedActiveTemplate = loadRtpPrintActiveTemplateName();
+    const recoveredState = recoverStoredRtpPrintTemplate(loadedTemplates, storedCalibration, storedActiveTemplate);
+    const templates = saveRtpPrintTemplates(recoveredState.templates);
+    const activeTemplateName = recoveredState.recoveredTemplateName || (templates[storedActiveTemplate]
+        ? storedActiveTemplate
+        : (templates[currentRtpPrintTemplateName] ? currentRtpPrintTemplateName : 'Default'));
+    return {
+        templates,
+        activeTemplateName: normalizeRtpPrintTemplateName(activeTemplateName)
+    };
+}
+
+function parseRtpPrintTemplateJson(value) {
+    if (!value) return {};
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        return Object.fromEntries(extractRtpPrintTemplateEntries(parsed));
+    } catch (error) {
+        console.warn('Unable to parse Firebase invoice print templates.', error);
+        return {};
+    }
+}
+
+async function loadRtpPrintTemplatesFromFirestore() {
+    const doc = await getFirestoreDocument(RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION, RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID);
+    if (!doc) {
+        return {
+            found: false,
+            templates: {
+                Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
+            },
+            activeTemplateName: 'Default'
+        };
+    }
+
+    return {
+        found: true,
+        templates: {
+            Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION),
+            ...parseRtpPrintTemplateJson(doc.templates_json)
+        },
+        activeTemplateName: normalizeRtpPrintTemplateName(doc.active_template_name || 'Default')
+    };
+}
+
+async function saveRtpPrintTemplatesToFirestore() {
+    const templatesJson = JSON.stringify(currentRtpPrintTemplates);
+    return setFirestoreDocument(RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION, RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID, {
+        setting_key: RTP_PRINT_TEMPLATE_SETTING_KEY,
+        active_template_name: currentRtpPrintTemplateName,
+        templates_json: templatesJson,
+        updated_at: new Date().toISOString(),
+        source_module: 'billing_dashboard'
+    }, {
+        mode: 'set',
+        label: 'Invoice print templates',
+        dedupeKey: `${RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION}:${RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID}`
+    });
+}
+
+async function ensureRtpPrintTemplatesReady(options = {}) {
+    const { force = false } = options;
+    if (rtpPrintTemplatesLoadedFromFirebase && !force) return currentRtpPrintTemplates;
+    if (rtpPrintTemplatesFirebasePromise && !force) return rtpPrintTemplatesFirebasePromise;
+
+    rtpPrintTemplatesFirebasePromise = (async () => {
+        const localState = buildRtpPrintLocalTemplateState();
+        let firebaseState = null;
+        try {
+            firebaseState = await loadRtpPrintTemplatesFromFirestore();
+        } catch (error) {
+            console.warn('Unable to load invoice print templates from Firebase. Using local fallback.', error);
+            firebaseState = null;
+        }
+
+        if (firebaseState?.found) {
+            const mergedTemplates = mergeRtpPrintTemplateLibraries(firebaseState.templates, localState.templates);
+            const activeTemplateName = mergedTemplates[firebaseState.activeTemplateName]
+                ? firebaseState.activeTemplateName
+                : (mergedTemplates[localState.activeTemplateName] ? localState.activeTemplateName : 'Default');
+            saveRtpPrintActiveTemplateName(activeTemplateName);
+            currentRtpPrintCalibration = mergedTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+            saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
+
+            if (JSON.stringify(mergedTemplates) !== JSON.stringify(firebaseState.templates)) {
+                await saveRtpPrintTemplatesToFirestore();
+            }
+        } else {
+            currentRtpPrintTemplates = saveRtpPrintTemplates(localState.templates);
+            const activeTemplateName = currentRtpPrintTemplates[localState.activeTemplateName]
+                ? localState.activeTemplateName
+                : 'Default';
+            saveRtpPrintActiveTemplateName(activeTemplateName);
+            currentRtpPrintCalibration = currentRtpPrintTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+            saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
+            await saveRtpPrintTemplatesToFirestore();
+        }
+
+        rtpPrintTemplatesLoadedFromFirebase = true;
+        return currentRtpPrintTemplates;
+    })().finally(() => {
+        rtpPrintTemplatesFirebasePromise = null;
+    });
+
+    return rtpPrintTemplatesFirebasePromise;
+}
 
 function getRtpPrintSectionCalibration(sectionKey) {
     return currentRtpPrintCalibration.sections?.[sectionKey] || RTP_PRINT_CALIBRATION.sections[sectionKey];
@@ -2110,6 +2258,15 @@ async function openBillingCalcModal(rowId, monthKey) {
     const canPrintInvoice = isPrintableContractCode(printContractCode);
     const requestToken = ++billingCalcRequestToken;
 
+    if (canPrintInvoice) {
+        try {
+            await ensureRtpPrintTemplatesReady();
+        } catch (error) {
+            console.warn('Unable to prepare Firebase invoice print templates.', error);
+        }
+        if (requestToken !== billingCalcRequestToken) return;
+    }
+
     let existingBillingDocs = [];
     try {
         existingBillingDocs = await queryBillingDocsByContractMonth(row?.contractmain_id, monthKey);
@@ -2632,20 +2789,41 @@ async function openBillingCalcModal(rowId, monthKey) {
         syncCalibrationInputs(calibration);
         renderCalcPreview(activeEstimate);
     });
-    saveTemplateBtn?.addEventListener('click', () => {
+    saveTemplateBtn?.addEventListener('click', async () => {
         const templateName = normalizeRtpPrintTemplateName(templateNameInput?.value || currentRtpPrintTemplateName);
-        saveCurrentRtpPrintTemplate(templateName);
-        syncCalibrationInputs(currentRtpPrintCalibration);
-        renderCalcPreview(activeEstimate);
-        MargaUtils.showToast(`Saved invoice template: ${templateName}`, 'success');
+        if (saveTemplateBtn) saveTemplateBtn.disabled = true;
+        try {
+            saveCurrentRtpPrintTemplate(templateName);
+            syncCalibrationInputs(currentRtpPrintCalibration);
+            renderCalcPreview(activeEstimate);
+            const result = await saveRtpPrintTemplatesToFirestore();
+            MargaUtils.showToast(result?.queued
+                ? `Queued invoice template for Firebase: ${templateName}`
+                : `Saved invoice template to Firebase: ${templateName}`, 'success');
+        } catch (error) {
+            console.error('Unable to save invoice print template to Firebase.', error);
+            MargaUtils.showToast(error.message || 'Unable to save invoice template to Firebase.', 'error');
+        } finally {
+            if (saveTemplateBtn) saveTemplateBtn.disabled = false;
+        }
     });
-    deleteTemplateBtn?.addEventListener('click', () => {
+    deleteTemplateBtn?.addEventListener('click', async () => {
         if (currentRtpPrintTemplateName === 'Default') return;
         const deletedTemplate = currentRtpPrintTemplateName;
-        const calibration = deleteRtpPrintTemplate(deletedTemplate);
-        syncCalibrationInputs(calibration);
-        renderCalcPreview(activeEstimate);
-        MargaUtils.showToast(`Deleted invoice template: ${deletedTemplate}`, 'success');
+        if (deleteTemplateBtn) deleteTemplateBtn.disabled = true;
+        try {
+            const calibration = deleteRtpPrintTemplate(deletedTemplate);
+            syncCalibrationInputs(calibration);
+            renderCalcPreview(activeEstimate);
+            const result = await saveRtpPrintTemplatesToFirestore();
+            MargaUtils.showToast(result?.queued
+                ? `Queued invoice template deletion for Firebase: ${deletedTemplate}`
+                : `Deleted invoice template from Firebase: ${deletedTemplate}`, 'success');
+        } catch (error) {
+            console.error('Unable to delete invoice print template from Firebase.', error);
+            MargaUtils.showToast(error.message || 'Unable to delete invoice template from Firebase.', 'error');
+            syncCalibrationInputs(currentRtpPrintCalibration);
+        }
     });
     resetPrintBtn?.addEventListener('click', () => {
         const calibration = resetRtpPrintCalibration();
