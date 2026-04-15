@@ -505,30 +505,31 @@ function buildRtpPrintDocument(preview) {
     <meta charset="utf-8">
     <title>RTP Print</title>
     <style>
-        @page { size: A4 landscape; margin: 0; }
+        @page { size: 139.7mm 215.9mm; margin: 0; }
         * { box-sizing: border-box; }
         html, body {
             margin: 0;
             padding: 0;
-            width: 297mm;
-            height: 210mm;
+            width: 139.7mm;
+            height: 215.9mm;
             background: #fff;
             overflow: hidden;
         }
         body { font-family: "Arial", "Helvetica Neue", sans-serif; }
         .print-wrap {
-            width: 297mm;
-            height: 210mm;
-            padding: 5mm 8mm;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
+            position: relative;
+            width: 139.7mm;
+            height: 215.9mm;
             overflow: hidden;
             page-break-after: avoid;
         }
         .rtp-preview-shell {
-            display: block;
-            width: 281mm;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 255mm;
+            transform-origin: top left;
+            transform: translate(136.8mm, 11mm) rotate(-90deg) scale(0.72);
         }
         .rtp-preview-note {
             display: none;
