@@ -1072,7 +1072,7 @@ const RTP_PRINT_CALIBRATION = {
         header: { xMm: 0, yMm: 0, fontScale: 1 },
         description: { xMm: 0, yMm: 0, fontScale: 1 },
         meta: { xMm: 0, yMm: 0, fontScale: 1 },
-        totals: { xMm: 0, yMm: 0, fontScale: 1 }
+        totals: { xMm: 0, yMm: 0, fontScale: 1, amountWidthMm: 34, amountScaleX: 0.92, amountDueFontScale: 1.2 }
     }
 };
 
@@ -1110,11 +1110,20 @@ function normalizeRtpPrintCalibration(value = {}) {
             const sectionX = Number(current?.xMm ?? defaults.xMm);
             const sectionY = Number(current?.yMm ?? defaults.yMm);
             const fontScale = Number(current?.fontScale ?? defaults.fontScale);
-            return [sectionKey, {
+            const normalizedSection = {
                 xMm: Number.isFinite(sectionX) ? Math.max(-40, Math.min(40, sectionX)) : defaults.xMm,
                 yMm: Number.isFinite(sectionY) ? Math.max(-40, Math.min(80, sectionY)) : defaults.yMm,
                 fontScale: Number.isFinite(fontScale) ? Math.max(0.6, Math.min(1.8, fontScale)) : defaults.fontScale
-            }];
+            };
+            if (sectionKey === 'totals') {
+                const amountWidthMm = Number(current?.amountWidthMm ?? defaults.amountWidthMm ?? 34);
+                const amountScaleX = Number(current?.amountScaleX ?? defaults.amountScaleX ?? 0.92);
+                const amountDueFontScale = Number(current?.amountDueFontScale ?? defaults.amountDueFontScale ?? 1.2);
+                normalizedSection.amountWidthMm = Number.isFinite(amountWidthMm) ? Math.max(20, Math.min(60, amountWidthMm)) : (defaults.amountWidthMm || 34);
+                normalizedSection.amountScaleX = Number.isFinite(amountScaleX) ? Math.max(0.75, Math.min(1.15, amountScaleX)) : (defaults.amountScaleX || 0.92);
+                normalizedSection.amountDueFontScale = Number.isFinite(amountDueFontScale) ? Math.max(0.8, Math.min(2.2, amountDueFontScale)) : (defaults.amountDueFontScale || 1.2);
+            }
+            return [sectionKey, normalizedSection];
         }))
     };
 }
@@ -1510,6 +1519,25 @@ function buildRtpSectionStyle(sectionKey, mode = 'print') {
     ].join(';');
 }
 
+function buildRtpTotalsAmountStyle(yMm, mode = 'print', options = {}) {
+    const totalsCalibration = getRtpPrintSectionCalibration('totals');
+    const baseWidthMm = 27;
+    const amountWidthMm = Number(totalsCalibration?.amountWidthMm || 34) || 34;
+    const amountScaleX = Number(totalsCalibration?.amountScaleX || 1) || 1;
+    const xMm = baseWidthMm - amountWidthMm;
+    const parts = [
+        buildRtpPositionStyle({ xMm, yMm, widthMm: amountWidthMm, textAlign: 'right' }, mode),
+        'transform-origin:right center',
+        `transform:scaleX(${amountScaleX})`
+    ];
+    if (options.due) {
+        const amountDueFontScale = Number(totalsCalibration?.amountDueFontScale || 1.2) || 1.2;
+        parts.push(`font-size:${amountDueFontScale}em`);
+        parts.push('font-weight:800');
+    }
+    return parts.join(';');
+}
+
 function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
     const totals = preview?.totals || {};
     const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
@@ -1559,13 +1587,13 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 27, widthMm: 32 }, mode)}">${escapeHtml(contractCode)}</div>
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('totals', mode)}">
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 9, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 17, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 26, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 35, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 44, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 53, widthMm: 27, textAlign: 'right' }, mode)}"><strong>${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</strong></div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(0, mode)}">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(9, mode)}">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(17, mode)}">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(26, mode)}">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(35, mode)}">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(44, mode)}">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(53, mode, { due: true })}">${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</div>
         </div>
     `;
 }
@@ -1592,6 +1620,20 @@ function renderRtpSectionCalibrationControls() {
                                 <label for="rtpSection${sectionKey}Font">Font Size</label>
                                 <input type="number" id="rtpSection${sectionKey}Font" data-rtp-section-key="${sectionKey}" data-rtp-section-field="fontScale" step="0.05" min="0.6" max="1.8" value="${escapeHtml(String(calibration.fontScale))}">
                             </div>
+                            ${sectionKey === 'totals' ? `
+                                <div class="calc-field">
+                                    <label for="rtpSection${sectionKey}AmountWidth">Amount Width</label>
+                                    <input type="number" id="rtpSection${sectionKey}AmountWidth" data-rtp-section-key="${sectionKey}" data-rtp-section-field="amountWidthMm" step="0.5" min="20" max="60" value="${escapeHtml(String(calibration.amountWidthMm || 34))}">
+                                </div>
+                                <div class="calc-field">
+                                    <label for="rtpSection${sectionKey}AmountFit">Amount Fit</label>
+                                    <input type="number" id="rtpSection${sectionKey}AmountFit" data-rtp-section-key="${sectionKey}" data-rtp-section-field="amountScaleX" step="0.01" min="0.75" max="1.15" value="${escapeHtml(String(calibration.amountScaleX || 0.92))}">
+                                </div>
+                                <div class="calc-field">
+                                    <label for="rtpSection${sectionKey}DueFont">Final Amount Size</label>
+                                    <input type="number" id="rtpSection${sectionKey}DueFont" data-rtp-section-key="${sectionKey}" data-rtp-section-field="amountDueFontScale" step="0.05" min="0.8" max="2.2" value="${escapeHtml(String(calibration.amountDueFontScale || 1.2))}">
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
