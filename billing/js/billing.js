@@ -505,52 +505,50 @@ function buildRtpPrintDocument(preview) {
     <meta charset="utf-8">
     <title>RTP Print</title>
     <style>
-        @page { size: 139.7mm 215.9mm; margin: 0; }
+        @page { size: Letter portrait; margin: 0; }
         * { box-sizing: border-box; }
         html, body {
             margin: 0;
             padding: 0;
-            width: 139.7mm;
-            height: 215.9mm;
+            width: 8.5in;
+            height: 11in;
             background: #fff;
             overflow: hidden;
         }
         body { font-family: "Arial", "Helvetica Neue", sans-serif; }
         .print-wrap {
             position: relative;
-            width: 139.7mm;
-            height: 215.9mm;
+            width: 8.5in;
+            height: 11in;
+            padding: 0.3in 0 0;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
             overflow: hidden;
             page-break-after: avoid;
         }
         .rtp-preview-shell {
-            position: absolute;
-            inset: 0;
+            display: block;
+            width: 255mm;
+            transform-origin: top center;
+            transform: scale(0.8);
         }
         .rtp-preview-note {
             display: none;
         }
         .rtp-preview-paper {
-            position: relative;
-            width: 139.7mm;
-            height: 215.9mm;
             padding: 0;
             border: 0;
             background: transparent;
-            overflow: hidden;
         }
         .rtp-print-sheet {
-            position: absolute;
-            top: 0;
-            left: 0;
+            position: relative;
             width: 255mm;
             height: 190mm;
             color: #111827;
             font-size: 4.6mm;
             font-weight: 600;
             line-height: 1.18;
-            transform-origin: top left;
-            transform: translate(0mm, 201.7mm) rotate(-90deg) scale(0.735);
         }
         .rtp-field { position: absolute; white-space: pre-wrap; }
         .rtp-customer-name { top: 26mm; left: 18mm; width: 150mm; font-weight: 700; }
