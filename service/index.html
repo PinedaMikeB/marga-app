@@ -184,6 +184,12 @@
                             <option value="closed">Closed</option>
                             <option value="cancelled">Cancelled</option>
                         </select>
+                        <select id="opsAssigneeRoleFilter" class="ops-purpose-filter" aria-label="Assignee role filter">
+                            <option value="all">All Assignees</option>
+                            <option value="technician">Technicians</option>
+                            <option value="messenger">Messengers</option>
+                            <option value="unassigned">Unassigned</option>
+                        </select>
                         <label class="ops-toggle">
                             <input type="checkbox" id="opsCarryoverToggle">
                             <span>Printed route only</span>
@@ -346,14 +352,20 @@
                 </label>
 
                 <label class="marga-field marga-field-full">
+                    <span>Serial Number</span>
+                    <input type="text" id="newReqSerialNumber" placeholder="Enter machine serial number...">
+                    <small class="new-req-serial-status" id="newReqSerialStatus">Enter a serial number to auto-fill company and branch.</small>
+                </label>
+
+                <label class="marga-field marga-field-full">
                     <span>Company</span>
-                    <input type="text" id="newReqCompanySearch" placeholder="Search company...">
+                    <input type="text" id="newReqCompanySearch" placeholder="Search active customer...">
                     <select id="newReqCompany"></select>
                 </label>
 
                 <label class="marga-field marga-field-full">
                     <span>Branch</span>
-                    <input type="text" id="newReqBranchSearch" placeholder="Search branch...">
+                    <input type="text" id="newReqBranchSearch" placeholder="Search active contract branch...">
                     <select id="newReqBranch"></select>
                 </label>
 

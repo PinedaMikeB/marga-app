@@ -82,6 +82,34 @@ Security reminder:
 - App settings that users tune in the web app must be stored in Firebase, not only in browser storage.
 - Browser localStorage may be used only as cache, fallback, or migration source for durable settings.
 
+## Customer Identity Strategy
+The canonical customer lookup is the **Active Contract Customer Graph**. This is the customer locator query used by Billing and should become the shared way Service, Collections, Inventory, Field App, and Customer Portal identify real customers with machines.
+
+Use this graph instead of raw customer tables:
+- `tbl_companylist` is only the company master, not the active customer list.
+- `tbl_branchinfo` is only the branch/location master, not enough by itself.
+- `tbl_machine.client_id` is not reliable enough as the primary locator because many active contract machines do not carry a current client tag.
+
+Canonical graph:
+- Start with `tbl_contractmain` where `status == 1`.
+- Resolve `tbl_contractmain.contract_id` to `tbl_contractdep.id`.
+- Resolve `tbl_contractdep.branch_id` to `tbl_branchinfo.id`.
+- Resolve `tbl_branchinfo.company_id` to `tbl_companylist.id`.
+- Attach machine using `tbl_contractmain.mach_id` -> `tbl_machine.id`.
+- Display serial using `tbl_contractmain.xserial` first, then `tbl_machine.serial`.
+- If the contract department path is missing, the deeper Billing resolver may fall back to `tbl_newmachinehistory` delivery history, then mark unresolved rows clearly.
+
+Naming:
+- Business/system name: **Active Contract Customer Graph**.
+- API/query name: **Billing Customer Locator Query**.
+- Implementation reference today: `netlify/functions/openclaw-billing-cohort.js`.
+
+Module rules:
+- Billing dashboard rows, customer portal accounts, service request serial lookup, usage monitoring, and customer-facing machine history must all resolve customers through this graph.
+- Service may offer raw company/branch selection only as a fallback for non-contract or newly created accounts.
+- When saving service schedules, keep legacy compatibility: `tbl_schedule.serial` means machine id, not serial text. Store the typed serial separately in a Firebase-only helper field when needed.
+- Customer Portal should expose graph-resolved account/machine rows by default so customers see the same machines, branches/departments, billing status, meter readings, and service history.
+
 ## Billing Invoice Print Layout Rules
 - Current protected Billing print/save baseline: `e9338ab`.
 - Billing invoice print layouts are operational settings and must be durable in Firebase.

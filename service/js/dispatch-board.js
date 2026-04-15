@@ -18,6 +18,7 @@ const LEGACY_EMPTY_DATETIME_VALUES = new Set([
 ]);
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
+const SERIAL_LOOKUP_MIN_CHARS = 4;
 const PURPOSE_LABELS = {
     1: 'Billing',
     2: 'Collection',
@@ -36,6 +37,9 @@ const LOOKUP_COLLECTION_LIMITS = {
     tbl_branchinfo: 7000,
     tbl_branchcontact: 9000,
     tbl_companylist: 3000,
+    tbl_machine: 12000,
+    tbl_contractmain: 7000,
+    tbl_contractdep: 7000,
     tbl_area: 1500
 };
 
@@ -47,6 +51,14 @@ const opsCache = {
     branchContactsByBranch: new Map(),
     companies: new Map(),
     areas: new Map(),
+    machines: new Map(),
+    machinesBySerial: new Map(),
+    contracts: new Map(),
+    contractDeps: new Map(),
+    activeCustomerGraphRows: [],
+    activeGraphCompanies: [],
+    activeGraphBranchesByCompany: new Map(),
+    activeGraphBySerial: new Map(),
     closedScheduleIds: new Set(),
     fullyLoaded: new Set(),
     assignableLoaded: false
@@ -62,23 +74,28 @@ const opsState = {
     panelStaffId: null,
     purposeFilter: 'all',
     statusFilter: 'all',
+    assigneeRoleFilter: 'all',
     includeCarryover: false,
-    routeSourceLabel: 'Printed'
+    routeSourceLabel: 'Printed',
+    newRequestMachine: null,
+    newRequestGraphRow: null,
+    newRequestLookupSeq: 0
 };
 
 document.addEventListener('DOMContentLoaded', () => {
     const user = MargaAuth.getUser();
     if (user) {
         document.getElementById('userName').textContent = user.name;
-        document.getElementById('userRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+        document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
         document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
     }
 
     const purposeFilter = document.getElementById('opsPurposeFilter');
     const statusFilter = document.getElementById('opsStatusFilter');
+    const assigneeRoleFilter = document.getElementById('opsAssigneeRoleFilter');
     const carryoverToggle = document.getElementById('opsCarryoverToggle');
     const carryoverBtn = document.getElementById('opsCarryoverBtn');
-    const defaultPurpose = getDefaultPurposeFilter(user?.role || 'viewer');
+    const defaultPurpose = getDefaultPurposeFilter();
     if (defaultPurpose !== 'all') {
         purposeFilter.value = defaultPurpose;
     }
@@ -109,6 +126,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderOperationsBoard();
     });
 
+    assigneeRoleFilter.addEventListener('change', () => {
+        opsState.assigneeRoleFilter = assigneeRoleFilter.value || 'all';
+        renderOperationsBoard();
+    });
+
     carryoverToggle.checked = false;
     carryoverToggle.disabled = true;
     carryoverToggle.closest('.ops-toggle')?.setAttribute('title', 'Printed route view only');
@@ -123,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
     carryoverBtn.style.display = 'none';
 
     const newReqBtn = document.getElementById('opsNewRequestBtn');
-    const canCreate = MargaAuth.isAdmin() || user?.role === 'service';
+    const canCreate = MargaAuth.isAdmin() || MargaAuth.hasRole('service');
     newReqBtn.style.display = canCreate ? 'inline-flex' : 'none';
     newReqBtn.addEventListener('click', () => openNewRequestModal());
 
@@ -133,10 +155,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('newReqSaveBtn').addEventListener('click', () => saveNewServiceRequest());
 
     const dispatchNote = document.getElementById('dispatchHeaderNote');
-    dispatchNote.textContent = getRoleDispatchNote(user?.role || 'viewer');
+    dispatchNote.textContent = getRoleDispatchNote();
 
     opsState.purposeFilter = purposeFilter.value;
     opsState.statusFilter = statusFilter.value;
+    opsState.assigneeRoleFilter = assigneeRoleFilter.value || 'all';
     opsState.includeCarryover = false;
     loadOperationsBoard();
 });
@@ -145,23 +168,23 @@ function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
 }
 
-function getDefaultPurposeFilter(role) {
-    if (role === 'billing') return '1';
-    if (role === 'collection') return '2';
+function getDefaultPurposeFilter() {
+    if (MargaAuth.hasRole('billing')) return '1';
+    if (MargaAuth.hasRole('collection')) return '2';
     return 'all';
 }
 
-function getRoleDispatchNote(role) {
-    if (role === 'billing') {
-        return 'Billing printed route view: default filter is Billing. You can switch to other task types as needed.';
+function getRoleDispatchNote() {
+    if (MargaAuth.hasRole('billing')) {
+        return 'Billing dispatch view: default filter is Billing. You can switch to other task types and assignee groups as needed.';
     }
-    if (role === 'collection') {
-        return 'Collection printed route view: default filter is Collection. You can switch to other task types as needed.';
+    if (MargaAuth.hasRole('collection')) {
+        return 'Collection dispatch view: default filter is Collection. You can switch to other task types and assignee groups as needed.';
     }
-    if (role === 'service') {
-        return 'Service printed route view: monitor the same technician and messenger day sheet used by the legacy app.';
+    if (MargaAuth.hasRole('service')) {
+        return 'Service dispatch view: show all selected-date schedules, with printed/saved route details attached when available.';
     }
-    return 'Unified printed route view for service, collection, billing, delivery, and reading tasks.';
+    return 'Unified dispatch view for service, collection, billing, delivery, and reading schedules.';
 }
 
 function formatDateYmd(date) {
@@ -344,6 +367,221 @@ async function ensureBranchContactsLoaded() {
     opsCache.fullyLoaded.add('tbl_branchcontact');
 }
 
+function normalizeSerialNumber(value) {
+    return String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function cacheMachineBySerial(machine) {
+    const key = normalizeSerialNumber(machine?.serial);
+    if (!key) return;
+    opsCache.machinesBySerial.set(key, machine);
+}
+
+async function queryMachineDocsBySerial(serialValue) {
+    const structuredQuery = {
+        from: [{ collectionId: 'tbl_machine' }],
+        where: makeFieldFilter('serial', 'EQUAL', serialValue),
+        limit: 10
+    };
+
+    return runFirestoreStructuredQuery(structuredQuery);
+}
+
+async function findMachineBySerial(serialText) {
+    const normalized = normalizeSerialNumber(serialText);
+    if (!normalized || normalized.length < SERIAL_LOOKUP_MIN_CHARS) return null;
+
+    const cached = opsCache.machinesBySerial.get(normalized);
+    if (cached) return cached;
+
+    const variants = [...new Set([
+        String(serialText || '').trim(),
+        normalized,
+        normalized.toLowerCase()
+    ].filter(Boolean))];
+
+    const docs = (await Promise.all(
+        variants.map((variant) => queryMachineDocsBySerial(variant).catch(() => []))
+    )).flat();
+
+    const machines = docs
+        .map(parseFirestoreDoc)
+        .filter(Boolean);
+
+    machines.forEach(cacheMachineBySerial);
+
+    return machines.find((machine) => normalizeSerialNumber(machine.serial) === normalized) || null;
+}
+
+function buildAccountName(companyName, branchName) {
+    const company = String(companyName || '').trim();
+    const branch = String(branchName || '').trim();
+    if (!branch || branch.toLowerCase() === 'main') return company || 'Unknown';
+    if (!company) return branch;
+    const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const companyText = normalize(company);
+    const branchText = normalize(branch);
+    if (branchText.includes(companyText) || companyText.includes(branchText)) return branch;
+    return `${company} - ${branch}`;
+}
+
+function getBranchDisplayName(branch, contractDep) {
+    const branchName = String(branch?.branchname || '').trim() || `Branch #${branch?.id || ''}`.trim();
+    const departmentName = String(contractDep?.departmentname || '').trim();
+    if (!departmentName) return branchName;
+    const normalizedBranch = branchName.toLowerCase();
+    const normalizedDepartment = departmentName.toLowerCase();
+    if (normalizedBranch.includes(normalizedDepartment)) return branchName;
+    return `${branchName} - ${departmentName}`;
+}
+
+function getContractSerialNumber(contract, machine) {
+    return String(contract?.xserial || machine?.serial || '').trim();
+}
+
+function resolveContractBranch(contract) {
+    const contractDepId = String(contract?.contract_id || '').trim();
+    const contractDep = opsCache.contractDeps.get(contractDepId) || null;
+    const branchId = String(contractDep?.branch_id || contract?.contract_id || '').trim();
+    const branch = branchId ? opsCache.branches.get(branchId) || null : null;
+    return { branch, contractDep, branchId };
+}
+
+function rebuildActiveCustomerGraph() {
+    const rows = [];
+    const companyMap = new Map();
+    const branchesByCompany = new Map();
+    const bySerial = new Map();
+
+    opsCache.machinesBySerial.clear();
+    opsCache.machines.forEach(cacheMachineBySerial);
+
+    opsCache.contracts.forEach((contract) => {
+        if (Number(contract?.status || 0) !== 1) return;
+
+        const machineId = Number(contract?.mach_id || 0) || 0;
+        const machine = machineId > 0 ? opsCache.machines.get(String(machineId)) || null : null;
+        const { branch, contractDep } = resolveContractBranch(contract);
+        if (!branch || Number(branch.inactive || 0) === 1) return;
+
+        const companyId = Number(branch.company_id || 0) || 0;
+        const company = companyId > 0 ? opsCache.companies.get(String(companyId)) || null : null;
+        if (!company) return;
+
+        const branchId = Number(branch.id || 0) || 0;
+        const companyName = String(company.companyname || '').trim() || `Company #${companyId}`;
+        const branchName = getBranchDisplayName(branch, contractDep);
+        const serialNumber = getContractSerialNumber(contract, machine);
+        const accountName = buildAccountName(companyName, branchName);
+        const row = {
+            companyId,
+            companyName,
+            branchId,
+            branchName,
+            accountName,
+            contractId: Number(contract.id || 0) || 0,
+            contractDepId: Number(contract.contract_id || 0) || 0,
+            machineId,
+            serialNumber,
+            machineDescription: String(machine?.description || '').trim(),
+            branch,
+            company,
+            contract,
+            machine
+        };
+
+        rows.push(row);
+
+        if (!companyMap.has(String(companyId))) {
+            companyMap.set(String(companyId), { id: companyId, name: companyName, activeAccountCount: 0 });
+        }
+        companyMap.get(String(companyId)).activeAccountCount += 1;
+
+        if (!branchesByCompany.has(String(companyId))) {
+            branchesByCompany.set(String(companyId), new Map());
+        }
+        const branchBucket = branchesByCompany.get(String(companyId));
+        const branchKey = String(branchId);
+        if (!branchBucket.has(branchKey)) {
+            branchBucket.set(branchKey, {
+                id: branchId,
+                name: branchName,
+                accountName,
+                activeMachineCount: 0,
+                rows: []
+            });
+        }
+        const branchRow = branchBucket.get(branchKey);
+        branchRow.activeMachineCount += machineId > 0 ? 1 : 0;
+        branchRow.rows.push(row);
+
+        const serialKey = normalizeSerialNumber(serialNumber);
+        if (serialKey && !bySerial.has(serialKey)) {
+            bySerial.set(serialKey, row);
+        }
+    });
+
+    opsCache.activeCustomerGraphRows = rows.sort((left, right) => (
+        left.companyName.localeCompare(right.companyName)
+        || left.branchName.localeCompare(right.branchName)
+        || String(left.serialNumber || '').localeCompare(String(right.serialNumber || ''))
+    ));
+    opsCache.activeGraphCompanies = [...companyMap.values()].sort((left, right) => left.name.localeCompare(right.name));
+    opsCache.activeGraphBranchesByCompany = new Map(
+        [...branchesByCompany.entries()].map(([companyId, branchMap]) => [
+            companyId,
+            [...branchMap.values()].sort((left, right) => left.name.localeCompare(right.name))
+        ])
+    );
+    opsCache.activeGraphBySerial = bySerial;
+}
+
+async function ensureActiveCustomerGraphLoaded() {
+    await Promise.all([
+        ensureCollectionLoaded('tbl_companylist', opsCache.companies),
+        ensureCollectionLoaded('tbl_branchinfo', opsCache.branches),
+        ensureCollectionLoaded('tbl_contractmain', opsCache.contracts),
+        ensureCollectionLoaded('tbl_contractdep', opsCache.contractDeps),
+        ensureCollectionLoaded('tbl_machine', opsCache.machines)
+    ]);
+    rebuildActiveCustomerGraph();
+}
+
+function findGraphRowBySerial(serialText) {
+    const normalized = normalizeSerialNumber(serialText);
+    if (!normalized || normalized.length < SERIAL_LOOKUP_MIN_CHARS) return null;
+    return opsCache.activeGraphBySerial.get(normalized) || null;
+}
+
+function getMachineDisplayName(machine) {
+    if (!machine) return '';
+    return String(machine.description || machine.modelname || machine.model || machine.serial || '').trim();
+}
+
+function resolveMachineCustomer(machine) {
+    const branchId = Number(machine?.client_id || machine?.branch_id || 0);
+    const branch = branchId > 0 ? opsCache.branches.get(String(branchId)) || null : null;
+    const companyId = Number(branch?.company_id || machine?.company_id || 0);
+    const company = companyId > 0 ? opsCache.companies.get(String(companyId)) || null : null;
+    const directCompany = !company && branchId > 0 ? opsCache.companies.get(String(branchId)) || null : null;
+
+    return {
+        branch,
+        company: company || directCompany || null,
+        branchId: Number(branch?.id || branchId || 0),
+        companyId: Number((company || directCompany)?.id || companyId || 0)
+    };
+}
+
+function setNewReqSerialStatus(message, tone = '') {
+    const status = document.getElementById('newReqSerialStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('is-match', tone === 'match');
+    status.classList.toggle('is-warning', tone === 'warning');
+    status.classList.toggle('is-error', tone === 'error');
+}
+
 async function fetchManyDocs(collection, ids, cacheMap) {
     const uniqueIds = [...new Set(ids)]
         .map((id) => Number(id))
@@ -474,6 +712,25 @@ function getRoleClass(role) {
     return 'role-unknown';
 }
 
+function getAssigneeRoleKey(row) {
+    const staffId = getAssignedStaffId(row);
+    if (!staffId) return 'unassigned';
+    const employee = opsCache.employees.get(String(staffId)) || null;
+    const position = employee ? opsCache.positions.get(String(employee.position_id || 0)) : null;
+    const role = getRole(employee, position);
+    if (role === 'Technician') return 'technician';
+    if (role === 'Messenger') return 'messenger';
+    if (employee) return 'staff';
+    return 'unmapped';
+}
+
+function getAssigneeRoleFilterLabel(value) {
+    if (value === 'technician') return 'Technicians';
+    if (value === 'messenger') return 'Messengers';
+    if (value === 'unassigned') return 'Unassigned';
+    return 'All Assignees';
+}
+
 function getRouteTaskDateTime(row) {
     const routeValue = String(row?.route_task_datetime || '').trim();
     if (routeValue) return routeValue;
@@ -543,6 +800,71 @@ async function buildRouteBoundScheduleRows(routeRows, routeSourceLabel) {
             };
         })
         .filter(Boolean);
+}
+
+function overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows) {
+    const routeBySchedule = new Map();
+
+    savedRows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId > 0) {
+            routeBySchedule.set(scheduleId, { ...row, _routeSource: 'saved' });
+        }
+    });
+
+    printedRows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId > 0) {
+            routeBySchedule.set(scheduleId, { ...row, _routeSource: 'printed' });
+        }
+    });
+
+    const mergedRows = scheduleRows.map((schedule) => {
+        const scheduleId = Number(schedule.id || schedule._docId || 0);
+        const routeRow = routeBySchedule.get(scheduleId);
+        if (!routeRow) {
+            return {
+                ...schedule,
+                route_id: 0,
+                route_doc_id: '',
+                route_source: 'schedule',
+                route_tech_id: 0,
+                route_task_datetime: '',
+                route_status: '',
+                route_iscancelled: 0,
+                route_date_finished: '',
+                route_remarks: ''
+            };
+        }
+
+        return {
+            ...schedule,
+            task_datetime: String(routeRow.task_datetime || schedule.task_datetime || ''),
+            tech_id: Number(routeRow.tech_id || schedule.tech_id || 0) || 0,
+            route_id: Number(routeRow.id || 0) || 0,
+            route_doc_id: routeRow._docId || String(routeRow.id || ''),
+            route_source: routeRow._routeSource || 'saved',
+            route_tech_id: Number(routeRow.tech_id || 0) || 0,
+            route_task_datetime: String(routeRow.task_datetime || ''),
+            route_status: routeRow.status ?? '',
+            route_iscancelled: Number(routeRow.iscancelled || routeRow.iscancel || 0) || 0,
+            route_date_finished: String(routeRow.date_finished || ''),
+            route_remarks: String(routeRow.remarks || '').trim()
+        };
+    });
+
+    const boundScheduleIds = new Set(mergedRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
+    const orphanRouteRows = [...routeBySchedule.values()].filter((row) => !boundScheduleIds.has(Number(row.schedule_id || 0)));
+
+    return {
+        mergedRows,
+        routeCoverage: {
+            printedCount: printedRows.length,
+            savedCount: savedRows.length,
+            boundCount: mergedRows.filter((row) => Number(row.route_id || 0) > 0).length,
+            orphanCount: orphanRouteRows.length
+        }
+    };
 }
 
 function getOpsStatusKey(row, selectedDate) {
@@ -790,6 +1112,7 @@ function setNewReqOpen(isOpen) {
 }
 
 function closeNewRequestModal() {
+    opsState.newRequestLookupSeq += 1;
     setNewReqOpen(false);
 }
 
@@ -800,7 +1123,7 @@ function clearNewRequestPrefill() {
 
 async function openNewRequestModal() {
     const user = MargaAuth.getUser();
-    const canCreate = MargaAuth.isAdmin() || user?.role === 'service';
+    const canCreate = MargaAuth.isAdmin() || MargaAuth.hasRole('service');
     if (!canCreate) {
         alert('New request is available for Admin / Service roles only.');
         return;
@@ -811,10 +1134,9 @@ async function openNewRequestModal() {
     document.getElementById('newReqDate').value = opsState.selectedDate || formatDateYmd(new Date());
     clearNewRequestPrefill();
 
-    // Load lookup collections needed for the form. (Uses DESC scans, no composite indexes.)
+    // Load lookup collections needed for the form. Customer identity comes from the Active Contract Customer Graph.
     await Promise.all([
-        ensureCollectionLoaded('tbl_companylist', opsCache.companies),
-        ensureCollectionLoaded('tbl_branchinfo', opsCache.branches),
+        ensureActiveCustomerGraphLoaded(),
         ensureCollectionLoaded('tbl_area', opsCache.areas),
         ensureCollectionLoaded('tbl_trouble', opsCache.troubles),
         ensureBranchContactsLoaded(),
@@ -829,30 +1151,54 @@ async function openNewRequestModal() {
     const assigneeSelect = document.getElementById('newReqAssignee');
     const callerInput = document.getElementById('newReqCaller');
     const phoneInput = document.getElementById('newReqPhone');
+    const serialInput = document.getElementById('newReqSerialNumber');
 
     companySearch.value = '';
     branchSearch.value = '';
+    serialInput.value = '';
+    opsState.newRequestMachine = null;
+    opsState.newRequestGraphRow = null;
+    opsState.newRequestLookupSeq += 1;
+    setNewReqSerialStatus(`Using Active Contract Customer Graph: ${opsCache.activeCustomerGraphRows.length} active machine/account rows.`);
 
-    const companies = [...opsCache.companies.values()]
-        .filter(Boolean)
-        .map((c) => ({ id: Number(c.id || 0), name: String(c.companyname || '').trim() }))
-        .filter((c) => c.id > 0 && c.name)
-        .sort((a, b) => a.name.localeCompare(b.name));
+    const companies = opsCache.activeGraphCompanies;
 
-    function renderCompanyOptions(query) {
+    function renderCompanyOptions(query, selectedId = '') {
         const q = String(query || '').trim().toLowerCase();
         const filtered = q
             ? companies.filter((c) => c.name.toLowerCase().includes(q) || String(c.id).includes(q))
             : companies;
 
-        companySelect.innerHTML = `<option value="">Select company...</option>` + filtered
-            .slice(0, 2500)
-            .map((c) => `<option value="${c.id}">${sanitize(c.name)}</option>`)
+        const visible = filtered.slice(0, 2500);
+        const selectedCompany = selectedId
+            ? companies.find((c) => String(c.id) === String(selectedId))
+            : null;
+        if (selectedCompany && !visible.some((c) => c.id === selectedCompany.id)) {
+            visible.unshift(selectedCompany);
+        } else if (selectedId && !selectedCompany) {
+            const rawCompany = opsCache.companies.get(String(selectedId)) || null;
+            if (rawCompany) {
+                visible.unshift({
+                    id: Number(rawCompany.id || selectedId),
+                    name: `${String(rawCompany.companyname || `Company #${selectedId}`).trim()} (non-contract fallback)`
+                });
+            }
+        }
+
+        companySelect.innerHTML = `<option value="">Select active contract customer...</option>` + visible
+            .map((c) => {
+                const countText = Number(c.activeAccountCount || 0) > 0 ? ` (${c.activeAccountCount} active)` : '';
+                return `<option value="${c.id}">${sanitize(c.name)}${sanitize(countText)}</option>`;
+            })
             .join('');
+
+        if (selectedId) {
+            companySelect.value = String(selectedId);
+        }
     }
 
     renderCompanyOptions('');
-    companySearch.oninput = () => renderCompanyOptions(companySearch.value);
+    companySearch.oninput = () => renderCompanyOptions(companySearch.value, companySelect.value);
 
     const troubles = [...opsCache.troubles.values()]
         .filter(Boolean)
@@ -869,26 +1215,157 @@ async function openNewRequestModal() {
         .map((s) => `<option value="${s.id}">${sanitize(s.name)} (${sanitize(s.role)})</option>`)
         .join('');
 
-    function fillBranchesForCompany(companyId, query = '') {
-        const branches = [...opsCache.branches.values()]
-            .filter(Boolean)
-            .filter((b) => Number(b.company_id || 0) === Number(companyId))
-            .map((b) => ({ id: Number(b.id || 0), name: String(b.branchname || '').trim(), area_id: Number(b.area_id || 0) }))
-            .filter((b) => b.id > 0)
-            .sort((a, b) => a.name.localeCompare(b.name));
+    function fillBranchesForCompany(companyId, query = '', selectedId = '') {
+        const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
 
         const q = String(query || '').trim().toLowerCase();
         const filtered = q
             ? branches.filter((b) => b.name.toLowerCase().includes(q) || String(b.id).includes(q))
             : branches;
 
-        branchSelect.innerHTML = `<option value="">Select branch...</option>` + filtered
-            .slice(0, 2500)
-            .map((b) => `<option value="${b.id}">${sanitize(b.name || `Branch #${b.id}`)}</option>`)
+        const visible = filtered.slice(0, 2500);
+        const selectedBranch = selectedId
+            ? branches.find((b) => String(b.id) === String(selectedId))
+            : null;
+        if (selectedBranch && !visible.some((b) => b.id === selectedBranch.id)) {
+            visible.unshift(selectedBranch);
+        } else if (selectedId && !selectedBranch) {
+            const rawBranch = opsCache.branches.get(String(selectedId)) || null;
+            if (rawBranch) {
+                visible.unshift({
+                    id: Number(rawBranch.id || selectedId),
+                    name: `${String(rawBranch.branchname || `Branch #${selectedId}`).trim()} (non-contract fallback)`
+                });
+            }
+        }
+
+        branchSelect.innerHTML = `<option value="">Select active contract branch...</option>` + visible
+            .map((b) => {
+                const countText = Number(b.activeMachineCount || 0) > 0 ? ` (${b.activeMachineCount} machine${b.activeMachineCount === 1 ? '' : 's'})` : '';
+                return `<option value="${b.id}">${sanitize(b.name || `Branch #${b.id}`)}${sanitize(countText)}</option>`;
+            })
             .join('');
+
+        if (selectedId) {
+            branchSelect.value = String(selectedId);
+        }
     }
 
+    function prefillContactForBranch(branchId) {
+        const branch = opsCache.branches.get(String(branchId)) || null;
+        const contacts = opsCache.branchContactsByBranch.get(Number(branchId)) || [];
+        const best = contacts.find((c) => (c.contact_person || '').trim() || (c.contact_number || '').trim()) || null;
+
+        if (!callerInput.value.trim()) {
+            callerInput.value = String(best?.contact_person || branch?.signatory || '').trim();
+        }
+
+        if (!phoneInput.value.trim()) {
+            phoneInput.value = String(best?.contact_number || '').trim();
+        }
+    }
+
+    function clearMatchedMachineIfManualChange() {
+        if (!opsState.newRequestMachine && !opsState.newRequestGraphRow) return;
+        opsState.newRequestMachine = null;
+        opsState.newRequestGraphRow = null;
+        if (serialInput.value.trim()) {
+            setNewReqSerialStatus('Serial match cleared after manual company/branch change.', 'warning');
+        }
+    }
+
+    function applyGraphRowToForm(row) {
+        opsState.newRequestGraphRow = row;
+        opsState.newRequestMachine = row?.machine || null;
+        companySearch.value = row.companyName;
+        renderCompanyOptions(row.companyName, row.companyId);
+        branchSearch.value = row.branchName;
+        fillBranchesForCompany(row.companyId, row.branchName, row.branchId);
+        prefillContactForBranch(row.branchId);
+    }
+
+    async function applySerialLookup() {
+        const serialText = serialInput.value.trim();
+        const token = ++opsState.newRequestLookupSeq;
+        opsState.newRequestMachine = null;
+        opsState.newRequestGraphRow = null;
+
+        if (!serialText) {
+            setNewReqSerialStatus(`Using Active Contract Customer Graph: ${opsCache.activeCustomerGraphRows.length} active machine/account rows.`);
+            return;
+        }
+
+        if (normalizeSerialNumber(serialText).length < SERIAL_LOOKUP_MIN_CHARS) {
+            setNewReqSerialStatus(`Enter at least ${SERIAL_LOOKUP_MIN_CHARS} characters to search.`, 'warning');
+            return;
+        }
+
+        setNewReqSerialStatus('Looking up serial in Active Contract Customer Graph...');
+
+        try {
+            const graphRow = findGraphRowBySerial(serialText);
+            if (graphRow) {
+                applyGraphRowToForm(graphRow);
+                const machineLabel = graphRow.machineDescription || graphRow.serialNumber || `Machine #${graphRow.machineId}`;
+                setNewReqSerialStatus(
+                    `Matched active contract ${graphRow.contractId}: ${machineLabel} - ${graphRow.accountName}.`,
+                    'match'
+                );
+                return;
+            }
+
+            const machine = await findMachineBySerial(serialText);
+            if (token !== opsState.newRequestLookupSeq) return;
+
+            if (!machine) {
+                setNewReqSerialStatus('No active contract or machine found for this serial. Select an active customer manually.', 'warning');
+                return;
+            }
+
+            opsState.newRequestMachine = machine;
+            const { branch, company, branchId, companyId } = resolveMachineCustomer(machine);
+            const companyName = company?.companyname || '';
+            const branchName = branch?.branchname || '';
+
+            if (companyId) {
+                companySearch.value = companyName;
+                renderCompanyOptions(companyName, companyId);
+            }
+
+            if (companyId && branchId && branch) {
+                branchSearch.value = branchName;
+                fillBranchesForCompany(companyId, branchName, branchId);
+                prefillContactForBranch(branchId);
+                const machineName = getMachineDisplayName(machine);
+                setNewReqSerialStatus(
+                    `Machine found outside active contract graph: ${machineName || 'machine'} - ${companyName || `Company #${companyId}`} - ${branchName || `Branch #${branchId}`}.`,
+                    'warning'
+                );
+                return;
+            }
+
+            if (companyId) {
+                branchSelect.innerHTML = `<option value="">Select branch...</option>`;
+                const companyName = company?.companyname || `Company #${companyId}`;
+                setNewReqSerialStatus(`Machine found outside active contract graph for ${companyName}, but no branch is tagged. Select active customer manually.`, 'warning');
+                return;
+            }
+
+            setNewReqSerialStatus('Machine found outside active contract graph, but no customer location is tagged. Select active customer manually.', 'warning');
+        } catch (error) {
+            console.error('Serial lookup failed:', error);
+            if (token !== opsState.newRequestLookupSeq) return;
+            setNewReqSerialStatus('Serial lookup failed. Select active customer manually.', 'error');
+        }
+    }
+
+    const debouncedSerialLookup = MargaUtils.debounce(applySerialLookup, 350);
+
+    serialInput.oninput = debouncedSerialLookup;
+    serialInput.onblur = applySerialLookup;
+
     companySelect.onchange = () => {
+        clearMatchedMachineIfManualChange();
         branchSearch.value = '';
         fillBranchesForCompany(companySelect.value, '');
         branchSelect.value = '';
@@ -899,26 +1376,16 @@ async function openNewRequestModal() {
     branchSelect.onchange = () => {
         const branchId = Number(branchSelect.value || 0);
         if (!branchId) return;
-
-        const branch = opsCache.branches.get(String(branchId)) || null;
-        const contacts = opsCache.branchContactsByBranch.get(branchId) || [];
-        const best = contacts.find((c) => (c.contact_person || '').trim() || (c.contact_number || '').trim()) || null;
-
-        if (!callerInput.value.trim()) {
-            callerInput.value = String(best?.contact_person || branch?.signatory || '').trim();
-        }
-
-        if (!phoneInput.value.trim()) {
-            phoneInput.value = String(best?.contact_number || '').trim();
-        }
+        clearMatchedMachineIfManualChange();
+        prefillContactForBranch(branchId);
     };
 
-    branchSelect.innerHTML = `<option value="">Select branch...</option>`;
+    branchSelect.innerHTML = `<option value="">Select active contract branch...</option>`;
 }
 
 async function saveNewServiceRequest() {
     const user = MargaAuth.getUser();
-    const canCreate = MargaAuth.isAdmin() || user?.role === 'service';
+    const canCreate = MargaAuth.isAdmin() || MargaAuth.hasRole('service');
     if (!canCreate) {
         alert('New request is available for Admin / Service roles only.');
         return;
@@ -928,8 +1395,9 @@ async function saveNewServiceRequest() {
     const purposeId = Number(document.getElementById('newReqPurpose').value || 5);
     const date = document.getElementById('newReqDate').value;
     const time = document.getElementById('newReqTime').value || '08:00';
-    const companyId = Number(document.getElementById('newReqCompany').value || 0);
-    const branchId = Number(document.getElementById('newReqBranch').value || 0);
+    let companyId = Number(document.getElementById('newReqCompany').value || 0);
+    let branchId = Number(document.getElementById('newReqBranch').value || 0);
+    const serialNumber = (document.getElementById('newReqSerialNumber')?.value || '').trim();
     const caller = (document.getElementById('newReqCaller').value || '').trim();
     const phone = (document.getElementById('newReqPhone').value || '').trim();
     const troubleId = Number(document.getElementById('newReqTrouble').value || 0);
@@ -939,6 +1407,33 @@ async function saveNewServiceRequest() {
     if (!date) {
         alert('Please choose a schedule date.');
         return;
+    }
+    let graphRow = null;
+    if (serialNumber) {
+        const currentGraphRow = opsState.newRequestGraphRow || null;
+        const currentGraphMatches = normalizeSerialNumber(currentGraphRow?.serialNumber) === normalizeSerialNumber(serialNumber);
+        graphRow = currentGraphMatches
+            ? currentGraphRow
+            : (!companyId || !branchId ? findGraphRowBySerial(serialNumber) : null);
+        if (graphRow) {
+            opsState.newRequestGraphRow = graphRow;
+            opsState.newRequestMachine = graphRow.machine || null;
+            companyId = companyId || graphRow.companyId || 0;
+            branchId = branchId || graphRow.branchId || 0;
+        }
+    }
+    if (serialNumber && !graphRow) {
+        const currentMachine = opsState.newRequestMachine || null;
+        const currentMatches = normalizeSerialNumber(currentMachine?.serial) === normalizeSerialNumber(serialNumber);
+        const machine = currentMatches
+            ? currentMachine
+            : (!companyId || !branchId ? await findMachineBySerial(serialNumber).catch(() => null) : null);
+        if (machine) {
+            opsState.newRequestMachine = machine;
+            const machineCustomer = resolveMachineCustomer(machine);
+            companyId = companyId || machineCustomer.companyId || 0;
+            branchId = branchId || machineCustomer.branchId || 0;
+        }
     }
     if (!companyId) {
         alert('Please select a company.');
@@ -968,13 +1463,25 @@ async function saveNewServiceRequest() {
     const areaId = Number(branch?.area_id || 0);
     const bridgeUpdatedAt = new Date().toISOString();
     const bridgeUpdatedBy = Number(user?.staff_id || 0) || 0;
+    const matchedMachine = opsState.newRequestMachine || null;
+    const matchedMachineBranchId = Number(matchedMachine?.client_id || matchedMachine?.branch_id || 0);
+    const typedSerialKey = normalizeSerialNumber(serialNumber);
+    const matchedSerialKey = normalizeSerialNumber(matchedMachine?.serial);
+    const graphSerialKey = normalizeSerialNumber(graphRow?.serialNumber || opsState.newRequestGraphRow?.serialNumber);
+    const graphMachineId = Number(graphRow?.machineId || opsState.newRequestGraphRow?.machineId || 0) || 0;
+    const graphBranchId = Number(graphRow?.branchId || opsState.newRequestGraphRow?.branchId || 0) || 0;
+    const matchedMachineId = typedSerialKey && graphSerialKey && typedSerialKey === graphSerialKey && graphMachineId > 0 && (!graphBranchId || graphBranchId === branchId)
+        ? graphMachineId
+        : (typedSerialKey && typedSerialKey === matchedSerialKey && (!matchedMachineBranchId || matchedMachineBranchId === branchId)
+            ? Number(matchedMachine?.id || 0)
+            : 0);
 
     const base = {
         id: nextId,
         company_id: companyId,
         branch_id: branchId,
         area_id: areaId,
-        serial: 0,
+        serial: matchedMachineId || 0,
         caller: caller || '-',
         phone_number: phone || '',
         purpose_id: purposeId,
@@ -990,6 +1497,9 @@ async function saveNewServiceRequest() {
         scheduled: 1,
         // App-specific tracking (safe in Firestore, doesn't break legacy)
         request_origin: origin,
+        request_serial_number: serialNumber,
+        contractmain_id: Number(graphRow?.contractId || opsState.newRequestGraphRow?.contractId || 0) || 0,
+        active_customer_graph_source: graphRow ? 'active_contract_customer_graph' : (matchedMachineId ? 'machine_fallback' : ''),
         from_mobileapp: 1,
         bridge_updated_at: bridgeUpdatedAt,
         bridge_updated_by: bridgeUpdatedBy
@@ -1021,7 +1531,6 @@ async function saveNewServiceRequest() {
         oldest_invoice_age: 0,
         soa_status: 0,
         willsettle: 0,
-        contractmain_id: 0,
         firebase_key: '',
         iscancelleddate: '',
         super_urgent: 0,
@@ -1072,9 +1581,9 @@ function renderOpsStaffPanel(staffId) {
 
     panelTitle.textContent = `${assigneeName} - ${role}`;
     panelSubtitle.textContent = selectedDate
-        ? `${rows.length} ${opsState.routeSourceLabel.toLowerCase()} schedule(s): ${todayCount} on ${selectedDate}`
-        : `${rows.length} ${opsState.routeSourceLabel.toLowerCase()} schedule(s)`;
-    panelMeta.textContent = `${opsState.routeSourceLabel} route view only. Field staff update the master ticket from the field app.`;
+        ? `${rows.length} schedule(s): ${todayCount} on ${selectedDate}`
+        : `${rows.length} schedule(s)`;
+    panelMeta.textContent = 'All selected-date schedules assigned to this staff member. Printed/saved route details appear when available.';
 
     const printAllBtn = document.getElementById('opsPanelPrintAllBtn');
     printAllBtn.style.display = rows.length ? 'inline-flex' : 'none';
@@ -1105,7 +1614,7 @@ function renderOpsStaffPanel(staffId) {
                     <div>${sanitize(clientName)}</div>
                     <div class="ops-subtext">${sanitize(branchName)}</div>
                 </td>
-                <td data-label="Action"><div class="ops-row-actions">Printed Route</div></td>
+                <td data-label="Action"><div class="ops-row-actions">${sanitize(row.route_source === 'schedule' ? 'Schedule' : `${row.route_source} route`)}</div></td>
             </tr>
         `;
     }).join('');
@@ -1366,13 +1875,20 @@ function filterRowsByStatus(rows, selectedDate, statusFilter) {
     return rows.filter((row) => getOpsStatusKey(row, selectedDate) === statusFilter);
 }
 
+function filterRowsByAssigneeRole(rows, assigneeRoleFilter) {
+    if (!assigneeRoleFilter || assigneeRoleFilter === 'all') return rows;
+    return rows.filter((row) => getAssigneeRoleKey(row) === assigneeRoleFilter);
+}
+
 function renderOperationsBoard() {
     const selectedDate = opsState.selectedDate || formatDateYmd(new Date());
     const purposeFilter = opsState.purposeFilter || 'all';
     const statusFilter = opsState.statusFilter || 'all';
+    const assigneeRoleFilter = opsState.assigneeRoleFilter || 'all';
 
     const byPurpose = filterRowsByPurpose(opsState.allRows, purposeFilter);
-    const filtered = filterRowsByStatus(byPurpose, selectedDate, statusFilter);
+    const byAssigneeRole = filterRowsByAssigneeRole(byPurpose, assigneeRoleFilter);
+    const filtered = filterRowsByStatus(byAssigneeRole, selectedDate, statusFilter);
     opsState.selectedRows = filtered;
 
     const selectedScheduleIds = new Set(filtered.map((row) => Number(row.id || 0)));
@@ -1393,7 +1909,7 @@ function renderOperationsBoard() {
     opsState.logsBySchedule = logsBySchedule;
     opsState.logsByStaff = logsByStaff;
 
-    renderOpsStatusKpis(byPurpose, selectedDate);
+    renderOpsStatusKpis(byAssigneeRole, selectedDate);
     renderOpsStaffTable(filtered, logsByStaff, opsCache.employees, opsCache.positions);
     renderOpsTaskTable(filtered.slice(0, OPS_MAX_TASK_ROWS), logsBySchedule, {
         employeeMap: opsCache.employees,
@@ -1410,7 +1926,7 @@ function renderOperationsBoard() {
         .filter((id) => !opsCache.employees.get(String(id))).length;
 
     const meta = document.getElementById('opsMeta');
-    meta.textContent = `Showing ${filtered.length} task(s) after filters. Assigned staff: ${assigneeCount}. With time logs: ${withLogsCount}. Unmapped staff IDs: ${unmappedCount}.`;
+    meta.textContent = `Showing ${filtered.length} task(s) after filters. Assignee group: ${getAssigneeRoleFilterLabel(assigneeRoleFilter)}. Assigned staff: ${assigneeCount}. With time logs: ${withLogsCount}. Unmapped staff IDs: ${unmappedCount}.`;
 
     const carryoverBtn = document.getElementById('opsCarryoverBtn');
     carryoverBtn.style.display = 'none';
@@ -1423,14 +1939,15 @@ function renderOperationsBoard() {
 async function loadOperationsBoard() {
     const selectedDate = document.getElementById('opsDateInput').value || formatDateYmd(new Date());
     const purposeFilter = document.getElementById('opsPurposeFilter').value || 'all';
+    const assigneeRoleFilter = document.getElementById('opsAssigneeRoleFilter')?.value || 'all';
     const subtitle = document.getElementById('opsSubtitle');
     const meta = document.getElementById('opsMeta');
     const panelVisible = document.getElementById('opsStaffPanel').classList.contains('open');
     const includeCarryover = false;
 
     const purposeLabel = purposeFilter === 'all' ? 'All Tasks' : getPurposeLabel(Number(purposeFilter));
-    subtitle.textContent = `Loading ${purposeLabel} printed route for ${selectedDate}...`;
-    meta.textContent = 'Querying Firestore printed schedule tables...';
+    subtitle.textContent = `Loading ${purposeLabel} schedules for ${selectedDate}...`;
+    meta.textContent = 'Querying Firestore schedules, route tables, and execution logs...';
 
     document.querySelector('#opsStaffTable tbody').innerHTML =
         '<tr><td colspan="6" class="loading-cell">Loading...</td></tr>';
@@ -1441,7 +1958,8 @@ async function loadOperationsBoard() {
         const start = `${selectedDate} 00:00:00`;
         const end = `${selectedDate} 23:59:59`;
 
-        const [printedDocs, savedDocs, schedtimeDocs] = await Promise.all([
+        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs] = await Promise.all([
+            queryByDateRange('tbl_schedule', 'task_datetime', { start, end }),
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange('tbl_schedtime', 'schedule_date', { start, end })
@@ -1449,12 +1967,11 @@ async function loadOperationsBoard() {
 
         await ensureClosedScheduleIdsLoaded();
 
+        const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
         const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), selectedDate);
         const savedRows = pickLatestRouteRows(savedDocs.map(parseFirestoreDoc).filter(Boolean), selectedDate);
-        const routeRows = printedRows.length ? printedRows : savedRows;
-        const routeSourceLabel = printedRows.length ? 'Printed' : 'Saved';
-
-        const mergedRows = (await buildRouteBoundScheduleRows(routeRows, routeSourceLabel.toLowerCase()))
+        const { mergedRows, routeCoverage } = overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows);
+        const sortedRows = mergedRows
             .sort((a, b) => {
                 const left = getRouteTaskDateTime(a);
                 const right = getRouteTaskDateTime(b);
@@ -1465,21 +1982,21 @@ async function loadOperationsBoard() {
         const schedtimeRows = schedtimeDocs.map(parseFirestoreDoc).filter(Boolean);
 
         opsState.selectedDate = selectedDate;
-        opsState.allRows = mergedRows;
+        opsState.allRows = sortedRows;
         opsState.schedtimeRows = schedtimeRows;
         opsState.purposeFilter = purposeFilter;
+        opsState.assigneeRoleFilter = assigneeRoleFilter;
         opsState.includeCarryover = includeCarryover;
-        opsState.routeSourceLabel = routeSourceLabel;
+        opsState.routeSourceLabel = 'Schedule';
 
-        const byPurpose = filterRowsByPurpose(mergedRows, purposeFilter);
-        const assigneeIds = byPurpose.map((row) => getAssignedStaffId(row));
-        const troubleIds = byPurpose.map((row) => Number(row.trouble_id || 0));
-        const branchIds = byPurpose.map((row) => Number(row.branch_id || 0)).filter((id) => id > 0);
+        const assigneeIds = sortedRows.map((row) => getAssignedStaffId(row));
+        const troubleIds = sortedRows.map((row) => Number(row.trouble_id || 0));
+        const branchIds = sortedRows.map((row) => Number(row.branch_id || 0)).filter((id) => id > 0);
         schedtimeRows.forEach((log) => {
             const branchId = Number(log.branch_id || 0);
             if (branchId > 0) branchIds.push(branchId);
         });
-        const companyIdsFromSchedule = byPurpose.map((row) => Number(row.company_id || 0)).filter((id) => id > 0);
+        const companyIdsFromSchedule = sortedRows.map((row) => Number(row.company_id || 0)).filter((id) => id > 0);
 
         await Promise.all([
             fetchManyDocs('tbl_employee', assigneeIds, opsCache.employees),
@@ -1506,8 +2023,9 @@ async function loadOperationsBoard() {
             fetchManyDocs('tbl_area', areaIds, opsCache.areas)
         ]);
 
-        subtitle.textContent = `Operations for ${selectedDate} (${purposeLabel}): ${byPurpose.length} ${routeSourceLabel.toLowerCase()} task(s), ${schedtimeRows.length} execution log(s).`;
-        meta.textContent = `${routeSourceLabel} route view is active. Only legacy printed/saved day-sheet rows are shown.`;
+        const visibleRows = filterRowsByAssigneeRole(filterRowsByPurpose(sortedRows, purposeFilter), assigneeRoleFilter);
+        subtitle.textContent = `Operations for ${selectedDate} (${purposeLabel}, ${getAssigneeRoleFilterLabel(assigneeRoleFilter)}): ${visibleRows.length} schedule(s), ${schedtimeRows.length} execution log(s).`;
+        meta.textContent = `Schedule-first view is active. Route coverage: ${routeCoverage.boundCount}/${sortedRows.length} schedules have printed/saved rows (${routeCoverage.printedCount} printed, ${routeCoverage.savedCount} saved, ${routeCoverage.orphanCount} orphan route row(s)).`;
 
         if (panelVisible && opsState.panelStaffId) {
             renderOpsStaffPanel(opsState.panelStaffId);
@@ -1530,7 +2048,7 @@ async function batchCarryoverPending() {
     return;
 
     const selectedDate = opsState.selectedDate || formatDateYmd(new Date());
-    const canCarry = MargaAuth.isAdmin() || (MargaAuth.getUser()?.role === 'service');
+    const canCarry = MargaAuth.isAdmin() || MargaAuth.hasRole('service');
     if (!canCarry) {
         alert('Batch carryover is available for Admin / Service roles only.');
         return;

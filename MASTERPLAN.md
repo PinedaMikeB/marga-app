@@ -36,6 +36,22 @@ This file protects the project across new chats. It should record the stable bas
   - missed reading / catch-up states
   - machine-reading fallback logic
 
+## Customer Identity Rule
+- Canonical customer lookup is the **Active Contract Customer Graph**.
+- Use this graph whenever the app needs the real customer universe for Billing, Service, Collections, Customer Portal, machine usage, or customer-facing history.
+- Do not treat raw `tbl_companylist` as the customer list. It is only the company master.
+- Do not treat raw `tbl_machine.client_id` as the customer locator. Most active contract machines do not have a reliable machine-side client tag.
+- The graph is:
+  - `tbl_contractmain` where `status == 1` as the active customer/machine basis
+  - `tbl_contractmain.contract_id` -> `tbl_contractdep.id`
+  - `tbl_contractdep.branch_id` -> `tbl_branchinfo.id`
+  - `tbl_branchinfo.company_id` -> `tbl_companylist.id`
+  - `tbl_contractmain.mach_id` -> `tbl_machine.id`
+  - serial display from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
+- Billing calls this through the cohort/customer resolver in `netlify/functions/openclaw-billing-cohort.js`; future modules may call it the **Billing Customer Locator Query** when referring to the Firebase query/result.
+- Service request serial lookup must resolve through this graph before falling back to raw machine/client fields.
+- Customer Portal must expose only graph-resolved customer/account/machine rows unless an admin explicitly creates a non-contract customer account.
+
 ## Billing Print Template Rules
 - Firestore is the source of truth for print layout templates.
 - Store invoice print templates in `tbl_app_settings/billing_invoice_print_templates_v1`, not only in Chrome/localStorage.

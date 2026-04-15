@@ -225,6 +225,24 @@
     margin-bottom: 0.35rem;
 }
 
+.new-req-serial-status {
+    color: #5a6f88;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.new-req-serial-status.is-match {
+    color: #166534;
+}
+
+.new-req-serial-status.is-warning {
+    color: #92400e;
+}
+
+.new-req-serial-status.is-error {
+    color: #991b1b;
+}
+
 .marga-field textarea {
     resize: vertical;
 }
