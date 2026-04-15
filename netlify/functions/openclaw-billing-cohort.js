@@ -336,7 +336,7 @@ async function loadCache(
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
-            fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial', 'page_rate', 'monthly_quota', 'monthly_rate', 'page_rate2', 'monthly_quota2', 'monthly_rate2', 'withvat', 'category_id'],
+            fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial', 'page_rate', 'monthly_quota', 'monthly_rate', 'page_rate2', 'page_rate_xtra', 'page_rate_xtra2', 'monthly_quota2', 'monthly_rate2', 'withvat', 'category_id'],
             maxPages: 80
         }),
         firestoreGetAll('tbl_contractdep', { fieldMask: ['id', 'branch_id', 'departmentname'], maxPages: 60 }),
@@ -467,7 +467,8 @@ async function loadCache(
             pageRate: Number(getField(f, ['page_rate']) || 0) || 0,
             monthlyQuota: Number(getField(f, ['monthly_quota']) || 0) || 0,
             monthlyRate: Number(getField(f, ['monthly_rate']) || 0) || 0,
-            pageRate2: Number(getField(f, ['page_rate2']) || 0) || 0,
+            pageRate2: Number(getField(f, ['page_rate2', 'page_rate_xtra']) || 0) || 0,
+            pageRateXtra2: Number(getField(f, ['page_rate_xtra2']) || 0) || 0,
             monthlyQuota2: Number(getField(f, ['monthly_quota2']) || 0) || 0,
             monthlyRate2: Number(getField(f, ['monthly_rate2']) || 0) || 0,
             withVat: Number(getField(f, ['withvat']) || 0) || 0,
@@ -660,26 +661,45 @@ function computeReadingAmount(contract, fields) {
             monthlyRate: Number(contract?.monthlyRate || 0) || 0,
             withVat: Number(contract?.withVat || 0) === 1,
             categoryId: Number(contract?.categoryId || 0) || 0,
+            succeedingRate: Number(contract?.pageRate2 || contract?.pageRateXtra2 || contract?.pageRate || 0) || 0,
             formula: 'not_applicable'
         };
     }
 
     const pages = extractReadingPages(fields);
     const pageRate = Number(contract?.pageRate || 0) || 0;
+    const succeedingRate = Number(contract?.pageRate2 || contract?.pageRateXtra2 || 0) || pageRate;
     const monthlyQuota = Number(contract?.monthlyQuota || 0) || 0;
     const monthlyRate = Number(contract?.monthlyRate || 0) || 0;
     const withVat = Number(contract?.withVat || 0) === 1;
+    let quotaPages = 0;
+    let succeedingPages = 0;
+    let quotaAmount = 0;
+    let succeedingAmount = 0;
     let amountDue = 0;
     let formula = 'net_pages_times_page_rate';
 
-    if (pages > 0 && pageRate > 0) {
-        amountDue = pages * pageRate;
+    if (pageRate > 0 && (pages > 0 || monthlyQuota > 0)) {
+        if (monthlyQuota > 0) {
+            quotaPages = monthlyQuota;
+            succeedingPages = Math.max(0, pages - monthlyQuota);
+            quotaAmount = quotaPages * pageRate;
+            succeedingAmount = succeedingPages * succeedingRate;
+            amountDue = quotaAmount + succeedingAmount;
+            formula = succeedingPages > 0 ? 'quota_pages_plus_succeeding_rate' : 'quota_floor_after_spoilage';
+        } else {
+            quotaPages = pages;
+            quotaAmount = pages * pageRate;
+            amountDue = quotaAmount;
+        }
     } else if (monthlyRate > 0) {
         amountDue = monthlyRate;
         formula = 'monthly_rate_fallback';
     }
 
     amountDue = roundCurrency(amountDue);
+    quotaAmount = roundCurrency(quotaAmount);
+    succeedingAmount = roundCurrency(succeedingAmount);
     const netAmount = withVat ? roundCurrency(amountDue / 1.12) : amountDue;
     const vatAmount = withVat ? roundCurrency(amountDue - netAmount) : roundCurrency(amountDue * 0.12);
 
@@ -689,6 +709,11 @@ function computeReadingAmount(contract, fields) {
         netAmount,
         vatAmount,
         pageRate,
+        succeedingRate,
+        quotaPages,
+        succeedingPages,
+        quotaAmount,
+        succeedingAmount,
         monthlyQuota,
         monthlyRate,
         withVat,
@@ -785,6 +810,9 @@ function serializeReadingGroups(groups) {
             total_consumed: Number(group.total_consumed || 0) || 0,
             pages: Number(group.pages || 0),
             page_rate: Number(group.page_rate || 0),
+            succeeding_page_rate: Number(group.succeeding_page_rate || group.page_rate || 0),
+            quota_pages: Number(group.quota_pages || 0),
+            succeeding_pages: Number(group.succeeding_pages || 0),
             monthly_quota: Number(group.monthly_quota || 0),
             monthly_rate: Number(group.monthly_rate || 0),
             amount_total: roundCurrency(group.amount_total || 0),
@@ -910,7 +938,8 @@ function buildContractProfile(contract) {
         page_rate: Number(contract?.pageRate || 0) || 0,
         monthly_quota: Number(contract?.monthlyQuota || 0) || 0,
         monthly_rate: Number(contract?.monthlyRate || 0) || 0,
-        page_rate2: Number(contract?.pageRate2 || 0) || 0,
+        page_rate2: Number(contract?.pageRate2 || contract?.pageRateXtra2 || 0) || 0,
+        succeeding_page_rate: Number(contract?.pageRate2 || contract?.pageRateXtra2 || contract?.pageRate || 0) || 0,
         monthly_quota2: Number(contract?.monthlyQuota2 || 0) || 0,
         monthly_rate2: Number(contract?.monthlyRate2 || 0) || 0,
         with_vat: Number(contract?.withVat || 0) === 1
@@ -1380,6 +1409,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     total_consumed: totalConsumed > 0 ? totalConsumed : Math.max(0, presentMeter - previousMeter),
                     pages: reading.pages,
                     page_rate: reading.pageRate,
+                    succeeding_page_rate: reading.succeedingRate,
+                    quota_pages: reading.quotaPages,
+                    succeeding_pages: reading.succeedingPages,
                     monthly_quota: reading.monthlyQuota,
                     monthly_rate: reading.monthlyRate,
                     amount_total: reading.amountDue,
@@ -1575,6 +1607,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     total_consumed: Math.max(0, Number(currentEntry.meter_reading || 0) - Number(previousEntry.meter_reading || 0)),
                     pages: reading.pages,
                     page_rate: reading.pageRate,
+                    succeeding_page_rate: reading.succeedingRate,
+                    quota_pages: reading.quotaPages,
+                    succeeding_pages: reading.succeedingPages,
                     monthly_quota: reading.monthlyQuota,
                     monthly_rate: reading.monthlyRate,
                     amount_total: reading.amountDue,

@@ -138,8 +138,11 @@ function getRowBillingProfile(row) {
     const profile = row?.billing_profile || null;
     if (profile) {
         const categoryMeta = getContractCategoryMeta(profile.category_id);
+        const pageRate = Number(profile.page_rate || 0) || 0;
+        const succeedingRate = Number(profile.succeeding_page_rate || profile.page_rate2 || profile.page_rate_xtra || 0) || pageRate;
         return {
             ...profile,
+            succeeding_page_rate: succeedingRate,
             category_code: profile.category_code || categoryMeta.code,
             category_label: profile.category_label || categoryMeta.label
         };
@@ -159,8 +162,22 @@ function getRowBillingProfile(row) {
         page_rate: Number(fallbackGroup.page_rate || 0) || 0,
         monthly_quota: Number(fallbackGroup.monthly_quota || 0) || 0,
         monthly_rate: Number(fallbackGroup.monthly_rate || 0) || 0,
+        succeeding_page_rate: Number(fallbackGroup.succeeding_page_rate || fallbackGroup.page_rate2 || fallbackGroup.page_rate_xtra || fallbackGroup.page_rate || 0) || 0,
         with_vat: Boolean(fallbackGroup.with_vat)
     };
+}
+
+function getSucceedingPageRate(profile) {
+    const pageRate = Number(profile?.page_rate || 0) || 0;
+    return Number(profile?.succeeding_page_rate || profile?.page_rate2 || profile?.page_rate_xtra || 0) || pageRate;
+}
+
+function formatRtpRatePlan({ quota = 0, pageRate = 0, succeedingRate = 0 } = {}) {
+    const effectiveSucceedingRate = succeedingRate || pageRate;
+    if (Number(quota || 0) > 0) {
+        return `${formatCount(quota)} quota @ ${formatAmount(pageRate)}; succeeding @ ${formatAmount(effectiveSucceedingRate)}`;
+    }
+    return `All pages @ ${formatAmount(pageRate)}`;
 }
 
 function isReadingPricing(profile) {
@@ -532,8 +549,13 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         billed_pages: Number(estimate?.billedPages || 0) || 0,
         quota_variance: Number(estimate?.quotaVariance || 0) || 0,
         page_rate: Number(context?.profile?.page_rate || 0) || 0,
+        succeeding_page_rate: Number(estimate?.succeedingRate || getSucceedingPageRate(context?.profile) || 0) || 0,
         monthly_quota: Number(context?.profile?.monthly_quota || 0) || 0,
         monthly_rate: Number(context?.profile?.monthly_rate || 0) || 0,
+        quota_pages: Number(estimate?.quotaPages || 0) || 0,
+        succeeding_pages: Number(estimate?.succeedingPages || 0) || 0,
+        quota_amount: Number(estimate?.quotaAmount || 0) || 0,
+        succeeding_amount: Number(estimate?.succeedingAmount || 0) || 0,
         billing_formula: String(estimate?.formula || '').trim(),
         withvat: context?.profile?.with_vat ? 1 : 0,
         category_id: Number(context?.profile?.category_id || 0) || 0,
@@ -783,6 +805,10 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         billingTo: period.to || 'N/A',
         totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
         rate: Number(readingGroup?.page_rate || getRowBillingProfile(row)?.page_rate || 0) || 0,
+        quota: Number(readingGroup?.monthly_quota || getRowBillingProfile(row)?.monthly_quota || 0) || 0,
+        quotaPages: Number(readingGroup?.quota_pages || 0) || 0,
+        succeedingPages: Number(readingGroup?.succeeding_pages || 0) || 0,
+        succeedingRate: Number(readingGroup?.succeeding_page_rate || readingGroup?.page_rate2 || getSucceedingPageRate(getRowBillingProfile(row)) || 0) || 0,
         totals
     };
 }
@@ -831,6 +857,10 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         billingTo: period.to || 'N/A',
         totalPages: Number(estimate?.netPages || 0) || 0,
         rate: Number(context?.profile?.page_rate || 0) || 0,
+        quota: Number(context?.profile?.monthly_quota || 0) || 0,
+        quotaPages: Number(estimate?.quotaPages || 0) || 0,
+        succeedingPages: Number(estimate?.succeedingPages || 0) || 0,
+        succeedingRate: Number(estimate?.succeedingRate || getSucceedingPageRate(context?.profile) || 0) || 0,
         totals: computePreviewAmountsFromEstimate(estimate)
     };
 }
@@ -1135,6 +1165,8 @@ function buildRtpSectionStyle(sectionKey, mode = 'print') {
 
 function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
     const totals = preview?.totals || {};
+    const succeedingRate = Number(preview?.succeedingRate || preview?.rate || 0) || 0;
+    const succeedingPages = Number(preview?.succeedingPages || 0) || 0;
     return `
         <div class="rtp-section-block" style="${buildRtpSectionStyle('header', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 150 }, mode)}"><strong>${escapeHtml(preview?.customerName || 'Unknown Customer')}</strong></div>
@@ -1158,6 +1190,9 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
 
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Rate per Page:</strong></div>
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 52, widthMm: 76 }, mode)}"><strong>Succeeding Pages / Rate:</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 52, widthMm: 80 }, mode)}">${escapeHtml(`${formatCount(succeedingPages)} @ ${formatFixedAmount(succeedingRate)}`)}</div>
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('meta', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 32 }, mode)}">${escapeHtml(preview?.invoiceDate || '')}</div>
@@ -1635,6 +1670,9 @@ function mergeReadingGroups(groups) {
             total_consumed: Number(group.total_consumed || 0),
             pages: Number(group.pages || 0),
             page_rate: Number(group.page_rate || 0),
+            succeeding_page_rate: Number(group.succeeding_page_rate || group.page_rate2 || group.page_rate || 0),
+            quota_pages: Number(group.quota_pages || 0),
+            succeeding_pages: Number(group.succeeding_pages || 0),
             monthly_quota: Number(group.monthly_quota || 0),
             monthly_rate: Number(group.monthly_rate || 0),
             amount_total: Number(group.amount_total || 0),
@@ -1868,6 +1906,7 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
     const previousMeter = Math.max(0, Number(previousMeterValue || 0) || 0);
     const presentMeter = Math.max(0, Number(presentMeterValue || 0) || 0);
     const pageRate = Number(profile.page_rate || 0) || 0;
+    const succeedingRate = getSucceedingPageRate(profile);
     const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
     const monthlyRate = Number(profile.monthly_rate || 0) || 0;
     const withVat = Boolean(profile.with_vat);
@@ -1876,6 +1915,10 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
     let spoilagePages = 0;
     let netPages = 0;
     let billedPages = 0;
+    let quotaPages = 0;
+    let succeedingPages = 0;
+    let quotaAmount = 0;
+    let succeedingAmount = 0;
     let amountDue = 0;
     let formula = 'not_available';
     let warning = '';
@@ -1889,10 +1932,21 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
             netPages = Math.max(0, rawPages - spoilagePages);
             billedPages = monthlyQuota > 0 ? Math.max(netPages, monthlyQuota) : netPages;
             if (billedPages > 0 && pageRate > 0) {
-                amountDue = billedPages * pageRate;
-                formula = monthlyQuota > 0
-                    ? 'quota_floor_after_spoilage'
-                    : 'net_pages_after_spoilage_x_rate';
+                if (monthlyQuota > 0) {
+                    quotaPages = monthlyQuota;
+                    succeedingPages = Math.max(0, netPages - monthlyQuota);
+                    quotaAmount = quotaPages * pageRate;
+                    succeedingAmount = succeedingPages * succeedingRate;
+                    amountDue = quotaAmount + succeedingAmount;
+                    formula = succeedingPages > 0
+                        ? 'quota_pages_plus_succeeding_rate'
+                        : 'quota_floor_after_spoilage';
+                } else {
+                    quotaPages = billedPages;
+                    quotaAmount = billedPages * pageRate;
+                    amountDue = quotaAmount;
+                    formula = 'net_pages_after_spoilage_x_rate';
+                }
             } else if (monthlyRate > 0) {
                 amountDue = monthlyRate;
                 formula = 'monthly_rate_fallback';
@@ -1917,6 +1971,11 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
         spoilagePages,
         netPages,
         billedPages,
+        quotaPages,
+        succeedingPages,
+        quotaAmount: Number(quotaAmount.toFixed(2)),
+        succeedingAmount: Number(succeedingAmount.toFixed(2)),
+        succeedingRate,
         pages: billedPages,
         amountDue,
         netAmount,
@@ -2044,6 +2103,10 @@ async function openBillingCalcModal(rowId, monthKey) {
                             <label>Machine Serial</label>
                             <input type="text" readonly value="${escapeHtml(serialNumber)}">
                         </div>
+                        <div class="calc-field">
+                            <label>Contract Rate Plan</label>
+                            <input type="text" readonly value="${escapeHtml(formatRtpRatePlan({ quota: profile.monthly_quota, pageRate: profile.page_rate, succeedingRate: getSucceedingPageRate(profile) }))}">
+                        </div>
                     </div>
                 </section>
                 <section class="calc-panel">
@@ -2104,12 +2167,20 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 <input type="text" readonly value="${escapeHtml(formatCount(profile.monthly_quota || 0))}">
                             </div>
                             <div class="calc-field">
-                                <label>Page Rate</label>
+                                <label>Within Quota Rate</label>
                                 <input type="text" readonly value="${escapeHtml(formatAmount(profile.page_rate || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Succeeding Rate</label>
+                                <input type="text" readonly value="${escapeHtml(formatAmount(getSucceedingPageRate(profile)))}">
                             </div>
                             <div class="calc-field">
                                 <label>Monthly Rate</label>
                                 <input type="text" readonly value="${escapeHtml(formatAmount(profile.monthly_rate || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Succeeding Pages</label>
+                                <input type="text" id="calcSucceedingPagesValue" readonly value="${escapeHtml(formatCount(estimate.succeedingPages || 0))}">
                             </div>
                             <div class="calc-field">
                                 <label>Billed Pages</label>
@@ -2132,7 +2203,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                     <div class="calc-note calc-note-tight">
                         ${
                             context.isReading
-                                ? `This estimate applies spoilage first, then charges the contract quota when net pages fall below quota. If no page-rate computation can run, the monthly rate is used as fallback.`
+                                ? `This estimate applies spoilage first, bills quota pages at the within-quota rate, then bills pages above quota at the succeeding rate. If no succeeding rate is saved, the within-quota rate is used.`
                                 : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
                         }
                     </div>
@@ -2158,7 +2229,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                         <span class="detail-list-label">Computation Flow</span>
                         <div class="detail-list-value" id="calcFlowValue">${escapeHtml(
                             context.isReading
-                                ? `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(estimate.spoilagePages || 0)} spoilage = ${formatCount(estimate.netPages || 0)} net, then quota floor ${formatCount(profile.monthly_quota || 0)} gives ${formatCount(estimate.billedPages || 0)} billed pages.`
+                                ? `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(estimate.spoilagePages || 0)} spoilage = ${formatCount(estimate.netPages || 0)} net. ${formatCount(estimate.quotaPages || 0)} quota pages x ${formatAmount(profile.page_rate || 0)} plus ${formatCount(estimate.succeedingPages || 0)} succeeding pages x ${formatAmount(estimate.succeedingRate || 0)} = ${formatAmount(estimate.amountDue || 0)}.`
                                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`
                         )}</div>
                     </div>
@@ -2242,6 +2313,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const spoilagePagesValue = document.getElementById('calcSpoilagePagesValue');
     const netPagesValue = document.getElementById('calcNetPagesValue');
     const billedPagesValue = document.getElementById('calcBilledPagesValue');
+    const succeedingPagesValue = document.getElementById('calcSucceedingPagesValue');
     const netValue = document.getElementById('calcNetValue');
     const vatValue = document.getElementById('calcVatValue');
     const formulaValue = document.getElementById('calcFormulaValue');
@@ -2416,6 +2488,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         setElementDisplayValue(spoilagePagesValue, formatCount(next.spoilagePages || 0));
         setElementDisplayValue(netPagesValue, formatCount(next.netPages || 0));
         setElementDisplayValue(billedPagesValue, formatCount(next.billedPages || 0));
+        setElementDisplayValue(succeedingPagesValue, formatCount(next.succeedingPages || 0));
         setElementDisplayValue(netValue, formatAmount(next.netAmount || 0));
         setElementDisplayValue(vatValue, formatAmount(next.vatAmount || 0));
         if (formulaValue) formulaValue.textContent = next.formula;
@@ -2426,7 +2499,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
         if (flowValue) {
             flowValue.textContent = context.isReading
-                ? `${formatCount(next.rawPages || 0)} raw - ${formatCount(next.spoilagePages || 0)} spoilage = ${formatCount(next.netPages || 0)} net, then quota floor ${formatCount(profile.monthly_quota || 0)} gives ${formatCount(next.billedPages || 0)} billed pages.`
+                ? `${formatCount(next.rawPages || 0)} raw - ${formatCount(next.spoilagePages || 0)} spoilage = ${formatCount(next.netPages || 0)} net. ${formatCount(next.quotaPages || 0)} quota pages x ${formatAmount(profile.page_rate || 0)} plus ${formatCount(next.succeedingPages || 0)} succeeding pages x ${formatAmount(next.succeedingRate || 0)} = ${formatAmount(next.amountDue || 0)}.`
                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
         }
         if (warningValue) warningValue.textContent = next.warning || '';
@@ -3024,6 +3097,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
                                         <div class="invoice-detail-meta">
                                             <span class="invoice-detail-chip">${escapeHtml(formatMetricCount(group.pages || 0, 'page'))}</span>
                                             <span class="invoice-detail-chip">${escapeHtml(`Rate ${formatAmount(group.page_rate || 0)}`)}</span>
+                                            <span class="invoice-detail-chip">${escapeHtml(`Succeeding ${formatAmount(group.succeeding_page_rate || group.page_rate || 0)}`)}</span>
                                             <span class="invoice-detail-chip">${escapeHtml(group.with_vat ? 'VAT Inclusive' : 'VAT Exclusive')}</span>
                                         </div>
                                         <div class="detail-list-block">
@@ -3036,7 +3110,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
                                         </div>
                                         <div class="detail-list-block">
                                             <span class="detail-list-label">Computation</span>
-                                            <div class="detail-list-value">${escapeHtml(`${formatCount(group.pages || 0)} pages × ${formatAmount(group.page_rate || 0)} = ${formatAmount(group.amount_total || 0)}`)}</div>
+                                            <div class="detail-list-value">${escapeHtml(`${formatCount(group.quota_pages || group.pages || 0)} quota pages x ${formatAmount(group.page_rate || 0)} + ${formatCount(group.succeeding_pages || 0)} succeeding pages x ${formatAmount(group.succeeding_page_rate || group.page_rate || 0)} = ${formatAmount(group.amount_total || 0)}`)}</div>
                                         </div>
                                     </article>
                                 `
