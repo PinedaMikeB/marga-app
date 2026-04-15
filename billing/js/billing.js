@@ -10,6 +10,7 @@ const els = {
     statusPill: null,
     selectionCard: null,
     selectionCopy: null,
+    clearSelectionBtn: null,
     summarySubhead: null,
     sheetMeta: null,
     summaryTableWrap: null,
@@ -33,6 +34,7 @@ const els = {
 let lastPayload = null;
 let renderedMatrixRows = [];
 let searchReloadTimer = null;
+const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 
 function getMatrixSearchTerm() {
     return String(els.matrixSearchInput?.value || '').trim().toLowerCase();
@@ -40,6 +42,14 @@ function getMatrixSearchTerm() {
 
 function getMatrixSortValue() {
     return String(els.matrixSortInput?.value || 'rd').trim().toLowerCase();
+}
+
+function restoreMatrixSortValue() {
+    if (!els.matrixSortInput) return;
+    const saved = String(localStorage.getItem(MATRIX_SORT_STORAGE_KEY) || '').trim().toLowerCase();
+    if (!saved) return;
+    const hasOption = Array.from(els.matrixSortInput.options || []).some((option) => option.value === saved);
+    if (hasOption) els.matrixSortInput.value = saved;
 }
 
 function cacheElements() {
@@ -199,6 +209,30 @@ function pendingHref(companyId, monthKey) {
     url.searchParams.set('month', monthKey);
     url.searchParams.set('action', 'create');
     return `${url.pathname}${url.search}`;
+}
+
+function updatePendingSelection(rowId, monthKey) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('row_id', String(rowId));
+    url.searchParams.set('month', String(monthKey));
+    url.searchParams.set('action', 'create');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+    if (lastPayload) {
+        renderSelectionCard(lastPayload);
+        renderMatrixTable(lastPayload);
+    }
+}
+
+function clearPendingSelection() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('row_id');
+    url.searchParams.delete('month');
+    url.searchParams.delete('action');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+    if (lastPayload) {
+        renderSelectionCard(lastPayload);
+        renderMatrixTable(lastPayload);
+    }
 }
 
 function customerHref(row) {
@@ -588,7 +622,13 @@ function renderMatrixTable(payload) {
             if (cell.pending) {
                 return `
                     <td class="month-cell pending-cell ${isSelected ? 'selected-cell' : ''}">
-                        <a class="pending-link" href="${escapeHtml(pendingHref(rowId, monthKey))}" title="Pending reading or billing. Open billing context."></a>
+                        <a
+                            class="pending-link"
+                            href="${escapeHtml(pendingHref(rowId, monthKey))}"
+                            data-row-id="${escapeHtml(String(rowId))}"
+                            data-month-key="${escapeHtml(monthKey)}"
+                            title="Pending reading or billing. Open billing context."
+                        ></a>
                     </td>
                 `;
             }
@@ -936,9 +976,16 @@ function bindEvents() {
         }
     });
     els.matrixSortInput?.addEventListener('change', () => {
+        localStorage.setItem(MATRIX_SORT_STORAGE_KEY, getMatrixSortValue());
         if (lastPayload) renderMatrixTable(lastPayload);
     });
     els.matrixTableWrap?.addEventListener('click', (event) => {
+        const pendingTrigger = event.target.closest('.pending-link');
+        if (pendingTrigger) {
+            event.preventDefault();
+            updatePendingSelection(pendingTrigger.dataset.rowId, pendingTrigger.dataset.monthKey);
+            return;
+        }
         const serialTrigger = event.target.closest('.serial-link');
         if (serialTrigger) {
             openSerialDetailModal(serialTrigger.dataset.rowId);
@@ -952,9 +999,19 @@ function bindEvents() {
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
     });
+    els.clearSelectionBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        clearPendingSelection();
+    });
     els.serialDetailCloseBtn?.addEventListener('click', closeSerialDetailModal);
     els.serialDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.serialDetailModal) closeSerialDetailModal();
+    });
+    window.addEventListener('popstate', () => {
+        if (lastPayload) {
+            renderSelectionCard(lastPayload);
+            renderMatrixTable(lastPayload);
+        }
     });
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
@@ -977,6 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedKey = String(localStorage.getItem('openclaw_api_key') || '').trim();
     if (savedKey) els.apiKeyInput.value = savedKey;
 
+    restoreMatrixSortValue();
     initDefaults();
     bindEvents();
     loadDashboard();
