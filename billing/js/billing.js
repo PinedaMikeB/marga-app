@@ -576,19 +576,28 @@ function printCurrentRtpInvoice() {
         return;
     }
 
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1180,height=860');
+    const printWindow = window.open('', 'marga_rtp_print', 'width=1180,height=860');
     if (!printWindow) {
         MargaUtils.showToast('The print window was blocked.', 'error');
         return;
     }
 
-    printWindow.document.open();
-    printWindow.document.write(buildRtpPrintDocument(currentRtpPrintPayload));
+    const printMarkup = buildRtpPrintDocument(currentRtpPrintPayload);
+    let printTriggered = false;
+    const triggerPrint = () => {
+        if (printTriggered || printWindow.closed) return;
+        printTriggered = true;
+        printWindow.focus();
+        window.setTimeout(() => {
+            printWindow.print();
+        }, 150);
+    };
+
+    printWindow.document.open('text/html', 'replace');
+    printWindow.document.write(printMarkup);
     printWindow.document.close();
-    printWindow.focus();
-    window.setTimeout(() => {
-        printWindow.print();
-    }, 250);
+    printWindow.addEventListener('load', triggerPrint, { once: true });
+    window.setTimeout(triggerPrint, 700);
 }
 
 function setStatus(text, type = 'idle') {
