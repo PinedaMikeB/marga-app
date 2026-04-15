@@ -825,6 +825,34 @@
     align-items: flex-end;
 }
 
+.calc-section-calibration-grid {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 1rem;
+}
+
+.calc-section-card {
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #f8fbff;
+    padding: 0.9rem;
+}
+
+.calc-section-title {
+    color: var(--bill-ink);
+    font-size: 0.84rem;
+    font-weight: 800;
+    margin-bottom: 0.2rem;
+    text-transform: uppercase;
+}
+
+.calc-section-subtitle {
+    color: var(--bill-muted);
+    font-size: 0.8rem;
+    margin-bottom: 0.75rem;
+}
+
 .rtp-calibration-shell {
     display: flex;
     justify-content: center;
@@ -855,6 +883,16 @@
     font-size: calc(4.6 * var(--rtp-mm-px) * 1px);
     font-weight: 600;
     line-height: 1.18;
+}
+
+.rtp-calibration-paper .rtp-section-block {
+    position: absolute;
+    transform-origin: top left;
+}
+
+.rtp-calibration-paper .rtp-block-field {
+    position: absolute;
+    white-space: pre-wrap;
 }
 
 .rtp-calibration-paper .rtp-field {

@@ -504,12 +504,26 @@ function buildRtpSheetFieldsHtml(preview) {
     `;
 }
 
+const RTP_PREVIEW_MM_PX = 1.8;
+const RTP_PRINT_SECTION_LAYOUT = {
+    header: { label: 'Header', subtitle: 'Registered name, TIN, address', xMm: 18, yMm: 26 },
+    description: { label: 'Service Block', subtitle: 'Item description and service details', xMm: 18, yMm: 68 },
+    meta: { label: 'Date / Terms', subtitle: 'Date, code, month, RTP tag', xMm: 205, yMm: 26 },
+    totals: { label: 'Totals', subtitle: 'Total sales, VAT, net, due', xMm: 211, yMm: 128 }
+};
+
 const RTP_PRINT_CALIBRATION = {
     paperWidthCm: 20,
     paperHeightCm: 18,
     scale: 0.54,
     offsetXmm: 1.5,
-    offsetYmm: 18
+    offsetYmm: 18,
+    sections: {
+        header: { xMm: 0, yMm: 0, fontScale: 1 },
+        description: { xMm: 0, yMm: 0, fontScale: 1 },
+        meta: { xMm: 0, yMm: 0, fontScale: 1 },
+        totals: { xMm: 0, yMm: 0, fontScale: 1 }
+    }
 };
 
 const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
@@ -521,12 +535,25 @@ function normalizeRtpPrintCalibration(value = {}) {
     const scale = Number(value?.scale ?? RTP_PRINT_CALIBRATION.scale);
     const offsetXmm = Number(value?.offsetXmm ?? RTP_PRINT_CALIBRATION.offsetXmm);
     const offsetYmm = Number(value?.offsetYmm ?? RTP_PRINT_CALIBRATION.offsetYmm);
+    const rawSections = value?.sections || {};
     return {
         paperWidthCm: Number.isFinite(paperWidthCm) ? Math.max(10, Math.min(40, paperWidthCm)) : RTP_PRINT_CALIBRATION.paperWidthCm,
         paperHeightCm: Number.isFinite(paperHeightCm) ? Math.max(10, Math.min(40, paperHeightCm)) : RTP_PRINT_CALIBRATION.paperHeightCm,
         scale: Number.isFinite(scale) ? Math.max(0.35, Math.min(0.9, scale)) : RTP_PRINT_CALIBRATION.scale,
         offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-40, Math.min(40, offsetXmm)) : RTP_PRINT_CALIBRATION.offsetXmm,
-        offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(80, offsetYmm)) : RTP_PRINT_CALIBRATION.offsetYmm
+        offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(80, offsetYmm)) : RTP_PRINT_CALIBRATION.offsetYmm,
+        sections: Object.fromEntries(Object.keys(RTP_PRINT_SECTION_LAYOUT).map((sectionKey) => {
+            const defaults = RTP_PRINT_CALIBRATION.sections[sectionKey];
+            const current = rawSections?.[sectionKey] || {};
+            const sectionX = Number(current?.xMm ?? defaults.xMm);
+            const sectionY = Number(current?.yMm ?? defaults.yMm);
+            const fontScale = Number(current?.fontScale ?? defaults.fontScale);
+            return [sectionKey, {
+                xMm: Number.isFinite(sectionX) ? Math.max(-40, Math.min(40, sectionX)) : defaults.xMm,
+                yMm: Number.isFinite(sectionY) ? Math.max(-40, Math.min(80, sectionY)) : defaults.yMm,
+                fontScale: Number.isFinite(fontScale) ? Math.max(0.6, Math.min(1.8, fontScale)) : defaults.fontScale
+            }];
+        }))
     };
 }
 
@@ -554,6 +581,102 @@ function resetRtpPrintCalibration() {
     return saveRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 }
 
+function getRtpPrintSectionCalibration(sectionKey) {
+    return currentRtpPrintCalibration.sections?.[sectionKey] || RTP_PRINT_CALIBRATION.sections[sectionKey];
+}
+
+function rtpSizeUnit(valueMm, mode = 'print') {
+    return mode === 'screen'
+        ? `${Number(valueMm || 0) * RTP_PREVIEW_MM_PX}px`
+        : `${valueMm}mm`;
+}
+
+function buildRtpPositionStyle(config = {}, mode = 'print') {
+    const parts = ['position:absolute'];
+    if (config.xMm !== undefined) parts.push(`left:${rtpSizeUnit(config.xMm, mode)}`);
+    if (config.yMm !== undefined) parts.push(`top:${rtpSizeUnit(config.yMm, mode)}`);
+    if (config.widthMm !== undefined) parts.push(`width:${rtpSizeUnit(config.widthMm, mode)}`);
+    if (config.heightMm !== undefined) parts.push(`height:${rtpSizeUnit(config.heightMm, mode)}`);
+    if (config.textAlign) parts.push(`text-align:${config.textAlign}`);
+    return parts.join(';');
+}
+
+function buildRtpSectionStyle(sectionKey, mode = 'print') {
+    const layout = RTP_PRINT_SECTION_LAYOUT[sectionKey];
+    const calibration = getRtpPrintSectionCalibration(sectionKey);
+    return [
+        'position:absolute',
+        `left:${rtpSizeUnit((layout?.xMm || 0) + (calibration?.xMm || 0), mode)}`,
+        `top:${rtpSizeUnit((layout?.yMm || 0) + (calibration?.yMm || 0), mode)}`,
+        'transform-origin:top left',
+        `transform:scale(${calibration?.fontScale || 1})`
+    ].join(';');
+}
+
+function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
+    const totals = preview?.totals || {};
+    return `
+        <div class="rtp-section-block" style="${buildRtpSectionStyle('header', mode)}">
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 150 }, mode)}"><strong>${escapeHtml(preview?.customerName || 'Unknown Customer')}</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 9, widthMm: 90 }, mode)}">${escapeHtml(preview?.tin || 'N/A')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 17, widthMm: 150 }, mode)}">${escapeHtml(preview?.address || 'N/A')}</div>
+        </div>
+        <div class="rtp-section-block" style="${buildRtpSectionStyle('description', mode)}">
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 175 }, mode)}">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 10, widthMm: 175 }, mode)}">${escapeHtml(preview?.printerModel || 'N/A')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 86, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 146, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingTo || 'N/A')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 95, yMm: 32, widthMm: 26, textAlign: 'center' }, mode)}">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 15, yMm: 41, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+        </div>
+        <div class="rtp-section-block" style="${buildRtpSectionStyle('meta', mode)}">
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 32 }, mode)}">${escapeHtml(preview?.invoiceDate || '')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 9, widthMm: 32 }, mode)}">${escapeHtml(preview?.readingCode || '')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 17, widthMm: 32 }, mode)}">${escapeHtml(preview?.monthLabel || '')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 27, widthMm: 32 }, mode)}">${escapeHtml(preview?.contractCode || 'RTP')}</div>
+        </div>
+        <div class="rtp-section-block" style="${buildRtpSectionStyle('totals', mode)}">
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 9, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 17, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 26, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 35, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 44, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 53, widthMm: 27, textAlign: 'right' }, mode)}"><strong>${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</strong></div>
+        </div>
+    `;
+}
+
+function renderRtpSectionCalibrationControls() {
+    return `
+        <div class="calc-section-calibration-grid">
+            ${Object.entries(RTP_PRINT_SECTION_LAYOUT).map(([sectionKey, layout]) => {
+                const calibration = getRtpPrintSectionCalibration(sectionKey);
+                return `
+                    <div class="calc-section-card">
+                        <div class="calc-section-title">${escapeHtml(layout.label)}</div>
+                        <div class="calc-section-subtitle">${escapeHtml(layout.subtitle || '')}</div>
+                        <div class="calc-print-calibration calc-print-calibration-compact">
+                            <div class="calc-field">
+                                <label for="rtpSection${sectionKey}X">X (mm)</label>
+                                <input type="number" id="rtpSection${sectionKey}X" data-rtp-section-key="${sectionKey}" data-rtp-section-field="xMm" step="0.5" value="${escapeHtml(String(calibration.xMm))}">
+                            </div>
+                            <div class="calc-field">
+                                <label for="rtpSection${sectionKey}Y">Y (mm)</label>
+                                <input type="number" id="rtpSection${sectionKey}Y" data-rtp-section-key="${sectionKey}" data-rtp-section-field="yMm" step="0.5" value="${escapeHtml(String(calibration.yMm))}">
+                            </div>
+                            <div class="calc-field">
+                                <label for="rtpSection${sectionKey}Font">Font Size</label>
+                                <input type="number" id="rtpSection${sectionKey}Font" data-rtp-section-key="${sectionKey}" data-rtp-section-field="fontScale" step="0.05" min="0.6" max="1.8" value="${escapeHtml(String(calibration.fontScale))}">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
 function buildRtpCalibratedPreviewHtml(preview) {
     const paperWidthMm = currentRtpPrintCalibration.paperWidthCm * 10;
     const paperHeightMm = currentRtpPrintCalibration.paperHeightCm * 10;
@@ -567,7 +690,7 @@ function buildRtpCalibratedPreviewHtml(preview) {
                     class="rtp-calibration-sheet"
                     style="transform: translate(calc(${currentRtpPrintCalibration.offsetXmm} * var(--rtp-mm-px) * 1px), calc(${currentRtpPrintCalibration.offsetYmm} * var(--rtp-mm-px) * 1px)) scale(${currentRtpPrintCalibration.scale});"
                 >
-                    ${buildRtpSheetFieldsHtml(preview)}
+                    ${buildRtpSectionedLayoutHtml(preview, 'screen')}
                 </div>
             </div>
         </section>
@@ -631,33 +754,20 @@ function buildRtpPrintDocument(preview) {
             transform-origin: top left;
             transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});
         }
-        .rtp-field { position: absolute; white-space: pre-wrap; }
-        .rtp-customer-name { top: 26mm; left: 18mm; width: 150mm; font-weight: 700; }
-        .rtp-customer-tin { top: 35mm; left: 18mm; width: 90mm; }
-        .rtp-customer-address { top: 43mm; left: 18mm; width: 150mm; }
-        .rtp-meta-date { top: 26mm; left: 205mm; width: 32mm; text-align: left; }
-        .rtp-meta-code { top: 35mm; left: 205mm; width: 32mm; text-align: left; }
-        .rtp-meta-month { top: 43mm; left: 205mm; width: 32mm; text-align: left; }
-        .rtp-meta-type { top: 53mm; left: 205mm; width: 32mm; text-align: left; }
-        .rtp-business-style { top: 68mm; left: 18mm; width: 175mm; }
-        .rtp-printer-model { top: 78mm; left: 18mm; width: 175mm; }
-        .rtp-billing-from { top: 89mm; left: 104mm; width: 34mm; text-align: center; }
-        .rtp-billing-to { top: 89mm; left: 164mm; width: 34mm; text-align: center; }
-        .rtp-total-pages { top: 100mm; left: 113mm; width: 26mm; text-align: center; }
-        .rtp-rate { top: 109mm; left: 33mm; width: 24mm; text-align: left; }
-        .rtp-amount { left: 211mm; width: 27mm; text-align: right; }
-        .rtp-amount-total { top: 128mm; }
-        .rtp-amount-vat { top: 137mm; }
-        .rtp-amount-vatable { top: 145mm; }
-        .rtp-amount-exempt { top: 154mm; }
-        .rtp-amount-zero { top: 163mm; }
-        .rtp-amount-less-vat { top: 172mm; }
-        .rtp-amount-due { top: 181mm; font-size: 5.6mm; font-weight: 800; }
+        .rtp-section-block { position: absolute; transform-origin: top left; }
+        .rtp-block-field { position: absolute; white-space: pre-wrap; }
     </style>
 </head>
 <body>
     <div class="print-wrap">
-        ${buildRtpPreviewHtml(preview)}
+        <section class="rtp-preview-shell" aria-label="RTP print preview">
+            <div class="rtp-preview-note">RTP</div>
+            <div class="rtp-preview-paper">
+                <div class="rtp-print-sheet">
+                    ${buildRtpSectionedLayoutHtml(preview, 'print')}
+                </div>
+            </div>
+        </section>
     </div>
 </body>
 </html>`;
@@ -1334,6 +1444,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                                     <button class="btn btn-secondary" type="button" id="calcPrintResetBtn">Reset</button>
                                 </div>
                             </div>
+                            <div class="detail-section-title">Section Adjustments</div>
+                            ${renderRtpSectionCalibrationControls()}
                             <div class="detail-section-title">RTP Print Preview</div>
                             <div id="calcRtpPreviewMount">
                                 <div class="detail-empty">Loading printable RTP preview...</div>
@@ -1482,6 +1594,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const offsetYInput = document.getElementById('calcPrintOffsetYInput');
     const scaleInput = document.getElementById('calcPrintScaleInput');
     const resetPrintBtn = document.getElementById('calcPrintResetBtn');
+    const sectionInputs = Array.from(document.querySelectorAll('[data-rtp-section-key][data-rtp-section-field]'));
     let activeEstimate = estimate;
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
@@ -1534,15 +1647,35 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (offsetXInput) offsetXInput.value = String(calibration.offsetXmm);
         if (offsetYInput) offsetYInput.value = String(calibration.offsetYmm);
         if (scaleInput) scaleInput.value = String(calibration.scale);
+        sectionInputs.forEach((input) => {
+            const sectionKey = input.dataset.rtpSectionKey;
+            const field = input.dataset.rtpSectionField;
+            if (!sectionKey || !field) return;
+            const value = calibration.sections?.[sectionKey]?.[field];
+            if (value !== undefined) input.value = String(value);
+        });
     };
 
     const updateCalibration = () => {
+        const nextSections = Object.fromEntries(Object.keys(RTP_PRINT_SECTION_LAYOUT).map((sectionKey) => {
+            const defaults = currentRtpPrintCalibration.sections?.[sectionKey] || RTP_PRINT_CALIBRATION.sections[sectionKey];
+            const sectionValues = { ...defaults };
+            sectionInputs
+                .filter((input) => input.dataset.rtpSectionKey === sectionKey)
+                .forEach((input) => {
+                    const field = input.dataset.rtpSectionField;
+                    if (!field) return;
+                    sectionValues[field] = Number(input.value || 0);
+                });
+            return [sectionKey, sectionValues];
+        }));
         const calibration = saveRtpPrintCalibration({
             paperWidthCm: paperWidthInput ? Number(paperWidthInput.value || 0) : currentRtpPrintCalibration.paperWidthCm,
             paperHeightCm: paperHeightInput ? Number(paperHeightInput.value || 0) : currentRtpPrintCalibration.paperHeightCm,
             offsetXmm: offsetXInput ? Number(offsetXInput.value || 0) : currentRtpPrintCalibration.offsetXmm,
             offsetYmm: offsetYInput ? Number(offsetYInput.value || 0) : currentRtpPrintCalibration.offsetYmm,
-            scale: scaleInput ? Number(scaleInput.value || 0) : currentRtpPrintCalibration.scale
+            scale: scaleInput ? Number(scaleInput.value || 0) : currentRtpPrintCalibration.scale,
+            sections: nextSections
         });
         syncCalibrationInputs(calibration);
         renderCalcPreview(activeEstimate);
@@ -1586,6 +1719,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     offsetXInput?.addEventListener('input', updateCalibration);
     offsetYInput?.addEventListener('input', updateCalibration);
     scaleInput?.addEventListener('input', updateCalibration);
+    sectionInputs.forEach((input) => input.addEventListener('input', updateCalibration));
     resetPrintBtn?.addEventListener('click', () => {
         const calibration = resetRtpPrintCalibration();
         syncCalibrationInputs(calibration);
