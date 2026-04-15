@@ -643,16 +643,32 @@ function showBillingSaveResult({ type = 'info', title = '', message = '' } = {})
 
 function setRtpPrintPayload(payload) {
     currentRtpPrintPayload = payload || null;
+    const printCode = String(payload?.contractCode || 'Invoice').trim().toUpperCase() || 'Invoice';
     els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
     els.billingCalcPrintBtn?.classList.toggle('hidden', !payload);
+    if (els.rtpInvoicePrintBtn) els.rtpInvoicePrintBtn.textContent = `Print ${printCode}`;
+    if (els.billingCalcPrintBtn) els.billingCalcPrintBtn.textContent = `Print ${printCode}`;
+}
+
+function isPrintableContractCode(code) {
+    return ['RTP', 'RTF'].includes(String(code || '').trim().toUpperCase());
+}
+
+function getPrintableContractCode(row, cell) {
+    const profileCode = String(getRowBillingProfile(row)?.category_code || '').trim().toUpperCase();
+    if (isPrintableContractCode(profileCode)) return profileCode;
+    const readingGroup = (Array.isArray(cell?.reading_groups) ? cell.reading_groups : []).find((group) => {
+        return isPrintableContractCode(getContractCategoryMeta(group?.category_id)?.code);
+    });
+    return String(getContractCategoryMeta(readingGroup?.category_id)?.code || '').trim().toUpperCase();
+}
+
+function isPrintableBillingCell(row, cell) {
+    return isPrintableContractCode(getPrintableContractCode(row, cell));
 }
 
 function isRtpBillingCell(row, cell) {
-    const profileCode = String(getRowBillingProfile(row)?.category_code || '').trim().toUpperCase();
-    if (profileCode === 'RTP') return true;
-    return (Array.isArray(cell?.reading_groups) ? cell.reading_groups : []).some((group) => {
-        return String(getContractCategoryMeta(group?.category_id)?.code || '').trim().toUpperCase() === 'RTP';
-    });
+    return getPrintableContractCode(row, cell) === 'RTP';
 }
 
 function getPrimaryRtpReadingGroup(row, cell) {
@@ -703,10 +719,10 @@ async function loadInvoicePreviewReferenceData() {
     return invoicePreviewReferencePromise;
 }
 
-function computePreviewAmounts(totalAmount, readingGroup) {
+function computePreviewAmounts(totalAmount, source = {}) {
     const total = Number(totalAmount || 0) || 0;
-    const vatAmount = Number(readingGroup?.vat_amount || 0) || 0;
-    const withVat = Boolean(readingGroup?.with_vat);
+    const vatAmount = Number(source?.vat_amount || 0) || 0;
+    const withVat = Boolean(source?.with_vat);
     let vatableSales = total;
     let computedVat = 0;
 
@@ -757,7 +773,8 @@ function setCalcInlinePrintState(state = {}) {
 }
 
 async function buildRtpPreviewPayload(row, cell, monthKey) {
-    if (!isRtpBillingCell(row, cell)) return null;
+    const contractCode = getPrintableContractCode(row, cell);
+    if (!isPrintableContractCode(contractCode)) return null;
 
     const references = await loadInvoicePreviewReferenceData();
     const company = references.companies.get(String(row?.company_id || '').trim()) || null;
@@ -767,11 +784,12 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
     const machine = references.machines.get(String(row?.machine_id || '').trim()) || null;
     const model = references.models.get(String(machine?.model_id || '').trim()) || null;
     const readingGroup = getPrimaryRtpReadingGroup(row, cell);
+    const profile = getRowBillingProfile(row);
     const period = buildBillingPeriod(monthKey, row?.reading_day);
     const invoiceDate = asValidDate(cell?.latest_invoice_date) || period.endDate || new Date();
     const totals = computePreviewAmounts(
         cell?.display_amount_total || cell?.amount_total || cell?.reading_amount_total || 0,
-        readingGroup
+        readingGroup || { with_vat: profile?.with_vat }
     );
     const serialNumber = String(machine?.serial || row?.serial_number || '').trim();
     const modelName = String(model?.modelname || machine?.description || row?.machine_label || '').trim();
@@ -798,23 +816,27 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         invoiceDate: formatUsDate(invoiceDate),
         readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
         monthLabel: formatMonthLongLabel(monthKey, monthKey),
-        contractCode: 'RTP',
+        contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
         printerModel: modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A'),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
-        rate: Number(readingGroup?.page_rate || getRowBillingProfile(row)?.page_rate || 0) || 0,
-        quota: Number(readingGroup?.monthly_quota || getRowBillingProfile(row)?.monthly_quota || 0) || 0,
+        rate: contractCode === 'RTF'
+            ? Number(profile?.monthly_rate || 0) || 0
+            : Number(readingGroup?.page_rate || profile?.page_rate || 0) || 0,
+        monthlyRate: Number(profile?.monthly_rate || 0) || 0,
+        quota: Number(readingGroup?.monthly_quota || profile?.monthly_quota || 0) || 0,
         quotaPages: Number(readingGroup?.quota_pages || 0) || 0,
         succeedingPages: Number(readingGroup?.succeeding_pages || 0) || 0,
-        succeedingRate: Number(readingGroup?.succeeding_page_rate || readingGroup?.page_rate_xtra || readingGroup?.page_rate2 || getSucceedingPageRate(getRowBillingProfile(row)) || 0) || 0,
+        succeedingRate: Number(readingGroup?.succeeding_page_rate || readingGroup?.page_rate_xtra || readingGroup?.page_rate2 || getSucceedingPageRate(profile) || 0) || 0,
         totals
     };
 }
 
 async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
-    if (String(context?.profile?.category_code || '').trim().toUpperCase() !== 'RTP') return null;
+    const contractCode = String(context?.profile?.category_code || '').trim().toUpperCase();
+    if (!isPrintableContractCode(contractCode)) return null;
 
     const references = await loadInvoicePreviewReferenceData();
     const company = references.companies.get(String(row?.company_id || '').trim()) || null;
@@ -850,13 +872,16 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         invoiceDate: formatUsDate(invoiceDate),
         readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
         monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
-        contractCode: 'RTP',
+        contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
         printerModel: modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A'),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
-        totalPages: Number(estimate?.netPages || 0) || 0,
-        rate: Number(context?.profile?.page_rate || 0) || 0,
+        totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
+        rate: contractCode === 'RTF'
+            ? Number(context?.profile?.monthly_rate || 0) || 0
+            : Number(context?.profile?.page_rate || 0) || 0,
+        monthlyRate: Number(context?.profile?.monthly_rate || 0) || 0,
         quota: Number(context?.profile?.monthly_quota || 0) || 0,
         quotaPages: Number(estimate?.quotaPages || 0) || 0,
         succeedingPages: Number(estimate?.succeedingPages || 0) || 0,
@@ -866,9 +891,10 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
 }
 
 function buildRtpPreviewHtml(preview) {
+    const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     return `
-        <section class="rtp-preview-shell" aria-label="RTP print preview">
-            <div class="rtp-preview-note">RTP</div>
+        <section class="rtp-preview-shell" aria-label="${escapeHtml(contractCode)} print preview">
+            <div class="rtp-preview-note">${escapeHtml(contractCode)}</div>
             <div class="rtp-preview-paper">
                 <div class="rtp-print-sheet">
                     ${buildRtpSheetFieldsHtml(preview)}
@@ -880,6 +906,7 @@ function buildRtpPreviewHtml(preview) {
 
 function buildRtpSheetFieldsHtml(preview) {
     const totals = preview?.totals || {};
+    const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     return `
         <div class="rtp-field rtp-customer-name">${escapeHtml(preview?.customerName || 'Unknown Customer')}</div>
         <div class="rtp-field rtp-customer-tin">${escapeHtml(preview?.tin || 'N/A')}</div>
@@ -888,14 +915,14 @@ function buildRtpSheetFieldsHtml(preview) {
         <div class="rtp-field rtp-meta-date">${escapeHtml(preview?.invoiceDate || '')}</div>
         <div class="rtp-field rtp-meta-code">${escapeHtml(preview?.readingCode || '')}</div>
         <div class="rtp-field rtp-meta-month">${escapeHtml(preview?.monthLabel || '')}</div>
-        <div class="rtp-field rtp-meta-type">${escapeHtml(preview?.contractCode || 'RTP')}</div>
+        <div class="rtp-field rtp-meta-type">${escapeHtml(contractCode)}</div>
 
         <div class="rtp-field rtp-business-style">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
         <div class="rtp-field rtp-printer-model">${escapeHtml(preview?.printerModel || 'N/A')}</div>
         <div class="rtp-field rtp-billing-from">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
         <div class="rtp-field rtp-billing-to">${escapeHtml(preview?.billingTo || 'N/A')}</div>
-        <div class="rtp-field rtp-total-pages">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
-        <div class="rtp-field rtp-rate">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+        <div class="rtp-field rtp-total-pages">${contractCode === 'RTF' ? '' : escapeHtml(formatCount(preview?.totalPages || 0))}</div>
+        <div class="rtp-field rtp-rate">${escapeHtml(formatFixedAmount(contractCode === 'RTF' ? (preview?.monthlyRate || preview?.rate || 0) : (preview?.rate || 0)))}</div>
 
         <div class="rtp-field rtp-amount rtp-amount-total">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
         <div class="rtp-field rtp-amount rtp-amount-vat">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
@@ -911,7 +938,7 @@ const RTP_PREVIEW_MM_PX = 1.8;
 const RTP_PRINT_SECTION_LAYOUT = {
     header: { label: 'Header', subtitle: 'Registered name, TIN, address', xMm: 18, yMm: 11 },
     description: { label: 'Service Block', subtitle: 'Item description and service details', xMm: 18, yMm: 42 },
-    meta: { label: 'Date / Terms', subtitle: 'Date, code, month, RTP tag', xMm: 204, yMm: 11 },
+    meta: { label: 'Date / Terms', subtitle: 'Date, code, month, contract tag', xMm: 204, yMm: 11 },
     totals: { label: 'Totals', subtitle: 'Total sales, VAT, net, due', xMm: 212, yMm: 112 }
 };
 
@@ -1165,6 +1192,8 @@ function buildRtpSectionStyle(sectionKey, mode = 'print') {
 
 function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
     const totals = preview?.totals || {};
+    const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
+    const isFixedRate = contractCode === 'RTF';
     const succeedingRate = Number(preview?.succeedingRate || preview?.rate || 0) || 0;
     const succeedingPages = Number(preview?.succeedingPages || 0) || 0;
     return `
@@ -1185,20 +1214,29 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 128, yMm: 21, widthMm: 10, textAlign: 'center' }, mode)}"><strong>to</strong></div>
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 142, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingTo || 'N/A')}</div>
 
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Total Pages consumed :</strong></div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 32, widthMm: 24 }, mode)}">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
+            ${
+                isFixedRate
+                    ? `
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Monthly Rate:</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 32, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.monthlyRate || preview?.rate || 0))}</div>
+                    `
+                    : `
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Total Pages consumed :</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 32, widthMm: 24 }, mode)}">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
 
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Rate per Page:</strong></div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Rate per Page:</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
 
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 52, widthMm: 76 }, mode)}"><strong>Succeeding Pages / Rate:</strong></div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 52, widthMm: 80 }, mode)}">${escapeHtml(`${formatCount(succeedingPages)} @ ${formatFixedAmount(succeedingRate)}`)}</div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 52, widthMm: 76 }, mode)}"><strong>Succeeding Pages / Rate:</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 52, widthMm: 80 }, mode)}">${escapeHtml(`${formatCount(succeedingPages)} @ ${formatFixedAmount(succeedingRate)}`)}</div>
+                    `
+            }
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('meta', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 32 }, mode)}">${escapeHtml(preview?.invoiceDate || '')}</div>
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 9, widthMm: 32 }, mode)}">${escapeHtml(preview?.readingCode || '')}</div>
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 17, widthMm: 32 }, mode)}">${escapeHtml(preview?.monthLabel || '')}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 27, widthMm: 32 }, mode)}">${escapeHtml(preview?.contractCode || 'RTP')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 27, widthMm: 32 }, mode)}">${escapeHtml(contractCode)}</div>
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('totals', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 27, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
@@ -1290,11 +1328,12 @@ function buildRtpPrintDocument(preview) {
     const paper = getRtpPrintPaperDimensions(currentRtpPrintCalibration);
     const paperWidth = `${paper.widthCm}cm`;
     const paperHeight = `${paper.heightCm}cm`;
+    const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>RTP Print</title>
+    <title>${escapeHtml(contractCode)} Print</title>
     <style>
         @page { size: ${paperWidth} ${paperHeight}; margin: 0; }
         * { box-sizing: border-box; }
@@ -1350,8 +1389,8 @@ function buildRtpPrintDocument(preview) {
 </head>
 <body>
     <div class="print-wrap">
-        <section class="rtp-preview-shell" aria-label="RTP print preview">
-            <div class="rtp-preview-note">RTP</div>
+        <section class="rtp-preview-shell" aria-label="${escapeHtml(contractCode)} print preview">
+            <div class="rtp-preview-note">${escapeHtml(contractCode)}</div>
             <div class="rtp-preview-paper">
                 <div class="rtp-print-sheet">
                     ${buildRtpSectionedLayoutHtml(preview, 'print')}
@@ -1365,11 +1404,11 @@ function buildRtpPrintDocument(preview) {
 
 function printCurrentRtpInvoice() {
     if (!currentRtpPrintPayload) {
-        MargaUtils.showToast('Open an RTP invoice first.', 'error');
+        MargaUtils.showToast('Open a printable invoice first.', 'error');
         return;
     }
 
-    const printWindow = window.open('', 'marga_rtp_print', 'width=1180,height=860');
+    const printWindow = window.open('', 'marga_invoice_print', 'width=1180,height=860');
     if (!printWindow) {
         MargaUtils.showToast('The print window was blocked.', 'error');
         return;
@@ -2004,7 +2043,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     const profile = context.profile;
     const latest = context.latestPriorGroup;
     const latestInvoice = context.latestInvoice;
-    const canPrintRtp = String(profile.category_code || '').trim().toUpperCase() === 'RTP';
+    const printContractCode = String(profile.category_code || '').trim().toUpperCase();
+    const canPrintInvoice = isPrintableContractCode(printContractCode);
     const requestToken = ++billingCalcRequestToken;
 
     let existingBillingDocs = [];
@@ -2052,7 +2092,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
     setRtpPrintPayload(null);
     if (els.billingCalcPrintBtn) {
-        els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintRtp);
+        els.billingCalcPrintBtn.textContent = `Print ${printContractCode || 'Invoice'}`;
+        els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice);
         els.billingCalcPrintBtn.disabled = true;
     }
 
@@ -2105,7 +2146,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                         </div>
                         <div class="calc-field">
                             <label>Contract Rate Plan</label>
-                            <input type="text" readonly value="${escapeHtml(formatRtpRatePlan({ quota: profile.monthly_quota, pageRate: profile.page_rate, succeedingRate: getSucceedingPageRate(profile) }))}">
+                            <input type="text" readonly value="${escapeHtml(context.isFixed ? `Monthly fixed rate ${formatAmount(profile.monthly_rate || 0)}` : formatRtpRatePlan({ quota: profile.monthly_quota, pageRate: profile.page_rate, succeedingRate: getSucceedingPageRate(profile) }))}">
                         </div>
                     </div>
                 </section>
@@ -2244,12 +2285,12 @@ async function openBillingCalcModal(rowId, monthKey) {
                 </section>
             </div>
             ${
-                canPrintRtp
+                canPrintInvoice
                     ? `
                         <section class="calc-panel">
-                            <div class="calc-panel-title">RTP Print</div>
+                            <div class="calc-panel-title">${escapeHtml(printContractCode)} Print</div>
                             <div class="calc-print-row">
-                                <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print RTP</button>
+                                <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print ${escapeHtml(printContractCode)}</button>
                                 <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
                             </div>
                             <div class="calc-print-note">
@@ -2290,9 +2331,9 @@ async function openBillingCalcModal(rowId, monthKey) {
                             </div>
                             <div class="detail-section-title">Section Adjustments</div>
                             ${renderRtpSectionCalibrationControls()}
-                            <div class="detail-section-title">RTP Print Preview</div>
+                            <div class="detail-section-title">${escapeHtml(printContractCode)} Print Preview</div>
                             <div id="calcRtpPreviewMount">
-                                <div class="detail-empty">Loading printable RTP preview...</div>
+                                <div class="detail-empty">Loading printable invoice preview...</div>
                             </div>
                         </section>
                     `
@@ -2365,20 +2406,20 @@ async function openBillingCalcModal(rowId, monthKey) {
             } else if (isDirty) {
                 saveStatus.textContent = `You changed the billing values. Save again to update ${savedMonthLabel} and re-enable printing.`;
             } else {
-                saveStatus.textContent = `Saved in ${savedMonthLabel}. The month cell now owns invoice ${currentSnapshot.invoiceNo || 'N/A'} and Print RTP is ready.`;
+                saveStatus.textContent = `Saved in ${savedMonthLabel}. The month cell now owns invoice ${currentSnapshot.invoiceNo || 'N/A'} and Print ${printContractCode || 'Invoice'} is ready.`;
             }
         }
 
-        if (!canPrintRtp) return;
+        if (!canPrintInvoice) return;
         const printEnabled = previewReady && matchesSaved;
         let printHint = 'Preparing preview...';
         if (previewReady) {
             if (workflowError) {
                 printHint = workflowError;
             } else if (!savedDocExists) {
-                printHint = 'Save billing first to enable Print RTP.';
+                printHint = `Save billing first to enable Print ${printContractCode || 'Invoice'}.`;
             } else if (isDirty) {
-                printHint = 'Save your changes first so the printed RTP matches the saved invoice.';
+                printHint = `Save your changes first so the printed ${printContractCode || 'invoice'} matches the saved invoice.`;
             } else {
                 printHint = 'Ready to print. Turn off Headers and footers in More settings if the browser preview adds extra top space.';
             }
@@ -2389,22 +2430,22 @@ async function openBillingCalcModal(rowId, monthKey) {
             hint: printHint
         });
         if (els.billingCalcPrintBtn) {
-            els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintRtp);
+            els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice);
             els.billingCalcPrintBtn.disabled = !printEnabled;
         }
     };
 
-    if (canPrintRtp) syncCalcWorkflowState();
+    if (canPrintInvoice) syncCalcWorkflowState();
 
     const renderCalcPreview = async (nextEstimate) => {
-        if (!canPrintRtp || !previewMount) return;
+        if (!canPrintInvoice || !previewMount) return;
         previewReady = false;
         syncCalcWorkflowState();
         try {
             const preview = await buildRtpPreviewPayloadFromCalculation(row, context, nextEstimate);
             if (requestToken !== billingCalcRequestToken) return;
             if (!preview) {
-                previewMount.innerHTML = '<div class="detail-empty">This contract does not have an RTP print preview.</div>';
+                previewMount.innerHTML = '<div class="detail-empty">This contract does not have a printable invoice preview.</div>';
                 setRtpPrintPayload(null);
                 previewReady = false;
                 if (saveStatus) saveStatus.textContent = 'The print preview is unavailable for this row right now.';
@@ -2416,9 +2457,9 @@ async function openBillingCalcModal(rowId, monthKey) {
             previewReady = true;
             syncCalcWorkflowState();
         } catch (error) {
-            console.warn('Unable to build RTP calculator preview.', error);
+            console.warn('Unable to build calculator print preview.', error);
             if (requestToken !== billingCalcRequestToken) return;
-            previewMount.innerHTML = '<div class="detail-empty">The printable RTP preview could not load the extra customer data right now.</div>';
+            previewMount.innerHTML = '<div class="detail-empty">The printable invoice preview could not load the extra customer data right now.</div>';
             setRtpPrintPayload(null);
             previewReady = false;
             if (saveStatus) saveStatus.textContent = 'The print preview failed to load. Save is still available.';
@@ -2533,7 +2574,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         saveCurrentRtpPrintTemplate(templateName);
         syncCalibrationInputs(currentRtpPrintCalibration);
         renderCalcPreview(activeEstimate);
-        MargaUtils.showToast(`Saved RTP template: ${templateName}`, 'success');
+        MargaUtils.showToast(`Saved invoice template: ${templateName}`, 'success');
     });
     deleteTemplateBtn?.addEventListener('click', () => {
         if (currentRtpPrintTemplateName === 'Default') return;
@@ -2541,7 +2582,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         const calibration = deleteRtpPrintTemplate(deletedTemplate);
         syncCalibrationInputs(calibration);
         renderCalcPreview(activeEstimate);
-        MargaUtils.showToast(`Deleted RTP template: ${deletedTemplate}`, 'success');
+        MargaUtils.showToast(`Deleted invoice template: ${deletedTemplate}`, 'success');
     });
     resetPrintBtn?.addEventListener('click', () => {
         const calibration = resetRtpPrintCalibration();
@@ -2588,8 +2629,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 type: 'success',
                 title: result.queued ? 'Billing Queued' : 'Billing Saved',
                 message: result.queued
-                    ? `Invoice ${currentSnapshot.invoiceNo} was queued. Print RTP is unlocked from this saved form while the app syncs.`
-                    : `Invoice ${currentSnapshot.invoiceNo} was saved for ${savedMonthLabel}. Print RTP is ready.`
+                    ? `Invoice ${currentSnapshot.invoiceNo} was queued. Print ${printContractCode || 'Invoice'} is unlocked from this saved form while the app syncs.`
+                    : `Invoice ${currentSnapshot.invoiceNo} was saved for ${savedMonthLabel}. Print ${printContractCode || 'Invoice'} is ready.`
             });
             if (!result.queued) {
                 loadDashboard({ forceRefresh: true }).catch((error) => {
@@ -2973,23 +3014,24 @@ async function openInvoiceDetailModal(rowId, monthKey) {
     els.invoiceDetailModal.classList.remove('hidden');
 
     let rtpPreviewBlock = '';
-    if (isRtpBillingCell(row, cell)) {
+    if (isPrintableBillingCell(row, cell)) {
         try {
             const preview = await buildRtpPreviewPayload(row, cell, monthKey);
             if (requestToken !== invoiceDetailRequestToken) return;
             if (preview) {
                 setRtpPrintPayload(preview);
+                const previewCode = String(preview.contractCode || 'Invoice').trim().toUpperCase();
                 rtpPreviewBlock = `
-                    <div class="detail-section-title">RTP Print Preview</div>
+                    <div class="detail-section-title">${escapeHtml(previewCode)} Print Preview</div>
                     ${buildRtpPreviewHtml(preview)}
                 `;
             }
         } catch (error) {
-            console.warn('Unable to build RTP preview.', error);
+            console.warn('Unable to build invoice print preview.', error);
             if (requestToken !== invoiceDetailRequestToken) return;
             rtpPreviewBlock = `
-                <div class="detail-section-title">RTP Print Preview</div>
-                <div class="detail-empty">The printable RTP preview could not load the extra customer data right now.</div>
+                <div class="detail-section-title">Invoice Print Preview</div>
+                <div class="detail-empty">The printable invoice preview could not load the extra customer data right now.</div>
             `;
         }
     }
