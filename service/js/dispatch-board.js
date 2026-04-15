@@ -703,12 +703,16 @@ function getRole(employee, position) {
     if (positionId === 9 || positionName.includes('messenger') || positionName.includes('driver')) {
         return 'Messenger';
     }
+    if (positionName.includes('production') || positionName.includes('prod')) {
+        return 'Production';
+    }
     return 'Staff';
 }
 
 function getRoleClass(role) {
     if (role === 'Technician') return 'role-tech';
     if (role === 'Messenger') return 'role-messenger';
+    if (role === 'Production') return 'role-production';
     return 'role-unknown';
 }
 
@@ -1095,7 +1099,7 @@ function getAssignableStaffList() {
             };
         })
         .filter((staff) => staff.id > 0)
-        .filter((staff) => staff.role === 'Technician' || staff.role === 'Messenger')
+        .filter((staff) => staff.role === 'Technician' || staff.role === 'Production' || staff.role === 'Messenger')
         .filter((staff) => staff.estatus > 0)
         .sort((a, b) => {
             if (a.role !== b.role) return a.role.localeCompare(b.role);
@@ -1119,6 +1123,7 @@ function closeNewRequestModal() {
 function clearNewRequestPrefill() {
     document.getElementById('newReqCaller').value = '';
     document.getElementById('newReqPhone').value = '';
+    document.getElementById('newReqRemarks').value = '';
 }
 
 async function openNewRequestModal() {
@@ -1144,12 +1149,20 @@ async function openNewRequestModal() {
     ]);
 
     const companySearch = document.getElementById('newReqCompanySearch');
+    const companyList = document.getElementById('newReqCompanyList');
     const companySelect = document.getElementById('newReqCompany');
     const branchSearch = document.getElementById('newReqBranchSearch');
+    const branchList = document.getElementById('newReqBranchList');
     const branchSelect = document.getElementById('newReqBranch');
     const machineSelect = document.getElementById('newReqMachine');
     const machineMeta = document.getElementById('newReqMachineMeta');
+    const modelInput = document.getElementById('newReqModel');
+    const serialList = document.getElementById('newReqSerialList');
+    const troubleSearch = document.getElementById('newReqTroubleSearch');
+    const troubleList = document.getElementById('newReqTroubleList');
     const troubleSelect = document.getElementById('newReqTrouble');
+    const assigneeSearch = document.getElementById('newReqAssigneeSearch');
+    const assigneeList = document.getElementById('newReqAssigneeList');
     const assigneeSelect = document.getElementById('newReqAssignee');
     const callerInput = document.getElementById('newReqCaller');
     const phoneInput = document.getElementById('newReqPhone');
@@ -1157,7 +1170,14 @@ async function openNewRequestModal() {
 
     companySearch.value = '';
     branchSearch.value = '';
+    troubleSearch.value = '';
+    assigneeSearch.value = '';
     serialInput.value = '';
+    modelInput.value = '';
+    document.getElementById('newReqStatus').value = '1';
+    document.getElementById('newReqSuperUrgent').checked = false;
+    document.getElementById('newReqWithRequest').checked = false;
+    document.getElementById('newReqWithComplain').checked = false;
     machineSelect.innerHTML = `<option value="">Select company and branch first...</option>`;
     machineMeta.textContent = 'Select a company and branch to load active machines.';
     opsState.newRequestMachine = null;
@@ -1166,6 +1186,35 @@ async function openNewRequestModal() {
     setNewReqSerialStatus(`Using Active Contract Customer Graph: ${opsCache.activeCustomerGraphRows.length} active machine/account rows.`);
 
     const companies = opsCache.activeGraphCompanies;
+
+    function setDatalistOptions(listEl, items, getValue) {
+        if (!listEl) return;
+        listEl.innerHTML = items
+            .map((item) => {
+                const value = String(getValue(item) || '').trim();
+                return value ? `<option value="${sanitize(value)}"></option>` : '';
+            })
+            .join('');
+    }
+
+    function findByDatalistValue(items, value, getValue) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (!normalized) return null;
+        return items.find((item) => String(getValue(item) || '').trim().toLowerCase() === normalized) || null;
+    }
+
+    function getCompanyInputLabel(company) {
+        return String(company?.name || '').trim();
+    }
+
+    function getBranchInputLabel(branch) {
+        return String(branch?.name || '').trim();
+    }
+
+    function getStaffInputLabel(staff) {
+        if (!staff) return '';
+        return `${staff.name} (${staff.role})`;
+    }
 
     function renderCompanyOptions(query, selectedId = '') {
         const q = String(query || '').trim().toLowerCase();
@@ -1195,6 +1244,7 @@ async function openNewRequestModal() {
                 return `<option value="${c.id}">${sanitize(c.name)}${sanitize(countText)}</option>`;
             })
             .join('');
+        setDatalistOptions(companyList, visible, getCompanyInputLabel);
 
         if (selectedId) {
             companySelect.value = String(selectedId);
@@ -1202,7 +1252,6 @@ async function openNewRequestModal() {
     }
 
     renderCompanyOptions('');
-    companySearch.oninput = () => renderCompanyOptions(companySearch.value, companySelect.value);
 
     const troubles = [...opsCache.troubles.values()]
         .filter(Boolean)
@@ -1213,11 +1262,29 @@ async function openNewRequestModal() {
     troubleSelect.innerHTML = `<option value="">Select concern...</option>` + troubles
         .map((t) => `<option value="${t.id}">${sanitize(t.name)}</option>`)
         .join('');
+    setDatalistOptions(troubleList, troubles, (t) => t.name);
 
     const staff = getAssignableStaffList();
     assigneeSelect.innerHTML = `<option value="">Unassigned</option>` + staff
         .map((s) => `<option value="${s.id}">${sanitize(s.name)} (${sanitize(s.role)})</option>`)
         .join('');
+    setDatalistOptions(assigneeList, staff, getStaffInputLabel);
+
+    troubleSearch.oninput = () => {
+        const match = findByDatalistValue(troubles, troubleSearch.value, (t) => t.name);
+        troubleSelect.value = match ? String(match.id) : '';
+    };
+
+    assigneeSearch.oninput = () => {
+        const match = findByDatalistValue(staff, assigneeSearch.value, getStaffInputLabel);
+        assigneeSelect.value = match ? String(match.id) : '';
+    };
+
+    const serialRows = opsCache.activeCustomerGraphRows
+        .filter((row) => row?.serialNumber)
+        .sort((left, right) => String(left.serialNumber || '').localeCompare(String(right.serialNumber || '')))
+        .slice(0, 5000);
+    setDatalistOptions(serialList, serialRows, (row) => row.serialNumber);
 
     function fillBranchesForCompany(companyId, query = '', selectedId = '') {
         const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
@@ -1249,6 +1316,7 @@ async function openNewRequestModal() {
                 return `<option value="${b.id}">${sanitize(b.name || `Branch #${b.id}`)}${sanitize(countText)}</option>`;
             })
             .join('');
+        setDatalistOptions(branchList, visible, getBranchInputLabel);
 
         if (selectedId) {
             branchSelect.value = String(selectedId);
@@ -1290,6 +1358,7 @@ async function openNewRequestModal() {
         if (!opsState.newRequestMachine && !opsState.newRequestGraphRow) return;
         opsState.newRequestMachine = null;
         opsState.newRequestGraphRow = null;
+        modelInput.value = '';
         if (serialInput.value.trim()) {
             setNewReqSerialStatus('Serial match cleared after manual company/branch change.', 'warning');
         }
@@ -1317,6 +1386,7 @@ async function openNewRequestModal() {
             serialInput.value = row.serialNumber;
         }
         const machineLabel = row.machineDescription || row.serialNumber || `Machine #${row.machineId}`;
+        modelInput.value = row.machineDescription || machineLabel || '';
         setMachineMeta(`Active contract ${row.contractId}: ${machineLabel}.`, 'match');
         if (options.updateStatus !== false) {
             setNewReqSerialStatus(`Selected ${row.serialNumber || machineLabel} from ${row.accountName}.`, 'match');
@@ -1327,9 +1397,13 @@ async function openNewRequestModal() {
         const rows = getGraphRowsForBranch(branchId);
         if (!rows.length) {
             machineSelect.innerHTML = `<option value="">No active machines found for this branch...</option>`;
+            modelInput.value = '';
+            setDatalistOptions(serialList, [], (row) => row.serialNumber);
             setMachineMeta('No active machines are linked to this branch in the customer graph.', 'warning');
             return;
         }
+
+        setDatalistOptions(serialList, rows, (row) => row.serialNumber);
 
         machineSelect.innerHTML = `<option value="">Select machine...</option>` + rows
             .map((row) => {
@@ -1356,6 +1430,7 @@ async function openNewRequestModal() {
         const token = ++opsState.newRequestLookupSeq;
         opsState.newRequestMachine = null;
         opsState.newRequestGraphRow = null;
+        modelInput.value = '';
 
         if (!serialText) {
             setNewReqSerialStatus(`Using Active Contract Customer Graph: ${opsCache.activeCustomerGraphRows.length} active machine/account rows.`);
@@ -1390,6 +1465,7 @@ async function openNewRequestModal() {
             }
 
             opsState.newRequestMachine = machine;
+            modelInput.value = getMachineDisplayName(machine) || '';
             const { branch, company, branchId, companyId } = resolveMachineCustomer(machine);
             const companyName = company?.companyname || '';
             const branchName = branch?.branchname || '';
@@ -1431,25 +1507,45 @@ async function openNewRequestModal() {
     serialInput.oninput = debouncedSerialLookup;
     serialInput.onblur = applySerialLookup;
 
-    companySelect.onchange = () => {
+    function handleCompanySelection(companyId) {
         clearMatchedMachineIfManualChange();
         branchSearch.value = '';
-        fillBranchesForCompany(companySelect.value, '');
+        fillBranchesForCompany(companyId, '');
         branchSelect.value = '';
         machineSelect.innerHTML = `<option value="">Select branch first...</option>`;
+        modelInput.value = '';
         setMachineMeta('Select a branch to load active machines.');
         serialInput.value = '';
-    };
+    }
 
-    branchSearch.oninput = () => fillBranchesForCompany(companySelect.value, branchSearch.value);
-
-    branchSelect.onchange = () => {
-        const branchId = Number(branchSelect.value || 0);
+    function handleBranchSelection(branchId) {
         if (!branchId) return;
         clearMatchedMachineIfManualChange();
         prefillContactForBranch(branchId);
         renderMachineOptionsForBranch(branchId);
+    }
+
+    companySearch.oninput = () => {
+        renderCompanyOptions(companySearch.value, companySelect.value);
+        const match = findByDatalistValue(companies, companySearch.value, getCompanyInputLabel);
+        if (!match) return;
+        companySelect.value = String(match.id);
+        handleCompanySelection(match.id);
     };
+
+    companySelect.onchange = () => handleCompanySelection(companySelect.value);
+
+    branchSearch.oninput = () => {
+        const companyId = companySelect.value;
+        fillBranchesForCompany(companyId, branchSearch.value, branchSelect.value);
+        const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
+        const match = findByDatalistValue(branches, branchSearch.value, getBranchInputLabel);
+        if (!match) return;
+        branchSelect.value = String(match.id);
+        handleBranchSelection(match.id);
+    };
+
+    branchSelect.onchange = () => handleBranchSelection(Number(branchSelect.value || 0));
 
     machineSelect.onchange = () => {
         const contractId = Number(machineSelect.value || 0);
@@ -1459,6 +1555,7 @@ async function openNewRequestModal() {
     };
 
     branchSelect.innerHTML = `<option value="">Select active contract branch...</option>`;
+    branchList.innerHTML = '';
 }
 
 async function saveNewServiceRequest() {
@@ -1478,13 +1575,40 @@ async function saveNewServiceRequest() {
     const serialNumber = (document.getElementById('newReqSerialNumber')?.value || '').trim();
     const caller = (document.getElementById('newReqCaller').value || '').trim();
     const phone = (document.getElementById('newReqPhone').value || '').trim();
-    const troubleId = Number(document.getElementById('newReqTrouble').value || 0);
-    const assigneeId = Number(document.getElementById('newReqAssignee').value || 0);
+    let troubleId = Number(document.getElementById('newReqTrouble').value || 0);
+    let assigneeId = Number(document.getElementById('newReqAssignee').value || 0);
     const remarks = (document.getElementById('newReqRemarks').value || '').trim();
+    const statusValue = Number(document.getElementById('newReqStatus')?.value || 1);
+    const superUrgent = document.getElementById('newReqSuperUrgent')?.checked ? 1 : 0;
+    const withRequest = document.getElementById('newReqWithRequest')?.checked ? 1 : 0;
+    const withComplain = document.getElementById('newReqWithComplain')?.checked ? 1 : 0;
 
     if (!date) {
         alert('Please choose a schedule date.');
         return;
+    }
+    if (!companyId) {
+        const typedCompany = String(document.getElementById('newReqCompanySearch')?.value || '').trim().toLowerCase();
+        const companyMatch = opsCache.activeGraphCompanies.find((company) => String(company.name || '').trim().toLowerCase() === typedCompany) || null;
+        companyId = Number(companyMatch?.id || 0);
+    }
+    if (!branchId && companyId) {
+        const typedBranch = String(document.getElementById('newReqBranchSearch')?.value || '').trim().toLowerCase();
+        const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
+        const branchMatch = branches.find((branch) => String(branch.name || '').trim().toLowerCase() === typedBranch) || null;
+        branchId = Number(branchMatch?.id || 0);
+    }
+    if (!troubleId) {
+        const typedTrouble = String(document.getElementById('newReqTroubleSearch')?.value || '').trim().toLowerCase();
+        const troubleMatch = [...opsCache.troubles.values()]
+            .filter(Boolean)
+            .find((trouble) => String(trouble.trouble || '').trim().toLowerCase() === typedTrouble) || null;
+        troubleId = Number(troubleMatch?.id || 0);
+    }
+    if (!assigneeId) {
+        const typedAssignee = String(document.getElementById('newReqAssigneeSearch')?.value || '').trim().toLowerCase();
+        const assigneeMatch = getAssignableStaffList().find((staff) => `${staff.name} (${staff.role})`.toLowerCase() === typedAssignee) || null;
+        assigneeId = Number(assigneeMatch?.id || 0);
     }
     let graphRow = null;
     if (serialNumber) {
@@ -1568,11 +1692,14 @@ async function saveNewServiceRequest() {
         tech_id: assigneeId || 0,
         trouble_id: troubleId,
         remarks: remarks || '',
-        status: 1,
+        status: Number.isFinite(statusValue) ? statusValue : 1,
         isongoing: 0,
         date_finished: ZERO_DATETIME,
         iscancel: 0,
         scheduled: 1,
+        withcomplain: withComplain,
+        withrequest: withRequest,
+        super_urgent: superUrgent,
         // App-specific tracking (safe in Firestore, doesn't break legacy)
         request_origin: origin,
         request_serial_number: serialNumber,
@@ -1598,9 +1725,7 @@ async function saveNewServiceRequest() {
         returning_cart: 0,
         userlog_id: 0,
         closedby: 0,
-        withcomplain: 0,
         amt_collected: 0,
-        withrequest: 0,
         from_other_source: 0,
         invoice_count: 0,
         commitment_date: ZERO_DATETIME,
@@ -1611,7 +1736,6 @@ async function saveNewServiceRequest() {
         willsettle: 0,
         firebase_key: '',
         iscancelleddate: '',
-        super_urgent: 0,
         csr_status: 0,
         csr_remarks: '',
         meter_reading: 0,

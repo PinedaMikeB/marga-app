@@ -166,7 +166,7 @@
     position: fixed;
     inset: 50% auto auto 50%;
     transform: translate(-50%, -50%);
-    width: min(860px, calc(100vw - 1rem));
+    width: min(980px, calc(100vw - 1rem));
     max-height: calc(100vh - 2rem);
     overflow: hidden;
     display: none;
@@ -225,6 +225,26 @@
     gap: 0.85rem;
 }
 
+.marga-vb-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: end;
+}
+
+.marga-form-section {
+    color: #1f3657;
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-top: 0.3rem;
+    border-top: 1px solid rgba(187, 212, 237, 0.7);
+}
+
+.marga-form-section:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
 .marga-field {
     display: flex;
     flex-direction: column;
@@ -243,7 +263,7 @@
 .marga-field select,
 .marga-field textarea {
     border: 1px solid rgba(187, 212, 237, 0.85);
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 0.65rem 0.75rem;
     font-size: 0.9rem;
     color: #1f3657;
@@ -256,8 +276,14 @@
 }
 
 .marga-field input#newReqCompanySearch,
-.marga-field input#newReqBranchSearch {
+.marga-field input#newReqBranchSearch,
+.marga-field input#newReqTroubleSearch,
+.marga-field input#newReqAssigneeSearch {
     margin-bottom: 0.35rem;
+}
+
+.marga-hidden-select {
+    display: none;
 }
 
 .new-req-serial-status {
@@ -284,6 +310,38 @@
 
 .marga-field-full {
     grid-column: 1 / -1;
+}
+
+.marga-field-wide {
+    grid-column: span 2;
+}
+
+.marga-check-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    align-self: stretch;
+    grid-column: span 2;
+}
+
+.marga-check-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-height: 2.4rem;
+    padding: 0.52rem 0.65rem;
+    border: 1px solid rgba(187, 212, 237, 0.85);
+    border-radius: 8px;
+    color: #1f3657;
+    background: rgba(255, 255, 255, 0.72);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.marga-check-row input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #2f80ed;
 }
 
 .ops-status-pill {
@@ -370,6 +428,10 @@
     #opsTaskTable th:last-child,
     #opsTaskTable td:last-child {
         background: rgba(255, 255, 255, 0.92);
+    }
+
+    .marga-vb-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -483,6 +545,11 @@
 
     .marga-form-grid {
         grid-template-columns: 1fr;
+    }
+
+    .marga-field-wide,
+    .marga-check-row {
+        grid-column: 1 / -1;
     }
 
     .marga-modal-header,

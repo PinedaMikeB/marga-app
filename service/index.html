@@ -316,20 +316,45 @@
             </button>
         </div>
         <div class="marga-modal-body">
-            <div class="marga-form-grid">
-                <label class="marga-field">
-                    <span>Request Origin</span>
-                    <select id="newReqOrigin">
-                        <option value="viber">Viber</option>
-                        <option value="call">Call</option>
-                        <option value="website_chat">Website Chat</option>
-                        <option value="tech_request">Tech Request</option>
-                        <option value="other">Other</option>
-                    </select>
+            <div class="marga-form-grid marga-vb-form">
+                <div class="marga-form-section marga-field-full">Customer / Machine</div>
+
+                <label class="marga-field marga-field-wide">
+                    <span>Company</span>
+                    <input type="text" id="newReqCompanySearch" list="newReqCompanyList" placeholder="Search active customer...">
+                    <datalist id="newReqCompanyList"></datalist>
+                    <select id="newReqCompany" class="marga-hidden-select" aria-hidden="true" tabindex="-1"></select>
+                </label>
+
+                <label class="marga-field marga-field-wide">
+                    <span>Branch</span>
+                    <input type="text" id="newReqBranchSearch" list="newReqBranchList" placeholder="Search branch...">
+                    <datalist id="newReqBranchList"></datalist>
+                    <select id="newReqBranch" class="marga-hidden-select" aria-hidden="true" tabindex="-1"></select>
                 </label>
 
                 <label class="marga-field">
-                    <span>Task Type</span>
+                    <span>Serial #</span>
+                    <input type="text" id="newReqSerialNumber" list="newReqSerialList" placeholder="Type serial...">
+                    <datalist id="newReqSerialList"></datalist>
+                </label>
+
+                <label class="marga-field">
+                    <span>Model</span>
+                    <input type="text" id="newReqModel" placeholder="Auto-filled" readonly>
+                </label>
+
+                <label class="marga-field marga-field-full">
+                    <span>Machine / Active Contract</span>
+                    <select id="newReqMachine"></select>
+                    <small class="new-req-serial-status" id="newReqMachineMeta">Select a company and branch to load active machines.</small>
+                    <small class="new-req-serial-status" id="newReqSerialStatus">Enter a serial number to auto-fill company and branch.</small>
+                </label>
+
+                <div class="marga-form-section marga-field-full">Service Details</div>
+
+                <label class="marga-field">
+                    <span>Purpose</span>
                     <select id="newReqPurpose">
                         <option value="5">Service</option>
                         <option value="3">Deliver Ink / Toner</option>
@@ -342,42 +367,15 @@
                 </label>
 
                 <label class="marga-field">
-                    <span>Schedule Date</span>
-                    <input type="date" id="newReqDate">
+                    <span>Trouble</span>
+                    <input type="text" id="newReqTroubleSearch" list="newReqTroubleList" placeholder="Search concern...">
+                    <datalist id="newReqTroubleList"></datalist>
+                    <select id="newReqTrouble" class="marga-hidden-select" aria-hidden="true" tabindex="-1"></select>
                 </label>
 
                 <label class="marga-field">
-                    <span>Schedule Time</span>
-                    <input type="time" id="newReqTime" value="08:00">
-                </label>
-
-                <label class="marga-field marga-field-full">
-                    <span>Serial Number</span>
-                    <input type="text" id="newReqSerialNumber" placeholder="Enter machine serial number...">
-                    <small class="new-req-serial-status" id="newReqSerialStatus">Enter a serial number to auto-fill company and branch.</small>
-                </label>
-
-                <label class="marga-field marga-field-full">
-                    <span>Company</span>
-                    <input type="text" id="newReqCompanySearch" placeholder="Search active customer...">
-                    <select id="newReqCompany"></select>
-                </label>
-
-                <label class="marga-field marga-field-full">
-                    <span>Branch</span>
-                    <input type="text" id="newReqBranchSearch" placeholder="Search active contract branch...">
-                    <select id="newReqBranch"></select>
-                </label>
-
-                <label class="marga-field marga-field-full">
-                    <span>Machine / Serial</span>
-                    <select id="newReqMachine"></select>
-                    <small class="new-req-serial-status" id="newReqMachineMeta">Select a company and branch to load active machines.</small>
-                </label>
-
-                <label class="marga-field">
-                    <span>Caller / Contact</span>
-                    <input type="text" id="newReqCaller" placeholder="Name">
+                    <span>Caller</span>
+                    <input type="text" id="newReqCaller" placeholder="Caller name">
                 </label>
 
                 <label class="marga-field">
@@ -385,15 +383,49 @@
                     <input type="text" id="newReqPhone" placeholder="09xx...">
                 </label>
 
-                <label class="marga-field marga-field-full">
-                    <span>Trouble / Concern</span>
-                    <select id="newReqTrouble"></select>
+                <label class="marga-field">
+                    <span>Assign To</span>
+                    <input type="text" id="newReqAssigneeSearch" list="newReqAssigneeList" placeholder="Search technician, production, messenger...">
+                    <datalist id="newReqAssigneeList"></datalist>
+                    <select id="newReqAssignee" class="marga-hidden-select" aria-hidden="true" tabindex="-1"></select>
                 </label>
 
-                <label class="marga-field marga-field-full">
-                    <span>Assign To (optional)</span>
-                    <select id="newReqAssignee"></select>
+                <label class="marga-field">
+                    <span>Status</span>
+                    <select id="newReqStatus">
+                        <option value="1">Open</option>
+                        <option value="0">Closed (Fixed)</option>
+                        <option value="2">Closed (Under Observation)</option>
+                        <option value="3">Closed (Over The Phone)</option>
+                    </select>
                 </label>
+
+                <label class="marga-field">
+                    <span>Task Sched</span>
+                    <input type="date" id="newReqDate">
+                </label>
+
+                <label class="marga-field">
+                    <span>Time</span>
+                    <input type="time" id="newReqTime" value="08:00">
+                </label>
+
+                <label class="marga-field">
+                    <span>Request Origin</span>
+                    <select id="newReqOrigin">
+                        <option value="viber">Viber</option>
+                        <option value="call">Call</option>
+                        <option value="website_chat">Website Chat</option>
+                        <option value="tech_request">Tech Request</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+
+                <div class="marga-check-row">
+                    <label><input type="checkbox" id="newReqSuperUrgent"> Super Urgent</label>
+                    <label><input type="checkbox" id="newReqWithRequest"> With Request</label>
+                    <label><input type="checkbox" id="newReqWithComplain"> With Complain</label>
+                </div>
 
                 <label class="marga-field marga-field-full">
                     <span>Remarks</span>
