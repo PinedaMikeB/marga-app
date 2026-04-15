@@ -103,21 +103,16 @@ function initDefaults() {
 }
 
 function compareBillingRows(left, right, sortValue) {
-    const leftAmountCount = Object.values(left?.months || {}).reduce((sum, cell) => sum + (Number(cell?.display_amount_total || 0) > 0 ? 1 : 0), 0);
-    const rightAmountCount = Object.values(right?.months || {}).reduce((sum, cell) => sum + (Number(cell?.display_amount_total || 0) > 0 ? 1 : 0), 0);
-    const leftLatestAmount = Object.values(left?.months || {}).reduce((max, cell) => Math.max(max, Number(cell?.display_amount_total || 0)), 0);
-    const rightLatestAmount = Object.values(right?.months || {}).reduce((max, cell) => Math.max(max, Number(cell?.display_amount_total || 0)), 0);
-    const leftRd = Number(left.reading_day || 0) || Number.MAX_SAFE_INTEGER;
-    const rightRd = Number(right.reading_day || 0) || Number.MAX_SAFE_INTEGER;
+    const leftRdRaw = Number(left.reading_day || 0);
+    const rightRdRaw = Number(right.reading_day || 0);
+    const leftRd = leftRdRaw >= 1 && leftRdRaw <= 31 ? leftRdRaw : Number.MAX_SAFE_INTEGER;
+    const rightRd = rightRdRaw >= 1 && rightRdRaw <= 31 ? rightRdRaw : Number.MAX_SAFE_INTEGER;
     const leftCustomer = String(left.company_name || left.account_name || '').toLowerCase();
     const rightCustomer = String(right.company_name || right.account_name || '').toLowerCase();
     const leftBranch = String(left.branch_name || '').toLowerCase();
     const rightBranch = String(right.branch_name || '').toLowerCase();
     const leftSerial = String(left.serial_number || left.machine_label || '').toLowerCase();
     const rightSerial = String(right.serial_number || right.machine_label || '').toLowerCase();
-
-    if (rightAmountCount !== leftAmountCount) return rightAmountCount - leftAmountCount;
-    if (rightLatestAmount !== leftLatestAmount) return rightLatestAmount - leftLatestAmount;
 
     if (sortValue === 'customer') {
         return leftCustomer.localeCompare(rightCustomer)
