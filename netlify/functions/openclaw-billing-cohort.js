@@ -627,6 +627,25 @@ function roundCurrency(value) {
     return Number(Number(value || 0).toFixed(2));
 }
 
+function serializeMonthSummary(summary, includeDebugLists = false) {
+    const {
+        skipped_companies: skippedCompanies,
+        receipt_gap_companies: receiptGapCompanies,
+        ...rest
+    } = summary || {};
+    const serialized = {
+        ...rest,
+        billed_amount_total: roundCurrency(rest.billed_amount_total || 0)
+    };
+
+    if (includeDebugLists) {
+        serialized.skipped_companies = Array.isArray(skippedCompanies) ? skippedCompanies : [];
+        serialized.receipt_gap_companies = Array.isArray(receiptGapCompanies) ? receiptGapCompanies : [];
+    }
+
+    return serialized;
+}
+
 function getContractCategoryMeta(categoryId) {
     const normalized = Number(categoryId || 0) || 0;
     return CONTRACT_CATEGORY_META[normalized] || {
@@ -2022,7 +2041,7 @@ exports.handler = async (event) => {
             ? monthKeyFromYearMonth(explicitStartYear, explicitStartMonth)
             : shiftMonthKey(endKey, -(monthsBack - 1));
         const includeRows = boolParam(searchParams.get('include_rows'), true);
-        const rowLimit = intParam(searchParams.get('row_limit') || 1000, 1000, 1, 1200);
+        const rowLimit = intParam(searchParams.get('row_limit') || 1000, 1000, 1, 1000);
         const latestLimit = intParam(searchParams.get('latest_limit') || 200, 200, 1, 5000);
         const forceRefresh = boolParam(searchParams.get('refresh_cache'), false);
         const billingPages = intParam(searchParams.get('max_billing_pages') || DEFAULT_BILLING_MAX_PAGES, DEFAULT_BILLING_MAX_PAGES, 10, 600);
@@ -2030,6 +2049,7 @@ exports.handler = async (event) => {
         const searchTerm = String(searchParams.get('search') || '').trim();
         const includeActiveRows = boolParam(searchParams.get('include_active_rows'), true);
         const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm));
+        const includeDebugLists = boolParam(searchParams.get('include_debug_lists'), false);
 
         if (!startKey || !endKey || startKey > endKey) {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
@@ -2073,7 +2093,7 @@ exports.handler = async (event) => {
                 include_active_rows: includeActiveRows
             },
             billing_last_6_months: result.topSummaryRows,
-            month_summaries: result.monthSummaries,
+            month_summaries: result.monthSummaries.map((summary) => serializeMonthSummary(summary, includeDebugLists)),
             month_to_month_comparison: result.comparisons,
             month_matrix: {
                 months: result.months,
