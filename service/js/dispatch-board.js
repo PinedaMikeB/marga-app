@@ -1149,24 +1149,24 @@ async function openNewRequestModal() {
     ]);
 
     const companySearch = document.getElementById('newReqCompanySearch');
-    const companyList = document.getElementById('newReqCompanyList');
     const companySelect = document.getElementById('newReqCompany');
     const branchSearch = document.getElementById('newReqBranchSearch');
-    const branchList = document.getElementById('newReqBranchList');
     const branchSelect = document.getElementById('newReqBranch');
     const machineSelect = document.getElementById('newReqMachine');
     const machineMeta = document.getElementById('newReqMachineMeta');
     const modelInput = document.getElementById('newReqModel');
-    const serialList = document.getElementById('newReqSerialList');
     const troubleSearch = document.getElementById('newReqTroubleSearch');
-    const troubleList = document.getElementById('newReqTroubleList');
     const troubleSelect = document.getElementById('newReqTrouble');
     const assigneeSearch = document.getElementById('newReqAssigneeSearch');
-    const assigneeList = document.getElementById('newReqAssigneeList');
     const assigneeSelect = document.getElementById('newReqAssignee');
     const callerInput = document.getElementById('newReqCaller');
     const phoneInput = document.getElementById('newReqPhone');
     const serialInput = document.getElementById('newReqSerialNumber');
+    const companyPanel = document.getElementById('newReqCompanyPanel');
+    const branchPanel = document.getElementById('newReqBranchPanel');
+    const serialPanel = document.getElementById('newReqSerialPanel');
+    const troublePanel = document.getElementById('newReqTroublePanel');
+    const assigneePanel = document.getElementById('newReqAssigneePanel');
 
     companySearch.value = '';
     branchSearch.value = '';
@@ -1187,20 +1187,101 @@ async function openNewRequestModal() {
 
     const companies = opsCache.activeGraphCompanies;
 
-    function setDatalistOptions(listEl, items, getValue) {
-        if (!listEl) return;
-        listEl.innerHTML = items
-            .map((item) => {
-                const value = String(getValue(item) || '').trim();
-                return value ? `<option value="${sanitize(value)}"></option>` : '';
-            })
-            .join('');
+    function closeComboPanel(panel, input) {
+        if (!panel) return;
+        panel.classList.remove('open');
+        if (input) input.setAttribute('aria-expanded', 'false');
     }
 
-    function findByDatalistValue(items, value, getValue) {
+    function closeAllComboPanels(exceptPanel = null) {
+        [
+            [companyPanel, companySearch],
+            [branchPanel, branchSearch],
+            [serialPanel, serialInput],
+            [troublePanel, troubleSearch],
+            [assigneePanel, assigneeSearch]
+        ].forEach(([panel, input]) => {
+            if (panel !== exceptPanel) closeComboPanel(panel, input);
+        });
+    }
+
+    function findByInputValue(items, value, getValue) {
         const normalized = String(value || '').trim().toLowerCase();
         if (!normalized) return null;
         return items.find((item) => String(getValue(item) || '').trim().toLowerCase() === normalized) || null;
+    }
+
+    function renderComboPanel({ input, panel, items, getLabel, getMeta, onSelect, emptyText = 'No matches found.', limit = 80 }) {
+        if (!panel || !input) return;
+        const source = Array.isArray(items) ? items.filter(Boolean) : [];
+        const q = input.value.trim().toLowerCase();
+        const filtered = (q
+            ? source.filter((item) => {
+                const label = String(getLabel(item) || '').toLowerCase();
+                const meta = String(getMeta?.(item) || '').toLowerCase();
+                return label.includes(q) || meta.includes(q);
+            })
+            : source
+        ).slice(0, limit);
+
+        if (!filtered.length) {
+            const emptyMessage = typeof emptyText === 'function' ? emptyText() : emptyText;
+            panel.innerHTML = `<div class="marga-combo-empty">${sanitize(emptyMessage)}</div>`;
+        } else {
+            panel.innerHTML = filtered.map((item, index) => {
+                const label = String(getLabel(item) || '').trim();
+                const meta = String(getMeta?.(item) || '').trim();
+                return `
+                    <button type="button" class="marga-combo-option" data-index="${index}" role="option">
+                        <span class="marga-combo-name">${sanitize(label)}</span>
+                        ${meta ? `<span class="marga-combo-meta">${sanitize(meta)}</span>` : ''}
+                    </button>
+                `;
+            }).join('');
+            panel.querySelectorAll('.marga-combo-option').forEach((button) => {
+                button.addEventListener('mousedown', (event) => event.preventDefault());
+                button.addEventListener('click', () => {
+                    const item = filtered[Number(button.dataset.index || 0)];
+                    onSelect(item);
+                    closeComboPanel(panel, input);
+                });
+            });
+        }
+
+        closeAllComboPanels(panel);
+        panel.classList.add('open');
+        input.setAttribute('aria-expanded', 'true');
+    }
+
+    function installSearchCombo(config) {
+        const { input, panel, getItems, getLabel, getMeta, onSelect, onInput, emptyText, limit } = config;
+        const open = () => renderComboPanel({
+            input,
+            panel,
+            items: getItems(),
+            getLabel,
+            getMeta,
+            onSelect,
+            emptyText,
+            limit
+        });
+
+        input.onfocus = open;
+        input.oninput = () => {
+            if (typeof onInput === 'function') onInput(input.value);
+            open();
+        };
+        input.onkeydown = (event) => {
+            if (event.key === 'Escape') {
+                closeComboPanel(panel, input);
+                return;
+            }
+            if (event.key !== 'Enter') return;
+            const first = panel?.querySelector('.marga-combo-option');
+            if (!first) return;
+            event.preventDefault();
+            first.click();
+        };
     }
 
     function getCompanyInputLabel(company) {
@@ -1244,8 +1325,6 @@ async function openNewRequestModal() {
                 return `<option value="${c.id}">${sanitize(c.name)}${sanitize(countText)}</option>`;
             })
             .join('');
-        setDatalistOptions(companyList, visible, getCompanyInputLabel);
-
         if (selectedId) {
             companySelect.value = String(selectedId);
         }
@@ -1262,29 +1341,16 @@ async function openNewRequestModal() {
     troubleSelect.innerHTML = `<option value="">Select concern...</option>` + troubles
         .map((t) => `<option value="${t.id}">${sanitize(t.name)}</option>`)
         .join('');
-    setDatalistOptions(troubleList, troubles, (t) => t.name);
 
     const staff = getAssignableStaffList();
     assigneeSelect.innerHTML = `<option value="">Unassigned</option>` + staff
         .map((s) => `<option value="${s.id}">${sanitize(s.name)} (${sanitize(s.role)})</option>`)
         .join('');
-    setDatalistOptions(assigneeList, staff, getStaffInputLabel);
 
-    troubleSearch.oninput = () => {
-        const match = findByDatalistValue(troubles, troubleSearch.value, (t) => t.name);
-        troubleSelect.value = match ? String(match.id) : '';
-    };
-
-    assigneeSearch.oninput = () => {
-        const match = findByDatalistValue(staff, assigneeSearch.value, getStaffInputLabel);
-        assigneeSelect.value = match ? String(match.id) : '';
-    };
-
-    const serialRows = opsCache.activeCustomerGraphRows
+    let serialComboRows = opsCache.activeCustomerGraphRows
         .filter((row) => row?.serialNumber)
         .sort((left, right) => String(left.serialNumber || '').localeCompare(String(right.serialNumber || '')))
         .slice(0, 5000);
-    setDatalistOptions(serialList, serialRows, (row) => row.serialNumber);
 
     function fillBranchesForCompany(companyId, query = '', selectedId = '') {
         const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
@@ -1316,7 +1382,6 @@ async function openNewRequestModal() {
                 return `<option value="${b.id}">${sanitize(b.name || `Branch #${b.id}`)}${sanitize(countText)}</option>`;
             })
             .join('');
-        setDatalistOptions(branchList, visible, getBranchInputLabel);
 
         if (selectedId) {
             branchSelect.value = String(selectedId);
@@ -1398,12 +1463,12 @@ async function openNewRequestModal() {
         if (!rows.length) {
             machineSelect.innerHTML = `<option value="">No active machines found for this branch...</option>`;
             modelInput.value = '';
-            setDatalistOptions(serialList, [], (row) => row.serialNumber);
+            serialComboRows = [];
             setMachineMeta('No active machines are linked to this branch in the customer graph.', 'warning');
             return;
         }
 
-        setDatalistOptions(serialList, rows, (row) => row.serialNumber);
+        serialComboRows = rows.filter((row) => row?.serialNumber);
 
         machineSelect.innerHTML = `<option value="">Select machine...</option>` + rows
             .map((row) => {
@@ -1504,7 +1569,6 @@ async function openNewRequestModal() {
 
     const debouncedSerialLookup = MargaUtils.debounce(applySerialLookup, 350);
 
-    serialInput.oninput = debouncedSerialLookup;
     serialInput.onblur = applySerialLookup;
 
     function handleCompanySelection(companyId) {
@@ -1525,27 +1589,89 @@ async function openNewRequestModal() {
         renderMachineOptionsForBranch(branchId);
     }
 
-    companySearch.oninput = () => {
-        renderCompanyOptions(companySearch.value, companySelect.value);
-        const match = findByDatalistValue(companies, companySearch.value, getCompanyInputLabel);
-        if (!match) return;
-        companySelect.value = String(match.id);
-        handleCompanySelection(match.id);
-    };
+    installSearchCombo({
+        input: companySearch,
+        panel: companyPanel,
+        getItems: () => companies,
+        getLabel: getCompanyInputLabel,
+        getMeta: (company) => `${Number(company.activeAccountCount || 0)} active`,
+        emptyText: 'No active customers found.',
+        onInput: () => renderCompanyOptions(companySearch.value, companySelect.value),
+        onSelect: (company) => {
+            companySearch.value = getCompanyInputLabel(company);
+            renderCompanyOptions(companySearch.value, company.id);
+            companySelect.value = String(company.id);
+            handleCompanySelection(company.id);
+        }
+    });
 
     companySelect.onchange = () => handleCompanySelection(companySelect.value);
 
-    branchSearch.oninput = () => {
-        const companyId = companySelect.value;
-        fillBranchesForCompany(companyId, branchSearch.value, branchSelect.value);
-        const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
-        const match = findByDatalistValue(branches, branchSearch.value, getBranchInputLabel);
-        if (!match) return;
-        branchSelect.value = String(match.id);
-        handleBranchSelection(match.id);
-    };
+    installSearchCombo({
+        input: branchSearch,
+        panel: branchPanel,
+        getItems: () => opsCache.activeGraphBranchesByCompany.get(String(companySelect.value)) || [],
+        getLabel: getBranchInputLabel,
+        getMeta: (branch) => `${Number(branch.activeMachineCount || 0)} machine${Number(branch.activeMachineCount || 0) === 1 ? '' : 's'}`,
+        emptyText: () => companySelect.value ? 'No branches found for this customer.' : 'Choose a company first.',
+        onInput: () => fillBranchesForCompany(companySelect.value, branchSearch.value, branchSelect.value),
+        onSelect: (branch) => {
+            branchSearch.value = getBranchInputLabel(branch);
+            fillBranchesForCompany(companySelect.value, branchSearch.value, branch.id);
+            branchSelect.value = String(branch.id);
+            handleBranchSelection(branch.id);
+        }
+    });
 
     branchSelect.onchange = () => handleBranchSelection(Number(branchSelect.value || 0));
+
+    installSearchCombo({
+        input: serialInput,
+        panel: serialPanel,
+        getItems: () => serialComboRows,
+        getLabel: (row) => row.serialNumber || '',
+        getMeta: (row) => row.machineDescription || row.accountName || '',
+        emptyText: 'No serials found.',
+        onInput: () => debouncedSerialLookup(),
+        onSelect: (row) => {
+            serialInput.value = row.serialNumber || '';
+            applyGraphRowToForm(row);
+        }
+    });
+
+    installSearchCombo({
+        input: troubleSearch,
+        panel: troublePanel,
+        getItems: () => troubles,
+        getLabel: (trouble) => trouble.name,
+        getMeta: () => '',
+        emptyText: 'No concerns found.',
+        onInput: () => {
+            const match = findByInputValue(troubles, troubleSearch.value, (trouble) => trouble.name);
+            troubleSelect.value = match ? String(match.id) : '';
+        },
+        onSelect: (trouble) => {
+            troubleSearch.value = trouble.name;
+            troubleSelect.value = String(trouble.id);
+        }
+    });
+
+    installSearchCombo({
+        input: assigneeSearch,
+        panel: assigneePanel,
+        getItems: () => staff,
+        getLabel: (assignee) => assignee.name,
+        getMeta: (assignee) => assignee.role,
+        emptyText: 'No technicians, production, or messengers found.',
+        onInput: () => {
+            const match = findByInputValue(staff, assigneeSearch.value, getStaffInputLabel);
+            assigneeSelect.value = match ? String(match.id) : '';
+        },
+        onSelect: (assignee) => {
+            assigneeSearch.value = getStaffInputLabel(assignee);
+            assigneeSelect.value = String(assignee.id);
+        }
+    });
 
     machineSelect.onchange = () => {
         const contractId = Number(machineSelect.value || 0);
@@ -1555,7 +1681,11 @@ async function openNewRequestModal() {
     };
 
     branchSelect.innerHTML = `<option value="">Select active contract branch...</option>`;
-    branchList.innerHTML = '';
+    document.getElementById('newReqModal').onmousedown = (event) => {
+        if (event.target.closest('.marga-combo-panel')) return;
+        if ([companySearch, branchSearch, serialInput, troubleSearch, assigneeSearch].includes(event.target)) return;
+        closeAllComboPanels();
+    };
 }
 
 async function saveNewServiceRequest() {
