@@ -467,7 +467,8 @@ async function loadCache(
             pageRate: Number(getField(f, ['page_rate']) || 0) || 0,
             monthlyQuota: Number(getField(f, ['monthly_quota']) || 0) || 0,
             monthlyRate: Number(getField(f, ['monthly_rate']) || 0) || 0,
-            pageRate2: Number(getField(f, ['page_rate2', 'page_rate_xtra']) || 0) || 0,
+            pageRate2: Number(getField(f, ['page_rate2']) || 0) || 0,
+            pageRateXtra: Number(getField(f, ['page_rate_xtra']) || 0) || 0,
             pageRateXtra2: Number(getField(f, ['page_rate_xtra2']) || 0) || 0,
             monthlyQuota2: Number(getField(f, ['monthly_quota2']) || 0) || 0,
             monthlyRate2: Number(getField(f, ['monthly_rate2']) || 0) || 0,
@@ -661,14 +662,14 @@ function computeReadingAmount(contract, fields) {
             monthlyRate: Number(contract?.monthlyRate || 0) || 0,
             withVat: Number(contract?.withVat || 0) === 1,
             categoryId: Number(contract?.categoryId || 0) || 0,
-            succeedingRate: Number(contract?.pageRate2 || contract?.pageRateXtra2 || contract?.pageRate || 0) || 0,
+            succeedingRate: Number(contract?.pageRateXtra || contract?.pageRate2 || contract?.pageRate || 0) || 0,
             formula: 'not_applicable'
         };
     }
 
     const pages = extractReadingPages(fields);
     const pageRate = Number(contract?.pageRate || 0) || 0;
-    const succeedingRate = Number(contract?.pageRate2 || contract?.pageRateXtra2 || 0) || pageRate;
+    const succeedingRate = Number(contract?.pageRateXtra || contract?.pageRate2 || 0) || pageRate;
     const monthlyQuota = Number(contract?.monthlyQuota || 0) || 0;
     const monthlyRate = Number(contract?.monthlyRate || 0) || 0;
     const withVat = Number(contract?.withVat || 0) === 1;
@@ -938,8 +939,10 @@ function buildContractProfile(contract) {
         page_rate: Number(contract?.pageRate || 0) || 0,
         monthly_quota: Number(contract?.monthlyQuota || 0) || 0,
         monthly_rate: Number(contract?.monthlyRate || 0) || 0,
-        page_rate2: Number(contract?.pageRate2 || contract?.pageRateXtra2 || 0) || 0,
-        succeeding_page_rate: Number(contract?.pageRate2 || contract?.pageRateXtra2 || contract?.pageRate || 0) || 0,
+        page_rate2: Number(contract?.pageRate2 || 0) || 0,
+        page_rate_xtra: Number(contract?.pageRateXtra || 0) || 0,
+        page_rate_xtra2: Number(contract?.pageRateXtra2 || 0) || 0,
+        succeeding_page_rate: Number(contract?.pageRateXtra || contract?.pageRate2 || contract?.pageRate || 0) || 0,
         monthly_quota2: Number(contract?.monthlyQuota2 || 0) || 0,
         monthly_rate2: Number(contract?.monthlyRate2 || 0) || 0,
         with_vat: Number(contract?.withVat || 0) === 1

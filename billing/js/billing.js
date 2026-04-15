@@ -139,7 +139,7 @@ function getRowBillingProfile(row) {
     if (profile) {
         const categoryMeta = getContractCategoryMeta(profile.category_id);
         const pageRate = Number(profile.page_rate || 0) || 0;
-        const succeedingRate = Number(profile.succeeding_page_rate || profile.page_rate2 || profile.page_rate_xtra || 0) || pageRate;
+        const succeedingRate = Number(profile.succeeding_page_rate || profile.page_rate_xtra || profile.page_rate2 || 0) || pageRate;
         return {
             ...profile,
             succeeding_page_rate: succeedingRate,
@@ -162,14 +162,14 @@ function getRowBillingProfile(row) {
         page_rate: Number(fallbackGroup.page_rate || 0) || 0,
         monthly_quota: Number(fallbackGroup.monthly_quota || 0) || 0,
         monthly_rate: Number(fallbackGroup.monthly_rate || 0) || 0,
-        succeeding_page_rate: Number(fallbackGroup.succeeding_page_rate || fallbackGroup.page_rate2 || fallbackGroup.page_rate_xtra || fallbackGroup.page_rate || 0) || 0,
+        succeeding_page_rate: Number(fallbackGroup.succeeding_page_rate || fallbackGroup.page_rate_xtra || fallbackGroup.page_rate2 || fallbackGroup.page_rate || 0) || 0,
         with_vat: Boolean(fallbackGroup.with_vat)
     };
 }
 
 function getSucceedingPageRate(profile) {
     const pageRate = Number(profile?.page_rate || 0) || 0;
-    return Number(profile?.succeeding_page_rate || profile?.page_rate2 || profile?.page_rate_xtra || 0) || pageRate;
+    return Number(profile?.succeeding_page_rate || profile?.page_rate_xtra || profile?.page_rate2 || 0) || pageRate;
 }
 
 function formatRtpRatePlan({ quota = 0, pageRate = 0, succeedingRate = 0 } = {}) {
@@ -808,7 +808,7 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         quota: Number(readingGroup?.monthly_quota || getRowBillingProfile(row)?.monthly_quota || 0) || 0,
         quotaPages: Number(readingGroup?.quota_pages || 0) || 0,
         succeedingPages: Number(readingGroup?.succeeding_pages || 0) || 0,
-        succeedingRate: Number(readingGroup?.succeeding_page_rate || readingGroup?.page_rate2 || getSucceedingPageRate(getRowBillingProfile(row)) || 0) || 0,
+        succeedingRate: Number(readingGroup?.succeeding_page_rate || readingGroup?.page_rate_xtra || readingGroup?.page_rate2 || getSucceedingPageRate(getRowBillingProfile(row)) || 0) || 0,
         totals
     };
 }
