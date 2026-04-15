@@ -1762,6 +1762,9 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print RTP</button>
                                 <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
                             </div>
+                            <div class="calc-print-note">
+                                Chrome print preview must have <strong>Headers and footers</strong> turned off in <strong>More settings</strong>, or the browser will add its own top margin and push the header down.
+                            </div>
                             ${renderRtpPrintTemplateControls()}
                             <div class="calc-print-calibration">
                                 <div class="calc-field">
@@ -1867,7 +1870,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             setCalcInlinePrintState({
                 visible: true,
                 disabled: false,
-                hint: 'Ready to print on the preprinted RTP form.'
+                hint: 'Ready to print. Turn off Headers and footers in More settings if the browser preview adds extra top space.'
             });
         } catch (error) {
             console.warn('Unable to build RTP calculator preview.', error);

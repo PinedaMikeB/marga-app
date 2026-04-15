@@ -884,6 +884,17 @@
     font-weight: 700;
 }
 
+.calc-print-note {
+    margin: 0.75rem 0 1rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid #cfe0fb;
+    border-radius: 8px;
+    background: #f5f9ff;
+    color: #46607f;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
 .calc-print-calibration {
     display: grid;
     gap: 0.8rem;
