@@ -255,6 +255,347 @@ function buildBranchAddress(branch) {
     return parts.join(', ');
 }
 
+function toFirestoreFieldValue(value) {
+    if (value === null || value === undefined) return { nullValue: null };
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return { timestampValue: value.toISOString() };
+    if (Array.isArray(value)) return { arrayValue: { values: value.map((entry) => toFirestoreFieldValue(entry)) } };
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Number.isInteger(value)
+            ? { integerValue: String(value) }
+            : { doubleValue: value };
+    }
+    return { stringValue: String(value) };
+}
+
+async function runFirestoreQuery(structuredQuery) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structuredQuery })
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.error || payload?.[0]?.error) {
+        throw new Error(payload?.error?.message || payload?.[0]?.error?.message || 'Failed to run Firestore query.');
+    }
+    return Array.isArray(payload)
+        ? payload
+            .map((row) => row?.document)
+            .filter(Boolean)
+            .map((doc) => MargaUtils.parseFirestoreDoc(doc))
+            .filter(Boolean)
+        : [];
+}
+
+async function queryFirestoreEquals(collection, fieldPath, value) {
+    if (value === null || value === undefined || value === '') return [];
+    return runFirestoreQuery({
+        from: [{ collectionId: collection }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath },
+                op: 'EQUAL',
+                value: toFirestoreFieldValue(value)
+            }
+        }
+    });
+}
+
+async function setFirestoreDocument(collection, docId, fields, options = {}) {
+    if (window.MargaOfflineSync?.writeFirestoreDoc) {
+        return window.MargaOfflineSync.writeFirestoreDoc({
+            mode: options.mode || 'set',
+            collection,
+            docId,
+            fields,
+            label: options.label || `${collection}/${docId}`,
+            dedupeKey: options.dedupeKey || `${collection}:${docId}`
+        });
+    }
+
+    const body = { fields: {} };
+    Object.entries(fields).forEach(([key, value]) => {
+        body.fields[key] = toFirestoreFieldValue(value);
+    });
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to save ${collection}/${docId}.`);
+    }
+    return { ok: true, queued: false, payload };
+}
+
+async function deleteFirestoreDocument(collection, docId) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'DELETE'
+    });
+    if (response.status === 404) return { ok: true, deleted: false };
+    const payload = response.status === 200 ? await response.json().catch(() => ({})) : await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to delete ${collection}/${docId}.`);
+    }
+    return { ok: true, deleted: true };
+}
+
+function monthNumberFromValue(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const raw = String(value).trim().toLowerCase();
+    if (!raw) return null;
+    const byName = {
+        january: 1,
+        february: 2,
+        march: 3,
+        april: 4,
+        may: 5,
+        june: 6,
+        july: 7,
+        august: 8,
+        september: 9,
+        october: 10,
+        november: 11,
+        december: 12
+    };
+    if (byName[raw]) return byName[raw];
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric)) return null;
+    const month = Math.trunc(numeric);
+    return month >= 1 && month <= 12 ? month : null;
+}
+
+function getBillingDocMonthKey(doc) {
+    const year = Number(doc?.year || 0) || 0;
+    let month = monthNumberFromValue(doc?.month);
+    if ((!year || !month) && doc) {
+        const dateRef = asValidDate(doc.dateprinted || doc.date_printed || doc.invdate || doc.invoice_date || doc.datex || doc.due_date);
+        if (dateRef) {
+            if (!month) month = dateRef.getMonth() + 1;
+            if (!year) {
+                const derivedYear = dateRef.getFullYear();
+                if (derivedYear) {
+                    return `${String(derivedYear).padStart(4, '0')}-${String(month || 0).padStart(2, '0')}`;
+                }
+            }
+        }
+    }
+    if (!year || !month) return '';
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+}
+
+function getBillingDocInvoiceRef(doc) {
+    return String(doc?.invoice_no || doc?.invoiceno || doc?.invoice_id || doc?.invoiceid || '').trim();
+}
+
+function getBillingDocSortValue(doc) {
+    const dateRef = asValidDate(doc?.updated_at || doc?.invoice_date || doc?.dateprinted || doc?.date_printed || doc?.invdate || doc?.datex || doc?.due_date);
+    if (dateRef) return dateRef.getTime();
+    const docIdValue = Number(String(doc?._docId || '').replace(/\D/g, '')) || 0;
+    return Number(doc?.id || 0) || docIdValue;
+}
+
+function pickPrimaryBillingDoc(docs) {
+    return [...(Array.isArray(docs) ? docs : [])]
+        .sort((left, right) => getBillingDocSortValue(right) - getBillingDocSortValue(left))
+        [0] || null;
+}
+
+function normalizeInvoiceNumber(value) {
+    return String(value || '').trim();
+}
+
+function billingSnapshotFromValues({ invoiceNo, previousMeter, presentMeter, spoilagePercent }) {
+    return {
+        invoiceNo: normalizeInvoiceNumber(invoiceNo),
+        previousMeter: Math.max(0, Number(previousMeter || 0) || 0),
+        presentMeter: Math.max(0, Number(presentMeter || 0) || 0),
+        spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2))
+    };
+}
+
+function billingSnapshotFromDoc(doc, fallback = {}) {
+    const spoilagePercent = doc?.spoilage_percent !== undefined && doc?.spoilage_percent !== null && doc?.spoilage_percent !== ''
+        ? Number(doc.spoilage_percent || 0)
+        : Number(doc?.spoilage_rate || 0) * 100;
+    return billingSnapshotFromValues({
+        invoiceNo: getBillingDocInvoiceRef(doc) || fallback.invoiceNo,
+        previousMeter: doc?.field_previous_meter ?? fallback.previousMeter,
+        presentMeter: doc?.field_present_meter ?? fallback.presentMeter,
+        spoilagePercent: Number.isFinite(spoilagePercent) ? spoilagePercent : fallback.spoilagePercent
+    });
+}
+
+function billingSnapshotsEqual(left, right) {
+    const a = billingSnapshotFromValues(left || {});
+    const b = billingSnapshotFromValues(right || {});
+    return a.invoiceNo === b.invoiceNo
+        && a.previousMeter === b.previousMeter
+        && a.presentMeter === b.presentMeter
+        && Math.abs(a.spoilagePercent - b.spoilagePercent) < 0.001;
+}
+
+function toSqlDateTime(date = new Date()) {
+    const valid = asValidDate(date);
+    if (!valid) return '';
+    const year = valid.getFullYear();
+    const month = String(valid.getMonth() + 1).padStart(2, '0');
+    const day = String(valid.getDate()).padStart(2, '0');
+    const hours = String(valid.getHours()).padStart(2, '0');
+    const minutes = String(valid.getMinutes()).padStart(2, '0');
+    const seconds = String(valid.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+async function queryBillingDocsByContractMonth(contractmainId, monthKey) {
+    const rawId = String(contractmainId || '').trim();
+    if (!rawId) return [];
+
+    const candidateValues = [];
+    const numeric = Number(rawId);
+    if (Number.isFinite(numeric)) candidateValues.push(Math.trunc(numeric));
+    candidateValues.push(rawId);
+
+    const byDocId = new Map();
+    for (const value of candidateValues) {
+        const docs = await queryFirestoreEquals('tbl_billing', 'contractmain_id', value);
+        docs.forEach((doc) => {
+            if (getBillingDocMonthKey(doc) !== monthKey) return;
+            if (doc?._docId) byDocId.set(doc._docId, doc);
+        });
+    }
+    return Array.from(byDocId.values());
+}
+
+async function queryBillingDocsByInvoice(invoiceNo) {
+    const normalizedInvoice = normalizeInvoiceNumber(invoiceNo);
+    if (!normalizedInvoice) return [];
+
+    const queryPairs = [
+        ['invoice_no', normalizedInvoice],
+        ['invoiceno', normalizedInvoice],
+        ['invoice_id', normalizedInvoice],
+        ['invoiceid', normalizedInvoice]
+    ];
+    if (/^\d+$/.test(normalizedInvoice)) {
+        const numericInvoice = Number(normalizedInvoice);
+        queryPairs.push(['invoice_id', numericInvoice], ['invoiceid', numericInvoice]);
+    }
+
+    const byDocId = new Map();
+    for (const [fieldPath, value] of queryPairs) {
+        const docs = await queryFirestoreEquals('tbl_billing', fieldPath, value);
+        docs.forEach((doc) => {
+            if (doc?._docId) byDocId.set(doc._docId, doc);
+        });
+    }
+    return Array.from(byDocId.values());
+}
+
+function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
+    const period = buildBillingPeriod(context?.monthKey, row?.reading_day);
+    const parsedMonth = parseMonthInput(context?.monthKey);
+    const now = new Date();
+    const sqlNow = toSqlDateTime(now);
+    const dueDate = period.to ? `${period.to} 00:00:00` : sqlNow;
+    const numericInvoice = /^\d+$/.test(snapshot.invoiceNo) ? Number(snapshot.invoiceNo) : null;
+    const numericContractId = Number(row?.contractmain_id || 0);
+    const numericDocId = Number(docId);
+
+    return {
+        id: Number.isFinite(numericDocId) ? numericDocId : Date.now(),
+        invoice_id: numericInvoice ?? snapshot.invoiceNo,
+        invoiceid: numericInvoice ?? snapshot.invoiceNo,
+        invoice_no: snapshot.invoiceNo,
+        invoiceno: snapshot.invoiceNo,
+        contractmain_id: Number.isFinite(numericContractId) && numericContractId > 0 ? numericContractId : String(row?.contractmain_id || ''),
+        month: formatMonthLongLabel(context?.monthKey, context?.monthKey || ''),
+        year: String(parsedMonth?.year || now.getFullYear()),
+        due_date: dueDate,
+        dateprinted: sqlNow,
+        date_printed: sqlNow,
+        invoice_date: sqlNow,
+        invdate: sqlNow,
+        datex: sqlNow,
+        amount: Number(estimate?.amountDue || 0) || 0,
+        totalamount: Number(estimate?.amountDue || 0) || 0,
+        vatamount: Number(estimate?.vatAmount || 0) || 0,
+        netamount: Number(estimate?.netAmount || 0) || 0,
+        field_previous_meter: snapshot.previousMeter,
+        field_present_meter: snapshot.presentMeter,
+        field_total_consumed: Number(estimate?.rawPages || 0) || 0,
+        total_pages: Number(estimate?.netPages || 0) || 0,
+        spoilage_pages: Number(estimate?.spoilagePages || 0) || 0,
+        spoilage_percent: Number(snapshot.spoilagePercent || 0) || 0,
+        spoilage_rate: Number((Number(snapshot.spoilagePercent || 0) / 100).toFixed(4)),
+        billed_pages: Number(estimate?.billedPages || 0) || 0,
+        quota_variance: Number(estimate?.quotaVariance || 0) || 0,
+        page_rate: Number(context?.profile?.page_rate || 0) || 0,
+        monthly_quota: Number(context?.profile?.monthly_quota || 0) || 0,
+        monthly_rate: Number(context?.profile?.monthly_rate || 0) || 0,
+        billing_formula: String(estimate?.formula || '').trim(),
+        withvat: context?.profile?.with_vat ? 1 : 0,
+        category_id: Number(context?.profile?.category_id || 0) || 0,
+        category_code: String(context?.profile?.category_code || '').trim(),
+        branch_id: String(row?.branch_id || '').trim(),
+        company_id: String(row?.company_id || '').trim(),
+        machine_id: String(row?.machine_id || '').trim(),
+        serial_number: String(row?.serial_number || '').trim(),
+        updated_at: now.toISOString(),
+        source_module: 'billing_dashboard',
+        status: 0,
+        isreceived: 0,
+        location: 1
+    };
+}
+
+async function saveBillingRecord({ row, context, estimate, snapshot, existingDocs = [] }) {
+    const invoiceNo = normalizeInvoiceNumber(snapshot?.invoiceNo);
+    if (!invoiceNo) throw new Error('Enter an invoice number before saving.');
+    if (!row?.contractmain_id) throw new Error('This row has no contract ID, so billing cannot be saved yet.');
+
+    const rowDocs = existingDocs.length ? existingDocs : await queryBillingDocsByContractMonth(row.contractmain_id, context.monthKey);
+    const targetDoc = pickPrimaryBillingDoc(rowDocs);
+    const duplicateDocs = await queryBillingDocsByInvoice(invoiceNo);
+    const conflictingDoc = duplicateDocs.find((doc) => doc?._docId && doc._docId !== targetDoc?._docId);
+    if (conflictingDoc) {
+        const duplicateMonth = getBillingDocMonthKey(conflictingDoc);
+        throw new Error(`Invoice ${invoiceNo} is already used${duplicateMonth ? ` for ${formatMonthLabel(duplicateMonth, duplicateMonth)}` : ''}.`);
+    }
+
+    const docId = String(targetDoc?._docId || Date.now());
+    const fields = buildBillingRecordFields({ row, context, estimate, snapshot, docId });
+    const result = await setFirestoreDocument('tbl_billing', docId, fields, {
+        mode: 'set',
+        label: `Billing ${invoiceNo}`,
+        dedupeKey: `tbl_billing:${docId}`
+    });
+    return {
+        ...result,
+        docId,
+        invoiceNo,
+        fields
+    };
+}
+
+async function deleteBillingRecord({ row, monthKey, invoiceNo = '' }) {
+    if (!row?.contractmain_id) throw new Error('This row has no contract ID to delete.');
+    const docs = await queryBillingDocsByContractMonth(row.contractmain_id, monthKey);
+    const normalizedInvoice = normalizeInvoiceNumber(invoiceNo);
+    const matchingDocs = normalizedInvoice
+        ? docs.filter((doc) => getBillingDocInvoiceRef(doc) === normalizedInvoice)
+        : docs;
+    if (!matchingDocs.length) return { deletedCount: 0 };
+
+    for (const doc of matchingDocs) {
+        if (!doc?._docId) continue;
+        await deleteFirestoreDocument('tbl_billing', doc._docId);
+    }
+
+    return { deletedCount: matchingDocs.length };
+}
+
 function setRtpPrintPayload(payload) {
     currentRtpPrintPayload = payload || null;
     els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
@@ -1580,9 +1921,37 @@ async function openBillingCalcModal(rowId, monthKey) {
     const profile = context.profile;
     const latest = context.latestPriorGroup;
     const latestInvoice = context.latestInvoice;
-    const estimate = calculateBillingEstimate(context, context.previousMeter, context.presentMeter);
     const canPrintRtp = String(profile.category_code || '').trim().toUpperCase() === 'RTP';
     const requestToken = ++billingCalcRequestToken;
+
+    let existingBillingDocs = [];
+    try {
+        existingBillingDocs = await queryBillingDocsByContractMonth(row?.contractmain_id, monthKey);
+    } catch (error) {
+        console.warn('Unable to load saved billing docs for the calculator modal.', error);
+    }
+    if (requestToken !== billingCalcRequestToken) return;
+
+    const savedBillingDoc = pickPrimaryBillingDoc(existingBillingDocs);
+    const initialSnapshot = savedBillingDoc
+        ? billingSnapshotFromDoc(savedBillingDoc, {
+            invoiceNo: latestInvoice?.invoice_ref || '',
+            previousMeter: context.previousMeter,
+            presentMeter: context.presentMeter,
+            spoilagePercent: (context.spoilageRate || 0) * 100
+        })
+        : billingSnapshotFromValues({
+            invoiceNo: latestInvoice?.invoice_ref || '',
+            previousMeter: context.previousMeter,
+            presentMeter: context.presentMeter,
+            spoilagePercent: (context.spoilageRate || 0) * 100
+        });
+    const estimate = calculateBillingEstimate(
+        context,
+        initialSnapshot.previousMeter,
+        initialSnapshot.presentMeter,
+        initialSnapshot.spoilagePercent / 100
+    );
     const companyName = row.display_name || row.account_name || row.company_name || 'Unknown Customer';
     const branchName = row.branch_name || 'Main';
     const machineModel = row.machine_label || 'N/A';
@@ -1594,10 +1963,15 @@ async function openBillingCalcModal(rowId, monthKey) {
         ? formatUsDate(asValidDate(latest.task_date))
         : 'Not recorded';
     const latestMonthUsed = latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading';
+    const savedMonthLabel = context.targetCell?.month_label_short || context.monthLabel;
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
     setRtpPrintPayload(null);
+    if (els.billingCalcPrintBtn) {
+        els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintRtp);
+        els.billingCalcPrintBtn.disabled = true;
+    }
 
     els.billingCalcContent.innerHTML = `
         <div class="calc-layout calc-ledger-layout">
@@ -1606,6 +1980,13 @@ async function openBillingCalcModal(rowId, monthKey) {
                 <span class="calc-flag">${escapeHtml(context.isReading ? 'Meter-Based Billing' : (context.isFixed ? 'Fixed Monthly Billing' : 'Reference Only'))}</span>
                 <span class="calc-flag">${escapeHtml(profile.with_vat ? 'VAT Inclusive' : 'VAT Exclusive')}</span>
                 <span class="calc-flag">Latest meter context: ${escapeHtml(latestMonthUsed)}</span>
+            </div>
+            <div class="calc-save-row">
+                <div class="calc-save-actions">
+                    <button class="btn btn-primary" type="button" id="calcSaveBillingBtn">${savedBillingDoc ? 'Update Billing' : 'Save Billing'}</button>
+                    ${savedBillingDoc ? '<button class="btn btn-danger" type="button" id="calcDeleteBillingBtn">Delete Billing</button>' : ''}
+                </div>
+                <div class="calc-save-status" id="calcSaveStatus">${savedBillingDoc ? `Saved in ${escapeHtml(savedMonthLabel)}. Printing stays unlocked while the form matches the saved invoice.` : `Save this billing first so it lands in ${escapeHtml(savedMonthLabel)} and unlocks printing.`}</div>
             </div>
             <div class="calc-ledger-grid">
                 <section class="calc-panel calc-panel-wide">
@@ -1621,7 +2002,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                         </div>
                         <div class="calc-field">
                             <label>Invoice #</label>
-                            <input type="text" id="calcInvoiceInput" value="${escapeHtml(latestInvoice?.invoice_ref || '')}" placeholder="Invoice number">
+                            <input type="text" id="calcInvoiceInput" value="${escapeHtml(initialSnapshot.invoiceNo || '')}" placeholder="Invoice number">
                         </div>
                         <div class="calc-field">
                             <label>Category</label>
@@ -1666,11 +2047,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                         <div class="calc-reading-column">
                             <div class="calc-field">
                                 <label for="calcPresentMeterInput">Present Reading</label>
-                                <input type="number" id="calcPresentMeterInput" min="0" step="1" value="${escapeHtml(String(context.presentMeter || 0))}">
+                                <input type="number" id="calcPresentMeterInput" min="0" step="1" value="${escapeHtml(String(initialSnapshot.presentMeter || 0))}">
                             </div>
                             <div class="calc-field">
                                 <label for="calcPreviousMeterInput">Previous Reading</label>
-                                <input type="number" id="calcPreviousMeterInput" min="0" step="1" value="${escapeHtml(String(context.previousMeter || 0))}">
+                                <input type="number" id="calcPreviousMeterInput" min="0" step="1" value="${escapeHtml(String(initialSnapshot.previousMeter || 0))}">
                             </div>
                             <div class="calc-field">
                                 <label>Gross Total Cons.</label>
@@ -1678,7 +2059,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                             </div>
                             <div class="calc-field">
                                 <label for="calcSpoilageInput">Spoilage %</label>
-                                <input type="number" id="calcSpoilageInput" min="0" step="0.01" value="${escapeHtml(String((context.spoilageRate || 0) * 100))}">
+                                <input type="number" id="calcSpoilageInput" min="0" step="0.01" value="${escapeHtml(String(initialSnapshot.spoilagePercent || 0))}">
                             </div>
                             <div class="calc-field">
                                 <label>Spoilage Pages</label>
@@ -1821,6 +2202,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         </div>
     `;
 
+    const invoiceInput = document.getElementById('calcInvoiceInput');
+    const saveBillingBtn = document.getElementById('calcSaveBillingBtn');
+    const deleteBillingBtn = document.getElementById('calcDeleteBillingBtn');
+    const saveStatus = document.getElementById('calcSaveStatus');
     const previousInput = document.getElementById('calcPreviousMeterInput');
     const presentInput = document.getElementById('calcPresentMeterInput');
     const spoilageInput = document.getElementById('calcSpoilageInput');
@@ -1850,48 +2235,87 @@ async function openBillingCalcModal(rowId, monthKey) {
     const resetPrintBtn = document.getElementById('calcPrintResetBtn');
     const sectionInputs = Array.from(document.querySelectorAll('[data-rtp-section-key][data-rtp-section-field]'));
     let activeEstimate = estimate;
+    let previewReady = false;
+    let savedSnapshot = savedBillingDoc ? billingSnapshotFromDoc(savedBillingDoc, initialSnapshot) : null;
+    let savedDocExists = Boolean(savedBillingDoc);
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
-    if (canPrintRtp) {
+
+    const buildCurrentSnapshot = () => billingSnapshotFromValues({
+        invoiceNo: invoiceInput?.value || '',
+        previousMeter: previousInput?.value || 0,
+        presentMeter: presentInput?.value || 0,
+        spoilagePercent: spoilageInput?.value || 0
+    });
+
+    const syncCalcWorkflowState = () => {
+        const currentSnapshot = buildCurrentSnapshot();
+        const matchesSaved = savedDocExists && savedSnapshot ? billingSnapshotsEqual(savedSnapshot, currentSnapshot) : false;
+        const isDirty = savedDocExists && !matchesSaved;
+
+        if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
+        if (saveStatus) {
+            if (!savedDocExists) {
+                saveStatus.textContent = `Save this billing first so it lands in ${savedMonthLabel} and unlocks printing.`;
+            } else if (isDirty) {
+                saveStatus.textContent = `You changed the billing values. Save again to update ${savedMonthLabel} and re-enable printing.`;
+            } else {
+                saveStatus.textContent = `Saved in ${savedMonthLabel}. The month cell now owns invoice ${currentSnapshot.invoiceNo || 'N/A'} and Print RTP is ready.`;
+            }
+        }
+
+        if (!canPrintRtp) return;
+        const printEnabled = previewReady && matchesSaved;
+        let printHint = 'Preparing preview...';
+        if (previewReady) {
+            if (!savedDocExists) {
+                printHint = 'Save billing first to enable Print RTP.';
+            } else if (isDirty) {
+                printHint = 'Save your changes first so the printed RTP matches the saved invoice.';
+            } else {
+                printHint = 'Ready to print. Turn off Headers and footers in More settings if the browser preview adds extra top space.';
+            }
+        }
         setCalcInlinePrintState({
             visible: true,
-            disabled: true,
-            hint: 'Preparing preview...'
+            disabled: !printEnabled,
+            hint: printHint
         });
-    }
+        if (els.billingCalcPrintBtn) {
+            els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintRtp);
+            els.billingCalcPrintBtn.disabled = !printEnabled;
+        }
+    };
+
+    if (canPrintRtp) syncCalcWorkflowState();
 
     const renderCalcPreview = async (nextEstimate) => {
         if (!canPrintRtp || !previewMount) return;
+        previewReady = false;
+        syncCalcWorkflowState();
         try {
             const preview = await buildRtpPreviewPayloadFromCalculation(row, context, nextEstimate);
             if (requestToken !== billingCalcRequestToken) return;
             if (!preview) {
                 previewMount.innerHTML = '<div class="detail-empty">This contract does not have an RTP print preview.</div>';
                 setRtpPrintPayload(null);
-                setCalcInlinePrintState({
-                    visible: true,
-                    disabled: true,
-                    hint: 'Preview unavailable for this row.'
-                });
+                previewReady = false;
+                if (saveStatus) saveStatus.textContent = 'The print preview is unavailable for this row right now.';
+                syncCalcWorkflowState();
                 return;
             }
             previewMount.innerHTML = buildRtpCalibratedPreviewHtml(preview);
             setRtpPrintPayload(preview);
-            setCalcInlinePrintState({
-                visible: true,
-                disabled: false,
-                hint: 'Ready to print. Turn off Headers and footers in More settings if the browser preview adds extra top space.'
-            });
+            previewReady = true;
+            syncCalcWorkflowState();
         } catch (error) {
             console.warn('Unable to build RTP calculator preview.', error);
             if (requestToken !== billingCalcRequestToken) return;
             previewMount.innerHTML = '<div class="detail-empty">The printable RTP preview could not load the extra customer data right now.</div>';
             setRtpPrintPayload(null);
-            setCalcInlinePrintState({
-                visible: true,
-                disabled: true,
-                hint: 'Preview failed to load.'
-            });
+            previewReady = false;
+            if (saveStatus) saveStatus.textContent = 'The print preview failed to load. Save is still available.';
+            syncCalcWorkflowState();
         }
     };
 
@@ -1973,8 +2397,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (warningValue) warningValue.textContent = next.warning || '';
         activeEstimate = next;
         renderCalcPreview(activeEstimate);
+        syncCalcWorkflowState();
     };
 
+    invoiceInput?.addEventListener('input', syncCalcWorkflowState);
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
     spoilageInput?.addEventListener('input', recompute);
@@ -2010,8 +2436,85 @@ async function openBillingCalcModal(rowId, monthKey) {
         syncCalibrationInputs(calibration);
         renderCalcPreview(activeEstimate);
     });
+    saveBillingBtn?.addEventListener('click', async () => {
+        const currentSnapshot = buildCurrentSnapshot();
+        saveBillingBtn.disabled = true;
+        if (deleteBillingBtn) deleteBillingBtn.disabled = true;
+        try {
+            const result = await saveBillingRecord({
+                row,
+                context,
+                estimate: activeEstimate,
+                snapshot: currentSnapshot,
+                existingDocs: existingBillingDocs
+            });
+            savedSnapshot = currentSnapshot;
+            savedDocExists = true;
+            if (!savedBillingDoc) {
+                existingBillingDocs = [{
+                    _docId: result.docId,
+                    ...result.fields
+                }];
+            } else {
+                existingBillingDocs = [{
+                    _docId: result.docId,
+                    ...result.fields
+                }];
+            }
+            syncCalcWorkflowState();
+            MargaUtils.showToast(
+                result.queued
+                    ? `Billing ${currentSnapshot.invoiceNo} queued and will sync when you are back online.`
+                    : `Billing ${currentSnapshot.invoiceNo} saved to ${savedMonthLabel}.`,
+                'success'
+            );
+            if (!result.queued) {
+                await loadDashboard();
+                if (requestToken !== billingCalcRequestToken) return;
+                await openBillingCalcModal(rowId, monthKey);
+                return;
+            }
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to save billing.'), 'error');
+        } finally {
+            saveBillingBtn.disabled = false;
+            if (deleteBillingBtn) deleteBillingBtn.disabled = false;
+            syncCalcWorkflowState();
+        }
+    });
+    deleteBillingBtn?.addEventListener('click', async () => {
+        const invoiceNo = savedSnapshot?.invoiceNo || buildCurrentSnapshot().invoiceNo;
+        const confirmed = window.confirm(`Delete billing ${invoiceNo || 'for this month'}? This frees the invoice number so it can be reused.`);
+        if (!confirmed) return;
+        deleteBillingBtn.disabled = true;
+        if (saveBillingBtn) saveBillingBtn.disabled = true;
+        try {
+            const result = await deleteBillingRecord({
+                row,
+                monthKey,
+                invoiceNo
+            });
+            savedSnapshot = null;
+            savedDocExists = false;
+            existingBillingDocs = [];
+            MargaUtils.showToast(
+                result.deletedCount
+                    ? `Deleted ${result.deletedCount} saved billing record${result.deletedCount === 1 ? '' : 's'} from ${savedMonthLabel}.`
+                    : 'No saved billing record was found for this month.',
+                'success'
+            );
+            await loadDashboard();
+            closeBillingCalcModal();
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to delete billing.'), 'error');
+        } finally {
+            deleteBillingBtn.disabled = false;
+            if (saveBillingBtn) saveBillingBtn.disabled = false;
+        }
+    });
     els.billingCalcModal.classList.remove('hidden');
     await renderCalcPreview(estimate);
+    syncCalcWorkflowState();
 }
 
 function renderMatrixTable(payload) {
@@ -2322,6 +2825,9 @@ async function openInvoiceDetailModal(rowId, monthKey) {
     const readingGroups = Array.isArray(cell.reading_groups) ? cell.reading_groups : [];
     const shownAmount = Number(cell.display_amount_total || cell.amount_total || cell.reading_amount_total || 0);
     const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
+    const primaryInvoice = invoiceGroups[0] || null;
+    const primaryInvoiceRef = String(primaryInvoice?.invoice_no || primaryInvoice?.invoice_ref || primaryInvoice?.invoice_id || '').trim();
+    const canManageBilling = hasInvoiceAmount && !row.is_summary_row && Boolean(row?.contractmain_id);
     const requestToken = ++invoiceDetailRequestToken;
 
     els.invoiceDetailTitle.textContent = title;
@@ -2354,6 +2860,16 @@ async function openInvoiceDetailModal(rowId, monthKey) {
 
     els.invoiceDetailContent.innerHTML = `
         ${rtpPreviewBlock}
+        ${
+            canManageBilling
+                ? `
+                    <div class="detail-action-row">
+                        <button class="btn btn-primary" type="button" id="invoiceEditBillingBtn">Edit Billing</button>
+                        <button class="btn btn-danger" type="button" id="invoiceDeleteBillingBtn">Delete Invoice</button>
+                    </div>
+                `
+                : ''
+        }
         <div class="detail-summary-grid">
             <article class="detail-summary-card">
                 <span class="label">Shown Amount</span>
@@ -2468,6 +2984,38 @@ async function openInvoiceDetailModal(rowId, monthKey) {
                 : '<div class="detail-empty">No meter-reading breakdown was returned for this cell.</div>'
         }
     `;
+
+    document.getElementById('invoiceEditBillingBtn')?.addEventListener('click', () => {
+        closeInvoiceDetailModal();
+        openBillingCalcModal(rowId, monthKey);
+    });
+    document.getElementById('invoiceDeleteBillingBtn')?.addEventListener('click', async () => {
+        const confirmed = window.confirm(`Delete invoice ${primaryInvoiceRef || 'for this billing month'}? This makes the invoice number available again.`);
+        if (!confirmed) return;
+        const deleteButton = document.getElementById('invoiceDeleteBillingBtn');
+        const editButton = document.getElementById('invoiceEditBillingBtn');
+        if (deleteButton) deleteButton.disabled = true;
+        if (editButton) editButton.disabled = true;
+        try {
+            const result = await deleteBillingRecord({
+                row,
+                monthKey,
+                invoiceNo: primaryInvoiceRef
+            });
+            MargaUtils.showToast(
+                result.deletedCount
+                    ? `Deleted ${result.deletedCount} billing record${result.deletedCount === 1 ? '' : 's'} from ${formatMonthLabel(monthKey, monthKey)}.`
+                    : 'No saved billing record was found for this cell.',
+                'success'
+            );
+            closeInvoiceDetailModal();
+            await loadDashboard();
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to delete billing.'), 'error');
+            if (deleteButton) deleteButton.disabled = false;
+            if (editButton) editButton.disabled = false;
+        }
+    });
 }
 
 function renderAll(payload) {
