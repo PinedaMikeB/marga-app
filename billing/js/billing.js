@@ -116,19 +116,20 @@ function compareBillingRows(left, right, sortValue) {
     const leftSerial = String(left.serial_number || left.machine_label || '').toLowerCase();
     const rightSerial = String(right.serial_number || right.machine_label || '').toLowerCase();
 
-    if (rightAmountCount !== leftAmountCount) return rightAmountCount - leftAmountCount;
-    if (rightLatestAmount !== leftLatestAmount) return rightLatestAmount - leftLatestAmount;
-
     if (sortValue === 'customer') {
         return leftCustomer.localeCompare(rightCustomer)
             || leftBranch.localeCompare(rightBranch)
             || leftRd - rightRd
+            || (rightAmountCount - leftAmountCount)
+            || (rightLatestAmount - leftLatestAmount)
             || leftSerial.localeCompare(rightSerial);
     }
 
     return leftRd - rightRd
         || leftCustomer.localeCompare(rightCustomer)
         || leftBranch.localeCompare(rightBranch)
+        || (rightAmountCount - leftAmountCount)
+        || (rightLatestAmount - leftLatestAmount)
         || leftSerial.localeCompare(rightSerial);
 }
 
@@ -501,6 +502,7 @@ function renderMatrixTable(payload) {
     const rowsWithAmounts = filteredRows.filter((row) => (
         Object.values(row?.months || {}).some((cell) => Number(cell?.display_amount_total || 0) > 0)
     )).length;
+    const sortValue = getMatrixSortValue();
 
     const displayRows = searchTerm ? buildCompanySummaryRows(sortedRows, months) : sortedRows;
     renderedMatrixRows = displayRows;
@@ -518,7 +520,10 @@ function renderMatrixTable(payload) {
             const subtotalText = subtotalCount
                 ? ` ${formatCount(subtotalCount)} company subtotal row${subtotalCount === 1 ? '' : 's'} added.`
                 : '';
-            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}". ${formatCount(rowsWithAmounts)} row${rowsWithAmounts === 1 ? '' : 's'} already have amounts and are shown first.${windowText}${subtotalText} Footer totals reflect all matched rows.`;
+            const sortText = sortValue === 'customer'
+                ? ` ${formatCount(rowsWithAmounts)} row${rowsWithAmounts === 1 ? '' : 's'} already have amounts and are shown first within each customer grouping.`
+                : ' Rows follow Reading Day order first.';
+            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}".${sortText}${windowText}${subtotalText} Footer totals reflect all matched rows.`;
         } else {
             els.matrixSearchMeta.textContent = isRowWindowed
                 ? `Showing first ${formatCount(rows.length)} loaded machine rows out of ${formatCount(matchedRowCount)} matched rows. Footer totals reflect all matched rows.`
