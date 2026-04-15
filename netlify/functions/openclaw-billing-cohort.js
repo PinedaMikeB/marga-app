@@ -93,6 +93,12 @@ function normalizeDate(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function startOfLocalDay(dateValue = new Date()) {
+    const date = normalizeDate(dateValue) || new Date();
+    date.setHours(0, 0, 0, 0);
+    return date;
+}
+
 function normalizeYear(value) {
     if (value === null || value === undefined || value === '') return null;
     const n = Number(String(value).trim());
@@ -550,6 +556,13 @@ async function loadCache(
 
 function extractBillingMonth(fields) {
     const invoiceDate = normalizeDate(getField(fields, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
+    const today = startOfLocalDay(new Date());
+    if (invoiceDate && invoiceDate > today) {
+        return {
+            monthKey: null,
+            invoiceDate
+        };
+    }
     let year = normalizeYear(getField(fields, ['year']));
     let month = normalizeMonth(getField(fields, ['month']));
 

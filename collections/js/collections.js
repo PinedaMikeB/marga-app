@@ -121,6 +121,12 @@ function normalizeDate(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function startOfLocalDay(dateValue = new Date()) {
+    const date = normalizeDate(dateValue) || new Date();
+    date.setHours(0, 0, 0, 0);
+    return date;
+}
+
 function toDateKey(value) {
     const d = normalizeDate(value);
     if (!d) return null;
@@ -1189,6 +1195,8 @@ function processInvoice(doc) {
     const dueDate = getField(f, ['due_date']);
     const invoiceDateRaw = getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex']);
     const invoiceDate = normalizeDate(invoiceDateRaw);
+    const today = startOfLocalDay(new Date());
+    if (invoiceDate && invoiceDate > today) return null;
     const billingContactNumber = getField(f, ['contact_number']) || '';
 
     const age = calculateAge(dueDate, month, year);
@@ -1296,6 +1304,7 @@ async function loadInvoices(mode) {
             const invoiceNoRaw = getField(f, ['invoiceno', 'invoice_no', 'invoice_id', 'id']);
             const invoiceNo = invoiceNoRaw !== null && invoiceNoRaw !== undefined ? String(invoiceNoRaw).trim() : '';
             const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
+            const today = startOfLocalDay(new Date());
             const dueDate = normalizeDate(getField(f, ['due_date']));
             const amount = Number(getField(f, ['totalamount', 'amount']) || 0) + Number(getField(f, ['vatamount']) || 0);
             const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
@@ -1313,7 +1322,7 @@ async function loadInvoices(mode) {
             if (invoiceId) billingMetaByInvoiceKey.set(invoiceId, billingMeta);
             if (invoiceNo) billingMetaByInvoiceKey.set(invoiceNo, billingMeta);
 
-            if (invoiceDate && amount > 0) {
+            if (invoiceDate && invoiceDate <= today && amount > 0) {
                 collectorBillingRecords.push({
                     invoiceId,
                     invoiceNo: invoiceNo || invoiceId,
