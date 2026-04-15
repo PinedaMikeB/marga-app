@@ -40,6 +40,7 @@ let lastPayload = null;
 let renderedMatrixRows = [];
 let searchReloadTimer = null;
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
+const DEFAULT_SPOILAGE_RATE = 0.02;
 const CONTRACT_CATEGORY_META = {
     1: { code: 'RTP', label: 'Rental Per Page' },
     2: { code: 'RTF', label: 'Rental Fixed Rate' },
@@ -611,6 +612,36 @@ function collectPriorReadingGroups(row, monthKey) {
         });
 }
 
+function collectPriorInvoiceRefs(row, monthKey) {
+    return Object.entries(row?.months || {})
+        .filter(([key]) => key <= monthKey)
+        .flatMap(([key, cell]) => {
+            const invoiceRefs = [];
+            (Array.isArray(cell?.invoice_groups) ? cell.invoice_groups : []).forEach((group) => {
+                const invoiceRef = String(group?.invoice_no || group?.invoice_ref || group?.invoice_id || '').trim();
+                if (invoiceRef) {
+                    invoiceRefs.push({
+                        invoice_ref: invoiceRef,
+                        month_key: key,
+                        month_label: cell.month_label_short || formatMonthLabel(key, key)
+                    });
+                }
+            });
+            (Array.isArray(cell?.reading_groups) ? cell.reading_groups : []).forEach((group) => {
+                const invoiceRef = String(group?.invoice_num || '').trim();
+                if (invoiceRef) {
+                    invoiceRefs.push({
+                        invoice_ref: invoiceRef,
+                        month_key: key,
+                        month_label: cell.month_label_short || formatMonthLabel(key, key)
+                    });
+                }
+            });
+            return invoiceRefs;
+        })
+        .sort((left, right) => String(right.month_key || '').localeCompare(String(left.month_key || '')));
+}
+
 function buildBillingCalculationContext(row, monthKey) {
     if (!row || row.is_summary_row) return null;
     const profile = getRowBillingProfile(row);
@@ -618,6 +649,7 @@ function buildBillingCalculationContext(row, monthKey) {
 
     const targetCell = row.months?.[monthKey] || {};
     const latestPriorGroup = collectPriorReadingGroups(row, monthKey)[0] || null;
+    const latestInvoice = collectPriorInvoiceRefs(row, monthKey)[0] || null;
     const previousMeter = latestPriorGroup
         ? Number(latestPriorGroup.present_meter || latestPriorGroup.previous_meter || 0) || 0
         : 0;
@@ -628,14 +660,16 @@ function buildBillingCalculationContext(row, monthKey) {
         monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
         profile,
         latestPriorGroup,
+        latestInvoice,
         previousMeter,
         presentMeter: previousMeter,
+        spoilageRate: DEFAULT_SPOILAGE_RATE,
         isReading: isReadingPricing(profile),
         isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0
     };
 }
 
-function calculateBillingEstimate(context, previousMeterValue, presentMeterValue) {
+function calculateBillingEstimate(context, previousMeterValue, presentMeterValue, spoilageRateValue = context?.spoilageRate) {
     const profile = context?.profile || {};
     const previousMeter = Math.max(0, Number(previousMeterValue || 0) || 0);
     const presentMeter = Math.max(0, Number(presentMeterValue || 0) || 0);
@@ -643,7 +677,11 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
     const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
     const monthlyRate = Number(profile.monthly_rate || 0) || 0;
     const withVat = Boolean(profile.with_vat);
-    let pages = 0;
+    const spoilageRate = Math.max(0, Number(spoilageRateValue || 0) || 0);
+    let rawPages = 0;
+    let spoilagePages = 0;
+    let netPages = 0;
+    let billedPages = 0;
     let amountDue = 0;
     let formula = 'not_available';
     let warning = '';
@@ -652,10 +690,15 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
         if (presentMeter < previousMeter) {
             warning = 'Present meter cannot be lower than the previous meter.';
         } else {
-            pages = presentMeter - previousMeter;
-            if (pages > 0 && pageRate > 0) {
-                amountDue = pages * pageRate;
-                formula = 'pages_x_rate';
+            rawPages = presentMeter - previousMeter;
+            spoilagePages = Math.round(rawPages * spoilageRate);
+            netPages = Math.max(0, rawPages - spoilagePages);
+            billedPages = monthlyQuota > 0 ? Math.max(netPages, monthlyQuota) : netPages;
+            if (billedPages > 0 && pageRate > 0) {
+                amountDue = billedPages * pageRate;
+                formula = monthlyQuota > 0
+                    ? 'quota_floor_after_spoilage'
+                    : 'net_pages_after_spoilage_x_rate';
             } else if (monthlyRate > 0) {
                 amountDue = monthlyRate;
                 formula = 'monthly_rate_fallback';
@@ -675,11 +718,16 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
     return {
         previousMeter,
         presentMeter,
-        pages,
+        rawPages,
+        spoilageRate,
+        spoilagePages,
+        netPages,
+        billedPages,
+        pages: billedPages,
         amountDue,
         netAmount,
         vatAmount,
-        quotaVariance: monthlyQuota > 0 ? pages - monthlyQuota : null,
+        quotaVariance: monthlyQuota > 0 ? netPages - monthlyQuota : null,
         formula,
         warning
     };
@@ -700,6 +748,7 @@ function openBillingCalcModal(rowId, monthKey) {
 
     const profile = context.profile;
     const latest = context.latestPriorGroup;
+    const latestInvoice = context.latestInvoice;
     const estimate = calculateBillingEstimate(context, context.previousMeter, context.presentMeter);
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
@@ -716,9 +765,23 @@ function openBillingCalcModal(rowId, monthKey) {
             <div class="calc-note">
                 ${
                     context.isReading
-                        ? `This estimate follows the current dashboard formula: pages x page rate, with monthly rate fallback when page rate is not available. Quota is shown as contract reference.`
+                        ? `This estimate now applies spoilage first, then charges the contract quota when net pages fall below quota. If no page-rate computation can run, the monthly rate is used as fallback.`
                         : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
                 }
+            </div>
+            <div class="calc-form-grid">
+                <div class="calc-field">
+                    <label for="calcInvoiceInput">Invoice</label>
+                    <input type="text" id="calcInvoiceInput" value="${escapeHtml(latestInvoice?.invoice_ref || '')}" placeholder="Invoice number">
+                </div>
+                <div class="calc-field">
+                    <label for="calcBillingMonthInput">Billing Month</label>
+                    <input type="text" id="calcBillingMonthInput" readonly value="${escapeHtml(context.monthLabel)}">
+                </div>
+                <div class="calc-field">
+                    <label for="calcSpoilageInput">Spoilage %</label>
+                    <input type="number" id="calcSpoilageInput" min="0" step="0.01" value="${escapeHtml(String((context.spoilageRate || 0) * 100))}">
+                </div>
             </div>
             <div class="detail-summary-grid">
                 <article class="detail-summary-card">
@@ -764,8 +827,20 @@ function openBillingCalcModal(rowId, monthKey) {
                     <span class="value" id="calcAmountValue">${escapeHtml(formatAmount(estimate.amountDue))}</span>
                 </article>
                 <article class="detail-summary-card">
+                    <span class="label">Raw Pages</span>
+                    <span class="value" id="calcRawPagesValue">${escapeHtml(formatCount(estimate.rawPages || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Spoilage Pages</span>
+                    <span class="value" id="calcSpoilagePagesValue">${escapeHtml(formatCount(estimate.spoilagePages || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
                     <span class="label">Net Pages</span>
-                    <span class="value" id="calcPagesValue">${escapeHtml(formatCount(estimate.pages || 0))}</span>
+                    <span class="value" id="calcNetPagesValue">${escapeHtml(formatCount(estimate.netPages || 0))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Billed Pages</span>
+                    <span class="value" id="calcBilledPagesValue">${escapeHtml(formatCount(estimate.billedPages || 0))}</span>
                 </article>
                 <article class="detail-summary-card">
                     <span class="label">Net Amount</span>
@@ -792,11 +867,19 @@ function openBillingCalcModal(rowId, monthKey) {
                     </div>
                 </div>
                 <div class="detail-list-block">
+                    <span class="detail-list-label">Computation Flow</span>
+                    <div class="detail-list-value" id="calcFlowValue">${escapeHtml(
+                        context.isReading
+                            ? `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(estimate.spoilagePages || 0)} spoilage = ${formatCount(estimate.netPages || 0)} net, then quota floor ${formatCount(profile.monthly_quota || 0)} gives ${formatCount(estimate.billedPages || 0)} billed pages.`
+                            : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`
+                    )}</div>
+                </div>
+                <div class="detail-list-block">
                     <span class="detail-list-label">Quota Reference</span>
                     <div class="detail-list-value" id="calcQuotaValue">${escapeHtml(
                         estimate.quotaVariance === null
                             ? 'No quota saved on this contract.'
-                            : `${formatCount(profile.monthly_quota || 0)} quota • ${estimate.quotaVariance >= 0 ? '+' : ''}${formatCount(estimate.quotaVariance)} vs usage`
+                            : `${formatCount(profile.monthly_quota || 0)} quota floor • ${estimate.quotaVariance >= 0 ? '+' : ''}${formatCount(estimate.quotaVariance)} vs net pages`
                     )}</div>
                 </div>
                 <div class="calc-warning" id="calcWarningValue">${escapeHtml(estimate.warning || '')}</div>
@@ -806,35 +889,50 @@ function openBillingCalcModal(rowId, monthKey) {
 
     const previousInput = document.getElementById('calcPreviousMeterInput');
     const presentInput = document.getElementById('calcPresentMeterInput');
+    const spoilageInput = document.getElementById('calcSpoilageInput');
     const amountValue = document.getElementById('calcAmountValue');
-    const pagesValue = document.getElementById('calcPagesValue');
+    const rawPagesValue = document.getElementById('calcRawPagesValue');
+    const spoilagePagesValue = document.getElementById('calcSpoilagePagesValue');
+    const netPagesValue = document.getElementById('calcNetPagesValue');
+    const billedPagesValue = document.getElementById('calcBilledPagesValue');
     const netValue = document.getElementById('calcNetValue');
     const vatValue = document.getElementById('calcVatValue');
     const formulaValue = document.getElementById('calcFormulaValue');
     const quotaValue = document.getElementById('calcQuotaValue');
+    const flowValue = document.getElementById('calcFlowValue');
     const warningValue = document.getElementById('calcWarningValue');
 
     const recompute = () => {
         const next = calculateBillingEstimate(
             context,
             previousInput ? previousInput.value : context.previousMeter,
-            presentInput ? presentInput.value : context.presentMeter
+            presentInput ? presentInput.value : context.presentMeter,
+            spoilageInput ? Number(spoilageInput.value || 0) / 100 : context.spoilageRate
         );
         if (amountValue) amountValue.textContent = formatAmount(next.amountDue || 0);
-        if (pagesValue) pagesValue.textContent = formatCount(next.pages || 0);
+        if (rawPagesValue) rawPagesValue.textContent = formatCount(next.rawPages || 0);
+        if (spoilagePagesValue) spoilagePagesValue.textContent = formatCount(next.spoilagePages || 0);
+        if (netPagesValue) netPagesValue.textContent = formatCount(next.netPages || 0);
+        if (billedPagesValue) billedPagesValue.textContent = formatCount(next.billedPages || 0);
         if (netValue) netValue.textContent = formatAmount(next.netAmount || 0);
         if (vatValue) vatValue.textContent = formatAmount(next.vatAmount || 0);
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
             quotaValue.textContent = next.quotaVariance === null
                 ? 'No quota saved on this contract.'
-                : `${formatCount(profile.monthly_quota || 0)} quota • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs usage`;
+                : `${formatCount(profile.monthly_quota || 0)} quota floor • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs net pages`;
+        }
+        if (flowValue) {
+            flowValue.textContent = context.isReading
+                ? `${formatCount(next.rawPages || 0)} raw - ${formatCount(next.spoilagePages || 0)} spoilage = ${formatCount(next.netPages || 0)} net, then quota floor ${formatCount(profile.monthly_quota || 0)} gives ${formatCount(next.billedPages || 0)} billed pages.`
+                : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
         }
         if (warningValue) warningValue.textContent = next.warning || '';
     };
 
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
+    spoilageInput?.addEventListener('input', recompute);
     els.billingCalcModal.classList.remove('hidden');
 }
 
