@@ -596,6 +596,29 @@ async function deleteBillingRecord({ row, monthKey, invoiceNo = '' }) {
     return { deletedCount: matchingDocs.length };
 }
 
+function showBillingSaveResult({ type = 'info', title = '', message = '' } = {}) {
+    document.getElementById('billingSaveResultOverlay')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'billingSaveResultOverlay';
+    overlay.className = `billing-save-result-overlay ${type}`;
+    overlay.innerHTML = `
+        <section class="billing-save-result-card" role="dialog" aria-modal="true" aria-live="assertive" aria-label="${escapeHtml(title || 'Billing save result')}">
+            <button class="billing-save-result-close" type="button" aria-label="Close save message">x</button>
+            <div class="billing-save-result-kicker">${escapeHtml(type === 'success' ? 'Saved' : (type === 'error' ? 'Error' : 'Billing'))}</div>
+            <div class="billing-save-result-title">${escapeHtml(title || 'Billing Update')}</div>
+            <div class="billing-save-result-message">${escapeHtml(message || '')}</div>
+        </section>
+    `;
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) close();
+    });
+    overlay.querySelector('.billing-save-result-close')?.addEventListener('click', close);
+    document.body.appendChild(overlay);
+}
+
 function setRtpPrintPayload(payload) {
     currentRtpPrintPayload = payload || null;
     els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
@@ -2488,17 +2511,33 @@ async function openBillingCalcModal(rowId, monthKey) {
                     : `Billing ${currentSnapshot.invoiceNo} saved to ${savedMonthLabel}.`,
                 'success'
             );
+            showBillingSaveResult({
+                type: 'success',
+                title: result.queued ? 'Billing Queued' : 'Billing Saved',
+                message: result.queued
+                    ? `Invoice ${currentSnapshot.invoiceNo} was queued. Print RTP is unlocked from this saved form while the app syncs.`
+                    : `Invoice ${currentSnapshot.invoiceNo} was saved for ${savedMonthLabel}. Print RTP is ready.`
+            });
             if (!result.queued) {
-                await loadDashboard({ forceRefresh: true });
-                if (requestToken !== billingCalcRequestToken) return;
-                await openBillingCalcModal(rowId, monthKey);
-                return;
+                loadDashboard({ forceRefresh: true }).catch((error) => {
+                    console.warn('Unable to refresh billing dashboard after save.', error);
+                    showBillingSaveResult({
+                        type: 'error',
+                        title: 'Saved, Refresh Failed',
+                        message: `Invoice ${currentSnapshot.invoiceNo} saved, but the billing grid did not refresh. Reload the dashboard to see the Apr 26 cell.`
+                    });
+                });
             }
         } catch (error) {
             workflowError = String(error?.message || 'Unable to save billing.');
             invoiceInput?.classList.add('input-error');
             saveStatus?.classList.add('error');
             if (inlinePrintHint) inlinePrintHint.classList.add('error');
+            showBillingSaveResult({
+                type: 'error',
+                title: 'Billing Not Saved',
+                message: workflowError
+            });
             MargaUtils.showToast(workflowError, 'error');
         } finally {
             saveBillingBtn.disabled = false;
