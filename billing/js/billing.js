@@ -515,10 +515,10 @@ function buildRtpSheetFieldsHtml(preview) {
 
 const RTP_PREVIEW_MM_PX = 1.8;
 const RTP_PRINT_SECTION_LAYOUT = {
-    header: { label: 'Header', subtitle: 'Registered name, TIN, address', xMm: 18, yMm: 26 },
-    description: { label: 'Service Block', subtitle: 'Item description and service details', xMm: 18, yMm: 68 },
-    meta: { label: 'Date / Terms', subtitle: 'Date, code, month, RTP tag', xMm: 205, yMm: 26 },
-    totals: { label: 'Totals', subtitle: 'Total sales, VAT, net, due', xMm: 211, yMm: 128 }
+    header: { label: 'Header', subtitle: 'Registered name, TIN, address', xMm: 18, yMm: 11 },
+    description: { label: 'Service Block', subtitle: 'Item description and service details', xMm: 18, yMm: 42 },
+    meta: { label: 'Date / Terms', subtitle: 'Date, code, month, RTP tag', xMm: 204, yMm: 11 },
+    totals: { label: 'Totals', subtitle: 'Total sales, VAT, net, due', xMm: 212, yMm: 112 }
 };
 
 const RTP_PRINT_CALIBRATION = {
@@ -778,12 +778,22 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 17, widthMm: 150 }, mode)}">${escapeHtml(preview?.address || 'N/A')}</div>
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('description', mode)}">
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 175 }, mode)}">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 10, widthMm: 175 }, mode)}">${escapeHtml(preview?.printerModel || 'N/A')}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 86, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 146, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingTo || 'N/A')}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 95, yMm: 32, widthMm: 26, textAlign: 'center' }, mode)}">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 15, yMm: 41, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 58 }, mode)}"><strong>Business Style :</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 60, yMm: 0, widthMm: 118 }, mode)}">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
+
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 10, widthMm: 58 }, mode)}"><strong>Printer Model</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 60, yMm: 10, widthMm: 118 }, mode)}">${escapeHtml(preview?.printerModel || 'N/A')}</div>
+
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 21, widthMm: 88 }, mode)}"><strong>Printer Rental Billing for :</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 90, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingFrom || 'N/A')}</div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 128, yMm: 21, widthMm: 10, textAlign: 'center' }, mode)}"><strong>to</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 142, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingTo || 'N/A')}</div>
+
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Total Pages consumed :</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 32, widthMm: 24 }, mode)}">${escapeHtml(formatCount(preview?.totalPages || 0))}</div>
+
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Rate per Page:</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('meta', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 32 }, mode)}">${escapeHtml(preview?.invoiceDate || '')}</div>
