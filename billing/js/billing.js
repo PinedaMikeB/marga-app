@@ -505,8 +505,8 @@ function buildRtpSheetFieldsHtml(preview) {
 }
 
 const RTP_PRINT_CALIBRATION = {
-    paperWidthIn: 5.5,
-    paperHeightIn: 8.5,
+    paperWidthCm: 20,
+    paperHeightCm: 18,
     scale: 0.54,
     offsetXmm: 1.5,
     offsetYmm: 18
@@ -516,12 +516,14 @@ const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
 let currentRtpPrintCalibration = loadRtpPrintCalibration();
 
 function normalizeRtpPrintCalibration(value = {}) {
+    const paperWidthCm = Number(value?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
+    const paperHeightCm = Number(value?.paperHeightCm ?? RTP_PRINT_CALIBRATION.paperHeightCm);
     const scale = Number(value?.scale ?? RTP_PRINT_CALIBRATION.scale);
     const offsetXmm = Number(value?.offsetXmm ?? RTP_PRINT_CALIBRATION.offsetXmm);
     const offsetYmm = Number(value?.offsetYmm ?? RTP_PRINT_CALIBRATION.offsetYmm);
     return {
-        paperWidthIn: RTP_PRINT_CALIBRATION.paperWidthIn,
-        paperHeightIn: RTP_PRINT_CALIBRATION.paperHeightIn,
+        paperWidthCm: Number.isFinite(paperWidthCm) ? Math.max(10, Math.min(40, paperWidthCm)) : RTP_PRINT_CALIBRATION.paperWidthCm,
+        paperHeightCm: Number.isFinite(paperHeightCm) ? Math.max(10, Math.min(40, paperHeightCm)) : RTP_PRINT_CALIBRATION.paperHeightCm,
         scale: Number.isFinite(scale) ? Math.max(0.35, Math.min(0.9, scale)) : RTP_PRINT_CALIBRATION.scale,
         offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-40, Math.min(40, offsetXmm)) : RTP_PRINT_CALIBRATION.offsetXmm,
         offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(80, offsetYmm)) : RTP_PRINT_CALIBRATION.offsetYmm
@@ -555,7 +557,10 @@ function resetRtpPrintCalibration() {
 function buildRtpCalibratedPreviewHtml(preview) {
     return `
         <section class="rtp-calibration-shell" aria-label="RTP print calibration preview">
-            <div class="rtp-calibration-paper">
+            <div
+                class="rtp-calibration-paper"
+                style="aspect-ratio:${currentRtpPrintCalibration.paperWidthCm} / ${currentRtpPrintCalibration.paperHeightCm};"
+            >
                 <div
                     class="rtp-print-sheet rtp-print-sheet-calibrated"
                     style="transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});"
@@ -568,8 +573,8 @@ function buildRtpCalibratedPreviewHtml(preview) {
 }
 
 function buildRtpPrintDocument(preview) {
-    const paperWidth = `${currentRtpPrintCalibration.paperWidthIn}in`;
-    const paperHeight = `${currentRtpPrintCalibration.paperHeightIn}in`;
+    const paperWidth = `${currentRtpPrintCalibration.paperWidthCm}cm`;
+    const paperHeight = `${currentRtpPrintCalibration.paperHeightCm}cm`;
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -595,29 +600,34 @@ function buildRtpPrintDocument(preview) {
             page-break-after: avoid;
         }
         .rtp-preview-shell {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 255mm;
-            transform-origin: top center;
-            transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});
+            position: relative;
+            width: ${paperWidth};
+            height: ${paperHeight};
+            overflow: hidden;
         }
         .rtp-preview-note {
             display: none;
         }
         .rtp-preview-paper {
+            position: relative;
+            width: 100%;
+            height: 100%;
             padding: 0;
             border: 0;
             background: transparent;
         }
         .rtp-print-sheet {
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 255mm;
             height: 190mm;
             color: #111827;
             font-size: 4.6mm;
             font-weight: 600;
             line-height: 1.18;
+            transform-origin: top left;
+            transform: translate(${currentRtpPrintCalibration.offsetXmm}mm, ${currentRtpPrintCalibration.offsetYmm}mm) scale(${currentRtpPrintCalibration.scale});
         }
         .rtp-field { position: absolute; white-space: pre-wrap; }
         .rtp-customer-name { top: 26mm; left: 18mm; width: 150mm; font-weight: 700; }
@@ -1299,6 +1309,14 @@ async function openBillingCalcModal(rowId, monthKey) {
                             </div>
                             <div class="calc-print-calibration">
                                 <div class="calc-field">
+                                    <label for="calcPrintPaperWidthInput">Paper Width (cm)</label>
+                                    <input type="number" id="calcPrintPaperWidthInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperWidthCm))}">
+                                </div>
+                                <div class="calc-field">
+                                    <label for="calcPrintPaperHeightInput">Paper Height (cm)</label>
+                                    <input type="number" id="calcPrintPaperHeightInput" step="0.1" min="10" max="40" value="${escapeHtml(String(currentRtpPrintCalibration.paperHeightCm))}">
+                                </div>
+                                <div class="calc-field">
                                     <label for="calcPrintOffsetXInput">X Offset (mm)</label>
                                     <input type="number" id="calcPrintOffsetXInput" step="0.5" value="${escapeHtml(String(currentRtpPrintCalibration.offsetXmm))}">
                                 </div>
@@ -1456,6 +1474,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     const warningValue = document.getElementById('calcWarningValue');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
+    const paperWidthInput = document.getElementById('calcPrintPaperWidthInput');
+    const paperHeightInput = document.getElementById('calcPrintPaperHeightInput');
     const offsetXInput = document.getElementById('calcPrintOffsetXInput');
     const offsetYInput = document.getElementById('calcPrintOffsetYInput');
     const scaleInput = document.getElementById('calcPrintScaleInput');
@@ -1507,6 +1527,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     };
 
     const syncCalibrationInputs = (calibration) => {
+        if (paperWidthInput) paperWidthInput.value = String(calibration.paperWidthCm);
+        if (paperHeightInput) paperHeightInput.value = String(calibration.paperHeightCm);
         if (offsetXInput) offsetXInput.value = String(calibration.offsetXmm);
         if (offsetYInput) offsetYInput.value = String(calibration.offsetYmm);
         if (scaleInput) scaleInput.value = String(calibration.scale);
@@ -1514,6 +1536,8 @@ async function openBillingCalcModal(rowId, monthKey) {
 
     const updateCalibration = () => {
         const calibration = saveRtpPrintCalibration({
+            paperWidthCm: paperWidthInput ? Number(paperWidthInput.value || 0) : currentRtpPrintCalibration.paperWidthCm,
+            paperHeightCm: paperHeightInput ? Number(paperHeightInput.value || 0) : currentRtpPrintCalibration.paperHeightCm,
             offsetXmm: offsetXInput ? Number(offsetXInput.value || 0) : currentRtpPrintCalibration.offsetXmm,
             offsetYmm: offsetYInput ? Number(offsetYInput.value || 0) : currentRtpPrintCalibration.offsetYmm,
             scale: scaleInput ? Number(scaleInput.value || 0) : currentRtpPrintCalibration.scale
@@ -1555,6 +1579,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
     spoilageInput?.addEventListener('input', recompute);
+    paperWidthInput?.addEventListener('input', updateCalibration);
+    paperHeightInput?.addEventListener('input', updateCalibration);
     offsetXInput?.addEventListener('input', updateCalibration);
     offsetYInput?.addEventListener('input', updateCalibration);
     scaleInput?.addEventListener('input', updateCalibration);
