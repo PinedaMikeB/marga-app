@@ -1147,6 +1147,8 @@ async function openNewRequestModal() {
     const companySelect = document.getElementById('newReqCompany');
     const branchSearch = document.getElementById('newReqBranchSearch');
     const branchSelect = document.getElementById('newReqBranch');
+    const machineSelect = document.getElementById('newReqMachine');
+    const machineMeta = document.getElementById('newReqMachineMeta');
     const troubleSelect = document.getElementById('newReqTrouble');
     const assigneeSelect = document.getElementById('newReqAssignee');
     const callerInput = document.getElementById('newReqCaller');
@@ -1156,6 +1158,8 @@ async function openNewRequestModal() {
     companySearch.value = '';
     branchSearch.value = '';
     serialInput.value = '';
+    machineSelect.innerHTML = `<option value="">Select company and branch first...</option>`;
+    machineMeta.textContent = 'Select a company and branch to load active machines.';
     opsState.newRequestMachine = null;
     opsState.newRequestGraphRow = null;
     opsState.newRequestLookupSeq += 1;
@@ -1265,6 +1269,23 @@ async function openNewRequestModal() {
         }
     }
 
+    function getGraphRowsForBranch(branchId) {
+        return opsCache.activeCustomerGraphRows
+            .filter((row) => Number(row.branchId || 0) === Number(branchId || 0))
+            .sort((left, right) => (
+                String(left.serialNumber || '').localeCompare(String(right.serialNumber || ''))
+                || String(left.machineDescription || '').localeCompare(String(right.machineDescription || ''))
+                || Number(left.contractId || 0) - Number(right.contractId || 0)
+            ));
+    }
+
+    function setMachineMeta(message, tone = '') {
+        machineMeta.textContent = message;
+        machineMeta.classList.toggle('is-match', tone === 'match');
+        machineMeta.classList.toggle('is-warning', tone === 'warning');
+        machineMeta.classList.toggle('is-error', tone === 'error');
+    }
+
     function clearMatchedMachineIfManualChange() {
         if (!opsState.newRequestMachine && !opsState.newRequestGraphRow) return;
         opsState.newRequestMachine = null;
@@ -1277,11 +1298,57 @@ async function openNewRequestModal() {
     function applyGraphRowToForm(row) {
         opsState.newRequestGraphRow = row;
         opsState.newRequestMachine = row?.machine || null;
+        if (row?.serialNumber) {
+            serialInput.value = row.serialNumber;
+        }
         companySearch.value = row.companyName;
         renderCompanyOptions(row.companyName, row.companyId);
         branchSearch.value = row.branchName;
         fillBranchesForCompany(row.companyId, row.branchName, row.branchId);
+        renderMachineOptionsForBranch(row.branchId, row.contractId);
         prefillContactForBranch(row.branchId);
+    }
+
+    function applyMachineSelection(row, options = {}) {
+        if (!row) return;
+        opsState.newRequestGraphRow = row;
+        opsState.newRequestMachine = row.machine || null;
+        if (row.serialNumber) {
+            serialInput.value = row.serialNumber;
+        }
+        const machineLabel = row.machineDescription || row.serialNumber || `Machine #${row.machineId}`;
+        setMachineMeta(`Active contract ${row.contractId}: ${machineLabel}.`, 'match');
+        if (options.updateStatus !== false) {
+            setNewReqSerialStatus(`Selected ${row.serialNumber || machineLabel} from ${row.accountName}.`, 'match');
+        }
+    }
+
+    function renderMachineOptionsForBranch(branchId, selectedContractId = '') {
+        const rows = getGraphRowsForBranch(branchId);
+        if (!rows.length) {
+            machineSelect.innerHTML = `<option value="">No active machines found for this branch...</option>`;
+            setMachineMeta('No active machines are linked to this branch in the customer graph.', 'warning');
+            return;
+        }
+
+        machineSelect.innerHTML = `<option value="">Select machine...</option>` + rows
+            .map((row) => {
+                const serial = row.serialNumber || `Machine #${row.machineId || '-'}`;
+                const model = row.machineDescription ? ` - ${row.machineDescription}` : '';
+                const selected = String(row.contractId) === String(selectedContractId) ? 'selected' : '';
+                return `<option value="${row.contractId}" ${selected}>${sanitize(serial)}${sanitize(model)}</option>`;
+            })
+            .join('');
+
+        const selectedRow = rows.find((row) => String(row.contractId) === String(selectedContractId)) || (rows.length === 1 ? rows[0] : rows[0]);
+        if (selectedRow) {
+            machineSelect.value = String(selectedRow.contractId);
+            applyMachineSelection(selectedRow, { updateStatus: Boolean(selectedContractId) });
+        }
+
+        if (rows.length > 1 && !selectedContractId) {
+            setMachineMeta(`${rows.length} active machines found. First machine selected; choose another if needed.`, 'warning');
+        }
     }
 
     async function applySerialLookup() {
@@ -1369,6 +1436,9 @@ async function openNewRequestModal() {
         branchSearch.value = '';
         fillBranchesForCompany(companySelect.value, '');
         branchSelect.value = '';
+        machineSelect.innerHTML = `<option value="">Select branch first...</option>`;
+        setMachineMeta('Select a branch to load active machines.');
+        serialInput.value = '';
     };
 
     branchSearch.oninput = () => fillBranchesForCompany(companySelect.value, branchSearch.value);
@@ -1378,6 +1448,14 @@ async function openNewRequestModal() {
         if (!branchId) return;
         clearMatchedMachineIfManualChange();
         prefillContactForBranch(branchId);
+        renderMachineOptionsForBranch(branchId);
+    };
+
+    machineSelect.onchange = () => {
+        const contractId = Number(machineSelect.value || 0);
+        if (!contractId) return;
+        const row = opsCache.activeCustomerGraphRows.find((entry) => Number(entry.contractId || 0) === contractId) || null;
+        applyMachineSelection(row);
     };
 
     branchSelect.innerHTML = `<option value="">Select active contract branch...</option>`;

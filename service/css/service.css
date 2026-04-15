@@ -2,6 +2,26 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    min-width: 0;
+    overflow-x: hidden;
+}
+
+.main-content {
+    width: calc(100% - 260px);
+    min-width: 0;
+}
+
+.main-header {
+    min-width: 0;
+}
+
+.header-title {
+    min-width: 0;
+}
+
+.header-title h1,
+.header-title p {
+    overflow-wrap: anywhere;
 }
 
 .data-tag {
@@ -16,6 +36,7 @@
 
 .ops-board {
     margin-bottom: 0;
+    min-width: 0;
 }
 
 .ops-controls {
@@ -23,6 +44,8 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .ops-toggle {
@@ -46,6 +69,7 @@
 .ops-purpose-filter,
 .ops-date-input {
     min-width: 160px;
+    max-width: 100%;
     border: 1px solid rgba(187, 212, 237, 0.8);
     border-radius: 10px;
     padding: 0.48rem 0.65rem;
@@ -55,11 +79,20 @@
 }
 
 #opsStaffTable {
-    min-width: 980px;
+    min-width: 900px;
 }
 
 #opsTaskTable {
-    min-width: 1220px;
+    min-width: 1080px;
+}
+
+.ops-summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.ops-table-wrap,
+.table-container {
+    min-width: 0;
 }
 
 #opsStaffPanel {
@@ -133,7 +166,7 @@
     position: fixed;
     inset: 50% auto auto 50%;
     transform: translate(-50%, -50%);
-    width: min(860px, calc(100vw - 2rem));
+    width: min(860px, calc(100vw - 1rem));
     max-height: calc(100vh - 2rem);
     overflow: hidden;
     display: none;
@@ -174,6 +207,7 @@
 .marga-modal-body {
     padding: 1.15rem 1.35rem;
     overflow: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .marga-modal-footer {
@@ -214,6 +248,7 @@
     font-size: 0.9rem;
     color: #1f3657;
     background: rgba(255, 255, 255, 0.88);
+    min-width: 0;
 }
 
 .marga-field input[type="text"]::placeholder {
@@ -313,7 +348,7 @@
 
     .ops-purpose-filter,
     .ops-date-input {
-        flex: 1 1 180px;
+        flex: 1 1 150px;
         min-width: 0;
     }
 
@@ -338,7 +373,31 @@
     }
 }
 
+@media (max-width: 768px) {
+    .main-content {
+        width: 100%;
+    }
+}
+
 @media (max-width: 720px) {
+    .main-header {
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .ops-controls {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .ops-controls .btn,
+    .ops-toggle,
+    .ops-purpose-filter,
+    .ops-date-input {
+        width: 100%;
+        justify-content: center;
+    }
+
     /* Table-to-card transformation for mobile */
     #opsStaffTable thead,
     #opsTaskTable thead,
@@ -414,13 +473,28 @@
     }
 
     .marga-modal {
-        width: calc(100vw - 1.25rem);
-        max-height: calc(100vh - 1.25rem);
-        border-radius: 16px;
+        inset: 0;
+        transform: none;
+        width: 100vw;
+        max-height: 100vh;
+        min-height: 100vh;
+        border-radius: 0;
     }
 
     .marga-form-grid {
         grid-template-columns: 1fr;
+    }
+
+    .marga-modal-header,
+    .marga-modal-body,
+    .marga-modal-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .marga-modal-footer {
+        position: sticky;
+        bottom: 0;
     }
 }
 
