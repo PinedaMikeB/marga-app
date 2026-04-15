@@ -146,6 +146,95 @@
     font-size: 0.94rem;
 }
 
+.invoice-lookup-panel {
+    margin: 1rem 1.25rem 1.25rem;
+    padding: 1rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.invoice-search-block {
+    max-width: 680px;
+}
+
+.invoice-search-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.invoice-search-row input {
+    flex: 1 1 260px;
+}
+
+.invoice-search-results {
+    margin-top: 0.85rem;
+    color: var(--bill-muted);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.invoice-search-count {
+    margin-bottom: 0.65rem;
+    color: var(--bill-ink);
+}
+
+.invoice-search-list {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.invoice-search-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.85rem;
+    align-items: center;
+    padding: 0.8rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.invoice-search-ref,
+.invoice-search-amount {
+    color: var(--bill-ink);
+    font-weight: 900;
+}
+
+.invoice-search-customer {
+    margin-top: 0.18rem;
+    color: var(--bill-ink);
+    font-weight: 800;
+}
+
+.invoice-search-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+}
+
+.invoice-search-meta span {
+    padding: 0.18rem 0.45rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 999px;
+    color: var(--bill-muted);
+    background: rgba(245, 248, 252, 0.92);
+    font-size: 0.76rem;
+}
+
+.invoice-search-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: flex-end;
+}
+
+.invoice-search-empty.error {
+    color: var(--bill-danger);
+}
+
 .matrix-search-meta {
     color: var(--bill-muted);
     font-size: 0.82rem;
@@ -1482,6 +1571,19 @@
 @media (max-width: 768px) {
     .controls-actions {
         flex-direction: column;
+    }
+
+    .invoice-search-card {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .invoice-search-actions {
+        justify-content: stretch;
+    }
+
+    .invoice-search-actions .btn {
+        flex: 1 1 140px;
     }
 
     .billing-sheet {

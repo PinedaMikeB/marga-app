@@ -18,6 +18,9 @@ const els = {
     matrixSearchInput: null,
     matrixSortInput: null,
     matrixSearchMeta: null,
+    invoiceSearchInput: null,
+    invoiceSearchBtn: null,
+    invoiceSearchResults: null,
     rawJson: null,
     invoiceDetailModal: null,
     invoiceDetailTitle: null,
@@ -626,6 +629,112 @@ async function deleteBillingRecord({ row, monthKey, invoiceNo = '' }) {
     }
 
     return { deletedCount: matchingDocs.length };
+}
+
+function getInvoiceSearchRows() {
+    const rows = [
+        ...(Array.isArray(renderedMatrixRows) ? renderedMatrixRows : []),
+        ...(Array.isArray(lastPayload?.month_matrix?.rows) ? lastPayload.month_matrix.rows : [])
+    ];
+    const byKey = new Map();
+    rows.forEach((row) => {
+        if (!row || row.is_summary_row) return;
+        const key = String(row.row_id || row.contractmain_id || row.machine_id || row.company_id || '').trim();
+        if (!key || byKey.has(key)) return;
+        byKey.set(key, row);
+    });
+    return Array.from(byKey.values());
+}
+
+function findInvoiceSearchRow(doc) {
+    const rows = getInvoiceSearchRows();
+    const contractId = String(doc?.contractmain_id || '').trim();
+    const machineId = String(doc?.machine_id || '').trim();
+    const companyId = String(doc?.company_id || '').trim();
+    const branchId = String(doc?.branch_id || '').trim();
+
+    return rows.find((row) => contractId && String(row.contractmain_id || '').trim() === contractId)
+        || rows.find((row) => machineId && String(row.machine_id || '').trim() === machineId)
+        || rows.find((row) => (
+            companyId
+            && branchId
+            && String(row.company_id || '').trim() === companyId
+            && String(row.branch_id || '').trim() === branchId
+        ))
+        || rows.find((row) => companyId && String(row.company_id || '').trim() === companyId)
+        || null;
+}
+
+function renderInvoiceSearchResults(docs = [], invoiceNo = '') {
+    if (!els.invoiceSearchResults) return;
+    if (!invoiceNo) {
+        els.invoiceSearchResults.innerHTML = 'Search an invoice number to trace or delete a billing transaction.';
+        return;
+    }
+    if (!docs.length) {
+        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">No Firebase billing transaction found for invoice ${escapeHtml(invoiceNo)}.</div>`;
+        return;
+    }
+
+    els.invoiceSearchResults.innerHTML = `
+        <div class="invoice-search-count">${escapeHtml(formatCount(docs.length))} transaction${docs.length === 1 ? '' : 's'} found for invoice ${escapeHtml(invoiceNo)}.</div>
+        <div class="invoice-search-list">
+            ${docs.map((doc) => {
+                const row = findInvoiceSearchRow(doc);
+                const monthKey = getBillingDocMonthKey(doc);
+                const rowId = row ? String(row.row_id || row.company_id || '') : '';
+                const customerLabel = row
+                    ? `${row.display_name || row.account_name || row.company_name || 'Loaded customer'}${row.branch_name ? ` • ${row.branch_name}` : ''}`
+                    : `Company ${doc.company_id || 'N/A'} • Branch ${doc.branch_id || 'N/A'}`;
+                const machineLabel = row?.machine_label || row?.serial_number || doc.serial_number || doc.machine_id || 'N/A';
+                const canOpen = Boolean(rowId && monthKey);
+                return `
+                    <article class="invoice-search-card">
+                        <div class="invoice-search-main">
+                            <div class="invoice-search-ref">Invoice ${escapeHtml(getBillingDocInvoiceRef(doc) || invoiceNo)}</div>
+                            <div class="invoice-search-customer">${escapeHtml(customerLabel)}</div>
+                            <div class="invoice-search-meta">
+                                <span>${escapeHtml(formatMonthLabel(monthKey, monthKey || `${doc.month || ''} ${doc.year || ''}`.trim() || 'No month'))}</span>
+                                <span>${escapeHtml(doc.category_code || 'N/A')}</span>
+                                <span>Contract ${escapeHtml(doc.contractmain_id || 'N/A')}</span>
+                                <span>Machine ${escapeHtml(machineLabel)}</span>
+                                <span>Doc ${escapeHtml(doc._docId || 'N/A')}</span>
+                            </div>
+                        </div>
+                        <div class="invoice-search-amount">${escapeHtml(formatAmount(doc.totalamount || doc.amount || 0))}</div>
+                        <div class="invoice-search-actions">
+                            <button class="btn btn-secondary" type="button" data-invoice-search-action="open" data-row-id="${escapeHtml(rowId)}" data-month-key="${escapeHtml(monthKey)}"${canOpen ? '' : ' disabled'}>${canOpen ? 'Open Billing' : 'Load Row To Open'}</button>
+                            <button class="btn btn-danger" type="button" data-invoice-search-action="delete" data-doc-id="${escapeHtml(doc._docId || '')}" data-invoice-no="${escapeHtml(getBillingDocInvoiceRef(doc) || invoiceNo)}">Delete</button>
+                        </div>
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+async function searchInvoiceNumber() {
+    const invoiceNo = normalizeInvoiceNumber(els.invoiceSearchInput?.value || '');
+    if (!invoiceNo) {
+        renderInvoiceSearchResults([], '');
+        MargaUtils.showToast('Enter an invoice number to search.', 'error');
+        return;
+    }
+    if (els.invoiceSearchBtn) els.invoiceSearchBtn.disabled = true;
+    if (els.invoiceSearchResults) {
+        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">Searching Firebase for invoice ${escapeHtml(invoiceNo)}...</div>`;
+    }
+    try {
+        const docs = await queryBillingDocsByInvoice(invoiceNo);
+        renderInvoiceSearchResults(docs, invoiceNo);
+    } catch (error) {
+        console.error('Unable to search invoice number.', error);
+        if (els.invoiceSearchResults) {
+            els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty error">Unable to search invoice ${escapeHtml(invoiceNo)}. ${escapeHtml(error.message || '')}</div>`;
+        }
+    } finally {
+        if (els.invoiceSearchBtn) els.invoiceSearchBtn.disabled = false;
+    }
 }
 
 function showBillingSaveResult({ type = 'info', title = '', message = '' } = {}) {
@@ -3505,6 +3614,50 @@ function bindEvents() {
     els.matrixSortInput?.addEventListener('change', () => {
         localStorage.setItem(MATRIX_SORT_STORAGE_KEY, getMatrixSortValue());
         if (lastPayload) renderMatrixTable(lastPayload);
+    });
+    els.invoiceSearchBtn?.addEventListener('click', searchInvoiceNumber);
+    els.invoiceSearchInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            searchInvoiceNumber();
+        }
+    });
+    els.invoiceSearchResults?.addEventListener('click', async (event) => {
+        const actionButton = event.target.closest('[data-invoice-search-action]');
+        if (!actionButton) return;
+        const action = actionButton.dataset.invoiceSearchAction;
+        if (action === 'open') {
+            const rowId = actionButton.dataset.rowId;
+            const monthKey = actionButton.dataset.monthKey;
+            if (rowId && monthKey) openBillingCalcModal(rowId, monthKey);
+            return;
+        }
+        if (action !== 'delete') return;
+
+        const docId = String(actionButton.dataset.docId || '').trim();
+        const invoiceNo = String(actionButton.dataset.invoiceNo || '').trim();
+        if (!docId) return;
+        const confirmed = window.confirm(`Delete invoice ${invoiceNo || docId}? This makes the invoice number available again.`);
+        if (!confirmed) return;
+        actionButton.disabled = true;
+        try {
+            await deleteFirestoreDocument('tbl_billing', docId);
+            showBillingSaveResult({
+                type: 'success',
+                title: 'Invoice Deleted',
+                message: `Invoice ${invoiceNo || docId} was deleted from Firebase and can be reused.`
+            });
+            await searchInvoiceNumber();
+            if (lastPayload) await loadDashboard();
+        } catch (error) {
+            console.error('Unable to delete invoice from lookup.', error);
+            showBillingSaveResult({
+                type: 'error',
+                title: 'Delete Failed',
+                message: error.message || `Invoice ${invoiceNo || docId} could not be deleted.`
+            });
+            actionButton.disabled = false;
+        }
     });
     els.matrixTableWrap?.addEventListener('click', (event) => {
         const calcTrigger = event.target.closest('.calc-link');
