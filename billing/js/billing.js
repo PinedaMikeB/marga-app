@@ -21,6 +21,8 @@ const els = {
     invoiceSearchInput: null,
     invoiceSearchBtn: null,
     invoiceSearchResults: null,
+    billingExclusionsRefreshBtn: null,
+    billingExclusionsList: null,
     rawJson: null,
     invoiceDetailModal: null,
     invoiceDetailTitle: null,
@@ -51,8 +53,17 @@ let invoicePreviewReferencePromise = null;
 let currentRtpPrintPayload = null;
 const priorMachineReadingCache = new Map();
 const priorBillingReadingCache = new Map();
+let billingExclusionCache = [];
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
+const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
+const BILLING_EXCLUSION_REASONS = [
+    'No delivery happened',
+    'Branch/customer inactive',
+    'Machine transferred',
+    'Duplicate/wrong contract row',
+    'Other'
+];
 const CONTRACT_CATEGORY_META = {
     1: { code: 'RTP', label: 'Rental Per Page' },
     2: { code: 'RTF', label: 'Rental Fixed Rate' },
@@ -597,6 +608,160 @@ async function queryBillingDocsByInvoice(invoiceNo) {
         });
     }
     return Array.from(byDocId.values());
+}
+
+function slugFirestoreId(value) {
+    return String(value || 'row')
+        .trim()
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 140) || 'row';
+}
+
+function getBillingRowExclusionKeys(row) {
+    const keys = [];
+    const contractId = String(row?.contractmain_id || '').trim();
+    const companyId = String(row?.company_id || '').trim();
+    const branchId = String(row?.branch_id || '').trim();
+    const machineId = String(row?.machine_id || '').trim();
+    const rowId = String(row?.row_id || '').trim();
+    if (contractId) keys.push(`contract:${contractId}`);
+    if (companyId && branchId && machineId) keys.push(`company_branch_machine:${companyId}:${branchId}:${machineId}`);
+    if (companyId && branchId && contractId) keys.push(`company_branch_contract:${companyId}:${branchId}:${contractId}`);
+    if (rowId) keys.push(`row:${rowId}`);
+    return uniqueNonBlankValues(keys);
+}
+
+function getPrimaryBillingExclusionKey(row) {
+    return getBillingRowExclusionKeys(row)[0] || `row:${String(row?.row_id || row?.company_id || Date.now()).trim()}`;
+}
+
+function getBillingExclusionDocId(row) {
+    return `billing_exclusion_${slugFirestoreId(getPrimaryBillingExclusionKey(row))}`;
+}
+
+function isActiveBillingExclusion(exclusion) {
+    return exclusion && exclusion.active !== false && exclusion.hide_from_billing_list !== false;
+}
+
+function isRowBillingExcluded(row, exclusions = billingExclusionCache) {
+    const keys = new Set(getBillingRowExclusionKeys(row));
+    if (!keys.size) return false;
+    return (Array.isArray(exclusions) ? exclusions : []).some((exclusion) => (
+        isActiveBillingExclusion(exclusion)
+        && keys.has(String(exclusion.exclusion_key || '').trim())
+    ));
+}
+
+function applyBillingExclusionsToPayload(payload, exclusions = billingExclusionCache) {
+    const rows = payload?.month_matrix?.rows;
+    if (!Array.isArray(rows) || !rows.length) return payload;
+    const visibleRows = rows.filter((row) => !isRowBillingExcluded(row, exclusions));
+    if (visibleRows.length === rows.length) return payload;
+    const months = Array.isArray(payload.month_matrix.months) ? payload.month_matrix.months : [];
+    const totals = Array.isArray(payload.month_matrix.totals) ? payload.month_matrix.totals : [];
+    const visibleTotals = totals.map((total) => {
+        const monthKey = total.month_key;
+        if (!months.includes(monthKey)) return total;
+        return {
+            ...total,
+            amount_total: Number(visibleRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0).toFixed(2)),
+            display_amount_total: Number(visibleRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.display_amount_total || 0), 0).toFixed(2))
+        };
+    });
+    return {
+        ...payload,
+        billing_exclusions: {
+            active_count: (Array.isArray(exclusions) ? exclusions : []).filter(isActiveBillingExclusion).length,
+            hidden_loaded_rows: rows.length - visibleRows.length
+        },
+        month_matrix: {
+            ...payload.month_matrix,
+            rows: visibleRows,
+            totals: visibleTotals
+        }
+    };
+}
+
+async function loadBillingExclusions() {
+    const docs = await queryFirestoreEquals(BILLING_EXCLUSIONS_COLLECTION, 'active', true).catch((error) => {
+        console.warn('Unable to load billing exclusions.', error);
+        return [];
+    });
+    return docs.filter((doc) => doc && doc.hide_from_billing_list !== false);
+}
+
+function mergeBillingExclusionCache(doc) {
+    if (!doc?._docId) return;
+    billingExclusionCache = [
+        doc,
+        ...billingExclusionCache.filter((entry) => entry?._docId !== doc._docId)
+    ];
+}
+
+function removeBillingExclusionFromCache(docId) {
+    billingExclusionCache = billingExclusionCache.filter((entry) => entry?._docId !== docId);
+}
+
+function buildBillingExclusionFields(row, form = {}) {
+    const now = new Date();
+    const reason = BILLING_EXCLUSION_REASONS.includes(form.reason) ? form.reason : 'Other';
+    const docId = getBillingExclusionDocId(row);
+    const exclusionKey = getPrimaryBillingExclusionKey(row);
+    return {
+        id: docId,
+        exclusion_key: exclusionKey,
+        active: true,
+        hide_from_billing_list: form.hideFromFuture !== false,
+        reason,
+        effective_date: form.effectiveDate || formatIsoDate(now),
+        staff_note: String(form.staffNote || '').trim(),
+        row_id: String(row?.row_id || '').trim(),
+        company_id: String(row?.company_id || '').trim(),
+        company_name: String(row?.company_name || row?.account_name || '').trim(),
+        branch_id: String(row?.branch_id || '').trim(),
+        branch_name: String(row?.branch_name || '').trim(),
+        account_name: String(row?.account_name || '').trim(),
+        machine_id: String(row?.machine_id || '').trim(),
+        machine_label: String(row?.machine_label || '').trim(),
+        serial_number: String(row?.serial_number || '').trim(),
+        contractmain_id: String(row?.contractmain_id || '').trim(),
+        category_code: String(getRowBillingProfile(row)?.category_code || '').trim(),
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+        source_module: 'billing_dashboard'
+    };
+}
+
+async function saveBillingExclusion(row, form = {}) {
+    const docId = getBillingExclusionDocId(row);
+    const fields = buildBillingExclusionFields(row, form);
+    const result = await setFirestoreDocument(BILLING_EXCLUSIONS_COLLECTION, docId, fields, {
+        mode: 'set',
+        label: `Billing exclusion ${fields.branch_name || fields.contractmain_id || docId}`,
+        dedupeKey: `${BILLING_EXCLUSIONS_COLLECTION}:${docId}`
+    });
+    mergeBillingExclusionCache({ _docId: docId, ...fields });
+    return { ...result, docId, fields };
+}
+
+async function restoreBillingExclusion(docId) {
+    const now = new Date();
+    const existing = billingExclusionCache.find((entry) => entry?._docId === docId) || {};
+    const fields = {
+        ...Object.fromEntries(Object.entries(existing).filter(([key]) => key !== '_docId')),
+        active: false,
+        hide_from_billing_list: false,
+        restored_at: now.toISOString(),
+        updated_at: now.toISOString()
+    };
+    const result = await setFirestoreDocument(BILLING_EXCLUSIONS_COLLECTION, docId, fields, {
+        mode: 'set',
+        label: `Restore billing exclusion ${docId}`,
+        dedupeKey: `${BILLING_EXCLUSIONS_COLLECTION}:${docId}:restore`
+    });
+    removeBillingExclusionFromCache(docId);
+    return { ...result, docId, fields };
 }
 
 function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
@@ -3016,6 +3181,15 @@ function buildSummaryBillingRow(row, groupedMachineRows) {
     };
 }
 
+function getBillingExclusionsForContext(row, context) {
+    const companyId = String(row?.company_id || context?.row?.company_id || '').trim();
+    if (!companyId) return billingExclusionCache.filter(isActiveBillingExclusion);
+    return billingExclusionCache
+        .filter(isActiveBillingExclusion)
+        .filter((exclusion) => String(exclusion.company_id || '').trim() === companyId)
+        .sort((left, right) => String(left.branch_name || '').localeCompare(String(right.branch_name || '')));
+}
+
 function buildBillingCalculationContext(row, monthKey) {
     if (!row) return null;
     const summaryGroupedRows = row.is_summary_row ? getGroupedMachineRows(row, monthKey) : [];
@@ -3123,8 +3297,110 @@ function renderBillingModeSummary() {
     `;
 }
 
+function renderBillingExclusionEditor() {
+    return `
+        <section class="calc-panel calc-exclusion-editor hidden" id="calcExclusionEditor">
+            <div class="calc-panel-title">Hide Billing Account</div>
+            <div class="calc-note calc-note-tight">This only hides the row from active Billing. It does not delete the customer, contract, or machine record.</div>
+            <div class="calc-panel-grid calc-contract-grid">
+                <div class="calc-field calc-field-span-2">
+                    <label>Account</label>
+                    <input type="text" id="calcExclusionTargetInput" readonly value="">
+                </div>
+                <div class="calc-field">
+                    <label for="calcExclusionReasonInput">Reason</label>
+                    <select id="calcExclusionReasonInput">
+                        ${BILLING_EXCLUSION_REASONS.map((reason) => `<option value="${escapeHtml(reason)}">${escapeHtml(reason)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="calc-field">
+                    <label for="calcExclusionEffectiveDateInput">Effective Date</label>
+                    <input type="date" id="calcExclusionEffectiveDateInput" value="${escapeHtml(formatIsoDate(new Date()))}">
+                </div>
+                <label class="calc-checkbox-line calc-field-span-2">
+                    <input type="checkbox" id="calcExclusionHideFutureInput" checked>
+                    <span>Hide from future billing lists</span>
+                </label>
+                <div class="calc-field calc-field-span-2">
+                    <label for="calcExclusionNoteInput">Staff Note</label>
+                    <textarea id="calcExclusionNoteInput" rows="3" placeholder="Example: No delivery happened, wrong contract row, or machine transferred."></textarea>
+                </div>
+            </div>
+            <div class="calc-exclusion-actions">
+                <button class="btn btn-danger" type="button" id="calcExclusionSaveBtn">Save Hidden Account</button>
+                <button class="btn btn-secondary" type="button" id="calcExclusionCancelBtn">Cancel</button>
+            </div>
+        </section>
+    `;
+}
+
+function renderSavedBillingExclusions(exclusions = []) {
+    const activeExclusions = (Array.isArray(exclusions) ? exclusions : []).filter(isActiveBillingExclusion);
+    return `
+        <section class="calc-panel calc-exclusion-list">
+            <div class="calc-panel-title">Saved Billing Exclusions</div>
+            <div class="calc-note calc-note-tight">Hidden accounts stay out of active Billing until restored here.</div>
+            ${
+                activeExclusions.length
+                    ? `
+                        <div class="calc-exclusion-items">
+                            ${activeExclusions.map((exclusion) => `
+                                <article class="calc-exclusion-item">
+                                    <div>
+                                        <div class="calc-exclusion-title">${escapeHtml(exclusion.branch_name || exclusion.account_name || exclusion.company_name || 'Hidden account')}</div>
+                                        <div class="calc-exclusion-meta">
+                                            ${escapeHtml([
+                                                exclusion.reason,
+                                                exclusion.effective_date ? `Effective ${exclusion.effective_date}` : '',
+                                                exclusion.contractmain_id ? `Contract ${exclusion.contractmain_id}` : '',
+                                                exclusion.machine_label || exclusion.machine_id || exclusion.serial_number || ''
+                                            ].filter(Boolean).join(' • '))}
+                                        </div>
+                                        ${exclusion.staff_note ? `<div class="calc-exclusion-note">${escapeHtml(exclusion.staff_note)}</div>` : ''}
+                                    </div>
+                                    <button class="btn btn-secondary" type="button" data-calc-exclusion-action="restore" data-doc-id="${escapeHtml(exclusion._docId || '')}">Restore</button>
+                                </article>
+                            `).join('')}
+                        </div>
+                    `
+                    : '<div class="detail-empty">No hidden billing accounts saved for this customer.</div>'
+            }
+        </section>
+    `;
+}
+
+function renderDashboardBillingExclusions() {
+    if (!els.billingExclusionsList) return;
+    const activeExclusions = billingExclusionCache.filter(isActiveBillingExclusion);
+    if (!activeExclusions.length) {
+        els.billingExclusionsList.innerHTML = '<div class="detail-empty">No hidden billing accounts saved.</div>';
+        return;
+    }
+    els.billingExclusionsList.innerHTML = activeExclusions
+        .sort((left, right) => String(left.company_name || '').localeCompare(String(right.company_name || ''))
+            || String(left.branch_name || '').localeCompare(String(right.branch_name || '')))
+        .map((exclusion) => `
+            <article class="calc-exclusion-item">
+                <div>
+                    <div class="calc-exclusion-title">${escapeHtml(exclusion.company_name || 'Hidden account')} ${exclusion.branch_name ? `- ${escapeHtml(exclusion.branch_name)}` : ''}</div>
+                    <div class="calc-exclusion-meta">
+                        ${escapeHtml([
+                            exclusion.reason,
+                            exclusion.effective_date ? `Effective ${exclusion.effective_date}` : '',
+                            exclusion.contractmain_id ? `Contract ${exclusion.contractmain_id}` : '',
+                            exclusion.machine_label || exclusion.machine_id || exclusion.serial_number || ''
+                        ].filter(Boolean).join(' • '))}
+                    </div>
+                    ${exclusion.staff_note ? `<div class="calc-exclusion-note">${escapeHtml(exclusion.staff_note)}</div>` : ''}
+                </div>
+                <button class="btn btn-secondary" type="button" data-billing-exclusion-restore="${escapeHtml(exclusion._docId || '')}">Restore</button>
+            </article>
+        `).join('');
+}
+
 function renderMeterLineCard(line, mode, index) {
     const prefix = `${mode}-${index}`;
+    const canHideLine = mode === 'multi_machine_rtp';
     return `
         <article class="calc-meter-line" data-calc-line-card="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}">
             <div class="calc-meter-line-head">
@@ -3134,6 +3410,13 @@ function renderMeterLineCard(line, mode, index) {
                 </div>
                 <div class="calc-meter-line-amount" id="${escapeHtml(prefix)}-amount">${escapeHtml(formatAmount(line.amountDue || 0))}</div>
             </div>
+            ${canHideLine ? `
+                <div class="calc-meter-line-actions">
+                    <button class="btn btn-secondary btn-small" type="button" data-calc-exclusion-action="open" data-calc-line-index="${escapeHtml(String(index))}">
+                        ${escapeHtml(line.missingMeterSource ? 'Mark inactive / no delivery' : 'Hide account')}
+                    </button>
+                </div>
+            ` : ''}
             <div class="calc-panel-grid calc-meter-line-grid">
                 <div class="calc-field">
                     <label>Present Reading</label>
@@ -3334,6 +3617,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         : 'Not recorded';
     const latestMonthUsed = latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading';
     const savedMonthLabel = context.targetCell?.month_label_short || context.monthLabel;
+    const savedExclusionsForContext = getBillingExclusionsForContext(row, context);
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
@@ -3535,6 +3819,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             </div>
             ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate black/white and colored readings, quotas, and rates.', multiMeterSeedLines)}
             ${renderBillingLinePanel('multi_machine_rtp', 'One Invoice, Multiple Machines', 'Use one invoice number, compute each machine line, then sum the invoice total.', multiMachineSeedLines)}
+            ${renderBillingExclusionEditor()}
+            ${renderSavedBillingExclusions(savedExclusionsForContext)}
             ${
                 canPrintInvoice
                     ? `
@@ -3637,13 +3923,50 @@ async function openBillingCalcModal(rowId, monthKey) {
     const modeSummaryTitle = document.getElementById('calcModeSummaryTitle');
     const modeSummaryCopy = document.getElementById('calcModeSummaryCopy');
     const modeTotalAmountValue = document.getElementById('calcModeTotalAmountValue');
+    const exclusionEditor = document.getElementById('calcExclusionEditor');
+    const exclusionTargetInput = document.getElementById('calcExclusionTargetInput');
+    const exclusionReasonInput = document.getElementById('calcExclusionReasonInput');
+    const exclusionEffectiveDateInput = document.getElementById('calcExclusionEffectiveDateInput');
+    const exclusionHideFutureInput = document.getElementById('calcExclusionHideFutureInput');
+    const exclusionNoteInput = document.getElementById('calcExclusionNoteInput');
+    const exclusionSaveBtn = document.getElementById('calcExclusionSaveBtn');
+    const exclusionCancelBtn = document.getElementById('calcExclusionCancelBtn');
     let activeEstimate = estimate;
     let previewReady = false;
     let savedSnapshot = savedBillingDoc ? billingSnapshotFromDoc(savedBillingDoc, initialSnapshot) : null;
     let savedDocExists = Boolean(savedBillingDoc);
     let workflowError = '';
+    let pendingExclusionLineIndex = -1;
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
+
+    const closeExclusionEditor = () => {
+        pendingExclusionLineIndex = -1;
+        exclusionEditor?.classList.add('hidden');
+    };
+
+    const openExclusionEditor = (index) => {
+        const line = multiMachineSeedLines[index];
+        const lineRow = groupedRowsForBilling[index];
+        if (!line || !lineRow) return;
+        pendingExclusionLineIndex = index;
+        if (exclusionTargetInput) {
+            exclusionTargetInput.value = [
+                line.label || lineRow.branch_name || 'Billing account',
+                lineRow.contractmain_id ? `Contract ${lineRow.contractmain_id}` : '',
+                lineRow.machine_label || lineRow.machine_id || lineRow.serial_number || ''
+            ].filter(Boolean).join(' • ');
+        }
+        if (exclusionReasonInput) {
+            exclusionReasonInput.value = line.missingMeterSource ? 'No delivery happened' : 'Branch/customer inactive';
+        }
+        if (exclusionEffectiveDateInput && !exclusionEffectiveDateInput.value) {
+            exclusionEffectiveDateInput.value = formatIsoDate(new Date());
+        }
+        if (exclusionHideFutureInput) exclusionHideFutureInput.checked = true;
+        exclusionEditor?.classList.remove('hidden');
+        exclusionEditor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     const readLineInputValue = (mode, index, field, fallback = 0) => {
         const input = document.querySelector(`[data-calc-line-mode="${mode}"][data-calc-line-index="${index}"][data-calc-line-field="${field}"]`);
@@ -3921,6 +4244,60 @@ async function openBillingCalcModal(rowId, monthKey) {
     }));
     document.querySelectorAll('[data-calc-line-mode][data-calc-line-index][data-calc-line-field]').forEach((input) => {
         input.addEventListener('input', recompute);
+    });
+    document.querySelectorAll('[data-calc-exclusion-action="open"]').forEach((button) => {
+        button.addEventListener('click', () => {
+            openExclusionEditor(Number(button.dataset.calcLineIndex || -1));
+        });
+    });
+    document.querySelectorAll('[data-calc-exclusion-action="restore"]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const docId = String(button.dataset.docId || '').trim();
+            if (!docId) return;
+            const confirmed = window.confirm('Restore this account to active billing lists?');
+            if (!confirmed) return;
+            button.disabled = true;
+            try {
+                const result = await restoreBillingExclusion(docId);
+                MargaUtils.showToast(
+                    result.queued ? 'Billing account restore queued.' : 'Billing account restored.',
+                    'success'
+                );
+                closeBillingCalcModal();
+                await loadDashboard({ forceRefresh: true });
+            } catch (error) {
+                button.disabled = false;
+                MargaUtils.showToast(String(error?.message || 'Unable to restore billing account.'), 'error');
+            }
+        });
+    });
+    exclusionCancelBtn?.addEventListener('click', closeExclusionEditor);
+    exclusionSaveBtn?.addEventListener('click', async () => {
+        const lineRow = groupedRowsForBilling[pendingExclusionLineIndex];
+        if (!lineRow) {
+            MargaUtils.showToast('Choose a billing line to hide first.', 'error');
+            return;
+        }
+        exclusionSaveBtn.disabled = true;
+        if (exclusionCancelBtn) exclusionCancelBtn.disabled = true;
+        try {
+            const result = await saveBillingExclusion(lineRow, {
+                reason: exclusionReasonInput?.value || 'Other',
+                effectiveDate: exclusionEffectiveDateInput?.value || formatIsoDate(new Date()),
+                staffNote: exclusionNoteInput?.value || '',
+                hideFromFuture: exclusionHideFutureInput?.checked !== false
+            });
+            MargaUtils.showToast(
+                result.queued ? 'Billing account hide queued.' : 'Billing account hidden from active Billing.',
+                'success'
+            );
+            closeBillingCalcModal();
+            await loadDashboard({ forceRefresh: true });
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to hide billing account.'), 'error');
+            exclusionSaveBtn.disabled = false;
+            if (exclusionCancelBtn) exclusionCancelBtn.disabled = false;
+        }
     });
     paperWidthInput?.addEventListener('input', updateCalibration);
     paperHeightInput?.addEventListener('input', updateCalibration);
@@ -4616,7 +4993,9 @@ async function loadDashboard(options = {}) {
             throw new Error(payload?.error || `Request failed (${response.status})`);
         }
 
-        renderAll(payload);
+        billingExclusionCache = await loadBillingExclusions();
+        renderDashboardBillingExclusions();
+        renderAll(applyBillingExclusionsToPayload(payload, billingExclusionCache));
         setStatus('Loaded');
     } catch (error) {
         renderError(error?.message || error);
@@ -4659,6 +5038,36 @@ function bindEvents() {
         if (event.key === 'Enter') {
             event.preventDefault();
             searchInvoiceNumber();
+        }
+    });
+    els.billingExclusionsRefreshBtn?.addEventListener('click', async () => {
+        els.billingExclusionsRefreshBtn.disabled = true;
+        try {
+            billingExclusionCache = await loadBillingExclusions();
+            renderDashboardBillingExclusions();
+            if (lastPayload) renderMatrixTable(applyBillingExclusionsToPayload(lastPayload, billingExclusionCache));
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to refresh hidden billing accounts.'), 'error');
+        } finally {
+            els.billingExclusionsRefreshBtn.disabled = false;
+        }
+    });
+    els.billingExclusionsList?.addEventListener('click', async (event) => {
+        const restoreButton = event.target.closest('[data-billing-exclusion-restore]');
+        if (!restoreButton) return;
+        const docId = String(restoreButton.dataset.billingExclusionRestore || '').trim();
+        if (!docId) return;
+        const confirmed = window.confirm('Restore this account to active billing lists?');
+        if (!confirmed) return;
+        restoreButton.disabled = true;
+        try {
+            const result = await restoreBillingExclusion(docId);
+            renderDashboardBillingExclusions();
+            MargaUtils.showToast(result.queued ? 'Billing account restore queued.' : 'Billing account restored.', 'success');
+            if (lastPayload) await loadDashboard({ forceRefresh: true });
+        } catch (error) {
+            restoreButton.disabled = false;
+            MargaUtils.showToast(String(error?.message || 'Unable to restore billing account.'), 'error');
         }
     });
     els.invoiceSearchResults?.addEventListener('click', async (event) => {

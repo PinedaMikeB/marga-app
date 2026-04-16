@@ -66,6 +66,7 @@ Each thread should update only the relevant module sections plus `Current Focus`
 - Serial/machine history matters because a machine can transfer customers; only reuse old readings when the serial has not moved to another customer after that reading.
 - New delivery/customer first bill may use the delivery or contract beginning meter as the previous meter.
 - Rows with no prior meter or beginning meter should show a note and zero computed amount instead of silently billing quota from `0 / 0`; staff can enter the beginning meter or mark the row inactive if no delivery happened.
+- Added reversible Billing hide/unhide plan: `tbl_billing_exclusions` stores hidden account rows with reason, effective date, note, and hide-from-future-list flag. Restore must be available from a saved exclusions list even when the account no longer appears in the active grid.
 
 ### 2026-04-15 - Billing Save And Invoice Print Calibration
 - Built and pushed the current Billing save-first workflow and print-layout baseline through commit `e9338ab`.

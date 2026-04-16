@@ -175,6 +175,28 @@
     font-weight: 700;
 }
 
+.billing-exclusions-panel {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--bill-line);
+}
+
+.billing-exclusions-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.75rem;
+}
+
+.billing-exclusions-list {
+    display: grid;
+    gap: 0.65rem;
+    color: var(--bill-muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
 .invoice-search-count {
     margin-bottom: 0.65rem;
     color: var(--bill-ink);
@@ -1161,6 +1183,17 @@
     white-space: nowrap;
 }
 
+.calc-meter-line-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin: -0.35rem 0 0.75rem;
+}
+
+.btn-small {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.76rem;
+}
+
 .calc-meter-line-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1177,6 +1210,64 @@
 
 .calc-meter-line-math.error {
     color: var(--bill-danger);
+}
+
+.calc-exclusion-editor,
+.calc-exclusion-list {
+    border-color: #f0c9c9;
+    background: #fffafa;
+}
+
+.calc-checkbox-line {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--bill-ink);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.calc-checkbox-line input {
+    width: auto;
+}
+
+.calc-exclusion-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: flex-end;
+    margin-top: 0.9rem;
+}
+
+.calc-exclusion-items {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.calc-exclusion-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.75rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.calc-exclusion-title {
+    color: var(--bill-ink);
+    font-size: 0.9rem;
+    font-weight: 900;
+}
+
+.calc-exclusion-meta,
+.calc-exclusion-note {
+    margin-top: 0.2rem;
+    color: var(--bill-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.35;
 }
 
 .calc-detail-block-first {
@@ -1444,7 +1535,8 @@
 }
 
 .calc-field input,
-.calc-field select {
+.calc-field select,
+.calc-field textarea {
     width: 100%;
     padding: 0.72rem 0.8rem;
     border: 1px solid var(--bill-line);
@@ -1455,7 +1547,8 @@
 }
 
 .calc-field input[readonly],
-.calc-field select[disabled] {
+.calc-field select[disabled],
+.calc-field textarea[readonly] {
     background: #f8fbff;
 }
 

@@ -42,6 +42,10 @@ This file protects the project across new chats. It should record the stable bas
   - for a new delivery/customer, the beginning meter from delivery/contract setup may be the previous meter for the first bill.
   - if no prior meter, delivery beginning meter, or saved billing meter is available, keep the row visible with a clear note such as "No available previous meter reading"; do not silently bill the quota minimum from `0 / 0`.
   - if no delivery happened, office staff should mark the customer/machine inactive so it moves to inactive review instead of being billed.
+- Billing visibility rule:
+  - user-facing hide/unhide is handled by reversible `tbl_billing_exclusions` records.
+  - hiding an account removes it from active Billing lists without deleting or editing the customer, contract, branch, or machine master.
+  - restore must be available from a saved exclusions list even when the account is hidden from the active grid.
 
 ## Customer Identity Rule
 - Canonical customer lookup is the **Active Contract Customer Graph**.
