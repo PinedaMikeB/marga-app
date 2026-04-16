@@ -436,12 +436,21 @@ function normalizeInvoiceNumber(value) {
     return String(value || '').trim();
 }
 
-function billingSnapshotFromValues({ invoiceNo, previousMeter, presentMeter, spoilagePercent }) {
+function billingSnapshotFromValues({
+    invoiceNo,
+    previousMeter,
+    presentMeter,
+    spoilagePercent,
+    billingMode = 'single_meter_rtp',
+    linesSignature = ''
+} = {}) {
     return {
         invoiceNo: normalizeInvoiceNumber(invoiceNo),
         previousMeter: Math.max(0, Number(previousMeter || 0) || 0),
         presentMeter: Math.max(0, Number(presentMeter || 0) || 0),
-        spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2))
+        spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2)),
+        billingMode: String(billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
+        linesSignature: String(linesSignature || '').trim()
     };
 }
 
@@ -453,7 +462,9 @@ function billingSnapshotFromDoc(doc, fallback = {}) {
         invoiceNo: getBillingDocInvoiceRef(doc) || fallback.invoiceNo,
         previousMeter: doc?.field_previous_meter ?? fallback.previousMeter,
         presentMeter: doc?.field_present_meter ?? fallback.presentMeter,
-        spoilagePercent: Number.isFinite(spoilagePercent) ? spoilagePercent : fallback.spoilagePercent
+        spoilagePercent: Number.isFinite(spoilagePercent) ? spoilagePercent : fallback.spoilagePercent,
+        billingMode: doc?.billing_mode || fallback.billingMode,
+        linesSignature: doc?.billing_lines_signature || fallback.linesSignature
     });
 }
 
@@ -463,7 +474,9 @@ function billingSnapshotsEqual(left, right) {
     return a.invoiceNo === b.invoiceNo
         && a.previousMeter === b.previousMeter
         && a.presentMeter === b.presentMeter
-        && Math.abs(a.spoilagePercent - b.spoilagePercent) < 0.001;
+        && Math.abs(a.spoilagePercent - b.spoilagePercent) < 0.001
+        && a.billingMode === b.billingMode
+        && a.linesSignature === b.linesSignature;
 }
 
 function toSqlDateTime(date = new Date()) {
@@ -532,6 +545,9 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     const numericInvoice = /^\d+$/.test(snapshot.invoiceNo) ? Number(snapshot.invoiceNo) : null;
     const numericContractId = Number(row?.contractmain_id || 0);
     const numericDocId = Number(docId);
+    const lineItems = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
+    const primaryLine = lineItems[0] || estimate || {};
+    const linesSignature = buildBillingLinesSignature(lineItems);
 
     return {
         id: Number.isFinite(numericDocId) ? numericDocId : Date.now(),
@@ -552,8 +568,8 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         totalamount: Number(estimate?.amountDue || 0) || 0,
         vatamount: Number(estimate?.vatAmount || 0) || 0,
         netamount: Number(estimate?.netAmount || 0) || 0,
-        field_previous_meter: snapshot.previousMeter,
-        field_present_meter: snapshot.presentMeter,
+        field_previous_meter: Number(primaryLine.previousMeter ?? snapshot.previousMeter ?? 0) || 0,
+        field_present_meter: Number(primaryLine.presentMeter ?? snapshot.presentMeter ?? 0) || 0,
         field_total_consumed: Number(estimate?.rawPages || 0) || 0,
         total_pages: Number(estimate?.netPages || 0) || 0,
         spoilage_pages: Number(estimate?.spoilagePages || 0) || 0,
@@ -577,6 +593,11 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         company_id: String(row?.company_id || '').trim(),
         machine_id: String(row?.machine_id || '').trim(),
         serial_number: String(row?.serial_number || '').trim(),
+        billing_mode: String(snapshot.billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
+        billing_lines_json: JSON.stringify(lineItems),
+        billing_lines_count: lineItems.length,
+        billing_lines_signature: linesSignature,
+        billing_total_pages: Number(estimate?.billedPages || estimate?.pages || 0) || 0,
         updated_at: now.toISOString(),
         source_module: 'billing_dashboard',
         status: 0,
@@ -2267,6 +2288,26 @@ function collectPriorReadingGroups(row, monthKey) {
         });
 }
 
+function getTargetReadingGroups(row, monthKey) {
+    const cell = row?.months?.[monthKey] || {};
+    return (Array.isArray(cell.reading_groups) ? cell.reading_groups : [])
+        .map((group) => ({
+            ...group,
+            month_key: monthKey,
+            month_label: cell.month_label_short || formatMonthLabel(monthKey, monthKey)
+        }))
+        .sort((left, right) => {
+            if (Number(right.amount_total || 0) !== Number(left.amount_total || 0)) {
+                return Number(right.amount_total || 0) - Number(left.amount_total || 0);
+            }
+            return String(right.task_date || '').localeCompare(String(left.task_date || ''));
+        });
+}
+
+function getPrimaryTargetReadingGroup(row, monthKey) {
+    return getTargetReadingGroups(row, monthKey)[0] || null;
+}
+
 function collectPriorInvoiceRefs(row, monthKey) {
     return Object.entries(row?.months || {})
         .filter(([key]) => key <= monthKey)
@@ -2297,44 +2338,46 @@ function collectPriorInvoiceRefs(row, monthKey) {
         .sort((left, right) => String(right.month_key || '').localeCompare(String(left.month_key || '')));
 }
 
-function buildBillingCalculationContext(row, monthKey) {
-    if (!row || row.is_summary_row) return null;
-    const profile = getRowBillingProfile(row);
-    if (!profile) return null;
+function hasSecondaryRtpRate(profile = {}) {
+    return Number(profile.page_rate2 || 0) > 0
+        || Number(profile.page_rate_xtra2 || 0) > 0
+        || Number(profile.monthly_quota2 || 0) > 0
+        || Number(profile.monthly_rate2 || 0) > 0;
+}
 
-    const targetCell = row.months?.[monthKey] || {};
-    const latestPriorGroup = collectPriorReadingGroups(row, monthKey)[0] || null;
-    const latestInvoice = collectPriorInvoiceRefs(row, monthKey)[0] || null;
-    const previousMeter = latestPriorGroup
-        ? Number(latestPriorGroup.present_meter || latestPriorGroup.previous_meter || 0) || 0
-        : 0;
-
+function getRtpSecondaryProfile(profile = {}) {
+    const pageRate = Number(profile.page_rate2 || profile.page_rate_xtra2 || 0) || 0;
     return {
-        row,
-        monthKey,
-        targetCell,
-        monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
-        profile,
-        latestPriorGroup,
-        latestInvoice,
-        previousMeter,
-        presentMeter: previousMeter,
-        spoilageRate: DEFAULT_SPOILAGE_RATE,
-        isReading: isReadingPricing(profile),
-        isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0
+        ...profile,
+        page_rate: pageRate || Number(profile.page_rate || 0) || 0,
+        monthly_quota: Number(profile.monthly_quota2 || 0) || 0,
+        monthly_rate: Number(profile.monthly_rate2 || 0) || 0,
+        succeeding_page_rate: Number(profile.page_rate_xtra2 || profile.page_rate2 || pageRate || 0) || pageRate || Number(profile.page_rate || 0) || 0
     };
 }
 
-function calculateBillingEstimate(context, previousMeterValue, presentMeterValue, spoilageRateValue = context?.spoilageRate) {
-    const profile = context?.profile || {};
-    const previousMeter = Math.max(0, Number(previousMeterValue || 0) || 0);
-    const presentMeter = Math.max(0, Number(presentMeterValue || 0) || 0);
+function roundBillingAmount(value) {
+    return Number((Number(value || 0) || 0).toFixed(2));
+}
+
+function calculateMeterLineEstimate({
+    label = 'Meter',
+    profile = {},
+    previousMeter = 0,
+    presentMeter = 0,
+    spoilagePercent = DEFAULT_SPOILAGE_RATE * 100,
+    forceFixed = false,
+    row = null
+} = {}) {
+    const previous = Math.max(0, Number(previousMeter || 0) || 0);
+    const present = Math.max(0, Number(presentMeter || 0) || 0);
     const pageRate = Number(profile.page_rate || 0) || 0;
     const succeedingRate = getSucceedingPageRate(profile);
     const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
     const monthlyRate = Number(profile.monthly_rate || 0) || 0;
     const withVat = Boolean(profile.with_vat);
-    const spoilageRate = Math.max(0, Number(spoilageRateValue || 0) || 0);
+    const spoilageRate = Math.max(0, Number(spoilagePercent || 0) || 0) / 100;
+    const isFixed = forceFixed || (!isReadingPricing(profile) && monthlyRate > 0);
     let rawPages = 0;
     let spoilagePages = 0;
     let netPages = 0;
@@ -2347,17 +2390,17 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
     let formula = 'not_available';
     let warning = '';
 
-    if (context?.isReading) {
-        if (presentMeter < previousMeter) {
-            warning = 'Present meter cannot be lower than the previous meter.';
+    if (!isFixed) {
+        if (present < previous) {
+            warning = `${label}: present meter cannot be lower than previous meter.`;
         } else {
-            rawPages = presentMeter - previousMeter;
+            rawPages = present - previous;
             spoilagePages = Math.round(rawPages * spoilageRate);
             netPages = Math.max(0, rawPages - spoilagePages);
             billedPages = monthlyQuota > 0 ? Math.max(netPages, monthlyQuota) : netPages;
             if (billedPages > 0 && pageRate > 0) {
                 if (monthlyQuota > 0) {
-                    quotaPages = monthlyQuota;
+                    quotaPages = Math.min(billedPages, monthlyQuota);
                     succeedingPages = Math.max(0, netPages - monthlyQuota);
                     quotaAmount = quotaPages * pageRate;
                     succeedingAmount = succeedingPages * succeedingRate;
@@ -2378,28 +2421,41 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
                 formula = 'missing_rate';
             }
         }
-    } else if (context?.isFixed) {
+    } else {
         amountDue = monthlyRate;
         formula = 'fixed_monthly_rate';
     }
 
-    amountDue = Number(amountDue.toFixed(2));
-    const netAmount = withVat ? Number((amountDue / 1.12).toFixed(2)) : amountDue;
-    const vatAmount = withVat ? Number((amountDue - netAmount).toFixed(2)) : Number((amountDue * 0.12).toFixed(2));
+    amountDue = roundBillingAmount(amountDue);
+    quotaAmount = roundBillingAmount(quotaAmount);
+    succeedingAmount = roundBillingAmount(succeedingAmount);
+    const netAmount = withVat ? roundBillingAmount(amountDue / 1.12) : amountDue;
+    const vatAmount = withVat ? roundBillingAmount(amountDue - netAmount) : roundBillingAmount(amountDue * 0.12);
 
     return {
-        previousMeter,
-        presentMeter,
+        label,
+        rowId: row ? String(row.row_id || row.company_id || '').trim() : '',
+        companyName: row ? String(row.company_name || row.account_name || '').trim() : '',
+        branchName: row ? String(row.branch_name || '').trim() : '',
+        machineId: row ? String(row.machine_id || '').trim() : '',
+        contractmainId: row ? String(row.contractmain_id || '').trim() : '',
+        serialNumber: row ? String(row.serial_number || '').trim() : '',
+        previousMeter: previous,
+        presentMeter: present,
         rawPages,
+        spoilagePercent: Number((spoilageRate * 100).toFixed(2)),
         spoilageRate,
         spoilagePages,
         netPages,
         billedPages,
         quotaPages,
         succeedingPages,
-        quotaAmount: Number(quotaAmount.toFixed(2)),
-        succeedingAmount: Number(succeedingAmount.toFixed(2)),
+        quotaAmount,
+        succeedingAmount,
         succeedingRate,
+        pageRate,
+        monthlyQuota,
+        monthlyRate,
         pages: billedPages,
         amountDue,
         netAmount,
@@ -2408,6 +2464,247 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
         formula,
         warning
     };
+}
+
+function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available') {
+    const lines = Array.isArray(lineItems) ? lineItems : [];
+    const amountDue = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.amountDue || 0), 0));
+    const netAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.netAmount || 0), 0));
+    const vatAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.vatAmount || 0), 0));
+    const rawPages = lines.reduce((sum, line) => sum + Number(line.rawPages || 0), 0);
+    const spoilagePages = lines.reduce((sum, line) => sum + Number(line.spoilagePages || 0), 0);
+    const netPages = lines.reduce((sum, line) => sum + Number(line.netPages || 0), 0);
+    const billedPages = lines.reduce((sum, line) => sum + Number(line.billedPages || 0), 0);
+    const quotaPages = lines.reduce((sum, line) => sum + Number(line.quotaPages || 0), 0);
+    const succeedingPages = lines.reduce((sum, line) => sum + Number(line.succeedingPages || 0), 0);
+    const quotaAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.quotaAmount || 0), 0));
+    const succeedingAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.succeedingAmount || 0), 0));
+    const warnings = lines.map((line) => line.warning).filter(Boolean);
+    return {
+        lineItems: lines,
+        rawPages,
+        spoilagePages,
+        netPages,
+        billedPages,
+        quotaPages,
+        succeedingPages,
+        quotaAmount,
+        succeedingAmount,
+        succeedingRate: Number(lines[0]?.succeedingRate || 0) || 0,
+        pages: billedPages,
+        amountDue,
+        netAmount,
+        vatAmount,
+        quotaVariance: null,
+        formula: lines.length > 1 ? 'sum_of_billing_lines' : (lines[0]?.formula || fallbackFormula),
+        warning: warnings.join(' ')
+    };
+}
+
+function buildBillingLinesSignature(lineItems = []) {
+    return JSON.stringify((Array.isArray(lineItems) ? lineItems : []).map((line) => ({
+        label: String(line.label || '').trim(),
+        rowId: String(line.rowId || '').trim(),
+        previousMeter: Number(line.previousMeter || 0) || 0,
+        presentMeter: Number(line.presentMeter || 0) || 0,
+        spoilagePercent: Number(line.spoilagePercent || 0) || 0,
+        pageRate: Number(line.pageRate || 0) || 0,
+        succeedingRate: Number(line.succeedingRate || 0) || 0,
+        monthlyQuota: Number(line.monthlyQuota || 0) || 0,
+        monthlyRate: Number(line.monthlyRate || 0) || 0,
+        amountDue: Number(line.amountDue || 0) || 0
+    })));
+}
+
+function getGroupedMachineRows(row, monthKey) {
+    const companyId = String(row?.company_id || '').trim();
+    if (!companyId || !lastPayload?.month_matrix?.rows) return [];
+    const rows = lastPayload.month_matrix.rows
+        .filter((entry) => (
+            entry
+            && !entry.is_summary_row
+            && String(entry.company_id || '').trim() === companyId
+            && getRowBillingProfile(entry)
+        ))
+        .sort((left, right) => {
+            const currentId = String(row.row_id || row.company_id || '');
+            if (String(left.row_id || left.company_id || '') === currentId) return -1;
+            if (String(right.row_id || right.company_id || '') === currentId) return 1;
+            return String(left.branch_name || left.display_name || '').localeCompare(String(right.branch_name || right.display_name || ''));
+        });
+    const byRowId = new Map();
+    rows.forEach((entry) => {
+        const key = String(entry.row_id || entry.company_id || entry.contractmain_id || entry.machine_id || '').trim();
+        if (!key || byRowId.has(key)) return;
+        const cell = entry.months?.[monthKey] || {};
+        if (!cell.pending && !Number(cell.reading_amount_total || 0) && !Number(cell.display_amount_total || 0)) return;
+        byRowId.set(key, entry);
+    });
+    return Array.from(byRowId.values());
+}
+
+function buildBillingCalculationContext(row, monthKey) {
+    if (!row || row.is_summary_row) return null;
+    const profile = getRowBillingProfile(row);
+    if (!profile) return null;
+
+    const targetCell = row.months?.[monthKey] || {};
+    const targetReadingGroup = getPrimaryTargetReadingGroup(row, monthKey);
+    const latestPriorGroup = collectPriorReadingGroups(row, monthKey)[0] || null;
+    const latestInvoice = collectPriorInvoiceRefs(row, monthKey)[0] || null;
+    const previousMeter = latestPriorGroup
+        ? Number(latestPriorGroup.present_meter || latestPriorGroup.previous_meter || 0) || 0
+        : 0;
+    const targetPreviousMeter = targetReadingGroup
+        ? Number(targetReadingGroup.previous_meter || previousMeter || 0) || 0
+        : previousMeter;
+    const targetPresentMeter = targetReadingGroup
+        ? Number(targetReadingGroup.present_meter || targetReadingGroup.meter_reading || targetPreviousMeter || 0) || 0
+        : targetPreviousMeter;
+
+    return {
+        row,
+        monthKey,
+        targetCell,
+        targetReadingGroup,
+        monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
+        profile,
+        latestPriorGroup,
+        latestInvoice,
+        previousMeter: targetPreviousMeter,
+        presentMeter: targetPresentMeter,
+        spoilageRate: DEFAULT_SPOILAGE_RATE,
+        isReading: isReadingPricing(profile),
+        isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
+        hasSecondaryRtp: hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2),
+        groupedMachineRows: getGroupedMachineRows(row, monthKey)
+    };
+}
+
+function calculateBillingEstimate(context, previousMeterValue, presentMeterValue, spoilageRateValue = context?.spoilageRate) {
+    return calculateMeterLineEstimate({
+        label: context?.isFixed ? 'Fixed Rate' : 'Single Meter',
+        profile: context?.profile || {},
+        previousMeter: previousMeterValue,
+        presentMeter: presentMeterValue,
+        spoilagePercent: Math.max(0, Number(spoilageRateValue || 0) || 0) * 100,
+        forceFixed: Boolean(context?.isFixed),
+        row: context?.row || null
+    });
+}
+
+function getBillingModeOptions(context) {
+    const options = [];
+    if (context?.isReading) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
+    if (context?.isReading && context?.hasSecondaryRtp) options.push({ key: 'multi_meter_rtp', label: 'Multiple Meter RTP' });
+    if (context?.isFixed) options.push({ key: 'rtf', label: 'RTF Fixed Rate' });
+    if (context?.isReading && (context?.groupedMachineRows || []).length > 1) {
+        options.push({ key: 'multi_machine_rtp', label: 'One Invoice, Multiple Machines' });
+    }
+    if (!options.length) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
+    return options;
+}
+
+function getDefaultBillingMode(context) {
+    const savedMode = String(context?.savedBillingMode || '').trim();
+    const options = getBillingModeOptions(context);
+    if (savedMode && options.some((option) => option.key === savedMode)) return savedMode;
+    if (context?.isFixed) return 'rtf';
+    if (context?.hasSecondaryRtp) return 'multi_meter_rtp';
+    return options[0]?.key || 'single_meter_rtp';
+}
+
+function renderBillingModeTabs(options, activeMode) {
+    return `
+        <div class="calc-mode-tabs" role="tablist" aria-label="Billing calculation type">
+            ${options.map((option) => `
+                <button
+                    class="calc-mode-tab ${option.key === activeMode ? 'active' : ''}"
+                    type="button"
+                    role="tab"
+                    aria-selected="${option.key === activeMode ? 'true' : 'false'}"
+                    data-calc-mode-tab="${escapeHtml(option.key)}"
+                >${escapeHtml(option.label)}</button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderBillingModeSummary() {
+    return `
+        <section class="calc-panel calc-mode-summary">
+            <div>
+                <div class="calc-panel-title" id="calcModeSummaryTitle">Billing Computation</div>
+                <div class="calc-mode-summary-copy" id="calcModeSummaryCopy">Choose a calculation type and confirm the meter lines.</div>
+            </div>
+            <div class="calc-mode-total">
+                <span>Total Amount Due</span>
+                <strong id="calcModeTotalAmountValue">0</strong>
+            </div>
+        </section>
+    `;
+}
+
+function renderMeterLineCard(line, mode, index) {
+    const prefix = `${mode}-${index}`;
+    return `
+        <article class="calc-meter-line" data-calc-line-card="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}">
+            <div class="calc-meter-line-head">
+                <div>
+                    <div class="calc-meter-line-title">${escapeHtml(line.label || `Line ${index + 1}`)}</div>
+                    <div class="calc-meter-line-sub">${escapeHtml(line.subtitle || line.serialNumber || '')}</div>
+                </div>
+                <div class="calc-meter-line-amount" id="${escapeHtml(prefix)}-amount">${escapeHtml(formatAmount(line.amountDue || 0))}</div>
+            </div>
+            <div class="calc-panel-grid calc-meter-line-grid">
+                <div class="calc-field">
+                    <label>Present Reading</label>
+                    <input type="number" min="0" step="1" value="${escapeHtml(String(line.presentMeter || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="presentMeter">
+                </div>
+                <div class="calc-field">
+                    <label>Previous Reading</label>
+                    <input type="number" min="0" step="1" value="${escapeHtml(String(line.previousMeter || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="previousMeter">
+                </div>
+                <div class="calc-field">
+                    <label>Spoilage %</label>
+                    <input type="number" min="0" step="0.01" value="${escapeHtml(String(line.spoilagePercent ?? (DEFAULT_SPOILAGE_RATE * 100)))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="spoilagePercent">
+                </div>
+                <div class="calc-field">
+                    <label>Quota</label>
+                    <input type="number" min="0" step="1" value="${escapeHtml(String(line.monthlyQuota || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="monthlyQuota">
+                </div>
+                <div class="calc-field">
+                    <label>Page Rate</label>
+                    <input type="number" min="0" step="0.01" value="${escapeHtml(String(line.pageRate || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="pageRate">
+                </div>
+                <div class="calc-field">
+                    <label>Exceed Rate</label>
+                    <input type="number" min="0" step="0.01" value="${escapeHtml(String(line.succeedingRate || line.pageRate || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="succeedingRate">
+                </div>
+            </div>
+            <div class="calc-meter-line-math" id="${escapeHtml(prefix)}-math">${escapeHtml(line.formula || '')}</div>
+        </article>
+    `;
+}
+
+function renderBillingLinePanel(mode, title, copy, lines) {
+    return `
+        <section class="calc-panel calc-line-panel hidden" data-calc-mode-panel="${escapeHtml(mode)}">
+            <div class="calc-panel-title">${escapeHtml(title)}</div>
+            <div class="calc-note calc-note-tight">${escapeHtml(copy)}</div>
+            <div class="calc-meter-lines">
+                ${lines.map((line, index) => renderMeterLineCard(line, mode, index)).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function formatLineComputation(line) {
+    if (!line) return '';
+    if (line.formula === 'fixed_monthly_rate') {
+        return `Fixed monthly rate ${formatAmount(line.monthlyRate || 0)}.`;
+    }
+    return `${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
 }
 
 function closeBillingCalcModal() {
@@ -2469,6 +2766,47 @@ async function openBillingCalcModal(rowId, monthKey) {
         initialSnapshot.presentMeter,
         initialSnapshot.spoilagePercent / 100
     );
+    estimate.lineItems = [estimate];
+
+    context.savedBillingMode = savedBillingDoc?.billing_mode || '';
+    const billingModeOptions = getBillingModeOptions(context);
+    let activeBillingMode = getDefaultBillingMode(context);
+    const secondaryProfile = getRtpSecondaryProfile(profile);
+    const secondaryPreviousMeter = Number(context.targetReadingGroup?.previous_meter2 || context.targetReadingGroup?.previous_meter_color || 0) || 0;
+    const secondaryPresentMeter = Number(context.targetReadingGroup?.present_meter2 || context.targetReadingGroup?.meter_reading2 || context.targetReadingGroup?.present_meter_color || secondaryPreviousMeter || 0) || 0;
+    const multiMeterSeedLines = [
+        calculateMeterLineEstimate({
+            label: 'Black / White',
+            profile,
+            previousMeter: initialSnapshot.previousMeter,
+            presentMeter: initialSnapshot.presentMeter,
+            spoilagePercent: initialSnapshot.spoilagePercent,
+            row
+        }),
+        calculateMeterLineEstimate({
+            label: 'Colored',
+            profile: secondaryProfile,
+            previousMeter: secondaryPreviousMeter,
+            presentMeter: secondaryPresentMeter,
+            spoilagePercent: initialSnapshot.spoilagePercent,
+            row
+        })
+    ];
+    const multiMachineSeedLines = (context.groupedMachineRows || []).map((machineRow) => {
+        const machineProfile = getRowBillingProfile(machineRow) || profile;
+        const group = getPrimaryTargetReadingGroup(machineRow, monthKey);
+        const prior = collectPriorReadingGroups(machineRow, monthKey)[0] || null;
+        const previousMeter = Number(group?.previous_meter || prior?.present_meter || prior?.previous_meter || 0) || 0;
+        const presentMeter = Number(group?.present_meter || group?.meter_reading || previousMeter || 0) || 0;
+        return calculateMeterLineEstimate({
+            label: machineRow.branch_name || machineRow.serial_number || machineRow.machine_label || 'Machine',
+            profile: machineProfile,
+            previousMeter,
+            presentMeter,
+            spoilagePercent: initialSnapshot.spoilagePercent,
+            row: machineRow
+        });
+    });
     const companyName = row.display_name || row.account_name || row.company_name || 'Unknown Customer';
     const branchName = row.branch_name || 'Main';
     const machineModel = row.machine_label || 'N/A';
@@ -2499,6 +2837,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 <span class="calc-flag">${escapeHtml(profile.with_vat ? 'VAT Inclusive' : 'VAT Exclusive')}</span>
                 <span class="calc-flag">Latest meter context: ${escapeHtml(latestMonthUsed)}</span>
             </div>
+            ${renderBillingModeTabs(billingModeOptions, activeBillingMode)}
+            ${renderBillingModeSummary()}
             <div class="calc-save-row">
                 <div class="calc-save-actions">
                     <button class="btn btn-primary" type="button" id="calcSaveBillingBtn">${savedBillingDoc ? 'Update Billing' : 'Save Billing'}</button>
@@ -2566,7 +2906,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                     </div>
                 </section>
             </div>
-            <div class="calc-ledger-grid calc-ledger-grid-bottom">
+            <div class="calc-ledger-grid calc-ledger-grid-bottom" data-calc-mode-panel="single_meter_rtp rtf">
                 <section class="calc-panel calc-panel-wide">
                     <div class="calc-panel-title">Reading Information</div>
                     <div class="calc-reading-grid">
@@ -2678,6 +3018,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                     </div>
                 </section>
             </div>
+            ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate black/white and colored readings, quotas, and rates.', multiMeterSeedLines)}
+            ${renderBillingLinePanel('multi_machine_rtp', 'One Invoice, Multiple Machines', 'Use one invoice number, compute each machine line, then sum the invoice total.', multiMachineSeedLines)}
             ${
                 canPrintInvoice
                     ? `
@@ -2775,6 +3117,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const scaleInput = document.getElementById('calcPrintScaleInput');
     const resetPrintBtn = document.getElementById('calcPrintResetBtn');
     const sectionInputs = Array.from(document.querySelectorAll('[data-rtp-section-key][data-rtp-section-field]'));
+    const modeTabs = Array.from(document.querySelectorAll('[data-calc-mode-tab]'));
+    const modePanels = Array.from(document.querySelectorAll('[data-calc-mode-panel]'));
+    const modeSummaryTitle = document.getElementById('calcModeSummaryTitle');
+    const modeSummaryCopy = document.getElementById('calcModeSummaryCopy');
+    const modeTotalAmountValue = document.getElementById('calcModeTotalAmountValue');
     let activeEstimate = estimate;
     let previewReady = false;
     let savedSnapshot = savedBillingDoc ? billingSnapshotFromDoc(savedBillingDoc, initialSnapshot) : null;
@@ -2783,12 +3130,104 @@ async function openBillingCalcModal(rowId, monthKey) {
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
 
-    const buildCurrentSnapshot = () => billingSnapshotFromValues({
-        invoiceNo: invoiceInput?.value || '',
-        previousMeter: previousInput?.value || 0,
-        presentMeter: presentInput?.value || 0,
-        spoilagePercent: spoilageInput?.value || 0
-    });
+    const readLineInputValue = (mode, index, field, fallback = 0) => {
+        const input = document.querySelector(`[data-calc-line-mode="${mode}"][data-calc-line-index="${index}"][data-calc-line-field="${field}"]`);
+        return input ? Number(input.value || 0) || 0 : fallback;
+    };
+
+    const estimateLineFromSeed = (seed, mode, index) => {
+        const lineProfile = {
+            ...(seed.profile || profile),
+            page_rate: readLineInputValue(mode, index, 'pageRate', seed.pageRate),
+            succeeding_page_rate: readLineInputValue(mode, index, 'succeedingRate', seed.succeedingRate),
+            monthly_quota: readLineInputValue(mode, index, 'monthlyQuota', seed.monthlyQuota),
+            monthly_rate: Number(seed.monthlyRate || 0) || 0
+        };
+        return calculateMeterLineEstimate({
+            label: seed.label,
+            profile: lineProfile,
+            previousMeter: readLineInputValue(mode, index, 'previousMeter', seed.previousMeter),
+            presentMeter: readLineInputValue(mode, index, 'presentMeter', seed.presentMeter),
+            spoilagePercent: readLineInputValue(mode, index, 'spoilagePercent', seed.spoilagePercent),
+            row: seed.row || null
+        });
+    };
+
+    const updateLineCardDisplay = (mode, index, line) => {
+        setElementDisplayValue(document.getElementById(`${mode}-${index}-amount`), formatAmount(line.amountDue || 0));
+        const math = document.getElementById(`${mode}-${index}-math`);
+        if (math) {
+            math.textContent = formatLineComputation(line);
+            math.classList.toggle('error', Boolean(line.warning));
+        }
+    };
+
+    const calculateActiveEstimate = () => {
+        if (activeBillingMode === 'multi_meter_rtp') {
+            const lines = multiMeterSeedLines.map((seed, index) => estimateLineFromSeed({ ...seed, profile: index === 0 ? profile : secondaryProfile, row }, activeBillingMode, index));
+            lines.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
+            const summary = summarizeBillingLines(lines);
+            summary.billingMode = activeBillingMode;
+            return summary;
+        }
+        if (activeBillingMode === 'multi_machine_rtp') {
+            const lines = multiMachineSeedLines.map((seed, index) => estimateLineFromSeed({
+                ...seed,
+                profile: getRowBillingProfile((context.groupedMachineRows || [])[index]) || profile,
+                row: (context.groupedMachineRows || [])[index] || row
+            }, activeBillingMode, index));
+            lines.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
+            const summary = summarizeBillingLines(lines);
+            summary.billingMode = activeBillingMode;
+            return summary;
+        }
+        const next = calculateBillingEstimate(
+            { ...context, isFixed: activeBillingMode === 'rtf' ? true : context.isFixed },
+            previousInput ? previousInput.value : context.previousMeter,
+            presentInput ? presentInput.value : context.presentMeter,
+            spoilageInput ? Number(spoilageInput.value || 0) / 100 : context.spoilageRate
+        );
+        next.billingMode = activeBillingMode;
+        next.lineItems = [next];
+        return next;
+    };
+
+    const syncModeUi = () => {
+        modeTabs.forEach((tab) => {
+            const isActive = tab.dataset.calcModeTab === activeBillingMode;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        modePanels.forEach((panel) => {
+            const panelModes = String(panel.dataset.calcModePanel || '').split(/\s+/);
+            panel.classList.toggle('hidden', !panelModes.includes(activeBillingMode));
+        });
+        const activeOption = billingModeOptions.find((option) => option.key === activeBillingMode);
+        if (modeSummaryTitle) modeSummaryTitle.textContent = activeOption?.label || 'Billing Computation';
+        if (modeSummaryCopy) {
+            if (activeBillingMode === 'multi_meter_rtp') {
+                modeSummaryCopy.textContent = 'Black/white and colored meters are computed separately, then summed into one invoice.';
+            } else if (activeBillingMode === 'multi_machine_rtp') {
+                modeSummaryCopy.textContent = 'Each machine line is computed separately under the same invoice number.';
+            } else if (activeBillingMode === 'rtf') {
+                modeSummaryCopy.textContent = 'This invoice uses the fixed monthly contract rate.';
+            } else {
+                modeSummaryCopy.textContent = 'This invoice uses one meter reading, one quota, and one rate plan.';
+            }
+        }
+    };
+
+    const buildCurrentSnapshot = () => {
+        const primaryLine = Array.isArray(activeEstimate?.lineItems) ? activeEstimate.lineItems[0] : null;
+        return billingSnapshotFromValues({
+            invoiceNo: invoiceInput?.value || '',
+            previousMeter: primaryLine ? primaryLine.previousMeter : (previousInput?.value || 0),
+            presentMeter: primaryLine ? primaryLine.presentMeter : (presentInput?.value || 0),
+            spoilagePercent: primaryLine ? primaryLine.spoilagePercent : (spoilageInput?.value || 0),
+            billingMode: activeBillingMode,
+            linesSignature: buildBillingLinesSignature(activeEstimate?.lineItems || [])
+        });
+    };
 
     const syncCalcWorkflowState = () => {
         const currentSnapshot = buildCurrentSnapshot();
@@ -2833,8 +3272,6 @@ async function openBillingCalcModal(rowId, monthKey) {
             els.billingCalcPrintBtn.disabled = !printEnabled;
         }
     };
-
-    if (canPrintInvoice) syncCalcWorkflowState();
 
     const renderCalcPreview = async (nextEstimate) => {
         if (!canPrintInvoice || !previewMount) return;
@@ -2919,12 +3356,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     };
 
     const recompute = () => {
-        const next = calculateBillingEstimate(
-            context,
-            previousInput ? previousInput.value : context.previousMeter,
-            presentInput ? presentInput.value : context.presentMeter,
-            spoilageInput ? Number(spoilageInput.value || 0) / 100 : context.spoilageRate
-        );
+        const next = calculateActiveEstimate();
         setElementDisplayValue(amountValue, formatAmount(next.amountDue || 0));
         setElementDisplayValue(rawPagesValue, formatCount(next.rawPages || 0));
         setElementDisplayValue(spoilagePagesValue, formatCount(next.spoilagePages || 0));
@@ -2933,14 +3365,17 @@ async function openBillingCalcModal(rowId, monthKey) {
         setElementDisplayValue(succeedingPagesValue, formatCount(next.succeedingPages || 0));
         setElementDisplayValue(netValue, formatAmount(next.netAmount || 0));
         setElementDisplayValue(vatValue, formatAmount(next.vatAmount || 0));
+        setElementDisplayValue(modeTotalAmountValue, formatAmount(next.amountDue || 0));
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
             quotaValue.textContent = next.quotaVariance === null
-                ? 'No quota saved on this contract.'
+                ? (next.lineItems?.length > 1 ? `${formatCount(next.lineItems.length)} billing lines summed.` : 'No quota saved on this contract.')
                 : `${formatCount(profile.monthly_quota || 0)} quota floor • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs net pages`;
         }
         if (flowValue) {
-            flowValue.textContent = context.isReading
+            flowValue.textContent = next.lineItems?.length > 1
+                ? next.lineItems.map((line) => `${line.label}: ${formatAmount(line.amountDue || 0)}`).join(' • ')
+                : context.isReading
                 ? `${formatCount(next.rawPages || 0)} raw - ${formatCount(next.spoilagePages || 0)} spoilage = ${formatCount(next.netPages || 0)} net. ${formatCount(next.quotaPages || 0)} quota pages x ${formatAmount(profile.page_rate || 0)} plus ${formatCount(next.succeedingPages || 0)} succeeding pages x ${formatAmount(next.succeedingRate || 0)} = ${formatAmount(next.amountDue || 0)}.`
                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
         }
@@ -2950,6 +3385,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         syncCalcWorkflowState();
     };
 
+    syncModeUi();
+    recompute();
+    if (canPrintInvoice) syncCalcWorkflowState();
+
     invoiceInput?.addEventListener('input', () => {
         workflowError = '';
         invoiceInput.classList.remove('input-error');
@@ -2958,6 +3397,14 @@ async function openBillingCalcModal(rowId, monthKey) {
     previousInput?.addEventListener('input', recompute);
     presentInput?.addEventListener('input', recompute);
     spoilageInput?.addEventListener('input', recompute);
+    modeTabs.forEach((tab) => tab.addEventListener('click', () => {
+        activeBillingMode = tab.dataset.calcModeTab || activeBillingMode;
+        syncModeUi();
+        recompute();
+    }));
+    document.querySelectorAll('[data-calc-line-mode][data-calc-line-index][data-calc-line-field]').forEach((input) => {
+        input.addEventListener('input', recompute);
+    });
     paperWidthInput?.addEventListener('input', updateCalibration);
     paperHeightInput?.addEventListener('input', updateCalibration);
     orientationInput?.addEventListener('change', updateCalibration);
@@ -3013,6 +3460,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         renderCalcPreview(activeEstimate);
     });
     saveBillingBtn?.addEventListener('click', async () => {
+        activeEstimate = calculateActiveEstimate();
         const currentSnapshot = buildCurrentSnapshot();
         workflowError = '';
         invoiceInput?.classList.remove('input-error');
@@ -3113,7 +3561,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
     });
     els.billingCalcModal.classList.remove('hidden');
-    await renderCalcPreview(estimate);
+    await renderCalcPreview(activeEstimate);
     syncCalcWorkflowState();
 }
 

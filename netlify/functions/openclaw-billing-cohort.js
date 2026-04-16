@@ -827,6 +827,9 @@ function serializeReadingGroups(groups) {
             contractmain_id: group.contractmain_id,
             previous_meter: Number(group.previous_meter || 0) || 0,
             present_meter: Number(group.present_meter || 0) || 0,
+            previous_meter2: Number(group.previous_meter2 || 0) || 0,
+            present_meter2: Number(group.present_meter2 || 0) || 0,
+            meter_reading2: Number(group.meter_reading2 || 0) || 0,
             total_consumed: Number(group.total_consumed || 0) || 0,
             pages: Number(group.pages || 0),
             page_rate: Number(group.page_rate || 0),
@@ -1536,6 +1539,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const machineId = String(getField(f, ['machine_id']) || '').trim();
         const readingStamp = normalizeDate(getField(f, ['timestmp']));
         const meterReading = Number(getField(f, ['meter_reading']) || 0) || 0;
+        const meterReading2 = Number(getField(f, ['meter_reading2']) || 0) || 0;
         if (!contractId || !machineId || !readingStamp || meterReading <= 0) return;
         const monthKey = monthKeyFromYearMonth(readingStamp.getFullYear(), readingStamp.getMonth() + 1);
         if (!monthKey) return;
@@ -1549,7 +1553,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             task_date: toIso(readingStamp),
             machine_id: machineId,
             contractmain_id: contractId,
-            meter_reading: meterReading
+            meter_reading: meterReading,
+            meter_reading2: meterReading2
         };
         if (!existing || new Date(existing.task_date).getTime() < readingStamp.getTime()) {
             monthBucket.set(monthKey, nextEntry);
@@ -1626,6 +1631,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                     contractmain_id: contractId,
                     previous_meter: Number(previousEntry.meter_reading || 0) || 0,
                     present_meter: Number(currentEntry.meter_reading || 0) || 0,
+                    previous_meter2: Number(previousEntry.meter_reading2 || 0) || 0,
+                    present_meter2: Number(currentEntry.meter_reading2 || 0) || 0,
+                    meter_reading2: Number(currentEntry.meter_reading2 || 0) || 0,
                     total_consumed: Math.max(0, Number(currentEntry.meter_reading || 0) - Number(previousEntry.meter_reading || 0)),
                     pages: reading.pages,
                     page_rate: reading.pageRate,
