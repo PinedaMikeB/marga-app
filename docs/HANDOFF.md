@@ -1,6 +1,6 @@
 # MARGA Handoff (Single Source of Truth)
 
-Last Updated: 2026-04-15  
+Last Updated: 2026-04-16
 Owner: Marga App Team
 
 This file is the canonical session-to-session handoff.
@@ -60,6 +60,13 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Sync Updater | In Progress | Dual-lane supervisor exists, restart shortcuts exist, and recovery logic is improved. | Validate outage recovery and extend coverage to billing/collections/payments. |
 
 ## Session Log (Top First)
+### 2026-04-16 - Grouped RTP Meter Source Rule
+- Added the Billing grouped RTP rule that all loaded rows stay visible in the modal.
+- Previous meter lookup should use the latest valid serial/machine meter before the billing month, even if that reading is from months ago or last year.
+- Serial/machine history matters because a machine can transfer customers; only reuse old readings when the serial has not moved to another customer after that reading.
+- New delivery/customer first bill may use the delivery or contract beginning meter as the previous meter.
+- Rows with no prior meter or beginning meter should show a note and zero computed amount instead of silently billing quota from `0 / 0`; staff can enter the beginning meter or mark the row inactive if no delivery happened.
+
 ### 2026-04-15 - Billing Save And Invoice Print Calibration
 - Built and pushed the current Billing save-first workflow and print-layout baseline through commit `e9338ab`.
 - Current protected Billing baseline:
@@ -86,6 +93,13 @@ Each thread should update only the relevant module sections plus `Current Focus`
   - Chrome print preview must have `Headers and footers` turned off
   - keep app `@page` margin at `0`
   - use the Billing modal dropdown to load `Invoice RTP` or `Invoice RTF`; do not recalibrate from scratch if a template exists
+- Grouped RTP meter-source rule added after China Bank Savings testing:
+  - list every loaded machine/customer row in the billing modal first
+  - previous meter follows the serial/machine history, not only the previous calendar month
+  - if April is being billed and the last valid reading/bill was months earlier or last year, use that meter only if the serial has not been delivered/transferred to another customer afterward
+  - for a new delivery/customer, the delivery or contract beginning meter can be the previous meter for the first bill
+  - if no prior meter or beginning meter exists, keep the row visible with "No available previous meter reading" and do not auto-bill quota from `0 / 0`
+  - if no delivery happened, staff should mark the row inactive so it moves to inactive customer review instead of grouped billing
 - Thread/repo protection:
   - this work belongs in `Marga-App`
   - if the user asks for Marga App work inside a `marga-biz` thread, stop and redirect before editing

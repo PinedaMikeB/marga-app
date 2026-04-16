@@ -35,6 +35,13 @@ This file protects the project across new chats. It should record the stable bas
   - future invoice hiding
   - missed reading / catch-up states
   - machine-reading fallback logic
+- Billing meter source rule:
+  - grouped RTP computation must show all loaded machine/customer rows first; do not hide rows only because a meter lookup is missing.
+  - previous meter should be the latest valid meter for the machine serial before the billing month, even if the last reading/bill was months ago or in a previous year.
+  - the serial/machine id is the billing anchor because machines transfer between customers; use the last meter only when the serial has not been delivered/transferred to another customer after that reading.
+  - for a new delivery/customer, the beginning meter from delivery/contract setup may be the previous meter for the first bill.
+  - if no prior meter, delivery beginning meter, or saved billing meter is available, keep the row visible with a clear note such as "No available previous meter reading"; do not silently bill the quota minimum from `0 / 0`.
+  - if no delivery happened, office staff should mark the customer/machine inactive so it moves to inactive review instead of being billed.
 
 ## Customer Identity Rule
 - Canonical customer lookup is the **Active Contract Customer Graph**.

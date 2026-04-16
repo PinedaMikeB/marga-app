@@ -693,7 +693,7 @@ async function saveMultiMachineBillingRecords({ row, context, estimate, snapshot
             ...line,
             row: getLineRowForBilling(line, row)
         }))
-        .filter((line) => line?.row?.contractmain_id);
+        .filter((line) => line?.row?.contractmain_id && !line.missingMeterSource);
     if (!lines.length) throw new Error('No machine contract lines are available to save for this grouped invoice.');
 
     const targetDocsByContract = new Map();
@@ -2810,12 +2810,14 @@ function roundBillingAmount(value) {
 
 function calculateMeterLineEstimate({
     label = 'Meter',
+    subtitle = '',
     profile = {},
     previousMeter = 0,
     presentMeter = 0,
     spoilagePercent = DEFAULT_SPOILAGE_RATE * 100,
     forceFixed = false,
-    row = null
+    row = null,
+    missingMeterMessage = ''
 } = {}) {
     const previous = Math.max(0, Number(previousMeter || 0) || 0);
     const present = Math.max(0, Number(presentMeter || 0) || 0);
@@ -2839,7 +2841,10 @@ function calculateMeterLineEstimate({
     let warning = '';
 
     if (!isFixed) {
-        if (present < previous) {
+        if (missingMeterMessage && previous <= 0 && present <= 0) {
+            warning = missingMeterMessage;
+            formula = 'missing_prior_meter';
+        } else if (present < previous) {
             warning = `${label}: present meter cannot be lower than previous meter.`;
         } else {
             rawPages = present - previous;
@@ -2882,6 +2887,7 @@ function calculateMeterLineEstimate({
 
     return {
         label,
+        subtitle,
         rowId: row ? String(row.row_id || row.company_id || '').trim() : '',
         companyName: row ? String(row.company_name || row.account_name || '').trim() : '',
         branchName: row ? String(row.branch_name || '').trim() : '',
@@ -2910,7 +2916,9 @@ function calculateMeterLineEstimate({
         vatAmount,
         quotaVariance: monthlyQuota > 0 ? netPages - monthlyQuota : null,
         formula,
-        warning
+        warning,
+        missingMeterMessage,
+        missingMeterSource: Boolean(missingMeterMessage && previous <= 0 && present <= 0)
     };
 }
 
@@ -3152,7 +3160,7 @@ function renderMeterLineCard(line, mode, index) {
                     <input type="number" min="0" step="0.01" value="${escapeHtml(String(line.succeedingRate || line.pageRate || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="succeedingRate">
                 </div>
             </div>
-            <div class="calc-meter-line-math" id="${escapeHtml(prefix)}-math">${escapeHtml(line.formula || '')}</div>
+            <div class="calc-meter-line-math ${line.warning ? 'error' : ''}" id="${escapeHtml(prefix)}-math">${escapeHtml(formatLineComputation(line))}</div>
         </article>
     `;
 }
@@ -3173,6 +3181,9 @@ function formatLineComputation(line) {
     if (!line) return '';
     if (line.formula === 'fixed_monthly_rate') {
         return `Fixed monthly rate ${formatAmount(line.monthlyRate || 0)}.`;
+    }
+    if (line.formula === 'missing_prior_meter') {
+        return line.warning || 'No available previous meter reading found yet.';
     }
     return `${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
 }
@@ -3287,12 +3298,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             row
         })
     ];
-    const groupedRowsForBilling = (context.groupedMachineRows || []).filter((machineRow) => {
-        if (machineRow?.machine_id) return true;
-        if (getPrimaryTargetReadingGroup(machineRow, monthKey)) return true;
-        if (collectPriorReadingGroups(machineRow, monthKey)[0]) return true;
-        return priorMachineReadingByRow.has(getBillingRowLookupKey(machineRow));
-    });
+    const groupedRowsForBilling = context.groupedMachineRows || [];
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
         const machineProfile = getRowBillingProfile(machineRow) || profile;
         const group = getPrimaryTargetReadingGroup(machineRow, monthKey);
@@ -3300,13 +3306,20 @@ async function openBillingCalcModal(rowId, monthKey) {
         const lookup = priorMachineReadingByRow.get(getBillingRowLookupKey(machineRow));
         const previousMeter = Number(group?.previous_meter || prior?.present_meter || prior?.previous_meter || lookup?.previousMeter || 0) || 0;
         const presentMeter = Number(group?.present_meter || group?.meter_reading || previousMeter || 0) || 0;
+        const meterSourceLabel = lookup?.sourceMonthLabel || prior?.month_label || group?.month_label || '';
+        const hasMeterSource = Boolean(group || prior || lookup || previousMeter > 0 || presentMeter > 0);
+        const missingMeterMessage = hasMeterSource
+            ? ''
+            : 'No available previous meter reading found. Check first delivery/beginning meter or mark inactive if no delivery happened.';
         return calculateMeterLineEstimate({
             label: machineRow.branch_name || machineRow.serial_number || machineRow.machine_label || 'Machine',
+            subtitle: `${machineRow.machine_label || machineRow.serial_number || 'No machine serial'}${meterSourceLabel ? ` • last meter ${meterSourceLabel}` : ''}`,
             profile: machineProfile,
             previousMeter,
             presentMeter,
             spoilagePercent: initialSnapshot.spoilagePercent,
-            row: machineRow
+            row: machineRow,
+            missingMeterMessage
         });
     });
     const companyName = row.display_name || row.account_name || row.company_name || 'Unknown Customer';
@@ -3647,11 +3660,13 @@ async function openBillingCalcModal(rowId, monthKey) {
         };
         return calculateMeterLineEstimate({
             label: seed.label,
+            subtitle: seed.subtitle,
             profile: lineProfile,
             previousMeter: readLineInputValue(mode, index, 'previousMeter', seed.previousMeter),
             presentMeter: readLineInputValue(mode, index, 'presentMeter', seed.presentMeter),
             spoilagePercent: readLineInputValue(mode, index, 'spoilagePercent', seed.spoilagePercent),
-            row: seed.row || null
+            row: seed.row || null,
+            missingMeterMessage: seed.missingMeterMessage
         });
     };
 

@@ -49,6 +49,10 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 - April 26 or the target month cell must show the saved billing after save.
 - Invoice numbers must be unique. If a bill is deleted/cancelled, that invoice number should become available again only after the billing record is actually removed or marked cancelled according to the agreed workflow.
 - Keep the invoice number search box so an invoice can be traced before deletion.
+- Grouped RTP modal must list all loaded machine/customer rows. If no prior meter is found, show the row with a note instead of hiding it.
+- Previous meter lookup should follow the serial/machine history, not only the previous calendar month. If April is being billed and the last valid reading was November 2025 or January 2026, use that meter as long as the serial has not been delivered/transferred to another customer after that reading.
+- For first delivery/new customer cases, the delivery or contract beginning meter can be the previous meter for the first bill.
+- Never auto-bill a quota amount from `0 present / 0 previous` when no meter source exists; show "No available previous meter reading" so staff can enter the beginning meter or mark the row inactive if no delivery happened.
 
 ## Petty Cash Status
 - Petty Cash module files were not rolled back.
