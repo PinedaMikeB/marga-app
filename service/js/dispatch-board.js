@@ -371,6 +371,10 @@ function normalizeSerialNumber(value) {
     return String(value || '').trim().replace(/\s+/g, '').toUpperCase();
 }
 
+function normalizeContactNumber(value) {
+    return String(value || '').replace(/\D+/g, '');
+}
+
 function cacheMachineBySerial(machine) {
     const key = normalizeSerialNumber(machine?.serial);
     if (!key) return;
@@ -1178,6 +1182,7 @@ async function openNewRequestModal() {
     document.getElementById('newReqSuperUrgent').checked = false;
     document.getElementById('newReqWithRequest').checked = false;
     document.getElementById('newReqWithComplain').checked = false;
+    document.getElementById('newReqSaveContact').checked = false;
     machineSelect.innerHTML = `<option value="">Select company and branch first...</option>`;
     machineMeta.textContent = 'Select a company and branch to load active machines.';
     opsState.newRequestMachine = null;
@@ -1750,6 +1755,44 @@ async function openNewRequestModal() {
     };
 }
 
+async function saveRequestContactIfNeeded({ branchId, caller, phone }) {
+    const shouldSave = document.getElementById('newReqSaveContact')?.checked === true;
+    if (!shouldSave) return { status: 'skipped' };
+
+    const normalizedPhone = normalizeContactNumber(phone);
+    if (!normalizedPhone) {
+        return { status: 'empty' };
+    }
+
+    await ensureBranchContactsLoaded();
+    const contacts = opsCache.branchContactsByBranch.get(Number(branchId)) || [];
+    const existing = contacts.find((contact) => normalizeContactNumber(contact.contact_number) === normalizedPhone);
+    if (existing) {
+        return { status: 'duplicate' };
+    }
+
+    const maxDocs = await runFirestoreQuery('tbl_branchcontact', 1).catch(() => []);
+    const maxRow = maxDocs.map(parseFirestoreDoc).filter(Boolean)[0] || null;
+    const nextId = Number(maxRow?.id || 0) + 1;
+    if (!Number.isFinite(nextId) || nextId <= 0) {
+        throw new Error('Unable to allocate contact id.');
+    }
+
+    const contactDoc = {
+        id: nextId,
+        branch_id: Number(branchId || 0) || 0,
+        contact_person: caller || '',
+        contact_number: phone
+    };
+
+    await setDocument('tbl_branchcontact', nextId, contactDoc);
+    if (!opsCache.branchContactsByBranch.has(Number(branchId))) {
+        opsCache.branchContactsByBranch.set(Number(branchId), []);
+    }
+    opsCache.branchContactsByBranch.get(Number(branchId)).push(contactDoc);
+    return { status: 'created', id: nextId };
+}
+
 async function saveNewServiceRequest() {
     const user = MargaAuth.getUser();
     const canCreate = MargaAuth.isAdmin() || MargaAuth.hasRole('service');
@@ -1774,6 +1817,7 @@ async function saveNewServiceRequest() {
     const superUrgent = document.getElementById('newReqSuperUrgent')?.checked ? 1 : 0;
     const withRequest = document.getElementById('newReqWithRequest')?.checked ? 1 : 0;
     const withComplain = document.getElementById('newReqWithComplain')?.checked ? 1 : 0;
+    const saveContact = document.getElementById('newReqSaveContact')?.checked === true;
 
     if (!date) {
         alert('Please choose a schedule date.');
@@ -1835,6 +1879,10 @@ async function saveNewServiceRequest() {
     }
     if (!branchId) {
         alert('Please select a branch.');
+        return;
+    }
+    if (saveContact && !normalizeContactNumber(phone)) {
+        alert('Please enter a phone number before saving it to the customer file.');
         return;
     }
     if (!troubleId) {
@@ -1942,9 +1990,21 @@ async function saveNewServiceRequest() {
     saveBtn.disabled = true;
     try {
         await setDocument('tbl_schedule', nextId, fullDoc);
+        let contactMessage = '';
+        try {
+            const contactResult = await saveRequestContactIfNeeded({ branchId, caller, phone });
+            if (contactResult.status === 'created') {
+                contactMessage = ` Contact saved to branch/department file as #${contactResult.id}.`;
+            } else if (contactResult.status === 'duplicate') {
+                contactMessage = ' Contact number was already on file for this branch/department.';
+            }
+        } catch (contactError) {
+            console.error('Save contact failed:', contactError);
+            contactMessage = ` Contact was not saved: ${contactError?.message || contactError}.`;
+        }
         closeNewRequestModal();
         await loadOperationsBoard();
-        alert(`Service request saved as schedule #${nextId}.`);
+        alert(`Service request saved as schedule #${nextId}.${contactMessage}`);
     } catch (err) {
         console.error('Save request failed:', err);
         alert(`Failed to save request: ${err?.message || err}`);
