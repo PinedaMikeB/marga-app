@@ -378,10 +378,13 @@
                     <input type="text" id="newReqCaller" placeholder="Caller name">
                 </label>
 
-                <label class="marga-field">
+                <div class="marga-field marga-phone-field">
                     <span>Phone</span>
-                    <input type="text" id="newReqPhone" placeholder="09xx...">
-                </label>
+                    <div class="marga-phone-save-row">
+                        <input type="text" id="newReqPhone" placeholder="09xx...">
+                        <label class="marga-inline-check"><input type="checkbox" id="newReqSaveContact"> Save Contact</label>
+                    </div>
+                </div>
 
                 <label class="marga-field">
                     <span>Assign To</span>
@@ -425,7 +428,6 @@
                     <label><input type="checkbox" id="newReqSuperUrgent"> Super Urgent</label>
                     <label><input type="checkbox" id="newReqWithRequest"> With Request</label>
                     <label><input type="checkbox" id="newReqWithComplain"> With Complain</label>
-                    <label><input type="checkbox" id="newReqSaveContact"> Save Customer Contact</label>
                 </div>
 
                 <label class="marga-field marga-field-full">
