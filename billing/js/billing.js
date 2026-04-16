@@ -49,6 +49,7 @@ let billingCalcRequestToken = 0;
 let invoicePreviewReferenceData = null;
 let invoicePreviewReferencePromise = null;
 let currentRtpPrintPayload = null;
+const priorMachineReadingCache = new Map();
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const CONTRACT_CATEGORY_META = {
@@ -319,6 +320,67 @@ async function queryFirestoreEquals(collection, fieldPath, value) {
             }
         }
     });
+}
+
+function uniqueNonBlankValues(values = []) {
+    const seen = new Set();
+    const unique = [];
+    values.forEach((value) => {
+        const key = String(value ?? '').trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        unique.push(value);
+    });
+    return unique;
+}
+
+function chunkValues(values = [], size = 10) {
+    const chunks = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
+async function queryFirestoreIn(collection, fieldPath, values = [], options = {}) {
+    const uniqueValues = uniqueNonBlankValues(values);
+    if (!uniqueValues.length) return [];
+
+    const byDocId = new Map();
+    const chunks = chunkValues(uniqueValues, options.chunkSize || 10);
+    const queries = chunks.map((chunk) => {
+        const structuredQuery = {
+            from: [{ collectionId: collection }],
+            where: {
+                fieldFilter: {
+                    field: { fieldPath },
+                    op: 'IN',
+                    value: {
+                        arrayValue: {
+                            values: chunk.map((value) => toFirestoreFieldValue(value))
+                        }
+                    }
+                }
+            }
+        };
+        if (Array.isArray(options.select) && options.select.length) {
+            structuredQuery.select = {
+                fields: options.select.map((selectedFieldPath) => ({ fieldPath: selectedFieldPath }))
+            };
+        }
+        if (Number(options.limit || 0) > 0) {
+            structuredQuery.limit = Number(options.limit || 0);
+        }
+        return structuredQuery;
+    });
+
+    const queryResults = await Promise.all(queries.map((structuredQuery) => runFirestoreQuery(structuredQuery)));
+    queryResults.flat().forEach((doc) => {
+        const docKey = String(doc?._docId || `${doc?.id || ''}:${doc?.current_contract || ''}:${doc?.machine_id || ''}`).trim();
+        if (docKey && !byDocId.has(docKey)) byDocId.set(docKey, doc);
+    });
+
+    return Array.from(byDocId.values());
 }
 
 async function getFirestoreDocument(collection, docId) {
@@ -2368,6 +2430,186 @@ function renderBranchSub(row) {
     return row.account_name || row.company_name || '';
 }
 
+function getBillingRowLookupKey(row) {
+    return String(row?.row_id || row?.contractmain_id || row?.machine_id || row?.company_id || '').trim();
+}
+
+function parseMachineReadingDate(value) {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const sql = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+    if (sql) {
+        const parsed = new Date(`${sql[1]}T${sql[2]}+08:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) {
+        const parsed = new Date(`${iso[1]}T00:00:00+08:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getMonthStartDate(monthKey) {
+    const parsed = parseMonthInput(monthKey);
+    if (!parsed) return null;
+    return new Date(parsed.year, parsed.month - 1, 1);
+}
+
+function monthKeyFromDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    return monthInputValue(date);
+}
+
+function normalizeNumericIds(values = []) {
+    return uniqueNonBlankValues(values)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function sortReadingsNewestFirst(readings = []) {
+    return [...readings].sort((left, right) => {
+        const leftTime = parseMachineReadingDate(left?.timestmp)?.getTime() || 0;
+        const rightTime = parseMachineReadingDate(right?.timestmp)?.getTime() || 0;
+        return rightTime - leftTime;
+    });
+}
+
+function pickPriorMachineReading(row, readings = [], monthKey) {
+    const machineId = String(row?.machine_id || '').trim();
+    if (!machineId) return null;
+
+    const contractId = String(row?.contractmain_id || '').trim();
+    const companyId = String(row?.company_id || '').trim();
+    const branchId = String(row?.branch_id || '').trim();
+    const cutoffDate = getMonthStartDate(monthKey);
+    const cutoffTime = cutoffDate?.getTime() || Number.POSITIVE_INFINITY;
+    const candidates = readings
+        .filter((reading) => {
+            if (String(reading?.machine_id || '').trim() !== machineId) return false;
+            const meterReading = Number(reading?.meter_reading || 0) || 0;
+            if (meterReading <= 0) return false;
+            const readingDate = parseMachineReadingDate(reading?.timestmp);
+            if (!readingDate) return false;
+            return readingDate.getTime() < cutoffTime;
+        });
+    if (!candidates.length) return null;
+
+    const newestFor = (items) => sortReadingsNewestFirst(items)[0] || null;
+    const sameContract = contractId
+        ? candidates.filter((reading) => String(reading?.current_contract || '').trim() === contractId)
+        : [];
+    if (sameContract.length) return newestFor(sameContract);
+
+    const sameCompany = companyId
+        ? candidates.filter((reading) => String(reading?.current_companyid || '').trim() === companyId)
+        : [];
+    if (sameCompany.length) {
+        const sameBranch = branchId
+            ? sameCompany.filter((reading) => String(reading?.current_branchid || '').trim() === branchId)
+            : [];
+        return newestFor(sameBranch.length ? sameBranch : sameCompany);
+    }
+
+    return newestFor(candidates);
+}
+
+function buildPriorReadingLookup(reading) {
+    const readingDate = parseMachineReadingDate(reading?.timestmp);
+    const sourceMonthKey = monthKeyFromDate(readingDate);
+    const previousMeter = Number(reading?.meter_reading || 0) || 0;
+    const previousMeter2 = Number(reading?.meter_reading2 || 0) || 0;
+    return {
+        previousMeter,
+        previousMeter2,
+        taskDate: readingDate ? formatIsoDate(readingDate) : String(reading?.timestmp || '').trim(),
+        sourceMonthKey,
+        sourceMonthLabel: sourceMonthKey ? formatMonthLabel(sourceMonthKey, sourceMonthKey) : 'Previous reading',
+        invoiceRef: String(reading?.invoice_id || '').trim(),
+        readingId: String(reading?.id || reading?._docId || '').trim()
+    };
+}
+
+function buildPriorGroupFromLookup(lookup, row) {
+    return {
+        schedule_id: `machine-reading:${lookup?.readingId || getBillingRowLookupKey(row)}`,
+        invoice_num: lookup?.invoiceRef || null,
+        task_date: lookup?.taskDate || '',
+        machine_id: String(row?.machine_id || '').trim(),
+        contractmain_id: String(row?.contractmain_id || '').trim(),
+        previous_meter: 0,
+        present_meter: Number(lookup?.previousMeter || 0) || 0,
+        previous_meter2: 0,
+        present_meter2: Number(lookup?.previousMeter2 || 0) || 0,
+        meter_reading2: Number(lookup?.previousMeter2 || 0) || 0,
+        month_key: lookup?.sourceMonthKey || '',
+        month_label: lookup?.sourceMonthLabel || 'Previous reading',
+        pages: 0,
+        total_consumed: 0
+    };
+}
+
+async function loadPriorMachineReadingLookups(rows = [], monthKey) {
+    const eligibleRows = rows.filter((row) => row?.machine_id);
+    if (!eligibleRows.length) return new Map();
+
+    const cacheKey = JSON.stringify({
+        monthKey,
+        rows: eligibleRows.map((row) => [
+            String(row?.company_id || '').trim(),
+            String(row?.branch_id || '').trim(),
+            String(row?.machine_id || '').trim(),
+            String(row?.contractmain_id || '').trim()
+        ])
+    });
+    if (priorMachineReadingCache.has(cacheKey)) return priorMachineReadingCache.get(cacheKey);
+
+    const fieldMask = [
+        'id',
+        'current_contract',
+        'current_companyid',
+        'current_branchid',
+        'machine_id',
+        'meter_reading',
+        'meter_reading2',
+        'timestmp',
+        'invoice_id'
+    ];
+    const machineIds = normalizeNumericIds(eligibleRows.map((row) => row.machine_id));
+    const contractIds = normalizeNumericIds(eligibleRows.map((row) => row.contractmain_id));
+    const [machineDocs, contractDocs] = await Promise.all([
+        queryFirestoreIn('tbl_machinereading', 'machine_id', machineIds, { select: fieldMask, limit: 1000 }),
+        queryFirestoreIn('tbl_machinereading', 'current_contract', contractIds, { select: fieldMask, limit: 1000 }).catch((error) => {
+            console.warn('Unable to load prior readings by contract.', error);
+            return [];
+        })
+    ]);
+
+    const docsByKey = new Map();
+    [...machineDocs, ...contractDocs].forEach((doc) => {
+        const key = String(doc?._docId || `${doc?.id || ''}:${doc?.machine_id || ''}:${doc?.timestmp || ''}`).trim();
+        if (key && !docsByKey.has(key)) docsByKey.set(key, doc);
+    });
+    const allReadings = Array.from(docsByKey.values());
+
+    const lookups = new Map();
+    eligibleRows.forEach((row) => {
+        const picked = pickPriorMachineReading(row, allReadings, monthKey);
+        if (!picked) return;
+        const key = getBillingRowLookupKey(row);
+        if (key) lookups.set(key, buildPriorReadingLookup(picked));
+    });
+
+    priorMachineReadingCache.set(cacheKey, lookups);
+    return lookups;
+}
+
 function collectPriorReadingGroups(row, monthKey) {
     return Object.entries(row?.months || {})
         .filter(([key]) => key < monthKey)
@@ -2845,7 +3087,6 @@ async function openBillingCalcModal(rowId, monthKey) {
 
     const row = context.row;
     const profile = context.profile;
-    const latest = context.latestPriorGroup;
     const latestInvoice = context.latestInvoice;
     const printContractCode = String(profile.category_code || '').trim().toUpperCase();
     const canPrintInvoice = isPrintableContractCode(printContractCode);
@@ -2869,6 +3110,27 @@ async function openBillingCalcModal(rowId, monthKey) {
     if (requestToken !== billingCalcRequestToken) return;
 
     const savedBillingDoc = pickPrimaryBillingDoc(existingBillingDocs);
+    let priorMachineReadingByRow = new Map();
+    if (context.isReading) {
+        const prefillRows = (context.groupedMachineRows || []).length ? context.groupedMachineRows : [row];
+        try {
+            priorMachineReadingByRow = await loadPriorMachineReadingLookups(prefillRows, monthKey);
+        } catch (error) {
+            console.warn('Unable to load prior machine readings for the calculator modal.', error);
+        }
+        if (requestToken !== billingCalcRequestToken) return;
+
+        const rowPriorLookup = priorMachineReadingByRow.get(getBillingRowLookupKey(row));
+        if (!savedBillingDoc && rowPriorLookup && !context.targetReadingGroup && Number(context.previousMeter || 0) <= 0) {
+            context.latestPriorGroup = context.latestPriorGroup || buildPriorGroupFromLookup(rowPriorLookup, row);
+            context.previousMeter = Number(rowPriorLookup.previousMeter || 0) || 0;
+            context.presentMeter = context.previousMeter;
+            if (Number(rowPriorLookup.previousMeter2 || 0) > 0) {
+                context.hasSecondaryRtp = true;
+            }
+        }
+    }
+    const latest = context.latestPriorGroup;
     const initialSnapshot = savedBillingDoc
         ? billingSnapshotFromDoc(savedBillingDoc, {
             invoiceNo: '',
@@ -2918,7 +3180,8 @@ async function openBillingCalcModal(rowId, monthKey) {
         const machineProfile = getRowBillingProfile(machineRow) || profile;
         const group = getPrimaryTargetReadingGroup(machineRow, monthKey);
         const prior = collectPriorReadingGroups(machineRow, monthKey)[0] || null;
-        const previousMeter = Number(group?.previous_meter || prior?.present_meter || prior?.previous_meter || 0) || 0;
+        const lookup = priorMachineReadingByRow.get(getBillingRowLookupKey(machineRow));
+        const previousMeter = Number(group?.previous_meter || prior?.present_meter || prior?.previous_meter || lookup?.previousMeter || 0) || 0;
         const presentMeter = Number(group?.present_meter || group?.meter_reading || previousMeter || 0) || 0;
         return calculateMeterLineEstimate({
             label: machineRow.branch_name || machineRow.serial_number || machineRow.machine_label || 'Machine',
