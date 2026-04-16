@@ -606,9 +606,108 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     };
 }
 
+function isMultiMachineBilling(snapshot, estimate) {
+    return String(snapshot?.billingMode || '').trim() === 'multi_machine_rtp'
+        && Array.isArray(estimate?.lineItems)
+        && estimate.lineItems.length > 1;
+}
+
+function getLineRowForBilling(line, fallbackRow) {
+    const lineRowId = String(line?.rowId || '').trim();
+    if (lineRowId && lastPayload?.month_matrix?.rows) {
+        const found = lastPayload.month_matrix.rows.find((entry) => String(entry.row_id || entry.company_id || '').trim() === lineRowId);
+        if (found) return found;
+    }
+    return fallbackRow;
+}
+
+async function saveMultiMachineBillingRecords({ row, context, estimate, snapshot }) {
+    const invoiceNo = normalizeInvoiceNumber(snapshot?.invoiceNo);
+    if (!invoiceNo) throw new Error('Enter an invoice number before saving.');
+
+    const lines = (Array.isArray(estimate?.lineItems) ? estimate.lineItems : [])
+        .map((line) => ({
+            ...line,
+            row: getLineRowForBilling(line, row)
+        }))
+        .filter((line) => line?.row?.contractmain_id);
+    if (!lines.length) throw new Error('No machine contract lines are available to save for this grouped invoice.');
+
+    const targetDocsByContract = new Map();
+    for (const line of lines) {
+        const docs = await queryBillingDocsByContractMonth(line.row.contractmain_id, context.monthKey);
+        const targetDoc = pickPrimaryBillingDoc(docs);
+        targetDocsByContract.set(String(line.row.contractmain_id), targetDoc || null);
+    }
+
+    const duplicateDocs = await queryBillingDocsByInvoice(invoiceNo);
+    const allowedContractIds = new Set(lines.map((line) => String(line.row.contractmain_id)));
+    const allowedDocIds = new Set(Array.from(targetDocsByContract.values()).map((doc) => doc?._docId).filter(Boolean));
+    const conflictingDoc = duplicateDocs.find((doc) => {
+        const docContractId = String(doc?.contractmain_id || '').trim();
+        if (doc?._docId && allowedDocIds.has(doc._docId)) return false;
+        return !allowedContractIds.has(docContractId);
+    });
+    if (conflictingDoc) {
+        const duplicateMonth = getBillingDocMonthKey(conflictingDoc);
+        throw new Error(`Invoice ${invoiceNo} is already used${duplicateMonth ? ` for ${formatMonthLabel(duplicateMonth, duplicateMonth)}` : ''}.`);
+    }
+
+    const savedDocs = [];
+    for (const [index, line] of lines.entries()) {
+        const targetDoc = targetDocsByContract.get(String(line.row.contractmain_id));
+        const docId = String(targetDoc?._docId || `${Date.now()}-${index}`);
+        const { row: lineRow, ...lineFields } = line;
+        const lineEstimate = {
+            ...lineFields,
+            lineItems: [lineFields],
+            amountDue: Number(lineFields.amountDue || 0) || 0,
+            netAmount: Number(lineFields.netAmount || 0) || 0,
+            vatAmount: Number(lineFields.vatAmount || 0) || 0
+        };
+        const fields = buildBillingRecordFields({
+            row: lineRow,
+            context: {
+                ...context,
+                profile: getRowBillingProfile(lineRow) || context.profile
+            },
+            estimate: lineEstimate,
+            snapshot,
+            docId
+        });
+        fields.billing_group_invoice_total = Number(estimate.amountDue || 0) || 0;
+        fields.billing_group_line_index = index + 1;
+        fields.billing_group_line_count = lines.length;
+        const result = await setFirestoreDocument('tbl_billing', docId, fields, {
+            mode: 'set',
+            label: `Billing ${invoiceNo} line ${index + 1}`,
+            dedupeKey: `tbl_billing:${docId}`
+        });
+        savedDocs.push({
+            ...result,
+            docId,
+            invoiceNo,
+            fields
+        });
+    }
+
+    return {
+        ok: savedDocs.every((entry) => entry.ok !== false),
+        queued: savedDocs.some((entry) => entry.queued),
+        docId: savedDocs[0]?.docId || '',
+        invoiceNo,
+        fields: savedDocs[0]?.fields || {},
+        savedCount: savedDocs.length,
+        docs: savedDocs
+    };
+}
+
 async function saveBillingRecord({ row, context, estimate, snapshot, existingDocs = [] }) {
     const invoiceNo = normalizeInvoiceNumber(snapshot?.invoiceNo);
     if (!invoiceNo) throw new Error('Enter an invoice number before saving.');
+    if (isMultiMachineBilling(snapshot, estimate)) {
+        return saveMultiMachineBillingRecords({ row, context, estimate, snapshot });
+    }
     if (!row?.contractmain_id) throw new Error('This row has no contract ID, so billing cannot be saved yet.');
 
     const rowDocs = existingDocs.length ? existingDocs : await queryBillingDocsByContractMonth(row.contractmain_id, context.monthKey);
@@ -2543,15 +2642,34 @@ function getGroupedMachineRows(row, monthKey) {
     return Array.from(byRowId.values());
 }
 
+function buildSummaryBillingRow(row, groupedMachineRows) {
+    const firstRow = groupedMachineRows[0] || {};
+    return {
+        ...firstRow,
+        row_id: row?.row_id || `summary:${row?.company_id || firstRow.company_id || ''}`,
+        is_summary_billing_row: true,
+        is_summary_row: false,
+        company_id: row?.company_id || firstRow.company_id || '',
+        company_name: row?.company_name || firstRow.company_name || '',
+        account_name: row?.account_name || row?.company_name || firstRow.account_name || firstRow.company_name || '',
+        branch_name: row?.branch_name || 'All branches / departments',
+        display_name: row?.display_name || `${row?.company_name || firstRow.company_name || 'Customer'} grouped billing`,
+        machine_label: row?.machine_label || `${formatCount(groupedMachineRows.length)} machine rows`,
+        months: row?.months || firstRow.months || {}
+    };
+}
+
 function buildBillingCalculationContext(row, monthKey) {
-    if (!row || row.is_summary_row) return null;
-    const profile = getRowBillingProfile(row);
+    if (!row) return null;
+    const summaryGroupedRows = row.is_summary_row ? getGroupedMachineRows(row, monthKey) : [];
+    const workingRow = row.is_summary_row ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
+    const profile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
     if (!profile) return null;
 
-    const targetCell = row.months?.[monthKey] || {};
-    const targetReadingGroup = getPrimaryTargetReadingGroup(row, monthKey);
-    const latestPriorGroup = collectPriorReadingGroups(row, monthKey)[0] || null;
-    const latestInvoice = collectPriorInvoiceRefs(row, monthKey)[0] || null;
+    const targetCell = workingRow.months?.[monthKey] || {};
+    const targetReadingGroup = getPrimaryTargetReadingGroup(workingRow, monthKey);
+    const latestPriorGroup = collectPriorReadingGroups(workingRow, monthKey)[0] || null;
+    const latestInvoice = collectPriorInvoiceRefs(workingRow, monthKey)[0] || null;
     const previousMeter = latestPriorGroup
         ? Number(latestPriorGroup.present_meter || latestPriorGroup.previous_meter || 0) || 0
         : 0;
@@ -2563,7 +2681,8 @@ function buildBillingCalculationContext(row, monthKey) {
         : targetPreviousMeter;
 
     return {
-        row,
+        row: workingRow,
+        sourceSummaryRow: row.is_summary_row ? row : null,
         monthKey,
         targetCell,
         targetReadingGroup,
@@ -2577,7 +2696,8 @@ function buildBillingCalculationContext(row, monthKey) {
         isReading: isReadingPricing(profile),
         isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
         hasSecondaryRtp: hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2),
-        groupedMachineRows: getGroupedMachineRows(row, monthKey)
+        groupedMachineRows: summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey),
+        forceGroupedMode: Boolean(row.is_summary_row)
     };
 }
 
@@ -2609,6 +2729,7 @@ function getDefaultBillingMode(context) {
     const savedMode = String(context?.savedBillingMode || '').trim();
     const options = getBillingModeOptions(context);
     if (savedMode && options.some((option) => option.key === savedMode)) return savedMode;
+    if (context?.forceGroupedMode && options.some((option) => option.key === 'multi_machine_rtp')) return 'multi_machine_rtp';
     if (context?.isFixed) return 'rtf';
     if (context?.hasSecondaryRtp) return 'multi_meter_rtp';
     return options[0]?.key || 'single_meter_rtp';
@@ -2714,14 +2835,15 @@ function closeBillingCalcModal() {
 }
 
 async function openBillingCalcModal(rowId, monthKey) {
-    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
+    const requestedRow = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
         || (lastPayload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
-    const context = buildBillingCalculationContext(row, monthKey);
+    const context = buildBillingCalculationContext(requestedRow, monthKey);
     if (!context) {
         MargaUtils.showToast('No billing profile is available for this row yet.', 'error');
         return;
     }
 
+    const row = context.row;
     const profile = context.profile;
     const latest = context.latestPriorGroup;
     const latestInvoice = context.latestInvoice;
@@ -3658,7 +3780,8 @@ function renderMatrixTable(payload) {
             const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
             const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
             const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
-            const canOpenCalculator = !row.is_summary_row && Boolean(getRowBillingProfile(row));
+            const canOpenCalculator = (!row.is_summary_row && Boolean(getRowBillingProfile(row)))
+                || (row.is_summary_row && Number(cell.pending_count || 0) > 0);
             if (cell.billed || shownAmount > 0) {
                 const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
                 const machineMeta = `${formatCount(cell.machine_count || 0)} mach`;
@@ -3695,7 +3818,7 @@ function renderMatrixTable(payload) {
                             type="button"
                             data-row-id="${escapeHtml(String(rowId))}"
                             data-month-key="${escapeHtml(monthKey)}"
-                            title="Pending reading or billing. Open billing calculation."
+                            title="${escapeHtml(row.is_summary_row ? 'Open grouped branch billing.' : 'Pending reading or billing. Open billing calculation.')}"
                             aria-label="Open billing calculation for ${escapeHtml(row.account_name || row.company_name)} ${escapeHtml(monthKey)}"
                         ></button>
                     </td>
