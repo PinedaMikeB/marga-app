@@ -1292,6 +1292,50 @@ async function openNewRequestModal() {
         return String(branch?.name || '').trim();
     }
 
+    function getSelectedCompanyIdFromInput() {
+        const selectedId = Number(companySelect.value || 0) || 0;
+        if (selectedId) return selectedId;
+        const match = findByInputValue(companies, companySearch.value, getCompanyInputLabel);
+        if (!match) return 0;
+        companySelect.value = String(match.id);
+        return Number(match.id || 0) || 0;
+    }
+
+    function getBranchRowsForCompany(companyId) {
+        const branchMap = new Map();
+        (opsCache.activeGraphBranchesByCompany.get(String(companyId)) || []).forEach((branch) => {
+            branchMap.set(String(branch.id), { ...branch, activeMachineCount: Number(branch.activeMachineCount || 0) || 0 });
+        });
+
+        [...opsCache.branches.values()]
+            .filter((branch) => (
+                Number(branch?.company_id || 0) === Number(companyId || 0)
+                && Number(branch?.inactive || 0) !== 1
+            ))
+            .forEach((branch) => {
+                const branchId = Number(branch.id || 0) || 0;
+                const key = String(branchId);
+                const existing = branchMap.get(key);
+                const name = String(branch.branchname || '').trim() || `Branch #${branchId}`;
+                branchMap.set(key, {
+                    id: branchId,
+                    name: existing?.name || name,
+                    accountName: existing?.accountName || buildAccountName(
+                        String((opsCache.companies.get(String(companyId)) || {}).companyname || '').trim(),
+                        existing?.name || name
+                    ),
+                    activeMachineCount: Number(existing?.activeMachineCount || 0) || 0,
+                    rows: existing?.rows || [],
+                    branch
+                });
+            });
+
+        return [...branchMap.values()].sort((left, right) => (
+            (Number(right.activeMachineCount || 0) > 0 ? 1 : 0) - (Number(left.activeMachineCount || 0) > 0 ? 1 : 0)
+            || String(left.name || '').localeCompare(String(right.name || ''))
+        ));
+    }
+
     function getStaffInputLabel(staff) {
         if (!staff) return '';
         return `${staff.name} (${staff.role})`;
@@ -1353,7 +1397,7 @@ async function openNewRequestModal() {
         .slice(0, 5000);
 
     function fillBranchesForCompany(companyId, query = '', selectedId = '') {
-        const branches = opsCache.activeGraphBranchesByCompany.get(String(companyId)) || [];
+        const branches = getBranchRowsForCompany(companyId);
 
         const q = String(query || '').trim().toLowerCase();
         const filtered = q
@@ -1376,9 +1420,10 @@ async function openNewRequestModal() {
             }
         }
 
-        branchSelect.innerHTML = `<option value="">Select active contract branch...</option>` + visible
+        branchSelect.innerHTML = `<option value="">Select branch / department...</option>` + visible
             .map((b) => {
-                const countText = Number(b.activeMachineCount || 0) > 0 ? ` (${b.activeMachineCount} machine${b.activeMachineCount === 1 ? '' : 's'})` : '';
+                const activeCount = Number(b.activeMachineCount || 0) || 0;
+                const countText = activeCount > 0 ? ` (${activeCount} machine${activeCount === 1 ? '' : 's'})` : ' (no active machine)';
                 return `<option value="${b.id}">${sanitize(b.name || `Branch #${b.id}`)}${sanitize(countText)}</option>`;
             })
             .join('');
@@ -1596,12 +1641,25 @@ async function openNewRequestModal() {
         getLabel: getCompanyInputLabel,
         getMeta: (company) => `${Number(company.activeAccountCount || 0)} active`,
         emptyText: 'No active customers found.',
-        onInput: () => renderCompanyOptions(companySearch.value, companySelect.value),
+        onInput: () => {
+            renderCompanyOptions(companySearch.value, companySelect.value);
+            const match = findByInputValue(companies, companySearch.value, getCompanyInputLabel);
+            if (!match) {
+                companySelect.value = '';
+                branchSelect.value = '';
+                branchSearch.value = '';
+                branchSelect.innerHTML = `<option value="">Select branch / department...</option>`;
+                return;
+            }
+            companySelect.value = String(match.id);
+            fillBranchesForCompany(match.id, branchSearch.value, branchSelect.value);
+        },
         onSelect: (company) => {
             companySearch.value = getCompanyInputLabel(company);
             renderCompanyOptions(companySearch.value, company.id);
             companySelect.value = String(company.id);
             handleCompanySelection(company.id);
+            setTimeout(() => branchSearch.focus(), 0);
         }
     });
 
@@ -1610,14 +1668,18 @@ async function openNewRequestModal() {
     installSearchCombo({
         input: branchSearch,
         panel: branchPanel,
-        getItems: () => opsCache.activeGraphBranchesByCompany.get(String(companySelect.value)) || [],
+        getItems: () => getBranchRowsForCompany(getSelectedCompanyIdFromInput()),
         getLabel: getBranchInputLabel,
-        getMeta: (branch) => `${Number(branch.activeMachineCount || 0)} machine${Number(branch.activeMachineCount || 0) === 1 ? '' : 's'}`,
-        emptyText: () => companySelect.value ? 'No branches found for this customer.' : 'Choose a company first.',
-        onInput: () => fillBranchesForCompany(companySelect.value, branchSearch.value, branchSelect.value),
+        getMeta: (branch) => {
+            const count = Number(branch.activeMachineCount || 0) || 0;
+            return count > 0 ? `${count} machine${count === 1 ? '' : 's'}` : 'branch/dept';
+        },
+        emptyText: () => getSelectedCompanyIdFromInput() ? 'No branches found for this customer.' : 'Choose a company first.',
+        onInput: () => fillBranchesForCompany(getSelectedCompanyIdFromInput(), branchSearch.value, branchSelect.value),
         onSelect: (branch) => {
+            const companyId = getSelectedCompanyIdFromInput();
             branchSearch.value = getBranchInputLabel(branch);
-            fillBranchesForCompany(companySelect.value, branchSearch.value, branch.id);
+            fillBranchesForCompany(companyId, branchSearch.value, branch.id);
             branchSelect.value = String(branch.id);
             handleBranchSelection(branch.id);
         }
@@ -1680,7 +1742,7 @@ async function openNewRequestModal() {
         applyMachineSelection(row);
     };
 
-    branchSelect.innerHTML = `<option value="">Select active contract branch...</option>`;
+    branchSelect.innerHTML = `<option value="">Select branch / department...</option>`;
     document.getElementById('newReqModal').onmousedown = (event) => {
         if (event.target.closest('.marga-combo-panel')) return;
         if ([companySearch, branchSearch, serialInput, troubleSearch, assigneeSearch].includes(event.target)) return;
