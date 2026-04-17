@@ -1258,26 +1258,58 @@ function getInvoiceSearchEntryLabel(entry) {
         || 'Billing line';
 }
 
-function buildInvoiceSearchGroupBreakdownPrintDocument(group) {
+function getInvoiceSearchEntryModel(entry, references = null) {
+    const row = entry?.row || {};
+    const doc = entry?.doc || {};
+    const machineId = String(doc.machine_id || row.machine_id || '').trim();
+    const machine = machineId && references?.machines ? references.machines.get(machineId) : null;
+    const model = machine?.model_id && references?.models ? references.models.get(String(machine.model_id).trim()) : null;
+    return doc.model_name
+        || doc.model
+        || doc.printer_model
+        || model?.modelname
+        || machine?.description
+        || row.machine_label
+        || doc.machine_label
+        || doc.machine_model
+        || 'N/A';
+}
+
+function getInvoiceSearchCustomerLabel(group) {
+    const label = group?.companyLabels?.[0]
+        || group?.displayDocs?.[0]?.row?.company_name
+        || group?.displayDocs?.[0]?.row?.account_name
+        || group?.displayDocs?.[0]?.doc?.company_name
+        || 'Customer';
+    return String(label || 'Customer').split(' / ')[0].trim() || 'Customer';
+}
+
+function buildInvoiceSearchGroupBreakdownPrintDocument(group, references = null) {
     const lines = group?.displayDocs || [];
     const rows = lines.map((entry) => {
         const doc = entry.doc || {};
-        const movement = getBillingDocMeterMovement(doc);
         const previous = Number(doc.field_previous_meter || 0) || 0;
         const present = Number(doc.field_present_meter || 0) || 0;
+        const difference = Math.max(0, present - previous);
+        const savedSpoilage = Number(doc.spoilage_pages || 0) || 0;
+        const spoilageRate = Number(doc.spoilage_rate || 0) || (Number(doc.spoilage_percent || 0) || 0) / 100;
+        const spoilage = savedSpoilage || (spoilageRate > 0 ? Math.round(difference * spoilageRate) : 0);
+        const netPages = Number(doc.total_pages || 0) || Math.max(0, difference - spoilage);
         return `
             <tr>
                 <td>${escapeHtml(getInvoiceSearchEntryLabel(entry))}</td>
-                <td>${escapeHtml(doc.contractmain_id || '')}</td>
-                <td>${escapeHtml(doc.machine_id || doc.serial_number || '')}</td>
-                <td class="num">${escapeHtml(formatCount(previous))}</td>
+                <td>${escapeHtml(getInvoiceSearchEntryModel(entry, references))}</td>
                 <td class="num">${escapeHtml(formatCount(present))}</td>
-                <td class="num">${escapeHtml(formatCount(movement.rawPages || movement.delta || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(previous))}</td>
+                <td class="num">${escapeHtml(formatCount(difference))}</td>
+                <td class="num">${escapeHtml(formatCount(spoilage))}</td>
+                <td class="num">${escapeHtml(formatCount(netPages))}</td>
                 <td class="num">${escapeHtml(formatAmount(doc.page_rate || 0))}</td>
                 <td class="num">${escapeHtml(formatFixedAmount(getBillingDocAmount(doc)))}</td>
             </tr>
         `;
     }).join('');
+    const customerLabel = getInvoiceSearchCustomerLabel(group);
 
     return `<!DOCTYPE html>
 <html>
@@ -1303,44 +1335,47 @@ function buildInvoiceSearchGroupBreakdownPrintDocument(group) {
         <div>
             <h1>Billing Breakdown Attachment</h1>
             <div class="muted">Invoice ${escapeHtml(group?.invoiceRef || '')}</div>
-            <div>${escapeHtml(group?.companyLabels?.join(' / ') || '')}</div>
+            <div>${escapeHtml(customerLabel)}</div>
         </div>
         <div>
             <div><strong>Month:</strong> ${escapeHtml(formatMonthLabel(group?.monthKey, group?.monthKey || ''))}</div>
             <div><strong>Computed Lines:</strong> ${escapeHtml(formatCount(lines.length))}</div>
-            <div><strong>Ignored Saved Rows:</strong> ${escapeHtml(formatCount(group?.suppressedDocs?.length || 0))}</div>
         </div>
     </div>
     <table>
         <thead>
             <tr>
-                <th>Branch / Machine</th>
-                <th>Contract</th>
-                <th>Machine</th>
-                <th class="num">Previous</th>
+                <th>Branch</th>
+                <th>Model</th>
                 <th class="num">Present</th>
-                <th class="num">Pages</th>
+                <th class="num">Previous</th>
+                <th class="num">Difference</th>
+                <th class="num">Spoilage</th>
+                <th class="num">Net Page Consumed</th>
                 <th class="num">Rate</th>
                 <th class="num">Amount</th>
             </tr>
         </thead>
-        <tbody>${rows || '<tr><td colspan="8">No computed branch lines available.</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="9">No computed branch lines available.</td></tr>'}</tbody>
     </table>
     <table class="total">
         <tr><td><strong>Invoice Total</strong></td><td class="num">${escapeHtml(formatFixedAmount(group?.amountTotal || 0))}</td></tr>
     </table>
-    <div class="note">Zero-meter/pending saved rows are excluded from this attachment total.</div>
 </body>
 </html>`;
 }
 
-function printInvoiceSearchGroupBreakdown(groupKey) {
+async function printInvoiceSearchGroupBreakdown(groupKey) {
     const group = invoiceSearchGroupCache.get(groupKey);
     if (!group) {
         MargaUtils.showToast('Invoice group is no longer loaded. Search the invoice again.', 'error');
         return;
     }
-    printHtmlDocument(buildInvoiceSearchGroupBreakdownPrintDocument(group), 'marga_invoice_group_breakdown_print');
+    const references = await loadInvoicePreviewReferenceData().catch((error) => {
+        console.warn('Unable to load model references for billing breakdown print.', error);
+        return null;
+    });
+    printHtmlDocument(buildInvoiceSearchGroupBreakdownPrintDocument(group, references), 'marga_invoice_group_breakdown_print');
 }
 
 function openInvoiceSearchGroupDetail(groupKey) {
