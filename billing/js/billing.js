@@ -4526,7 +4526,12 @@ async function openBillingCalcModal(rowId, monthKey) {
     };
 
     const readLineInputValue = (mode, index, field, fallback = 0) => {
-        const input = document.querySelector(`[data-calc-line-mode="${mode}"][data-calc-line-index="${index}"][data-calc-line-field="${field}"]`);
+        const selector = `[data-calc-line-mode="${mode}"][data-calc-line-index="${index}"][data-calc-line-field="${field}"]`;
+        const card = document.querySelector(`[data-calc-line-card="${mode}"][data-calc-line-index="${index}"]`);
+        const scopedInput = card?.querySelector(selector);
+        const inputs = Array.from(document.querySelectorAll(selector));
+        const visibleInput = inputs.find((entry) => entry.offsetParent !== null);
+        const input = scopedInput || visibleInput || inputs[inputs.length - 1] || null;
         return input ? Number(input.value || 0) || 0 : fallback;
     };
 
@@ -4804,6 +4809,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     }));
     document.querySelectorAll('[data-calc-line-mode][data-calc-line-index][data-calc-line-field]').forEach((input) => {
         input.addEventListener('input', recompute);
+        input.addEventListener('change', recompute);
     });
     document.querySelectorAll('[data-calc-exclusion-action="open"]').forEach((button) => {
         button.addEventListener('click', () => {
