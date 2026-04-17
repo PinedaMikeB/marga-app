@@ -48,6 +48,8 @@ let renderedMatrixRows = [];
 let searchReloadTimer = null;
 let invoiceDetailRequestToken = 0;
 let billingCalcRequestToken = 0;
+let dashboardRequestToken = 0;
+let dashboardAbortController = null;
 let invoicePreviewReferenceData = null;
 let invoicePreviewReferencePromise = null;
 let currentRtpPrintPayload = null;
@@ -92,6 +94,10 @@ function firstPositiveNumber(...values) {
         if (numeric > 0) return numeric;
     }
     return 0;
+}
+
+function getPayloadSearchTerm(payload) {
+    return String(payload?.filters?.search || '').trim().toLowerCase();
 }
 
 function restoreMatrixSortValue() {
@@ -5179,11 +5185,24 @@ function renderMatrixTable(payload) {
     const months = matrix.months || [];
     const rows = matrix.rows || [];
     const totals = matrix.totals || [];
-    const payloadSearchTerm = String(payload?.filters?.search || '').trim().toLowerCase();
+    const payloadSearchTerm = getPayloadSearchTerm(payload);
     const selectedRowId = MargaUtils.getUrlParam('row_id');
     const selectedMonth = MargaUtils.getUrlParam('month');
     const searchTerm = getMatrixSearchTerm();
     const payloadMatchesCurrentSearch = payloadSearchTerm === searchTerm;
+    const payloadIsStaleSearch = Boolean(payloadSearchTerm && payloadSearchTerm !== searchTerm);
+
+    if (payloadIsStaleSearch) {
+        renderedMatrixRows = [];
+        if (els.matrixSearchMeta) {
+            els.matrixSearchMeta.textContent = searchTerm
+                ? `Loading full search results for "${els.matrixSearchInput.value.trim()}".`
+                : 'Reloading all billing rows.';
+        }
+        els.matrixTableWrap.innerHTML = '<div class="empty-panel">Loading current search results...</div>';
+        return;
+    }
+
     const matchedRowCount = payloadMatchesCurrentSearch
         ? Number(payload?.summary?.matrix_customers_total || rows.length)
         : rows.length;
@@ -5694,6 +5713,10 @@ function renderError(message) {
 }
 
 async function loadDashboard(options = {}) {
+    const requestToken = ++dashboardRequestToken;
+    if (dashboardAbortController) dashboardAbortController.abort();
+    dashboardAbortController = new AbortController();
+
     try {
         const { url, apiKey } = buildRequestContext(options);
         setStatus('Loading...', 'loading');
@@ -5702,21 +5725,32 @@ async function loadDashboard(options = {}) {
         const headers = {};
         if (apiKey) headers['x-api-key'] = apiKey;
 
-        const response = await fetch(url, { headers });
+        const response = await fetch(url, { headers, signal: dashboardAbortController.signal });
         const payload = await response.json();
+        if (requestToken !== dashboardRequestToken) return;
         if (!response.ok || !payload.ok) {
             throw new Error(payload?.error || `Request failed (${response.status})`);
         }
 
+        const activeSearchTerm = getMatrixSearchTerm();
+        const expectedPayloadSearchTerm = activeSearchTerm.length >= 2 ? activeSearchTerm : '';
+        if (getPayloadSearchTerm(payload) !== expectedPayloadSearchTerm) return;
+
         billingExclusionCache = await loadBillingExclusions();
+        if (requestToken !== dashboardRequestToken) return;
         renderDashboardBillingExclusions();
         renderAll(applyBillingExclusionsToPayload(payload, billingExclusionCache));
         setStatus('Loaded');
     } catch (error) {
+        if (error?.name === 'AbortError') return;
+        if (requestToken !== dashboardRequestToken) return;
         renderError(error?.message || error);
         setStatus('Error', 'error');
     } finally {
-        els.runBtn.disabled = false;
+        if (requestToken === dashboardRequestToken) {
+            dashboardAbortController = null;
+            els.runBtn.disabled = false;
+        }
     }
 }
 
