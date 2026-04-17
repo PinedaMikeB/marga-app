@@ -3505,6 +3505,9 @@ function calculateMeterLineEstimate({
         if (missingMeterMessage && previous <= 0 && present <= 0) {
             warning = missingMeterMessage;
             formula = 'missing_prior_meter';
+        } else if (present <= 0) {
+            warning = pendingPresentMessage || `${label}: enter a present meter reading to include this line in the invoice total.`;
+            formula = 'pending_present_meter';
         } else if (pendingPresentMessage && present <= previous) {
             warning = pendingPresentMessage;
             formula = 'pending_present_meter';
