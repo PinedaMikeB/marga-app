@@ -1196,11 +1196,14 @@ function resolveReadingDay(rowId, invoiceDaySignals, readingSignals, billingSign
 function rowMatchesSearch(searchTerm, values) {
     const needle = String(searchTerm || '').trim().toLowerCase();
     if (!needle) return true;
-    return values
+    const haystack = values
         .filter(Boolean)
         .join(' ')
-        .toLowerCase()
-        .includes(needle);
+        .toLowerCase();
+    if (haystack.includes(needle)) return true;
+    const compactNeedle = needle.replace(/[^a-z0-9]/g, '');
+    if (!compactNeedle) return false;
+    return haystack.replace(/[^a-z0-9]/g, '').includes(compactNeedle);
 }
 
 function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}) {

@@ -100,6 +100,19 @@ function getPayloadSearchTerm(payload) {
     return String(payload?.filters?.search || '').trim().toLowerCase();
 }
 
+function textMatchesSearch(searchTerm, values = []) {
+    const needle = String(searchTerm || '').trim().toLowerCase();
+    if (!needle) return true;
+    const haystack = values
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+    if (haystack.includes(needle)) return true;
+    const compactNeedle = needle.replace(/[^a-z0-9]/g, '');
+    if (!compactNeedle) return false;
+    return haystack.replace(/[^a-z0-9]/g, '').includes(compactNeedle);
+}
+
 function restoreMatrixSortValue() {
     if (!els.matrixSortInput) return;
     const saved = String(localStorage.getItem(MATRIX_SORT_STORAGE_KEY) || '').trim().toLowerCase();
@@ -5208,21 +5221,15 @@ function renderMatrixTable(payload) {
         : rows.length;
     const isRowWindowed = matchedRowCount > rows.length;
     const filteredRows = searchTerm
-        ? rows.filter((row) => {
-              const haystack = [
-                  row.serial_number,
-                  row.account_name,
-                  row.company_name,
-                  row.branch_name,
-                  row.machine_label,
-                  row.machine_id,
-                  row.reading_day
-              ]
-                  .filter(Boolean)
-                  .join(' ')
-                  .toLowerCase();
-              return haystack.includes(searchTerm);
-          })
+        ? rows.filter((row) => textMatchesSearch(searchTerm, [
+              row.serial_number,
+              row.account_name,
+              row.company_name,
+              row.branch_name,
+              row.machine_label,
+              row.machine_id,
+              row.reading_day
+          ]))
         : rows;
     const sortedRows = [...filteredRows].sort((left, right) => compareBillingRows(left, right, getMatrixSortValue()));
     const rowsWithAmounts = filteredRows.filter((row) => (
