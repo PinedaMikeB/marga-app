@@ -304,6 +304,38 @@ function buildBranchAddress(branch) {
     return parts.join(', ');
 }
 
+function getBillInfoAddress(billInfo) {
+    return String(billInfo?.payeeadd || billInfo?.enduseradd || '').trim();
+}
+
+function getCompanyAddress(company) {
+    return String(
+        company?.company_address
+        || company?.address
+        || company?.companyadd
+        || company?.company_add
+        || ''
+    ).trim();
+}
+
+function getGroupedBillingAddress(references, groupedRows = [], company = null) {
+    const addressCounts = new Map();
+    (Array.isArray(groupedRows) ? groupedRows : []).forEach((entry) => {
+        const branchId = String(entry?.branch_id || '').trim();
+        if (!branchId) return;
+        const billInfoRows = references?.billInfoByBranchId?.get(branchId) || [];
+        billInfoRows.forEach((billInfo) => {
+            const address = getBillInfoAddress(billInfo);
+            if (!address) return;
+            addressCounts.set(address, (addressCounts.get(address) || 0) + 1);
+        });
+    });
+
+    const commonAddress = Array.from(addressCounts.entries())
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] || '';
+    return commonAddress || getCompanyAddress(company);
+}
+
 function toFirestoreFieldValue(value) {
     if (value === null || value === undefined) return { nullValue: null };
     if (value instanceof Date && !Number.isNaN(value.getTime())) return { timestampValue: value.toISOString() };
@@ -1746,23 +1778,21 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         || row?.company_name
         || ''
     );
-    const address = String(
-        billInfo?.payeeadd
-        || billInfo?.enduseradd
-        || buildBranchAddress(branch)
-        || ''
-    ).trim();
+    const isGroupedPrint = Boolean(row?.is_summary_billing_row || row?.is_summary_row);
+    const address = isGroupedPrint
+        ? (getCompanyAddress(company) || 'N/A')
+        : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
 
     return {
         customerName: accountName || 'Unknown Customer',
         tin: String(company?.company_tin || '').trim() || 'N/A',
-        address: address || 'N/A',
+        address,
         invoiceDate: formatUsDate(invoiceDate),
         readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
         monthLabel: formatMonthLongLabel(monthKey, monthKey),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: (row?.is_summary_billing_row || row?.is_summary_row) ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
+        printerModel: isGroupedPrint ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
@@ -1801,23 +1831,22 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         || row?.company_name
         || ''
     );
-    const address = String(
-        billInfo?.payeeadd
-        || billInfo?.enduseradd
-        || buildBranchAddress(branch)
-        || ''
-    ).trim();
+    const groupedRows = Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
+    const isGroupedPrint = Boolean(row?.is_summary_billing_row || row?.is_summary_row || groupedRows.length > 1);
+    const address = isGroupedPrint
+        ? (getGroupedBillingAddress(references, groupedRows, company) || 'N/A')
+        : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
 
     return {
         customerName: accountName || 'Unknown Customer',
         tin: String(company?.company_tin || '').trim() || 'N/A',
-        address: address || 'N/A',
+        address,
         invoiceDate: formatUsDate(invoiceDate),
         readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
         monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: (row?.is_summary_billing_row || row?.is_summary_row) ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
+        printerModel: isGroupedPrint ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
@@ -3773,7 +3802,7 @@ function buildSummaryBillingRow(row, groupedMachineRows) {
         company_name: row?.company_name || firstRow.company_name || '',
         account_name: row?.account_name || row?.company_name || firstRow.account_name || firstRow.company_name || '',
         branch_name: row?.branch_name || 'All branches / departments',
-        display_name: row?.display_name || `${row?.company_name || firstRow.company_name || 'Customer'} grouped billing`,
+        display_name: cleanPrintCustomerName(row?.company_name || row?.account_name || firstRow.company_name || firstRow.account_name || 'Customer'),
         machine_label: row?.machine_label || `${formatCount(groupedMachineRows.length)} machine rows`,
         months: row?.months || firstRow.months || {}
     };
