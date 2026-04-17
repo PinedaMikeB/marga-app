@@ -59,6 +59,8 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 - Cancel/replace actions should remove the whole invoice group for that invoice number and billing month before the invoice number is reused.
 - Invoice search should display one invoice card per invoice number/month even when `tbl_billing` stores many branch line records. The card total should use computed branch lines only and flag ignored zero-meter/pending saved rows from older buggy saves.
 - Billing hide/unhide is a reversible visibility layer saved in `tbl_billing_exclusions`; it hides active Billing rows without deleting customer, contract, branch, or machine master records, and restore must be reachable from the saved exclusions list.
+- For grouped RTP meter forms, `tbl_machinereading.current_contract` is the billing-period source of truth for actual read lines. Keep the active customer basis on contract graph rows, but do not drop a read line only because the contract status is not `1`; historical/transition rows such as `~xxGuagua` can still belong to the billed meter form.
+- Do not use grouped invoice number alone to locate a branch. One invoice can cover many branches, so contract -> contract department -> branch is the primary branch locator; invoice/schedule branch lookup is only a fallback for unlinked records.
 
 ## Petty Cash Status
 - Petty Cash module files were not rolled back.

@@ -62,6 +62,8 @@ This file protects the project across new chats. It should record the stable bas
   - `tbl_contractmain.mach_id` -> `tbl_machine.id`
   - serial display from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
 - Billing calls this through the cohort/customer resolver in `netlify/functions/openclaw-billing-cohort.js`; future modules may call it the **Billing Customer Locator Query** when referring to the Firebase query/result.
+- For grouped RTP meter-form computation, actual read lines come from `tbl_machinereading.current_contract` for the billing period and can include historical/transition contract rows even when `tbl_contractmain.status != 1`. The active customer universe is still status `1`, but a real meter reading tied to a contract must not be discarded from the form or invoice breakdown because of status alone.
+- Grouped invoice numbers must not be used as the primary branch locator because one invoice can contain many branches. Prefer `tbl_contractmain.contract_id` -> `tbl_contractdep.id` -> `tbl_branchinfo.id`; use invoice/schedule branch matching only as a fallback when the contract graph is unlinked.
 - Service request serial lookup must resolve through this graph before falling back to raw machine/client fields.
 - Customer Portal must expose only graph-resolved customer/account/machine rows unless an admin explicitly creates a non-contract customer account.
 
