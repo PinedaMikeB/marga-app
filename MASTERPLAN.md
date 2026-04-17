@@ -9,12 +9,15 @@ This file protects the project across new chats. It should record the stable bas
 3. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`
 
 ## Current Protected State
-- Billing dashboard protected baseline: commit `e9338ab`
+- Billing dashboard protected baseline: commit `8df832d`
 - Meaning of protected baseline:
   - dashboard loads with the current save-first Billing calculation workflow
   - invoice lookup/delete controls are available for tracing billing records
   - RTP and RTF print previews can print onto preprinted invoice paper
   - Firebase-stored invoice print templates load from the Billing modal dropdown
+  - grouped one-invoice/multiple-machine RTP billing can save, reprint invoice, print breakdown attachment, and print meter form
+  - multimeter RTP customers show black/white and color meter lines with previous readings, and dashboard totals include primary plus second-meter saved invoice amounts
+  - customer search is stable after clear/change and ignores spacing/punctuation differences such as `vansturf` vs `VANS TURF`
   - if the UI breaks, check function/runtime payloads and Firestore documents before changing history again
 
 ## Project Rules
@@ -44,10 +47,24 @@ This file protects the project across new chats. It should record the stable bas
   - if a prior meter exists but no present reading has been entered for the billing month, treat the row as pending present reading; keep it visible, show a note, and do not charge the quota floor until staff enters the present meter or an actual current reading exists.
   - grouped RTP saves must exclude missing-meter and pending-present rows from `tbl_billing`; only computed machine lines belong in the saved invoice group.
   - if no delivery happened, office staff should mark the customer/machine inactive so it moves to inactive review instead of being billed.
+  - absolute meters must never be reset by the app. If present reading is lower than previous reading, do not compute, do not alter previous reading, and prompt staff to check the present meter.
 - Billing visibility rule:
   - user-facing hide/unhide is handled by reversible `tbl_billing_exclusions` records.
   - hiding an account removes it from active Billing lists without deleting or editing the customer, contract, branch, or machine master.
   - restore must be available from a saved exclusions list even when the account is hidden from the active grid.
+- Billing search rule:
+  - search must be tolerant of spaces and punctuation on both backend cohort filtering and browser-side filtering.
+  - `VANS TURF` must be searchable as `vansturf`.
+  - stale search API responses must not overwrite the visible table when the user clears or changes the search term.
+- Billing amount rule:
+  - single-meter RTP usually stores the saved invoice amount in `totalamount` or `amount`.
+  - legacy multimeter RTP may store black/white in `totalamount` / `amount` and color in `totalamount2` / `amount2`.
+  - dashboard cells, invoice search, and monthly footer totals must use primary plus secondary saved amounts when the secondary fields exist.
+  - validation sample: Rhipe Philippines Inc., contract `2569`, machine `1554`, serial `V9713900410`, April 2026 invoice `129921` should use saved billing `1,625 + 4,985.50 = 6,610.50`. If the modal draft shows a different value, the dashboard should continue to reflect saved invoice fields until staff saves the corrected billing.
+- Multimeter RTP rule:
+  - black/white and color meters are computed separately and summed into one invoice.
+  - color/second meter previous reading must use the same prior lookup policy as black/white: saved line item, current target reading group, latest prior group, `meter_reading2`, `field_present_meter2`, then zero only if no valid source exists.
+  - present color reading should default to the color previous reading so staff can type the actual current value.
 
 ## Customer Identity Rule
 - Canonical customer lookup is the **Active Contract Customer Graph**.
@@ -65,6 +82,8 @@ This file protects the project across new chats. It should record the stable bas
 - For grouped RTP meter-form computation, actual read lines come from `tbl_machinereading.current_contract` for the billing period and can include historical/transition contract rows even when `tbl_contractmain.status != 1`. The active customer universe is still status `1`, but a real meter reading tied to a contract must not be discarded from the form or invoice breakdown because of status alone.
 - Grouped invoice numbers must not be used as the primary branch locator because one invoice can contain many branches. Prefer `tbl_contractmain.contract_id` -> `tbl_contractdep.id` -> `tbl_branchinfo.id`; use invoice/schedule branch matching only as a fallback when the contract graph is unlinked.
 - Service request serial lookup must resolve through this graph before falling back to raw machine/client fields.
+- Service must not use raw `tbl_machine.client_id` as the customer source of truth. It may be a fallback hint only after the active contract graph fails.
+- For model display in Service and Billing print/preview, prefer the corrected contract/machine resolver and `tbl_machine.description` where that resolver says it is the reliable model label. Do not reintroduce helper code that prefers mismatched `tbl_model.modelname` and creates wrong customer/model combinations.
 - Customer Portal must expose only graph-resolved customer/account/machine rows unless an admin explicitly creates a non-contract customer account.
 
 ## Billing Print Template Rules
@@ -90,9 +109,15 @@ This file protects the project across new chats. It should record the stable bas
 - For one-invoice/multiple-machine RTP billing, cancel/replace must clear all `tbl_billing` records for that invoice number and billing month, not only one branch line.
 - Saved grouped RTP billing should support reprinting the invoice, the meter reading form, and a breakdown attachment for corrected/replacement invoices.
 - Invoice lookup should group many saved branch records into one invoice card per invoice number/month. When older buggy saves created zero-meter branch rows under the same invoice, lookup should flag those rows and exclude them from the displayed computed invoice total.
+- For multimeter invoices, invoice lookup totals must include second-meter legacy fields (`totalamount2` / `amount2`) in addition to primary amount fields.
 
 ## Rollback Reference
-- `e9338ab`: current protected Billing print/save baseline
+- `8df832d`: current protected Billing baseline including multimeter invoice amounts in dashboard/month totals
+- `9d2e0ae`: spacing/punctuation tolerant Billing search
+- `071ecc4`: stable Billing search refresh handling
+- `a277f95`: color meter previous reading prefill for multimeter RTP
+- `936c588`: mother company details for grouped Billing prints
+- `e9338ab`: older protected Billing print/save baseline
 - `77ff141`: April 6-equivalent Billing rollback snapshot
 - `04787a0`: April 7 working-state rollback attempt
 - `cf5f234`: April 13-equivalent rollback attempt
@@ -105,10 +130,15 @@ This file protects the project across new chats. It should record the stable bas
 
 ## Next Safe Work Sequence
 1. Continue Marga-App implementation in the Marga-App thread, not a `marga-biz` SEO/site thread.
-2. Confirm Billing at `e9338ab` remains the protected baseline before adding more billing states.
+2. Confirm Billing at `8df832d` remains the protected baseline before adding more billing states.
 3. For print-layout changes, update through the Billing modal and click `Save Template`; verify the template survives refresh and reloads from Firebase.
 4. If Billing fails, inspect live API payload, Firestore billing records, and `tbl_app_settings/billing_invoice_print_templates_v1` before more rollbacks.
 5. Reintroduce any later Billing improvements one by one, with exact validation after each change.
+
+## Next Service Thread
+- Start by reading `HANDOFF.md`, `MASTERPLAN.md`, and `docs/HANDOFF.md`.
+- Preserve Billing unless the Service change explicitly requires shared resolver code.
+- Service should adopt the Active Contract Customer Graph first, then carefully verify serial, machine, model, branch, and company identity against known Billing samples before changing user-facing service screens.
 
 ## Longer Project Context
 - Canonical long-form module notes live in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`

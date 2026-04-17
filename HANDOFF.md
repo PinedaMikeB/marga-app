@@ -7,8 +7,13 @@ Start every new chat by reading:
 3. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`
 
 ## Current Stable Billing Baseline
-- Billing dashboard is currently live on `main` with the save-first billing workflow and RTP/RTF invoice print preview work.
-- Current safe commit on `main`: `e9338ab` `Add invoice right margin control`
+- Billing dashboard is currently live on `main` with the save-first billing workflow, RTP/RTF invoice print preview work, grouped RTP billing computation, billing exclusions, stable customer search, and multimeter invoice-total support.
+- Current safe commit on `main`: `8df832d` `Include multimeter invoice amounts in billing totals`
+- Important recent commits:
+  - `9d2e0ae` `Normalize billing customer search spacing`
+  - `071ecc4` `Stabilize billing customer search refresh`
+  - `a277f95` `Prefill color meter prior readings`
+  - `936c588` `Use mother company details for grouped prints`
 - Older rollback reference: `77ff141` `Rollback billing dashboard to April 6 snapshot`
 - If Billing breaks again, inspect the live Netlify function payload and Firestore data before doing another rollback.
 
@@ -23,7 +28,7 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 
 ## What The Next Chat Should Protect
 - Keep the current Billing dashboard working before adding new states or filters.
-- Treat the live Billing UI behavior at commit `e9338ab` as the protected baseline for billing save, invoice lookup, and RTP/RTF printing.
+- Treat the live Billing UI behavior at commit `8df832d` as the protected baseline for billing save, invoice lookup, grouped/multimeter RTP totals, and RTP/RTF printing.
 - If the current chat/thread is for `marga-biz`, future Marga App implementation should continue in the Marga-App thread. If a future chat is in the wrong repo/thread, stop and redirect before editing.
 - Never mix `marga-biz` SEO/site work with `Marga-App` billing/application changes in the same commit.
 
@@ -61,6 +66,25 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 - Billing hide/unhide is a reversible visibility layer saved in `tbl_billing_exclusions`; it hides active Billing rows without deleting customer, contract, branch, or machine master records, and restore must be reachable from the saved exclusions list.
 - For grouped RTP meter forms, `tbl_machinereading.current_contract` is the billing-period source of truth for actual read lines. Keep the active customer basis on contract graph rows, but do not drop a read line only because the contract status is not `1`; historical/transition rows such as `~xxGuagua` can still belong to the billed meter form.
 - Do not use grouped invoice number alone to locate a branch. One invoice can cover many branches, so contract -> contract department -> branch is the primary branch locator; invoice/schedule branch lookup is only a fallback for unlinked records.
+- Customer search in Billing is spacing/punctuation tolerant. Example: database value `VANS TURF` must match search text `vansturf`; stale search responses must not overwrite the current table after the user clears or changes the search.
+- Single-meter RTP and multimeter RTP are different billing structures:
+  - single-meter RTP uses `totalamount` / `amount`.
+  - legacy multimeter RTP can store black and color meter charges separately: primary amount in `totalamount` or `amount`, color amount in `totalamount2` or `amount2`.
+  - Billing dashboard cells, invoice search, and monthly footer totals must sum the primary and secondary amount fields when `totalamount2` / `amount2` exists. Rhipe is the validation sample: contract `2569`, machine `1554`, serial `V9713900410`; April 2026 saved invoice `129921` should read `1,625 + 4,985.50 = 6,610.50` from saved billing fields.
+- Multimeter RTP modal must prefill the second/color previous reading using the same latest-valid-prior-meter rule as black/white. Use `meter_reading2`, `field_present_meter2`, or saved second-line values before falling back to zero. Present should default to previous until staff enters the current reading; do not reset absolute meters.
+- If present meter is lower than previous meter, do not compute, do not reset either value, and prompt the user to check the present meter.
+
+## Service Module Handoff
+- The next Service thread must read this handoff and the masterplan before editing.
+- Service should use the same Active Contract Customer Graph / Billing Customer Locator Query rules for customer, branch, machine, model, and serial identity:
+  - `tbl_contractmain.status == 1`
+  - `tbl_contractmain.contract_id` -> `tbl_contractdep.id`
+  - `tbl_contractdep.branch_id` -> `tbl_branchinfo.id`
+  - `tbl_branchinfo.company_id` -> `tbl_companylist.id`
+  - `tbl_contractmain.mach_id` -> `tbl_machine.id`
+  - serial from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
+- Do not rely on raw `tbl_machine.client_id` as the customer locator in Service.
+- For model display, prefer the corrected machine/contract resolver and avoid old helper paths that prefer mismatched `tbl_model.modelname` over `tbl_machine.description`; this previously caused wrong model/customer combinations in billing print preview.
 
 ## Petty Cash Status
 - Petty Cash module files were not rolled back.
