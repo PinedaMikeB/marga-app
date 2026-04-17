@@ -1092,7 +1092,7 @@ function shouldCountInvoiceSearchDoc(doc, groupDocs = []) {
     if (categoryCode === 'RTF') return true;
 
     const movement = getBillingDocMeterMovement(doc);
-    return movement.delta > 0 || movement.rawPages > 0;
+    return movement.delta > 0;
 }
 
 function uniqueBillingValues(values = []) {
