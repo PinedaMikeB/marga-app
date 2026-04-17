@@ -197,6 +197,21 @@ function formatRtpRatePlan({ quota = 0, pageRate = 0, succeedingRate = 0 } = {})
     return `All pages @ ${formatAmount(pageRate)}`;
 }
 
+function cleanPrintCustomerName(value) {
+    return String(value || '')
+        .replace(/\s*[\u2022-]\s*company subtotal\s*$/i, '')
+        .replace(/\s+company subtotal\s*$/i, '')
+        .trim();
+}
+
+function formatAllPagesRate(value) {
+    const rate = Number(value || 0) || 0;
+    const formattedRate = rate
+        ? rate.toFixed(2).replace(/^0(?=\.)/, '').replace(/0+$/, '').replace(/\.$/, '')
+        : '0';
+    return `All pages @ ${formattedRate}`;
+}
+
 function isReadingPricing(profile) {
     return String(profile?.pricing_mode || '').toLowerCase() === 'reading';
 }
@@ -1722,7 +1737,7 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         readingGroup || { with_vat: profile?.with_vat }
     );
     const { modelName, serialNumber } = resolveBillingMachineIdentity({ row, machine, model });
-    const accountName = String(
+    const accountName = cleanPrintCustomerName(
         row?.display_name
         || row?.account_name
         || billInfo?.payeename
@@ -1730,7 +1745,7 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         || company?.companyname
         || row?.company_name
         || ''
-    ).trim();
+    );
     const address = String(
         billInfo?.payeeadd
         || billInfo?.enduseradd
@@ -1747,7 +1762,7 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         monthLabel: formatMonthLongLabel(monthKey, monthKey),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A'),
+        printerModel: (row?.is_summary_billing_row || row?.is_summary_row) ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
@@ -1777,7 +1792,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     const period = buildBillingPeriod(context?.monthKey, row?.reading_day);
     const invoiceDate = period.endDate || new Date();
     const { modelName, serialNumber } = resolveBillingMachineIdentity({ row, machine, model });
-    const accountName = String(
+    const accountName = cleanPrintCustomerName(
         row?.display_name
         || row?.account_name
         || billInfo?.payeename
@@ -1785,7 +1800,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         || company?.companyname
         || row?.company_name
         || ''
-    ).trim();
+    );
     const address = String(
         billInfo?.payeeadd
         || billInfo?.enduseradd
@@ -1802,7 +1817,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A'),
+        printerModel: (row?.is_summary_billing_row || row?.is_summary_row) ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
@@ -2370,8 +2385,6 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
     const totals = preview?.totals || {};
     const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     const isFixedRate = contractCode === 'RTF';
-    const succeedingRate = Number(preview?.succeedingRate || preview?.rate || 0) || 0;
-    const succeedingPages = Number(preview?.succeedingPages || 0) || 0;
     return `
         <div class="rtp-section-block" style="${buildRtpSectionStyle('header', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 150 }, mode)}"><strong>${escapeHtml(preview?.customerName || 'Unknown Customer')}</strong></div>
@@ -2402,9 +2415,6 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
 
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Rate per Page:</strong></div>
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.rate || 0))}</div>
-
-                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 52, widthMm: 76 }, mode)}"><strong>Succeeding Pages / Rate:</strong></div>
-                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 52, widthMm: 80 }, mode)}">${escapeHtml(`${formatCount(succeedingPages)} @ ${formatFixedAmount(succeedingRate)}`)}</div>
                     `
             }
         </div>
@@ -2645,6 +2655,7 @@ function buildBillingAttachmentPrintDocument(preview, estimate, type = 'breakdow
     const title = isMeterForm ? 'Meter Reading Form' : 'Billing Breakdown Attachment';
     const period = [preview?.billingFrom, preview?.billingTo].filter(Boolean).join(' to ');
     const totals = preview?.totals || {};
+    const invoiceRate = Number(estimate?.pageRate || preview?.rate || 0) || 0;
     const rows = lines.map((line, index) => {
         const difference = Number(line.rawPages || 0) || Math.max(0, Number(line.presentMeter || 0) - Number(line.previousMeter || 0));
         return `
@@ -2687,7 +2698,7 @@ function buildBillingAttachmentPrintDocument(preview, estimate, type = 'breakdow
     <div class="header">
         <div>
             <h1>${escapeHtml(title)}</h1>
-            <div class="muted">${escapeHtml(preview?.customerName || 'Unknown Customer')}</div>
+            <div class="muted">${escapeHtml(cleanPrintCustomerName(preview?.customerName) || 'Unknown Customer')}</div>
             <div>${escapeHtml(preview?.address || '')}</div>
         </div>
         <div>
@@ -2699,7 +2710,7 @@ function buildBillingAttachmentPrintDocument(preview, estimate, type = 'breakdow
     <div class="info">
         <div><strong>Period:</strong> ${escapeHtml(period || 'N/A')}</div>
         <div><strong>Total Pages:</strong> ${escapeHtml(formatCount(estimate?.netPages || 0))}</div>
-        <div><strong>Rate Plan:</strong> ${escapeHtml(formatRtpRatePlan({ quota: estimate?.monthlyQuota || 0, pageRate: estimate?.pageRate || 0, succeedingRate: estimate?.succeedingRate || 0 }))}</div>
+        <div><strong>Rate:</strong> ${escapeHtml(formatAllPagesRate(invoiceRate))}</div>
         <div><strong>Invoice Total:</strong> ${escapeHtml(formatFixedAmount(totals.amountDue || estimate?.amountDue || 0))}</div>
     </div>
     <table>
