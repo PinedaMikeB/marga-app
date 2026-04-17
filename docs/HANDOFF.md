@@ -1,6 +1,6 @@
 # MARGA Handoff (Single Source of Truth)
 
-Last Updated: 2026-04-16
+Last Updated: 2026-04-17
 Owner: Marga App Team
 
 This file is the canonical session-to-session handoff.
@@ -60,6 +60,14 @@ Each thread should update only the relevant module sections plus `Current Focus`
 | Sync Updater | In Progress | Dual-lane supervisor exists, restart shortcuts exist, and recovery logic is improved. | Validate outage recovery and extend coverage to billing/collections/payments. |
 
 ## Session Log (Top First)
+### 2026-04-17 - Grouped RTP Pending Lines And Replacement Prints
+- Fixed grouped RTP computation so a row with a prior meter but no current/present reading entered stays at zero and shows "Enter present reading"; it must not auto-bill the quota floor just because `present == previous`.
+- Multi-machine grouped saves now skip both missing-meter rows and pending-present rows, so only actual computed machine lines are written to `tbl_billing`.
+- Added printable grouped-billing attachments from the calculation modal:
+  - `Print Breakdown` for invoice support
+  - `Print Meter Form` for corrected/replacement reading paperwork
+- Invoice search and saved-billing delete actions are now worded as cancel/replace. For grouped invoices, cancellation should remove all saved `tbl_billing` records using the same invoice number for the billing month before that invoice number is reused.
+
 ### 2026-04-16 - Grouped RTP Meter Source Rule
 - Added the Billing grouped RTP rule that all loaded rows stay visible in the modal.
 - Previous meter lookup should use the latest valid serial/machine meter before the billing month, even if that reading is from months ago or last year.

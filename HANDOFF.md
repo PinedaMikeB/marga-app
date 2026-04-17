@@ -53,6 +53,10 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 - Previous meter lookup should follow the serial/machine history, not only the previous calendar month. If April is being billed and the last valid reading was November 2025 or January 2026, use that meter as long as the serial has not been delivered/transferred to another customer after that reading.
 - For first delivery/new customer cases, the delivery or contract beginning meter can be the previous meter for the first bill.
 - Never auto-bill a quota amount from `0 present / 0 previous` when no meter source exists; show "No available previous meter reading" so staff can enter the beginning meter or mark the row inactive if no delivery happened.
+- If a grouped RTP row has a previous meter but no current/present reading yet, keep it visible as pending and do not charge the quota floor until staff enters the present reading or an actual current reading group exists.
+- Grouped RTP saves should write only real computed machine lines; missing-meter and pending-present rows stay visible for staff action but should not become zero-amount invoice records.
+- Multi-machine invoice print support now includes `Print Breakdown` and `Print Meter Form` from the saved calculation modal, so the breakdown can be attached to the invoice and the meter form can be reprinted during correction/replacement.
+- Cancel/replace actions should remove the whole invoice group for that invoice number and billing month before the invoice number is reused.
 - Billing hide/unhide is a reversible visibility layer saved in `tbl_billing_exclusions`; it hides active Billing rows without deleting customer, contract, branch, or machine master records, and restore must be reachable from the saved exclusions list.
 
 ## Petty Cash Status

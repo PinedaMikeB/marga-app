@@ -1288,6 +1288,12 @@
     background: #f8fbff;
 }
 
+.calc-print-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
 .calc-print-hint {
     color: var(--bill-muted);
     font-size: 0.82rem;

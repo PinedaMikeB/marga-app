@@ -41,6 +41,8 @@ This file protects the project across new chats. It should record the stable bas
   - the serial/machine id is the billing anchor because machines transfer between customers; use the last meter only when the serial has not been delivered/transferred to another customer after that reading.
   - for a new delivery/customer, the beginning meter from delivery/contract setup may be the previous meter for the first bill.
   - if no prior meter, delivery beginning meter, or saved billing meter is available, keep the row visible with a clear note such as "No available previous meter reading"; do not silently bill the quota minimum from `0 / 0`.
+  - if a prior meter exists but no present reading has been entered for the billing month, treat the row as pending present reading; keep it visible, show a note, and do not charge the quota floor until staff enters the present meter or an actual current reading exists.
+  - grouped RTP saves must exclude missing-meter and pending-present rows from `tbl_billing`; only computed machine lines belong in the saved invoice group.
   - if no delivery happened, office staff should mark the customer/machine inactive so it moves to inactive review instead of being billed.
 - Billing visibility rule:
   - user-facing hide/unhide is handled by reversible `tbl_billing_exclusions` records.
@@ -83,6 +85,8 @@ This file protects the project across new chats. It should record the stable bas
 - Invoice numbers must remain unique across billing records.
 - Invoice search must remain available so a user can locate and delete/cancel a specific invoice number before reusing it.
 - Delete/cancel must be deliberate and should release the invoice number only when the billing record is actually cleared according to the agreed workflow.
+- For one-invoice/multiple-machine RTP billing, cancel/replace must clear all `tbl_billing` records for that invoice number and billing month, not only one branch line.
+- Saved grouped RTP billing should support reprinting the invoice, the meter reading form, and a breakdown attachment for corrected/replacement invoices.
 
 ## Rollback Reference
 - `e9338ab`: current protected Billing print/save baseline

@@ -858,7 +858,7 @@ async function saveMultiMachineBillingRecords({ row, context, estimate, snapshot
             ...line,
             row: getLineRowForBilling(line, row)
         }))
-        .filter((line) => line?.row?.contractmain_id && !line.missingMeterSource);
+        .filter((line) => line?.row?.contractmain_id && !line.missingMeterSource && line.formula !== 'pending_present_meter');
     if (!lines.length) throw new Error('No machine contract lines are available to save for this grouped invoice.');
 
     const targetDocsByContract = new Map();
@@ -963,12 +963,12 @@ async function saveBillingRecord({ row, context, estimate, snapshot, existingDoc
 }
 
 async function deleteBillingRecord({ row, monthKey, invoiceNo = '' }) {
-    if (!row?.contractmain_id) throw new Error('This row has no contract ID to delete.');
-    const docs = await queryBillingDocsByContractMonth(row.contractmain_id, monthKey);
     const normalizedInvoice = normalizeInvoiceNumber(invoiceNo);
-    const matchingDocs = normalizedInvoice
-        ? docs.filter((doc) => getBillingDocInvoiceRef(doc) === normalizedInvoice)
-        : docs;
+    if (normalizedInvoice) {
+        return deleteBillingDocsForReplacement({ invoiceNo: normalizedInvoice, monthKey });
+    }
+    if (!row?.contractmain_id) throw new Error('This row has no contract ID to delete.');
+    const matchingDocs = await queryBillingDocsByContractMonth(row.contractmain_id, monthKey);
     if (!matchingDocs.length) return { deletedCount: 0 };
 
     for (const doc of matchingDocs) {
@@ -977,6 +977,29 @@ async function deleteBillingRecord({ row, monthKey, invoiceNo = '' }) {
     }
 
     return { deletedCount: matchingDocs.length };
+}
+
+async function deleteBillingDocsForReplacement({ invoiceNo = '', docId = '', monthKey = '' } = {}) {
+    const normalizedInvoice = normalizeInvoiceNumber(invoiceNo);
+    let matchingDocs = [];
+    if (normalizedInvoice) {
+        const docs = await queryBillingDocsByInvoice(normalizedInvoice);
+        const monthDocs = monthKey
+            ? docs.filter((doc) => getBillingDocMonthKey(doc) === monthKey)
+            : docs;
+        matchingDocs = monthDocs.length ? monthDocs : docs;
+    }
+    if (!matchingDocs.length && docId) {
+        matchingDocs = [{ _docId: docId }];
+    }
+    if (!matchingDocs.length) return { deletedCount: 0 };
+
+    const uniqueDocIds = Array.from(new Set(matchingDocs.map((doc) => doc?._docId).filter(Boolean)));
+    for (const id of uniqueDocIds) {
+        await deleteFirestoreDocument('tbl_billing', id);
+    }
+
+    return { deletedCount: uniqueDocIds.length };
 }
 
 function getInvoiceSearchRows() {
@@ -1051,8 +1074,8 @@ function renderInvoiceSearchResults(docs = [], invoiceNo = '') {
                         </div>
                         <div class="invoice-search-amount">${escapeHtml(formatAmount(doc.totalamount || doc.amount || 0))}</div>
                         <div class="invoice-search-actions">
-                            <button class="btn btn-secondary" type="button" data-invoice-search-action="open" data-row-id="${escapeHtml(rowId)}" data-month-key="${escapeHtml(monthKey)}"${canOpen ? '' : ' disabled'}>${canOpen ? 'Open Billing' : 'Load Row To Open'}</button>
-                            <button class="btn btn-danger" type="button" data-invoice-search-action="delete" data-doc-id="${escapeHtml(doc._docId || '')}" data-invoice-no="${escapeHtml(getBillingDocInvoiceRef(doc) || invoiceNo)}">Delete</button>
+                            <button class="btn btn-secondary" type="button" data-invoice-search-action="open" data-row-id="${escapeHtml(rowId)}" data-month-key="${escapeHtml(monthKey)}"${canOpen ? '' : ' disabled'}>${canOpen ? 'Open / Reprint' : 'Load Row To Open'}</button>
+                            <button class="btn btn-danger" type="button" data-invoice-search-action="delete" data-doc-id="${escapeHtml(doc._docId || '')}" data-invoice-no="${escapeHtml(getBillingDocInvoiceRef(doc) || invoiceNo)}" data-month-key="${escapeHtml(monthKey)}">Cancel / Replace</button>
                         </div>
                     </article>
                 `;
@@ -2141,13 +2164,16 @@ function printCurrentRtpInvoice() {
         return;
     }
 
-    const printWindow = window.open('', 'marga_invoice_print', 'width=1180,height=860');
+    printHtmlDocument(buildRtpPrintDocument(currentRtpPrintPayload), 'marga_invoice_print');
+}
+
+function printHtmlDocument(printMarkup, windowName = 'marga_print') {
+    const printWindow = window.open('', windowName, 'width=1180,height=860');
     if (!printWindow) {
         MargaUtils.showToast('The print window was blocked.', 'error');
         return;
     }
 
-    const printMarkup = buildRtpPrintDocument(currentRtpPrintPayload);
     let printTriggered = false;
     const triggerPrint = () => {
         if (printTriggered || printWindow.closed) return;
@@ -2163,6 +2189,117 @@ function printCurrentRtpInvoice() {
     printWindow.document.close();
     printWindow.addEventListener('load', triggerPrint, { once: true });
     window.setTimeout(triggerPrint, 700);
+}
+
+function getPrintableBillingLines(estimate) {
+    const lines = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
+    const available = lines.filter((line) => !line.missingMeterSource && line.formula !== 'pending_present_meter');
+    const printable = available.filter((line) => (
+        !line.missingMeterSource
+        && (Number(line.amountDue || 0) > 0 || Number(line.rawPages || 0) > 0 || Number(line.presentMeter || 0) > Number(line.previousMeter || 0))
+    ));
+    return printable.length ? printable : available;
+}
+
+function buildBillingAttachmentPrintDocument(preview, estimate, type = 'breakdown') {
+    const lines = getPrintableBillingLines(estimate);
+    const isMeterForm = type === 'meter_form';
+    const title = isMeterForm ? 'Meter Reading Form' : 'Billing Breakdown Attachment';
+    const period = [preview?.billingFrom, preview?.billingTo].filter(Boolean).join(' to ');
+    const totals = preview?.totals || {};
+    const rows = lines.map((line, index) => {
+        const difference = Number(line.rawPages || 0) || Math.max(0, Number(line.presentMeter || 0) - Number(line.previousMeter || 0));
+        return `
+            <tr>
+                <td>${escapeHtml(line.label || `Line ${index + 1}`)}</td>
+                <td>${escapeHtml(line.machineId || line.serialNumber || '')}</td>
+                <td class="num">${escapeHtml(formatCount(line.presentMeter || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(line.previousMeter || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(difference))}</td>
+                <td class="num">${escapeHtml(formatCount(line.spoilagePages || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(line.netPages || 0))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(line.pageRate || 0))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(line.amountDue || 0))}</td>
+            </tr>
+        `;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${escapeHtml(title)}</title>
+    <style>
+        @page { size: A4 portrait; margin: 10mm; }
+        body { font-family: Arial, sans-serif; color: #111827; font-size: 11px; }
+        .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
+        h1 { margin: 0 0 3px; font-size: 18px; }
+        .muted { color: #4b5563; font-weight: 700; }
+        .info { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; margin-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #9ca3af; padding: 4px 5px; vertical-align: top; }
+        th { background: #eef2f7; text-align: left; font-size: 10px; text-transform: uppercase; }
+        .num { text-align: right; white-space: nowrap; }
+        .totals { margin-left: auto; margin-top: 10px; width: 280px; }
+        .totals td:first-child { font-weight: 700; }
+        .note { margin-top: 10px; color: #4b5563; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>${escapeHtml(title)}</h1>
+            <div class="muted">${escapeHtml(preview?.customerName || 'Unknown Customer')}</div>
+            <div>${escapeHtml(preview?.address || '')}</div>
+        </div>
+        <div>
+            <div><strong>Date:</strong> ${escapeHtml(preview?.invoiceDate || '')}</div>
+            <div><strong>Month:</strong> ${escapeHtml(preview?.monthLabel || '')}</div>
+            <div><strong>Contract:</strong> ${escapeHtml(preview?.contractCode || '')}</div>
+        </div>
+    </div>
+    <div class="info">
+        <div><strong>Period:</strong> ${escapeHtml(period || 'N/A')}</div>
+        <div><strong>Total Pages:</strong> ${escapeHtml(formatCount(estimate?.netPages || 0))}</div>
+        <div><strong>Rate Plan:</strong> ${escapeHtml(formatRtpRatePlan({ quota: estimate?.monthlyQuota || 0, pageRate: estimate?.pageRate || 0, succeedingRate: estimate?.succeedingRate || 0 }))}</div>
+        <div><strong>Invoice Total:</strong> ${escapeHtml(formatFixedAmount(totals.amountDue || estimate?.amountDue || 0))}</div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Branch / Machine</th>
+                <th>Serial</th>
+                <th class="num">Present</th>
+                <th class="num">Previous</th>
+                <th class="num">Diff</th>
+                <th class="num">Spoilage</th>
+                <th class="num">Net</th>
+                <th class="num">Rate</th>
+                <th class="num">Amount</th>
+            </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="9">No computed meter lines available.</td></tr>'}</tbody>
+    </table>
+    <table class="totals">
+        <tr><td>Total</td><td class="num">${escapeHtml(formatFixedAmount(totals.total || estimate?.amountDue || 0))}</td></tr>
+        <tr><td>VAT</td><td class="num">${escapeHtml(formatFixedAmount(totals.vatAmount || estimate?.vatAmount || 0))}</td></tr>
+        <tr><td>Vatable Sales</td><td class="num">${escapeHtml(formatFixedAmount(totals.vatableSales || estimate?.netAmount || 0))}</td></tr>
+        <tr><td>Amount Due</td><td class="num">${escapeHtml(formatFixedAmount(totals.amountDue || estimate?.amountDue || 0))}</td></tr>
+    </table>
+    <div class="note">${escapeHtml(isMeterForm ? 'Use this as the meter reading attachment for the replacement or corrected invoice.' : 'Attach this breakdown to the invoice for multi-machine grouped billing.')}</div>
+</body>
+</html>`;
+}
+
+function printBillingAttachment(preview, estimate, type = 'breakdown') {
+    if (!preview) {
+        MargaUtils.showToast('Save or preview the invoice first.', 'error');
+        return;
+    }
+    printHtmlDocument(
+        buildBillingAttachmentPrintDocument(preview, estimate, type),
+        type === 'meter_form' ? 'marga_meter_form_print' : 'marga_breakdown_print'
+    );
 }
 
 function setStatus(text, type = 'idle') {
@@ -2982,7 +3119,8 @@ function calculateMeterLineEstimate({
     spoilagePercent = DEFAULT_SPOILAGE_RATE * 100,
     forceFixed = false,
     row = null,
-    missingMeterMessage = ''
+    missingMeterMessage = '',
+    pendingPresentMessage = ''
 } = {}) {
     const previous = Math.max(0, Number(previousMeter || 0) || 0);
     const present = Math.max(0, Number(presentMeter || 0) || 0);
@@ -3009,6 +3147,9 @@ function calculateMeterLineEstimate({
         if (missingMeterMessage && previous <= 0 && present <= 0) {
             warning = missingMeterMessage;
             formula = 'missing_prior_meter';
+        } else if (pendingPresentMessage && present <= previous) {
+            warning = pendingPresentMessage;
+            formula = 'pending_present_meter';
         } else if (present < previous) {
             warning = `${label}: present meter cannot be lower than previous meter.`;
         } else {
@@ -3083,6 +3224,7 @@ function calculateMeterLineEstimate({
         formula,
         warning,
         missingMeterMessage,
+        pendingPresentMessage,
         missingMeterSource: Boolean(missingMeterMessage && previous <= 0 && present <= 0)
     };
 }
@@ -3468,6 +3610,9 @@ function formatLineComputation(line) {
     if (line.formula === 'missing_prior_meter') {
         return line.warning || 'No available previous meter reading found yet.';
     }
+    if (line.formula === 'pending_present_meter') {
+        return line.warning || 'Enter the present reading to include this machine in the invoice total.';
+    }
     return `${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
 }
 
@@ -3594,6 +3739,9 @@ async function openBillingCalcModal(rowId, monthKey) {
         const missingMeterMessage = hasMeterSource
             ? ''
             : 'No available previous meter reading found. Check first delivery/beginning meter or mark inactive if no delivery happened.';
+        const pendingPresentMessage = hasMeterSource && !group
+            ? 'Enter present reading to include this machine in the invoice total.'
+            : '';
         return calculateMeterLineEstimate({
             label: machineRow.branch_name || machineRow.serial_number || machineRow.machine_label || 'Machine',
             subtitle: `${machineRow.machine_label || machineRow.serial_number || 'No machine serial'}${meterSourceLabel ? ` • last meter ${meterSourceLabel}` : ''}`,
@@ -3602,7 +3750,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row: machineRow,
-            missingMeterMessage
+            missingMeterMessage,
+            pendingPresentMessage
         });
     });
     const companyName = row.display_name || row.account_name || row.company_name || 'Unknown Customer';
@@ -3641,7 +3790,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             <div class="calc-save-row">
                 <div class="calc-save-actions">
                     <button class="btn btn-primary" type="button" id="calcSaveBillingBtn">${savedBillingDoc ? 'Update Billing' : 'Save Billing'}</button>
-                    ${savedBillingDoc ? '<button class="btn btn-danger" type="button" id="calcDeleteBillingBtn">Delete Billing</button>' : ''}
+                    ${savedBillingDoc ? '<button class="btn btn-danger" type="button" id="calcDeleteBillingBtn">Cancel / Replace Billing</button>' : ''}
                 </div>
                 <div class="calc-save-status" id="calcSaveStatus">${savedBillingDoc ? `Saved in ${escapeHtml(savedMonthLabel)}. Printing stays unlocked while the form matches the saved invoice.` : `Save this billing first so it lands in ${escapeHtml(savedMonthLabel)} and unlocks printing.`}</div>
             </div>
@@ -3827,7 +3976,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                         <section class="calc-panel">
                             <div class="calc-panel-title">${escapeHtml(printContractCode)} Print</div>
                             <div class="calc-print-row">
-                                <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print ${escapeHtml(printContractCode)}</button>
+                                <div class="calc-print-buttons">
+                                    <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print ${escapeHtml(printContractCode)}</button>
+                                    <button class="btn btn-secondary" type="button" id="calcPrintBreakdownBtn" disabled>Print Breakdown</button>
+                                    <button class="btn btn-secondary" type="button" id="calcPrintMeterFormBtn" disabled>Print Meter Form</button>
+                                </div>
                                 <span class="calc-print-hint" id="calcInlinePrintHint">Preparing preview...</span>
                             </div>
                             <div class="calc-print-note">
@@ -3904,6 +4057,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     const warningValue = document.getElementById('calcWarningValue');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
+    const printBreakdownBtn = document.getElementById('calcPrintBreakdownBtn');
+    const printMeterFormBtn = document.getElementById('calcPrintMeterFormBtn');
     const inlinePrintHint = document.getElementById('calcInlinePrintHint');
     const templateSelect = document.getElementById('calcPrintTemplateSelect');
     const templateNameInput = document.getElementById('calcPrintTemplateNameInput');
@@ -3939,6 +4094,12 @@ async function openBillingCalcModal(rowId, monthKey) {
     let pendingExclusionLineIndex = -1;
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
+    printBreakdownBtn?.addEventListener('click', () => {
+        printBillingAttachment(currentRtpPrintPayload, activeEstimate, 'breakdown');
+    });
+    printMeterFormBtn?.addEventListener('click', () => {
+        printBillingAttachment(currentRtpPrintPayload, activeEstimate, 'meter_form');
+    });
 
     const closeExclusionEditor = () => {
         pendingExclusionLineIndex = -1;
@@ -3989,7 +4150,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter: readLineInputValue(mode, index, 'presentMeter', seed.presentMeter),
             spoilagePercent: readLineInputValue(mode, index, 'spoilagePercent', seed.spoilagePercent),
             row: seed.row || null,
-            missingMeterMessage: seed.missingMeterMessage
+            missingMeterMessage: seed.missingMeterMessage,
+            pendingPresentMessage: seed.pendingPresentMessage
         });
     };
 
@@ -4111,6 +4273,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice);
             els.billingCalcPrintBtn.disabled = !printEnabled;
         }
+        if (printBreakdownBtn) printBreakdownBtn.disabled = !printEnabled;
+        if (printMeterFormBtn) printMeterFormBtn.disabled = !printEnabled;
     };
 
     const renderCalcPreview = async (nextEstimate) => {
@@ -4426,7 +4590,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     });
     deleteBillingBtn?.addEventListener('click', async () => {
         const invoiceNo = savedSnapshot?.invoiceNo || buildCurrentSnapshot().invoiceNo;
-        const confirmed = window.confirm(`Delete billing ${invoiceNo || 'for this month'}? This frees the invoice number so it can be reused.`);
+        const confirmed = window.confirm(`Cancel billing ${invoiceNo || 'for this month'} for replacement? This frees the invoice number after the saved billing record is removed.`);
         if (!confirmed) return;
         deleteBillingBtn.disabled = true;
         if (saveBillingBtn) saveBillingBtn.disabled = true;
@@ -4809,7 +4973,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
                 ? `
                     <div class="detail-action-row">
                         <button class="btn btn-primary" type="button" id="invoiceEditBillingBtn">Edit Billing</button>
-                        <button class="btn btn-danger" type="button" id="invoiceDeleteBillingBtn">Delete Invoice</button>
+                        <button class="btn btn-danger" type="button" id="invoiceDeleteBillingBtn">Cancel / Replace Invoice</button>
                     </div>
                 `
                 : ''
@@ -4935,7 +5099,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
         openBillingCalcModal(rowId, monthKey);
     });
     document.getElementById('invoiceDeleteBillingBtn')?.addEventListener('click', async () => {
-        const confirmed = window.confirm(`Delete invoice ${primaryInvoiceRef || 'for this billing month'}? This makes the invoice number available again.`);
+        const confirmed = window.confirm(`Cancel invoice ${primaryInvoiceRef || 'for this billing month'} for replacement? This makes the invoice number available again after the saved billing record is removed.`);
         if (!confirmed) return;
         const deleteButton = document.getElementById('invoiceDeleteBillingBtn');
         const editButton = document.getElementById('invoiceEditBillingBtn');
@@ -5084,16 +5248,17 @@ function bindEvents() {
 
         const docId = String(actionButton.dataset.docId || '').trim();
         const invoiceNo = String(actionButton.dataset.invoiceNo || '').trim();
+        const monthKey = String(actionButton.dataset.monthKey || '').trim();
         if (!docId) return;
-        const confirmed = window.confirm(`Delete invoice ${invoiceNo || docId}? This makes the invoice number available again.`);
+        const confirmed = window.confirm(`Cancel invoice ${invoiceNo || docId} for replacement? This makes the invoice number available again after the saved billing record is removed.`);
         if (!confirmed) return;
         actionButton.disabled = true;
         try {
-            await deleteFirestoreDocument('tbl_billing', docId);
+            const result = await deleteBillingDocsForReplacement({ invoiceNo, docId, monthKey });
             showBillingSaveResult({
                 type: 'success',
-                title: 'Invoice Deleted',
-                message: `Invoice ${invoiceNo || docId} was deleted from Firebase and can be reused.`
+                title: 'Invoice Cancelled',
+                message: `Invoice ${invoiceNo || docId} removed ${formatCount(result.deletedCount || 0)} saved billing record${result.deletedCount === 1 ? '' : 's'} and can be replaced.`
             });
             await searchInvoiceNumber();
             if (lastPayload) await loadDashboard();
@@ -5101,7 +5266,7 @@ function bindEvents() {
             console.error('Unable to delete invoice from lookup.', error);
             showBillingSaveResult({
                 type: 'error',
-                title: 'Delete Failed',
+                title: 'Cancel Failed',
                 message: error.message || `Invoice ${invoiceNo || docId} could not be deleted.`
             });
             actionButton.disabled = false;

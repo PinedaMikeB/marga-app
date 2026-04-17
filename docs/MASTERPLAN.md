@@ -129,6 +129,11 @@ Module rules:
 - Do not make Chrome/localStorage the source of truth for invoice templates.
 - Keep the portrait-safe right-margin clamp so adding right-side paper room does not cause Chrome print preview to become landscape.
 - Keep the print document using `@page` margin `0`; instruct users to turn off Chrome `Headers and footers`.
+- For grouped RTP one-invoice/multiple-machine billing, support printable attachments from the saved calculation:
+  - invoice print for the official invoice paper
+  - breakdown print for the invoice attachment
+  - meter reading form print for correction/replacement paperwork
+- Pending-present grouped lines should remain visible for staff but must not be included in the saved invoice total, breakdown attachment, or `tbl_billing` invoice records until the present meter is entered.
 
 ## Key UX Principles
 - Default views should be department-scoped (Billing / Collection / Service).
