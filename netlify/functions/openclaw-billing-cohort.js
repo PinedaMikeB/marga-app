@@ -194,10 +194,13 @@ function parseAmount(value) {
 
 function extractBillingAmount(fields) {
     const totalAmount = parseAmount(getField(fields, ['totalamount']));
-    if (totalAmount > 0) return totalAmount;
     const amount = parseAmount(getField(fields, ['amount']));
-    if (amount > 0) return amount;
-    return parseAmount(getField(fields, ['vatamount']));
+    const totalAmount2 = parseAmount(getField(fields, ['totalamount2']));
+    const amount2 = parseAmount(getField(fields, ['amount2']));
+    const primaryAmount = totalAmount > 0 ? totalAmount : amount;
+    const secondaryAmount = totalAmount2 > 0 ? totalAmount2 : amount2;
+    if (primaryAmount > 0 || secondaryAmount > 0) return roundCurrency(primaryAmount + secondaryAmount);
+    return roundCurrency(parseAmount(getField(fields, ['vatamount'])) + parseAmount(getField(fields, ['vatamount2'])));
 }
 
 async function firestoreGet(collection, pageSize = DEFAULT_PAGE_SIZE, pageToken = null, fieldMask = null) {
@@ -302,7 +305,7 @@ async function loadCache(
         return cache;
     }
 
-    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount'];
+    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount', 'amount2', 'totalamount2', 'vatamount2'];
     const scheduleFieldMask = [
         'id',
         'company_id',

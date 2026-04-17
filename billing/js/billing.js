@@ -1137,7 +1137,13 @@ function getBillingDocCategoryCode(doc) {
 }
 
 function getBillingDocAmount(doc) {
-    return Number(doc?.totalamount ?? doc?.amount ?? 0) || 0;
+    const primaryAmount = Number(doc?.totalamount || 0) > 0
+        ? Number(doc.totalamount || 0)
+        : Number(doc?.amount || 0);
+    const secondaryAmount = Number(doc?.totalamount2 || 0) > 0
+        ? Number(doc.totalamount2 || 0)
+        : Number(doc?.amount2 || 0);
+    return roundBillingAmount(primaryAmount + secondaryAmount);
 }
 
 function parseBillingDocLineItems(doc) {
