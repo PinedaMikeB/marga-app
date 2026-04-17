@@ -51,6 +51,7 @@ let billingCalcRequestToken = 0;
 let invoicePreviewReferenceData = null;
 let invoicePreviewReferencePromise = null;
 let currentRtpPrintPayload = null;
+let invoiceSearchGroupCache = new Map();
 const priorMachineReadingCache = new Map();
 const priorBillingReadingCache = new Map();
 let billingExclusionCache = [];
@@ -1036,46 +1037,181 @@ function findInvoiceSearchRow(doc) {
         || null;
 }
 
+function getBillingDocCategoryCode(doc) {
+    const rawCode = String(doc?.category_code || '').trim().toUpperCase();
+    if (rawCode) return rawCode;
+    return CONTRACT_CATEGORY_META[Number(doc?.category_id || 0)]?.code || '';
+}
+
+function getBillingDocAmount(doc) {
+    return Number(doc?.totalamount ?? doc?.amount ?? 0) || 0;
+}
+
+function parseBillingDocLineItems(doc) {
+    const raw = doc?.billing_lines_json;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try {
+        const parsed = JSON.parse(String(raw));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function getBillingDocMeterMovement(doc) {
+    const previous = Number(doc?.field_previous_meter || 0) || 0;
+    const present = Number(doc?.field_present_meter || 0) || 0;
+    const previous2 = Number(doc?.field_previous_meter2 || 0) || 0;
+    const present2 = Number(doc?.field_present_meter2 || 0) || 0;
+    let rawPages = Math.max(
+        0,
+        Number(doc?.field_total_consumed || 0) || 0,
+        Number(doc?.total_pages || 0) || 0,
+        Number(doc?.billing_total_pages || 0) || 0
+    );
+    let delta = Math.max(0, present - previous, present2 - previous2);
+    parseBillingDocLineItems(doc).forEach((line) => {
+        const linePrevious = Number(line?.previousMeter || 0) || 0;
+        const linePresent = Number(line?.presentMeter || 0) || 0;
+        rawPages = Math.max(rawPages, Number(line?.rawPages || line?.netPages || 0) || 0);
+        delta = Math.max(delta, linePresent - linePrevious);
+    });
+    return { delta: Math.max(0, delta), rawPages: Math.max(0, rawPages) };
+}
+
+function shouldCountInvoiceSearchDoc(doc, groupDocs = []) {
+    const mode = String(doc?.billing_mode || '').trim();
+    const groupNeedsMeterFilter = groupDocs.length > 1 || mode === 'multi_machine_rtp';
+    if (!groupNeedsMeterFilter) return true;
+
+    const formula = String(doc?.billing_formula || '').trim();
+    if (formula === 'pending_present_meter' || formula === 'missing_prior_meter') return false;
+
+    const categoryCode = getBillingDocCategoryCode(doc);
+    if (categoryCode === 'RTF') return true;
+
+    const movement = getBillingDocMeterMovement(doc);
+    return movement.delta > 0 || movement.rawPages > 0;
+}
+
+function uniqueBillingValues(values = []) {
+    return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
+}
+
+function buildInvoiceSearchGroups(docs = [], invoiceNo = '') {
+    const groupsByKey = new Map();
+    docs.forEach((doc) => {
+        const invoiceRef = getBillingDocInvoiceRef(doc) || invoiceNo || 'Invoice';
+        const monthKey = getBillingDocMonthKey(doc) || 'unknown';
+        const key = `${invoiceRef}::${monthKey}`;
+        if (!groupsByKey.has(key)) {
+            groupsByKey.set(key, {
+                key,
+                invoiceRef,
+                monthKey,
+                docs: []
+            });
+        }
+        groupsByKey.get(key).docs.push(doc);
+    });
+
+    return Array.from(groupsByKey.values()).map((group) => {
+        const docsWithRows = group.docs.map((doc) => ({
+            doc,
+            row: findInvoiceSearchRow(doc)
+        }));
+        const billableDocs = docsWithRows.filter(({ doc }) => shouldCountInvoiceSearchDoc(doc, group.docs));
+        const suppressedDocs = docsWithRows.filter(({ doc }) => !shouldCountInvoiceSearchDoc(doc, group.docs));
+        const displayDocs = billableDocs.length ? billableDocs : [];
+        const companyLabels = uniqueBillingValues(docsWithRows.map(({ row, doc }) => (
+            row?.company_name
+            || row?.account_name
+            || row?.display_name
+            || doc?.company_name
+            || (doc?.company_id ? `Company ${doc.company_id}` : '')
+        )));
+        const branchLabels = uniqueBillingValues(displayDocs.map(({ row, doc }) => (
+            row?.branch_name
+            || doc?.branch_name
+            || ''
+        )));
+        const categoryCodes = uniqueBillingValues(docsWithRows.map(({ doc }) => getBillingDocCategoryCode(doc) || doc?.category_id || 'N/A'));
+        const contractIds = uniqueBillingValues(displayDocs.map(({ doc }) => doc?.contractmain_id));
+        const machineIds = uniqueBillingValues(displayDocs.map(({ doc }) => doc?.machine_id));
+        const amountTotal = displayDocs.reduce((sum, { doc }) => sum + getBillingDocAmount(doc), 0);
+        const savedAmountTotal = docsWithRows.reduce((sum, { doc }) => sum + getBillingDocAmount(doc), 0);
+        const rawPages = displayDocs.reduce((sum, { doc }) => sum + getBillingDocMeterMovement(doc).rawPages, 0);
+        const primaryRow = displayDocs[0]?.row || docsWithRows[0]?.row || null;
+        return {
+            ...group,
+            docsWithRows,
+            billableDocs,
+            suppressedDocs,
+            displayDocs,
+            companyLabels,
+            branchLabels,
+            categoryCodes,
+            contractIds,
+            machineIds,
+            amountTotal,
+            savedAmountTotal,
+            rawPages,
+            primaryRow
+        };
+    }).sort((left, right) => String(right.monthKey || '').localeCompare(String(left.monthKey || '')));
+}
+
 function renderInvoiceSearchResults(docs = [], invoiceNo = '') {
     if (!els.invoiceSearchResults) return;
     if (!invoiceNo) {
         els.invoiceSearchResults.innerHTML = 'Search an invoice number to trace or delete a billing transaction.';
+        invoiceSearchGroupCache = new Map();
         return;
     }
     if (!docs.length) {
         els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">No Firebase billing transaction found for invoice ${escapeHtml(invoiceNo)}.</div>`;
+        invoiceSearchGroupCache = new Map();
         return;
     }
 
+    const groups = buildInvoiceSearchGroups(docs, invoiceNo);
+    invoiceSearchGroupCache = new Map(groups.map((group) => [group.key, group]));
+    const rawRecordText = groups.length === docs.length
+        ? `${formatCount(docs.length)} saved record${docs.length === 1 ? '' : 's'}`
+        : `${formatCount(groups.length)} invoice group${groups.length === 1 ? '' : 's'} from ${formatCount(docs.length)} saved branch record${docs.length === 1 ? '' : 's'}`;
     els.invoiceSearchResults.innerHTML = `
-        <div class="invoice-search-count">${escapeHtml(formatCount(docs.length))} transaction${docs.length === 1 ? '' : 's'} found for invoice ${escapeHtml(invoiceNo)}.</div>
+        <div class="invoice-search-count">${escapeHtml(rawRecordText)} found for invoice ${escapeHtml(invoiceNo)}.</div>
         <div class="invoice-search-list">
-            ${docs.map((doc) => {
-                const row = findInvoiceSearchRow(doc);
-                const monthKey = getBillingDocMonthKey(doc);
-                const rowId = row ? String(row.row_id || row.company_id || '') : '';
-                const customerLabel = row
-                    ? `${row.display_name || row.account_name || row.company_name || 'Loaded customer'}${row.branch_name ? ` • ${row.branch_name}` : ''}`
-                    : `Company ${doc.company_id || 'N/A'} • Branch ${doc.branch_id || 'N/A'}`;
-                const machineLabel = row?.machine_label || row?.serial_number || doc.serial_number || doc.machine_id || 'N/A';
-                const canOpen = Boolean(rowId && monthKey);
+            ${groups.map((group) => {
+                const customerLabel = group.companyLabels[0] || 'Unknown customer';
+                const branchLabel = group.branchLabels.length === 1
+                    ? group.branchLabels[0]
+                    : `${formatCount(group.displayDocs.length)} computed branch line${group.displayDocs.length === 1 ? '' : 's'}`;
+                const ignoredText = group.suppressedDocs.length
+                    ? `<div class="invoice-search-warning">${escapeHtml(formatCount(group.suppressedDocs.length))} saved zero-meter/pending branch row${group.suppressedDocs.length === 1 ? '' : 's'} ignored from this invoice total.</div>`
+                    : '';
                 return `
                     <article class="invoice-search-card">
                         <div class="invoice-search-main">
-                            <div class="invoice-search-ref">Invoice ${escapeHtml(getBillingDocInvoiceRef(doc) || invoiceNo)}</div>
-                            <div class="invoice-search-customer">${escapeHtml(customerLabel)}</div>
+                            <div class="invoice-search-ref">Invoice ${escapeHtml(group.invoiceRef || invoiceNo)}</div>
+                            <div class="invoice-search-customer">${escapeHtml(customerLabel)}${branchLabel ? ` • ${escapeHtml(branchLabel)}` : ''}</div>
                             <div class="invoice-search-meta">
-                                <span>${escapeHtml(formatMonthLabel(monthKey, monthKey || `${doc.month || ''} ${doc.year || ''}`.trim() || 'No month'))}</span>
-                                <span>${escapeHtml(doc.category_code || 'N/A')}</span>
-                                <span>Contract ${escapeHtml(doc.contractmain_id || 'N/A')}</span>
-                                <span>Machine ${escapeHtml(machineLabel)}</span>
-                                <span>Doc ${escapeHtml(doc._docId || 'N/A')}</span>
+                                <span>${escapeHtml(formatMonthLabel(group.monthKey, group.monthKey || 'No month'))}</span>
+                                <span>${escapeHtml(group.categoryCodes.join(' / ') || 'N/A')}</span>
+                                <span>${escapeHtml(formatCount(group.displayDocs.length))} computed line${group.displayDocs.length === 1 ? '' : 's'}</span>
+                                <span>${escapeHtml(formatCount(group.docs.length))} saved row${group.docs.length === 1 ? '' : 's'}</span>
+                                <span>${escapeHtml(formatCount(group.machineIds.length))} machine${group.machineIds.length === 1 ? '' : 's'}</span>
                             </div>
+                            ${ignoredText}
                         </div>
-                        <div class="invoice-search-amount">${escapeHtml(formatAmount(doc.totalamount || doc.amount || 0))}</div>
+                        <div class="invoice-search-amount">
+                            <div>${escapeHtml(formatAmount(group.amountTotal || 0))}</div>
+                            ${group.suppressedDocs.length ? `<span>Saved rows total ${escapeHtml(formatAmount(group.savedAmountTotal || 0))}</span>` : ''}
+                        </div>
                         <div class="invoice-search-actions">
-                            <button class="btn btn-secondary" type="button" data-invoice-search-action="open" data-row-id="${escapeHtml(rowId)}" data-month-key="${escapeHtml(monthKey)}"${canOpen ? '' : ' disabled'}>${canOpen ? 'Open / Reprint' : 'Load Row To Open'}</button>
-                            <button class="btn btn-danger" type="button" data-invoice-search-action="delete" data-doc-id="${escapeHtml(doc._docId || '')}" data-invoice-no="${escapeHtml(getBillingDocInvoiceRef(doc) || invoiceNo)}" data-month-key="${escapeHtml(monthKey)}">Cancel / Replace</button>
+                            <button class="btn btn-secondary" type="button" data-invoice-search-action="open" data-group-key="${escapeHtml(group.key)}">Open / Reprint</button>
+                            <button class="btn btn-danger" type="button" data-invoice-search-action="delete" data-invoice-no="${escapeHtml(group.invoiceRef || invoiceNo)}" data-month-key="${escapeHtml(group.monthKey)}">Cancel / Replace</button>
                         </div>
                     </article>
                 `;
@@ -1106,6 +1242,228 @@ async function searchInvoiceNumber() {
     } finally {
         if (els.invoiceSearchBtn) els.invoiceSearchBtn.disabled = false;
     }
+}
+
+function getInvoiceSearchEntryLabel(entry) {
+    const row = entry?.row || {};
+    const doc = entry?.doc || {};
+    return row.branch_name
+        || row.display_name
+        || row.account_name
+        || row.company_name
+        || doc.branch_name
+        || doc.serial_number
+        || doc.machine_id
+        || doc.contractmain_id
+        || 'Billing line';
+}
+
+function buildInvoiceSearchGroupBreakdownPrintDocument(group) {
+    const lines = group?.displayDocs || [];
+    const rows = lines.map((entry) => {
+        const doc = entry.doc || {};
+        const movement = getBillingDocMeterMovement(doc);
+        const previous = Number(doc.field_previous_meter || 0) || 0;
+        const present = Number(doc.field_present_meter || 0) || 0;
+        return `
+            <tr>
+                <td>${escapeHtml(getInvoiceSearchEntryLabel(entry))}</td>
+                <td>${escapeHtml(doc.contractmain_id || '')}</td>
+                <td>${escapeHtml(doc.machine_id || doc.serial_number || '')}</td>
+                <td class="num">${escapeHtml(formatCount(previous))}</td>
+                <td class="num">${escapeHtml(formatCount(present))}</td>
+                <td class="num">${escapeHtml(formatCount(movement.rawPages || movement.delta || 0))}</td>
+                <td class="num">${escapeHtml(formatAmount(doc.page_rate || 0))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(getBillingDocAmount(doc)))}</td>
+            </tr>
+        `;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Invoice ${escapeHtml(group?.invoiceRef || '')} Breakdown</title>
+    <style>
+        @page { size: A4 portrait; margin: 10mm; }
+        body { font-family: Arial, sans-serif; color: #111827; font-size: 11px; }
+        h1 { margin: 0 0 4px; font-size: 18px; }
+        .head { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
+        .muted { color: #4b5563; font-weight: 700; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #9ca3af; padding: 4px 5px; vertical-align: top; }
+        th { background: #eef2f7; text-align: left; font-size: 10px; text-transform: uppercase; }
+        .num { text-align: right; white-space: nowrap; }
+        .total { margin-left: auto; margin-top: 10px; width: 260px; }
+        .note { margin-top: 10px; color: #4b5563; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <div class="head">
+        <div>
+            <h1>Billing Breakdown Attachment</h1>
+            <div class="muted">Invoice ${escapeHtml(group?.invoiceRef || '')}</div>
+            <div>${escapeHtml(group?.companyLabels?.join(' / ') || '')}</div>
+        </div>
+        <div>
+            <div><strong>Month:</strong> ${escapeHtml(formatMonthLabel(group?.monthKey, group?.monthKey || ''))}</div>
+            <div><strong>Computed Lines:</strong> ${escapeHtml(formatCount(lines.length))}</div>
+            <div><strong>Ignored Saved Rows:</strong> ${escapeHtml(formatCount(group?.suppressedDocs?.length || 0))}</div>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Branch / Machine</th>
+                <th>Contract</th>
+                <th>Machine</th>
+                <th class="num">Previous</th>
+                <th class="num">Present</th>
+                <th class="num">Pages</th>
+                <th class="num">Rate</th>
+                <th class="num">Amount</th>
+            </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="8">No computed branch lines available.</td></tr>'}</tbody>
+    </table>
+    <table class="total">
+        <tr><td><strong>Invoice Total</strong></td><td class="num">${escapeHtml(formatFixedAmount(group?.amountTotal || 0))}</td></tr>
+    </table>
+    <div class="note">Zero-meter/pending saved rows are excluded from this attachment total.</div>
+</body>
+</html>`;
+}
+
+function printInvoiceSearchGroupBreakdown(groupKey) {
+    const group = invoiceSearchGroupCache.get(groupKey);
+    if (!group) {
+        MargaUtils.showToast('Invoice group is no longer loaded. Search the invoice again.', 'error');
+        return;
+    }
+    printHtmlDocument(buildInvoiceSearchGroupBreakdownPrintDocument(group), 'marga_invoice_group_breakdown_print');
+}
+
+function openInvoiceSearchGroupDetail(groupKey) {
+    const group = invoiceSearchGroupCache.get(groupKey);
+    if (!group || !els.invoiceDetailModal) return;
+
+    const lines = group.displayDocs || [];
+    const ignored = group.suppressedDocs || [];
+    els.invoiceDetailTitle.textContent = `Invoice ${group.invoiceRef || ''}`;
+    els.invoiceDetailSubtitle.textContent = `${formatMonthLabel(group.monthKey, group.monthKey || 'No month')} • ${formatCount(lines.length)} computed branch line${lines.length === 1 ? '' : 's'} • ${formatAmount(group.amountTotal || 0)}`;
+    setRtpPrintPayload(null);
+    els.invoiceDetailContent.innerHTML = `
+        <div class="detail-action-row">
+            <button class="btn btn-secondary" type="button" id="invoiceSearchPrintBreakdownBtn">Print Breakdown</button>
+            <button class="btn btn-danger" type="button" id="invoiceSearchCancelGroupBtn">Cancel / Replace Invoice</button>
+        </div>
+        <div class="detail-summary-grid">
+            <article class="detail-summary-card">
+                <span class="label">Invoice Total</span>
+                <span class="value">${escapeHtml(formatAmount(group.amountTotal || 0))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Computed Branch Lines</span>
+                <span class="value">${escapeHtml(formatCount(lines.length))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Saved Branch Records</span>
+                <span class="value">${escapeHtml(formatCount(group.docs.length))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Ignored Zero-Meter Rows</span>
+                <span class="value">${escapeHtml(formatCount(ignored.length))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Saved Rows Total</span>
+                <span class="value">${escapeHtml(formatAmount(group.savedAmountTotal || 0))}</span>
+            </article>
+            <article class="detail-summary-card">
+                <span class="label">Meter Pages</span>
+                <span class="value">${escapeHtml(formatCount(group.rawPages || 0))}</span>
+            </article>
+        </div>
+        ${ignored.length ? `<div class="detail-empty warning">This invoice number has ${escapeHtml(formatCount(ignored.length))} saved branch row${ignored.length === 1 ? '' : 's'} with no meter movement. They look like older auto-billed pending rows, so the invoice total above ignores them.</div>` : ''}
+        <div class="detail-section-title">Computed Branch Lines</div>
+        ${
+            lines.length
+                ? `
+                    <div class="invoice-detail-list">
+                        ${lines.map((entry) => {
+                            const doc = entry.doc || {};
+                            const movement = getBillingDocMeterMovement(doc);
+                            return `
+                                <article class="invoice-detail-card">
+                                    <div class="invoice-detail-head">
+                                        <div class="invoice-detail-ref">${escapeHtml(getInvoiceSearchEntryLabel(entry))}</div>
+                                        <div class="invoice-detail-amount">${escapeHtml(formatAmount(getBillingDocAmount(doc)))}</div>
+                                    </div>
+                                    <div class="invoice-detail-meta">
+                                        <span class="invoice-detail-chip">${escapeHtml(getBillingDocCategoryCode(doc) || 'N/A')}</span>
+                                        <span class="invoice-detail-chip">Contract ${escapeHtml(doc.contractmain_id || 'N/A')}</span>
+                                        <span class="invoice-detail-chip">Machine ${escapeHtml(doc.machine_id || doc.serial_number || 'N/A')}</span>
+                                        <span class="invoice-detail-chip">${escapeHtml(formatCount(movement.rawPages || movement.delta || 0))} pg</span>
+                                        <span class="invoice-detail-chip">Doc ${escapeHtml(doc._docId || 'N/A')}</span>
+                                    </div>
+                                    <div class="detail-list-block">
+                                        <span class="detail-list-label">Meter</span>
+                                        <div class="detail-list-value">${escapeHtml(`${formatCount(doc.field_previous_meter || 0)} previous -> ${formatCount(doc.field_present_meter || 0)} present`)}</div>
+                                    </div>
+                                </article>
+                            `;
+                        }).join('')}
+                    </div>
+                `
+                : '<div class="detail-empty">No computed branch lines were found for this invoice. Cancel/replace this invoice and save the correct present readings again.</div>'
+        }
+        ${
+            ignored.length
+                ? `
+                    <div class="detail-section-title">Ignored Saved Rows</div>
+                    <div class="invoice-detail-list">
+                        ${ignored.slice(0, 12).map((entry) => `
+                            <article class="invoice-detail-card">
+                                <div class="invoice-detail-head">
+                                    <div class="invoice-detail-ref">${escapeHtml(getInvoiceSearchEntryLabel(entry))}</div>
+                                    <div class="invoice-detail-amount">${escapeHtml(formatAmount(getBillingDocAmount(entry.doc)))}</div>
+                                </div>
+                                <div class="invoice-detail-meta">
+                                    <span class="invoice-detail-chip">Contract ${escapeHtml(entry.doc?.contractmain_id || 'N/A')}</span>
+                                    <span class="invoice-detail-chip">Doc ${escapeHtml(entry.doc?._docId || 'N/A')}</span>
+                                </div>
+                            </article>
+                        `).join('')}
+                    </div>
+                `
+                : ''
+        }
+    `;
+
+    els.invoiceDetailModal.classList.remove('hidden');
+    document.getElementById('invoiceSearchPrintBreakdownBtn')?.addEventListener('click', () => printInvoiceSearchGroupBreakdown(group.key));
+    document.getElementById('invoiceSearchCancelGroupBtn')?.addEventListener('click', async () => {
+        const confirmed = window.confirm(`Cancel invoice ${group.invoiceRef || 'for this billing month'} for replacement? This removes all saved branch rows for this invoice/month.`);
+        if (!confirmed) return;
+        const button = document.getElementById('invoiceSearchCancelGroupBtn');
+        if (button) button.disabled = true;
+        try {
+            const result = await deleteBillingDocsForReplacement({
+                invoiceNo: group.invoiceRef,
+                monthKey: group.monthKey
+            });
+            showBillingSaveResult({
+                type: 'success',
+                title: 'Invoice Cancelled',
+                message: `Invoice ${group.invoiceRef} removed ${formatCount(result.deletedCount || 0)} saved branch record${result.deletedCount === 1 ? '' : 's'} and can be replaced.`
+            });
+            closeInvoiceDetailModal();
+            await searchInvoiceNumber();
+            if (lastPayload) await loadDashboard({ forceRefresh: true });
+        } catch (error) {
+            if (button) button.disabled = false;
+            MargaUtils.showToast(String(error?.message || 'Unable to cancel invoice.'), 'error');
+        }
+    });
 }
 
 function showBillingSaveResult({ type = 'info', title = '', message = '' } = {}) {
@@ -5239,6 +5597,11 @@ function bindEvents() {
         if (!actionButton) return;
         const action = actionButton.dataset.invoiceSearchAction;
         if (action === 'open') {
+            const groupKey = actionButton.dataset.groupKey;
+            if (groupKey) {
+                openInvoiceSearchGroupDetail(groupKey);
+                return;
+            }
             const rowId = actionButton.dataset.rowId;
             const monthKey = actionButton.dataset.monthKey;
             if (rowId && monthKey) openBillingCalcModal(rowId, monthKey);
@@ -5249,7 +5612,7 @@ function bindEvents() {
         const docId = String(actionButton.dataset.docId || '').trim();
         const invoiceNo = String(actionButton.dataset.invoiceNo || '').trim();
         const monthKey = String(actionButton.dataset.monthKey || '').trim();
-        if (!docId) return;
+        if (!docId && !invoiceNo) return;
         const confirmed = window.confirm(`Cancel invoice ${invoiceNo || docId} for replacement? This makes the invoice number available again after the saved billing record is removed.`);
         if (!confirmed) return;
         actionButton.disabled = true;

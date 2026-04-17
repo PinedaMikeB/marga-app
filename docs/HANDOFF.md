@@ -63,6 +63,8 @@ Each thread should update only the relevant module sections plus `Current Focus`
 ### 2026-04-17 - Grouped RTP Pending Lines And Replacement Prints
 - Fixed grouped RTP computation so a row with a prior meter but no current/present reading entered stays at zero and shows "Enter present reading"; it must not auto-bill the quota floor just because `present == previous`.
 - Multi-machine grouped saves now skip both missing-meter rows and pending-present rows, so only actual computed machine lines are written to `tbl_billing`.
+- Invoice lookup now groups multiple `tbl_billing` branch records under one invoice card per invoice number/month, instead of showing every branch record as a separate invoice.
+- Grouped invoice lookup totals count only computed branch lines with meter movement/pages and flags older zero-meter auto-billed rows as ignored; cancel/replace still removes the whole saved invoice group.
 - Added printable grouped-billing attachments from the calculation modal:
   - `Print Breakdown` for invoice support
   - `Print Meter Form` for corrected/replacement reading paperwork

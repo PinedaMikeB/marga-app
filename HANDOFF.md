@@ -57,6 +57,7 @@ These may be useful ideas, but they must not be reapplied blindly. Re-test again
 - Grouped RTP saves should write only real computed machine lines; missing-meter and pending-present rows stay visible for staff action but should not become zero-amount invoice records.
 - Multi-machine invoice print support now includes `Print Breakdown` and `Print Meter Form` from the saved calculation modal, so the breakdown can be attached to the invoice and the meter form can be reprinted during correction/replacement.
 - Cancel/replace actions should remove the whole invoice group for that invoice number and billing month before the invoice number is reused.
+- Invoice search should display one invoice card per invoice number/month even when `tbl_billing` stores many branch line records. The card total should use computed branch lines only and flag ignored zero-meter/pending saved rows from older buggy saves.
 - Billing hide/unhide is a reversible visibility layer saved in `tbl_billing_exclusions`; it hides active Billing rows without deleting customer, contract, branch, or machine master records, and restore must be reachable from the saved exclusions list.
 
 ## Petty Cash Status

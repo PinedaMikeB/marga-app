@@ -87,6 +87,7 @@ This file protects the project across new chats. It should record the stable bas
 - Delete/cancel must be deliberate and should release the invoice number only when the billing record is actually cleared according to the agreed workflow.
 - For one-invoice/multiple-machine RTP billing, cancel/replace must clear all `tbl_billing` records for that invoice number and billing month, not only one branch line.
 - Saved grouped RTP billing should support reprinting the invoice, the meter reading form, and a breakdown attachment for corrected/replacement invoices.
+- Invoice lookup should group many saved branch records into one invoice card per invoice number/month. When older buggy saves created zero-meter branch rows under the same invoice, lookup should flag those rows and exclude them from the displayed computed invoice total.
 
 ## Rollback Reference
 - `e9338ab`: current protected Billing print/save baseline

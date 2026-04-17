@@ -134,6 +134,7 @@ Module rules:
   - breakdown print for the invoice attachment
   - meter reading form print for correction/replacement paperwork
 - Pending-present grouped lines should remain visible for staff but must not be included in the saved invoice total, breakdown attachment, or `tbl_billing` invoice records until the present meter is entered.
+- Invoice lookup for grouped RTP must present one invoice card per invoice number/month, because the database may hold one `tbl_billing` record per computed branch line. The lookup total should exclude older zero-meter pending rows and call them out clearly.
 
 ## Key UX Principles
 - Default views should be department-scoped (Billing / Collection / Service).

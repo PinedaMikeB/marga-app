@@ -224,6 +224,15 @@
     font-weight: 900;
 }
 
+.invoice-search-amount span {
+    display: block;
+    margin-top: 0.18rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
 .invoice-search-customer {
     margin-top: 0.18rem;
     color: var(--bill-ink);
@@ -251,6 +260,13 @@
     flex-wrap: wrap;
     gap: 0.45rem;
     justify-content: flex-end;
+}
+
+.invoice-search-warning {
+    margin-top: 0.5rem;
+    color: var(--bill-danger);
+    font-size: 0.78rem;
+    font-weight: 900;
 }
 
 .invoice-search-empty.error {
