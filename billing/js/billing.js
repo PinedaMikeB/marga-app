@@ -3575,6 +3575,7 @@ function calculateMeterLineEstimate({
     let amountDue = 0;
     let formula = 'not_available';
     let warning = '';
+    let note = '';
 
     if (!isFixed) {
         if (missingMeterMessage && previous <= 0 && present <= 0) {
@@ -3583,13 +3584,18 @@ function calculateMeterLineEstimate({
         } else if (present <= 0) {
             warning = pendingPresentMessage || `${label}: enter a present meter reading to include this line in the invoice total.`;
             formula = 'pending_present_meter';
-        } else if (pendingPresentMessage && present <= previous) {
+        } else if (pendingPresentMessage && present === previous) {
             warning = pendingPresentMessage;
             formula = 'pending_present_meter';
         } else if (present < previous) {
-            warning = `${label}: present meter cannot be lower than previous meter.`;
+            rawPages = present;
+            note = `${label}: present meter is lower than previous, so this is computed as a reset/new counter from 0 to ${formatCount(present)}.`;
+            formula = 'meter_reset_present_only';
         } else {
             rawPages = present - previous;
+        }
+
+        if (rawPages > 0) {
             spoilagePages = Math.round(rawPages * spoilageRate);
             netPages = Math.max(0, rawPages - spoilagePages);
             billedPages = monthlyQuota > 0 ? Math.max(netPages, monthlyQuota) : netPages;
@@ -3603,15 +3609,18 @@ function calculateMeterLineEstimate({
                     formula = succeedingPages > 0
                         ? 'quota_pages_plus_succeeding_rate'
                         : 'quota_floor_after_spoilage';
+                    if (note) formula = `${formula}_meter_reset`;
                 } else {
                     quotaPages = billedPages;
                     quotaAmount = billedPages * pageRate;
                     amountDue = quotaAmount;
                     formula = 'net_pages_after_spoilage_x_rate';
+                    if (note) formula = `${formula}_meter_reset`;
                 }
             } else if (monthlyRate > 0) {
                 amountDue = monthlyRate;
                 formula = 'monthly_rate_fallback';
+                if (note) formula = `${formula}_meter_reset`;
             } else {
                 formula = 'missing_rate';
             }
@@ -3659,6 +3668,7 @@ function calculateMeterLineEstimate({
         quotaVariance: monthlyQuota > 0 ? netPages - monthlyQuota : null,
         formula,
         warning,
+        note,
         missingMeterMessage,
         pendingPresentMessage,
         missingMeterSource: Boolean(missingMeterMessage && previous <= 0 && present <= 0)
@@ -4049,7 +4059,8 @@ function formatLineComputation(line) {
     if (line.formula === 'pending_present_meter') {
         return line.warning || 'Enter the present reading to include this machine in the invoice total.';
     }
-    return `${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
+    const resetNote = line.note ? `${line.note} ` : '';
+    return `${resetNote}${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
 }
 
 function closeBillingCalcModal() {
