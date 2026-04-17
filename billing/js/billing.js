@@ -866,7 +866,7 @@ async function saveMultiMachineBillingRecords({ row, context, estimate, snapshot
             ...line,
             row: getLineRowForBilling(line, row)
         }))
-        .filter((line) => line?.row?.contractmain_id && !line.missingMeterSource && line.formula !== 'pending_present_meter');
+        .filter((line) => line?.row?.contractmain_id && !line.missingMeterSource && !isNonBillableMeterFormula(line.formula));
     if (!lines.length) throw new Error('No machine contract lines are available to save for this grouped invoice.');
 
     const targetDocsByContract = new Map();
@@ -1099,7 +1099,7 @@ function shouldCountInvoiceSearchDoc(doc, groupDocs = []) {
     if (!groupNeedsMeterFilter) return true;
 
     const formula = String(doc?.billing_formula || '').trim();
-    if (formula === 'pending_present_meter' || formula === 'missing_prior_meter') return false;
+    if (isNonBillableMeterFormula(formula)) return false;
 
     const categoryCode = getBillingDocCategoryCode(doc);
     if (categoryCode === 'RTF') return true;
@@ -1594,6 +1594,11 @@ function isPrintableBillingCell(row, cell) {
 
 function isRtpBillingCell(row, cell) {
     return getPrintableContractCode(row, cell) === 'RTP';
+}
+
+function isNonBillableMeterFormula(formula) {
+    return ['pending_present_meter', 'missing_prior_meter', 'present_lower_than_previous']
+        .includes(String(formula || '').trim());
 }
 
 function getPrimaryRtpReadingGroup(row, cell) {
@@ -2626,7 +2631,7 @@ function printHtmlDocument(printMarkup, windowName = 'marga_print') {
 
 function getPrintableBillingLines(estimate) {
     const lines = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
-    const available = lines.filter((line) => !line.missingMeterSource && line.formula !== 'pending_present_meter');
+    const available = lines.filter((line) => !line.missingMeterSource && !isNonBillableMeterFormula(line.formula));
     const printable = available.filter((line) => (
         !line.missingMeterSource
         && (Number(line.amountDue || 0) > 0 || Number(line.rawPages || 0) > 0 || Number(line.presentMeter || 0) > Number(line.previousMeter || 0))
@@ -3575,7 +3580,6 @@ function calculateMeterLineEstimate({
     let amountDue = 0;
     let formula = 'not_available';
     let warning = '';
-    let note = '';
 
     if (!isFixed) {
         if (missingMeterMessage && previous <= 0 && present <= 0) {
@@ -3588,9 +3592,8 @@ function calculateMeterLineEstimate({
             warning = pendingPresentMessage;
             formula = 'pending_present_meter';
         } else if (present < previous) {
-            rawPages = present;
-            note = `${label}: present meter is lower than previous, so this is computed as a reset/new counter from 0 to ${formatCount(present)}.`;
-            formula = 'meter_reset_present_only';
+            warning = `${label}: present reading is lower than the previous reading. Please check the present meter before billing this line.`;
+            formula = 'present_lower_than_previous';
         } else {
             rawPages = present - previous;
         }
@@ -3609,18 +3612,15 @@ function calculateMeterLineEstimate({
                     formula = succeedingPages > 0
                         ? 'quota_pages_plus_succeeding_rate'
                         : 'quota_floor_after_spoilage';
-                    if (note) formula = `${formula}_meter_reset`;
                 } else {
                     quotaPages = billedPages;
                     quotaAmount = billedPages * pageRate;
                     amountDue = quotaAmount;
                     formula = 'net_pages_after_spoilage_x_rate';
-                    if (note) formula = `${formula}_meter_reset`;
                 }
             } else if (monthlyRate > 0) {
                 amountDue = monthlyRate;
                 formula = 'monthly_rate_fallback';
-                if (note) formula = `${formula}_meter_reset`;
             } else {
                 formula = 'missing_rate';
             }
@@ -3668,7 +3668,6 @@ function calculateMeterLineEstimate({
         quotaVariance: monthlyQuota > 0 ? netPages - monthlyQuota : null,
         formula,
         warning,
-        note,
         missingMeterMessage,
         pendingPresentMessage,
         missingMeterSource: Boolean(missingMeterMessage && previous <= 0 && present <= 0)
@@ -4059,8 +4058,10 @@ function formatLineComputation(line) {
     if (line.formula === 'pending_present_meter') {
         return line.warning || 'Enter the present reading to include this machine in the invoice total.';
     }
-    const resetNote = line.note ? `${line.note} ` : '';
-    return `${resetNote}${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
+    if (line.formula === 'present_lower_than_previous') {
+        return line.warning || 'Present reading is lower than previous reading. Please check the present meter before billing this line.';
+    }
+    return `${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
 }
 
 function closeBillingCalcModal() {
