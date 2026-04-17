@@ -86,6 +86,14 @@ function getMatrixSortValue() {
     return String(els.matrixSortInput?.value || 'rd').trim().toLowerCase();
 }
 
+function firstPositiveNumber(...values) {
+    for (const value of values) {
+        const numeric = Number(value || 0) || 0;
+        if (numeric > 0) return numeric;
+    }
+    return 0;
+}
+
 function restoreMatrixSortValue() {
     if (!els.matrixSortInput) return;
     const saved = String(localStorage.getItem(MATRIX_SORT_STORAGE_KEY) || '').trim().toLowerCase();
@@ -823,6 +831,9 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     const numericDocId = Number(docId);
     const lineItems = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
     const primaryLine = lineItems[0] || estimate || {};
+    const secondaryLine = lineItems.find((line) => String(line?.label || '').toLowerCase().includes('color'))
+        || (String(snapshot?.billingMode || '').trim() === 'multi_meter_rtp' ? lineItems[1] : null)
+        || {};
     const linesSignature = buildBillingLinesSignature(lineItems);
 
     return {
@@ -846,6 +857,9 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         netamount: Number(estimate?.netAmount || 0) || 0,
         field_previous_meter: Number(primaryLine.previousMeter ?? snapshot.previousMeter ?? 0) || 0,
         field_present_meter: Number(primaryLine.presentMeter ?? snapshot.presentMeter ?? 0) || 0,
+        field_previous_meter2: Number(secondaryLine.previousMeter || 0) || 0,
+        field_present_meter2: Number(secondaryLine.presentMeter || 0) || 0,
+        present_meter2: Number(secondaryLine.presentMeter || 0) || 0,
         field_total_consumed: Number(estimate?.rawPages || 0) || 0,
         total_pages: Number(estimate?.netPages || 0) || 0,
         spoilage_pages: Number(estimate?.spoilagePages || 0) || 0,
@@ -4145,6 +4159,7 @@ async function openBillingCalcModal(rowId, monthKey) {
 
     const savedBillingDoc = pickPrimaryBillingDoc(existingBillingDocs);
     let priorMachineReadingByRow = new Map();
+    let rowPriorLookup = null;
     if (context.isReading) {
         const prefillRows = (context.groupedMachineRows || []).length ? context.groupedMachineRows : [row];
         try {
@@ -4158,9 +4173,11 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
         if (requestToken !== billingCalcRequestToken) return;
 
-        const rowPriorLookup = priorMachineReadingByRow.get(getBillingRowLookupKey(row));
-        if (!savedBillingDoc && rowPriorLookup && !context.targetReadingGroup && Number(context.previousMeter || 0) <= 0) {
+        rowPriorLookup = priorMachineReadingByRow.get(getBillingRowLookupKey(row)) || null;
+        if (!savedBillingDoc && rowPriorLookup && !context.targetReadingGroup) {
             context.latestPriorGroup = context.latestPriorGroup || buildPriorGroupFromLookup(rowPriorLookup, row);
+        }
+        if (!savedBillingDoc && rowPriorLookup && !context.targetReadingGroup && Number(context.previousMeter || 0) <= 0) {
             context.previousMeter = Number(rowPriorLookup.previousMeter || 0) || 0;
             context.presentMeter = context.previousMeter;
             if (Number(rowPriorLookup.previousMeter2 || 0) > 0) {
@@ -4194,8 +4211,26 @@ async function openBillingCalcModal(rowId, monthKey) {
     const billingModeOptions = getBillingModeOptions(context);
     let activeBillingMode = getDefaultBillingMode(context);
     const secondaryProfile = getRtpSecondaryProfile(profile);
-    const secondaryPreviousMeter = Number(context.targetReadingGroup?.previous_meter2 || context.targetReadingGroup?.previous_meter_color || 0) || 0;
-    const secondaryPresentMeter = Number(context.targetReadingGroup?.present_meter2 || context.targetReadingGroup?.meter_reading2 || context.targetReadingGroup?.present_meter_color || secondaryPreviousMeter || 0) || 0;
+    const savedLineItems = savedBillingDoc ? parseBillingDocLineItems(savedBillingDoc) : [];
+    const savedSecondaryLine = savedLineItems.find((line) => String(line?.label || '').toLowerCase().includes('color'))
+        || (String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp' ? savedLineItems[1] : null)
+        || null;
+    const priorSecondaryGroup = context.latestPriorGroup || (rowPriorLookup ? buildPriorGroupFromLookup(rowPriorLookup, row) : null);
+    const secondaryPreviousMeter = firstPositiveNumber(
+        savedSecondaryLine?.previousMeter,
+        context.targetReadingGroup?.previous_meter2,
+        context.targetReadingGroup?.previous_meter_color,
+        priorSecondaryGroup?.present_meter2,
+        priorSecondaryGroup?.meter_reading2,
+        rowPriorLookup?.previousMeter2
+    );
+    const secondaryPresentMeter = firstPositiveNumber(
+        savedSecondaryLine?.presentMeter,
+        context.targetReadingGroup?.present_meter2,
+        context.targetReadingGroup?.meter_reading2,
+        context.targetReadingGroup?.present_meter_color,
+        secondaryPreviousMeter
+    );
     const multiMeterSeedLines = [
         calculateMeterLineEstimate({
             label: 'Black / White',
