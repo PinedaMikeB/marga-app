@@ -819,8 +819,15 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         category_id: Number(context?.profile?.category_id || 0) || 0,
         category_code: String(context?.profile?.category_code || '').trim(),
         branch_id: String(row?.branch_id || '').trim(),
+        branch_name: String(row?.branch_name || '').trim(),
         company_id: String(row?.company_id || '').trim(),
+        company_name: String(row?.company_name || row?.account_name || '').trim(),
+        account_name: String(row?.account_name || row?.display_name || row?.company_name || '').trim(),
+        display_name: String(row?.display_name || row?.account_name || row?.company_name || '').trim(),
         machine_id: String(row?.machine_id || '').trim(),
+        machine_label: String(row?.machine_label || '').trim(),
+        machine_model: String(row?.machine_label || '').trim(),
+        printer_model: String(row?.machine_label || '').trim(),
         serial_number: String(row?.serial_number || '').trim(),
         billing_mode: String(snapshot.billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
         billing_lines_json: JSON.stringify(lineItems),
@@ -1026,14 +1033,20 @@ function findInvoiceSearchRow(doc) {
     const branchId = String(doc?.branch_id || '').trim();
 
     return rows.find((row) => contractId && String(row.contractmain_id || '').trim() === contractId)
-        || rows.find((row) => machineId && String(row.machine_id || '').trim() === machineId)
+        || rows.find((row) => (
+            companyId
+            && branchId
+            && machineId
+            && String(row.company_id || '').trim() === companyId
+            && String(row.branch_id || '').trim() === branchId
+            && String(row.machine_id || '').trim() === machineId
+        ))
         || rows.find((row) => (
             companyId
             && branchId
             && String(row.company_id || '').trim() === companyId
             && String(row.branch_id || '').trim() === branchId
         ))
-        || rows.find((row) => companyId && String(row.company_id || '').trim() === companyId)
         || null;
 }
 
@@ -1258,21 +1271,50 @@ function getInvoiceSearchEntryLabel(entry) {
         || 'Billing line';
 }
 
+function cleanMachineIdentityValue(value, options = {}) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (options.skipNoMachine && /^no machine$/i.test(raw)) return '';
+    if (options.skipNA && (/^n\/?a(?:\b|$)/i.test(raw) || /^not available$/i.test(raw))) return '';
+    return raw;
+}
+
+function resolveBillingMachineIdentity({ row = {}, doc = {}, machine = null, model = null } = {}) {
+    const modelName = [
+        row.machine_label,
+        doc.machine_label,
+        doc.machine_model,
+        doc.model_name,
+        doc.model,
+        doc.printer_model,
+        machine?.description,
+        model?.modelname,
+        model?.description
+    ].map((value) => cleanMachineIdentityValue(value, { skipNoMachine: true }))
+        .find(Boolean) || '';
+
+    const serialNumber = [
+        row.serial_number,
+        doc.serial_number,
+        machine?.serial
+    ].map((value) => cleanMachineIdentityValue(value, { skipNA: true }))
+        .find(Boolean) || '';
+
+    return {
+        modelName,
+        serialNumber
+    };
+}
+
 function getInvoiceSearchEntryModel(entry, references = null) {
     const row = entry?.row || {};
     const doc = entry?.doc || {};
     const machineId = String(doc.machine_id || row.machine_id || '').trim();
-    const machine = machineId && references?.machines ? references.machines.get(machineId) : null;
+    const hasTrustedIdentity = Boolean(entry?.row)
+        || Boolean(doc.machine_label || doc.machine_model || doc.model_name || doc.model || doc.printer_model || doc.serial_number);
+    const machine = hasTrustedIdentity && machineId && references?.machines ? references.machines.get(machineId) : null;
     const model = machine?.model_id && references?.models ? references.models.get(String(machine.model_id).trim()) : null;
-    return doc.model_name
-        || doc.model
-        || doc.printer_model
-        || model?.modelname
-        || machine?.description
-        || row.machine_label
-        || doc.machine_label
-        || doc.machine_model
-        || 'N/A';
+    return resolveBillingMachineIdentity({ row, doc, machine, model }).modelName || 'N/A';
 }
 
 function getInvoiceSearchCustomerLabel(group) {
@@ -1674,8 +1716,7 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         cell?.display_amount_total || cell?.amount_total || cell?.reading_amount_total || 0,
         readingGroup || { with_vat: profile?.with_vat }
     );
-    const serialNumber = String(machine?.serial || row?.serial_number || '').trim();
-    const modelName = String(model?.modelname || machine?.description || row?.machine_label || '').trim();
+    const { modelName, serialNumber } = resolveBillingMachineIdentity({ row, machine, model });
     const accountName = String(
         row?.display_name
         || row?.account_name
@@ -1730,8 +1771,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     const model = references.models.get(String(machine?.model_id || '').trim()) || null;
     const period = buildBillingPeriod(context?.monthKey, row?.reading_day);
     const invoiceDate = period.endDate || new Date();
-    const serialNumber = String(machine?.serial || row?.serial_number || '').trim();
-    const modelName = String(model?.modelname || machine?.description || row?.machine_label || '').trim();
+    const { modelName, serialNumber } = resolveBillingMachineIdentity({ row, machine, model });
     const accountName = String(
         row?.display_name
         || row?.account_name
