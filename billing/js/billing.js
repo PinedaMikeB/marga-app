@@ -60,6 +60,8 @@ let billingExclusionCache = [];
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
+const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
+const SCHEDULE_AREA_RULES_COLLECTION = 'tbl_schedule_area_rules';
 const BILLING_EXCLUSION_REASONS = [
     'No delivery happened',
     'Branch/customer inactive',
@@ -713,6 +715,257 @@ function getPrimaryBillingExclusionKey(row) {
 
 function getBillingExclusionDocId(row) {
     return `billing_exclusion_${slugFirestoreId(getPrimaryBillingExclusionKey(row))}`;
+}
+
+function uniqueScheduleValues(values = []) {
+    return Array.from(new Set(
+        values
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    ));
+}
+
+function getPlannerField(fields = {}, keys = []) {
+    for (const key of keys) {
+        const value = fields?.[key];
+        if (value !== null && value !== undefined && String(value).trim() !== '') return value;
+    }
+    return '';
+}
+
+function normalizePlannerDate(date = new Date()) {
+    return formatIsoDate(date instanceof Date ? date : new Date());
+}
+
+function buildBillingPlannerGroups(result, row, context, snapshot, estimate) {
+    const docs = Array.isArray(result?.docs) && result.docs.length
+        ? result.docs
+        : [{
+            docId: result?.docId || '',
+            invoiceNo: result?.invoiceNo || snapshot?.invoiceNo || '',
+            fields: result?.fields || {}
+        }];
+    const groups = new Map();
+    const invoiceNo = normalizeInvoiceNumber(result?.invoiceNo || snapshot?.invoiceNo);
+    const monthKey = String(context?.monthKey || '').trim();
+
+    docs.forEach((entry) => {
+        const fields = entry?.fields || {};
+        const companyId = String(getPlannerField(fields, ['company_id']) || row?.company_id || '').trim();
+        const companyName = String(getPlannerField(fields, ['company_name', 'account_name', 'display_name']) || row?.company_name || row?.account_name || '').trim();
+        const groupKey = `${invoiceNo || 'invoice'}:${monthKey || 'month'}:${companyId || companyName || entry?.docId || row?.row_id || 'customer'}`;
+        if (!groups.has(groupKey)) {
+            groups.set(groupKey, {
+                key: groupKey,
+                invoiceNo,
+                monthKey,
+                companyId,
+                companyName,
+                accountName: String(getPlannerField(fields, ['account_name', 'display_name']) || row?.account_name || companyName || '').trim(),
+                amountDue: 0,
+                billingDocIds: [],
+                contractIds: [],
+                machineIds: [],
+                serialNumbers: [],
+                branchIds: [],
+                branchNames: [],
+                lineCount: 0
+            });
+        }
+        const group = groups.get(groupKey);
+        const branchId = String(getPlannerField(fields, ['branch_id']) || row?.branch_id || '').trim();
+        const branchName = String(getPlannerField(fields, ['branch_name']) || row?.branch_name || '').trim();
+        const contractId = String(getPlannerField(fields, ['contractmain_id']) || row?.contractmain_id || '').trim();
+        const machineId = String(getPlannerField(fields, ['machine_id']) || row?.machine_id || '').trim();
+        const serialNumber = String(getPlannerField(fields, ['serial_number']) || row?.serial_number || '').trim();
+        group.billingDocIds.push(String(entry?.docId || '').trim());
+        group.contractIds.push(contractId);
+        group.machineIds.push(machineId);
+        group.serialNumbers.push(serialNumber);
+        group.branchIds.push(branchId);
+        group.branchNames.push(branchName);
+        group.amountDue += Number(fields?.billing_group_invoice_total || fields?.totalamount || fields?.amount || 0) || 0;
+        group.lineCount += 1;
+    });
+
+    const groupList = Array.from(groups.values());
+    return groupList.map((group) => {
+        const branchIds = uniqueScheduleValues(group.branchIds);
+        const branchNames = uniqueScheduleValues(group.branchNames);
+        const totalAmount = groupList.length === 1
+            ? (Number(estimate?.amountDue || 0) || group.amountDue)
+            : group.amountDue;
+        return {
+            ...group,
+            amountDue: totalAmount,
+            billingDocIds: uniqueScheduleValues(group.billingDocIds),
+            contractIds: uniqueScheduleValues(group.contractIds),
+            machineIds: uniqueScheduleValues(group.machineIds),
+            serialNumbers: uniqueScheduleValues(group.serialNumbers),
+            branchIds,
+            branchNames,
+            primaryBranchId: branchIds[0] || '',
+            primaryBranchName: branchNames[0] || 'Main'
+        };
+    });
+}
+
+async function resolveBillingPlannerArea(group) {
+    const branchId = String(group?.primaryBranchId || '').trim();
+    if (!branchId) return { areaId: '', areaName: '', rule: null };
+
+    try {
+        const branch = await getFirestoreDocument('tbl_branchinfo', branchId);
+        const areaId = String(branch?.area_id || branch?.areaid || '').trim();
+        let areaName = '';
+        if (areaId) {
+            try {
+                const area = await getFirestoreDocument('tbl_area', areaId);
+                areaName = String(area?.area_name || area?.areaname || area?.name || '').trim();
+            } catch (error) {
+                console.warn('Schedule planner area name lookup failed.', error);
+            }
+        }
+
+        let rule = null;
+        const ruleIds = uniqueScheduleValues([
+            areaId ? `area_${slugFirestoreId(areaId)}` : '',
+            areaName ? `area_${slugFirestoreId(areaName)}` : '',
+            areaId,
+            areaName
+        ]);
+        for (const ruleId of ruleIds) {
+            try {
+                rule = await getFirestoreDocument(SCHEDULE_AREA_RULES_COLLECTION, ruleId);
+                if (rule) break;
+            } catch (error) {
+                console.warn('Schedule planner area rule lookup failed.', error);
+            }
+        }
+
+        return { areaId, areaName, rule };
+    } catch (error) {
+        console.warn('Schedule planner branch area lookup failed.', error);
+        return { areaId: '', areaName: '', rule: null };
+    }
+}
+
+function getScheduleRuleAssignment(rule) {
+    if (!rule) return { staffId: '', staffName: '', basis: 'no_area_rule' };
+    const staffId = String(
+        rule.default_messenger_id
+        || rule.messenger_id
+        || rule.default_staff_id
+        || rule.staff_id
+        || ''
+    ).trim();
+    const staffName = String(
+        rule.default_messenger_name
+        || rule.messenger_name
+        || rule.default_staff_name
+        || rule.staff_name
+        || ''
+    ).trim();
+    return {
+        staffId,
+        staffName,
+        basis: staffId || staffName ? 'area_rule' : 'area_rule_without_staff'
+    };
+}
+
+function buildSchedulePlannerDocId(group) {
+    return `billing_invoice_${slugFirestoreId([
+        group?.invoiceNo || 'invoice',
+        group?.monthKey || 'month',
+        group?.companyId || group?.companyName || 'customer'
+    ].join('_'))}`;
+}
+
+async function saveBillingToSchedulePlanner({ result, row, context, estimate, snapshot }) {
+    const groups = buildBillingPlannerGroups(result, row, context, snapshot, estimate);
+    if (!groups.length) return { ok: true, queued: false, savedCount: 0, docs: [] };
+
+    const now = new Date();
+    const today = normalizePlannerDate(now);
+    const savedDocs = [];
+
+    for (const group of groups) {
+        const { areaId, areaName, rule } = await resolveBillingPlannerArea(group);
+        const assignment = getScheduleRuleAssignment(rule);
+        const docId = buildSchedulePlannerDocId(group);
+        const fields = {
+            id: docId,
+            source_module: 'billing',
+            source_action: 'invoice_saved',
+            source_collection: 'tbl_billing',
+            source_doc_ids: group.billingDocIds,
+            source_doc_ids_json: JSON.stringify(group.billingDocIds),
+            source_record_key: `${group.invoiceNo || ''}:${group.monthKey || ''}:${group.companyId || group.companyName || ''}`,
+            department: 'billing',
+            task_type: 'deliver_invoice',
+            task_label: 'Deliver Invoice',
+            required_role: 'messenger',
+            planner_status: 'suggested',
+            task_status: 'pending_scheduler',
+            route_status: 'unscheduled',
+            priority: 'normal',
+            requested_date: today,
+            preferred_schedule_date: today,
+            schedule_date: today,
+            invoice_no: group.invoiceNo,
+            billing_month_key: group.monthKey,
+            billing_month_label: formatMonthLabel(group.monthKey, group.monthKey),
+            amount_due: Number(group.amountDue || 0) || 0,
+            company_id: group.companyId,
+            company_name: group.companyName,
+            account_name: group.accountName || group.companyName,
+            primary_branch_id: group.primaryBranchId,
+            primary_branch_name: group.primaryBranchName,
+            branch_ids: group.branchIds,
+            branch_ids_json: JSON.stringify(group.branchIds),
+            branch_names_json: JSON.stringify(group.branchNames),
+            branch_count: group.branchIds.length,
+            line_count: group.lineCount,
+            contractmain_ids: group.contractIds,
+            contractmain_ids_json: JSON.stringify(group.contractIds),
+            machine_ids: group.machineIds,
+            machine_ids_json: JSON.stringify(group.machineIds),
+            serial_numbers_json: JSON.stringify(group.serialNumbers),
+            area_id: areaId,
+            area_name: areaName,
+            suggested_staff_id: assignment.staffId,
+            suggested_staff_name: assignment.staffName,
+            suggested_messenger_id: assignment.staffId,
+            suggested_messenger_name: assignment.staffName,
+            assignment_basis: assignment.basis,
+            assigned_staff_id: '',
+            assigned_staff_name: '',
+            assigned_by: '',
+            assigned_at: '',
+            transfer_count: 0,
+            transfer_reason: '',
+            scheduler_locked: false,
+            published: false,
+            completed_at: '',
+            completion_notes: '',
+            notes: `Deliver saved billing invoice ${group.invoiceNo || ''}${group.primaryBranchName ? ` to ${group.primaryBranchName}` : ''}.`,
+            created_at: now.toISOString(),
+            updated_at: now.toISOString()
+        };
+        const saveResult = await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, docId, fields, {
+            mode: 'set',
+            label: `Schedule planner invoice ${group.invoiceNo || docId}`,
+            dedupeKey: `${SCHEDULE_PLANNER_COLLECTION}:${docId}`
+        });
+        savedDocs.push({ ...saveResult, docId, fields });
+    }
+
+    return {
+        ok: savedDocs.every((entry) => entry.ok !== false),
+        queued: savedDocs.some((entry) => entry.queued),
+        savedCount: savedDocs.length,
+        docs: savedDocs
+    };
 }
 
 function isActiveBillingExclusion(exclusion) {
@@ -2887,7 +3140,7 @@ function buildRequestContext(options = {}) {
     params.set('end_year', String(end.year));
     params.set('end_month', String(end.month));
     params.set('months_back', '6');
-    params.set('row_limit', String(Math.max(1, Math.min(1000, Number(els.rowLimitInput.value || 1000)))));
+    params.set('row_limit', String(Math.max(1, Math.min(5000, Number(els.rowLimitInput.value || 5000)))));
     params.set('latest_limit', '100');
     params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 10))));
     params.set('max_schedule_pages', String(Math.max(10, Number(els.schedulePagesInput.value || 10))));
@@ -5112,6 +5365,20 @@ async function openBillingCalcModal(rowId, monthKey) {
             });
             savedSnapshot = currentSnapshot;
             savedDocExists = true;
+            let plannerResult = null;
+            let plannerError = '';
+            try {
+                plannerResult = await saveBillingToSchedulePlanner({
+                    result,
+                    row,
+                    context,
+                    estimate: activeEstimate,
+                    snapshot: currentSnapshot
+                });
+            } catch (error) {
+                plannerError = String(error?.message || 'Schedule Planner save failed.');
+                console.warn('Invoice saved but Schedule Planner write failed.', error);
+            }
             if (!savedBillingDoc) {
                 existingBillingDocs = [{
                     _docId: result.docId,
@@ -5124,18 +5391,27 @@ async function openBillingCalcModal(rowId, monthKey) {
                 }];
             }
             syncCalcWorkflowState();
+            const plannerCount = Number(plannerResult?.savedCount || 0) || 0;
+            const plannerQueued = Boolean(plannerResult?.queued);
+            const plannerMessage = plannerError
+                ? `Invoice saved, but Schedule Planner was not updated: ${plannerError}`
+                : plannerQueued
+                    ? `Invoice ${currentSnapshot.invoiceNo} was queued and the Schedule Planner request was queued too.`
+                    : `Saved Invoice ${currentSnapshot.invoiceNo} and saved ${plannerCount || 1} request${plannerCount === 1 ? '' : 's'} to Schedule Planner.`;
             MargaUtils.showToast(
-                result.queued
-                    ? `Billing ${currentSnapshot.invoiceNo} queued and will sync when you are back online.`
-                    : `Billing ${currentSnapshot.invoiceNo} saved to ${savedMonthLabel}.`,
-                'success'
+                plannerError
+                    ? `Invoice ${currentSnapshot.invoiceNo} saved. Schedule Planner needs retry.`
+                    : result.queued || plannerQueued
+                        ? `Invoice ${currentSnapshot.invoiceNo} queued for Billing and Schedule Planner.`
+                        : `Saved Invoice ${currentSnapshot.invoiceNo} - saved to Schedule Planner.`,
+                plannerError ? 'error' : 'success'
             );
             showBillingSaveResult({
-                type: 'success',
-                title: result.queued ? 'Billing Queued' : 'Billing Saved',
-                message: result.queued
-                    ? `Invoice ${currentSnapshot.invoiceNo} was queued. Print ${printContractCode || 'Invoice'} is unlocked from this saved form while the app syncs.`
-                    : `Invoice ${currentSnapshot.invoiceNo} was saved for ${savedMonthLabel}. Print ${printContractCode || 'Invoice'} is ready.`
+                type: plannerError ? 'error' : 'success',
+                title: plannerError ? 'Saved Invoice, Planner Failed' : (result.queued || plannerQueued ? 'Saved Invoice Queued' : 'Saved Invoice'),
+                message: plannerError
+                    ? plannerMessage
+                    : `${plannerMessage} Print ${printContractCode || 'Invoice'} is ready.`
             });
             if (!result.queued) {
                 loadDashboard({ forceRefresh: true }).catch((error) => {

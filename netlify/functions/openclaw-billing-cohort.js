@@ -7,8 +7,12 @@ const DEFAULT_PAGE_SIZE = Number(process.env.OPENCLAW_BILLING_COHORT_PAGE_SIZE |
 const DEFAULT_BILLING_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_BILLING_MAX_PAGES || 260);
 const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SCHEDULE_MAX_PAGES || 240);
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
+const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
+const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
+const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 4, 8, 9, 10]);
+const FOR_READING_CATEGORY_IDS = new Set([1, 2, 3, 8]);
 const DEFAULT_MONTHS_BACK = 6;
 const DETAIL_ID_PREVIEW_LIMIT = 12;
 const READING_CATEGORY_IDS = new Set([1, 3, 8]);
@@ -345,11 +349,11 @@ async function loadCache(
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
-            fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial', 'page_rate', 'monthly_quota', 'monthly_rate', 'page_rate2', 'page_rate_xtra', 'page_rate_xtra2', 'monthly_quota2', 'monthly_rate2', 'withvat', 'category_id'],
+            fieldMask: ['id', 'contract_id', 'mach_id', 'status', 'xserial', 'reading_date', 'no_dr_yet', 'page_rate', 'monthly_quota', 'monthly_rate', 'page_rate2', 'page_rate_xtra', 'page_rate_xtra2', 'monthly_quota2', 'monthly_rate2', 'withvat', 'category_id'],
             maxPages: 80
         }),
         firestoreGetAll('tbl_contractdep', { fieldMask: ['id', 'branch_id', 'departmentname'], maxPages: 60 }),
-        firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial', 'model_id', 'description'], maxPages: 80 }),
+        firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial', 'model_id', 'description', 'status_id'], maxPages: 80 }),
         firestoreGetAll('tbl_model', { fieldMask: ['id', 'modelname', 'description'], maxPages: 20 }),
         includeMachineHistory
             ? firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 })
@@ -469,12 +473,16 @@ async function loadCache(
         const f = doc.fields || {};
         const id = String(getField(f, ['id']) || '').trim();
         if (!id) return;
+        const readingDate = getField(f, ['reading_date']);
         cache.contractMap[id] = {
             id,
             branchId: String(getField(f, ['contract_id']) || '').trim(),
             machId: String(getField(f, ['mach_id']) || '').trim(),
             status: Number(getField(f, ['status']) || 0),
             xserial: String(getField(f, ['xserial']) || '').trim(),
+            readingDate: readingDate ? String(readingDate).trim() : '',
+            readingDay: extractDayOfMonth(readingDate),
+            noDrYet: Number(getField(f, ['no_dr_yet']) || 0) || 0,
             pageRate: Number(getField(f, ['page_rate']) || 0) || 0,
             monthlyQuota: Number(getField(f, ['monthly_quota']) || 0) || 0,
             monthlyRate: Number(getField(f, ['monthly_rate']) || 0) || 0,
@@ -520,7 +528,8 @@ async function loadCache(
             id,
             serial: String(getField(f, ['serial']) || '').trim(),
             modelId: String(getField(f, ['model_id']) || '').trim(),
-            description: String(getField(f, ['description']) || '').trim()
+            description: String(getField(f, ['description']) || '').trim(),
+            statusId: Number(getField(f, ['status_id']) || 0) || 0
         };
     });
 
@@ -573,16 +582,16 @@ async function loadCache(
     Object.values(cache.contractMap).forEach((contract) => {
         const machId = String(contract?.machId || '').trim();
         const branch = resolveContractBranch(cache, contract);
-        if (machId) {
+        if (isRealMachineId(machId)) {
             const existingMachineContract = cache.contractByMachineMap[machId];
-            if (!existingMachineContract || Number(existingMachineContract.status || 0) !== 1) {
+            if (!existingMachineContract || billableContractStatusRank(contract.status) > billableContractStatusRank(existingMachineContract.status)) {
                 cache.contractByMachineMap[machId] = contract;
             }
         }
-        if (!branch || !machId) return;
+        if (!branch || !isRealMachineId(machId)) return;
         const branchMachineKey = `${String(branch.id).trim()}::${machId}`;
         const existingBranchMachineContract = cache.contractByBranchMachineMap[branchMachineKey];
-        if (!existingBranchMachineContract || Number(existingBranchMachineContract.status || 0) !== 1) {
+        if (!existingBranchMachineContract || billableContractStatusRank(contract.status) > billableContractStatusRank(existingBranchMachineContract.status)) {
             cache.contractByBranchMachineMap[branchMachineKey] = contract;
         }
     });
@@ -687,6 +696,41 @@ function getContractCategoryMeta(categoryId) {
         code: normalized ? `CAT ${normalized}` : 'N/A',
         label: normalized ? 'Unmapped Contract Type' : 'Unclassified Contract'
     };
+}
+
+function isBillableContractStatus(status) {
+    return BILLABLE_CONTRACT_STATUS_IDS.has(Number(status || 0));
+}
+
+function billableContractStatusRank(status) {
+    const normalized = Number(status || 0);
+    if (normalized === 1) return 5;
+    if (normalized === 10) return 4;
+    if (normalized === 9) return 3;
+    if (normalized === 8) return 2;
+    if (normalized === 4) return 1;
+    return 0;
+}
+
+function isRealMachineId(machId) {
+    const normalized = String(machId || '').trim();
+    return Boolean(normalized && normalized !== '0');
+}
+
+function isUsableSerialLabel(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+    return true;
+}
+
+function isBillingMachineEligible(cache, contract) {
+    const categoryId = Number(contract?.categoryId || 0);
+    if (!FOR_READING_CATEGORY_IDS.has(categoryId)) return false;
+    if (!isRealMachineId(contract?.machId) && categoryId !== 8) return false;
+    if (Number(contract?.noDrYet || 0) === 1) return false;
+    const machine = cache?.machineMap?.[String(contract.machId).trim()] || null;
+    if (Number(machine?.statusId || 0) === 9) return false;
+    return isUsableSerialLabel(resolveSerialLabel(cache, contract));
 }
 
 function isReadingContract(contract) {
@@ -951,7 +995,7 @@ function resolveSerialLabel(cache, contract) {
     if (contractSerial) return contractSerial;
     const machId = String(contract?.machId || '').trim();
     const machineSerial = machId ? String(cache?.machineMap?.[machId]?.serial || '').trim() : '';
-    if (machineSerial && !/^n\/a/i.test(machineSerial)) return machineSerial;
+    if (machineSerial) return machineSerial;
     return machId ? `Machine ${machId}` : 'N/A';
 }
 
@@ -1180,17 +1224,20 @@ function hasFutureBilling(companyMonthsMap, companyId, monthKey) {
     return false;
 }
 
-function resolveReadingDay(rowId, invoiceDaySignals, readingSignals, billingSignals, branchFallbackSignals) {
-    const invoiceDay = chooseModeDay(invoiceDaySignals.get(rowId));
-    if (invoiceDay) return { day: Number(invoiceDay), source: 'invoice_date_day' };
+function resolveReadingDay(rowId, branchId, contractReadingSignals, branchContractReadingSignals, readingSignals, billingSignals, branchFallbackSignals) {
+    const contractDay = chooseModeDay(contractReadingSignals.get(rowId));
+    if (contractDay) return { day: Number(contractDay), source: 'contract_reading_date' };
 
-    const readingDay = chooseModeDay(readingSignals.get(rowId));
+    const branchContractDay = chooseModeDay(branchContractReadingSignals.get(branchId));
+    if (branchContractDay) return { day: Number(branchContractDay), source: 'branch_contract_reading_date' };
+
+    const readingDay = chooseModeDay(readingSignals.get(branchId));
     if (readingDay) return { day: Number(readingDay), source: 'reading_schedule' };
 
-    const billingDay = chooseModeDay(billingSignals.get(rowId));
+    const billingDay = chooseModeDay(billingSignals.get(branchId));
     if (billingDay) return { day: Number(billingDay), source: 'billing_schedule' };
 
-    const branchDay = chooseModeDay(branchFallbackSignals.get(rowId));
+    const branchDay = chooseModeDay(branchFallbackSignals.get(branchId));
     if (branchDay) return { day: Number(branchDay), source: 'branch_earliest' };
 
     return { day: null, source: null };
@@ -1219,7 +1266,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
     const billedMonthsByCompany = new Map();
     const machineBilledByMonth = new Map(months.map((monthKey) => [monthKey, new Set()]));
     const billedMonthsByMachine = new Map();
-    const invoiceDaySignals = new Map();
+    const contractReadingSignals = new Map();
+    const branchContractReadingSignals = new Map();
     const readingSignals = new Map();
     const billingSignals = new Map();
     const branchFallbackSignals = new Map();
@@ -1233,7 +1281,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
     });
 
     Object.values(cache.contractMap).forEach((contract) => {
-        if (Number(contract.status || 0) !== 1) return;
+        if (!isBillableContractStatus(contract.status)) return;
+        if (!isBillingMachineEligible(cache, contract)) return;
         const branch = resolveContractBranch(cache, contract);
         if (!branch || Number(branch.inactive || 0) === 1) return;
         const display = resolveBranchDisplay(cache, branch);
@@ -1241,6 +1290,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const machineRowId = buildMachineRowKey(contract.machId, contract.id);
         const serialNumber = resolveSerialLabel(cache, contract);
         activeNowMachineSet.add(machineRowId);
+        if (contract.readingDay) {
+            addNestedCount(contractReadingSignals, machineRowId, contract.readingDay, 1);
+            addNestedCount(branchContractReadingSignals, display.branchId, contract.readingDay, 1);
+        }
         if (!includeActiveRows) return;
         if (!rowMatchesSearch(searchTerm, [display.companyName, display.branchName, contract.machId, contract.id, serialNumber])) return;
         ensureCompanyRow(
@@ -1335,9 +1388,6 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         }
         row.latest_billed_month = !row.latest_billed_month || monthKey > row.latest_billed_month ? monthKey : row.latest_billed_month;
 
-        const invoiceDay = invoiceDate ? invoiceDate.getDate() : null;
-        if (invoiceDay && invoiceDay >= 1 && invoiceDay <= 31) addNestedCount(invoiceDaySignals, rowId, invoiceDay, 1);
-
         billedByMonth.get(monthKey)?.add(rowId);
         if (!billedMonthsByCompany.has(rowId)) billedMonthsByCompany.set(rowId, new Set());
         billedMonthsByCompany.get(rowId).add(monthKey);
@@ -1358,6 +1408,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             cache
         );
         applyContractProfile(machineRow, contract);
+        if (contract.readingDay) {
+            addNestedCount(contractReadingSignals, machineRowId, contract.readingDay, 1);
+            addNestedCount(branchContractReadingSignals, rowId, contract.readingDay, 1);
+        }
         const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
         if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
             machineRow.expected_start_month = expectedStartMonth;
@@ -1425,6 +1479,11 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const taskDay = extractDayOfMonth(getField(f, ['task_datetime']));
         if (purposeId === READING_PURPOSE_ID && taskDay) addNestedCount(readingSignals, rowId, taskDay, 1);
         if (purposeId === BILLING_PURPOSE_ID && taskDay) addNestedCount(billingSignals, rowId, taskDay, 1);
+        if (matchedContract?.readingDay) {
+            const machineRowId = buildMachineRowKey(matchedContract.machId, matchedContract.id);
+            addNestedCount(contractReadingSignals, machineRowId, matchedContract.readingDay, 1);
+            addNestedCount(branchContractReadingSignals, rowId, matchedContract.readingDay, 1);
+        }
 
         if (purposeId === READING_PURPOSE_ID && matchedContract && matchedDisplay) {
             if (!rowMatchesSearch(searchTerm, [
@@ -1851,7 +1910,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const row = machineRows.get(rowId);
         if (!row) return;
         const accountRow = companyRows.get(String(row.branch_id || '').trim());
-        const rd = resolveReadingDay(String(row.branch_id || '').trim(), invoiceDaySignals, readingSignals, billingSignals, branchFallbackSignals);
+        const branchId = String(row.branch_id || '').trim();
+        const rd = resolveReadingDay(rowId, branchId, contractReadingSignals, branchContractReadingSignals, readingSignals, billingSignals, branchFallbackSignals);
         row.reading_day = rd.day;
         row.reading_day_source = rd.source;
         row.billed_months_count = 0;
@@ -2124,7 +2184,7 @@ exports.handler = async (event) => {
             ? monthKeyFromYearMonth(explicitStartYear, explicitStartMonth)
             : shiftMonthKey(endKey, -(monthsBack - 1));
         const includeRows = boolParam(searchParams.get('include_rows'), true);
-        const rowLimit = intParam(searchParams.get('row_limit') || 1000, 1000, 1, 1000);
+        const rowLimit = intParam(searchParams.get('row_limit') || DEFAULT_ROW_LIMIT, DEFAULT_ROW_LIMIT, 1, MAX_ROW_LIMIT);
         const latestLimit = intParam(searchParams.get('latest_limit') || 200, 200, 1, 5000);
         const forceRefresh = boolParam(searchParams.get('refresh_cache'), false);
         const billingPages = intParam(searchParams.get('max_billing_pages') || DEFAULT_BILLING_MAX_PAGES, DEFAULT_BILLING_MAX_PAGES, 10, 600);
@@ -2148,7 +2208,7 @@ exports.handler = async (event) => {
                 cache_ttl_ms: CACHE_TTL_MS,
                 cached_at: cache.stamp ? new Date(cache.stamp).toISOString() : null,
                 receipt_status_source: 'Billing task confirmation from tbl_schedule purpose_id=1 using field_billing_received_by',
-                reading_day_source: 'Primary: tbl_schedule purpose_id=8 day-of-month; fallback: billing schedule day; fallback: tbl_branchinfo.earliest',
+                reading_day_source: 'Primary: tbl_contractmain.reading_date day-of-month; fallback: reading schedule day; fallback: billing schedule day; fallback: tbl_branchinfo.earliest',
                 billing_docs_scanned: cache.billingDocs.length,
                 schedule_docs_scanned: cache.scheduleDocs.length,
                 machine_reading_docs_scanned: cache.machineReadingDocs.length
