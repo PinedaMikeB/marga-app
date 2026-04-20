@@ -11,7 +11,7 @@ const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT |
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
-const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 4, 8, 9, 10]);
+const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 3, 4, 8, 9, 10]);
 const FOR_READING_CATEGORY_IDS = new Set([1, 2, 3, 8]);
 const DEFAULT_MONTHS_BACK = 6;
 const DETAIL_ID_PREVIEW_LIMIT = 12;
@@ -707,6 +707,7 @@ function billableContractStatusRank(status) {
     if (normalized === 1) return 5;
     if (normalized === 10) return 4;
     if (normalized === 9) return 3;
+    if (normalized === 3) return 2;
     if (normalized === 8) return 2;
     if (normalized === 4) return 1;
     return 0;
@@ -1172,11 +1173,19 @@ function resolveBranchDisplay(cache, branch) {
 function resolveContractStartMonth(cache, contract, startKey) {
     const machId = String(contract?.machId || '').trim();
     const deliveryRaw = machId ? cache.machDeliveryDateMap[machId] : null;
-    const deliveryDate = normalizeDate(deliveryRaw);
-    if (!deliveryDate) return startKey;
+    const deliveryText = String(deliveryRaw || '').trim();
+    const deliveryDate = /T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(deliveryText)
+        ? new Date(deliveryText)
+        : normalizeDate(deliveryText);
+    if (!deliveryDate || Number.isNaN(deliveryDate.getTime())) return startKey;
+    const readingDay = Number(contract?.readingDay || 0) || 0;
     const deliveryKey = monthKeyFromYearMonth(deliveryDate.getFullYear(), deliveryDate.getMonth() + 1);
     if (!deliveryKey) return startKey;
-    return deliveryKey < startKey ? startKey : deliveryKey;
+    const effectiveStartKey = readingDay && deliveryDate.getDate() >= readingDay
+        ? shiftMonthKey(deliveryKey, 1)
+        : deliveryKey;
+    if (!effectiveStartKey) return startKey;
+    return effectiveStartKey < startKey ? startKey : effectiveStartKey;
 }
 
 function finalizeReceiptStatus(cell) {
@@ -1284,7 +1293,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         if (!isBillableContractStatus(contract.status)) return;
         if (!isBillingMachineEligible(cache, contract)) return;
         const branch = resolveContractBranch(cache, contract);
-        if (!branch || Number(branch.inactive || 0) === 1) return;
+        if (!branch || (Number(branch.inactive || 0) === 1 && Number(contract.status || 0) !== 4)) return;
         const display = resolveBranchDisplay(cache, branch);
         activeNowSet.add(branch.id);
         const machineRowId = buildMachineRowKey(contract.machId, contract.id);
@@ -2042,6 +2051,15 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             });
         }
 
+        const hasVisibleMonthActivity = Object.values(serializedMonths).some((cell) => (
+            cell.billed
+            || cell.pending
+            || Number(cell.display_amount_total || 0) > 0
+            || Number(cell.reading_task_count || 0) > 0
+        ));
+        const matrixCategoryId = Number(row.billing_profile?.category_id || 0) || 0;
+        if (!hasVisibleMonthActivity || !FOR_READING_CATEGORY_IDS.has(matrixCategoryId)) return;
+
         matrixRows.push({
             row_id: rowId,
             company_id: row.company_id,
@@ -2191,7 +2209,7 @@ exports.handler = async (event) => {
         const schedulePages = intParam(searchParams.get('max_schedule_pages') || DEFAULT_SCHEDULE_MAX_PAGES, DEFAULT_SCHEDULE_MAX_PAGES, 10, 600);
         const searchTerm = String(searchParams.get('search') || '').trim();
         const includeActiveRows = boolParam(searchParams.get('include_active_rows'), true);
-        const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm));
+        const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm) || includeActiveRows);
         const includeDebugLists = boolParam(searchParams.get('include_debug_lists'), false);
 
         if (!startKey || !endKey || startKey > endKey) {
