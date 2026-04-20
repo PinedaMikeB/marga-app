@@ -11,8 +11,8 @@ const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT |
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
-const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 3, 4, 8, 9, 10]);
-const FOR_READING_CATEGORY_IDS = new Set([1, 2, 3, 8]);
+const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
+const FOR_READING_CATEGORY_IDS = new Set([1, 2, 3, 5, 8]);
 const DEFAULT_MONTHS_BACK = 6;
 const DETAIL_ID_PREVIEW_LIMIT = 12;
 const READING_CATEGORY_IDS = new Set([1, 3, 8]);
@@ -705,10 +705,12 @@ function isBillableContractStatus(status) {
 function billableContractStatusRank(status) {
     const normalized = Number(status || 0);
     if (normalized === 1) return 5;
+    if (normalized === 2) return 4;
     if (normalized === 10) return 4;
     if (normalized === 9) return 3;
     if (normalized === 3) return 2;
     if (normalized === 8) return 2;
+    if (normalized === 13) return 1;
     if (normalized === 4) return 1;
     return 0;
 }
