@@ -497,9 +497,13 @@ function updateCollectorViewportRange() {
         return;
     }
 
-    const stickyBranch = container.querySelector('thead th.sticky-col.branch');
     const containerRect = container.getBoundingClientRect();
-    const stickyOffset = stickyBranch ? stickyBranch.getBoundingClientRect().right - containerRect.left : 0;
+    const stickyOffset = Array.from(container.querySelectorAll('thead th.sticky-col'))
+        .filter((header) => window.getComputedStyle(header).position === 'sticky')
+        .reduce((maxOffset, header) => {
+            const rect = header.getBoundingClientRect();
+            return Math.max(maxOffset, rect.right - containerRect.left);
+        }, 0);
     const visibleLeft = containerRect.left + Math.max(0, stickyOffset);
     const visibleRight = containerRect.right;
 

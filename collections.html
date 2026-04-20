@@ -16,6 +16,7 @@
 
         .main-content {
             padding: 24px;
+            min-width: 0;
         }
 
         .collections-header {
@@ -630,6 +631,7 @@
 
         .collector-table-wrap {
             padding: 12px;
+            min-width: 0;
         }
 
         .collector-matrix-legend {
@@ -671,12 +673,18 @@
             border: 1px solid rgba(148, 163, 184, 0.16);
             border-radius: 12px;
             background: rgba(255, 255, 255, 0.78);
+            max-width: 100%;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+            touch-action: pan-x pan-y;
+            scrollbar-gutter: stable;
         }
 
         .collector-sheet-scroll.matrix {
             max-height: 560px;
             overflow: auto;
             cursor: grab;
+            position: relative;
         }
 
         .collector-sheet-scroll.matrix.dragging {
@@ -685,10 +693,15 @@
         }
 
         .collector-sheet {
-            width: 100%;
+            --collector-rd-col: 72px;
+            --collector-sn-col: 156px;
+            --collector-customer-col: 240px;
+            --collector-branch-col: 220px;
+            width: max-content;
             border-collapse: separate;
             border-spacing: 0;
-            min-width: 760px;
+            min-width: 100%;
+            table-layout: fixed;
         }
 
         .collector-sheet th,
@@ -748,29 +761,29 @@
 
         .collector-sheet td.sticky-col.sn,
         .collector-sheet th.sticky-col.sn {
-            left: 72px;
-            min-width: 156px;
-            width: 156px;
+            left: var(--collector-rd-col);
+            min-width: var(--collector-sn-col);
+            width: var(--collector-sn-col);
         }
 
         .collector-sheet td.sticky-col.customer,
         .collector-sheet th.sticky-col.customer {
-            left: 228px;
-            min-width: 240px;
-            width: 240px;
+            left: calc(var(--collector-rd-col) + var(--collector-sn-col));
+            min-width: var(--collector-customer-col);
+            width: var(--collector-customer-col);
         }
 
         .collector-sheet td.sticky-col.branch,
         .collector-sheet th.sticky-col.branch {
-            left: 468px;
-            min-width: 220px;
-            width: 220px;
+            left: calc(var(--collector-rd-col) + var(--collector-sn-col) + var(--collector-customer-col));
+            min-width: var(--collector-branch-col);
+            width: var(--collector-branch-col);
         }
 
         .collector-sheet td.sticky-col.rd,
         .collector-sheet th.sticky-col.rd {
-            min-width: 72px;
-            width: 72px;
+            min-width: var(--collector-rd-col);
+            width: var(--collector-rd-col);
         }
 
         .collector-rd-count {
@@ -785,7 +798,15 @@
 
         .collector-sheet td.month-cell {
             min-width: 110px;
+            width: 110px;
             cursor: pointer;
+        }
+
+        .collector-sheet th[data-month-key],
+        .collector-sheet th[data-month-key] + th:last-child,
+        .collector-sheet td.total-cell:not(.sticky-col) {
+            min-width: 110px;
+            width: 110px;
         }
 
         .collector-sheet td.month-cell.no-bill {
@@ -2042,6 +2063,152 @@
 
             .header-actions {
                 width: 100%;
+            }
+
+            .collector-table-wrap {
+                padding: 10px 8px;
+            }
+
+            .collector-section-head,
+            .collector-matrix-actions,
+            .collector-control-row,
+            .collector-control-block,
+            .collector-control-block.nav,
+            .collector-nav-row {
+                width: 100%;
+            }
+
+            .collector-control-row {
+                align-items: stretch;
+                gap: 10px;
+                padding: 10px 8px;
+            }
+
+            .collector-control-block.nav {
+                margin-left: 0;
+                min-width: 0;
+            }
+
+            .collector-control-block.sort {
+                min-width: 0;
+            }
+
+            .collector-control-block input,
+            .collector-control-block select {
+                width: 100%;
+            }
+
+            .collector-nav-row,
+            .collector-matrix-actions {
+                justify-content: flex-start;
+            }
+
+            .collector-chip.viewport {
+                max-width: calc(100vw - 120px);
+                white-space: normal;
+                line-height: 1.25;
+            }
+
+            .collector-sheet-scroll.matrix {
+                max-height: calc(100vh - 260px);
+                min-height: 360px;
+            }
+
+            .collector-sheet {
+                --collector-rd-col: 58px;
+                --collector-sn-col: 144px;
+                --collector-customer-col: 220px;
+                --collector-branch-col: 210px;
+            }
+
+            .collector-sheet th,
+            .collector-sheet td {
+                padding: 9px 8px;
+                font-size: 11px;
+            }
+
+            .collector-sheet th {
+                font-size: 9px;
+                letter-spacing: 0.04em;
+            }
+
+            .collector-sheet td.sticky-col.sn,
+            .collector-sheet th.sticky-col.sn,
+            .collector-sheet td.sticky-col.customer,
+            .collector-sheet th.sticky-col.customer,
+            .collector-sheet td.sticky-col.branch,
+            .collector-sheet th.sticky-col.branch {
+                position: static;
+                left: auto;
+            }
+
+            .collector-sheet td.sticky-col.rd,
+            .collector-sheet th.sticky-col.rd {
+                left: 0;
+                z-index: 4;
+            }
+
+            .collector-sheet td.month-cell {
+                min-width: 104px;
+                width: 104px;
+            }
+
+            .collector-sheet th[data-month-key],
+            .collector-sheet th[data-month-key] + th:last-child,
+            .collector-sheet td.total-cell:not(.sticky-col) {
+                min-width: 104px;
+                width: 104px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            .main-content {
+                padding: 10px 6px;
+            }
+
+            .collections-header {
+                padding: 12px 10px;
+            }
+
+            .collector-table-wrap {
+                padding-inline: 4px;
+            }
+
+            .collector-matrix-legend {
+                padding-inline: 4px;
+            }
+
+            .collector-sheet-scroll {
+                border-radius: 8px;
+            }
+
+            .collector-sheet-scroll.matrix {
+                max-height: calc(100vh - 230px);
+            }
+
+            .collector-sheet {
+                --collector-rd-col: 52px;
+                --collector-sn-col: 132px;
+                --collector-customer-col: 200px;
+                --collector-branch-col: 190px;
+            }
+
+            .collector-sheet th,
+            .collector-sheet td {
+                padding: 8px 7px;
+            }
+
+            .collector-sub {
+                font-size: 10px;
+            }
+
+            .collector-rd-count {
+                font-size: 10px;
+            }
+
+            .collector-state-label {
+                font-size: 9px;
+                padding: 3px 5px;
             }
         }
     </style>
