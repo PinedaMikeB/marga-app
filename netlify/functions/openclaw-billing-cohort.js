@@ -732,7 +732,7 @@ function isBillingMachineEligible(cache, contract) {
     if (!isRealMachineId(contract?.machId) && categoryId !== 8) return false;
     if (Number(contract?.noDrYet || 0) === 1) return false;
     const machine = cache?.machineMap?.[String(contract.machId).trim()] || null;
-    if (Number(machine?.statusId || 0) === 9) return false;
+    if (Number(machine?.statusId || 0) === 9 && categoryId !== 1) return false;
     return isUsableSerialLabel(resolveSerialLabel(cache, contract));
 }
 
