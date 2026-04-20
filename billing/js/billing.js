@@ -3409,7 +3409,7 @@ function buildCompanySummaryRows(rows, months) {
                 const readingPagesTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_pages_total || 0), 0);
                 const readingTaskCount = childCells.reduce((sum, cell) => sum + Number(cell.reading_task_count || 0), 0);
                 const billingLineCount = billedCells.reduce((sum, cell) => sum + Number(cell.billing_line_count || 0), 0);
-                const invoiceCount = mergedGroups.length;
+                const invoiceCount = mergedGroups.length || childCells.reduce((sum, cell) => sum + Number(cell.invoice_count || 0), 0);
                 const machineIds = new Set();
                 mergedGroups.forEach((groupInvoice) => {
                     (groupInvoice.machine_ids || []).forEach((machineId) => machineIds.add(String(machineId)));

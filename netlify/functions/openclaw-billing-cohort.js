@@ -1271,6 +1271,9 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
     const includeActiveRows = Boolean(options.includeActiveRows);
     const searchTerm = String(options.searchTerm || '').trim();
     const months = buildMonthRange(startKey, endKey);
+    const detailMonthKeys = options.detailMonthKeys instanceof Set
+        ? options.detailMonthKeys
+        : new Set([endKey].filter(Boolean));
     const companyRows = new Map();
     const machineRows = new Map();
     const billedByMonth = new Map(months.map((monthKey) => [monthKey, new Set()]));
@@ -1996,6 +1999,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 if (cell.receipt_status === 'not_confirmed') summary.not_confirmed_customers_total += 1;
             }
 
+            const includeDetailGroups = detailMonthKeys.has(monthKey);
             serializedMonths[monthKey] = {
                 month_key: monthKey,
                 month_label: cell.month_label,
@@ -2018,8 +2022,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 receipt_status: cell.receipt_status,
                 latest_invoice_date: cell.latest_invoice_date,
                 received_by_names: sortedUnique(Array.from(cell.received_by_names)),
-                invoice_groups: serializeInvoiceGroups(cell.invoice_groups),
-                reading_groups: serializeReadingGroups(cell.reading_groups)
+                invoice_groups: includeDetailGroups ? serializeInvoiceGroups(cell.invoice_groups) : [],
+                reading_groups: includeDetailGroups ? serializeReadingGroups(cell.reading_groups) : []
             };
         });
 
@@ -2213,13 +2217,17 @@ exports.handler = async (event) => {
         const includeActiveRows = boolParam(searchParams.get('include_active_rows'), true);
         const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm) || includeActiveRows);
         const includeDebugLists = boolParam(searchParams.get('include_debug_lists'), false);
+        const detailScope = String(searchParams.get('cell_detail_scope') || 'current').trim().toLowerCase();
 
         if (!startKey || !endKey || startKey > endKey) {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
         }
 
         const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeMachineHistory, startKey, endKey);
-        const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm });
+        const detailMonthKeys = detailScope === 'all'
+            ? new Set(buildMonthRange(startKey, endKey))
+            : new Set([endKey]);
+        const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm, detailMonthKeys });
 
         return toJson(200, {
             ok: true,
@@ -2229,6 +2237,8 @@ exports.handler = async (event) => {
                 cached_at: cache.stamp ? new Date(cache.stamp).toISOString() : null,
                 receipt_status_source: 'Billing task confirmation from tbl_schedule purpose_id=1 using field_billing_received_by',
                 reading_day_source: 'Primary: tbl_contractmain.reading_date day-of-month; fallback: reading schedule day; fallback: billing schedule day; fallback: tbl_branchinfo.earliest',
+                cell_detail_scope: detailScope === 'all' ? 'all_months' : 'current_month',
+                cell_detail_months: Array.from(detailMonthKeys),
                 billing_docs_scanned: cache.billingDocs.length,
                 schedule_docs_scanned: cache.scheduleDocs.length,
                 machine_reading_docs_scanned: cache.machineReadingDocs.length
