@@ -42,6 +42,7 @@ let analyticsDashboardVisible = false;
 let collectorBillingMatrixCache = null;
 let collectorBillingMatrixPromise = null;
 let collectorMatrixDragState = null;
+let collectorScrollbarDragState = null;
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -522,12 +523,62 @@ function updateCollectorViewportRange() {
     chips.forEach((chip) => { chip.textContent = text; });
 }
 
+function getCollectorScrollbarParts() {
+    return {
+        shell: document.getElementById('collectorHorizontalScrollbar'),
+        track: document.getElementById('collectorHorizontalTrack'),
+        thumb: document.getElementById('collectorHorizontalThumb')
+    };
+}
+
+function updateCollectorHorizontalScrollbar() {
+    const container = document.getElementById('collector-matrix-table');
+    const { shell, track, thumb } = getCollectorScrollbarParts();
+    if (!container || !shell || !track || !thumb) return;
+
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+    if (maxScroll <= 2) {
+        shell.classList.add('is-disabled');
+        track.setAttribute('aria-valuenow', '0');
+        thumb.style.width = '100%';
+        thumb.style.transform = 'translateX(0px)';
+        return;
+    }
+
+    shell.classList.remove('is-disabled');
+    const trackWidth = track.clientWidth || 1;
+    const thumbWidth = Math.max(44, Math.round(trackWidth * (container.clientWidth / container.scrollWidth)));
+    const thumbTravel = Math.max(1, trackWidth - thumbWidth);
+    const thumbLeft = Math.round((container.scrollLeft / maxScroll) * thumbTravel);
+    const percent = Math.round((container.scrollLeft / maxScroll) * 100);
+    thumb.style.width = `${thumbWidth}px`;
+    thumb.style.transform = `translateX(${thumbLeft}px)`;
+    track.setAttribute('aria-valuenow', String(percent));
+}
+
+function setCollectorScrollFromTrack(clientX) {
+    const container = document.getElementById('collector-matrix-table');
+    const { track, thumb } = getCollectorScrollbarParts();
+    if (!container || !track || !thumb) return;
+
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+    const rect = track.getBoundingClientRect();
+    const thumbWidth = thumb.offsetWidth || 44;
+    const thumbTravel = Math.max(1, rect.width - thumbWidth);
+    const rawLeft = clientX - rect.left - thumbWidth / 2;
+    const clampedLeft = Math.max(0, Math.min(thumbTravel, rawLeft));
+    container.scrollLeft = Math.round((clampedLeft / thumbTravel) * maxScroll);
+    updateCollectorViewportRange();
+    updateCollectorHorizontalScrollbar();
+}
+
 function scrollCollectorMatrix(direction) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
     const delta = Math.max(220, Math.round(container.clientWidth * 0.62)) * direction;
     container.scrollBy({ left: delta, behavior: 'smooth' });
     window.setTimeout(updateCollectorViewportRange, 220);
+    window.setTimeout(updateCollectorHorizontalScrollbar, 220);
 }
 
 function bindCollectorMatrixViewport() {
@@ -535,11 +586,16 @@ function bindCollectorMatrixViewport() {
     if (!container) return;
 
     if (!collectorViewportBound) {
-        container.addEventListener('scroll', updateCollectorViewportRange, { passive: true });
+        container.addEventListener('scroll', () => {
+            updateCollectorViewportRange();
+            updateCollectorHorizontalScrollbar();
+        }, { passive: true });
         document.getElementById('collectorScrollLeft')?.addEventListener('click', () => scrollCollectorMatrix(-1));
         document.getElementById('collectorScrollRight')?.addEventListener('click', () => scrollCollectorMatrix(1));
         document.getElementById('collectorScrollLeftInline')?.addEventListener('click', () => scrollCollectorMatrix(-1));
         document.getElementById('collectorScrollRightInline')?.addEventListener('click', () => scrollCollectorMatrix(1));
+        document.getElementById('collectorScrollbarLeft')?.addEventListener('click', () => scrollCollectorMatrix(-1));
+        document.getElementById('collectorScrollbarRight')?.addEventListener('click', () => scrollCollectorMatrix(1));
 
         container.addEventListener('mousedown', (event) => {
             if (event.button !== 0) return;
@@ -555,6 +611,7 @@ function bindCollectorMatrixViewport() {
             if (!collectorMatrixDragState) return;
             const delta = event.clientX - collectorMatrixDragState.startX;
             container.scrollLeft = collectorMatrixDragState.startScrollLeft - delta;
+            updateCollectorHorizontalScrollbar();
         });
 
         window.addEventListener('mouseup', () => {
@@ -570,10 +627,52 @@ function bindCollectorMatrixViewport() {
             container.classList.remove('dragging');
         });
 
+        const { track, thumb } = getCollectorScrollbarParts();
+        track?.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            collectorScrollbarDragState = true;
+            thumb?.classList.add('dragging');
+            track.setPointerCapture?.(event.pointerId);
+            setCollectorScrollFromTrack(event.clientX);
+        });
+
+        track?.addEventListener('pointermove', (event) => {
+            if (!collectorScrollbarDragState) return;
+            event.preventDefault();
+            setCollectorScrollFromTrack(event.clientX);
+        });
+
+        const stopScrollbarDrag = (event) => {
+            if (!collectorScrollbarDragState) return;
+            collectorScrollbarDragState = null;
+            thumb?.classList.remove('dragging');
+            if (event?.pointerId !== undefined) track?.releasePointerCapture?.(event.pointerId);
+            updateCollectorViewportRange();
+            updateCollectorHorizontalScrollbar();
+        };
+
+        track?.addEventListener('pointerup', stopScrollbarDrag);
+        track?.addEventListener('pointercancel', stopScrollbarDrag);
+        track?.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                scrollCollectorMatrix(-1);
+            } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                scrollCollectorMatrix(1);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            updateCollectorViewportRange();
+            updateCollectorHorizontalScrollbar();
+        });
+
         collectorViewportBound = true;
     }
 
     updateCollectorViewportRange();
+    updateCollectorHorizontalScrollbar();
 }
 
 function updateLoadingStatus(message) {

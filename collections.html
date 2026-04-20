@@ -682,14 +682,83 @@
 
         .collector-sheet-scroll.matrix {
             max-height: 560px;
-            overflow: auto;
+            overflow-x: scroll;
+            overflow-y: auto;
             cursor: grab;
             position: relative;
+            scrollbar-color: rgba(37, 99, 235, 0.62) rgba(219, 234, 254, 0.72);
+            scrollbar-width: auto;
         }
 
         .collector-sheet-scroll.matrix.dragging {
             cursor: grabbing;
             user-select: none;
+        }
+
+        .collector-sheet-scroll.matrix::-webkit-scrollbar {
+            height: 14px;
+            width: 12px;
+        }
+
+        .collector-sheet-scroll.matrix::-webkit-scrollbar-track {
+            background: rgba(219, 234, 254, 0.72);
+            border-radius: 8px;
+        }
+
+        .collector-sheet-scroll.matrix::-webkit-scrollbar-thumb {
+            background: rgba(37, 99, 235, 0.62);
+            border: 3px solid rgba(219, 234, 254, 0.72);
+            border-radius: 8px;
+        }
+
+        .collector-horizontal-scrollbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 8px 10px;
+            border: 1px solid rgba(96, 165, 250, 0.32);
+            border-radius: 8px;
+            background: rgba(239, 246, 255, 0.84);
+        }
+
+        .collector-horizontal-scrollbar.is-disabled {
+            display: none;
+        }
+
+        .collector-scrollbar-label {
+            color: #1d4f7a;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .collector-scrollbar-track {
+            position: relative;
+            flex: 1;
+            min-width: 120px;
+            height: 18px;
+            border-radius: 8px;
+            border: 1px solid rgba(96, 165, 250, 0.34);
+            background: rgba(191, 219, 254, 0.7);
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        .collector-scrollbar-thumb {
+            position: absolute;
+            top: 2px;
+            left: 0;
+            height: 12px;
+            min-width: 44px;
+            border-radius: 8px;
+            background: #2563eb;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.28);
+            cursor: grab;
+        }
+
+        .collector-scrollbar-thumb.dragging {
+            cursor: grabbing;
         }
 
         .collector-sheet {
@@ -2103,6 +2172,15 @@
                 justify-content: flex-start;
             }
 
+            .collector-horizontal-scrollbar {
+                align-items: stretch;
+                flex-wrap: wrap;
+            }
+
+            .collector-scrollbar-label {
+                width: 100%;
+            }
+
             .collector-chip.viewport {
                 max-width: calc(100vw - 120px);
                 white-space: normal;
@@ -2180,6 +2258,14 @@
 
             .collector-sheet-scroll {
                 border-radius: 8px;
+            }
+
+            .collector-horizontal-scrollbar {
+                padding: 8px;
+            }
+
+            .collector-scrollbar-track {
+                min-width: calc(100% - 96px);
             }
 
             .collector-sheet-scroll.matrix {
@@ -2524,6 +2610,14 @@
                     </div>
                     <div class="collector-sheet-scroll matrix" id="collector-matrix-table">
                         <div class="empty-followup">Loading customer-month collection comparison...</div>
+                    </div>
+                    <div class="collector-horizontal-scrollbar is-disabled" id="collectorHorizontalScrollbar" aria-label="Collection table horizontal scroll">
+                        <span class="collector-scrollbar-label">Drag months</span>
+                        <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollbarLeft" aria-label="Scroll collection data left">←</button>
+                        <div class="collector-scrollbar-track" id="collectorHorizontalTrack" role="scrollbar" aria-controls="collector-matrix-table" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+                            <div class="collector-scrollbar-thumb" id="collectorHorizontalThumb"></div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollbarRight" aria-label="Scroll collection data right">→</button>
                     </div>
                 </div>
             </section>
