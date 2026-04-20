@@ -637,6 +637,17 @@ function extractScheduleMonthKey(fields) {
 }
 
 function extractDayOfMonth(value) {
+    const raw = String(value || '').trim();
+    const iso = raw.match(/^\d{4}-\d{2}-(\d{2})/);
+    if (iso) {
+        const day = Number(iso[1]);
+        return day >= 1 && day <= 31 ? day : null;
+    }
+    const slash = raw.match(/^\d{1,2}\/(\d{1,2})\/\d{4}/);
+    if (slash) {
+        const day = Number(slash[1]);
+        return day >= 1 && day <= 31 ? day : null;
+    }
     const date = normalizeDate(value);
     if (!date) return null;
     const day = date.getDate();
