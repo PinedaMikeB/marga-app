@@ -24,6 +24,7 @@ let contractMap = {};
 let contractDepMap = {};
 let branchMap = {};
 let companyMap = {};
+let machineMap = {};
 let paidInvoiceIds = new Set();
 let machToBranchMap = {};
 let invoiceIndexMap = new Map();
@@ -442,10 +443,11 @@ async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
     params.set('end_month', String(endMonthDate.getMonth() + 1));
     params.set('include_rows', 'true');
     params.set('include_active_rows', 'true');
-    params.set('row_limit', '1200');
+    params.set('row_limit', '5000');
     params.set('latest_limit', '100');
     params.set('max_billing_pages', '10');
     params.set('max_schedule_pages', '10');
+    params.set('cell_detail_scope', 'none');
 
     const request = fetch(`/.netlify/functions/openclaw-billing-cohort?${params.toString()}`)
         .then(async (response) => {
@@ -970,7 +972,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading company and branch data...');
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, machineDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', null, {
             fieldMask: ['id', 'companyname'],
             maxPages: 20
@@ -986,6 +988,10 @@ async function loadLookups() {
         firestoreGetAll('tbl_contractdep', null, {
             fieldMask: ['id', 'branch_id', 'departmentname'],
             maxPages: 40
+        }),
+        firestoreGetAll('tbl_machine', null, {
+            fieldMask: ['id', 'serial', 'model_id', 'description'],
+            maxPages: 80
         })
     ]);
 
@@ -1034,6 +1040,18 @@ async function loadLookups() {
         };
     });
 
+    machineMap = {};
+    machineDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const id = String(getField(f, ['id']) || '').trim();
+        if (!id) return;
+        machineMap[id] = {
+            serial: String(getField(f, ['serial']) || '').trim(),
+            modelId: String(getField(f, ['model_id']) || '').trim(),
+            description: String(getField(f, ['description']) || '').trim()
+        };
+    });
+
     updateLoadingStatus('Loading machine location map...');
     await buildMachineToBranchMap();
 
@@ -1076,6 +1094,20 @@ function buildMachineLabel(machineId, contractmainId) {
     return `Contract ${String(contractmainId || '').trim()}`;
 }
 
+function isMachineFallbackSerial(value) {
+    return /^machine\s+\S+/i.test(String(value || '').trim());
+}
+
+function normalizeSerialNumber(value) {
+    const serial = String(value || '').trim();
+    if (!serial || isMachineFallbackSerial(serial)) return '';
+    return serial;
+}
+
+function displaySerialNumber(value) {
+    return normalizeSerialNumber(value) || 'No serial on file';
+}
+
 function buildCollectorRowKey(machineId, contractmainId) {
     const contractId = String(contractmainId || '').trim();
     if (contractId) return `contract:${contractId}`;
@@ -1085,9 +1117,12 @@ function buildCollectorRowKey(machineId, contractmainId) {
 }
 
 function resolveSerialLabel(contract) {
-    const contractSerial = String(contract?.xserial || '').trim();
+    const contractSerial = normalizeSerialNumber(contract?.xserial);
     if (contractSerial) return contractSerial;
-    return buildMachineLabel(contract?.machId, contract?.id);
+    const machId = String(contract?.machId || '').trim();
+    const machineSerial = normalizeSerialNumber(machineMap[machId]?.serial);
+    if (machineSerial) return machineSerial;
+    return '';
 }
 
 function resolveContractBranch(contract) {
@@ -2288,8 +2323,11 @@ async function computeCollectorDashboardData() {
         const invoiceDateInBalanceWindow = record.invoiceDate && record.invoiceDate >= previousMonthStart && record.invoiceDate <= today;
         const paymentMonthsInWindow = Array.from(paymentSummary.months.keys()).filter((key) => monthColumnKeys.has(key));
         const invoiceMonthVisible = monthColumnKeys.has(record.monthKey);
+        const unpaidBalance = Math.max(0, Number(record.amount || 0) - Number(paymentSummary.amount || 0));
+        const hasUnpaidBalance = unpaidBalance > 0.01;
+        const carryoverMonthKey = hasUnpaidBalance && !invoiceMonthVisible ? monthColumns[0]?.key : null;
 
-        if (!invoiceDateInBalanceWindow && !paymentMonthsInWindow.length) return;
+        if (!invoiceDateInBalanceWindow && !paymentMonthsInWindow.length && !hasUnpaidBalance) return;
 
         if (!accountRowsMap.has(rowId)) {
             accountRowsMap.set(rowId, {
@@ -2297,7 +2335,7 @@ async function computeCollectorDashboardData() {
                 customer: record.company || 'Unknown',
                 branchName: record.branch || 'Main',
                 accountLabel: record.accountLabel || record.company || 'Unknown',
-                serialNumber: record.serialNumber || buildMachineLabel(record.machineId, record.contractmainId),
+                serialNumber: normalizeSerialNumber(record.serialNumber),
                 machineLabel: record.machineLabel || buildMachineLabel(record.machineId, record.contractmainId),
                 machineId: record.machineId || '',
                 contractmainId: record.contractmainId || '',
@@ -2308,6 +2346,7 @@ async function computeCollectorDashboardData() {
         }
 
         const accountRow = accountRowsMap.get(rowId);
+        if (!accountRow.serialNumber) accountRow.serialNumber = normalizeSerialNumber(record.serialNumber);
         accountRow.rdCounts.set(record.rd, (accountRow.rdCounts.get(record.rd) || 0) + 1);
 
         if (invoiceDateInBalanceWindow) {
@@ -2334,6 +2373,25 @@ async function computeCollectorDashboardData() {
                 rd: record.rd
             });
             accountRow.months[record.monthKey] = invoiceCell.id;
+        } else if (carryoverMonthKey && monthMetaMap.has(carryoverMonthKey)) {
+            const carryoverCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(carryoverMonthKey));
+            carryoverCell.rdValues.push(record.rd);
+            carryoverCell.billedTotal += unpaidBalance;
+            carryoverCell.displayBilledTotal = Math.max(Number(carryoverCell.displayBilledTotal || 0), Number(carryoverCell.billedTotal || 0));
+            carryoverCell.billedBasis = carryoverCell.billedBasis || 'unpaid_carryover';
+            upsertCollectorCellRecord(carryoverCell, record.invoiceKey, {
+                ...record,
+                amount: Number(record.amount || 0),
+                billedAmount: unpaidBalance,
+                collectedAmount: 0,
+                totalCollectedAmount: Number(paymentSummary.amount || 0),
+                expectedCollectionDate: addDays(record.invoiceDate, 30),
+                firstPaymentDate: paymentSummary.firstPaymentDate,
+                lastPaymentDate: paymentSummary.lastPaymentDate,
+                rd: record.rd,
+                carriedForward: true
+            });
+            accountRow.months[carryoverMonthKey] = carryoverCell.id;
         }
 
         paymentMonthsInWindow.forEach((monthKey) => {
@@ -2368,7 +2426,7 @@ async function computeCollectorDashboardData() {
                 customer: billingRow.company_name || billingRow.account_name || 'Unknown',
                 branchName: billingRow.branch_name || 'Main',
                 accountLabel: billingRow.account_name || billingRow.company_name || 'Unknown',
-                serialNumber: billingRow.serial_number || buildMachineLabel(billingRow.machine_id, billingRow.contractmain_id),
+                serialNumber: normalizeSerialNumber(billingRow.serial_number),
                 machineLabel: billingRow.machine_label || buildMachineLabel(billingRow.machine_id, billingRow.contractmain_id),
                 machineId: String(billingRow.machine_id || '').trim(),
                 contractmainId: String(billingRow.contractmain_id || '').trim(),
@@ -2379,6 +2437,7 @@ async function computeCollectorDashboardData() {
         }
 
         const accountRow = accountRowsMap.get(rowId);
+        if (!accountRow.serialNumber) accountRow.serialNumber = normalizeSerialNumber(billingRow.serial_number);
         const readingDay = Number(billingRow.reading_day || 0) || null;
         if (readingDay) accountRow.rdCounts.set(readingDay, (accountRow.rdCounts.get(readingDay) || 0) + 1);
 
@@ -2436,7 +2495,7 @@ async function computeCollectorDashboardData() {
                 customer: row.customer,
                 branchName: row.branchName,
                 accountLabel: row.accountLabel,
-                serialNumber: row.serialNumber,
+                serialNumber: normalizeSerialNumber(row.serialNumber),
                 machineLabel: row.machineLabel,
                 machineId: row.machineId,
                 contractmainId: row.contractmainId,
@@ -2538,6 +2597,11 @@ function renderCollectorSummaryTable(data) {
 function renderCollectorMatrixTable(data, visibleRows) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
+    const visibleCount = Array.isArray(visibleRows) ? visibleRows.length : 0;
+    const totalCount = Array.isArray(data?.customerRows) ? data.customerRows.length : visibleCount;
+    const rdCountLabel = visibleCount === totalCount
+        ? `${visibleCount.toLocaleString()}`
+        : `${visibleCount.toLocaleString()} / ${totalCount.toLocaleString()}`;
 
     if (!visibleRows.length) {
         const searchTerm = getCollectorSearchTerm();
@@ -2551,7 +2615,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
         <table class="collector-sheet">
             <thead>
                 <tr>
-                    <th class="sticky-col rd">RD</th>
+                    <th class="sticky-col rd">RD <span class="collector-rd-count">${escapeHtml(rdCountLabel)}</span></th>
                     <th class="sticky-col sn">SN</th>
                     <th class="sticky-col customer text-left">Customer</th>
                     <th class="sticky-col branch text-left">Branch / Dept</th>
@@ -2606,7 +2670,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                             <tr>
                                 <td class="sticky-col rd">${row.rd !== null && row.rd !== undefined ? escapeHtml(String(row.rd)) : '-'}</td>
                                 <td class="sticky-col sn">
-                                    <div class="collector-primary">${escapeHtml(row.serialNumber || 'N/A')}</div>
+                                    <div class="collector-primary">${escapeHtml(displaySerialNumber(row.serialNumber))}</div>
                                 </td>
                                 <td class="sticky-col customer text-left">
                                     <div class="collector-primary">${escapeHtml(row.customer)}</div>

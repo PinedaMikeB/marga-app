@@ -2237,7 +2237,7 @@ exports.handler = async (event) => {
         const cache = await loadCache(forceRefresh, billingPages, schedulePages, includeMachineHistory, startKey, endKey);
         const detailMonthKeys = detailScope === 'all'
             ? new Set(buildMonthRange(startKey, endKey))
-            : new Set([endKey]);
+            : (detailScope === 'none' ? new Set() : new Set([endKey]));
         const result = analyzeDashboard(cache, startKey, endKey, latestLimit, { includeActiveRows, searchTerm, detailMonthKeys });
 
         return toJson(200, {
@@ -2248,7 +2248,7 @@ exports.handler = async (event) => {
                 cached_at: cache.stamp ? new Date(cache.stamp).toISOString() : null,
                 receipt_status_source: 'Billing task confirmation from tbl_schedule purpose_id=1 using field_billing_received_by',
                 reading_day_source: 'Primary: tbl_contractmain.reading_date day-of-month; fallback: reading schedule day; fallback: billing schedule day; fallback: tbl_branchinfo.earliest',
-                cell_detail_scope: detailScope === 'all' ? 'all_months' : 'current_month',
+                cell_detail_scope: detailScope === 'all' ? 'all_months' : (detailScope === 'none' ? 'none' : 'current_month'),
                 cell_detail_months: Array.from(detailMonthKeys),
                 billing_docs_scanned: cache.billingDocs.length,
                 schedule_docs_scanned: cache.scheduleDocs.length,
