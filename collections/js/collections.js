@@ -448,6 +448,7 @@ async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
     params.set('max_billing_pages', '10');
     params.set('max_schedule_pages', '10');
     params.set('cell_detail_scope', 'none');
+    params.set('response_mode', 'collection');
 
     const request = fetch(`/.netlify/functions/openclaw-billing-cohort?${params.toString()}`)
         .then(async (response) => {

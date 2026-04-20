@@ -701,6 +701,38 @@ function serializeMonthSummary(summary, includeDebugLists = false) {
     return serialized;
 }
 
+function compactCollectionMatrixRow(row) {
+    const months = {};
+    Object.entries(row?.months || {}).forEach(([monthKey, cell]) => {
+        months[monthKey] = {
+            billed: Boolean(cell?.billed),
+            pending: Boolean(cell?.pending),
+            amount_total: roundCurrency(cell?.amount_total || 0),
+            display_amount_total: roundCurrency(cell?.display_amount_total || 0),
+            reading_amount_total: roundCurrency(cell?.reading_amount_total || 0),
+            reading_pages_total: Number(cell?.reading_pages_total || 0) || 0,
+            reading_task_count: Number(cell?.reading_task_count || 0) || 0,
+            billed_basis: cell?.billed_basis || 'none',
+            receipt_status: cell?.receipt_status || 'not_billed'
+        };
+    });
+
+    return {
+        row_id: row?.row_id || '',
+        company_id: row?.company_id || '',
+        branch_id: row?.branch_id || '',
+        company_name: row?.company_name || '',
+        branch_name: row?.branch_name || '',
+        account_name: row?.account_name || '',
+        serial_number: row?.serial_number || '',
+        machine_id: row?.machine_id || '',
+        contractmain_id: row?.contractmain_id || '',
+        machine_label: row?.machine_label || '',
+        reading_day: row?.reading_day || null,
+        months
+    };
+}
+
 function getContractCategoryMeta(categoryId) {
     const normalized = Number(categoryId || 0) || 0;
     return CONTRACT_CATEGORY_META[normalized] || {
@@ -2229,6 +2261,7 @@ exports.handler = async (event) => {
         const includeMachineHistory = boolParam(searchParams.get('include_machine_history'), Boolean(searchTerm) || includeActiveRows);
         const includeDebugLists = boolParam(searchParams.get('include_debug_lists'), false);
         const detailScope = String(searchParams.get('cell_detail_scope') || 'current').trim().toLowerCase();
+        const responseMode = String(searchParams.get('response_mode') || '').trim().toLowerCase();
 
         if (!startKey || !endKey || startKey > endKey) {
             return toJson(400, { ok: false, error: 'Invalid start/end month range' });
@@ -2283,7 +2316,11 @@ exports.handler = async (event) => {
                 months: result.months,
                 month_labels_short: result.months.map(shortMonthLabelFromKey),
                 totals: result.monthTotals,
-                rows: includeRows ? result.matrixRows.slice(0, rowLimit) : []
+                rows: includeRows
+                    ? result.matrixRows.slice(0, rowLimit).map((row) => (
+                        responseMode === 'collection' ? compactCollectionMatrixRow(row) : row
+                    ))
+                    : []
             }
         });
     } catch (error) {
