@@ -599,10 +599,16 @@ function scrollCollectorMatrixToMonth(monthKey, options = {}) {
     const leadInMonths = Number(options.leadInMonths ?? 2);
     const targetLeft = Math.max(0, header.offsetLeft - (monthWidth * leadInMonths));
     const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
-    container.scrollTo({
-        left: Math.min(targetLeft, maxScroll),
-        behavior: options.behavior || 'smooth'
-    });
+    const nextLeft = Math.min(targetLeft, maxScroll);
+
+    if (options.behavior === 'auto') {
+        container.scrollLeft = nextLeft;
+    } else {
+        container.scrollTo({
+            left: nextLeft,
+            behavior: options.behavior || 'smooth'
+        });
+    }
 
     window.setTimeout(updateCollectorViewportRange, options.behavior === 'auto' ? 0 : 220);
     window.setTimeout(updateCollectorHorizontalScrollbar, options.behavior === 'auto' ? 0 : 220);
@@ -611,6 +617,14 @@ function scrollCollectorMatrixToMonth(monthKey, options = {}) {
 function scrollCollectorMatrixToLatest(options = {}) {
     const data = options.data || collectorDashboardData;
     scrollCollectorMatrixToMonth(getCollectorLatestMonthKey(data), options);
+}
+
+function scheduleCollectorLatestScroll(data) {
+    [0, 80, 220, 500, 900].forEach((delay) => {
+        window.setTimeout(() => {
+            scrollCollectorMatrixToLatest({ data, behavior: 'auto' });
+        }, delay);
+    });
 }
 
 function bindCollectorMatrixViewport() {
@@ -2841,9 +2855,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
     `;
 
     bindCollectorMatrixViewport();
-    window.requestAnimationFrame(() => {
-        scrollCollectorMatrixToLatest({ data, behavior: 'auto' });
-    });
+    scheduleCollectorLatestScroll(data);
 }
 
 async function renderCollectorDashboard() {
