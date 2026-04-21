@@ -103,7 +103,7 @@ The app connects to Firebase Firestore. Configuration is in `shared/js/firebase-
 
 ## 📚 Project Docs (Canonical)
 - `HANDOFF.md` - what changed recently + what to do next
-- `docs/MASTERPLAN.md` - vision, goals, constraints, migration strategy
+- `MASTERPLAN.md` - vision, goals, constraints, migration strategy
 - `docs/CHANGELOG.md` - versioned release notes
 
 ## 📝 License

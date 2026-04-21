@@ -27,10 +27,10 @@ This is the canonical release/change log for all modules.
 
 ### Documentation
 #### Added
-- New canonical handoff at `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`.
+- New canonical handoff at `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md`.
 
 #### Changed
-- Root `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md` is now a redirect pointer to avoid duplicate truth.
+- Root `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md` remains the canonical handoff and `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md` remains the canonical masterplan.
 - Changelog format standardized for module-focused thread updates.
 
 ## v2026.02.10
@@ -53,4 +53,3 @@ This is the canonical release/change log for all modules.
 ### Settings/Auth
 #### Added
 - Admin user management with role-based access and password handling.
-

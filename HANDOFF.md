@@ -1,99 +1,132 @@
-# MARGA Quick Handoff
+# MARGA Handoff
 
-Start every new chat by reading:
+Last Updated: 2026-04-21
+Canonical Status: Single source of truth for current operational handoff
 
+Start every new Marga-App thread by reading:
 1. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md`
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
-3. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/HANDOFF.md`
 
-## Current Stable Billing Baseline
-- Billing dashboard is currently live on `main` with the save-first billing workflow, RTP/RTF invoice print preview work, grouped RTP billing computation, billing exclusions, stable customer search, and multimeter invoice-total support.
-- Current safe commit on `main`: `8df832d` `Include multimeter invoice amounts in billing totals`
-- Important recent commits:
+## Current Focus
+- Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
+- Keep Collections aligned to the Billing customer universe plus unpaid invoices.
+- Fix the live Collections matrix so month columns are actually reachable by mouse/trackpad/touch.
+- Fix Collections SN so it shows real serials, not fallback labels like `Machine 3616`.
+- Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
+
+## Current Protected Baselines
+- Billing protected baseline: commit `8df832d` `Include multimeter invoice amounts in billing totals`
+- Important Billing-support commits still relied on by current behavior:
   - `9d2e0ae` `Normalize billing customer search spacing`
   - `071ecc4` `Stabilize billing customer search refresh`
   - `a277f95` `Prefill color meter prior readings`
   - `936c588` `Use mother company details for grouped prints`
-- Older rollback reference: `77ff141` `Rollback billing dashboard to April 6 snapshot`
-- If Billing breaks again, inspect the live Netlify function payload and Firestore data before doing another rollback.
+- Current live Collections work already pushed on `main`:
+  - `d186537` `Fix collection serials and coverage counts`
+  - `ced7667` `Make collections matrix mobile scrollable`
+  - `9feab79` `Add collection matrix drag scrollbar`
 
-## Do Not Reintroduce Without Review
-- `6ac79f7` `Add missed reading and catch-up billing states`
-- `23aa23d` `Fix billing dashboard request timeouts`
-- `29d6e65` `Restore billed rows to billing dashboard window`
-- `217bdde` `Fix RD billing sort order`
-- `f832cdb` `Hide future-dated April billing until invoice date`
+## Current Live Issue To Carry Into The Next Thread
+Reference the latest live observation:
+- Screenshot: `Screenshot 2026-04-20 at 11.10.02 PM.png`
 
-These may be useful ideas, but they must not be reapplied blindly. Re-test against the current live API first.
+What the user saw on the live Collections page:
+- The month-to-month collection matrix is still not practically scrollable.
+- User cannot drag left/right in a reliable way and still cannot reach the later month columns comfortably.
+- The SN column is still wrong in production. It still shows fallback values like:
+  - `Machine 3616`
+  - `Machine 3613`
+  - `Machine 3319`
+  - `Machine 3325`
 
-## What The Next Chat Should Protect
-- Keep the current Billing dashboard working before adding new states or filters.
-- Treat the live Billing UI behavior at commit `8df832d` as the protected baseline for billing save, invoice lookup, grouped/multimeter RTP totals, and RTP/RTF printing.
-- If the current chat/thread is for `marga-biz`, future Marga App implementation should continue in the Marga-App thread. If a future chat is in the wrong repo/thread, stop and redirect before editing.
-- Never mix `marga-biz` SEO/site work with `Marga-App` billing/application changes in the same commit.
+What this means:
+- The deployed Collections page is still not meeting the requirement for horizontal month navigation.
+- The deployed SN resolver is still falling back to machine labels instead of showing real serial text.
+- Before changing more UI, confirm whether the live page is actually running the newest code and whether the row builder is still overwriting serials with `machineLabel`.
 
-## Billing Print Template Protection
-- Invoice print templates must be saved in Firebase, not only in Chrome/localStorage.
-- Firestore source of truth:
-  - collection: `tbl_app_settings`
-  - document: `billing_invoice_print_templates_v1`
-  - key: `billing_invoice_print_templates`
-- Chrome/localStorage is only a cache, fallback, and migration source.
-- `Save Template` must persist the full layout object to Firebase, including:
-  - `paperWidthCm`, `paperHeightCm`, `orientation`
-  - `offsetXmm` left margin, `offsetYmm` top margin, `rightMarginMm` right-side paper allowance
-  - `scale`
-  - section positions and font sizes for `header`, `description`, `meta`, and `totals`
-  - totals controls: `amountWidthMm`, `amountScaleX`, `amountRightPadMm`, `amountDueFontScale`
-- Do not remove the portrait-safe right-margin clamp; it prevents Chrome from flipping the preview back to landscape.
-- Chrome print preview must have `Headers and footers` turned off and browser margins should stay at none/default zero behavior from the app `@page` rule.
+## Non-Negotiable Rules
+- Do not break the Billing dashboard presentation while fixing Collections.
+- Do not reintroduce old Billing rollback commits blindly.
+- Use forward commits on `main`; do not rewrite history for rollback work.
+- Do not revert unrelated dirty files in the repo.
+- User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
 
-## Billing Workflow Protection
+## Customer Identity And Serial Rule
+Canonical customer lookup is the Active Contract Customer Graph:
+- `tbl_contractmain` where `status == 1`
+- `tbl_contractmain.contract_id` -> `tbl_contractdep.id`
+- `tbl_contractdep.branch_id` -> `tbl_branchinfo.id`
+- `tbl_branchinfo.company_id` -> `tbl_companylist.id`
+- `tbl_contractmain.mach_id` -> `tbl_machine.id`
+- serial display from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
+
+Collections and Service must follow this same identity rule whenever possible.
+
+Important Collections SN rule:
+- SN must display the actual serial when available.
+- `Machine ####` is only a fallback machine label, not an acceptable SN display for normal collection rows.
+- If no real serial exists, show a clear missing-serial state such as `No serial on file`, not `Machine ####` inside the SN column.
+
+## Collections Rules
+- Collections should use the Billing customer set as the base customer universe.
+- Collections must also include unpaid invoices that still need follow-up even if the customer is no longer active for new billing.
+- It is okay if the web app has more rows than the SQL screenshots.
+- It is not okay if a real SQL/Billing customer or unpaid account is missing from the web workflow.
+- The month matrix must be usable on desktop and mobile:
+  - mouse drag or visible scrollbar should work
+  - trackpad horizontal movement should work
+  - touch swipe should work on phone
+  - later month columns must be reachable without hidden/guesswork interactions
+
+## Billing Rules That Must Stay Protected
 - Billing calculation modal should save the invoice first.
 - Print button should stay disabled until the saved billing snapshot matches the current modal values.
-- April 26 or the target month cell must show the saved billing after save.
-- Invoice numbers must be unique. If a bill is deleted/cancelled, that invoice number should become available again only after the billing record is actually removed or marked cancelled according to the agreed workflow.
-- Keep the invoice number search box so an invoice can be traced before deletion.
-- Grouped RTP modal must list all loaded machine/customer rows. If no prior meter is found, show the row with a note instead of hiding it.
-- Previous meter lookup should follow the serial/machine history, not only the previous calendar month. If April is being billed and the last valid reading was November 2025 or January 2026, use that meter as long as the serial has not been delivered/transferred to another customer after that reading.
-- For first delivery/new customer cases, the delivery or contract beginning meter can be the previous meter for the first bill.
-- Never auto-bill a quota amount from `0 present / 0 previous` when no meter source exists; show "No available previous meter reading" so staff can enter the beginning meter or mark the row inactive if no delivery happened.
-- If a grouped RTP row has a previous meter but no current/present reading yet, keep it visible as pending and do not charge the quota floor until staff enters the present reading or an actual current reading group exists.
-- Grouped RTP saves should write only real computed machine lines; missing-meter and pending-present rows stay visible for staff action but should not become zero-amount invoice records.
-- Multi-machine invoice print support now includes `Print Breakdown` and `Print Meter Form` from the saved calculation modal, so the breakdown can be attached to the invoice and the meter form can be reprinted during correction/replacement.
-- Cancel/replace actions should remove the whole invoice group for that invoice number and billing month before the invoice number is reused.
-- Invoice search should display one invoice card per invoice number/month even when `tbl_billing` stores many branch line records. The card total should use computed branch lines only and flag ignored zero-meter/pending saved rows from older buggy saves.
-- Billing hide/unhide is a reversible visibility layer saved in `tbl_billing_exclusions`; it hides active Billing rows without deleting customer, contract, branch, or machine master records, and restore must be reachable from the saved exclusions list.
-- For grouped RTP meter forms, `tbl_machinereading.current_contract` is the billing-period source of truth for actual read lines. Keep the active customer basis on contract graph rows, but do not drop a read line only because the contract status is not `1`; historical/transition rows such as `~xxGuagua` can still belong to the billed meter form.
-- Do not use grouped invoice number alone to locate a branch. One invoice can cover many branches, so contract -> contract department -> branch is the primary branch locator; invoice/schedule branch lookup is only a fallback for unlinked records.
-- Customer search in Billing is spacing/punctuation tolerant. Example: database value `VANS TURF` must match search text `vansturf`; stale search responses must not overwrite the current table after the user clears or changes the search.
-- Single-meter RTP and multimeter RTP are different billing structures:
-  - single-meter RTP uses `totalamount` / `amount`.
-  - legacy multimeter RTP can store black and color meter charges separately: primary amount in `totalamount` or `amount`, color amount in `totalamount2` or `amount2`.
-  - Billing dashboard cells, invoice search, and monthly footer totals must sum the primary and secondary amount fields when `totalamount2` / `amount2` exists. Rhipe is the validation sample: contract `2569`, machine `1554`, serial `V9713900410`; April 2026 saved invoice `129921` should read `1,625 + 4,985.50 = 6,610.50` from saved billing fields.
-- Multimeter RTP modal must prefill the second/color previous reading using the same latest-valid-prior-meter rule as black/white. Use `meter_reading2`, `field_present_meter2`, or saved second-line values before falling back to zero. Present should default to previous until staff enters the current reading; do not reset absolute meters.
-- If present meter is lower than previous meter, do not compute, do not reset either value, and prompt the user to check the present meter.
+- Invoice numbers must stay unique.
+- Billing search must stay spacing/punctuation tolerant.
+- Dashboard and invoice lookup totals must include second-meter legacy fields when present.
+- Do not disturb the current grouped RTP and multimeter behavior while working on Collections.
 
-## Service Module Handoff
-- The next Service thread must read this handoff and the masterplan before editing.
-- Service should use the same Active Contract Customer Graph / Billing Customer Locator Query rules for customer, branch, machine, model, and serial identity:
-  - `tbl_contractmain.status == 1`
-  - `tbl_contractmain.contract_id` -> `tbl_contractdep.id`
-  - `tbl_contractdep.branch_id` -> `tbl_branchinfo.id`
-  - `tbl_branchinfo.company_id` -> `tbl_companylist.id`
-  - `tbl_contractmain.mach_id` -> `tbl_machine.id`
-  - serial from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
-- Do not rely on raw `tbl_machine.client_id` as the customer locator in Service.
-- For model display, prefer the corrected machine/contract resolver and avoid old helper paths that prefer mismatched `tbl_model.modelname` over `tbl_machine.description`; this previously caused wrong model/customer combinations in billing print preview.
+## Module Status Board
+| Module | Status | Current State | Next Safe Step |
+| --- | --- | --- | --- |
+| Billing | Protected / In Progress | Working save-first workflow, grouped RTP support, multimeter totals, search stability, Firebase print templates. | Keep protected while Collections resolver/scrolling is fixed. |
+| Collections | In Progress | Uses Billing-based coverage plus unpaid invoices, but live SN and horizontal scrolling are still wrong. | Fix live matrix usability and real serial display first. |
+| Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
+| APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
+| Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
+| Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
 
-## Petty Cash Status
-- Petty Cash module files were not rolled back.
-- The standalone module still exists at `/Volumes/Wotg Drive Mike/GitHub/Marga-App/pettycash/`.
-- Shared finance account code still exists at `/Volumes/Wotg Drive Mike/GitHub/Marga-App/shared/js/finance-accounts.js`.
-- What did change: the Billing page sidebar was rolled back to an older snapshot, so the `Petty Cash` nav link on the Billing page is currently gone.
-- APD still contains Petty Cash references and the Petty Cash module itself was not deleted.
+## Next Actions
+1. Reproduce the live Collections issue from the latest screenshot before changing more code.
+2. Confirm the deployed page is serving commit `9feab79` or later.
+3. Audit the Collections row builder so `serialNumber` does not get replaced by `machineLabel`.
+4. Make horizontal month navigation obvious and reliable on the live page, not only in local mocks.
+5. Verify Billing UI still matches the protected baseline after any shared resolver changes.
 
-## Safe Next Step
-- Continue Marga-App work in the Marga-App thread.
-- For print-layout tuning, adjust the Firebase `Invoice RTP` or `Invoice RTF` template through the Billing modal, click `Save Template`, then verify it reloads from the dropdown after refresh.
-- For any billing-data change, test one customer/month first before broad dashboard changes.
+## Session Log (Top First)
+### 2026-04-21 - Single Source Of Truth And Latest Collections Handoff
+- Merged the duplicated root/docs handoff and masterplan into one root `HANDOFF.md` and one root `MASTERPLAN.md`.
+- Retired the duplicate `docs/HANDOFF.md` and `docs/MASTERPLAN.md` so future threads do not read conflicting instructions.
+- Added the newest live Collections concern from `Screenshot 2026-04-20 at 11.10.02 PM.png`:
+  - month matrix still not reliably scrollable
+  - SN still shows `Machine ####` in production
+- Confirmed the current next-thread priority is Collections live parity without breaking Billing presentation.
+
+### 2026-04-20 - Collections Coverage And UI Work
+- Collections was moved to use the Billing customer base plus unpaid invoices.
+- Added RD visible count in the matrix header.
+- Implemented serial/coverage work intended to stop `Machine ####` SN fallbacks, but the live page still shows the issue and needs another pass.
+- Added responsive/mobile matrix handling and then a custom drag scrollbar, but the latest live observation says the interaction is still not good enough.
+
+### 2026-04-20 - Billing RD Parity Sweep
+- Verified and aligned Billing reading-day parity across RD 1 to RD 31 against user-provided legacy screenshots.
+- Billing cohort work now includes status/date protections needed for the SQL to Firebase migration.
+- Protected the current Billing dashboard behavior while widening row coverage for real billing parity.
+
+### 2026-04-17 - Billing Protection And Print Rules
+- Billing save-first workflow, invoice lookup/delete tracing, and RTP/RTF print calibration were locked in as the protected operational baseline.
+- Firebase invoice print templates remain the source of truth through `tbl_app_settings/billing_invoice_print_templates_v1`.
+
+## Historical Notes
+- `HANDOFF-COLLECTIONS-010626.md` is a historical module-specific note only.
+- Historical changelog remains in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/CHANGELOG.md`.
