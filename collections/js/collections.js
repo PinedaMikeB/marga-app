@@ -2999,15 +2999,23 @@ function renderCollectorMatrixTable(data, visibleRows) {
 
                                 if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal < billedTarget) {
                                     cellClass = 'month-cell partial';
-                                    cellText = escapeHtml(formatPlainNumber(cell.collectedTotal));
+                                    cellText = `
+                                        <span class="collector-amount">${escapeHtml(formatPlainNumber(cell.collectedTotal))}</span>
+                                        <span class="collector-state-label partial">Partial</span>
+                                    `;
                                 } else if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal >= billedTarget) {
                                     cellClass = 'month-cell collected';
-                                    cellText = escapeHtml(formatPlainNumber(cell.collectedTotal));
+                                    cellText = `
+                                        <span class="collector-amount">${escapeHtml(formatPlainNumber(cell.collectedTotal))}</span>
+                                        <span class="collector-state-label collected">Collected</span>
+                                    `;
                                 } else if (showBillingAmount) {
                                     cellClass = `month-cell pending${catchUpBilling ? ' catch-up' : ''}`;
                                     cellText = `
                                         <span class="collector-amount">${escapeHtml(formatPlainNumber(billedTarget))}</span>
-                                        ${catchUpBilling ? `<span class="collector-state-label catch-up">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))})` : ''}</span>` : ''}
+                                        ${catchUpBilling
+                                            ? `<span class="collector-state-label catch-up">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))})` : ''}</span>`
+                                            : '<span class="collector-state-label unpaid">No Payment</span>'}
                                     `;
                                 } else if (missedReading || cell.pendingBilling) {
                                     cellClass = `month-cell missed-reading${cell.pendingBilling ? ' pending-billing' : ''}`;
