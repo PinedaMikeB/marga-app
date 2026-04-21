@@ -44,6 +44,7 @@ let collectorBillingMatrixPromise = null;
 let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
+let collectorDashboardRenderSeq = 0;
 let collectionWorkspaceLookupsLoaded = false;
 let collectionWorkspaceLookupsPromise = null;
 let collectionProfileByBranchId = new Map();
@@ -1745,7 +1746,7 @@ async function loadInvoices(mode) {
         populateYearFilter(years);
 
         currentPage = 1;
-        recomputeFilteredInvoices();
+        await recomputeFilteredInvoices();
 
         const lastUpdated = document.getElementById('last-updated');
         if (lastUpdated) lastUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -1870,7 +1871,7 @@ function recomputeFilteredInvoices() {
 
     updateAllStats();
     updateDurationSummary();
-    void renderCollectorDashboard();
+    const collectorDashboardPromise = renderCollectorDashboard();
     renderTrendDashboard();
     renderTable();
     showActiveFilters();
@@ -1881,6 +1882,7 @@ function recomputeFilteredInvoices() {
     updateFollowupBadge();
     updateActionBrief();
     updateQueueContext();
+    return collectorDashboardPromise;
 }
 
 function applyFilters() {
@@ -3097,29 +3099,54 @@ function renderCollectorMatrixTable(data, visibleRows) {
 }
 
 async function renderCollectorDashboard() {
-    const data = await computeCollectorDashboardData();
-    collectorDashboardData = data;
-    const visibleRows = prepareCollectorRows(data.customerRows);
-    renderCollectorSummaryTable(data);
-    renderCollectorMatrixTable(data, visibleRows);
-
+    const renderSeq = ++collectorDashboardRenderSeq;
     const noteNode = document.getElementById('collector-dashboard-note');
+    const matrixNode = document.getElementById('collector-matrix-table');
     if (noteNode) {
-        const searchTerm = getCollectorSearchTerm();
-        const filterText = searchTerm
-            ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
-            : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cells can show branch billed amounts from Billing even when collection is still zero. Footer totals remain collected totals. Click cells to review unpaid invoices, missed readings, and continue collection remarks.`;
+        noteNode.textContent = 'Finalizing billing and payment status for the month matrix...';
+    }
+    if (matrixNode) {
+        matrixNode.innerHTML = '<div class="loading-overlay"><div class="loading-spinner"></div><span>Finalizing payment status...</span></div>';
     }
 
-    const rangeNode = document.getElementById('collector-dashboard-range');
-    if (rangeNode) {
-        rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.matrixEnd, true)}`;
-    }
+    try {
+        const data = await computeCollectorDashboardData();
+        if (renderSeq !== collectorDashboardRenderSeq) return null;
 
-    const pendingNode = document.getElementById('collector-dashboard-pending');
-    if (pendingNode) {
-        pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
+        collectorDashboardData = data;
+        const visibleRows = prepareCollectorRows(data.customerRows);
+        renderCollectorSummaryTable(data);
+        renderCollectorMatrixTable(data, visibleRows);
+
+        if (noteNode) {
+            const searchTerm = getCollectorSearchTerm();
+            const filterText = searchTerm
+                ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
+                : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
+            noteNode.textContent = `${filterText} Payment colors are finalized from Billing invoice month plus Collection payment balance. Click cells to review invoices and continue collection remarks.`;
+        }
+
+        const rangeNode = document.getElementById('collector-dashboard-range');
+        if (rangeNode) {
+            rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.matrixEnd, true)}`;
+        }
+
+        const pendingNode = document.getElementById('collector-dashboard-pending');
+        if (pendingNode) {
+            pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
+        }
+
+        return data;
+    } catch (error) {
+        if (renderSeq !== collectorDashboardRenderSeq) return null;
+        console.error('Collector dashboard render failed:', error);
+        if (noteNode) {
+            noteNode.textContent = 'Unable to finalize the collection month matrix. Please refresh and try again.';
+        }
+        if (matrixNode) {
+            matrixNode.innerHTML = '<div class="empty-followup">Unable to finalize payment status. Please refresh Collections.</div>';
+        }
+        return null;
     }
 }
 
