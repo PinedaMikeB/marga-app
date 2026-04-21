@@ -41,6 +41,7 @@ let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
 let collectorBillingMatrixCache = null;
 let collectorBillingMatrixPromise = null;
+let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
 
@@ -581,6 +582,37 @@ function scrollCollectorMatrix(direction) {
     window.setTimeout(updateCollectorHorizontalScrollbar, 220);
 }
 
+function getCollectorLatestMonthKey(data) {
+    const columns = Array.isArray(data?.monthColumns) ? data.monthColumns : [];
+    const current = columns.find((column) => column.isCurrentMonth);
+    return current?.key || columns[columns.length - 1]?.key || '';
+}
+
+function scrollCollectorMatrixToMonth(monthKey, options = {}) {
+    const container = document.getElementById('collector-matrix-table');
+    if (!container || !monthKey) return;
+    const header = Array.from(container.querySelectorAll('thead th[data-month-key]'))
+        .find((node) => node.dataset.monthKey === monthKey);
+    if (!header) return;
+
+    const monthWidth = header.offsetWidth || 110;
+    const leadInMonths = Number(options.leadInMonths ?? 2);
+    const targetLeft = Math.max(0, header.offsetLeft - (monthWidth * leadInMonths));
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+    container.scrollTo({
+        left: Math.min(targetLeft, maxScroll),
+        behavior: options.behavior || 'smooth'
+    });
+
+    window.setTimeout(updateCollectorViewportRange, options.behavior === 'auto' ? 0 : 220);
+    window.setTimeout(updateCollectorHorizontalScrollbar, options.behavior === 'auto' ? 0 : 220);
+}
+
+function scrollCollectorMatrixToLatest(options = {}) {
+    const data = options.data || collectorDashboardData;
+    scrollCollectorMatrixToMonth(getCollectorLatestMonthKey(data), options);
+}
+
 function bindCollectorMatrixViewport() {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
@@ -594,6 +626,8 @@ function bindCollectorMatrixViewport() {
         document.getElementById('collectorScrollRight')?.addEventListener('click', () => scrollCollectorMatrix(1));
         document.getElementById('collectorScrollLeftInline')?.addEventListener('click', () => scrollCollectorMatrix(-1));
         document.getElementById('collectorScrollRightInline')?.addEventListener('click', () => scrollCollectorMatrix(1));
+        document.getElementById('collectorScrollLatest')?.addEventListener('click', () => scrollCollectorMatrixToLatest({ behavior: 'smooth' }));
+        document.getElementById('collectorScrollLatestInline')?.addEventListener('click', () => scrollCollectorMatrixToLatest({ behavior: 'smooth' }));
         document.getElementById('collectorScrollbarLeft')?.addEventListener('click', () => scrollCollectorMatrix(-1));
         document.getElementById('collectorScrollbarRight')?.addEventListener('click', () => scrollCollectorMatrix(1));
 
@@ -2807,10 +2841,14 @@ function renderCollectorMatrixTable(data, visibleRows) {
     `;
 
     bindCollectorMatrixViewport();
+    window.requestAnimationFrame(() => {
+        scrollCollectorMatrixToLatest({ data, behavior: 'auto' });
+    });
 }
 
 async function renderCollectorDashboard() {
     const data = await computeCollectorDashboardData();
+    collectorDashboardData = data;
     const visibleRows = prepareCollectorRows(data.customerRows);
     renderCollectorSummaryTable(data);
     renderCollectorMatrixTable(data, visibleRows);

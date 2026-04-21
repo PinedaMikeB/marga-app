@@ -568,7 +568,7 @@
         }
 
         .collector-control-block.nav {
-            margin-left: auto;
+            flex: 1 1 100%;
             min-width: 260px;
         }
 
@@ -577,7 +577,7 @@
             align-items: center;
             gap: 8px;
             flex-wrap: wrap;
-            justify-content: flex-end;
+            justify-content: flex-start;
         }
 
         .collector-chip {
@@ -668,6 +668,11 @@
             padding-inline: 0;
         }
 
+        .collector-scroll-latest {
+            min-width: 84px;
+            padding-inline: 10px;
+        }
+
         .collector-sheet-scroll {
             overflow: auto;
             border: 1px solid rgba(148, 163, 184, 0.16);
@@ -684,7 +689,6 @@
             max-height: 560px;
             overflow-x: scroll;
             overflow-y: auto;
-            cursor: grab;
             position: relative;
             scrollbar-color: rgba(37, 99, 235, 0.62) rgba(219, 234, 254, 0.72);
             scrollbar-width: auto;
@@ -817,8 +821,7 @@
 
         .collector-sheet td.sticky-col,
         .collector-sheet th.sticky-col {
-            position: sticky;
-            left: 0;
+            position: static;
             z-index: 1;
             background: rgba(255, 255, 255, 0.97);
         }
@@ -2578,6 +2581,7 @@
                             <span class="collector-chip viewport" id="collector-visible-range">Viewing October 2025 to December 2026</span>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeft" aria-label="Scroll collection months left">←</button>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRight" aria-label="Scroll collection months right">→</button>
+                            <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn collector-scroll-latest" id="collectorScrollLatest" aria-label="Jump to current collection month">Latest</button>
                         </div>
                     </div>
                     <div class="collector-control-row">
@@ -2598,6 +2602,7 @@
                                 <span class="collector-chip viewport" id="collector-visible-range-inline">Viewing October 2025 to December 2026</span>
                                 <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeftInline" aria-label="Scroll collection months left">←</button>
                                 <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRightInline" aria-label="Scroll collection months right">→</button>
+                                <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn collector-scroll-latest" id="collectorScrollLatestInline" aria-label="Jump to current collection month">Latest</button>
                             </div>
                         </div>
                     </div>
