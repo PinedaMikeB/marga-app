@@ -249,6 +249,15 @@ function getMonthKey(value) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function getBillingPeriodMonthKey(monthValue, yearValue, fallbackDate = null) {
+    const monthNumber = monthNameToNumber(monthValue) || Number(monthValue || 0);
+    const yearNumber = Number(yearValue || 0);
+    if (monthNumber >= 1 && monthNumber <= 12 && yearNumber >= 2000) {
+        return `${yearNumber}-${String(monthNumber).padStart(2, '0')}`;
+    }
+    return getMonthKey(fallbackDate);
+}
+
 function formatMonthLabel(value, longLabel = false) {
     const d = startOfMonth(value);
     if (!d) return '-';
@@ -1660,11 +1669,15 @@ async function loadInvoices(mode) {
             const invoiceId = invoiceIdRaw !== null && invoiceIdRaw !== undefined ? String(invoiceIdRaw).trim() : '';
             const invoiceNoRaw = getField(f, ['invoiceno', 'invoice_no', 'invoice_id', 'id']);
             const invoiceNo = invoiceNoRaw !== null && invoiceNoRaw !== undefined ? String(invoiceNoRaw).trim() : '';
+            const billingMonth = getField(f, ['month']);
+            const billingYear = getField(f, ['year']);
             const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
             const dueDate = normalizeDate(getField(f, ['due_date']));
+            const billingPeriodMonthKey = getBillingPeriodMonthKey(billingMonth, billingYear, invoiceDate);
             const dateReceived = normalizeDate(getField(f, ['date_received']));
             const receivedBy = String(getField(f, ['receivedby']) || '').trim();
-            const amount = Number(getField(f, ['totalamount', 'amount']) || 0) + Number(getField(f, ['vatamount']) || 0);
+            const matrixAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
+            const amount = matrixAmount + Number(getField(f, ['vatamount']) || 0);
             const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
             const location = getBillingLocation(contractmainId);
             const billingMeta = {
@@ -1673,14 +1686,14 @@ async function loadInvoices(mode) {
                 accountLabel: location.accountLabel,
                 invoiceDate,
                 dueDate,
-                month: getField(f, ['month']),
-                year: getField(f, ['year'])
+                month: billingMonth,
+                year: billingYear
             };
 
             if (invoiceId) billingMetaByInvoiceKey.set(invoiceId, billingMeta);
             if (invoiceNo) billingMetaByInvoiceKey.set(invoiceNo, billingMeta);
 
-            if (invoiceDate && amount > 0) {
+            if (invoiceDate && matrixAmount > 0) {
                 collectorBillingRecords.push({
                     invoiceId,
                     invoiceNo: invoiceNo || invoiceId,
@@ -1702,9 +1715,9 @@ async function loadInvoices(mode) {
                     billingStatus: getField(f, ['status']),
                     billingLocation: getField(f, ['location']),
                     billingRemarks: getField(f, ['remarks']),
-                    amount,
+                    amount: matrixAmount,
                     rd: invoiceDate.getDate(),
-                    monthKey: getMonthKey(invoiceDate)
+                    monthKey: billingPeriodMonthKey
                 });
 
                 billingEntriesForDuration.push({
