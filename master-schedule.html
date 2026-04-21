@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Schedule - Marga Enterprises</title>
+    <link rel="stylesheet" href="shared/css/styles.css">
+    <link rel="stylesheet" href="shared/css/dashboard.css">
+    <style>
+        .master-content {
+            position: relative;
+            z-index: 1;
+            margin-left: 260px;
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .master-header,
+        .master-card {
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(15, 46, 81, 0.12);
+        }
+
+        .master-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-end;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+        }
+
+        .master-title h1 {
+            margin: 0;
+            color: #153b60;
+            font-size: 28px;
+            line-height: 1.1;
+        }
+
+        .master-title p {
+            margin: 6px 0 0;
+            color: #587291;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .master-controls {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+            flex-wrap: wrap;
+        }
+
+        .master-control {
+            display: grid;
+            gap: 5px;
+        }
+
+        .master-control label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #526f8d;
+            font-weight: 800;
+        }
+
+        .master-control input,
+        .master-control select {
+            min-width: 170px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 8px;
+            padding: 9px 10px;
+            color: #153b60;
+            background: #fff;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .master-card {
+            overflow: hidden;
+        }
+
+        .master-card-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            padding: 13px 16px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(239, 246, 255, 0.78);
+        }
+
+        .master-card-head strong {
+            color: #173d63;
+            font-size: 13px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .master-card-head span,
+        .master-status {
+            color: #5f7895;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .master-sheet {
+            padding: 18px 22px 24px;
+            background: #fff;
+            overflow: auto;
+        }
+
+        .master-group {
+            margin-bottom: 28px;
+            min-width: 820px;
+        }
+
+        .master-group h2 {
+            margin: 0 0 8px;
+            color: #111827;
+            font-size: 20px;
+            line-height: 1.2;
+        }
+
+        .master-table {
+            border-collapse: collapse;
+            min-width: 720px;
+            font-size: 13px;
+            color: #0f2742;
+        }
+
+        .master-table th,
+        .master-table td {
+            border: 1px solid #111827;
+            padding: 4px 7px;
+            height: 24px;
+            vertical-align: middle;
+            background: #fff;
+        }
+
+        .master-table th {
+            text-align: left;
+            font-weight: 800;
+            color: #111827;
+        }
+
+        .master-table td.numeric {
+            text-align: right;
+        }
+
+        .master-table td.action-cell {
+            border-color: rgba(148, 163, 184, 0.55);
+            min-width: 132px;
+        }
+
+        .master-empty {
+            padding: 34px;
+            color: #536f8e;
+            text-align: center;
+            font-weight: 750;
+        }
+
+        .schedule-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 22px;
+            border-radius: 999px;
+            padding: 2px 9px;
+            background: #dff7e5;
+            color: #176434;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .schedule-pill.cancelled {
+            background: #fee2e2;
+            color: #9f1239;
+        }
+
+        @media (max-width: 900px) {
+            .master-content {
+                margin-left: 0;
+                padding: 14px;
+            }
+
+            .master-header {
+                display: grid;
+            }
+
+            .master-controls {
+                align-items: stretch;
+            }
+
+            .master-control,
+            .master-control input,
+            .master-control select {
+                width: 100%;
+                min-width: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="#3b82f6"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                <a href="dashboard.html" class="nav-item"><span>Dashboard</span></a>
+                <a href="customers.html" class="nav-item"><span>Customers</span></a>
+                <a href="billing/" class="nav-item"><span>Billing</span></a>
+                <a href="collections.html" class="nav-item"><span>Collections</span></a>
+                <a href="master-schedule.html" class="nav-item active"><span>Master Schedule</span></a>
+                <a href="schedule/" class="nav-item"><span>Schedule Planner</span></a>
+                <a href="service/index.html" class="nav-item"><span>Service</span></a>
+            </div>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">M</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Marga</div>
+                    <div class="user-role">Master Schedule</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="master-content">
+        <header class="master-header">
+            <div class="master-title">
+                <h1>Master Schedule</h1>
+                <p>Printed billing, confirmed collection, toner and ink deliveries, service, and preventive maintenance in one grouped sheet.</p>
+            </div>
+            <div class="master-controls">
+                <div class="master-control">
+                    <label for="masterDateInput">Date</label>
+                    <input type="date" id="masterDateInput">
+                </div>
+                <div class="master-control">
+                    <label for="masterStatusInput">Status</label>
+                    <select id="masterStatusInput">
+                        <option value="active">Active</option>
+                        <option value="all">All</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div class="master-control">
+                    <label for="masterSearchInput">Search</label>
+                    <input type="search" id="masterSearchInput" placeholder="Customer, branch, serial, assigned">
+                </div>
+                <button class="btn btn-primary" id="masterRefreshBtn" type="button">Refresh</button>
+            </div>
+        </header>
+
+        <section class="master-card">
+            <div class="master-card-head">
+                <strong>Schedule Format</strong>
+                <span id="masterCount">Loading schedules...</span>
+            </div>
+            <div class="master-sheet" id="masterScheduleSheet">
+                <div class="master-empty">Loading Master Schedule...</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="shared/js/firebase-config.js"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260421-masterschedule-1"></script>
+</body>
+</html>

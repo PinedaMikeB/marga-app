@@ -2230,6 +2230,66 @@
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
+        .collection-followup-schedule-panel {
+            border-color: rgba(45, 212, 191, 0.32);
+            background: rgba(240, 253, 250, 0.78);
+        }
+
+        .collection-schedule-form {
+            display: grid;
+            grid-template-columns: auto auto minmax(140px, 0.8fr) minmax(120px, 0.7fr) minmax(200px, 1fr) auto;
+            gap: 8px;
+            align-items: end;
+        }
+
+        .collection-schedule-form label,
+        .collection-schedule-radio label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #40627f;
+            font-weight: 800;
+        }
+
+        .collection-schedule-form input,
+        .collection-schedule-form select {
+            width: 100%;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 8px;
+            padding: 7px 9px;
+            background: #fff;
+            color: #153b60;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .collection-schedule-return {
+            margin: 0;
+        }
+
+        .collection-schedule-radio,
+        .collection-schedule-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .collection-schedule-radio label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            height: 34px;
+        }
+
+        .collection-schedule-radio input {
+            width: auto;
+        }
+
+        .collection-schedule-status {
+            margin-top: 8px;
+        }
+
         .collection-followup-two {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2333,6 +2393,10 @@
             .collection-followup-grid,
             .collection-followup-bottom {
                 grid-template-columns: 1fr;
+            }
+
+            .collection-schedule-form {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
             .cell-modal-summary,
@@ -2681,6 +2745,7 @@
                 <a href="customers.html" class="nav-item"><span class="icon">👥</span> Customers</a>
                 <a href="billing.html" class="nav-item"><span class="icon">📄</span> Billing</a>
                 <a href="collections.html" class="nav-item active"><span class="icon">💰</span> Collections</a>
+                <a href="master-schedule.html" class="nav-item"><span class="icon">📅</span> Master Schedule</a>
                 <a href="#" class="nav-item"><span class="icon">🔧</span> Service</a>
                 <a href="#" class="nav-item"><span class="icon">📈</span> Reports</a>
             </nav>
@@ -2960,6 +3025,6 @@
 
     <script src="shared/js/firebase-config.js"></script>
     <script src="shared/js/offline-sync.js"></script>
-    <script src="collections/js/collections.js?v=20260421-paymenttotals-1"></script>
+    <script src="collections/js/collections.js?v=20260421-masterschedule-1"></script>
 </body>
 </html>

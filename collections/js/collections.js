@@ -56,6 +56,7 @@ let serviceHistoryCache = new Map();
 let currentCollectorWorkspace = null;
 let isSavingCollectorFollowup = false;
 let isSavingCollectorProfileOverride = false;
+let isSavingCollectorSchedule = false;
 
 const DEFAULT_COLLECTION_STATUSES = [
     { id: 1, label: 'Missing' },
@@ -71,6 +72,18 @@ const DEFAULT_COLLECTION_STATUSES = [
 const COLLECTION_LOCATION_OPTIONS = [
     { id: 1, key: 'end_user', label: 'End User' },
     { id: 2, key: 'accounting', label: 'Accounting' }
+];
+
+const COLLECTION_SCHEDULE_OPTIONS = [
+    'Confirmed',
+    'Tentative',
+    'Return cheque',
+    'Acquire 2307',
+    'Shutdown Notice',
+    'Deposit',
+    'Start Up',
+    'Refundable Deposit',
+    'Pick up RFP'
 ];
 
 const dailyTips = [
@@ -916,6 +929,20 @@ async function firestoreSetDocument(collection, docId, fields) {
     if (!response.ok) {
         const message = await response.text();
         throw new Error(`Failed to save ${collection}/${docId}: ${response.status} ${message.slice(0, 140)}`);
+    }
+
+    return response.json();
+}
+
+async function firestoreGetDocument(collection, docId) {
+    const safeDocId = encodeURIComponent(String(docId || '').trim());
+    if (!safeDocId) return null;
+
+    const response = await fetch(`${BASE_URL}/${collection}/${safeDocId}?key=${encodeURIComponent(API_KEY)}`);
+    if (response.status === 404) return null;
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Failed to load ${collection}/${docId}: ${response.status} ${message.slice(0, 140)}`);
     }
 
     return response.json();
@@ -3219,6 +3246,56 @@ function collectionProfileOverrideDocId(context) {
         .slice(0, 90) || 'unknown'}`;
 }
 
+function scheduleSlug(value, fallback = 'unknown') {
+    return String(value || fallback)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 90) || fallback;
+}
+
+function collectionScheduleDocId(context, selectedInvoice) {
+    const invoiceNo = String(selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
+    if (invoiceNo) return `collection_invoice_${scheduleSlug(invoiceNo)}`;
+
+    const branchId = normalizeLookupId(context?.branchId);
+    const monthKey = scheduleSlug(context?.monthKey || context?.label || 'month');
+    if (branchId && !branchId.startsWith('unlinked:')) return `collection_branch_${scheduleSlug(branchId)}_${monthKey}`;
+
+    const contractId = normalizeLookupId(context?.contractmainId);
+    if (contractId) return `collection_contract_${scheduleSlug(contractId)}_${monthKey}`;
+
+    return `collection_account_${scheduleSlug(context?.accountLabel || context?.customer)}_${monthKey}`;
+}
+
+async function loadCollectionScheduleForWorkspace(context, selectedInvoice) {
+    const docId = collectionScheduleDocId(context, selectedInvoice);
+    try {
+        const doc = await firestoreGetDocument('marga_master_schedule', docId);
+        return doc ? documentFieldsToPlain(doc) : null;
+    } catch (error) {
+        console.warn('Unable to load collection schedule override:', error);
+        return null;
+    }
+}
+
+function getCurrentCollectorName() {
+    return String(
+        document.getElementById('current-user')?.textContent
+        || localStorage.getItem('marga_current_user')
+        || 'Collector'
+    ).trim() || 'Collector';
+}
+
+function getSchedulePurposeLabel(scheduleStatus) {
+    const label = String(scheduleStatus || '').trim();
+    if (/confirmed/i.test(label)) return 'Confirmed Collection';
+    if (/toner|ink/i.test(label)) return 'Toner / Ink Delivery';
+    if (/shutdown|start up/i.test(label)) return 'Service / Preventive Maintenance';
+    if (label) return label;
+    return 'Collection';
+}
+
 function getCollectionOverrideForContext(context) {
     return collectionProfileOverrides.get(collectionProfileOverrideDocId(context)) || null;
 }
@@ -3576,7 +3653,10 @@ async function buildCollectorFollowupWorkspace(cell) {
         cell.records || []
     );
     const lastHistory = invoiceHistory[0] || null;
-    const serviceHistory = await loadServiceDeliveryHistory(context);
+    const [serviceHistory, activeSchedule] = await Promise.all([
+        loadServiceDeliveryHistory(context),
+        loadCollectionScheduleForWorkspace(context, selectedInvoice)
+    ]);
 
     const branchBalance = branchInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
     const companyBalance = companyInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
@@ -3599,6 +3679,7 @@ async function buildCollectorFollowupWorkspace(cell) {
         invoiceHistory,
         lastHistory,
         serviceHistory,
+        activeSchedule,
         branchBalance,
         companyBalance,
         selectedContact,
@@ -3720,6 +3801,7 @@ function renderCollectorFollowupWorkspace(workspace) {
         invoiceHistory,
         lastHistory,
         serviceHistory,
+        activeSchedule,
         branchBalance,
         companyBalance,
         selectedContact,
@@ -3737,6 +3819,11 @@ function renderCollectorFollowupWorkspace(workspace) {
     const contactNo = selectedContactNumber || '';
     const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || selectedInvoice?.amount || 0);
     const pendingAmount = Math.max(0, Number(branchBalance || billedTarget || 0));
+    const scheduleStatusValue = String(activeSchedule?.schedule_status || 'Confirmed').trim();
+    const scheduleDateValue = toDateKey(activeSchedule?.schedule_date || activeSchedule?.followup_date) || defaultFollowup;
+    const scheduleTimeValue = normalizeTimeInput(activeSchedule?.schedule_time || activeSchedule?.collection_time || fromTime || followupTime || '');
+    const scheduleIsActive = activeSchedule && String(activeSchedule.status || 'Active').toLowerCase() !== 'cancelled';
+    const returnCallValue = activeSchedule?.return_call === true || String(activeSchedule?.return_call || '').toLowerCase() === 'true';
 
     return `
         <div class="collection-followup-shell">
@@ -3871,6 +3958,43 @@ function renderCollectorFollowupWorkspace(workspace) {
                         <button class="btn btn-primary" onclick="saveCollectorFollowup()">Save Follow-up</button>
                         <span class="detail-save-status" id="collectorFollowupSaveStatus">Ready.</span>
                     </div>
+                </div>
+            </section>
+
+            <section class="collection-followup-panel collection-followup-schedule-panel">
+                <div class="collection-followup-panel-title">Set Schedule</div>
+                <div class="collection-schedule-form">
+                    <label class="collection-check-row collection-schedule-return">
+                        <input id="collectorScheduleReturnCall" type="checkbox"${returnCallValue ? ' checked' : ''}>
+                        Return Call
+                    </label>
+                    <div class="collection-schedule-radio">
+                        <label><input type="radio" name="collectorScheduleReturnChoice" value="yes"${returnCallValue ? ' checked' : ''}> Yes</label>
+                        <label><input type="radio" name="collectorScheduleReturnChoice" value="no"${returnCallValue ? '' : ' checked'}> No</label>
+                    </div>
+                    <div>
+                        <label>Schedule Date</label>
+                        <input id="collectorScheduleDate" type="date" value="${escapeHtml(scheduleDateValue || '')}">
+                    </div>
+                    <div>
+                        <label>Time</label>
+                        <input id="collectorScheduleTime" type="time" value="${escapeHtml(scheduleTimeValue || '')}">
+                    </div>
+                    <div>
+                        <label>Schedule Type</label>
+                        <select id="collectorScheduleStatus">
+                            ${COLLECTION_SCHEDULE_OPTIONS.map((option) => `<option value="${escapeHtml(option)}"${option.toLowerCase() === scheduleStatusValue.toLowerCase() ? ' selected' : ''}>${escapeHtml(option)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="collection-schedule-actions">
+                        <button class="btn btn-primary btn-sm" onclick="saveCollectorSchedule()">Save</button>
+                        <button class="btn btn-secondary btn-sm" onclick="cancelCollectorSchedule()"${scheduleIsActive ? '' : ' disabled'}>Cancel Trial Schedule</button>
+                    </div>
+                </div>
+                <div class="detail-save-status collection-schedule-status" id="collectorScheduleSaveStatus">
+                    ${scheduleIsActive
+                        ? `Active schedule: ${escapeHtml(scheduleStatusValue)}${scheduleDateValue ? ` on ${escapeHtml(formatDate(scheduleDateValue))}` : ''}.`
+                        : (activeSchedule ? 'Schedule is cancelled.' : 'No active schedule yet.')}
                 </div>
             </section>
 
@@ -4123,6 +4247,149 @@ async function saveCollectorFollowup() {
         if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
     } finally {
         isSavingCollectorFollowup = false;
+    }
+}
+
+function buildCollectorScheduleRecord(workspace, options = {}) {
+    const context = workspace.context || {};
+    const selectedInvoice = workspace.selectedInvoice || {};
+    const scheduleStatus = options.scheduleStatus || String(document.getElementById('collectorScheduleStatus')?.value || 'Confirmed').trim();
+    const scheduleDate = options.scheduleDate || String(document.getElementById('collectorScheduleDate')?.value || '').trim();
+    const scheduleTime = options.scheduleTime || String(document.getElementById('collectorScheduleTime')?.value || '').trim();
+    const returnCallRadio = document.querySelector('input[name="collectorScheduleReturnChoice"]:checked')?.value;
+    const returnCall = options.returnCall !== undefined
+        ? options.returnCall
+        : (returnCallRadio ? returnCallRadio === 'yes' : Boolean(document.getElementById('collectorScheduleReturnCall')?.checked));
+    const invoiceNo = String(selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '').trim();
+    const now = toTimestampString(new Date());
+    const previous = workspace.activeSchedule || {};
+    const branch = branchMap[normalizeLookupId(context.branchId)] || {};
+
+    return {
+        ...previous,
+        source: 'collections_followup',
+        purpose: getSchedulePurposeLabel(scheduleStatus),
+        schedule_status: scheduleStatus,
+        schedule_status_key: scheduleSlug(scheduleStatus),
+        status: options.status || 'Active',
+        trial_schedule: true,
+        return_call: returnCall,
+        schedule_date: scheduleDate,
+        schedule_time: scheduleTime,
+        followup_date: String(document.getElementById('collectorFollowupDate')?.value || scheduleDate || '').trim(),
+        collection_time: String(document.getElementById('collectorCollectionTime')?.value || scheduleTime || '').trim(),
+        invoice_no: invoiceNo,
+        invoice_id: String(selectedInvoice.invoiceId || selectedInvoice.invoiceNo || '').trim(),
+        invoice_month: selectedInvoice.monthYear || context.label || '',
+        amount: Number(selectedInvoice.amount || selectedInvoice.billedAmount || workspace.branchBalance || 0),
+        balance: Number(workspace.branchBalance || selectedInvoice.amount || 0),
+        company_id: context.companyId || '',
+        branch_id: context.branchId || '',
+        contractmain_id: context.contractmainId || '',
+        machine_id: context.machineId || '',
+        customer: context.customer || selectedInvoice.company || '',
+        branch: context.branchName || selectedInvoice.branch || branch.name || '',
+        model: context.modelName || selectedInvoice.modelName || '',
+        serial: displaySerialNumber(context.serialNumber || selectedInvoice.serialNumber || ''),
+        assigned_to: getCurrentCollectorName(),
+        collection_address: String(document.getElementById('collectorProfileAddress')?.value || workspace.address || branch.address || '').trim(),
+        contact_person: String(document.getElementById('collectorLastContact')?.value || document.getElementById('collectorProfileContactPerson')?.value || '').trim(),
+        contact_number: String(document.getElementById('collectorContactNumber')?.value || document.getElementById('collectorProfileContactNumber')?.value || '').trim(),
+        remarks: String(document.getElementById('collectorRemarks')?.value || previous.remarks || '').trim(),
+        area_group: previous.area_group || 'Area Group 1 (Unassigned)',
+        updated_at: now,
+        created_at: previous.created_at || now
+    };
+}
+
+async function saveCollectorSchedule() {
+    if (!currentCollectorWorkspace || isSavingCollectorSchedule) return;
+
+    const statusNode = document.getElementById('collectorScheduleSaveStatus');
+    const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
+    const context = currentCollectorWorkspace.context;
+    const scheduleDate = String(document.getElementById('collectorScheduleDate')?.value || '').trim();
+
+    if (!selectedInvoice?.invoiceNo && !selectedInvoice?.invoiceId) {
+        if (statusNode) statusNode.textContent = 'No invoice is linked to this cell yet, so a schedule cannot be saved.';
+        return;
+    }
+
+    if (!scheduleDate) {
+        if (statusNode) statusNode.textContent = 'Please choose a schedule date.';
+        return;
+    }
+
+    const docId = collectionScheduleDocId(context, selectedInvoice);
+    const record = buildCollectorScheduleRecord(currentCollectorWorkspace, { scheduleDate, status: 'Active' });
+    const fields = {};
+    Object.entries(record).forEach(([key, value]) => {
+        if (!key.startsWith('_')) fields[key] = toFirestoreWriteValue(value);
+    });
+
+    isSavingCollectorSchedule = true;
+    if (statusNode) statusNode.textContent = 'Saving schedule...';
+
+    try {
+        await firestoreSetDocument('marga_master_schedule', docId, fields);
+        currentCollectorWorkspace.activeSchedule = { ...record, _docId: docId };
+
+        const content = document.getElementById('collectorCellContent');
+        if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+
+        const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved to Master Schedule.';
+    } catch (error) {
+        console.error('Failed to save collection schedule:', error);
+        if (statusNode) statusNode.textContent = 'Schedule save failed. Follow-up history was not changed.';
+    } finally {
+        isSavingCollectorSchedule = false;
+    }
+}
+
+async function cancelCollectorSchedule() {
+    if (!currentCollectorWorkspace || isSavingCollectorSchedule) return;
+
+    const statusNode = document.getElementById('collectorScheduleSaveStatus');
+    const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
+    const context = currentCollectorWorkspace.context;
+    const activeSchedule = currentCollectorWorkspace.activeSchedule;
+
+    if (!activeSchedule || String(activeSchedule.status || '').toLowerCase() === 'cancelled') {
+        if (statusNode) statusNode.textContent = 'There is no active trial schedule to cancel.';
+        return;
+    }
+
+    const docId = activeSchedule._docId || collectionScheduleDocId(context, selectedInvoice);
+    const cancelled = {
+        ...activeSchedule,
+        status: 'Cancelled',
+        cancelled_at: toTimestampString(new Date()),
+        updated_at: toTimestampString(new Date()),
+        cancelled_by: getCurrentCollectorName()
+    };
+    const fields = {};
+    Object.entries(cancelled).forEach(([key, value]) => {
+        if (!key.startsWith('_')) fields[key] = toFirestoreWriteValue(value);
+    });
+
+    isSavingCollectorSchedule = true;
+    if (statusNode) statusNode.textContent = 'Cancelling schedule...';
+
+    try {
+        await firestoreSetDocument('marga_master_schedule', docId, fields);
+        currentCollectorWorkspace.activeSchedule = { ...cancelled, _docId: docId };
+
+        const content = document.getElementById('collectorCellContent');
+        if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+
+        const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Trial schedule cancelled.';
+    } catch (error) {
+        console.error('Failed to cancel collection schedule:', error);
+        if (statusNode) statusNode.textContent = 'Cancel failed. Please try again.';
+    } finally {
+        isSavingCollectorSchedule = false;
     }
 }
 
