@@ -10,8 +10,8 @@ Start every new Marga-App thread by reading:
 ## Current Focus
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
 - Keep Collections aligned to the Billing customer universe plus unpaid invoices.
-- Fix the live Collections matrix so month columns are actually reachable by mouse/trackpad/touch.
-- Fix Collections SN so it shows real serials, not fallback labels like `Machine 3616`.
+- Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
+- Collections SN/data display is acceptable in the dashboard as of the latest live check.
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
 
 ## Current Protected Baselines
@@ -25,24 +25,24 @@ Start every new Marga-App thread by reading:
   - `d186537` `Fix collection serials and coverage counts`
   - `ced7667` `Make collections matrix mobile scrollable`
   - `9feab79` `Add collection matrix drag scrollbar`
+  - `606509e` `Fix collections month matrix scrolling`
+  - `e0d2755` `Harden collections month auto scroll`
+  - `dbc320d` `Constrain collections matrix viewport`
 
-## Current Live Issue To Carry Into The Next Thread
-Reference the latest live observation:
-- Screenshot: `Screenshot 2026-04-20 at 11.10.02 PM.png`
+## Accepted Collections Matrix Format
+Reference the latest accepted live observation:
+- Screenshot: `Screenshot 2026-04-21 at 11.56.21 AM.png`
 
-What the user saw on the live Collections page:
-- The month-to-month collection matrix is still not practically scrollable.
-- User cannot drag left/right in a reliable way and still cannot reach the later month columns comfortably.
-- The SN column is still wrong in production. It still shows fallback values like:
-  - `Machine 3616`
-  - `Machine 3613`
-  - `Machine 3319`
-  - `Machine 3325`
+What now works and should be preserved:
+- Month matrix moves horizontally with the whole sheet, including RD, SN, customer, branch, months, and Total.
+- RD/SN/Customer/Branch are not horizontally sticky in Collections.
+- The view auto-anticipates newer/current months, showing windows such as February 2026 through December 2026.
+- Left/right arrows and `Latest` controls are visible above the matrix and usable.
+- The final right-side column is `Total`, and the user explicitly likes this format.
 
-What this means:
-- The deployed Collections page is still not meeting the requirement for horizontal month navigation.
-- The deployed SN resolver is still falling back to machine labels instead of showing real serial text.
-- Before changing more UI, confirm whether the live page is actually running the newest code and whether the row builder is still overwriting serials with `machineLabel`.
+Future reuse note:
+- This Collections matrix format is a candidate for Billing's month-to-month comparison later.
+- Do not port it to Billing casually; Billing save/print behavior is protected and must be regression-checked if Billing adopts this layout.
 
 ## Non-Negotiable Rules
 - Do not break the Billing dashboard presentation while fixing Collections.
@@ -89,21 +89,30 @@ Important Collections SN rule:
 ## Module Status Board
 | Module | Status | Current State | Next Safe Step |
 | --- | --- | --- | --- |
-| Billing | Protected / In Progress | Working save-first workflow, grouped RTP support, multimeter totals, search stability, Firebase print templates. | Keep protected while Collections resolver/scrolling is fixed. |
-| Collections | In Progress | Uses Billing-based coverage plus unpaid invoices, but live SN and horizontal scrolling are still wrong. | Fix live matrix usability and real serial display first. |
+| Billing | Protected / In Progress | Working save-first workflow, grouped RTP support, multimeter totals, search stability, Firebase print templates. | Consider adopting the accepted Collections matrix format only after separate Billing regression checks. |
+| Collections | Accepted / In Progress | Uses Billing-based coverage plus unpaid invoices. Matrix scroll format is accepted live: whole-sheet horizontal movement, visible arrows/Latest, Total at far right. | Preserve this format while continuing Collections parity work. |
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
 
 ## Next Actions
-1. Reproduce the live Collections issue from the latest screenshot before changing more code.
-2. Confirm the deployed page is serving commit `9feab79` or later.
-3. Audit the Collections row builder so `serialNumber` does not get replaced by `machineLabel`.
-4. Make horizontal month navigation obvious and reliable on the live page, not only in local mocks.
-5. Verify Billing UI still matches the protected baseline after any shared resolver changes.
+1. Preserve the accepted Collections matrix format as the reference implementation.
+2. If Billing month-to-month comparison is revisited, evaluate porting this exact format: whole-sheet movement, no sticky left columns, visible arrows/Latest, auto-current-month window, Total at far right.
+3. Keep Billing protected; any Billing matrix port needs separate live verification for save/print/invoice lookup behavior.
+4. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-21 - Collections Matrix Format Accepted
+- User confirmed the live Collections month-to-month matrix now works and is preferred over Billing's current matrix format.
+- Accepted behavior:
+  - no horizontally sticky RD/SN/Customer/Branch columns
+  - whole table moves horizontally
+  - arrows and `Latest` control work
+  - auto-scroll anticipates current/newer months
+  - far-right column is `Total`
+- Preserve this pattern as a candidate for future Billing matrix redesign.
+
 ### 2026-04-21 - Single Source Of Truth And Latest Collections Handoff
 - Merged the duplicated root/docs handoff and masterplan into one root `HANDOFF.md` and one root `MASTERPLAN.md`.
 - Retired the duplicate `docs/HANDOFF.md` and `docs/MASTERPLAN.md` so future threads do not read conflicting instructions.

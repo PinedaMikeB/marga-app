@@ -141,20 +141,24 @@ Collections matrix usability rule:
 - Actions must be obvious on desktop and mobile.
 - No critical controls should depend on hidden hover-only or OS-specific scroll behavior.
 - If a table is too wide, the app must provide a clear and usable way to reach the off-screen columns.
+- Accepted month-matrix pattern from Collections:
+  - move the whole sheet horizontally rather than freezing RD/SN/Customer/Branch
+  - show visible left/right and `Latest` controls above the matrix
+  - auto-position near current/newer months while preserving access to older months
+  - keep `Total` as the far-right terminal column
 
-## Current Known Live Concern
-From the latest Collections screenshot on 2026-04-20 11:10 PM:
-- collection matrix still feels non-scrollable in real use
-- SN still shows `Machine ####` in production
+## Current Known Live Status
+From the latest Collections screenshot on 2026-04-21 11:56 AM:
+- Collections month-to-month matrix scroll format is accepted by the user.
+- User likes it more than Billing's current month-to-month format.
+- Preserve this format for Collections and consider it for a future Billing matrix update.
 
-Until those are resolved, Collections cannot be treated as parity-ready.
+Collections still needs ongoing parity work, but the matrix navigation format itself is no longer the blocker.
 
 ## Safe Next Work Sequence
-1. Reproduce the live Collections problem first.
-2. Confirm deployed code version before assuming a logic bug.
-3. Fix SN resolution so it never prefers machine label over real serial.
-4. Fix live month-matrix interaction so the user can actually reach right-side months.
-5. Re-verify Billing presentation after any shared resolver/UI changes.
+1. Preserve the accepted Collections month-matrix format.
+2. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
+3. Re-verify Billing presentation after any Billing matrix changes.
 
 ## Rollback Reference
 - `8df832d`: current protected Billing baseline
