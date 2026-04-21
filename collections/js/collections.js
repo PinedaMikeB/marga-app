@@ -557,6 +557,16 @@ function updateCollectorHorizontalScrollbar() {
     track.setAttribute('aria-valuenow', String(percent));
 }
 
+function fitCollectorMatrixViewport() {
+    const container = document.getElementById('collector-matrix-table');
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const rightGutter = window.innerWidth <= 900 ? 12 : 28;
+    const availableWidth = Math.max(320, Math.floor(window.innerWidth - rect.left - rightGutter));
+    container.style.width = `${availableWidth}px`;
+    container.style.maxWidth = `${availableWidth}px`;
+}
+
 function setCollectorScrollFromTrack(clientX) {
     const container = document.getElementById('collector-matrix-table');
     const { track, thumb } = getCollectorScrollbarParts();
@@ -576,8 +586,11 @@ function setCollectorScrollFromTrack(clientX) {
 function scrollCollectorMatrix(direction) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
-    const delta = Math.max(220, Math.round(container.clientWidth * 0.62)) * direction;
-    container.scrollBy({ left: delta, behavior: 'smooth' });
+    fitCollectorMatrixViewport();
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+    const delta = Math.max(220, Math.round(container.clientWidth * 0.72)) * direction;
+    const nextLeft = Math.max(0, Math.min(maxScroll, container.scrollLeft + delta));
+    container.scrollTo({ left: nextLeft, behavior: 'smooth' });
     window.setTimeout(updateCollectorViewportRange, 220);
     window.setTimeout(updateCollectorHorizontalScrollbar, 220);
 }
@@ -591,6 +604,7 @@ function getCollectorLatestMonthKey(data) {
 function scrollCollectorMatrixToMonth(monthKey, options = {}) {
     const container = document.getElementById('collector-matrix-table');
     if (!container || !monthKey) return;
+    fitCollectorMatrixViewport();
     const header = Array.from(container.querySelectorAll('thead th[data-month-key]'))
         .find((node) => node.dataset.monthKey === monthKey);
     if (!header) return;
@@ -712,6 +726,7 @@ function bindCollectorMatrixViewport() {
         });
 
         window.addEventListener('resize', () => {
+            fitCollectorMatrixViewport();
             updateCollectorViewportRange();
             updateCollectorHorizontalScrollbar();
         });
@@ -719,6 +734,7 @@ function bindCollectorMatrixViewport() {
         collectorViewportBound = true;
     }
 
+    fitCollectorMatrixViewport();
     updateCollectorViewportRange();
     updateCollectorHorizontalScrollbar();
 }
