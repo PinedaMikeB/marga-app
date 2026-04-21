@@ -1363,7 +1363,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['invoice_id', 'payment_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number'],
+        fieldMask: ['invoice_id', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number'],
         maxPages: 260
     });
 
@@ -1377,11 +1377,14 @@ async function loadLookups() {
         }
 
         const amount = Number(getField(f, ['payment_amt']) || 0);
+        const balanceAmountRaw = getField(f, ['balance_amt']);
+        const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
         const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
         if (amount > 0 && paymentDate) {
             paymentEntries.push({
                 invoiceId: invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '',
                 amount,
+                balanceAmount,
                 paymentDate,
                 orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim()
             });
@@ -2590,6 +2593,8 @@ async function computeCollectorDashboardData() {
         if (!paymentMap.has(invoiceKey)) {
             paymentMap.set(invoiceKey, {
                 amount: 0,
+                isSettled: false,
+                latestBalanceAmount: null,
                 firstPaymentDate: null,
                 lastPaymentDate: null,
                 months: new Map()
@@ -2599,6 +2604,10 @@ async function computeCollectorDashboardData() {
         const summary = paymentMap.get(invoiceKey);
         const paymentDate = normalizeDate(entry.paymentDate);
         summary.amount += Number(entry.amount || 0);
+        if (entry.balanceAmount !== null && entry.balanceAmount !== undefined && Number.isFinite(Number(entry.balanceAmount))) {
+            summary.latestBalanceAmount = Number(entry.balanceAmount);
+            if (Number(entry.balanceAmount) <= 0.01) summary.isSettled = true;
+        }
 
         if (paymentDate && (!summary.firstPaymentDate || paymentDate < summary.firstPaymentDate)) {
             summary.firstPaymentDate = paymentDate;
@@ -2652,6 +2661,8 @@ async function computeCollectorDashboardData() {
             paymentMap.get(String(record.invoiceId || '').trim()) ||
             paymentMap.get(String(record.invoiceNo || '').trim()) || {
                 amount: 0,
+                isSettled: false,
+                latestBalanceAmount: null,
                 firstPaymentDate: null,
                 lastPaymentDate: null,
                 months: new Map()
@@ -2701,14 +2712,18 @@ async function computeCollectorDashboardData() {
 
         if (invoiceMonthVisible) {
             const invoiceCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(record.monthKey));
+            const paidAgainstInvoice = paymentSummary.isSettled
+                ? Number(record.amount || 0)
+                : Math.min(Number(paymentSummary.amount || 0), Number(record.amount || 0));
             invoiceCell.rdValues.push(record.rd);
             invoiceCell.billedTotal += Number(record.amount || 0);
+            invoiceCell.collectedTotal += paidAgainstInvoice;
             invoiceCell.displayBilledTotal = Math.max(Number(invoiceCell.displayBilledTotal || 0), Number(invoiceCell.billedTotal || 0));
             upsertCollectorCellRecord(invoiceCell, record.invoiceKey, {
                 ...record,
                 amount: Number(record.amount || 0),
                 billedAmount: Number(record.amount || 0),
-                collectedAmount: 0,
+                collectedAmount: paidAgainstInvoice,
                 totalCollectedAmount: Number(paymentSummary.amount || 0),
                 expectedCollectionDate: addDays(record.invoiceDate, 30),
                 firstPaymentDate: paymentSummary.firstPaymentDate,
@@ -2737,26 +2752,28 @@ async function computeCollectorDashboardData() {
             accountRow.months[carryoverMonthKey] = carryoverCell.id;
         }
 
-        paymentMonthsInWindow.forEach((monthKey) => {
-            const monthSummary = paymentSummary.months.get(monthKey);
-            const paymentCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(monthKey));
-            paymentCell.rdValues.push(record.rd);
-            paymentCell.collectedTotal += Number(monthSummary?.amount || 0);
-            upsertCollectorCellRecord(paymentCell, record.invoiceKey, {
-                ...record,
-                amount: Number(record.amount || 0),
-                billedAmount: 0,
-                collectedAmount: Number(monthSummary?.amount || 0),
-                totalCollectedAmount: Number(paymentSummary.amount || 0),
-                expectedCollectionDate: addDays(record.invoiceDate, 30),
-                firstPaymentDate: monthSummary?.firstPaymentDate || paymentSummary.firstPaymentDate,
-                lastPaymentDate: monthSummary?.lastPaymentDate || paymentSummary.lastPaymentDate,
-                paymentMonthKey: monthKey,
-                paymentOrNumbers: Array.from(monthSummary?.orNumbers || []),
-                rd: record.rd
+        paymentMonthsInWindow
+            .filter(() => !invoiceMonthVisible)
+            .forEach((monthKey) => {
+                const monthSummary = paymentSummary.months.get(monthKey);
+                const paymentCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(monthKey));
+                paymentCell.rdValues.push(record.rd);
+                paymentCell.collectedTotal += Number(monthSummary?.amount || 0);
+                upsertCollectorCellRecord(paymentCell, record.invoiceKey, {
+                    ...record,
+                    amount: Number(record.amount || 0),
+                    billedAmount: 0,
+                    collectedAmount: Number(monthSummary?.amount || 0),
+                    totalCollectedAmount: Number(paymentSummary.amount || 0),
+                    expectedCollectionDate: addDays(record.invoiceDate, 30),
+                    firstPaymentDate: monthSummary?.firstPaymentDate || paymentSummary.firstPaymentDate,
+                    lastPaymentDate: monthSummary?.lastPaymentDate || paymentSummary.lastPaymentDate,
+                    paymentMonthKey: monthKey,
+                    paymentOrNumbers: Array.from(monthSummary?.orNumbers || []),
+                    rd: record.rd
+                });
+                accountRow.months[monthKey] = paymentCell.id;
             });
-            accountRow.months[monthKey] = paymentCell.id;
-        });
     });
 
     billingMatrix.rowMap.forEach((billingRow) => {
