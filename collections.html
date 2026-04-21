@@ -824,35 +824,34 @@
             background: rgba(239, 246, 255, 0.68);
         }
 
-        .collector-sheet td.sticky-col,
-        .collector-sheet th.sticky-col {
+        .collector-sheet td.sticky-col {
             position: static;
             z-index: 1;
             background: rgba(255, 255, 255, 0.97);
         }
 
         .collector-sheet th.sticky-col {
+            position: sticky;
+            top: 0;
+            left: auto;
             z-index: 3;
             background: rgba(226, 236, 250, 0.98);
         }
 
         .collector-sheet td.sticky-col.sn,
         .collector-sheet th.sticky-col.sn {
-            left: var(--collector-rd-col);
             min-width: var(--collector-sn-col);
             width: var(--collector-sn-col);
         }
 
         .collector-sheet td.sticky-col.customer,
         .collector-sheet th.sticky-col.customer {
-            left: calc(var(--collector-rd-col) + var(--collector-sn-col));
             min-width: var(--collector-customer-col);
             width: var(--collector-customer-col);
         }
 
         .collector-sheet td.sticky-col.branch,
         .collector-sheet th.sticky-col.branch {
-            left: calc(var(--collector-rd-col) + var(--collector-sn-col) + var(--collector-customer-col));
             min-width: var(--collector-branch-col);
             width: var(--collector-branch-col);
         }
@@ -2222,18 +2221,15 @@
             }
 
             .collector-sheet td.sticky-col.sn,
-            .collector-sheet th.sticky-col.sn,
             .collector-sheet td.sticky-col.customer,
-            .collector-sheet th.sticky-col.customer,
-            .collector-sheet td.sticky-col.branch,
-            .collector-sheet th.sticky-col.branch {
+            .collector-sheet td.sticky-col.branch {
                 position: static;
                 left: auto;
             }
 
             .collector-sheet td.sticky-col.rd,
             .collector-sheet th.sticky-col.rd {
-                left: 0;
+                left: auto;
                 z-index: 4;
             }
 
