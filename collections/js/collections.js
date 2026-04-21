@@ -2661,12 +2661,20 @@ async function computeCollectorDashboardData() {
     const accountSetByMonth = new Map();
     const accountRowsMap = new Map();
     const monthTotals = {};
+    const paymentMonthTotals = {};
     const pendingCountsByMonth = {};
     collectorCellMap = new Map();
 
     monthColumns.forEach((column) => {
         monthTotals[column.key] = 0;
+        paymentMonthTotals[column.key] = 0;
         pendingCountsByMonth[column.key] = 0;
+    });
+
+    paymentEntries.forEach((entry) => {
+        const paymentMonthKey = getMonthKey(entry.paymentDate);
+        if (!paymentMonthKey || !Object.prototype.hasOwnProperty.call(paymentMonthTotals, paymentMonthKey)) return;
+        paymentMonthTotals[paymentMonthKey] += Number(entry.amount || 0);
     });
 
     collectorBillingRecords.forEach((record) => {
@@ -2933,6 +2941,7 @@ async function computeCollectorDashboardData() {
         customerRows,
         monthlySummaryRows,
         monthTotals,
+        paymentMonthTotals,
         pendingCountsByMonth,
         pendingCellCount,
         windowStart,
@@ -3084,12 +3093,12 @@ function renderCollectorMatrixTable(data, visibleRows) {
                 <tr>
                     <td class="sticky-col rd total-cell"></td>
                     <td class="sticky-col sn total-cell"></td>
-                    <td class="sticky-col customer total-cell text-left">Total</td>
+                    <td class="sticky-col customer total-cell text-left">Payment Total</td>
                     <td class="sticky-col branch total-cell"></td>
                     ${data.monthColumns
-                        .map((column) => `<td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.monthTotals[column.key] || 0))}</td>`)
+                        .map((column) => `<td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.paymentMonthTotals?.[column.key] || 0))}</td>`)
                         .join('')}
-                    <td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.customerRows.reduce((sum, row) => sum + row.totalCollected, 0)))}</td>
+                    <td class="total-cell text-right">${escapeHtml(formatPlainNumber(Object.values(data.paymentMonthTotals || {}).reduce((sum, value) => sum + Number(value || 0), 0)))}</td>
                 </tr>
             </tfoot>
         </table>
@@ -3112,7 +3121,7 @@ function renderCollectorDashboardFromData(data) {
         const filterText = searchTerm
             ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Payment colors are finalized from Billing invoice month plus Collection payment balance. Click cells to review invoices and continue collection remarks.`;
+        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Footer payment totals use actual payment dates from Collection payment records.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
