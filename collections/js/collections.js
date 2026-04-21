@@ -44,6 +44,33 @@ let collectorBillingMatrixPromise = null;
 let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
+let collectionWorkspaceLookupsLoaded = false;
+let collectionWorkspaceLookupsPromise = null;
+let collectionProfileByBranchId = new Map();
+let collectionProfileOverrides = new Map();
+let collectionStatusOptions = [];
+let troubleLookupMap = new Map();
+let employeeLookupMap = new Map();
+let serviceHistoryCache = new Map();
+let currentCollectorWorkspace = null;
+let isSavingCollectorFollowup = false;
+let isSavingCollectorProfileOverride = false;
+
+const DEFAULT_COLLECTION_STATUSES = [
+    { id: 1, label: 'Missing' },
+    { id: 2, label: 'Consolidating' },
+    { id: 3, label: 'For Approval' },
+    { id: 4, label: 'Voucher Preparation' },
+    { id: 5, label: 'For Signing' },
+    { id: 6, label: 'Check for Pick-up' },
+    { id: 7, label: 'On hold' },
+    { id: 8, label: 'Others' }
+];
+
+const COLLECTION_LOCATION_OPTIONS = [
+    { id: 1, key: 'end_user', label: 'End User' },
+    { id: 2, key: 'accounting', label: 'Accounting' }
+];
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -332,9 +359,12 @@ function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
             customer: rowMeta.customer,
             branchName: rowMeta.branchName,
             accountLabel: rowMeta.accountLabel,
+            companyId: rowMeta.companyId || '',
+            branchId: rowMeta.branchId || '',
             machineId: rowMeta.machineId,
             contractmainId: rowMeta.contractmainId,
             serialNumber: rowMeta.serialNumber,
+            modelName: rowMeta.modelName || '',
             machineLabel: rowMeta.machineLabel,
             monthKey: monthMeta.key,
             label: monthMeta.fullLabel || monthMeta.label || monthMeta.key,
@@ -370,12 +400,20 @@ function upsertCollectorCellRecord(cell, recordKey, payload) {
             company: payload.company || cell.customer,
             branch: payload.branch || cell.branchName,
             accountLabel: payload.accountLabel || cell.accountLabel,
+            companyId: payload.companyId || cell.companyId || '',
+            branchId: payload.branchId || cell.branchId || '',
             machineId: payload.machineId || cell.machineId,
             contractmainId: payload.contractmainId || cell.contractmainId,
             serialNumber: payload.serialNumber || cell.serialNumber,
+            modelName: payload.modelName || cell.modelName || '',
             machineLabel: payload.machineLabel || cell.machineLabel,
             invoiceDate: payload.invoiceDate || null,
             dueDate: payload.dueDate || null,
+            dateReceived: payload.dateReceived || null,
+            receivedBy: payload.receivedBy || '',
+            billingStatus: payload.billingStatus ?? null,
+            billingLocation: payload.billingLocation ?? null,
+            billingRemarks: payload.billingRemarks ?? null,
             expectedCollectionDate: payload.expectedCollectionDate || null,
             firstPaymentDate: payload.firstPaymentDate || null,
             lastPaymentDate: payload.lastPaymentDate || null,
@@ -391,11 +429,16 @@ function upsertCollectorCellRecord(cell, recordKey, payload) {
         current.totalCollectedAmount = Math.max(Number(current.totalCollectedAmount || 0), Number(payload.totalCollectedAmount || 0));
         current.branch = current.branch || payload.branch || cell.branchName;
         current.accountLabel = current.accountLabel || payload.accountLabel || cell.accountLabel;
+        current.companyId = current.companyId || payload.companyId || cell.companyId || '';
+        current.branchId = current.branchId || payload.branchId || cell.branchId || '';
         current.serialNumber = current.serialNumber || payload.serialNumber || cell.serialNumber;
+        current.modelName = current.modelName || payload.modelName || cell.modelName || '';
         current.machineLabel = current.machineLabel || payload.machineLabel || cell.machineLabel;
         current.rd = current.rd ?? payload.rd ?? null;
         if (!current.invoiceDate && payload.invoiceDate) current.invoiceDate = payload.invoiceDate;
         if (!current.dueDate && payload.dueDate) current.dueDate = payload.dueDate;
+        if (!current.dateReceived && payload.dateReceived) current.dateReceived = payload.dateReceived;
+        if (!current.receivedBy && payload.receivedBy) current.receivedBy = payload.receivedBy;
         if (!current.expectedCollectionDate && payload.expectedCollectionDate) current.expectedCollectionDate = payload.expectedCollectionDate;
         if (!current.firstPaymentDate || (payload.firstPaymentDate && payload.firstPaymentDate < current.firstPaymentDate)) {
             current.firstPaymentDate = payload.firstPaymentDate || current.firstPaymentDate;
@@ -849,6 +892,74 @@ async function firestoreCreate(collection, fields) {
     return response.json();
 }
 
+async function firestoreSetDocument(collection, docId, fields) {
+    const safeDocId = encodeURIComponent(String(docId || '').trim());
+    if (!safeDocId) throw new Error(`Missing document id for ${collection}`);
+
+    const url = `${BASE_URL}/${collection}/${safeDocId}?key=${encodeURIComponent(API_KEY)}`;
+    const response = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+    });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Failed to save ${collection}/${docId}: ${response.status} ${message.slice(0, 140)}`);
+    }
+
+    return response.json();
+}
+
+async function firestoreRunQuery(structuredQuery) {
+    const url = `${BASE_URL}:runQuery?key=${encodeURIComponent(API_KEY)}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structuredQuery })
+    });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Failed to query Firestore: ${response.status} ${message.slice(0, 140)}`);
+    }
+
+    const rows = await response.json();
+    return rows
+        .map((row) => row.document)
+        .filter(Boolean);
+}
+
+async function safeFirestoreGetAll(collection, statusCallback = null, options = {}) {
+    try {
+        return await firestoreGetAll(collection, statusCallback, options);
+    } catch (error) {
+        console.warn(`Unable to load optional collection ${collection}:`, error);
+        return [];
+    }
+}
+
+function toFirestoreWriteValue(value) {
+    if (value === null || value === undefined) return { stringValue: '' };
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value)) return { stringValue: '' };
+        if (Number.isInteger(value)) return { integerValue: String(value) };
+        return { doubleValue: value };
+    }
+    return { stringValue: String(value) };
+}
+
+function toFirestoreQueryValue(value) {
+    const raw = String(value || '').trim();
+    if (/^-?\d+$/.test(raw)) return { integerValue: raw };
+    return { stringValue: raw };
+}
+
+function getFirestoreDocumentId(doc) {
+    return String(doc?.name || '').split('/').pop() || '';
+}
+
 function monthNameToNumber(monthName) {
     const months = {
         january: 1,
@@ -1012,6 +1123,14 @@ async function loadCollectionHistory() {
             'followup_date',
             'next_followup',
             'schedule_status',
+            'status_id',
+            'location_id',
+            'location_label',
+            'ischecksigned',
+            'check_number',
+            'payment_amount',
+            'collection_id',
+            'employee_id',
             'remarks',
             'contact_person',
             'contact_number',
@@ -1043,10 +1162,19 @@ async function loadCollectionHistory() {
 
         const entry = {
             docId: doc.name || String(Math.random()),
+            invoiceKey,
             remarks: getField(f, ['remarks']) || 'No remarks',
             contactPerson: getField(f, ['contact_person']) || '-',
             contactNumber: getField(f, ['contact_number']) || '',
             scheduleStatus: getField(f, ['schedule_status']),
+            statusId: getField(f, ['status_id']),
+            locationId: getField(f, ['location_id']),
+            locationLabel: getField(f, ['location_label']),
+            isCheckSigned: Boolean(getField(f, ['ischecksigned'])),
+            checkNumber: getField(f, ['check_number']) || '',
+            paymentAmount: Number(getField(f, ['payment_amount']) || 0),
+            collectionId: getField(f, ['collection_id']),
+            employeeId: getField(f, ['employee_id']),
             followupDate,
             followupDateRaw,
             followupDateKey: toDateKey(followupDate),
@@ -1146,7 +1274,7 @@ async function loadLookups() {
             maxPages: 20
         }),
         firestoreGetAll('tbl_branchinfo', null, {
-            fieldMask: ['id', 'company_id', 'branchname'],
+            fieldMask: ['id', 'company_id', 'branchname', 'branch_address', 'bldg', 'floor', 'street', 'brgy', 'city', 'email'],
             maxPages: 30
         }),
         firestoreGetAll('tbl_contractmain', null, {
@@ -1177,8 +1305,18 @@ async function loadLookups() {
         if (!id) return;
 
         branchMap[id] = {
+            id,
             name: getField(f, ['branchname']) || 'Main',
-            companyId: String(getField(f, ['company_id']) || '').trim()
+            companyId: String(getField(f, ['company_id']) || '').trim(),
+            address: buildAddressText([
+                getField(f, ['branch_address']),
+                getField(f, ['bldg']),
+                getField(f, ['floor']),
+                getField(f, ['street']),
+                getField(f, ['brgy']),
+                getField(f, ['city'])
+            ]),
+            email: String(getField(f, ['email']) || '').trim()
         };
     });
 
@@ -1337,15 +1475,20 @@ function getBillingLocation(contractmainId) {
     const branch = resolveContractBranch(contract);
     const companyName = branch?.companyNameOverride || companyMap[String(branch?.companyId || '').trim()] || 'Unknown';
     const branchName = branch?.name || 'Main';
+    const machId = String(contract.machId || '').trim();
+    const machine = machineMap[machId] || {};
 
     return {
         companyName,
         branchName,
         accountLabel: buildAccountLabel(companyName, branchName),
         categoryCode: getCategoryCode(contract.categoryId),
-        machineId: String(contract.machId || '').trim(),
+        companyId: String(branch?.companyId || '').trim(),
+        branchId: String(branch?.id || '').trim(),
+        machineId: machId,
         contractmainId: String(contractmainId || '').trim(),
         serialNumber: resolveSerialLabel({ ...contract, id: contractmainId }),
+        modelName: String(machine.description || '').trim(),
         machineLabel: buildMachineLabel(contract.machId, contractmainId)
     };
 }
@@ -1392,6 +1535,8 @@ function processInvoice(doc) {
     const dueDate = getField(f, ['due_date']);
     const invoiceDateRaw = getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex']);
     const invoiceDate = normalizeDate(invoiceDateRaw);
+    const dateReceived = normalizeDate(getField(f, ['date_received']));
+    const receivedBy = String(getField(f, ['receivedby']) || '').trim();
     const billingContactNumber = getField(f, ['contact_number']) || '';
 
     const age = calculateAge(dueDate, month, year);
@@ -1416,14 +1561,22 @@ function processInvoice(doc) {
         invoiceDate,
         invoiceDateRaw,
         dueDate,
+        dateReceived,
+        receivedBy,
+        billingStatus: getField(f, ['status']),
+        billingLocation: getField(f, ['location']),
+        billingRemarks: getField(f, ['remarks']),
         age,
         priority: getPriority(age),
         company: location.companyName,
         branch: location.branchName,
         accountLabel: location.accountLabel,
+        companyId: location.companyId,
+        branchId: location.branchId,
         machineId: location.machineId,
         contractmainId: location.contractmainId,
         serialNumber: location.serialNumber,
+        modelName: location.modelName,
         machineLabel: location.machineLabel,
         contactNumber: billingContactNumber || historyContact || '',
         category: location.categoryCode,
@@ -1477,6 +1630,12 @@ async function loadInvoices(mode) {
                 'amount',
                 'vatamount',
                 'contact_number',
+                'date_received',
+                'receivedby',
+                'isreceived',
+                'status',
+                'location',
+                'remarks',
                 'dateprinted',
                 'date_printed',
                 'invdate',
@@ -1500,6 +1659,8 @@ async function loadInvoices(mode) {
             const invoiceNo = invoiceNoRaw !== null && invoiceNoRaw !== undefined ? String(invoiceNoRaw).trim() : '';
             const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
             const dueDate = normalizeDate(getField(f, ['due_date']));
+            const dateReceived = normalizeDate(getField(f, ['date_received']));
+            const receivedBy = String(getField(f, ['receivedby']) || '').trim();
             const amount = Number(getField(f, ['totalamount', 'amount']) || 0) + Number(getField(f, ['vatamount']) || 0);
             const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
             const location = getBillingLocation(contractmainId);
@@ -1524,12 +1685,20 @@ async function loadInvoices(mode) {
                     company: location.companyName,
                     branch: location.branchName,
                     accountLabel: location.accountLabel,
+                    companyId: location.companyId,
+                    branchId: location.branchId,
                     machineId: location.machineId,
                     contractmainId: location.contractmainId,
                     serialNumber: location.serialNumber,
+                    modelName: location.modelName,
                     machineLabel: location.machineLabel,
                     invoiceDate,
                     dueDate,
+                    dateReceived,
+                    receivedBy,
+                    billingStatus: getField(f, ['status']),
+                    billingLocation: getField(f, ['location']),
+                    billingRemarks: getField(f, ['remarks']),
                     amount,
                     rd: invoiceDate.getDate(),
                     monthKey: getMonthKey(invoiceDate)
@@ -2503,7 +2672,10 @@ async function computeCollectorDashboardData() {
                 customer: record.company || 'Unknown',
                 branchName: record.branch || 'Main',
                 accountLabel: record.accountLabel || record.company || 'Unknown',
+                companyId: record.companyId || '',
+                branchId: record.branchId || '',
                 serialNumber: normalizeSerialNumber(record.serialNumber),
+                modelName: record.modelName || '',
                 machineLabel: record.machineLabel || buildMachineLabel(record.machineId, record.contractmainId),
                 machineId: record.machineId || '',
                 contractmainId: record.contractmainId || '',
@@ -2515,6 +2687,9 @@ async function computeCollectorDashboardData() {
 
         const accountRow = accountRowsMap.get(rowId);
         if (!accountRow.serialNumber) accountRow.serialNumber = normalizeSerialNumber(record.serialNumber);
+        if (!accountRow.companyId) accountRow.companyId = record.companyId || '';
+        if (!accountRow.branchId) accountRow.branchId = record.branchId || '';
+        if (!accountRow.modelName) accountRow.modelName = record.modelName || '';
         accountRow.rdCounts.set(record.rd, (accountRow.rdCounts.get(record.rd) || 0) + 1);
 
         if (invoiceDateInBalanceWindow) {
@@ -2594,7 +2769,10 @@ async function computeCollectorDashboardData() {
                 customer: billingRow.company_name || billingRow.account_name || 'Unknown',
                 branchName: billingRow.branch_name || 'Main',
                 accountLabel: billingRow.account_name || billingRow.company_name || 'Unknown',
+                companyId: String(billingRow.company_id || '').trim(),
+                branchId: String(billingRow.branch_id || '').trim(),
                 serialNumber: normalizeSerialNumber(billingRow.serial_number),
+                modelName: String(billingRow.billing_profile?.model_name || billingRow.billing_profile?.model || '').trim(),
                 machineLabel: billingRow.machine_label || buildMachineLabel(billingRow.machine_id, billingRow.contractmain_id),
                 machineId: String(billingRow.machine_id || '').trim(),
                 contractmainId: String(billingRow.contractmain_id || '').trim(),
@@ -2606,6 +2784,9 @@ async function computeCollectorDashboardData() {
 
         const accountRow = accountRowsMap.get(rowId);
         if (!accountRow.serialNumber) accountRow.serialNumber = normalizeSerialNumber(billingRow.serial_number);
+        if (!accountRow.companyId) accountRow.companyId = String(billingRow.company_id || '').trim();
+        if (!accountRow.branchId) accountRow.branchId = String(billingRow.branch_id || '').trim();
+        if (!accountRow.modelName) accountRow.modelName = String(billingRow.billing_profile?.model_name || billingRow.billing_profile?.model || '').trim();
         const readingDay = Number(billingRow.reading_day || 0) || null;
         if (readingDay) accountRow.rdCounts.set(readingDay, (accountRow.rdCounts.get(readingDay) || 0) + 1);
 
@@ -2659,12 +2840,15 @@ async function computeCollectorDashboardData() {
             });
 
             return {
-                rowId: row.rowId,
-                customer: row.customer,
-                branchName: row.branchName,
-                accountLabel: row.accountLabel,
-                serialNumber: normalizeSerialNumber(row.serialNumber),
-                machineLabel: row.machineLabel,
+            rowId: row.rowId,
+            customer: row.customer,
+            branchName: row.branchName,
+            accountLabel: row.accountLabel,
+            companyId: row.companyId,
+            branchId: row.branchId,
+            serialNumber: normalizeSerialNumber(row.serialNumber),
+            modelName: row.modelName,
+            machineLabel: row.machineLabel,
                 machineId: row.machineId,
                 contractmainId: row.contractmainId,
                 rd,
@@ -2901,7 +3085,730 @@ async function renderCollectorDashboard() {
     }
 }
 
-function openCollectorCell(cellId) {
+function buildAddressText(parts) {
+    const seen = new Set();
+    return (parts || [])
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .filter((part) => {
+            const key = part.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .join(', ');
+}
+
+function documentFieldsToPlain(doc) {
+    const plain = {
+        _docId: getFirestoreDocumentId(doc),
+        _docName: doc?.name || ''
+    };
+
+    Object.entries(doc?.fields || {}).forEach(([key, value]) => {
+        plain[key] = getValue(value);
+    });
+
+    return plain;
+}
+
+function normalizeLookupId(value) {
+    const raw = String(value || '').trim();
+    return raw || '';
+}
+
+function collectionProfileOverrideDocId(context) {
+    const branchId = normalizeLookupId(context?.branchId);
+    if (branchId && !branchId.startsWith('unlinked:')) return `branch_${branchId}`;
+
+    const contractId = normalizeLookupId(context?.contractmainId);
+    if (contractId) return `contract_${contractId}`;
+
+    return `account_${String(context?.rowId || context?.accountLabel || context?.customer || 'unknown')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 90) || 'unknown'}`;
+}
+
+function getCollectionOverrideForContext(context) {
+    return collectionProfileOverrides.get(collectionProfileOverrideDocId(context)) || null;
+}
+
+function upsertCollectionProfileOverride(context, override) {
+    const docId = collectionProfileOverrideDocId(context);
+    collectionProfileOverrides.set(docId, {
+        ...(collectionProfileOverrides.get(docId) || {}),
+        ...override,
+        _docId: docId
+    });
+}
+
+function getCollectionProfileForContext(context) {
+    const branchId = normalizeLookupId(context?.branchId);
+    if (branchId && collectionProfileByBranchId.has(branchId)) return collectionProfileByBranchId.get(branchId);
+    return null;
+}
+
+function getProfileField(profile, override, overrideField, legacyFields, fallback = '') {
+    const overrideValue = override && override[overrideField];
+    if (overrideValue !== null && overrideValue !== undefined && String(overrideValue).trim() !== '') {
+        return overrideValue;
+    }
+
+    for (const field of legacyFields) {
+        const value = profile && profile[field];
+        if (value !== null && value !== undefined && String(value).trim() !== '') return value;
+    }
+
+    return fallback;
+}
+
+function getCollectionAddress(context, profile, override) {
+    const branch = branchMap[normalizeLookupId(context?.branchId)] || {};
+    return getProfileField(profile, override, 'collection_address', ['releaseadd', 'collection_address'], branch.address || '');
+}
+
+function getCollectionLocationLabel(locationId, locationLabel = '') {
+    const explicit = String(locationLabel || '').trim();
+    if (explicit) return explicit;
+    const found = COLLECTION_LOCATION_OPTIONS.find((option) => Number(option.id) === Number(locationId));
+    return found ? found.label : '-';
+}
+
+function getCollectionStatusLabel(statusId) {
+    const found = collectionStatusOptions.find((status) => Number(status.id) === Number(statusId));
+    return found ? found.label : '-';
+}
+
+function getCollectionContactRows(profile, override) {
+    const rows = [
+        ['ACCOUNTING', 'acctcon', 'acctnum'],
+        ['CASHIER', 'cashcon', 'cashnum'],
+        ['TREASURY', 'treascon', 'treasnum'],
+        ['RELEASING', 'releasecon', 'releasenum']
+    ].map(([location, nameField, numberField]) => ({
+        location,
+        name: String(profile?.[nameField] || '').trim(),
+        number: String(profile?.[numberField] || '').trim()
+    }));
+
+    const overrideName = String(override?.contact_person || '').trim();
+    const overrideNumber = String(override?.contact_number || '').trim();
+    if (overrideName || overrideNumber) {
+        rows.unshift({
+            location: 'WEB OVERRIDE',
+            name: overrideName,
+            number: overrideNumber
+        });
+    }
+
+    return rows.filter((row) => row.name || row.number);
+}
+
+async function loadCollectionWorkspaceLookups() {
+    if (collectionWorkspaceLookupsLoaded) return;
+    if (collectionWorkspaceLookupsPromise) return collectionWorkspaceLookupsPromise;
+
+    collectionWorkspaceLookupsPromise = (async () => {
+        const [profileDocs, statusDocs, overrideDocs, troubleDocs, employeeDocs] = await Promise.all([
+            safeFirestoreGetAll('tbl_collectioninfo', null, {
+                fieldMask: [
+                    'id',
+                    'branch_id',
+                    'acctcon',
+                    'acctnum',
+                    'cashcon',
+                    'cashnum',
+                    'treascon',
+                    'treasnum',
+                    'releasecon',
+                    'releasenum',
+                    'releaseadd',
+                    'collection_days',
+                    'collection_hours',
+                    'followup_days',
+                    'followup_time',
+                    'time_from',
+                    'time_to',
+                    'last_contact'
+                ],
+                maxPages: 80
+            }),
+            safeFirestoreGetAll('tbl_collectionstatus', null, {
+                fieldMask: ['id', 'status', 'statusname', 'description', 'name'],
+                maxPages: 10
+            }),
+            safeFirestoreGetAll('marga_collection_profiles', null, {
+                maxPages: 20
+            }),
+            safeFirestoreGetAll('tbl_trouble', null, {
+                fieldMask: ['id', 'trouble', 'description', 'trouble_name', 'name'],
+                maxPages: 20
+            }),
+            safeFirestoreGetAll('tbl_employee', null, {
+                fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name'],
+                maxPages: 40
+            })
+        ]);
+
+        collectionProfileByBranchId = new Map();
+        profileDocs.forEach((doc) => {
+            const profile = documentFieldsToPlain(doc);
+            const branchId = normalizeLookupId(profile.branch_id);
+            if (!branchId) return;
+            collectionProfileByBranchId.set(branchId, profile);
+        });
+
+        collectionStatusOptions = statusDocs
+            .map((doc) => {
+                const row = documentFieldsToPlain(doc);
+                return {
+                    id: Number(row.id || 0),
+                    label: String(row.status || row.statusname || row.description || row.name || '').trim()
+                };
+            })
+            .filter((row) => row.id && row.label)
+            .sort((a, b) => a.id - b.id);
+        if (!collectionStatusOptions.length) collectionStatusOptions = [...DEFAULT_COLLECTION_STATUSES];
+
+        collectionProfileOverrides = new Map();
+        overrideDocs.forEach((doc) => {
+            const override = documentFieldsToPlain(doc);
+            const docId = override._docId;
+            if (docId) collectionProfileOverrides.set(docId, override);
+        });
+
+        troubleLookupMap = new Map();
+        troubleDocs.forEach((doc) => {
+            const row = documentFieldsToPlain(doc);
+            const id = normalizeLookupId(row.id);
+            const label = String(row.trouble || row.description || row.trouble_name || row.name || '').trim();
+            if (id && label) troubleLookupMap.set(id, label);
+        });
+
+        employeeLookupMap = new Map();
+        employeeDocs.forEach((doc) => {
+            const row = documentFieldsToPlain(doc);
+            const id = normalizeLookupId(row.id);
+            const name = buildAddressText([row.nickname, `${row.firstname || ''} ${row.lastname || ''}`.trim(), row.name]);
+            if (id && name) employeeLookupMap.set(id, name);
+        });
+
+        collectionWorkspaceLookupsLoaded = true;
+        collectionWorkspaceLookupsPromise = null;
+    })();
+
+    return collectionWorkspaceLookupsPromise;
+}
+
+function resolveCollectorCellContext(cell) {
+    const firstRecord = (cell.records || [])[0] || {};
+    return {
+        cellId: cell.id,
+        rowId: cell.rowId,
+        customer: cell.customer || firstRecord.company || 'Unknown',
+        branchName: cell.branchName || firstRecord.branch || 'Main',
+        accountLabel: cell.accountLabel || firstRecord.accountLabel || cell.customer || 'Unknown',
+        companyId: normalizeLookupId(cell.companyId || firstRecord.companyId),
+        branchId: normalizeLookupId(cell.branchId || firstRecord.branchId),
+        contractmainId: normalizeLookupId(cell.contractmainId || firstRecord.contractmainId),
+        machineId: normalizeLookupId(cell.machineId || firstRecord.machineId),
+        serialNumber: normalizeSerialNumber(cell.serialNumber || firstRecord.serialNumber),
+        modelName: String(cell.modelName || firstRecord.modelName || '').trim(),
+        machineLabel: cell.machineLabel || firstRecord.machineLabel || '',
+        monthKey: cell.monthKey,
+        label: cell.label
+    };
+}
+
+function sameBranch(invoice, context) {
+    if (context.branchId && invoice.branchId && String(invoice.branchId) === String(context.branchId)) return true;
+    return normalizeText(invoice.branch) === normalizeText(context.branchName)
+        && normalizeText(invoice.company) === normalizeText(context.customer);
+}
+
+function sameCompany(invoice, context) {
+    if (context.companyId && invoice.companyId && String(invoice.companyId) === String(context.companyId)) return true;
+    return normalizeText(invoice.company) === normalizeText(context.customer);
+}
+
+function normalizeText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+function normalizeTimeInput(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const amPmMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (amPmMatch) {
+        let hour = Number(amPmMatch[1]);
+        const minute = amPmMatch[2];
+        const period = amPmMatch[3].toUpperCase();
+        if (period === 'PM' && hour < 12) hour += 12;
+        if (period === 'AM' && hour === 12) hour = 0;
+        return `${String(hour).padStart(2, '0')}:${minute}`;
+    }
+
+    const match = raw.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return '';
+
+    const hour = Math.min(23, Math.max(0, Number(match[1])));
+    return `${String(hour).padStart(2, '0')}:${match[2]}`;
+}
+
+function getRelatedUnpaidInvoices(context, scope) {
+    const matcher = scope === 'company' ? sameCompany : sameBranch;
+    return allInvoices
+        .filter((invoice) => matcher(invoice, context))
+        .sort((a, b) => {
+            const aTime = (a.invoiceDate || normalizeDate(a.dueDate) || new Date(0)).getTime();
+            const bTime = (b.invoiceDate || normalizeDate(b.dueDate) || new Date(0)).getTime();
+            return aTime - bTime;
+        });
+}
+
+function getSelectedInvoiceForCell(cell, context, branchInvoices) {
+    const candidateKeys = new Set();
+    (cell.records || []).forEach((record) => {
+        if (record.invoiceNo) candidateKeys.add(String(record.invoiceNo));
+        if (record.invoiceId) candidateKeys.add(String(record.invoiceId));
+        if (record.invoiceKey) candidateKeys.add(String(record.invoiceKey));
+    });
+
+    const exact = branchInvoices.find((invoice) => (
+        candidateKeys.has(String(invoice.invoiceNo))
+        || candidateKeys.has(String(invoice.invoiceId))
+        || candidateKeys.has(String(invoice.invoiceKey))
+    ));
+    if (exact) return exact;
+
+    if (cell.records?.length) {
+        const record = cell.records[0];
+        return {
+            ...record,
+            amount: Number(record.amount || record.billedAmount || 0),
+            company: record.company || context.customer,
+            branch: record.branch || context.branchName
+        };
+    }
+
+    return branchInvoices[0] || null;
+}
+
+function mergeInvoiceHistories(invoices, records = []) {
+    const keys = [];
+    invoices.forEach((invoice) => {
+        keys.push(invoice.invoiceNo, invoice.invoiceId, invoice.invoiceKey);
+    });
+    records.forEach((record) => {
+        keys.push(record.invoiceNo, record.invoiceId, record.invoiceKey);
+    });
+    return getHistoryForInvoice(...keys);
+}
+
+function queryScheduleByField(fieldPath, value) {
+    if (!value) return Promise.resolve([]);
+    return firestoreRunQuery({
+        from: [{ collectionId: 'tbl_schedule' }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath },
+                op: 'EQUAL',
+                value: toFirestoreQueryValue(value)
+            }
+        },
+        limit: 120
+    });
+}
+
+async function loadServiceDeliveryHistory(context) {
+    const cacheKey = `${context.branchId || 'branchless'}:${context.companyId || 'companyless'}`;
+    if (serviceHistoryCache.has(cacheKey)) return serviceHistoryCache.get(cacheKey);
+
+    const [branchDocs, companyDocs] = await Promise.all([
+        queryScheduleByField('branch_id', context.branchId).catch((error) => {
+            console.warn('Branch service history query failed:', error);
+            return [];
+        }),
+        queryScheduleByField('company_id', context.companyId).catch((error) => {
+            console.warn('Company service history query failed:', error);
+            return [];
+        })
+    ]);
+
+    const seen = new Set();
+    const rows = [...branchDocs, ...companyDocs]
+        .filter((doc) => {
+            const id = doc.name || '';
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        })
+        .map((doc) => {
+            const row = documentFieldsToPlain(doc);
+            const purposeId = Number(row.purpose_id || 0);
+            return {
+                scheduleId: row.id || getFirestoreDocumentId(doc),
+                purposeId,
+                trouble: troubleLookupMap.get(normalizeLookupId(row.trouble_id)) || row.trouble || row.problem || '-',
+                tech: employeeLookupMap.get(normalizeLookupId(row.tech_id)) || row.tech || '-',
+                taskDate: normalizeDate(row.task_datetime || row.task_date || row.scheduled || row.schedule_date || row.datex),
+                dateFinished: normalizeDate(row.date_finished || row.datefinished || row.finished_date),
+                remarks: row.remarks || row.action_taken || row.findings || ''
+            };
+        })
+        .filter((row) => row.purposeId !== 1)
+        .sort((a, b) => {
+            const aTime = (a.dateFinished || a.taskDate || new Date(0)).getTime();
+            const bTime = (b.dateFinished || b.taskDate || new Date(0)).getTime();
+            return bTime - aTime;
+        })
+        .slice(0, 20);
+
+    serviceHistoryCache.set(cacheKey, rows);
+    return rows;
+}
+
+async function buildCollectorFollowupWorkspace(cell) {
+    await loadCollectionWorkspaceLookups();
+
+    const context = resolveCollectorCellContext(cell);
+    const profile = getCollectionProfileForContext(context);
+    const override = getCollectionOverrideForContext(context);
+    const branchInvoices = getRelatedUnpaidInvoices(context, 'branch');
+    const companyInvoices = getRelatedUnpaidInvoices(context, 'company');
+    const selectedInvoice = getSelectedInvoiceForCell(cell, context, branchInvoices);
+    const invoiceHistory = mergeInvoiceHistories(
+        selectedInvoice ? [selectedInvoice, ...branchInvoices] : branchInvoices,
+        cell.records || []
+    );
+    const lastHistory = invoiceHistory[0] || null;
+    const serviceHistory = await loadServiceDeliveryHistory(context);
+
+    const branchBalance = branchInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
+    const companyBalance = companyInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
+    const selectedContact = lastHistory && hasMeaningfulContact(lastHistory.contactPerson)
+        ? lastHistory.contactPerson
+        : getCollectionContactRows(profile, override)[0]?.name || '';
+    const selectedContactNumber = lastHistory?.contactNumber
+        || getCollectionContactRows(profile, override)[0]?.number
+        || selectedInvoice?.contactNumber
+        || '';
+
+    return {
+        cell,
+        context,
+        profile,
+        override,
+        selectedInvoice,
+        branchInvoices,
+        companyInvoices,
+        invoiceHistory,
+        lastHistory,
+        serviceHistory,
+        branchBalance,
+        companyBalance,
+        selectedContact,
+        selectedContactNumber,
+        address: getCollectionAddress(context, profile, override)
+    };
+}
+
+function renderMiniInvoiceRows(invoices, emptyText) {
+    if (!invoices.length) {
+        return `<div class="collection-followup-empty">${escapeHtml(emptyText)}</div>`;
+    }
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Invoice #</th>
+                        <th>Branch</th>
+                        <th>Amount</th>
+                        <th>Month / Yr</th>
+                        <th>Rcvd By</th>
+                        <th>Date Rcvd</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${invoices.slice(0, 28).map((invoice) => `
+                        <tr>
+                            <td><input type="checkbox" checked aria-label="Selected invoice ${escapeHtml(invoice.invoiceNo || '')}"></td>
+                            <td>${escapeHtml(invoice.invoiceNo || invoice.invoiceId || '-')}</td>
+                            <td>${escapeHtml(invoice.branch || '-')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(invoice.amount || 0))}</td>
+                            <td>${escapeHtml(invoice.monthYear || '-')}</td>
+                            <td>${escapeHtml(invoice.receivedBy || '-')}</td>
+                            <td>${escapeHtml(formatDate(invoice.dateReceived))}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderHistoryRows(history) {
+    if (!history.length) return '<div class="collection-followup-empty">No invoice follow-up history yet.</div>';
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table">
+                <thead>
+                    <tr>
+                        <th>Invoice No.</th>
+                        <th>Date / Time</th>
+                        <th>Status</th>
+                        <th>Location</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${history.slice(0, 30).map((item) => `
+                        <tr>
+                            <td>${escapeHtml(item.invoiceKey || item.collectionId || '-')}</td>
+                            <td>${escapeHtml(formatDate(item.callDate))}</td>
+                            <td>${escapeHtml(getCollectionStatusLabel(item.statusId) || item.scheduleStatus || '-')}</td>
+                            <td>${escapeHtml(getCollectionLocationLabel(item.locationId, item.locationLabel))}</td>
+                            <td>${escapeHtml(item.remarks || '-')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderServiceRows(rows) {
+    if (!rows.length) return '<div class="collection-followup-empty">No recent service or delivery history found for this branch/company.</div>';
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table">
+                <thead>
+                    <tr>
+                        <th>Sched ID</th>
+                        <th>Trouble</th>
+                        <th>Tech</th>
+                        <th>Task Date</th>
+                        <th>Date Fnshd</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td>${escapeHtml(row.scheduleId || '-')}</td>
+                            <td>${escapeHtml(row.trouble || '-')}</td>
+                            <td>${escapeHtml(row.tech || '-')}</td>
+                            <td>${escapeHtml(formatDate(row.taskDate))}</td>
+                            <td>${escapeHtml(formatDate(row.dateFinished))}</td>
+                            <td>${escapeHtml(row.remarks || '-')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderCollectorFollowupWorkspace(workspace) {
+    const {
+        cell,
+        context,
+        profile,
+        override,
+        selectedInvoice,
+        branchInvoices,
+        companyInvoices,
+        invoiceHistory,
+        lastHistory,
+        serviceHistory,
+        branchBalance,
+        companyBalance,
+        selectedContact,
+        selectedContactNumber,
+        address
+    } = workspace;
+
+    const contacts = getCollectionContactRows(profile, override);
+    const defaultFollowup = toDateKey(lastHistory?.followupDate) || getTodayInputValue(1);
+    const statusId = Number(lastHistory?.statusId || 1);
+    const locationId = Number(lastHistory?.locationId || 1);
+    const fromTime = normalizeTimeInput(getProfileField(profile, override, 'collection_time_from', ['time_from'], ''));
+    const toTime = normalizeTimeInput(getProfileField(profile, override, 'collection_time_to', ['time_to'], ''));
+    const followupTime = normalizeTimeInput(getProfileField(profile, override, 'followup_time', ['followup_time'], ''));
+    const contactNo = selectedContactNumber || '';
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || selectedInvoice?.amount || 0);
+    const pendingAmount = Math.max(0, Number(branchBalance || billedTarget || 0));
+
+    return `
+        <div class="collection-followup-shell">
+            <section class="collection-followup-hero">
+                <div>
+                    <div class="collection-followup-kicker">Invoice No. ${escapeHtml(selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || 'No invoice linked')}</div>
+                    <h3>${escapeHtml(context.customer)}</h3>
+                    <p>Status: Active • Model: ${escapeHtml(context.modelName || selectedInvoice?.modelName || '-')} • Serial: ${escapeHtml(displaySerialNumber(context.serialNumber || selectedInvoice?.serialNumber))}</p>
+                </div>
+                <div class="collection-balance-card">
+                    <span>Branch Balance</span>
+                    <strong>${escapeHtml(formatCurrency(pendingAmount))}</strong>
+                    <em>Company open: ${escapeHtml(formatCurrency(companyBalance))}</em>
+                </div>
+            </section>
+
+            <section class="collection-followup-grid">
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Contacts</div>
+                    ${contacts.length ? `
+                        <table class="collection-contact-table">
+                            <thead><tr><th>Location</th><th>Contact</th><th>Contact No.</th><th></th></tr></thead>
+                            <tbody>
+                                ${contacts.map((row) => `
+                                    <tr data-contact-person="${escapeHtml(row.name)}" data-contact-number="${escapeHtml(row.number)}">
+                                        <td>${escapeHtml(row.location)}</td>
+                                        <td>${escapeHtml(row.name || '-')}</td>
+                                        <td>${escapeHtml(row.number || '-')}</td>
+                                        <td><button class="btn btn-secondary btn-sm" onclick="useCollectorContact(this)">Use</button></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<div class="collection-followup-empty">No contact profile found in collection info.</div>'}
+
+                    <div class="collection-followup-mini-form">
+                        <label>Collection Add.</label>
+                        <textarea id="collectorProfileAddress">${escapeHtml(address || '')}</textarea>
+                        <div class="collection-followup-two">
+                            <div>
+                                <label>Contact</label>
+                                <input id="collectorProfileContactPerson" type="text" value="${escapeHtml(selectedContact || '')}">
+                            </div>
+                            <div>
+                                <label>Contact #</label>
+                                <input id="collectorProfileContactNumber" type="text" value="${escapeHtml(contactNo)}">
+                            </div>
+                        </div>
+                        <div class="collection-followup-two">
+                            <div>
+                                <label>F/Up Days</label>
+                                <input id="collectorProfileFollowupDays" type="text" value="${escapeHtml(getProfileField(profile, override, 'followup_days', ['followup_days'], ''))}">
+                            </div>
+                            <div>
+                                <label>F/Up Time</label>
+                                <input id="collectorProfileFollowupTime" type="time" value="${escapeHtml(followupTime)}">
+                            </div>
+                        </div>
+                        <div class="collection-followup-two">
+                            <div>
+                                <label>Coll From</label>
+                                <input id="collectorProfileTimeFrom" type="time" value="${escapeHtml(fromTime)}">
+                            </div>
+                            <div>
+                                <label>Coll To</label>
+                                <input id="collectorProfileTimeTo" type="time" value="${escapeHtml(toTime)}">
+                            </div>
+                        </div>
+                        <label>Last Cntct</label>
+                        <input id="collectorProfileLastContact" type="text" value="${escapeHtml(getProfileField(profile, override, 'last_contact', ['last_contact'], lastHistory?.contactPerson || ''))}">
+                        <button class="btn btn-secondary btn-sm" onclick="saveCollectorProfileOverride()">Save Address / Policy Override</button>
+                        <span class="detail-save-status" id="collectorProfileSaveStatus">${override ? 'Web override active.' : 'Legacy profile loaded.'}</span>
+                    </div>
+                </div>
+
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Invoice State</div>
+                    <div class="collection-followup-facts">
+                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(branchBalance || billedTarget))}</strong></div>
+                        <div><span>Date Received</span><strong>${escapeHtml(formatDate(selectedInvoice?.dateReceived || selectedInvoice?.invoiceDate))}</strong></div>
+                        <div><span>Received By</span><strong>${escapeHtml(selectedInvoice?.receivedBy || '-')}</strong></div>
+                        <div><span>Invoice Month</span><strong>${escapeHtml(selectedInvoice?.monthYear || context.label || '-')}</strong></div>
+                    </div>
+                    <div class="collection-followup-form">
+                        <div>
+                            <label>Received By</label>
+                            <input id="collectorReceivedBy" type="text" value="${escapeHtml(selectedInvoice?.receivedBy || '')}">
+                        </div>
+                        <div>
+                            <label>Contact No.</label>
+                            <input id="collectorContactNumber" type="text" value="${escapeHtml(contactNo)}">
+                        </div>
+                        <div>
+                            <label>Status</label>
+                            <select id="collectorStatusId">
+                                ${collectionStatusOptions.map((status) => `<option value="${escapeHtml(status.id)}"${Number(status.id) === statusId ? ' selected' : ''}>${escapeHtml(status.label)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label>Inv. Location</label>
+                            <select id="collectorLocationId">
+                                ${COLLECTION_LOCATION_OPTIONS.map((option) => `<option value="${escapeHtml(option.id)}"${Number(option.id) === locationId ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label>Follow-up Date</label>
+                            <input id="collectorFollowupDate" type="date" value="${escapeHtml(defaultFollowup)}">
+                        </div>
+                        <div>
+                            <label>Coll Time</label>
+                            <input id="collectorCollectionTime" type="time" value="${escapeHtml(fromTime || followupTime || '')}">
+                        </div>
+                        <div class="full">
+                            <label>Remarks</label>
+                            <textarea id="collectorRemarks" placeholder="Write where the invoice is now, who was contacted, and the next action."></textarea>
+                        </div>
+                        <label class="collection-check-row"><input id="collectorCheckSigned" type="checkbox"${lastHistory?.isCheckSigned ? ' checked' : ''}> Check Signed</label>
+                        <div>
+                            <label>Check No.</label>
+                            <input id="collectorCheckNumber" type="text" value="${escapeHtml(lastHistory?.checkNumber || '')}">
+                        </div>
+                        <div>
+                            <label>Amount</label>
+                            <input id="collectorPaymentAmount" type="number" step="0.01" value="${lastHistory?.paymentAmount ? escapeHtml(lastHistory.paymentAmount) : ''}">
+                        </div>
+                        <div>
+                            <label>Last Cntct</label>
+                            <input id="collectorLastContact" type="text" value="${escapeHtml(lastHistory?.contactPerson || selectedContact || '')}">
+                        </div>
+                    </div>
+                    <div class="detail-form-actions">
+                        <button class="btn btn-primary" onclick="saveCollectorFollowup()">Save Follow-up</button>
+                        <span class="detail-save-status" id="collectorFollowupSaveStatus">Ready.</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="collection-followup-bottom">
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Branch Invoices</div>
+                    ${renderMiniInvoiceRows(branchInvoices, 'No unpaid branch invoices found in the current Collections data.')}
+                </div>
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Company Invoices</div>
+                    ${renderMiniInvoiceRows(companyInvoices, 'No unpaid company invoices found in the current Collections data.')}
+                </div>
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Invoice History</div>
+                    ${renderHistoryRows(invoiceHistory)}
+                </div>
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Service / Delivery History</div>
+                    ${renderServiceRows(serviceHistory)}
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+async function openCollectorCell(cellId) {
     const cell = collectorCellMap.get(String(cellId || '').trim());
     if (!cell) return;
 
@@ -2911,19 +3818,10 @@ function openCollectorCell(cellId) {
     const content = document.getElementById('collectorCellContent');
     if (!modal || !title || !subtitle || !content) return;
 
-    title.textContent = `${cell.customer} • ${cell.branchName || cell.accountLabel || 'Main'} • ${cell.label}`;
     const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
     const pendingAmount = Math.max(0, billedTarget - cell.collectedTotal);
-    if (cell.missedReading) {
-        subtitle.textContent = `No billed amount exists yet for ${cell.serialNumber || cell.machineLabel || 'this account'} in this month. This looks like a missed reading or missed billing month, so the collector can follow up with billing staff.`;
-    } else if (cell.collectedTotal > 0) {
-        subtitle.textContent = `Invoice worklist for ${cell.serialNumber || cell.machineLabel || 'this account'}. Use Open Call Log to continue the collector notes.`;
-    } else if (billedTarget > 0) {
-        subtitle.textContent = `No payment posted yet for ${cell.serialNumber || cell.machineLabel || 'this account'}. Billed amount follows the billing breakdown for this branch or department.`;
-    } else {
-        subtitle.textContent = `No payment posted yet for ${cell.serialNumber || cell.machineLabel || 'this account'}. Review invoices and continue the collection follow-up.`;
-    }
-
+    title.textContent = `${cell.customer} • ${cell.branchName || cell.accountLabel || 'Main'} • ${cell.label}`;
+    subtitle.textContent = `Loading collection profile, unpaid invoices, history, and service records for this follow-up.`;
     content.innerHTML = `
         <div class="cell-modal-summary">
             <div class="cell-modal-card">
@@ -2947,86 +3845,46 @@ function openCollectorCell(cellId) {
             ${cell.missedReading ? '<span class="collector-chip pending">Missed Reading</span>' : ''}
             ${cell.catchUpBilling ? `<span class="collector-chip viewport">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))} months)` : ''}</span>` : ''}
             ${cell.pendingBilling && !cell.missedReading ? '<span class="collector-chip pending">Pending Billing</span>' : ''}
-            ${cell.readingPagesTotal > 0 ? `<span class="collector-chip">Reading Pages: ${escapeHtml(formatPlainNumber(cell.readingPagesTotal))}</span>` : ''}
-            ${cell.readingTaskCount > 0 ? `<span class="collector-chip">Meter Forms: ${escapeHtml(formatPlainNumber(cell.readingTaskCount))}</span>` : ''}
-        </div>
-        <div class="cell-invoice-list">
-            ${cell.records.length
-                ? cell.records
-                .sort((a, b) => {
-                    const aTime = a.invoiceDate ? a.invoiceDate.getTime() : 0;
-                    const bTime = b.invoiceDate ? b.invoiceDate.getTime() : 0;
-                    return aTime - bTime;
-                })
-                .map((record) => {
-                    const history = getHistoryForInvoice(record.invoiceNo, record.invoiceId);
-                    const lastHistory = history.length ? history[0] : null;
-                    const lastRemarks = lastHistory ? lastHistory.remarks : 'No past collection remark yet.';
-                    const followup = lastHistory && lastHistory.followupDate ? formatDate(lastHistory.followupDate) : '-';
-                    const receiptLabel = record.paymentOrNumbers?.length ? record.paymentOrNumbers.join(', ') : 'None';
-                    const paymentPostedLabel = record.lastPaymentDate ? formatDate(record.lastPaymentDate) : 'None';
-
-                    return `
-                        <article class="cell-invoice-item">
-                            <div class="cell-invoice-head">
-                                <div>
-                                    <div class="cell-invoice-title">Invoice #${escapeHtml(record.invoiceNo || record.invoiceId || '-')}</div>
-                                    <div class="cell-invoice-meta">${escapeHtml(record.branch || 'Main')} • Received/Billed ${escapeHtml(formatDate(record.invoiceDate))}</div>
-                                </div>
-                                <div class="comparison-total-chip">${escapeHtml(formatCurrency(record.amount))}</div>
-                            </div>
-                            <div class="cell-invoice-grid">
-                                <div class="cell-modal-card">
-                                    <div class="label">Expected Collection</div>
-                                    <div class="value">${escapeHtml(formatDate(record.expectedCollectionDate || record.dueDate))}</div>
-                                </div>
-                                <div class="cell-modal-card">
-                                    <div class="label">Payment Posted</div>
-                                    <div class="value">${record.collectedAmount > 0 ? escapeHtml(formatCurrency(record.collectedAmount)) : 'None'}</div>
-                                </div>
-                                <div class="cell-modal-card">
-                                    <div class="label">Payment Date</div>
-                                    <div class="value">${escapeHtml(paymentPostedLabel)}</div>
-                                </div>
-                                <div class="cell-modal-card">
-                                    <div class="label">Official Receipt</div>
-                                    <div class="value">${escapeHtml(receiptLabel)}</div>
-                                </div>
-                                <div class="cell-modal-card">
-                                    <div class="label">Last Follow-up</div>
-                                    <div class="value">${escapeHtml(followup)}</div>
-                                </div>
-                            </div>
-                            <div class="cell-invoice-note">${escapeHtml(lastRemarks)}</div>
-                            <div class="cell-invoice-actions">
-                                <button class="btn btn-primary btn-sm" onclick="openCollectorInvoiceFromCell('${encodeURIComponent(record.invoiceKey)}')">Open Call Log</button>
-                            </div>
-                        </article>
-                    `;
-                })
-                .join('')
-                : `<article class="cell-invoice-item">
-                        <div class="cell-invoice-head">
-                            <div>
-                                <div class="cell-invoice-title">${cell.missedReading ? 'No invoice created yet' : 'No invoice record linked yet'}</div>
-                                <div class="cell-invoice-meta">${escapeHtml(cell.branchName || cell.accountLabel || 'Main')} • ${escapeHtml(cell.label)}</div>
-                            </div>
-                            <div class="comparison-total-chip">${escapeHtml(formatCurrency(billedTarget))}</div>
-                        </div>
-                        <div class="cell-invoice-note">${escapeHtml(
-                            cell.missedReading
-                                ? 'This month looks missed in billing. The collector can use this as a reminder to ask billing staff to complete the missing reading or billing.'
-                                : 'This branch has a billing breakdown amount from the billing dashboard, but no invoice record is linked in Collections yet.'
-                        )}</div>
-                    </article>`}
+            <span class="collector-chip">Preparing follow-up workspace...</span>
         </div>
     `;
 
     modal.classList.remove('hidden');
+
+    currentCollectorWorkspace = {
+        cell,
+        context: resolveCollectorCellContext(cell),
+        cellId: cell.id
+    };
+
+    try {
+        const workspace = await buildCollectorFollowupWorkspace(cell);
+        if (currentCollectorWorkspace?.cellId !== cell.id) return;
+        currentCollectorWorkspace = {
+            ...workspace,
+            cellId: cell.id
+        };
+
+        const selectedInvoice = workspace.selectedInvoice;
+        title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
+        subtitle.textContent = selectedInvoice
+            ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
+            : `Follow-up workspace`;
+        content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+    } catch (error) {
+        console.error('Failed to open collection follow-up workspace:', error);
+        subtitle.textContent = 'Collection follow-up workspace could not load completely.';
+        content.innerHTML += `
+            <div class="detail-last-remark">
+                <h4>Unable to load follow-up workspace</h4>
+                <p>Please refresh Collections and try again. No history or profile data was changed.</p>
+            </div>
+        `;
+    }
 }
 
 function openCollectorCellByToken(token) {
-    openCollectorCell(decodeURIComponent(String(token || '')));
+    void openCollectorCell(decodeURIComponent(String(token || '')));
 }
 
 function closeCollectorCellModal() {
@@ -3036,6 +3894,148 @@ function closeCollectorCellModal() {
 function openCollectorInvoiceFromCell(invoiceKey) {
     closeCollectorCellModal();
     viewInvoiceDetail(decodeURIComponent(String(invoiceKey || '')));
+}
+
+function useCollectorContact(button) {
+    const row = button?.closest?.('tr');
+    if (!row) return;
+
+    const person = row.dataset.contactPerson || '';
+    const number = row.dataset.contactNumber || '';
+    const followupContact = document.getElementById('collectorLastContact');
+    const profileContact = document.getElementById('collectorProfileContactPerson');
+    const profileNumber = document.getElementById('collectorProfileContactNumber');
+    const contactNumber = document.getElementById('collectorContactNumber');
+
+    if (followupContact) followupContact.value = person;
+    if (profileContact) profileContact.value = person;
+    if (profileNumber) profileNumber.value = number;
+    if (contactNumber) contactNumber.value = number;
+}
+
+async function saveCollectorProfileOverride() {
+    if (!currentCollectorWorkspace?.context || isSavingCollectorProfileOverride) return;
+
+    const statusNode = document.getElementById('collectorProfileSaveStatus');
+    const context = currentCollectorWorkspace.context;
+    const docId = collectionProfileOverrideDocId(context);
+
+    const override = {
+        branch_id: context.branchId || '',
+        company_id: context.companyId || '',
+        contractmain_id: context.contractmainId || '',
+        customer: context.customer || '',
+        branch: context.branchName || '',
+        collection_address: String(document.getElementById('collectorProfileAddress')?.value || '').trim(),
+        contact_person: String(document.getElementById('collectorProfileContactPerson')?.value || '').trim(),
+        contact_number: String(document.getElementById('collectorProfileContactNumber')?.value || '').trim(),
+        followup_days: String(document.getElementById('collectorProfileFollowupDays')?.value || '').trim(),
+        followup_time: String(document.getElementById('collectorProfileFollowupTime')?.value || '').trim(),
+        collection_time_from: String(document.getElementById('collectorProfileTimeFrom')?.value || '').trim(),
+        collection_time_to: String(document.getElementById('collectorProfileTimeTo')?.value || '').trim(),
+        last_contact: String(document.getElementById('collectorProfileLastContact')?.value || '').trim(),
+        updated_at: toTimestampString(new Date()),
+        source: 'collections_web_override'
+    };
+
+    isSavingCollectorProfileOverride = true;
+    if (statusNode) statusNode.textContent = 'Saving web override...';
+
+    try {
+        const fields = {};
+        Object.entries(override).forEach(([key, value]) => {
+            fields[key] = toFirestoreWriteValue(value);
+        });
+
+        await firestoreSetDocument('marga_collection_profiles', docId, fields);
+        upsertCollectionProfileOverride(context, override);
+
+        if (statusNode) statusNode.textContent = 'Saved as web override. Legacy collection info was not changed.';
+    } catch (error) {
+        console.error('Failed to save collection profile override:', error);
+        if (statusNode) statusNode.textContent = 'Override save failed. Follow-up history was not affected.';
+    } finally {
+        isSavingCollectorProfileOverride = false;
+    }
+}
+
+async function saveCollectorFollowup() {
+    if (!currentCollectorWorkspace || isSavingCollectorFollowup) return;
+
+    const statusNode = document.getElementById('collectorFollowupSaveStatus');
+    const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
+
+    if (!selectedInvoice?.invoiceNo && !selectedInvoice?.invoiceId) {
+        if (statusNode) statusNode.textContent = 'No invoice number is linked to this cell yet, so history cannot be saved.';
+        return;
+    }
+
+    const remarks = String(document.getElementById('collectorRemarks')?.value || '').trim();
+    const followupDate = String(document.getElementById('collectorFollowupDate')?.value || '').trim();
+    const collectionTime = String(document.getElementById('collectorCollectionTime')?.value || '').trim();
+    const contactPerson = String(document.getElementById('collectorLastContact')?.value || '').trim();
+    const contactNumber = String(document.getElementById('collectorContactNumber')?.value || '').trim();
+    const statusId = Number(document.getElementById('collectorStatusId')?.value || 0);
+    const locationId = Number(document.getElementById('collectorLocationId')?.value || 0);
+    const locationOption = COLLECTION_LOCATION_OPTIONS.find((option) => Number(option.id) === locationId);
+    const checkSigned = Boolean(document.getElementById('collectorCheckSigned')?.checked);
+    const checkNumber = String(document.getElementById('collectorCheckNumber')?.value || '').trim();
+    const paymentAmountRaw = String(document.getElementById('collectorPaymentAmount')?.value || '').trim();
+    const paymentAmount = paymentAmountRaw ? Number(paymentAmountRaw) : 0;
+
+    if (!remarks) {
+        if (statusNode) statusNode.textContent = 'Please enter remarks before saving.';
+        return;
+    }
+
+    if (!followupDate) {
+        if (statusNode) statusNode.textContent = 'Please set the next follow-up date.';
+        return;
+    }
+
+    const normalizedTime = collectionTime ? `${collectionTime.length === 5 ? collectionTime : collectionTime.slice(0, 5)}:00` : '00:00:00';
+
+    isSavingCollectorFollowup = true;
+    if (statusNode) statusNode.textContent = 'Saving follow-up history...';
+
+    try {
+        const invoiceNo = String(selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '').trim();
+        const invoiceId = String(selectedInvoice.invoiceId || selectedInvoice.invoiceNo || '').trim();
+        await firestoreCreate('tbl_collectionhistory', {
+            invoice_num: { stringValue: invoiceNo },
+            invoice_id: { stringValue: invoiceId },
+            remarks: { stringValue: remarks },
+            contact_person: { stringValue: contactPerson || '-' },
+            contact_number: { stringValue: contactNumber || '' },
+            followup_datetime: { stringValue: `${followupDate} ${normalizedTime}` },
+            timestamp: { stringValue: toTimestampString(new Date()) },
+            schedule_status: { integerValue: String(statusId || 0) },
+            status_id: { integerValue: String(statusId || 0) },
+            location_id: { integerValue: String(locationId || 0) },
+            location_label: { stringValue: locationOption?.label || '' },
+            ischecksigned: { booleanValue: checkSigned },
+            check_number: { stringValue: checkNumber },
+            payment_amount: { doubleValue: Number.isFinite(paymentAmount) ? paymentAmount : 0 }
+        });
+
+        await loadCollectionHistory();
+
+        const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
+        currentCollectorWorkspace = {
+            ...refreshed,
+            cellId: refreshed.cell.id
+        };
+
+        const content = document.getElementById('collectorCellContent');
+        if (content) content.innerHTML = renderCollectorFollowupWorkspace(refreshed);
+        const refreshedStatusNode = document.getElementById('collectorFollowupSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Follow-up history updated.';
+    } catch (error) {
+        console.error('Failed to save collection follow-up:', error);
+        if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
+    } finally {
+        isSavingCollectorFollowup = false;
+    }
 }
 
 function toggleAnalyticsDashboard(forceValue = null) {
