@@ -1745,6 +1745,7 @@ async function loadInvoices(mode) {
         rebuildInvoiceIndex();
         populateYearFilter(years);
 
+        collectorDashboardData = null;
         currentPage = 1;
         await recomputeFilteredInvoices();
 
@@ -3098,8 +3099,43 @@ function renderCollectorMatrixTable(data, visibleRows) {
     scheduleCollectorLatestScroll(data);
 }
 
-async function renderCollectorDashboard() {
+function renderCollectorDashboardFromData(data) {
+    if (!data) return null;
+
+    const visibleRows = prepareCollectorRows(data.customerRows);
+    renderCollectorSummaryTable(data);
+    renderCollectorMatrixTable(data, visibleRows);
+
+    const noteNode = document.getElementById('collector-dashboard-note');
+    if (noteNode) {
+        const searchTerm = getCollectorSearchTerm();
+        const filterText = searchTerm
+            ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
+            : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
+        noteNode.textContent = `${filterText} Payment colors are finalized from Billing invoice month plus Collection payment balance. Click cells to review invoices and continue collection remarks.`;
+    }
+
+    const rangeNode = document.getElementById('collector-dashboard-range');
+    if (rangeNode) {
+        rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.matrixEnd, true)}`;
+    }
+
+    const pendingNode = document.getElementById('collector-dashboard-pending');
+    if (pendingNode) {
+        pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
+    }
+
+    return data;
+}
+
+async function renderCollectorDashboard(options = {}) {
     const renderSeq = ++collectorDashboardRenderSeq;
+    const shouldRecompute = Boolean(options.recompute) || !collectorDashboardData;
+
+    if (!shouldRecompute) {
+        return renderCollectorDashboardFromData(collectorDashboardData);
+    }
+
     const noteNode = document.getElementById('collector-dashboard-note');
     const matrixNode = document.getElementById('collector-matrix-table');
     if (noteNode) {
@@ -3114,29 +3150,7 @@ async function renderCollectorDashboard() {
         if (renderSeq !== collectorDashboardRenderSeq) return null;
 
         collectorDashboardData = data;
-        const visibleRows = prepareCollectorRows(data.customerRows);
-        renderCollectorSummaryTable(data);
-        renderCollectorMatrixTable(data, visibleRows);
-
-        if (noteNode) {
-            const searchTerm = getCollectorSearchTerm();
-            const filterText = searchTerm
-                ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
-                : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-            noteNode.textContent = `${filterText} Payment colors are finalized from Billing invoice month plus Collection payment balance. Click cells to review invoices and continue collection remarks.`;
-        }
-
-        const rangeNode = document.getElementById('collector-dashboard-range');
-        if (rangeNode) {
-            rangeNode.textContent = `${formatMonthLabel(data.windowStart, true)} to ${formatMonthLabel(data.matrixEnd, true)}`;
-        }
-
-        const pendingNode = document.getElementById('collector-dashboard-pending');
-        if (pendingNode) {
-            pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
-        }
-
-        return data;
+        return renderCollectorDashboardFromData(data);
     } catch (error) {
         if (renderSeq !== collectorDashboardRenderSeq) return null;
         console.error('Collector dashboard render failed:', error);
