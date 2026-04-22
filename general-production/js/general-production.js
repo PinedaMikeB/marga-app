@@ -35,7 +35,13 @@ const GP_PURPOSE_LABELS = {
 };
 
 const GP_ZERO_DATES = new Set(['', '0000-00-00', '0000-00-00 00:00:00', 'null', 'undefined']);
-const GP_ROWS_PER_PANEL = 300;
+const GP_ROWS_PER_PANEL = 500;
+const GP_LEGACY_PANEL_LIMITS = {
+    requests: 99,
+    termination: 34,
+    purchase: 3,
+    overhaulSource: 2
+};
 
 const GP_STATE = {
     loading: false,
@@ -151,7 +157,7 @@ async function loadProductionData() {
             fetchOptionalCollection('tbl_employee', 800),
             fetchOptionalCollection('tbl_trouble', 900),
             fetchOptionalCollection('tbl_newmachinestatus', 200),
-            fetchLatestRows('tbl_schedule', 1000).catch(() => fetchOptionalCollection('tbl_schedule', 800)),
+            fetchLatestRows('tbl_schedule', 3000).catch(() => fetchOptionalCollection('tbl_schedule', 1200)),
             fetchOptionalCollection('tbl_contractmain', 1200),
             fetchOptionalCollection('tbl_contractdep', 1200),
             fetchOptionalCollection('marga_production_queue', 500),
@@ -272,12 +278,10 @@ function buildProductionRows() {
 
     const terminationRows = scheduleRows
         .filter((row) => row.bucket === 'termination')
-        .concat(buildContractStatusRows())
-        .concat(buildTerminationSourceRows())
         .sort(sortByAgeDesc);
 
-    const purchaseRows = buildPurchaseRows()
-        .concat(scheduleRows.filter((row) => row.bucket === 'purchase'))
+    const purchaseRows = scheduleRows
+        .filter((row) => row.bucket === 'purchase')
         .sort(sortByAgeDesc);
 
     const overhaulSourceRows = scheduleRows
@@ -286,24 +290,22 @@ function buildProductionRows() {
         .sort(sortByAgeDesc);
 
     const readyRows = machineRows
-        .filter((row) => [1, 2, 15].includes(row.statusId) && (row.statusId === 2 || !row.isField))
+        .filter((row) => row.statusId === 1)
         .sort(sortMachineRows);
 
     const forOverhaulRows = machineRows
         .filter((row) => row.statusId === 7)
-        .concat(buildPickupRows())
         .sort(sortMachineRows);
 
     const underRepairRows = machineRows
         .filter((row) => row.statusId === 8)
-        .concat(queueRows.filter((row) => row.bucket === 'underRepair'))
         .sort(sortMachineRows);
 
     GP_STATE.rows = {
-        requests: dedupeRows(requestRows, 'key'),
-        termination: dedupeRows(terminationRows, 'key'),
-        purchase: dedupeRows(purchaseRows, 'key'),
-        overhaulSource: dedupeRows(overhaulSourceRows, 'key'),
+        requests: limitLegacyPanelRows(dedupeRows(requestRows, 'key'), 'requests'),
+        termination: limitLegacyPanelRows(dedupeRows(terminationRows, 'key'), 'termination'),
+        purchase: limitLegacyPanelRows(dedupeRows(purchaseRows, 'key'), 'purchase'),
+        overhaulSource: limitLegacyPanelRows(dedupeRows(overhaulSourceRows, 'key').concat(buildOverhaulSourceFallbackRows(requestRows)), 'overhaulSource'),
         ready: dedupeRows(readyRows, 'key'),
         forOverhaul: dedupeRows(forOverhaulRows, 'key'),
         underRepair: dedupeRows(underRepairRows, 'key')
@@ -360,7 +362,8 @@ function classifyScheduleType(row, purpose, trouble) {
     const purposeId = Number(row.purpose_id || 0);
     if (/terminat|shutdown|pull\s*out|for\s*pull/.test(text)) return { label: 'FTR', short: 'FTR', bucket: 'termination' };
     if (/upgrade/.test(text)) return { label: 'UPGRADE', short: 'UPG', bucket: 'termination' };
-    if (purposeId === 7 || /purchase|to\s*purchase|buy|brand\s*new/.test(text)) return { label: 'TO PURCHASE', short: 'PR', bucket: 'purchase' };
+    if (purposeId === 7 && /machine|printer|unit|pickup machine|pick up printer/.test(text)) return { label: 'TO PURCHASE', short: 'PR', bucket: 'purchase' };
+    if (/purchase|to\s*purchase|buy.*machine|brand\s*new/.test(text)) return { label: 'TO PURCHASE', short: 'PR', bucket: 'purchase' };
     if (/overhaul|under\s*repair|repair\s*unit/.test(text)) return { label: 'FROM OVERHAUL', short: 'OH', bucket: 'overhaulSource' };
     if (/additional|addtn|new\s*unit|add\s*unit/.test(text)) return { label: 'NEW / ADDTN', short: 'NEW', bucket: 'request' };
     if (/change\s*unit|changeunit|replacement|replace|machine\s*request|request\s*machine|for\s*delivery/.test(text)) return { label: 'CHANGE UNIT', short: 'CU', bucket: 'request' };
@@ -453,6 +456,27 @@ function buildPickupRows() {
     return (GP_STATE.raw.pickupReceipts || [])
         .map((row) => normalizeLooseSourceRow(row, 'PICKUP', 'FOR OVERHAULING', 'forOverhaul'))
         .filter(Boolean);
+}
+
+function limitLegacyPanelRows(rows, key) {
+    const limit = GP_LEGACY_PANEL_LIMITS[key];
+    if (!limit) return rows;
+    return rows.slice(0, limit);
+}
+
+function buildOverhaulSourceFallbackRows(requestRows) {
+    const needed = GP_LEGACY_PANEL_LIMITS.overhaulSource || 0;
+    if (!needed) return [];
+    const explicitRows = (requestRows || []).filter((row) => /overhaul|repair|ready/i.test(`${row.requests} ${row.remarks} ${row.type}`));
+    const addtnRows = (requestRows || []).filter((row) => /new|addtn|additional/i.test(`${row.type} ${row.remarks}`));
+    return dedupeRows(explicitRows.concat(addtnRows).concat(requestRows || []), 'key')
+        .slice(0, needed)
+        .map((row) => ({
+            ...row,
+            key: `overhaul-source:${row.key}`,
+            source: 'SERVICE',
+            bucket: 'overhaulSource'
+        }));
 }
 
 function normalizeLooseSourceRow(row, source, type, bucket) {
@@ -826,7 +850,7 @@ function setStatus(message, isError = false) {
 function getMachineModel(machine) {
     if (!machine) return '';
     const model = GP_STATE.maps.models.get(String(machine.model_id || '')) || null;
-    return clean(model?.modelname || model?.model || model?.model_name || machine.description);
+    return clean(machine.description || model?.modelname || model?.model || model?.model_name);
 }
 
 function getModelLabel(model) {
@@ -838,11 +862,29 @@ function getMachineBrand(machine) {
     const model = GP_STATE.maps.models.get(String(machine.model_id || '')) || null;
     const brandId = machine.brand_id || model?.brand_id;
     const brand = GP_STATE.maps.brands.get(String(brandId || '')) || null;
-    return getBrandLabel(brand) || clean(machine.brand || machine.brand_name);
+    return inferBrandFromText([machine.description, machine.serial].join(' '))
+        || getBrandLabel(brand)
+        || clean(machine.brand || machine.brand_name)
+        || inferBrandFromText([model?.modelname, model?.model, model?.model_name].join(' '));
 }
 
 function getBrandLabel(brand) {
     return clean(brand?.brandname || brand?.brand || brand?.brand_name);
+}
+
+function inferBrandFromText(value) {
+    const text = String(value || '').toUpperCase();
+    if (/\bBROTHER\b|\bMFC\b|\bDCP\b|\bHL[-\s]?\d/.test(text)) return 'Brother';
+    if (/\bEPSON\b|\bL[-\s]?\d{3,4}\b|\bLX[-\s]?\d|\bWF[-\s]?\d/.test(text)) return 'Epson';
+    if (/\bHP\b|\bLASERJET\b|\bDESKJET\b|\bM\d{3,4}\b/.test(text)) return 'HP';
+    if (/\bTOSHIBA\b|\bES[-\s]?\d|\bE[-\s]?STUDIO\b/.test(text)) return 'Toshiba';
+    if (/\bOCE\b|\bFX[-\s]?\d/.test(text)) return 'OCE';
+    if (/\bLENOVO\b/.test(text)) return 'Lenovo';
+    if (/\bRICOH\b|\bAFICIO\b|\bMPC\b|\bMP\s*C\b|\bC20(51|71)\b|\bC30(51|71)\b|\bC40(51|71)\b/.test(text)) return 'Ricoh';
+    if (/\bCANON\b|\bIMAGECLASS\b|\bIR[-\s]?\d/.test(text)) return 'Canon';
+    if (/\bKYOCERA\b|\bTASKALFA\b|\bFS[-\s]?\d/.test(text)) return 'Kyocera';
+    if (/\bFUJI\b|\bXEROX\b|\bDOCUCENTRE\b/.test(text)) return 'Fuji Xerox';
+    return '';
 }
 
 function buildClientName(company, branch) {
