@@ -386,6 +386,18 @@ body {
     grid-column: 1 / -1;
 }
 
+.gp-machine-context {
+    margin: -0.2rem 0 0.15rem;
+    min-height: 1.25rem;
+    color: var(--gp-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.gp-machine-context strong {
+    color: var(--gp-ink);
+}
+
 .gp-radio-row {
     display: flex;
     flex-wrap: wrap;

@@ -35,6 +35,7 @@ const GP_PURPOSE_LABELS = {
 };
 
 const GP_ZERO_DATES = new Set(['', '0000-00-00', '0000-00-00 00:00:00', 'null', 'undefined']);
+const GP_SERIAL_STOPWORDS = /\b(PAYMENT|SERIAL|DUPLICATE|BUYER|ARROW)\b/i;
 const GP_ROWS_PER_PANEL = 500;
 const GP_LEGACY_PANEL_LIMITS = {
     requests: 99,
@@ -56,7 +57,8 @@ const GP_STATE = {
         companies: new Map(),
         employees: new Map(),
         troubles: new Map(),
-        contractDeps: new Map()
+        contractDeps: new Map(),
+        contractsByMachine: new Map()
     },
     statuses: GP_STATUS_FALLBACKS.slice(),
     rows: {
@@ -256,6 +258,7 @@ function buildLookupMaps() {
     GP_STATE.maps.employees = keyedMap(GP_STATE.raw.employees);
     GP_STATE.maps.troubles = keyedMap(GP_STATE.raw.troubles);
     GP_STATE.maps.contractDeps = keyedMap(GP_STATE.raw.contractDeps);
+    GP_STATE.maps.contractsByMachine = buildContractsByMachineMap(GP_STATE.raw.contracts);
 }
 
 function keyedMap(rows) {
@@ -264,6 +267,17 @@ function keyedMap(rows) {
             .map((row) => [String(row._docId || row.id || '').trim(), row])
             .filter(([id]) => id)
     );
+}
+
+function buildContractsByMachineMap(rows) {
+    const map = new Map();
+    (rows || []).forEach((contract) => {
+        const machineId = String(contract?.mach_id || contract?.machine_id || '').trim();
+        if (!machineId) return;
+        if (!map.has(machineId)) map.set(machineId, []);
+        map.get(machineId).push(contract);
+    });
+    return map;
 }
 
 function buildProductionRows() {
@@ -611,6 +625,8 @@ function passesFilters(row) {
 function populateMachineCheckerOptions() {
     populateStatusOptions();
     populateSerialOptions();
+    populateStatusModelOptions(null);
+    renderStatusMachineContext(null);
     populateBrandOptions();
     populateModelOptions();
     document.getElementById('newMachineDpInput').value = new Date().toISOString().slice(0, 10);
@@ -625,13 +641,50 @@ function populateStatusOptions() {
 
 function populateSerialOptions() {
     const datalist = document.getElementById('machineSerialOptions');
-    const options = (GP_STATE.raw.machines || [])
-        .filter((machine) => clean(machine.serial))
-        .sort((left, right) => clean(left.serial).localeCompare(clean(right.serial)))
-        .slice(0, 1400);
-    datalist.innerHTML = options
-        .map((machine) => `<option value="${escapeHtml(clean(machine.serial))}" label="${escapeHtml([getMachineBrand(machine), getMachineModel(machine)].filter(Boolean).join(' '))}"></option>`)
+    datalist.innerHTML = buildMachineCheckerRecords()
+        .map((record) => {
+            const label = [
+                record.model,
+                record.status,
+                record.customer
+            ].filter(Boolean).join(' - ');
+            return `<option value="${escapeHtml(record.serial)}" label="${escapeHtml(label)}"></option>`;
+        })
         .join('');
+}
+
+function populateStatusModelOptions(machine) {
+    const select = document.getElementById('statusModelInput');
+    const currentModel = clean(machine ? getMachineModel(machine) : '');
+    const seen = new Set();
+    const models = [];
+
+    if (currentModel) {
+        seen.add(normalizeLoose(currentModel));
+        models.push({ value: currentModel, label: currentModel });
+    }
+
+    (GP_STATE.raw.machines || []).forEach((row) => {
+        const label = clean(row.description || getMachineModel(row));
+        const key = normalizeLoose(label);
+        if (!label || seen.has(key)) return;
+        seen.add(key);
+        models.push({ value: label, label });
+    });
+
+    (GP_STATE.raw.models || []).forEach((row) => {
+        const label = getModelLabel(row);
+        const key = normalizeLoose(label);
+        if (!label || seen.has(key)) return;
+        seen.add(key);
+        models.push({ value: label, label });
+    });
+
+    models.sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+    select.innerHTML = '<option value="">Select model</option>' + models
+        .map((model) => `<option value="${escapeHtml(model.value)}">${escapeHtml(model.label)}</option>`)
+        .join('');
+    if (currentModel) select.value = currentModel;
 }
 
 function populateBrandOptions() {
@@ -662,6 +715,121 @@ function populateModelOptions() {
         .join('');
 }
 
+function buildMachineCheckerRecords() {
+    const recordsBySerial = new Map();
+    (GP_STATE.raw.machines || []).forEach((machine) => {
+        const serials = getMachineSerialCandidates(machine);
+        if (!serials.length) return;
+        const record = buildMachineCheckerRecord(machine, serials[0], 0);
+        const serialKey = normalizeSerial(record.serial);
+        if (!serialKey) return;
+        mergeMachineCheckerRecord(recordsBySerial, serialKey, record);
+    });
+    return Array.from(recordsBySerial.values()).sort(compareMachineCheckerRecords);
+}
+
+function buildMachineCheckerRecord(machine, serial, aliasIndex = 0) {
+    const machineId = machineKey(machine);
+    return {
+        machine,
+        machineId,
+        serial,
+        model: getMachineModel(machine),
+        brand: getMachineBrand(machine),
+        status: getMachineStatusLabel(machine),
+        customer: resolveMachineCustomer(machine),
+        duplicateCount: 1,
+        duplicateMachineIds: new Set([machineId]),
+        score: scoreMachineCheckerRecord(machine, serial, aliasIndex)
+    };
+}
+
+function mergeMachineCheckerRecord(recordsBySerial, serialKey, record) {
+    const existing = recordsBySerial.get(serialKey);
+    if (!existing) {
+        recordsBySerial.set(serialKey, record);
+        return;
+    }
+
+    const duplicateMachineIds = existing.duplicateMachineIds || new Set([existing.machineId]);
+    if (record.machineId) duplicateMachineIds.add(record.machineId);
+    existing.duplicateMachineIds = duplicateMachineIds;
+    existing.duplicateCount = duplicateMachineIds.size;
+
+    if (record.score > existing.score) {
+        record.duplicateMachineIds = duplicateMachineIds;
+        record.duplicateCount = duplicateMachineIds.size;
+        recordsBySerial.set(serialKey, record);
+    }
+}
+
+function findMachineCheckerRecord(serialValue) {
+    const serialKey = normalizeMachineSerialNumber(serialValue);
+    if (!serialKey) return null;
+
+    const recordsBySerial = new Map();
+    (GP_STATE.raw.machines || []).forEach((machine) => {
+        getMachineSerialCandidates(machine).forEach((serial, aliasIndex) => {
+            const key = normalizeSerial(serial);
+            if (!key) return;
+            mergeMachineCheckerRecord(recordsBySerial, key, buildMachineCheckerRecord(machine, serial, aliasIndex));
+        });
+    });
+
+    return recordsBySerial.get(serialKey) || null;
+}
+
+function getMachineSerialCandidates(machine) {
+    const values = [
+        machine?.serial,
+        ...getContractSerialsForMachine(machine)
+    ];
+    const seen = new Set();
+    return values
+        .map(normalizeMachineSerialNumber)
+        .filter((serial) => {
+            const key = normalizeSerial(serial);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+function getContractSerialsForMachine(machine) {
+    const machineId = machineKey(machine);
+    if (!machineId) return [];
+    return (GP_STATE.maps.contractsByMachine.get(machineId) || [])
+        .map((contract) => contract?.xserial || contract?.serial || contract?.serial_number);
+}
+
+function scoreMachineCheckerRecord(machine, serial, aliasIndex) {
+    let score = aliasIndex === 0 ? 20 : 5;
+    if (/[A-Z]/.test(serial)) score += 8;
+    if (getMachineModel(machine)) score += 4;
+    if (Number(machine?.status_id || 0) > 0) score += 3;
+    if (resolveMachineCustomer(machine)) score += 2;
+    return score;
+}
+
+function compareMachineCheckerRecords(left, right) {
+    const leftGroup = /[A-Z]/.test(left.serial) ? 0 : 1;
+    const rightGroup = /[A-Z]/.test(right.serial) ? 0 : 1;
+    return leftGroup - rightGroup
+        || left.serial.localeCompare(right.serial, undefined, { numeric: true })
+        || left.model.localeCompare(right.model, undefined, { numeric: true });
+}
+
+function renderStatusMachineContext(record) {
+    const context = document.getElementById('statusMachineContext');
+    if (!context) return;
+    if (!record) {
+        context.textContent = 'Search a machine serial to inspect status and customer context.';
+        return;
+    }
+    const duplicateWarning = record.duplicateCount > 1 ? ` - duplicate serial on ${record.duplicateCount} machine records` : '';
+    context.innerHTML = `<strong>${escapeHtml(record.serial)}</strong> - ${escapeHtml(record.model || 'No model')} - ${escapeHtml(record.status || 'No status')}${record.customer ? ` - ${escapeHtml(record.customer)}` : ''}${escapeHtml(duplicateWarning)}`;
+}
+
 function openMachineChecker() {
     document.getElementById('machineCheckerOverlay').classList.add('visible');
     document.getElementById('machineCheckerModal').classList.add('open');
@@ -676,10 +844,13 @@ function closeMachineChecker() {
 }
 
 function syncMachineCheckerFromSerial() {
-    const serial = normalizeSerial(document.getElementById('statusSerialInput').value);
-    const machine = (GP_STATE.raw.machines || []).find((item) => normalizeSerial(item.serial) === serial) || null;
+    const input = document.getElementById('statusSerialInput');
+    const record = findMachineCheckerRecord(input.value);
+    const machine = record?.machine || null;
     GP_STATE.selectedMachine = machine;
-    document.getElementById('statusModelInput').value = machine ? [getMachineBrand(machine), getMachineModel(machine)].filter(Boolean).join(' ') : '';
+    populateStatusModelOptions(machine);
+    renderStatusMachineContext(record);
+    if (record && input.value !== record.serial) input.value = record.serial;
     if (machine) {
         const select = document.getElementById('statusSelect');
         const statusId = String(Number(machine.status_id || 0));
@@ -691,15 +862,24 @@ function syncMachineCheckerFromSerial() {
 
 async function saveMachineStatus(event) {
     event.preventDefault();
-    const serial = clean(document.getElementById('statusSerialInput').value);
-    const machine = GP_STATE.selectedMachine || (GP_STATE.raw.machines || []).find((item) => normalizeSerial(item.serial) === normalizeSerial(serial));
+    const record = findMachineCheckerRecord(document.getElementById('statusSerialInput').value);
+    const machine = GP_STATE.selectedMachine || record?.machine || null;
     if (!machine) {
-        alert('Select an existing serial first.');
+        alert('Select an existing machine serial first.');
+        return;
+    }
+    if (record?.duplicateCount > 1) {
+        alert('This serial appears on more than one machine record. Please fix the duplicate before changing the status.');
         return;
     }
     const statusId = Number(document.getElementById('statusSelect').value || 0);
     if (!statusId) {
         alert('Select a status.');
+        return;
+    }
+    const selectedModel = clean(document.getElementById('statusModelInput').value);
+    if (!selectedModel) {
+        alert('Select a model.');
         return;
     }
 
@@ -710,14 +890,18 @@ async function saveMachineStatus(event) {
         if (!docId) throw new Error('Machine document id is missing.');
         await patchDocument('tbl_machine', docId, {
             status_id: statusId,
+            description: selectedModel,
             tmestamp: new Date().toISOString(),
             production_status_updated_at: new Date().toISOString(),
             production_status_updated_by: currentUserLabel()
         }, {
-            label: `Update machine status ${serial}`,
-            dedupeKey: `gp-status:${docId}:${statusId}`
+            label: `Update machine ${clean(machine.serial)}`,
+            dedupeKey: `gp-status:${docId}:${statusId}:${selectedModel}`
         });
         machine.status_id = statusId;
+        machine.description = selectedModel;
+        populateSerialOptions();
+        renderStatusMachineContext(findMachineCheckerRecord(document.getElementById('statusSerialInput').value));
         buildProductionRows();
         renderAllBoards();
         alert('Machine status saved.');
@@ -749,7 +933,11 @@ async function saveNewMachine(event) {
         alert('Enter the serial number.');
         return;
     }
-    if ((GP_STATE.raw.machines || []).some((machine) => normalizeSerial(machine.serial) === normalizeSerial(serial))) {
+    if (!normalizeMachineSerialNumber(serial)) {
+        alert('Enter a valid machine serial number.');
+        return;
+    }
+    if ((GP_STATE.raw.machines || []).some((machine) => normalizeMachineSerialNumber(machine.serial) === normalizeMachineSerialNumber(serial))) {
         alert('That serial already exists in the machine master.');
         return;
     }
@@ -789,6 +977,7 @@ async function saveNewMachine(event) {
         GP_STATE.raw.machines.push({ ...payload, _docId: String(nextId) });
         GP_STATE.maps.machines.set(String(nextId), { ...payload, _docId: String(nextId) });
         populateSerialOptions();
+        populateStatusModelOptions(GP_STATE.selectedMachine);
         buildProductionRows();
         renderAllBoards();
         document.getElementById('addMachineForm').reset();
@@ -857,6 +1046,13 @@ function getModelLabel(model) {
     return clean(model?.modelname || model?.model || model?.model_name || model?.description);
 }
 
+function getMachineStatusLabel(machine) {
+    const statusId = Number(machine?.status_id || machine?.status || 0);
+    if (!statusId) return '';
+    const status = GP_STATE.statuses.find((row) => Number(row.id || 0) === statusId);
+    return clean(status?.status) || `Status ${statusId}`;
+}
+
 function getMachineBrand(machine) {
     if (!machine) return '';
     const model = GP_STATE.maps.models.get(String(machine.model_id || '')) || null;
@@ -896,6 +1092,24 @@ function buildClientName(company, branch) {
     const normalizedBranch = normalizeLoose(branchName);
     if (normalizedBranch.includes(normalizedCompany)) return branchName;
     return `${companyName} - ${branchName}`;
+}
+
+function resolveMachineCustomer(machine) {
+    if (!machine) return '';
+    const directBranch = GP_STATE.maps.branches.get(String(machine.branch_id || machine.client_id || '')) || null;
+    const directCompany = GP_STATE.maps.companies.get(String(machine.company_id || directBranch?.company_id || '')) || null;
+    const directName = buildClientName(directCompany, directBranch);
+    if (directName) return directName;
+
+    const contracts = GP_STATE.maps.contractsByMachine.get(machineKey(machine)) || [];
+    for (const contract of contracts) {
+        const contractDep = GP_STATE.maps.contractDeps.get(String(contract?.contract_id || '')) || null;
+        const branch = GP_STATE.maps.branches.get(String(contractDep?.branch_id || contract?.branch_id || '')) || null;
+        const company = GP_STATE.maps.companies.get(String(branch?.company_id || contract?.company_id || '')) || null;
+        const name = buildClientName(company, branch);
+        if (name) return name;
+    }
+    return '';
 }
 
 function staffName(id) {
@@ -967,6 +1181,34 @@ function normalizeLoose(value) {
 
 function normalizeSerial(value) {
     return clean(value).replace(/\s+/g, '').toUpperCase();
+}
+
+function isMachineFallbackSerial(value) {
+    const serial = clean(value);
+    return /^machine\s+\S+/i.test(serial)
+        || /^no machine$/i.test(serial)
+        || /^n\/?a(?:\b|$)/i.test(serial)
+        || /^not available$/i.test(serial);
+}
+
+function normalizeMachineSerialNumber(value) {
+    const raw = clean(value);
+    if (!raw || isMachineFallbackSerial(raw)) return '';
+    if (GP_SERIAL_STOPWORDS.test(raw)) return '';
+    const serial = raw.replace(/\s+/g, '').toUpperCase().replace(/^0+(?=[A-Z])/, '');
+    if (!serial || isMachineFallbackSerial(serial)) return '';
+    if (['NA', 'N/A', 'NONE', 'NULL', '0', '-'].includes(serial)) return '';
+    if (/[^A-Z0-9-]/.test(serial)) return '';
+    if (!/[A-Z0-9]{4,}/.test(serial)) return '';
+    return serial;
+}
+
+function isRealSerial(value) {
+    return Boolean(normalizeMachineSerialNumber(value));
+}
+
+function machineKey(machine) {
+    return String(machine?._docId || machine?.id || normalizeSerial(machine?.serial) || '').trim();
 }
 
 function clean(value) {

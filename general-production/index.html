@@ -272,11 +272,12 @@
                 <form id="statusChangerForm" class="gp-form-grid">
                     <label class="gp-field gp-field-full">
                         <span>Serial</span>
-                        <input type="search" id="statusSerialInput" list="machineSerialOptions" autocomplete="off">
+                        <input type="search" id="statusSerialInput" list="machineSerialOptions" autocomplete="off" placeholder="Search serial number">
                     </label>
+                    <p class="gp-machine-context gp-field-full" id="statusMachineContext">Search a machine serial to inspect status and customer context.</p>
                     <label class="gp-field">
                         <span>Model</span>
-                        <input type="text" id="statusModelInput" readonly>
+                        <select id="statusModelInput"></select>
                     </label>
                     <label class="gp-field">
                         <span>Status</span>
