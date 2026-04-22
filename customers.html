@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MARGA - Customers</title>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <title>MARGA - Customer Information</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="shared/css/styles.css">
     <link rel="stylesheet" href="shared/css/dashboard.css">
     <link rel="stylesheet" href="customers/css/customers.css">
-    <link rel="stylesheet" href="customers/css/customer-form.css">
 </head>
 <body>
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
@@ -28,11 +26,9 @@
                 <span class="logo-text">MARGA<span>.</span></span>
             </div>
         </div>
-
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <div class="nav-title">Main Menu</div>
-                
                 <a href="dashboard.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="7" height="7"/>
@@ -42,7 +38,6 @@
                     </svg>
                     <span>Dashboard</span>
                 </a>
-
                 <a href="customers.html" class="nav-item active">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
@@ -51,16 +46,14 @@
                     </svg>
                     <span>Customers</span>
                 </a>
-
-                <a href="billing.html" class="nav-item">
+                <a href="billing/" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
                         <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
                     </svg>
                     <span>Billing</span>
                 </a>
-
-                <a href="collections.html" class="nav-item">
+                <a href="collections/" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="1" y="4" width="22" height="16" rx="2"/>
                         <path d="M1 10h22"/>
@@ -69,7 +62,6 @@
                 </a>
             </div>
         </nav>
-
         <div class="sidebar-footer">
             <div class="user-info">
                 <div class="user-avatar" id="userAvatar">A</div>
@@ -86,208 +78,333 @@
         </div>
     </aside>
 
-    <!-- Main Content -->
-    <main class="main-content">
-        <!-- Header -->
-        <header class="main-header">
-            <button class="menu-toggle" onclick="toggleSidebar()">
+    <main class="main-content customers-main">
+        <header class="main-header customers-header">
+            <button class="menu-toggle" onclick="toggleSidebar()" title="Menu">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M3 12h18M3 6h18M3 18h18"/>
                 </svg>
             </button>
             <div class="header-title">
-                <h1>Customers</h1>
-                <p>Manage companies, branches, and billing information</p>
+                <h1>Client Information</h1>
+                <p>Company, branch, department, machine, and contract records</p>
             </div>
             <div class="header-actions">
-                <button class="btn btn-primary" onclick="showNewCustomerModal()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 5v14M5 12h14"/>
-                    </svg>
-                    Add Customer
-                </button>
+                <span class="status-pill" id="customerStatusPill">Loading</span>
+                <button class="btn btn-secondary btn-sm" id="refreshCustomersBtn">Refresh</button>
             </div>
         </header>
 
-        <!-- Dashboard Content with Proper Spacing -->
-        <div class="dashboard-content">
-            <!-- Stats Cards -->
-            <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon blue">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 21h18M3 7v1a3 3 0 006 0V7m0 1a3 3 0 006 0V7m0 1a3 3 0 006 0V7H3l2-4h14l2 4M6 21V10m12 11V10"/>
-                    </svg>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-value" id="totalCompanies">0</div>
-                    <div class="stat-label">Companies</div>
-                </div>
+        <section class="customer-workbench">
+            <div class="status-strip">
+                <div class="status-tile"><strong id="companyCount">0</strong><span>Companies</span></div>
+                <div class="status-tile"><strong id="branchCount">0</strong><span>Branches</span></div>
+                <div class="status-tile"><strong id="contractCount">0</strong><span>Contracts</span></div>
+                <div class="status-tile"><strong id="activeContractCount">0</strong><span>Active</span></div>
+                <div class="status-tile"><strong id="branchMachineCount">0</strong><span>Branch Machines</span></div>
             </div>
-            <div class="stat-card">
-                <div class="stat-icon green">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-                        <circle cx="12" cy="10" r="3"/>
-                    </svg>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-value" id="totalBranches">0</div>
-                    <div class="stat-label">Branches</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon purple">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="2" y="6" width="20" height="12" rx="2"/>
-                        <path d="M12 12h.01"/>
-                    </svg>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-value" id="activeMachines">0</div>
-                    <div class="stat-label">Active Machines</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon orange">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                        <path d="M14 2v6h6"/>
-                    </svg>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-value" id="totalContracts">0</div>
-                    <div class="stat-label">Contracts</div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Customer List -->
-        <div class="content-card">
-            <div class="card-header">
-                <div class="card-header-left">
-                    <h3>Customer Directory</h3>
-                    <div class="filter-toggle">
-                        <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">
-                            All <span class="filter-count" id="countAll">(0)</span>
-                        </button>
-                        <button class="filter-btn" data-filter="active" onclick="setFilter('active')">
-                            Active <span class="filter-count" id="countActive">(0)</span>
-                        </button>
-                        <button class="filter-btn" data-filter="inactive" onclick="setFilter('inactive')">
-                            Inactive <span class="filter-count" id="countInactive">(0)</span>
-                        </button>
-                    </div>
+            <div class="legacy-window">
+                <div class="legacy-tabs">
+                    <span class="legacy-tab">File</span>
+                    <span class="legacy-tab active">Home</span>
+                    <span class="legacy-tab">Settings</span>
+                    <span class="legacy-tab">Inquiry Monitoring</span>
+                    <span class="legacy-tab active">Client Information</span>
+                    <span class="legacy-tab">Commission Summary</span>
+                    <span class="legacy-tab">Report Viewer</span>
+                    <span class="legacy-tab">Mobile App Users</span>
+                    <span class="legacy-tab">Inventory Request</span>
                 </div>
-                <div class="card-actions">
-                    <div class="search-input-wrapper">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="M21 21l-4.35-4.35"/>
-                        </svg>
-                        <input type="text" class="search-input" id="searchInput" placeholder="Search companies...">
-                    </div>
-                    <button class="btn btn-secondary" onclick="exportCustomers()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                        </svg>
-                        Export
-                    </button>
+
+                <div class="legacy-form">
+                    <section class="form-band">
+                        <div class="band-title">
+                            <span>Company Information</span>
+                            <button class="purple-link" id="openMapBtn">Location Coordinates</button>
+                        </div>
+                        <div class="band-body">
+                            <div class="selector-row">
+                                <div class="field">
+                                    <label for="customerCompanyPicker">Company Name</label>
+                                    <input id="customerCompanyPicker" list="companyOptions" autocomplete="off">
+                                    <datalist id="companyOptions"></datalist>
+                                </div>
+                                <div class="field xs">
+                                    <label for="companyIdDisplay">Company #</label>
+                                    <input id="companyIdDisplay" readonly>
+                                </div>
+                                <div class="action-row">
+                                    <button class="action-link" id="saveCompanyBtn">Save New Company</button>
+                                    <button class="action-link" id="updateCompanyBtn">Update Company</button>
+                                </div>
+                            </div>
+
+                            <div class="company-grid">
+                                <div class="field">
+                                    <label for="companyName">Company Name</label>
+                                    <input id="companyName" autocomplete="off">
+                                </div>
+                                <div class="field">
+                                    <label for="companyTin">TIN</label>
+                                    <input id="companyTin" autocomplete="off">
+                                </div>
+                                <div class="field">
+                                    <label for="businessStyle">Style of Business</label>
+                                    <input id="businessStyle" autocomplete="off">
+                                </div>
+                                <div class="field">
+                                    <label for="natureOfBusiness">Nature of Business</label>
+                                    <select id="natureOfBusiness"></select>
+                                </div>
+                                <div class="field">
+                                    <label for="businessIndustry">Business Industry</label>
+                                    <select id="businessIndustry"></select>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="form-band">
+                        <div class="band-title">
+                            <span>Branch / Departments</span>
+                            <span>Contracts: <strong id="branchContractCount">0</strong></span>
+                        </div>
+                        <div class="band-body">
+                            <div class="selector-row">
+                                <div class="field">
+                                    <label for="branchPicker">Branch Name</label>
+                                    <select id="branchPicker"></select>
+                                </div>
+                                <button class="tiny-btn" id="newBranchBtn">New Branch</button>
+                                <button class="tiny-btn" id="copyAddressBtn">Copy to All</button>
+                            </div>
+
+                            <div class="branch-grid">
+                                <div class="branch-left">
+                                    <div class="subpanel">
+                                        <div class="subpanel-title">Branch / Address</div>
+                                        <div class="subpanel-body">
+                                            <div class="field-grid">
+                                                <div class="field xs"><label for="branchCode">Branch No.</label><input id="branchCode"></div>
+                                                <div class="field lg"><label for="branchName">Branch Name</label><input id="branchName"></div>
+                                                <div class="field xs"><label for="branchRoom">Room</label><input id="branchRoom"></div>
+                                                <div class="field xs"><label for="branchFloor">Floor</label><input id="branchFloor"></div>
+                                                <div class="field md"><label for="branchBldg">Bldg.</label><input id="branchBldg"></div>
+                                                <div class="field md"><label for="branchStreet">Street</label><input id="branchStreet"></div>
+                                                <div class="field md"><label for="branchBrgy">Brgy.</label><input id="branchBrgy"></div>
+                                                <div class="field sm"><label for="branchCity">City</label><select id="branchCity"></select></div>
+                                                <div class="field sm"><label for="branchArea">Area</label><select id="branchArea"></select></div>
+                                                <div class="field md"><label for="branchLandmark">Landmark</label><input id="branchLandmark"></div>
+                                                <div class="field sm"><label for="branchLatitude">Latitude</label><input id="branchLatitude"></div>
+                                                <div class="field sm"><label for="branchLongitude">Longitude</label><input id="branchLongitude"></div>
+                                                <div class="field md"><label for="branchSignatory">Signatory</label><input id="branchSignatory"></div>
+                                                <div class="field md"><label for="branchDesignation">Designation</label><input id="branchDesignation"></div>
+                                                <div class="field lg"><label for="branchEmail">Email Add.</label><input id="branchEmail" type="email"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="subpanel">
+                                        <div class="subpanel-title">Delivery Information</div>
+                                        <div class="subpanel-body">
+                                            <div class="field-grid">
+                                                <div class="field md"><label for="deliveryContact">Contact</label><input id="deliveryContact"></div>
+                                                <div class="field sm"><label for="deliveryNum">Num.</label><input id="deliveryNum"></div>
+                                                <div class="field sm"><label for="deliveryDays">Off Days</label><input id="deliveryDays"></div>
+                                                <div class="field sm"><label for="deliveryHours">Hrs.</label><input id="deliveryHours"></div>
+                                                <div class="field sm"><label for="deliveryCity">City</label><select id="deliveryCity"></select></div>
+                                                <div class="field sm"><label for="deliveryArea">Area</label><select id="deliveryArea"></select></div>
+                                                <div class="field full"><label for="deliveryAddress">Address</label><input id="deliveryAddress"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="subpanel">
+                                        <div class="subpanel-title">Service Information</div>
+                                        <div class="subpanel-body">
+                                            <div class="field-grid">
+                                                <div class="field md"><label for="serviceContact">Contact Person</label><input id="serviceContact"></div>
+                                                <div class="field sm"><label for="serviceNum">Contact Num.</label><input id="serviceNum"></div>
+                                                <div class="field sm"><label for="serviceCity">City</label><select id="serviceCity"></select></div>
+                                                <div class="field sm"><label for="serviceArea">Area</label><select id="serviceArea"></select></div>
+                                                <div class="field full"><label for="serviceAddress">Address</label><input id="serviceAddress"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="branch-right">
+                                    <div class="subpanel">
+                                        <div class="subpanel-title">Billing Information</div>
+                                        <div class="subpanel-body">
+                                            <div class="field-grid">
+                                                <div class="field md"><label for="billEndUser">End User</label><input id="billEndUser"></div>
+                                                <div class="field sm"><label for="billEndUserContact">Contact No.</label><input id="billEndUserContact"></div>
+                                                <div class="field sm"><label for="billCity">City</label><select id="billCity"></select></div>
+                                                <div class="field sm"><label for="billArea">Area</label><select id="billArea"></select></div>
+                                                <div class="field md"><label for="billPayeeName">Payee Name</label><input id="billPayeeName"></div>
+                                                <div class="field sm"><label for="billPayeeContact">Payee No.</label><input id="billPayeeContact"></div>
+                                                <div class="field full"><label for="billPayeeAddress">Address</label><input id="billPayeeAddress"></div>
+                                                <div class="field sm"><label for="billLatitude">Latitude</label><input id="billLatitude"></div>
+                                                <div class="field sm"><label for="billLongitude">Longitude</label><input id="billLongitude"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="subpanel">
+                                        <div class="subpanel-title">Collection Information</div>
+                                        <div class="subpanel-body">
+                                            <div class="field-grid">
+                                                <div class="field md"><label for="acctContact">Accounting Contact</label><input id="acctContact"></div>
+                                                <div class="field sm"><label for="acctNum">Num.</label><input id="acctNum"></div>
+                                                <div class="field lg"><label for="acctEmail">Email</label><input id="acctEmail" type="email"></div>
+                                                <div class="field md"><label for="cashierContact">Cashier Contact</label><input id="cashierContact"></div>
+                                                <div class="field sm"><label for="cashierNum">Num.</label><input id="cashierNum"></div>
+                                                <div class="field md"><label for="treasuryContact">Treasury Contact</label><input id="treasuryContact"></div>
+                                                <div class="field sm"><label for="treasuryNum">Num.</label><input id="treasuryNum"></div>
+                                                <div class="field md"><label for="releasingContact">Releasing Contact</label><input id="releasingContact"></div>
+                                                <div class="field sm"><label for="releasingNum">Num.</label><input id="releasingNum"></div>
+                                                <div class="field sm"><label for="collectionDays">Col. Days</label><input id="collectionDays"></div>
+                                                <div class="field sm"><label for="collectionFrom">From</label><input id="collectionFrom" type="time"></div>
+                                                <div class="field sm"><label for="collectionTo">To</label><input id="collectionTo" type="time"></div>
+                                                <div class="field sm"><label for="collectionCity">City</label><select id="collectionCity"></select></div>
+                                                <div class="field sm"><label for="collectionArea">Area</label><select id="collectionArea"></select></div>
+                                                <div class="field full"><label for="collectionAddress">Address</label><input id="collectionAddress"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="action-row">
+                                        <button class="action-link" id="saveBranchBtn">Save New Info</button>
+                                        <button class="action-link" id="updateBranchBtn">Update Info</button>
+                                        <button class="action-link" id="machineContractsBtn">Mchn / Cntrcts</button>
+                                        <button class="action-link" id="verifiedUsersBtn">Verified App Users</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
-            <div class="table-container">
-                <table class="table">
+        </section>
+    </main>
+
+    <div class="modal-overlay customer-contract-overlay" id="contractOverlay"></div>
+    <section class="contract-modal" id="contractModal" aria-modal="true" role="dialog">
+        <div class="contract-titlebar">
+            <span>frmContracts</span>
+            <button class="icon-close" id="contractModalClose" title="Close">×</button>
+        </div>
+        <div class="contract-body">
+            <div class="subpanel-title" id="contractEditorTitle">Machine / Contracts</div>
+            <div class="contract-table-wrap">
+                <table class="contract-table">
                     <thead>
                         <tr>
-                            <th>Company / Branch</th>
-                            <th>Location</th>
-                            <th>Contact</th>
-                            <th>Machines</th>
+                            <th>Contract</th>
+                            <th>Model</th>
+                            <th>Serial</th>
+                            <th>Particular</th>
                             <th>Status</th>
-                            <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="customerTableBody">
-                        <tr>
-                            <td colspan="6" class="loading-cell">
-                                <div class="spinner"></div>
-                                <span>Loading customers...</span>
-                            </td>
-                        </tr>
+                    <tbody id="contractRows">
+                        <tr><td colspan="5" class="empty-row">Loading</td></tr>
                     </tbody>
                 </table>
             </div>
-            <div class="table-footer">
-                <div class="showing-info">
-                    Showing <span id="showingStart">1</span>-<span id="showingEnd">0</span> of <span id="totalRecords">0</span>
+
+            <div class="contract-grid">
+                <div class="contract-column">
+                    <div class="field-grid">
+                        <div class="field md"><label for="particularCode">Particular Code</label><select id="particularCode"></select></div>
+                        <div class="field md"><label for="contractStatus">Status</label><select id="contractStatus"></select></div>
+                        <div class="field md"><label for="machineBrand">Machine Brand</label><input id="machineBrand" list="brandOptions"></div>
+                        <div class="field md"><label for="machineModel">Machine Model</label><input id="machineModel" list="modelOptions"></div>
+                        <div class="field full"><label for="machineSerial">Serial Number</label><input id="machineSerial" list="machineSerialOptions"></div>
+                        <datalist id="brandOptions"></datalist>
+                        <datalist id="modelOptions"></datalist>
+                        <datalist id="machineSerialOptions"></datalist>
+                        <div class="field xs"><label for="piAmount">PI</label><input id="piAmount" type="number" step="0.01"></div>
+                        <div class="field xs"><label for="rdAmount">RD</label><input id="rdAmount" type="number" step="0.01"></div>
+                        <div class="field xs"><label for="apAmount">AP</label><input id="apAmount" type="number" step="0.01"></div>
+                        <div class="field md"><label for="contractDuration">Cntrct Duration</label><input id="contractDuration"></div>
+                        <div class="field md"><label for="beginningMeter">Beginning Meter</label><input id="beginningMeter"></div>
+                        <div class="field md"><label for="paymentTerms">Payment Terms</label><input id="paymentTerms" type="number"></div>
+                        <div class="field md"><label for="computerCount">No. of computers installed</label><input id="computerCount" type="number"></div>
+                        <div class="field full check-row">
+                            <span>Owned</span>
+                            <div class="check-grid">
+                                <label><input id="ownedWifi" type="checkbox"> Wifi</label>
+                                <label><input id="ownedUsb" type="checkbox"> USB Cable</label>
+                                <label><input id="ownedStandalone" type="checkbox"> Standalone</label>
+                            </div>
+                        </div>
+                        <div class="field full check-row">
+                            <span>Scan</span>
+                            <div class="check-grid">
+                                <label><input id="scanFolder" type="checkbox"> Scan to Folder</label>
+                                <label><input id="scanEmail" type="checkbox"> Scan to Email</label>
+                            </div>
+                        </div>
+                        <div class="field full check-row">
+                            <span>OS</span>
+                            <div class="check-grid">
+                                <label><input id="osMac" type="checkbox"> Mac</label>
+                                <label><input id="osWindows" type="checkbox"> Windows</label>
+                            </div>
+                        </div>
+                        <div class="field full"><label for="passwordRestriction">Password Restriction</label><input id="passwordRestriction"></div>
+                        <div class="field full"><label for="paperType">Paper Type</label><input id="paperType"></div>
+                    </div>
                 </div>
-                <div class="pagination">
-                    <button class="btn btn-secondary btn-sm" id="prevBtn" disabled onclick="prevPage()">Previous</button>
-                    <span class="page-info">Page <span id="currentPage">1</span></span>
-                    <button class="btn btn-secondary btn-sm" id="nextBtn" disabled onclick="nextPage()">Next</button>
+
+                <div class="contract-column">
+                    <div class="field-grid">
+                        <div class="field sm"><label for="bwQuota">B and W Quota</label><input id="bwQuota" type="number"></div>
+                        <div class="field sm"><label for="bwRate">Rate</label><input id="bwRate" type="number" step="0.01"></div>
+                        <div class="field sm"><label for="bwXRate">XPRate</label><input id="bwXRate" type="number" step="0.01"></div>
+                        <div class="field md"><label for="fixedRate">B and W Quota Rate / Fixed Rate</label><input id="fixedRate" type="number" step="0.01"></div>
+                        <div class="field sm"><label for="colorQuota">Colored Quota</label><input id="colorQuota" type="number"></div>
+                        <div class="field sm"><label for="colorRate">Rate</label><input id="colorRate" type="number" step="0.01"></div>
+                        <div class="field sm"><label for="colorXRate">XPRate</label><input id="colorXRate" type="number" step="0.01"></div>
+                        <div class="field md"><label for="colorMeter">Colored Mt Rate</label><input id="colorMeter" type="number" step="0.01"></div>
+                        <div class="field md"><label for="preTerm">Pre-Term</label><input id="preTerm" type="number" step="0.01"></div>
+                        <div class="field md"><label for="readingDate">Reading Date</label><input id="readingDate" type="date"></div>
+                        <div class="field full check-row">
+                            <span>With VAT?</span>
+                            <div class="radio-row">
+                                <label><input id="contractVatYes" name="contractVat" type="radio" checked> Yes</label>
+                                <label><input id="contractVatNo" name="contractVat" type="radio"> No</label>
+                            </div>
+                        </div>
+                        <div class="field md"><label for="contractAgent">Agent</label><select id="contractAgent"></select></div>
+                        <div class="field md"><label for="commission">Commission</label><input id="commission" type="number" step="0.01"></div>
+                        <div class="field md"><label for="deliveryDate">Delivery Date</label><input id="deliveryDate" type="date"></div>
+                        <div class="field md"><label for="installDate">Install Date</label><input id="installDate" type="date"></div>
+                        <div class="field md"><label for="contractEnd">Contract End</label><input id="contractEnd" type="date"></div>
+                        <div class="field full"><label for="contractRemarks">Remarks</label><textarea id="contractRemarks"></textarea></div>
+                    </div>
                 </div>
             </div>
+
+            <div class="contract-actions">
+                <div class="action-group">
+                    <button class="action-link" id="clearContractBtn">Clear All Fields</button>
+                    <button class="action-link" id="schedulePulloutBtn">Schedule Pullout</button>
+                </div>
+                <div class="action-group">
+                    <button class="action-link" id="updateContractBtn">Update Contract</button>
+                    <button class="action-link" id="saveContractBtn">Save New Contract</button>
+                </div>
             </div>
         </div>
-    </main>
+    </section>
 
-    <!-- Detail Modal (Centered) -->
-    <div class="modal-overlay" id="detailOverlay" onclick="closePanel()"></div>
-    <div class="detail-modal" id="detailPanel">
-        <div class="detail-modal-header">
-            <div class="detail-modal-title">
-                <h2 id="panelCompanyName">Company Name</h2>
-                <p id="panelBranchCount">0 Branches</p>
-            </div>
-            <button class="modal-close-btn" onclick="closePanel()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 6L6 18M6 6l12 12"/>
-                </svg>
-            </button>
-        </div>
-
-        <div class="detail-modal-tabs">
-            <button class="detail-tab active" data-tab="info" onclick="switchTab('info')">Information</button>
-            <button class="detail-tab" data-tab="billing" onclick="switchTab('billing')">Billing</button>
-            <button class="detail-tab" data-tab="machines" onclick="switchTab('machines')">Machines</button>
-        </div>
-
-        <div class="detail-modal-content" id="panelContent">
-            <!-- Dynamic content loaded here -->
-        </div>
-
-        <div class="detail-modal-footer">
-            <button class="btn btn-secondary" onclick="printCustomer()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
-                    <rect x="6" y="14" width="12" height="8"/>
-                </svg>
-                Print
-            </button>
-            <button class="btn btn-primary" onclick="editCustomer()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-                Edit Customer
-            </button>
-        </div>
-    </div>
-
-
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    
-    <!-- Shared modules -->
     <script src="shared/js/firebase-config.js"></script>
-    <script src="shared/js/utils.js"></script>
     <script src="shared/js/auth.js"></script>
-    <script src="shared/js/offline-sync.js"></script>
-    
-    <!-- Customer modules -->
-    <script src="customers/js/customer-form.js"></script>
+    <script src="shared/js/utils.js"></script>
     <script src="customers/js/customers.js"></script>
 </body>
 </html>

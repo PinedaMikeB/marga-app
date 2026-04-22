@@ -1,1166 +1,1288 @@
 /**
- * MARGA Customer Management Module
- * Handles customer data display and interactions
+ * MARGA Customer Information Workbench
+ * VB.NET parity screen for company, branch/departments, billing contacts,
+ * and machine/contracts maintenance.
  */
 
-// Data storage
-let customers = {
-    companies: [],
-    branches: [],
-    contracts: [],
-    contractDeps: [],
-    machines: [],
-    models: [],
-    brands: [],
-    areas: [],
-    cities: [],
-    billInfo: []
-};
+const CustomersApp = (() => {
+    const state = {
+        raw: {
+            companies: [],
+            branches: [],
+            contracts: [],
+            contractDeps: [],
+            machines: [],
+            models: [],
+            brands: [],
+            areas: [],
+            cities: [],
+            billInfo: [],
+            particulars: [],
+            nature: [],
+            industries: [],
+            employees: []
+        },
+        maps: {},
+        selectedCompanyId: '',
+        selectedBranchId: '',
+        selectedContractId: '',
+        selectedMachineId: '',
+        newBranchMode: false
+    };
 
-// Pagination
-let currentPage = 1;
-const itemsPerPage = 25;
-let filteredCompanies = [];
-let accountRows = [];
-let selectedAccountKey = null;
-let currentFilter = 'all'; // 'all', 'active', 'inactive'
-let recentBilledContractIds = new Set();
+    const CONTRACT_STATUS = {
+        0: 'Pending',
+        1: 'Active',
+        2: 'Terminated',
+        3: 'On Hold',
+        4: 'Pulled Out',
+        7: 'Ended',
+        8: 'Replaced',
+        9: 'Transferred',
+        10: 'For Pullout',
+        13: 'Cancelled'
+    };
 
-const BILLING_ACTIVITY_START_KEY = '2025-10';
-const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-];
+    const FALLBACK_PARTICULARS = [
+        { id: 1, code: 'RTP', name: 'Rental', with_reading: 1 },
+        { id: 2, code: 'RTF', name: 'Fixed Rate', with_reading: 0 },
+        { id: 3, code: 'STP', name: 'Short Term', with_reading: 1 },
+        { id: 8, code: 'MAP', name: 'Metered Account Plan', with_reading: 1 },
+        { id: 10, code: 'RD', name: 'Refundable Deposit', with_reading: 0 },
+        { id: 11, code: 'PI', name: 'Production Installation Charge', with_reading: 0 },
+        { id: 12, code: 'OTH', name: 'Others', with_reading: 0 }
+    ];
 
-/**
- * Initialize module
- */
-document.addEventListener('DOMContentLoaded', async () => {
-    // Setup search with debounce
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', MargaUtils.debounce(handleSearch, 300));
+    const COMPANY_INTEGER_FIELDS = new Set(['id', 'company_nob', 'industry', 'hide', 'usecomname', 'has_code']);
+    const BRANCH_INTEGER_FIELDS = new Set(['id', 'company_id', 'area_id', 'city_id', 'inactive', 'intrvl', 'volume', 'isurgent', 'address_type', 'earliest', 'no_netcon_spoilage']);
+    const BILL_INTEGER_FIELDS = new Set(['id', 'branch_id', 'area_id', 'city_id', 'enduserarea_id', 'col_area_id']);
+    const MACHINE_INTEGER_FIELDS = new Set(['id', 'brand_id', 'model_id', 'status_id', 'client_id', 'bmeter', 'ownership_id', 'type_id', 'condition_id', 'isclient']);
+    const CONTRACT_INTEGER_FIELDS = new Set([
+        'id',
+        'contract_id',
+        'mach_id',
+        'machine_id',
+        'brand_id',
+        'category_id',
+        'status',
+        'withvat',
+        'terms',
+        'monthly_quota',
+        'monthly_quota2',
+        'pi',
+        'rd',
+        'ap',
+        'preterm',
+        'computers_installed',
+        'wifi',
+        'usb',
+        'scan_to_folder',
+        'scan_to_email',
+        'standalone',
+        'os_windows',
+        'os_mac',
+        'no_dr_yet',
+        'readingdate_set',
+        'agent_id',
+        'starting_meter',
+        'updated',
+        'contract_upgraded',
+        'without_pird'
+    ]);
+    const CONTRACT_DOUBLE_FIELDS = new Set(['page_rate', 'page_rate2', 'page_rate_xtra', 'page_rate_xtra2', 'monthly_rate', 'monthly_rate2', 'fixed_rate', 'commision_rate']);
+
+    function init() {
+        bindStaticEvents();
+        loadAllData();
     }
 
-    // Load data
-    await loadAllData();
-    
-    // Initialize customer form module with all reference data
-    CustomerForm.init(
-        customers.areas, 
-        customers.cities, 
-        customers.contracts, 
-        customers.contractDeps,
-        customers.machines, 
-        customers.models, 
-        customers.brands
-    );
-
-    applyDeepLink();
-});
-
-/**
- * Load all data from Firebase
- */
-async function loadAllData() {
-    try {
-        showLoading(true);
-
-        // Load all collections in parallel
-        const [companies, branches, contracts, contractDeps, machines, models, brands, areas, cities, billInfo, billedContractIds] = 
-            await Promise.all([
-                MargaUtils.fetchCollection('tbl_companylist'),
-                MargaUtils.fetchCollection('tbl_branchinfo'),
-                MargaUtils.fetchCollection('tbl_contractmain'),
-                MargaUtils.fetchCollection('tbl_contractdep'),
-                MargaUtils.fetchCollection('tbl_machine'),
-                MargaUtils.fetchCollection('tbl_model'),
-                MargaUtils.fetchCollection('tbl_brand'),
-                MargaUtils.fetchCollection('tbl_area'),
-                MargaUtils.fetchCollection('tbl_city'),
-                MargaUtils.fetchCollection('tbl_billinfo'),
-                fetchRecentBilledContractIds(BILLING_ACTIVITY_START_KEY, getCurrentMonthKey())
+    async function loadAllData() {
+        setStatus('Loading customer records...');
+        try {
+            const [
+                companies,
+                branches,
+                contracts,
+                contractDeps,
+                machines,
+                models,
+                brands,
+                areas,
+                cities,
+                billInfo,
+                particulars,
+                nature,
+                industries,
+                employees
+            ] = await Promise.all([
+                fetchCollectionFast('tbl_companylist'),
+                fetchCollectionFast('tbl_branchinfo'),
+                fetchCollectionFast('tbl_contractmain'),
+                fetchCollectionFast('tbl_contractdep'),
+                fetchCollectionFast('tbl_machine'),
+                fetchCollectionFast('tbl_model'),
+                fetchCollectionFast('tbl_brand'),
+                fetchCollectionFast('tbl_area'),
+                fetchCollectionFast('tbl_city'),
+                fetchCollectionFast('tbl_billinfo'),
+                fetchOptionalCollection('tbl_particulars', FALLBACK_PARTICULARS),
+                fetchOptionalCollection('tbl_nature', []),
+                fetchOptionalCollection('tbl_industry', []),
+                fetchOptionalCollection('tbl_employee', [])
             ]);
 
-        customers = { companies, branches, contracts, contractDeps, machines, models, brands, areas, cities, billInfo };
-        recentBilledContractIds = billedContractIds;
-        accountRows = buildAccountRows();
-
-        // Update stats
-        updateStats();
-
-        // Sort account rows alphabetically and apply initial filter
-        filteredCompanies = [...accountRows].sort((a, b) =>
-            `${a.companyName || ''} ${a.accountName || ''}`.localeCompare(`${b.companyName || ''} ${b.accountName || ''}`)
-        );
-        renderTable();
-
-    } catch (error) {
-        console.error('Error loading data:', error);
-        MargaUtils.showToast('Failed to load customer data', 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-function applyDeepLink() {
-    const params = new URLSearchParams(window.location.search);
-    const companyId = String(params.get('company_id') || '').trim();
-    const branchId = String(params.get('branch_id') || '').trim();
-    const machineId = String(params.get('machine_id') || '').trim();
-    const contractmainId = String(params.get('contractmain_id') || '').trim();
-    const tab = String(params.get('tab') || '').trim().toLowerCase();
-    const account = accountRows.find((entry) => {
-        if (branchId && String(entry.branchId || '') === branchId) return true;
-        if (machineId && entry.contracts.some((contract) => String(contract.mach_id || '') === machineId)) return true;
-        if (contractmainId && entry.contracts.some((contract) => String(contract.id || '') === contractmainId)) return true;
-        if (companyId && String(entry.companyId || '') === companyId) return true;
-        return false;
-    });
-    if (!account) return;
-
-    openPanel(account.key);
-    if (tab === 'billing' || tab === 'machines' || tab === 'info') {
-        switchTab(tab);
-    }
-}
-
-function normalizeText(value) {
-    return String(value || '').trim().toLowerCase();
-}
-
-function getCurrentMonthKey() {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function shiftMonthKey(key, offset) {
-    const match = String(key || '').match(/^(\d{4})-(\d{2})$/);
-    if (!match) return null;
-    const date = new Date(Number(match[1]), Number(match[2]) - 1 + Number(offset || 0), 1);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function buildMonthRange(startKey, endKey) {
-    const keys = [];
-    let current = startKey;
-    while (current && current <= endKey) {
-        keys.push(current);
-        if (current === endKey) break;
-        current = shiftMonthKey(current, 1);
-    }
-    return keys;
-}
-
-function monthNameFromKey(key) {
-    const match = String(key || '').match(/^(\d{4})-(\d{2})$/);
-    if (!match) return '';
-    return MONTH_NAMES[Number(match[2]) - 1] || '';
-}
-
-async function runFirestoreQuery(structuredQuery) {
-    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ structuredQuery })
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to query recent billing activity: HTTP ${response.status}`);
-    }
-
-    const rows = await response.json();
-    return Array.isArray(rows)
-        ? rows.filter((row) => row?.document).map((row) => MargaUtils.parseFirestoreDoc(row.document)).filter(Boolean)
-        : [];
-}
-
-async function fetchRecentBilledContractIds(startKey, endKey) {
-    try {
-        const monthKeys = buildMonthRange(startKey, endKey);
-        if (!monthKeys.length) return new Set();
-
-        const groups = await Promise.all(monthKeys.map((monthKey) => runFirestoreQuery({
-            from: [{ collectionId: 'tbl_billing' }],
-            where: {
-                compositeFilter: {
-                    op: 'AND',
-                    filters: [
-                        { fieldFilter: { field: { fieldPath: 'year' }, op: 'EQUAL', value: { stringValue: String(monthKey.slice(0, 4)) } } },
-                        { fieldFilter: { field: { fieldPath: 'month' }, op: 'EQUAL', value: { stringValue: monthNameFromKey(monthKey) } } }
-                    ]
-                }
-            },
-            select: {
-                fields: [
-                    { fieldPath: 'contractmain_id' }
-                ]
-            }
-        })));
-
-        const contractIds = new Set();
-        groups.flat().forEach((doc) => {
-            const contractId = String(doc?.contractmain_id || '').trim();
-            if (contractId) contractIds.add(contractId);
-        });
-        return contractIds;
-    } catch (error) {
-        console.warn('Recent billing activity lookup failed:', error);
-        return new Set();
-    }
-}
-
-function resolveContractDep(contract) {
-    return (customers.contractDeps || []).find((entry) => String(entry.id) === String(contract.contract_id)) || null;
-}
-
-function resolveContractBranch(contract) {
-    const contractDep = resolveContractDep(contract);
-    const contractDepBranchId = Number(contractDep?.branch_id || 0) || 0;
-    const directBranch = customers.branches.find((entry) => String(entry.id) === String(contract.contract_id)) || null;
-    if (contractDepBranchId) {
-        return customers.branches.find((entry) => String(entry.id) === String(contractDepBranchId)) || null;
-    }
-    return directBranch;
-}
-
-function buildAccountName(branchName, departmentName = '') {
-    const base = String(branchName || 'Main').trim() || 'Main';
-    const dept = String(departmentName || '').trim();
-    if (!dept) return base;
-    if (normalizeText(base).includes(normalizeText(dept))) return base;
-    return `${base} - ${dept}`;
-}
-
-function buildAccountRows() {
-    const companyMap = new Map(customers.companies.map((company) => [String(company.id), company]));
-    const branchMap = new Map(customers.branches.map((branch) => [String(branch.id), branch]));
-    const machineMap = new Map(customers.machines.map((machine) => [String(machine.id), machine]));
-    const modelMap = new Map(customers.models.map((model) => [String(model.id), model]));
-    const rows = new Map();
-    const rowsByBranch = new Map();
-
-    const ensureRow = ({ company, branch, contractDep, fallbackBranchId = null }) => {
-        const companyId = String(company?.id || branch?.company_id || 'unlinked').trim() || 'unlinked';
-        const branchId = String(branch?.id || fallbackBranchId || '').trim();
-        const departmentName = String(contractDep?.departmentname || '').trim();
-        const companyName = String(company?.companyname || branch?.company_name || 'Unlinked in Firebase').trim() || 'Unlinked in Firebase';
-        const branchName = String(branch?.branchname || (branchId ? `Unlinked Branch ${branchId}` : 'Unlinked Branch')).trim() || 'Unlinked Branch';
-        const accountName = buildAccountName(branchName, departmentName);
-        const key = [companyId, branchId || 'unlinked', normalizeText(departmentName || branchName || accountName)].join(':');
-
-        if (!rows.has(key)) {
-            rows.set(key, {
-                key,
-                companyId,
-                companyName,
-                branchId: branch?.id || fallbackBranchId || null,
-                branch,
-                company,
-                branchName,
-                departmentName,
-                accountName,
-                contracts: [],
-                machineEntries: [],
-                billInfoRows: [],
-                machineCount: 0,
-                activeMachineCount: 0,
-                recentBilledContractCount: 0,
-                isActive: false,
-                location: getLocation(branch),
-                contactName: branch?.signatory || 'N/A'
-            });
+            state.raw = {
+                companies,
+                branches,
+                contracts,
+                contractDeps,
+                machines,
+                models,
+                brands,
+                areas,
+                cities,
+                billInfo,
+                particulars: normalizeParticulars(particulars),
+                nature,
+                industries,
+                employees
+            };
+            buildMaps();
+            renderReferenceLists();
+            renderStats();
+            selectInitialCompany();
+            setStatus('Ready');
+        } catch (error) {
+            console.error('Customers load failed:', error);
+            setStatus('Unable to load customers');
+            MargaUtils.showToast(`Failed to load customer data: ${error.message}`, 'error');
         }
+    }
 
-        const row = rows.get(key);
-        if (branch?.id) {
-            const branchKey = String(branch.id);
-            if (!rowsByBranch.has(branchKey)) rowsByBranch.set(branchKey, []);
-            if (!rowsByBranch.get(branchKey).includes(key)) rowsByBranch.get(branchKey).push(key);
+    async function fetchOptionalCollection(collection, fallback) {
+        try {
+            return await fetchCollectionFast(collection);
+        } catch (error) {
+            console.warn(`Optional collection ${collection} unavailable.`, error);
+            return fallback;
         }
-        return row;
-    };
-
-    customers.contracts.forEach((contract) => {
-        const contractDep = resolveContractDep(contract);
-        const branch = resolveContractBranch(contract);
-        const company = branch ? companyMap.get(String(branch.company_id)) || null : null;
-        const fallbackBranchId = Number(contractDep?.branch_id || 0) || (!branch ? Number(contract.contract_id || 0) || null : null);
-        const row = ensureRow({ company, branch, contractDep, fallbackBranchId });
-
-        row.contracts.push(contract);
-        const machine = machineMap.get(String(contract.mach_id)) || {};
-        const model = modelMap.get(String(machine.model_id)) || null;
-        row.machineEntries.push({
-            contractId: contract.id,
-            machineId: contract.mach_id,
-            serial: machine.serial || contract.xserial || 'N/A',
-            modelName: model?.modelname || machine.description || 'Unknown Model',
-            status: contract.status
-        });
-        if (recentBilledContractIds.has(String(contract.id || '').trim())) {
-            row.recentBilledContractCount += 1;
-        }
-        if (Number(contract.status || 0) === 1) {
-            row.activeMachineCount += 1;
-        }
-    });
-
-    customers.branches.forEach((branch) => {
-        const branchKey = String(branch.id);
-        if (rowsByBranch.has(branchKey)) return;
-        const company = companyMap.get(String(branch.company_id)) || null;
-        ensureRow({ company, branch, contractDep: null, fallbackBranchId: branch.id });
-    });
-
-    const billInfoByBranch = new Map();
-    customers.billInfo.forEach((billInfo) => {
-        const key = String(billInfo.branch_id || '').trim();
-        if (!key) return;
-        if (!billInfoByBranch.has(key)) billInfoByBranch.set(key, []);
-        billInfoByBranch.get(key).push(billInfo);
-    });
-
-    return Array.from(rows.values())
-        .map((row) => {
-            row.machineEntries = row.machineEntries.sort((left, right) => String(left.modelName || '').localeCompare(String(right.modelName || '')));
-            row.machineCount = row.machineEntries.length;
-            row.isActive = row.activeMachineCount > 0 || row.recentBilledContractCount > 0;
-            row.location = getLocation(row.branch);
-            row.contactName = row.branch?.signatory || 'N/A';
-            row.billInfoRows = row.branchId ? (billInfoByBranch.get(String(row.branchId)) || []) : [];
-            return row;
-        })
-        .sort((left, right) => {
-            const companyCompare = String(left.companyName || '').localeCompare(String(right.companyName || ''));
-            if (companyCompare !== 0) return companyCompare;
-            return String(left.accountName || '').localeCompare(String(right.accountName || ''));
-        });
-}
-
-/**
- * Update statistics display
- */
-function updateStats() {
-    MargaUtils.animateNumber('totalCompanies', customers.companies.length);
-    MargaUtils.animateNumber('totalBranches', customers.branches.length);
-    
-    // Count only active machines (status == 1)
-    const activeContracts = customers.contracts.filter(c => c.status == 1);
-    MargaUtils.animateNumber('activeMachines', activeContracts.length);
-    MargaUtils.animateNumber('totalContracts', customers.contracts.length);
-    
-    // Update filter counts
-    updateFilterCounts();
-}
-
-/**
- * Update filter button counts
- */
-function updateFilterCounts() {
-    let activeCount = 0;
-    let inactiveCount = 0;
-
-    accountRows.forEach((row) => {
-        if (row.isActive) {
-            activeCount++;
-        } else {
-            inactiveCount++;
-        }
-    });
-    
-    const countAll = document.getElementById('countAll');
-    const countActive = document.getElementById('countActive');
-    const countInactive = document.getElementById('countInactive');
-    
-    if (countAll) countAll.textContent = `(${accountRows.length})`;
-    if (countActive) countActive.textContent = `(${activeCount})`;
-    if (countInactive) countInactive.textContent = `(${inactiveCount})`;
-}
-
-/**
- * Show/hide loading state
- */
-function showLoading(show) {
-    const tbody = document.getElementById('customerTableBody');
-    if (show) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="loading-cell">
-                    <div class="spinner"></div>
-                    <span>Loading customers...</span>
-                </td>
-            </tr>
-        `;
-    }
-}
-
-/**
- * Handle search input
- */
-function handleSearch(event) {
-    const query = event?.target?.value?.toLowerCase().trim() || '';
-    applyFilters(query);
-}
-
-/**
- * Apply filters (search + status)
- */
-function applyFilters(query = '') {
-    // Get search query if not provided
-    if (!query) {
-        query = document.getElementById('searchInput')?.value?.toLowerCase().trim() || '';
-    }
-    
-    // Start with all account rows
-    let result = [...accountRows];
-    
-    // Apply search filter
-    if (query) {
-        result = result.filter((row) =>
-            [
-                row.companyName,
-                row.accountName,
-                row.branchName,
-                row.departmentName,
-                row.contactName
-            ]
-                .filter(Boolean)
-                .join(' ')
-                .toLowerCase()
-                .includes(query)
-        );
-    }
-    
-    // Apply status filter
-    if (currentFilter !== 'all') {
-        result = result.filter((row) => {
-            if (currentFilter === 'active') return row.isActive;
-            if (currentFilter === 'inactive') return !row.isActive;
-            return true;
-        });
-    }
-    
-    // Sort alphabetically
-    result.sort((a, b) => `${a.companyName || ''} ${a.accountName || ''}`.localeCompare(`${b.companyName || ''} ${b.accountName || ''}`));
-    
-    filteredCompanies = result;
-    currentPage = 1;
-    renderTable();
-}
-
-/**
- * Set status filter
- */
-function setFilter(filter) {
-    currentFilter = filter;
-    
-    // Update filter button styles
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.dataset.filter === filter) {
-            btn.classList.add('active');
-        }
-    });
-    
-    applyFilters();
-}
-
-/**
- * Render customer table
- */
-function renderTable() {
-    const tbody = document.getElementById('customerTableBody');
-    
-    // Calculate pagination
-    const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage);
-    const startIdx = (currentPage - 1) * itemsPerPage;
-    const endIdx = startIdx + itemsPerPage;
-    const pageCompanies = filteredCompanies.slice(startIdx, endIdx);
-
-    if (pageCompanies.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="loading-cell">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.3; margin-bottom: 1rem;">
-                        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
-                    </svg>
-                    <span>No customers found</span>
-                </td>
-            </tr>
-        `;
-        updatePaginationInfo(0, 0, 0);
-        return;
     }
 
-    tbody.innerHTML = pageCompanies.map((account) => {
-        const machineCount = account.machineCount || 0;
-        const location = account.location || 'N/A';
-        const isActive = Boolean(account.isActive);
-        const rowKey = MargaUtils.escapeHtml(String(account.key || '')).replace(/'/g, "\\'");
-
-        return `
-            <tr onclick="openPanel('${rowKey}')">
-                <td>
-                    <div class="customer-name">${MargaUtils.escapeHtml(account.companyName || 'Unknown')}</div>
-                    <div class="customer-branch">${MargaUtils.escapeHtml(account.accountName || account.branchName || 'Account')}</div>
-                </td>
-                <td class="customer-location">${MargaUtils.escapeHtml(location)}</td>
-                <td class="customer-contact">${MargaUtils.escapeHtml(account.contactName || 'N/A')}</td>
-                <td class="machine-count">${machineCount}</td>
-                <td>
-                    <span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">
-                        ${isActive ? 'Active' : 'Inactive'}
-                    </span>
-                </td>
-                <td>
-                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openPanel('${rowKey}')">
-                        View
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    updatePaginationInfo(startIdx + 1, Math.min(endIdx, filteredCompanies.length), filteredCompanies.length);
-    updatePaginationButtons(totalPages);
-}
-
-/**
- * Get machine count for branches
- * Status codes: 1 = Active, 2 = Terminated, 7 = Historical/Ended
- * Only count status == 1 as active machines
- */
-function getMachineCount(branches) {
-    const branchIds = branches.map(b => b.id);
-    return customers.contracts.filter(c => 
-        branchIds.includes(c.contract_id) && c.status == 1
-    ).length;
-}
-
-/**
- * Get location string
- */
-function getLocation(branch) {
-    if (!branch) return 'N/A';
-    
-    const area = customers.areas.find(a => a.id == branch.area_id);
-    const areaName = area?.area_name || area?.name || '';
-    const cityName = branch.city || '';
-    
-    return areaName || cityName || 'N/A';
-}
-
-/**
- * Update pagination info
- */
-function updatePaginationInfo(start, end, total) {
-    document.getElementById('showingStart').textContent = start;
-    document.getElementById('showingEnd').textContent = end;
-    document.getElementById('totalRecords').textContent = total;
-    document.getElementById('currentPage').textContent = currentPage;
-}
-
-/**
- * Update pagination buttons
- */
-function updatePaginationButtons(totalPages) {
-    document.getElementById('prevBtn').disabled = currentPage <= 1;
-    document.getElementById('nextBtn').disabled = currentPage >= totalPages;
-}
-
-/**
- * Previous page
- */
-function prevPage() {
-    if (currentPage > 1) {
-        currentPage--;
-        renderTable();
-    }
-}
-
-/**
- * Next page
- */
-function nextPage() {
-    const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage);
-    if (currentPage < totalPages) {
-        currentPage++;
-        renderTable();
-    }
-}
-
-/**
- * Open detail panel
- */
-function openPanel(accountKey) {
-    selectedAccountKey = String(accountKey || '');
-    const account = accountRows.find((entry) => String(entry.key) === selectedAccountKey);
-    if (!account) {
-        MargaUtils.showToast('Account not found', 'error');
-        return;
+    async function fetchCollectionFast(collection) {
+        return MargaUtils.fetchCollection(collection, 1000);
     }
 
-    document.getElementById('panelCompanyName').textContent = account.companyName || 'Unknown';
-    document.getElementById('panelBranchCount').textContent = account.accountName || account.branchName || 'Account';
-    
-    // Reset to info tab
-    document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
-    const infoTab = document.querySelector('.detail-tab[data-tab="info"]');
-    if (infoTab) infoTab.classList.add('active');
-    
-    // Load info tab content
-    loadInfoTab(account);
-    
-    // Show modal
-    document.getElementById('detailPanel').classList.add('open');
-    document.getElementById('detailOverlay').classList.add('visible');
-}
-
-/**
- * Close detail panel
- */
-function closePanel() {
-    document.getElementById('detailPanel').classList.remove('open');
-    document.getElementById('detailOverlay').classList.remove('visible');
-    selectedAccountKey = null;
-}
-
-/**
- * Switch tabs
- */
-function switchTab(tabName) {
-    document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
-    const tab = document.querySelector(`.detail-tab[data-tab="${tabName}"]`);
-    if (tab) tab.classList.add('active');
-    
-    const account = accountRows.find((entry) => String(entry.key) === String(selectedAccountKey));
-    if (!account) return;
-    
-    switch(tabName) {
-        case 'info':
-            loadInfoTab(account);
-            break;
-        case 'billing':
-            loadBillingTab(account);
-            break;
-        case 'machines':
-            loadMachinesTab(account);
-            break;
-    }
-}
-
-/**
- * Load Info Tab content
- */
-function loadInfoTab(account) {
-    const content = document.getElementById('panelContent');
-    const company = account.company || customers.companies.find((entry) => String(entry.id) === String(account.companyId));
-    const branch = account.branch || {};
-    const activeMachines = account.machineEntries.filter((entry) => Number(entry.status || 0) === 1).length;
-    
-    content.innerHTML = `
-        <div class="detail-section">
-            <div class="detail-section-title">Company Information</div>
-            <div class="detail-grid">
-                <div class="detail-field full">
-                    <div class="field-label">Company Name</div>
-                    <div class="field-value">${MargaUtils.escapeHtml(company?.companyname || 'N/A')}</div>
-                </div>
-                <div class="detail-field">
-                    <div class="field-label">TIN</div>
-                    <div class="field-value">${MargaUtils.escapeHtml(company?.company_tin || 'N/A')}</div>
-                </div>
-                <div class="detail-field">
-                    <div class="field-label">Business Style</div>
-                    <div class="field-value">${MargaUtils.escapeHtml(company?.business_style || 'N/A')}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="detail-section">
-            <div class="detail-section-title">Selected Account</div>
-            <div class="branch-card ${account.branchId ? 'branch-clickable' : ''}" ${account.branchId ? `onclick="editBranch(${account.branchId})"` : ''}>
-                    <div class="branch-card-header">
-                        <div>
-                            <div class="branch-name">${MargaUtils.escapeHtml(account.accountName || branch.branchname || 'Unnamed')}</div>
-                            <div class="branch-code">${MargaUtils.escapeHtml(branch.code || '')}</div>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span class="badge ${account.isActive ? 'badge-success' : 'badge-danger'}">
-                                ${account.isActive ? 'Active' : 'Inactive'}
-                            </span>
-                            ${account.branchId ? `
-                            <span class="branch-edit-icon">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                            </span>
-                            ` : ''}
-                        </div>
-                    </div>
-                    <div class="branch-details">
-                        <div><strong>Address:</strong> ${MargaUtils.escapeHtml(formatAddress(branch))}</div>
-                        <div><strong>Signatory:</strong> ${MargaUtils.escapeHtml(branch.signatory || 'N/A')} ${branch.designation ? '(' + MargaUtils.escapeHtml(branch.designation) + ')' : ''}</div>
-                        <div><strong>Email:</strong> ${MargaUtils.escapeHtml(branch.email || 'N/A')}</div>
-                    </div>
-                    ${account.machineEntries.length > 0 ? `
-                    <div class="branch-machines">
-                        <div class="branch-machines-title">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="2" y="6" width="20" height="12" rx="2"/>
-                                <path d="M12 12h.01"/>
-                            </svg>
-                            Machines (${account.machineEntries.length}) - ${activeMachines} active
-                        </div>
-                        <div class="branch-machines-list">
-                            ${account.machineEntries.slice(0, 3).map(m => `
-                                <span class="machine-tag ${m.status == 1 ? 'active' : m.status == 0 ? 'pending' : 'terminated'}">
-                                    ${MargaUtils.escapeHtml(m.modelName)}
-                                </span>
-                            `).join('')}
-                            ${account.machineEntries.length > 3 ? `<span class="machine-tag more">+${account.machineEntries.length - 3} more</span>` : ''}
-                        </div>
-                    </div>
-                    ` : ''}
-                    ${account.branchId ? `
-                    <div class="branch-actions">
-                        <button class="btn-convert" onclick="event.stopPropagation(); showConvertModal(${account.branchId}, '${MargaUtils.escapeHtml(branch.branchname || '').replace(/'/g, "\\'")}')">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                            Convert to Company
-                        </button>
-                    </div>
-                    ` : ''}
-                </div>
-        </div>
-    `;
-}
-
-/**
- * Load Billing Tab content
- */
-function loadBillingTab(account) {
-    const branchBillInfo = account.billInfoRows || [];
-    const content = document.getElementById('panelContent');
-    
-    if (branchBillInfo.length === 0) {
-        content.innerHTML = `
-            <div class="tab-empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                    <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
-                </svg>
-                <h4>No Billing Information</h4>
-                <p>No billing records found for this company</p>
-            </div>
-        `;
-        return;
-    }
-    
-    content.innerHTML = `
-        <div class="detail-section">
-            <div class="detail-section-title">Billing Information</div>
-            ${branchBillInfo.map(bi => {
-                return `
-                <div class="billing-card">
-                    <div class="billing-card-header">${MargaUtils.escapeHtml(account.accountName || account.branchName || 'Account')}</div>
-                    <div class="billing-grid">
-                        <div class="billing-field">
-                            <div class="field-label">Payee Name</div>
-                            <div class="field-value">${MargaUtils.escapeHtml(bi.payeename || 'N/A')}</div>
-                        </div>
-                        <div class="billing-field">
-                            <div class="field-label">Contact</div>
-                            <div class="field-value">${MargaUtils.escapeHtml(bi.payeecontactnum || 'N/A')}</div>
-                        </div>
-                        <div class="billing-field" style="grid-column: span 2;">
-                            <div class="field-label">Payee Address</div>
-                            <div class="field-value">${MargaUtils.escapeHtml(bi.payeeadd || 'N/A')}</div>
-                        </div>
-                        <div class="billing-field">
-                            <div class="field-label">End User</div>
-                            <div class="field-value">${MargaUtils.escapeHtml(bi.endusername || 'N/A')}</div>
-                        </div>
-                        <div class="billing-field">
-                            <div class="field-label">End User Contact</div>
-                            <div class="field-value">${MargaUtils.escapeHtml(bi.endusercontactnum || 'N/A')}</div>
-                        </div>
-                        <div class="billing-field" style="grid-column: span 2;">
-                            <div class="field-label">End User Address</div>
-                            <div class="field-value">${MargaUtils.escapeHtml(bi.enduseradd || 'N/A')}</div>
-                        </div>
-                    </div>
-                </div>
-            `}).join('')}
-        </div>
-    `;
-}
-
-/**
- * Load Machines Tab content
- */
-function loadMachinesTab(account) {
-    const branchContracts = account.contracts || [];
-    const content = document.getElementById('panelContent');
-    
-    // Status mapping based on legacy system
-    const statusMap = {
-        0: { text: 'Pending', class: 'pending' },
-        1: { text: 'Active', class: 'active' },
-        2: { text: 'Terminated', class: 'terminated' },
-        3: { text: 'On Hold', class: 'pending' },
-        4: { text: 'Pulled Out', class: 'terminated' },
-        7: { text: 'Ended', class: 'ended' },
-        8: { text: 'Replaced', class: 'pending' },
-        9: { text: 'Transferred', class: 'pending' },
-        10: { text: 'For Pullout', class: 'pending' },
-        13: { text: 'Cancelled', class: 'terminated' }
-    };
-    
-    if (branchContracts.length === 0) {
-        content.innerHTML = `
-            <div class="tab-empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="6" width="20" height="12" rx="2"/>
-                    <path d="M12 12h.01"/>
-                </svg>
-                <h4>No Machines</h4>
-                <p>No machines or contracts found for this company</p>
-            </div>
-        `;
-        return;
-    }
-    
-    content.innerHTML = `
-        <div class="detail-section">
-            <div class="detail-section-title">Machines & Contracts (${branchContracts.length})</div>
-            ${branchContracts.map(contract => {
-                const machine = customers.machines.find(m => m.id == contract.mach_id) || {};
-                const model = customers.models.find(m => m.id == machine.model_id);
-                const modelName = model?.modelname || 'Unknown Model';
-                const statusInfo = statusMap[contract.status] || { text: `Status ${contract.status}`, class: 'pending' };
-                
-                return `
-                    <div class="machine-card">
-                        <div class="machine-card-header">
-                            <div>
-                                <div class="machine-card-title">${MargaUtils.escapeHtml(modelName)}</div>
-                                <div class="machine-card-serial">${MargaUtils.escapeHtml(machine.serial || contract.xserial || 'N/A')}</div>
-                            </div>
-                            <span class="machine-status-badge ${statusInfo.class}">${statusInfo.text}</span>
-                        </div>
-                        <div class="machine-details-grid">
-                            <div class="machine-detail-item">
-                                <div class="machine-detail-label">B&W Rate</div>
-                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.page_rate || 0)}</div>
-                            </div>
-                            <div class="machine-detail-item">
-                                <div class="machine-detail-label">B&W Quota</div>
-                                <div class="machine-detail-value">${(contract.monthly_quota || 0).toLocaleString()}</div>
-                            </div>
-                            <div class="machine-detail-item">
-                                <div class="machine-detail-label">Monthly Rate</div>
-                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.monthly_rate || 0)}</div>
-                            </div>
-                        </div>
-                        ${contract.page_rate2 > 0 ? `
-                        <div class="machine-details-grid" style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed #e2e8f0;">
-                            <div class="machine-detail-item">
-                                <div class="machine-detail-label">Color Rate</div>
-                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.page_rate2 || 0)}</div>
-                            </div>
-                            <div class="machine-detail-item">
-                                <div class="machine-detail-label">Color Quota</div>
-                                <div class="machine-detail-value">${(contract.monthly_quota2 || 0).toLocaleString()}</div>
-                            </div>
-                            <div class="machine-detail-item">
-                                <div class="machine-detail-label">Color Monthly</div>
-                                <div class="machine-detail-value currency">${MargaUtils.formatCurrency(contract.monthly_rate2 || 0)}</div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('')}
-        </div>
-    `;
-}
-
-/**
- * Format address from branch
- */
-function formatAddress(branch) {
-    const parts = [
-        branch.room,
-        branch.floor,
-        branch.bldg,
-        branch.street,
-        branch.brgy,
-        branch.city
-    ].filter(Boolean);
-    
-    return parts.length > 0 ? parts.join(', ') : 'N/A';
-}
-
-/**
- * Export customers to CSV
- */
-function exportCustomers() {
-    const headers = ['Company Name', 'Account', 'Location', 'Contact', 'Machine Count', 'Status'];
-    const rows = filteredCompanies.map((row) => {
-        return [
-            row.companyName || '',
-            row.accountName || row.branchName || '',
-            row.location || '',
-            row.contactName || '',
-            row.machineCount || 0,
-            row.isActive ? 'Active' : 'Inactive'
-        ];
-    });
-    
-    const csv = [headers, ...rows].map(row => 
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `customers_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    MargaUtils.showToast('Export completed', 'success');
-}
-
-/**
- * Edit customer - opens the form with current data
- */
-function editCustomer() {
-    if (!selectedAccountKey) {
-        MargaUtils.showToast('No customer selected', 'error');
-        return;
-    }
-
-    const account = accountRows.find((entry) => String(entry.key) === String(selectedAccountKey));
-    if (!account?.branchId) {
-        MargaUtils.showToast('This account has no editable branch link yet.', 'error');
-        return;
-    }
-
-    editBranch(account.branchId);
-}
-
-/**
- * Print customer details
- */
-function printCustomer() {
-    window.print();
-}
-
-/**
- * Show new customer modal
- */
-function showNewCustomerModal() {
-    CustomerForm.openNew();
-}
-
-
-/**
- * Edit a specific branch
- */
-function editBranch(branchId) {
-    const branch = customers.branches.find(b => b.id == branchId);
-    if (!branch) {
-        MargaUtils.showToast('Branch not found', 'error');
-        return;
-    }
-    
-    const company = customers.companies.find(c => c.id == branch.company_id);
-    const companyBranches = [branch];
-    const branchBillInfo = customers.billInfo.filter(bi => bi.branch_id == branchId);
-    const branchIndex = 0;
-    
-    // Close the detail panel
-    closePanel();
-    
-    // Open edit form at specific branch
-    CustomerForm.openEditBranch(company, companyBranches, branchBillInfo, branchIndex);
-}
-
-
-/**
- * Show Convert to Company Modal
- */
-function showConvertModal(branchId, branchName) {
-    // Create modal if it doesn't exist
-    let modal = document.getElementById('convertModal');
-    if (!modal) {
-        const modalHTML = `
-            <div class="modal-overlay" id="convertModalOverlay" onclick="closeConvertModal()"></div>
-            <div class="convert-modal" id="convertModal">
-                <div class="convert-modal-header">
-                    <h3>🔄 Convert Branch to Company</h3>
-                    <button class="modal-close-btn" onclick="closeConvertModal()">×</button>
-                </div>
-                <div class="convert-modal-body">
-                    <p class="convert-info">This will remove the branch from its current company and create a new company with the same information.</p>
-                    
-                    <div class="convert-form">
-                        <div class="form-field">
-                            <label class="field-label">New Company Name</label>
-                            <input type="text" class="field-input" id="newCompanyName" placeholder="Enter company name">
-                        </div>
-                        <div class="form-field">
-                            <label class="field-label">TIN (Optional)</label>
-                            <input type="text" class="field-input" id="newCompanyTin" placeholder="000-000-000-000">
-                        </div>
-                        <div class="form-field">
-                            <label class="field-label">Business Style (Optional)</label>
-                            <input type="text" class="field-input" id="newCompanyStyle" placeholder="Business style">
-                        </div>
-                    </div>
-                    
-                    <input type="hidden" id="convertBranchId">
-                </div>
-                <div class="convert-modal-footer">
-                    <button class="btn btn-secondary" onclick="closeConvertModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="executeConvert()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                        Convert & Save
-                    </button>
-                </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        modal = document.getElementById('convertModal');
-    }
-    
-    // Set values
-    document.getElementById('convertBranchId').value = branchId;
-    document.getElementById('newCompanyName').value = branchName;
-    document.getElementById('newCompanyTin').value = '';
-    document.getElementById('newCompanyStyle').value = '';
-    
-    // Show modal
-    document.getElementById('convertModalOverlay').classList.add('visible');
-    modal.classList.add('visible');
-    document.getElementById('newCompanyName').focus();
-}
-
-/**
- * Close Convert Modal
- */
-function closeConvertModal() {
-    document.getElementById('convertModalOverlay')?.classList.remove('visible');
-    document.getElementById('convertModal')?.classList.remove('visible');
-}
-
-/**
- * Execute the conversion
- */
-async function executeConvert() {
-    const branchId = document.getElementById('convertBranchId').value;
-    const newCompanyName = document.getElementById('newCompanyName').value.trim();
-    const newCompanyTin = document.getElementById('newCompanyTin').value.trim();
-    const newCompanyStyle = document.getElementById('newCompanyStyle').value.trim();
-    
-    if (!newCompanyName) {
-        MargaUtils.showToast('Company name is required', 'error');
-        return;
-    }
-    
-    if (!branchId) {
-        MargaUtils.showToast('No branch selected', 'error');
-        return;
-    }
-    
-    try {
-        // Show loading
-        const btn = document.querySelector('#convertModal .btn-primary');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<div class="spinner"></div> Converting...';
-        btn.disabled = true;
-        
-        // Get the branch data
-        const branch = customers.branches.find(b => b.id == branchId);
-        if (!branch) {
-            throw new Error('Branch not found');
-        }
-        
-        // Get next company ID
-        const maxCompanyId = Math.max(...customers.companies.map(c => c.id || 0), 0);
-        const newCompanyId = maxCompanyId + 1;
-        
-        // Create new company via REST API
-        const companyData = {
-            fields: {
-                id: { integerValue: newCompanyId },
-                companyname: { stringValue: newCompanyName },
-                company_tin: { stringValue: newCompanyTin },
-                business_style: { stringValue: newCompanyStyle },
-                nature_of_business: { stringValue: '' },
-                business_industry: { stringValue: '' }
-            }
+    function buildMaps() {
+        state.maps = {
+            companies: toMap(state.raw.companies),
+            branches: toMap(state.raw.branches),
+            contracts: toMap(state.raw.contracts),
+            contractDeps: toMap(state.raw.contractDeps),
+            machines: toMap(state.raw.machines),
+            models: toMap(state.raw.models),
+            brands: toMap(state.raw.brands),
+            areas: toMap(state.raw.areas),
+            cities: toMap(state.raw.cities),
+            billInfoByBranch: new Map(),
+            contractsByBranch: new Map()
         };
-        
-        // Save new company
-        const createResponse = await fetch(
-            `${FIREBASE_CONFIG.baseUrl}/tbl_companylist?documentId=${newCompanyId}&key=${FIREBASE_CONFIG.apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(companyData)
-            }
-        );
-        
-        if (!createResponse.ok) {
-            throw new Error('Failed to create company');
+
+        state.raw.billInfo.forEach((row) => {
+            const branchId = clean(row.branch_id);
+            if (!branchId) return;
+            if (!state.maps.billInfoByBranch.has(branchId)) state.maps.billInfoByBranch.set(branchId, []);
+            state.maps.billInfoByBranch.get(branchId).push(row);
+        });
+
+        state.raw.contracts.forEach((contract) => {
+            const branch = resolveContractBranch(contract);
+            const branchId = clean(branch?.id);
+            if (!branchId) return;
+            if (!state.maps.contractsByBranch.has(branchId)) state.maps.contractsByBranch.set(branchId, []);
+            state.maps.contractsByBranch.get(branchId).push(contract);
+        });
+    }
+
+    function toMap(rows) {
+        return new Map((rows || []).map((row) => [clean(row.id || row._docId), row]).filter(([id]) => id));
+    }
+
+    function normalizeParticulars(rows) {
+        const source = Array.isArray(rows) && rows.length ? rows : FALLBACK_PARTICULARS;
+        return source
+            .map((row) => ({
+                id: Number(row.id || 0),
+                code: clean(row.code || row.particular_code || row.particularCode),
+                name: clean(row.name || row.description || row.particular_name),
+                with_reading: Number(row.with_reading ?? row.wreading ?? 0)
+            }))
+            .filter((row) => row.id || row.code)
+            .sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+    }
+
+    function selectInitialCompany() {
+        const params = new URLSearchParams(window.location.search);
+        const companyId = clean(params.get('company_id'));
+        const branchId = clean(params.get('branch_id'));
+        const contractId = clean(params.get('contractmain_id'));
+        let targetCompany = companyId ? state.maps.companies.get(companyId) : null;
+
+        if (!targetCompany && branchId) {
+            const branch = state.maps.branches.get(branchId);
+            targetCompany = state.maps.companies.get(clean(branch?.company_id));
         }
-        
-        // Update branch to point to new company
-        const updateResponse = await fetch(
-            `${FIREBASE_CONFIG.baseUrl}/tbl_branchinfo/${branchId}?updateMask.fieldPaths=company_id&key=${FIREBASE_CONFIG.apiKey}`,
-            {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fields: {
-                        company_id: { integerValue: newCompanyId }
-                    }
-                })
-            }
-        );
-        
-        if (!updateResponse.ok) {
-            throw new Error('Failed to update branch');
+        if (!targetCompany && contractId) {
+            const contract = state.maps.contracts.get(contractId);
+            const branch = resolveContractBranch(contract);
+            targetCompany = state.maps.companies.get(clean(branch?.company_id));
         }
-        
-        MargaUtils.showToast(`"${newCompanyName}" created successfully!`, 'success');
-        closeConvertModal();
-        closePanel();
-        
-        // Reload data
-        await loadAllData();
-        
-    } catch (error) {
-        console.error('Convert error:', error);
-        MargaUtils.showToast('Error: ' + error.message, 'error');
-    } finally {
-        const btn = document.querySelector('#convertModal .btn-primary');
-        if (btn) {
-            btn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="20 6 9 17 4 12"/>
-                </svg>
-                Convert & Save
-            `;
-            btn.disabled = false;
+        if (!targetCompany) {
+            targetCompany = [...state.raw.companies]
+                .filter((company) => !Number(company.hide || 0))
+                .sort((a, b) => companyName(a).localeCompare(companyName(b)))[0] || null;
+        }
+
+        if (targetCompany) {
+            selectCompany(clean(targetCompany.id), branchId);
         }
     }
+
+    function bindStaticEvents() {
+        byId('customerCompanyPicker')?.addEventListener('change', handleCompanyPicker);
+        byId('customerCompanyPicker')?.addEventListener('input', MargaUtils.debounce(handleCompanyPicker, 250));
+        byId('branchPicker')?.addEventListener('change', (event) => selectBranch(event.target.value));
+        byId('saveCompanyBtn')?.addEventListener('click', () => saveCompany(true));
+        byId('updateCompanyBtn')?.addEventListener('click', () => saveCompany(false));
+        byId('newBranchBtn')?.addEventListener('click', prepareNewBranch);
+        byId('saveBranchBtn')?.addEventListener('click', () => saveBranchInfo(true));
+        byId('updateBranchBtn')?.addEventListener('click', () => saveBranchInfo(false));
+        byId('copyAddressBtn')?.addEventListener('click', copyBranchAddressToSections);
+        byId('machineContractsBtn')?.addEventListener('click', openContractsModal);
+        byId('verifiedUsersBtn')?.addEventListener('click', () => MargaUtils.showToast('Verified app users wiring will use the portal/user tables after this customer screen is stable.', 'info'));
+        byId('refreshCustomersBtn')?.addEventListener('click', loadAllData);
+        byId('openMapBtn')?.addEventListener('click', openSelectedMap);
+        byId('contractModalClose')?.addEventListener('click', closeContractsModal);
+        byId('contractOverlay')?.addEventListener('click', closeContractsModal);
+        byId('clearContractBtn')?.addEventListener('click', clearContractForm);
+        byId('saveContractBtn')?.addEventListener('click', () => saveContract(true));
+        byId('updateContractBtn')?.addEventListener('click', () => saveContract(false));
+        byId('schedulePulloutBtn')?.addEventListener('click', schedulePullout);
+        byId('contractRows')?.addEventListener('click', handleContractTableClick);
+        byId('machineSerial')?.addEventListener('change', handleMachineSerialPicked);
+    }
+
+    function renderReferenceLists() {
+        renderCompanyList();
+        renderSelectOptions('natureOfBusiness', state.raw.nature, 'id', (row) => row.nature || row.name || `Nature ${row.id}`);
+        renderSelectOptions('businessIndustry', state.raw.industries, 'id', (row) => row.industry_name || row.name || `Industry ${row.id}`);
+        renderSelectOptions('branchArea', state.raw.areas, 'id', areaName);
+        renderSelectOptions('deliveryArea', state.raw.areas, 'id', areaName);
+        renderSelectOptions('serviceArea', state.raw.areas, 'id', areaName);
+        renderSelectOptions('billArea', state.raw.areas, 'id', areaName);
+        renderSelectOptions('collectionArea', state.raw.areas, 'id', areaName);
+        renderSelectOptions('branchCity', state.raw.cities, (row) => cityName(row), cityName);
+        renderSelectOptions('deliveryCity', state.raw.cities, (row) => cityName(row), cityName);
+        renderSelectOptions('serviceCity', state.raw.cities, (row) => cityName(row), cityName);
+        renderSelectOptions('billCity', state.raw.cities, (row) => cityName(row), cityName);
+        renderSelectOptions('collectionCity', state.raw.cities, (row) => cityName(row), cityName);
+        renderDatalist('brandOptions', state.raw.brands, brandName);
+        renderDatalist('modelOptions', state.raw.models, modelName);
+        renderDatalist('machineSerialOptions', state.raw.machines, machineOptionLabel);
+        renderSelectOptions('particularCode', state.raw.particulars, 'id', particularLabel);
+        renderSelectOptionsFromObject('contractStatus', CONTRACT_STATUS);
+        renderSelectOptions('contractAgent', state.raw.employees, 'id', employeeName);
+    }
+
+    function renderCompanyList() {
+        const list = byId('companyOptions');
+        if (!list) return;
+        const rows = [...state.raw.companies]
+            .sort((a, b) => companyName(a).localeCompare(companyName(b)))
+            .map((company) => `<option value="${escapeAttr(companyPickerValue(company))}"></option>`);
+        list.innerHTML = rows.join('');
+    }
+
+    function renderStats() {
+        const activeContracts = state.raw.contracts.filter((contract) => Number(contract.status || 0) === 1).length;
+        setText('companyCount', state.raw.companies.length.toLocaleString());
+        setText('branchCount', state.raw.branches.length.toLocaleString());
+        setText('contractCount', state.raw.contracts.length.toLocaleString());
+        setText('activeContractCount', activeContracts.toLocaleString());
+    }
+
+    function handleCompanyPicker() {
+        const value = clean(byId('customerCompanyPicker')?.value);
+        const idMatch = value.match(/\[(\d+)\]\s*$/);
+        let company = idMatch ? state.maps.companies.get(idMatch[1]) : null;
+        if (!company && value) {
+            const normalized = normalize(value.replace(/\[\d+\]\s*$/, ''));
+            company = state.raw.companies.find((row) => normalize(companyName(row)) === normalized)
+                || state.raw.companies.find((row) => normalize(companyName(row)).includes(normalized));
+        }
+        if (company) selectCompany(clean(company.id));
+    }
+
+    function selectCompany(companyId, preferredBranchId = '') {
+        const company = state.maps.companies.get(clean(companyId));
+        if (!company) return;
+        state.selectedCompanyId = clean(company.id);
+        state.newBranchMode = false;
+        byId('customerCompanyPicker').value = companyPickerValue(company);
+        fillCompanyForm(company);
+        renderBranchPicker(preferredBranchId);
+        setStatus(`Company ${state.selectedCompanyId}`);
+    }
+
+    function fillCompanyForm(company) {
+        setInput('companyName', companyName(company));
+        setInput('companyTin', company.company_tin || company.tin || '');
+        setInput('businessStyle', company.business_style || '');
+        setInput('natureOfBusiness', clean(company.company_nob || company.nature_of_business || ''));
+        setInput('businessIndustry', clean(company.industry || company.business_industry || ''));
+        setInput('companyIdDisplay', clean(company.id));
+    }
+
+    function renderBranchPicker(preferredBranchId = '') {
+        const branches = getCompanyBranches(state.selectedCompanyId);
+        const picker = byId('branchPicker');
+        if (!picker) return;
+        picker.innerHTML = branches.map((branch) => {
+            const label = `${branch.branchname || 'Main'}${branch.code ? ` - ${branch.code}` : ''}`;
+            return `<option value="${escapeAttr(branch.id)}">${escapeHtml(label)}</option>`;
+        }).join('');
+
+        const branchId = preferredBranchId && branches.some((branch) => clean(branch.id) === clean(preferredBranchId))
+            ? clean(preferredBranchId)
+            : clean(branches[0]?.id);
+        selectBranch(branchId);
+    }
+
+    function getCompanyBranches(companyId) {
+        return state.raw.branches
+            .filter((branch) => clean(branch.company_id) === clean(companyId))
+            .sort((a, b) => clean(a.branchname || '').localeCompare(clean(b.branchname || '')));
+    }
+
+    function selectBranch(branchId) {
+        state.selectedBranchId = clean(branchId);
+        state.newBranchMode = false;
+        if (byId('branchPicker')) byId('branchPicker').value = state.selectedBranchId;
+        const branch = state.maps.branches.get(state.selectedBranchId) || {};
+        const billInfo = firstBillInfoForBranch(state.selectedBranchId) || {};
+        fillBranchForm(branch);
+        fillBillForm(billInfo);
+        renderBranchSummary();
+    }
+
+    function prepareNewBranch() {
+        if (!state.selectedCompanyId) {
+            MargaUtils.showToast('Select or save a company first.', 'error');
+            return;
+        }
+        state.selectedBranchId = '';
+        state.newBranchMode = true;
+        if (byId('branchPicker')) byId('branchPicker').value = '';
+        fillBranchForm({});
+        fillBillForm({});
+        setText('branchMachineCount', '0');
+        setText('branchContractCount', '0');
+        setStatus('New branch/dept');
+    }
+
+    function fillBranchForm(branch) {
+        setInput('branchCode', branch.code || '');
+        setInput('branchName', branch.branchname || '');
+        setInput('branchRoom', branch.room || '');
+        setInput('branchFloor', branch.floor || '');
+        setInput('branchBldg', branch.bldg || '');
+        setInput('branchStreet', branch.street || '');
+        setInput('branchBrgy', branch.brgy || '');
+        setInput('branchCity', branch.city || '');
+        setInput('branchArea', clean(branch.area_id || ''));
+        setInput('branchLandmark', branch.landmark || '');
+        setInput('branchLatitude', branch.latitude || '');
+        setInput('branchLongitude', branch.longitude || '');
+        setInput('branchSignatory', branch.signatory || '');
+        setInput('branchDesignation', branch.designation || '');
+        setInput('branchEmail', branch.email || '');
+        setInput('deliveryContact', branch.delivery_contact || '');
+        setInput('deliveryNum', branch.delivery_num || '');
+        setInput('deliveryDays', branch.delivery_days || '');
+        setInput('deliveryHours', branch.delivery_hours || '');
+        setInput('deliveryCity', branch.delivery_city || branch.city || '');
+        setInput('deliveryArea', clean(branch.delivery_area_id || branch.area_id || ''));
+        setInput('deliveryAddress', branch.delivery_address || branch.branch_address || formatBranchAddress(branch));
+        setInput('serviceContact', branch.service_contact || '');
+        setInput('serviceNum', branch.service_num || '');
+        setInput('serviceCity', branch.service_city || branch.city || '');
+        setInput('serviceArea', clean(branch.service_area_id || branch.area_id || ''));
+        setInput('serviceAddress', branch.service_address || branch.branch_address || formatBranchAddress(branch));
+    }
+
+    function fillBillForm(billInfo) {
+        setInput('billEndUser', billInfo.endusername || '');
+        setInput('billEndUserContact', billInfo.endusercontactnum || '');
+        setInput('billPayeeName', billInfo.payeename || '');
+        setInput('billPayeeContact', billInfo.payeecontactnum || '');
+        setInput('billPayeeAddress', billInfo.payeeadd || billInfo.enduseradd || '');
+        setInput('billCity', billInfo.endusercity || cityName(state.maps.cities.get(clean(billInfo.city_id))) || '');
+        setInput('billArea', clean(billInfo.area_id || billInfo.enduserarea_id || ''));
+        setInput('billLatitude', billInfo.latitude || '');
+        setInput('billLongitude', billInfo.longitude || '');
+        setInput('acctContact', billInfo.acct_contact || '');
+        setInput('acctNum', billInfo.acct_num || '');
+        setInput('acctEmail', billInfo.acct_email || '');
+        setInput('cashierContact', billInfo.cashier_contact || '');
+        setInput('cashierNum', billInfo.cashier_num || '');
+        setInput('treasuryContact', billInfo.treasury_contact || '');
+        setInput('treasuryNum', billInfo.treasury_num || '');
+        setInput('releasingContact', billInfo.releasing_contact || '');
+        setInput('releasingNum', billInfo.releasing_num || '');
+        setInput('collectionDays', billInfo.col_days || '');
+        setInput('collectionFrom', normalizeTimeValue(billInfo.col_from));
+        setInput('collectionTo', normalizeTimeValue(billInfo.col_to));
+        setInput('collectionCity', billInfo.col_city || '');
+        setInput('collectionArea', clean(billInfo.col_area_id || ''));
+        setInput('collectionAddress', billInfo.col_address || '');
+    }
+
+    function renderBranchSummary() {
+        const contracts = getSelectedBranchContracts();
+        const machineIds = new Set(contracts.map((contract) => clean(contract.mach_id)).filter(Boolean));
+        setText('branchMachineCount', machineIds.size.toLocaleString());
+        setText('branchContractCount', contracts.length.toLocaleString());
+    }
+
+    async function saveCompany(createNew) {
+        const companyNameValue = clean(byId('companyName')?.value);
+        if (!companyNameValue) {
+            MargaUtils.showToast('Company name is required.', 'error');
+            return;
+        }
+
+        const companyId = createNew
+            ? nextNumericId(state.raw.companies)
+            : clean(state.selectedCompanyId || byId('companyIdDisplay')?.value);
+        if (!companyId) {
+            MargaUtils.showToast('Select a company before updating.', 'error');
+            return;
+        }
+
+        const natureId = clean(byId('natureOfBusiness')?.value);
+        const industryId = clean(byId('businessIndustry')?.value);
+        const payload = {
+            id: Number(companyId),
+            companyname: companyNameValue,
+            company_tin: clean(byId('companyTin')?.value),
+            company_nob: numberOrZero(natureId),
+            industry: numberOrZero(industryId),
+            nature_of_business: optionText('natureOfBusiness'),
+            business_industry: optionText('businessIndustry'),
+            business_style: clean(byId('businessStyle')?.value),
+            hide: 0,
+            usecomname: 0,
+            has_code: 0
+        };
+
+        try {
+            toggleButton(createNew ? 'saveCompanyBtn' : 'updateCompanyBtn', true);
+            if (createNew) {
+                await createDocument('tbl_companylist', companyId, payload, COMPANY_INTEGER_FIELDS);
+                state.raw.companies.push({ ...payload, id: Number(companyId) });
+                MargaUtils.showToast('New company saved.', 'success');
+            } else {
+                await patchDocument('tbl_companylist', companyId, payload, COMPANY_INTEGER_FIELDS);
+                replaceLocalRow(state.raw.companies, companyId, payload);
+                MargaUtils.showToast('Company updated.', 'success');
+            }
+            buildMaps();
+            renderReferenceLists();
+            renderStats();
+            selectCompany(companyId);
+        } catch (error) {
+            console.error('Company save failed:', error);
+            MargaUtils.showToast(`Company save failed: ${error.message}`, 'error');
+        } finally {
+            toggleButton(createNew ? 'saveCompanyBtn' : 'updateCompanyBtn', false);
+        }
+    }
+
+    async function saveBranchInfo(createNew) {
+        if (!state.selectedCompanyId) {
+            MargaUtils.showToast('Select or save a company first.', 'error');
+            return;
+        }
+        const branchNameValue = clean(byId('branchName')?.value);
+        if (!branchNameValue) {
+            MargaUtils.showToast('Branch name is required.', 'error');
+            return;
+        }
+
+        const branchId = createNew || state.newBranchMode
+            ? nextNumericId(state.raw.branches)
+            : clean(state.selectedBranchId);
+        if (!branchId) {
+            MargaUtils.showToast('Select a branch before updating.', 'error');
+            return;
+        }
+
+        const branchPayload = collectBranchPayload(branchId);
+        const existingBill = firstBillInfoForBranch(branchId);
+        const billId = existingBill?.id || nextNumericId(state.raw.billInfo);
+        const billPayload = collectBillPayload(billId, branchId);
+
+        try {
+            toggleButton(createNew ? 'saveBranchBtn' : 'updateBranchBtn', true);
+            if (createNew || state.newBranchMode) {
+                await createDocument('tbl_branchinfo', branchId, branchPayload, BRANCH_INTEGER_FIELDS);
+                await createDocument('tbl_billinfo', billId, billPayload, BILL_INTEGER_FIELDS);
+                state.raw.branches.push({ ...branchPayload, id: Number(branchId) });
+                state.raw.billInfo.push({ ...billPayload, id: Number(billId) });
+                MargaUtils.showToast('New branch information saved.', 'success');
+            } else {
+                await patchDocument('tbl_branchinfo', branchId, branchPayload, BRANCH_INTEGER_FIELDS);
+                if (existingBill?.id) {
+                    await patchDocument('tbl_billinfo', existingBill.id, billPayload, BILL_INTEGER_FIELDS);
+                    replaceLocalRow(state.raw.billInfo, existingBill.id, billPayload);
+                } else {
+                    await createDocument('tbl_billinfo', billId, billPayload, BILL_INTEGER_FIELDS);
+                    state.raw.billInfo.push({ ...billPayload, id: Number(billId) });
+                }
+                replaceLocalRow(state.raw.branches, branchId, branchPayload);
+                MargaUtils.showToast('Branch information updated.', 'success');
+            }
+            buildMaps();
+            renderBranchPicker(branchId);
+            selectBranch(branchId);
+        } catch (error) {
+            console.error('Branch save failed:', error);
+            MargaUtils.showToast(`Branch save failed: ${error.message}`, 'error');
+        } finally {
+            toggleButton(createNew ? 'saveBranchBtn' : 'updateBranchBtn', false);
+        }
+    }
+
+    function collectBranchPayload(branchId) {
+        const address = [
+            valueOf('branchRoom'),
+            valueOf('branchFloor'),
+            valueOf('branchBldg'),
+            valueOf('branchStreet'),
+            valueOf('branchBrgy'),
+            valueOf('branchCity')
+        ].filter(Boolean).join(', ');
+
+        return {
+            id: Number(branchId),
+            company_id: Number(state.selectedCompanyId),
+            code: valueOf('branchCode'),
+            branchname: valueOf('branchName'),
+            room: valueOf('branchRoom'),
+            floor: valueOf('branchFloor'),
+            bldg: valueOf('branchBldg'),
+            street: valueOf('branchStreet'),
+            brgy: valueOf('branchBrgy'),
+            city: valueOf('branchCity'),
+            city_id: cityIdFromName(valueOf('branchCity')),
+            area_id: numberOrZero(valueOf('branchArea')),
+            landmark: valueOf('branchLandmark'),
+            latitude: valueOf('branchLatitude'),
+            longitude: valueOf('branchLongitude'),
+            branch_address: address,
+            signatory: valueOf('branchSignatory'),
+            designation: valueOf('branchDesignation'),
+            email: valueOf('branchEmail'),
+            delivery_contact: valueOf('deliveryContact'),
+            delivery_num: valueOf('deliveryNum'),
+            delivery_days: valueOf('deliveryDays'),
+            delivery_hours: valueOf('deliveryHours'),
+            delivery_city: valueOf('deliveryCity'),
+            delivery_area_id: numberOrZero(valueOf('deliveryArea')),
+            delivery_address: valueOf('deliveryAddress'),
+            service_contact: valueOf('serviceContact'),
+            service_num: valueOf('serviceNum'),
+            service_city: valueOf('serviceCity'),
+            service_area_id: numberOrZero(valueOf('serviceArea')),
+            service_address: valueOf('serviceAddress'),
+            inactive: 0
+        };
+    }
+
+    function collectBillPayload(billId, branchId) {
+        return {
+            id: Number(billId),
+            branch_id: Number(branchId),
+            endusername: valueOf('billEndUser'),
+            endusercontactnum: valueOf('billEndUserContact'),
+            payeename: valueOf('billPayeeName'),
+            payeecontactnum: valueOf('billPayeeContact'),
+            payeeadd: valueOf('billPayeeAddress'),
+            endusercity: valueOf('billCity'),
+            city_id: cityIdFromName(valueOf('billCity')),
+            area_id: numberOrZero(valueOf('billArea')),
+            enduseradd: valueOf('billPayeeAddress'),
+            latitude: valueOf('billLatitude'),
+            longitude: valueOf('billLongitude'),
+            acct_contact: valueOf('acctContact'),
+            acct_num: valueOf('acctNum'),
+            acct_email: valueOf('acctEmail'),
+            cashier_contact: valueOf('cashierContact'),
+            cashier_num: valueOf('cashierNum'),
+            treasury_contact: valueOf('treasuryContact'),
+            treasury_num: valueOf('treasuryNum'),
+            releasing_contact: valueOf('releasingContact'),
+            releasing_num: valueOf('releasingNum'),
+            col_days: valueOf('collectionDays'),
+            col_from: valueOf('collectionFrom'),
+            col_to: valueOf('collectionTo'),
+            col_city: valueOf('collectionCity'),
+            col_area_id: numberOrZero(valueOf('collectionArea')),
+            col_address: valueOf('collectionAddress')
+        };
+    }
+
+    function copyBranchAddressToSections() {
+        const branchContact = valueOf('branchSignatory');
+        const city = valueOf('branchCity');
+        const area = valueOf('branchArea');
+        const address = [
+            valueOf('branchRoom'),
+            valueOf('branchFloor'),
+            valueOf('branchBldg'),
+            valueOf('branchStreet'),
+            valueOf('branchBrgy')
+        ].filter(Boolean).join(', ');
+
+        setInput('deliveryContact', branchContact);
+        setInput('deliveryCity', city);
+        setInput('deliveryArea', area);
+        setInput('deliveryAddress', address);
+        setInput('serviceContact', branchContact);
+        setInput('serviceCity', city);
+        setInput('serviceArea', area);
+        setInput('serviceAddress', address);
+        setInput('billCity', city);
+        setInput('billArea', area);
+        setInput('billPayeeAddress', address);
+        MargaUtils.showToast('Address copied.', 'success');
+    }
+
+    function openSelectedMap() {
+        const lat = valueOf('branchLatitude') || valueOf('billLatitude');
+        const lng = valueOf('branchLongitude') || valueOf('billLongitude');
+        if (!lat || !lng || lat === '0' || lng === '0') {
+            MargaUtils.showToast('No coordinates available for this branch.', 'info');
+            return;
+        }
+        window.open(`https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`, '_blank', 'noopener,noreferrer');
+    }
+
+    function openContractsModal() {
+        if (!state.selectedBranchId) {
+            MargaUtils.showToast('Select a branch before opening machine/contracts.', 'error');
+            return;
+        }
+        renderContractRows();
+        const contracts = getSelectedBranchContracts();
+        if (contracts.length) fillContractForm(contracts[0]);
+        else clearContractForm();
+        byId('contractOverlay')?.classList.add('visible');
+        byId('contractModal')?.classList.add('visible');
+    }
+
+    function closeContractsModal() {
+        byId('contractOverlay')?.classList.remove('visible');
+        byId('contractModal')?.classList.remove('visible');
+    }
+
+    function renderContractRows() {
+        const tbody = byId('contractRows');
+        if (!tbody) return;
+        const contracts = getSelectedBranchContracts();
+        if (!contracts.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No machine/contracts linked to this branch.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = contracts.map((contract) => {
+            const machine = state.maps.machines.get(clean(contract.mach_id)) || {};
+            const model = state.maps.models.get(clean(machine.model_id)) || {};
+            const serial = resolveSerial(contract, machine);
+            return `
+                <tr data-contract-id="${escapeAttr(contract.id)}">
+                    <td>${escapeHtml(clean(contract.id))}</td>
+                    <td>${escapeHtml(modelName(model) || machine.description || '-')}</td>
+                    <td>${escapeHtml(serial || 'No serial on file')}</td>
+                    <td>${escapeHtml(particularCode(contract.category_id))}</td>
+                    <td>${escapeHtml(CONTRACT_STATUS[Number(contract.status || 0)] || `Status ${contract.status || '-'}`)}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function handleContractTableClick(event) {
+        const row = event.target.closest('tr[data-contract-id]');
+        if (!row) return;
+        const contract = state.maps.contracts.get(clean(row.dataset.contractId));
+        if (contract) fillContractForm(contract);
+    }
+
+    function clearContractForm() {
+        state.selectedContractId = '';
+        state.selectedMachineId = '';
+        [
+            'machineBrand',
+            'machineModel',
+            'machineSerial',
+            'piAmount',
+            'rdAmount',
+            'apAmount',
+            'contractDuration',
+            'beginningMeter',
+            'paymentTerms',
+            'computerCount',
+            'passwordRestriction',
+            'paperType',
+            'bwQuota',
+            'bwRate',
+            'bwXRate',
+            'colorQuota',
+            'colorRate',
+            'colorXRate',
+            'colorMeter',
+            'preTerm',
+            'fixedRate',
+            'readingDate',
+            'commission',
+            'deliveryDate',
+            'installDate',
+            'contractEnd',
+            'contractRemarks'
+        ].forEach((id) => setInput(id, ''));
+        setInput('particularCode', '1');
+        setInput('contractStatus', '1');
+        setInput('contractVatYes', true, 'checked');
+        setInput('contractVatNo', false, 'checked');
+        setInput('contractAgent', '');
+        ['ownedWifi', 'ownedUsb', 'scanFolder', 'scanEmail', 'osMac', 'osWindows'].forEach((id) => setInput(id, false, 'checked'));
+        setText('contractEditorTitle', 'New Machine / Contract');
+    }
+
+    function fillContractForm(contract) {
+        const machine = state.maps.machines.get(clean(contract.mach_id)) || {};
+        const brand = state.maps.brands.get(clean(machine.brand_id || contract.brand_id)) || {};
+        const model = state.maps.models.get(clean(machine.model_id)) || {};
+        state.selectedContractId = clean(contract.id);
+        state.selectedMachineId = clean(contract.mach_id);
+        setText('contractEditorTitle', `Contract ${state.selectedContractId}`);
+        setInput('particularCode', clean(contract.category_id || '1'));
+        setInput('contractStatus', clean(contract.status || '1'));
+        setInput('machineBrand', brandName(brand));
+        setInput('machineModel', modelName(model) || machine.description || '');
+        setInput('machineSerial', resolveSerial(contract, machine));
+        setInput('piAmount', contract.pi || '');
+        setInput('rdAmount', contract.rd || '');
+        setInput('apAmount', contract.ap || '');
+        setInput('contractDuration', contract.contract_duration || '');
+        setInput('beginningMeter', contract.b_meter || contract.starting_meter || '');
+        setInput('paymentTerms', contract.terms || '');
+        setInput('computerCount', contract.computers_installed || '');
+        setInput('ownedWifi', Boolean(Number(contract.wifi || 0)), 'checked');
+        setInput('ownedUsb', Boolean(Number(contract.usb || 0)), 'checked');
+        setInput('scanFolder', Boolean(Number(contract.scan_to_folder || 0)), 'checked');
+        setInput('scanEmail', Boolean(Number(contract.scan_to_email || 0)), 'checked');
+        setInput('osMac', Boolean(Number(contract.os_mac || 0)), 'checked');
+        setInput('osWindows', Boolean(Number(contract.os_windows || 0)), 'checked');
+        setInput('passwordRestriction', contract.pw_res || '');
+        setInput('paperType', contract.paper_type || '');
+        setInput('bwQuota', contract.monthly_quota || '');
+        setInput('bwRate', contract.page_rate || '');
+        setInput('bwXRate', contract.page_rate_xtra || '');
+        setInput('colorQuota', contract.monthly_quota2 || '');
+        setInput('colorRate', contract.page_rate2 || '');
+        setInput('colorXRate', contract.page_rate_xtra2 || '');
+        setInput('colorMeter', contract.monthly_rate2 || '');
+        setInput('preTerm', contract.preterm || '');
+        setInput('fixedRate', contract.fixed_rate || contract.monthly_rate || '');
+        setInput('contractVatYes', Number(contract.withvat || 0) === 1, 'checked');
+        setInput('contractVatNo', Number(contract.withvat || 0) !== 1, 'checked');
+        setInput('readingDate', toDateInput(contract.reading_date));
+        setInput('contractAgent', clean(contract.agent_id || ''));
+        setInput('commission', contract.commision_rate || '');
+        setInput('deliveryDate', toDateInput(contract.target_delivery));
+        setInput('installDate', toDateInput(contract.date_installed));
+        setInput('contractEnd', toDateInput(contract.contractend_date));
+        setInput('contractRemarks', contract.remarks || contract.update_remarks || '');
+    }
+
+    function handleMachineSerialPicked() {
+        const serial = clean(byId('machineSerial')?.value);
+        const selected = findMachineBySerialValue(serial);
+        if (!selected) return;
+        state.selectedMachineId = clean(selected.id);
+        const brand = state.maps.brands.get(clean(selected.brand_id));
+        const model = state.maps.models.get(clean(selected.model_id));
+        setInput('machineBrand', brandName(brand));
+        setInput('machineModel', modelName(model) || selected.description || '');
+        setInput('machineSerial', selected.serial || '');
+    }
+
+    async function saveContract(createNew) {
+        if (!state.selectedBranchId) {
+            MargaUtils.showToast('Select a branch first.', 'error');
+            return;
+        }
+        if (!createNew && !state.selectedContractId) {
+            MargaUtils.showToast('Select a contract before updating.', 'error');
+            return;
+        }
+
+        try {
+            toggleButton(createNew ? 'saveContractBtn' : 'updateContractBtn', true);
+            const machine = await upsertMachineForContract(createNew);
+            const contractId = createNew ? nextNumericId(state.raw.contracts) : state.selectedContractId;
+            let contractDepId = '';
+
+            if (createNew) {
+                contractDepId = nextNumericId(state.raw.contractDeps);
+                const contractDepPayload = {
+                    id: Number(contractDepId),
+                    branch_id: Number(state.selectedBranchId),
+                    departmentname: '',
+                    dev_remarks: '',
+                    for_purchase: 0,
+                    address: '0'
+                };
+                await createDocument('tbl_contractdep', contractDepId, contractDepPayload, new Set(['id', 'branch_id', 'for_purchase']));
+                state.raw.contractDeps.push(contractDepPayload);
+            } else {
+                const current = state.maps.contracts.get(clean(contractId));
+                contractDepId = clean(current?.contract_id);
+            }
+
+            const payload = collectContractPayload(contractId, contractDepId, machine.id);
+            if (createNew) {
+                await createDocument('tbl_contractmain', contractId, payload, CONTRACT_INTEGER_FIELDS, CONTRACT_DOUBLE_FIELDS);
+                state.raw.contracts.push({ ...payload, id: Number(contractId) });
+                state.selectedContractId = clean(contractId);
+                MargaUtils.showToast('New contract saved.', 'success');
+            } else {
+                await patchDocument('tbl_contractmain', contractId, payload, CONTRACT_INTEGER_FIELDS, CONTRACT_DOUBLE_FIELDS);
+                replaceLocalRow(state.raw.contracts, contractId, payload);
+                MargaUtils.showToast('Contract updated.', 'success');
+            }
+
+            buildMaps();
+            renderContractRows();
+            fillContractForm(state.maps.contracts.get(clean(contractId)));
+            renderBranchSummary();
+        } catch (error) {
+            console.error('Contract save failed:', error);
+            MargaUtils.showToast(`Contract save failed: ${error.message}`, 'error');
+        } finally {
+            toggleButton(createNew ? 'saveContractBtn' : 'updateContractBtn', false);
+        }
+    }
+
+    async function upsertMachineForContract(createNew) {
+        const existingFromSerial = findMachineBySerialValue(valueOf('machineSerial'));
+        const machineId = clean(existingFromSerial?.id || state.selectedMachineId);
+        const brandId = resolveBrandId(valueOf('machineBrand'));
+        const modelId = resolveModelId(valueOf('machineModel'));
+        const serial = valueOf('machineSerial').replace(/\s*\[\d+\]\s*$/, '').trim().toUpperCase();
+        const description = valueOf('machineModel');
+
+        if (!machineId || (createNew && !existingFromSerial)) {
+            const newId = nextNumericId(state.raw.machines);
+            const payload = {
+                id: Number(newId),
+                brand_id: numberOrZero(brandId),
+                model_id: numberOrZero(modelId),
+                serial,
+                description,
+                status_id: 2,
+                client_id: 0,
+                bmeter: 1,
+                isclient: 0
+            };
+            await createDocument('tbl_machine', newId, payload, MACHINE_INTEGER_FIELDS);
+            state.raw.machines.push(payload);
+            state.selectedMachineId = clean(newId);
+            return payload;
+        }
+
+        const payload = {
+            id: Number(machineId),
+            brand_id: numberOrZero(brandId),
+            model_id: numberOrZero(modelId),
+            serial,
+            description
+        };
+        await patchDocument('tbl_machine', machineId, payload, MACHINE_INTEGER_FIELDS);
+        replaceLocalRow(state.raw.machines, machineId, payload);
+        state.selectedMachineId = clean(machineId);
+        return state.maps.machines.get(machineId) || { ...payload, id: Number(machineId) };
+    }
+
+    function collectContractPayload(contractId, contractDepId, machineId) {
+        const beginningMeter = valueOf('beginningMeter');
+        return {
+            id: Number(contractId),
+            contract_id: Number(contractDepId),
+            mach_id: Number(machineId),
+            machine_id: Number(machineId),
+            brand_id: numberOrZero(resolveBrandId(valueOf('machineBrand'))),
+            category_id: numberOrZero(valueOf('particularCode')),
+            status: numberOrZero(valueOf('contractStatus')),
+            xserial: valueOf('machineSerial').replace(/\s*\[\d+\]\s*$/, '').trim().toUpperCase(),
+            pi: numberOrZero(valueOf('piAmount')),
+            rd: numberOrZero(valueOf('rdAmount')),
+            ap: numberOrZero(valueOf('apAmount')),
+            contract_duration: valueOf('contractDuration'),
+            b_meter: beginningMeter,
+            starting_meter: numberOrZero(beginningMeter),
+            terms: numberOrZero(valueOf('paymentTerms')),
+            computers_installed: numberOrZero(valueOf('computerCount')),
+            wifi: checked('ownedWifi') ? 1 : 0,
+            usb: checked('ownedUsb') ? 1 : 0,
+            scan_to_folder: checked('scanFolder') ? 1 : 0,
+            scan_to_email: checked('scanEmail') ? 1 : 0,
+            standalone: checked('ownedStandalone') ? 1 : 0,
+            os_mac: checked('osMac') ? 1 : 0,
+            os_windows: checked('osWindows') ? 1 : 0,
+            pw_res: valueOf('passwordRestriction'),
+            paper_type: valueOf('paperType'),
+            monthly_quota: numberOrZero(valueOf('bwQuota')),
+            page_rate: numberOrZero(valueOf('bwRate')),
+            page_rate_xtra: numberOrZero(valueOf('bwXRate')),
+            monthly_quota2: numberOrZero(valueOf('colorQuota')),
+            page_rate2: numberOrZero(valueOf('colorRate')),
+            page_rate_xtra2: numberOrZero(valueOf('colorXRate')),
+            monthly_rate2: numberOrZero(valueOf('colorMeter')),
+            preterm: numberOrZero(valueOf('preTerm')),
+            fixed_rate: numberOrZero(valueOf('fixedRate')),
+            monthly_rate: numberOrZero(valueOf('fixedRate')),
+            withvat: checked('contractVatYes') ? 1 : 0,
+            reading_date: valueOf('readingDate'),
+            readingdate_set: valueOf('readingDate') ? 1 : 0,
+            agent_id: numberOrZero(valueOf('contractAgent')),
+            commision_rate: numberOrZero(valueOf('commission')),
+            target_delivery: valueOf('deliveryDate'),
+            date_installed: valueOf('installDate'),
+            contractend_date: valueOf('contractEnd'),
+            remarks: valueOf('contractRemarks'),
+            update_remarks: valueOf('contractRemarks'),
+            updated: 1,
+            update_date: new Date().toISOString().slice(0, 19).replace('T', ' ')
+        };
+    }
+
+    async function schedulePullout() {
+        if (!state.selectedContractId) {
+            MargaUtils.showToast('Select a contract before scheduling pullout.', 'error');
+            return;
+        }
+        const payload = {
+            id: Number(state.selectedContractId),
+            status: 10,
+            update_remarks: valueOf('contractRemarks') || 'For pullout',
+            update_date: new Date().toISOString().slice(0, 19).replace('T', ' ')
+        };
+        try {
+            await patchDocument('tbl_contractmain', state.selectedContractId, payload, CONTRACT_INTEGER_FIELDS, CONTRACT_DOUBLE_FIELDS);
+            replaceLocalRow(state.raw.contracts, state.selectedContractId, payload);
+            buildMaps();
+            renderContractRows();
+            fillContractForm(state.maps.contracts.get(state.selectedContractId));
+            MargaUtils.showToast('Contract marked for pullout.', 'success');
+        } catch (error) {
+            MargaUtils.showToast(`Pullout schedule failed: ${error.message}`, 'error');
+        }
+    }
+
+    function getSelectedBranchContracts() {
+        if (!state.selectedBranchId) return [];
+        return (state.maps.contractsByBranch.get(clean(state.selectedBranchId)) || [])
+            .slice()
+            .sort((a, b) => clean(a.id).localeCompare(clean(b.id), undefined, { numeric: true }));
+    }
+
+    function resolveContractBranch(contract) {
+        if (!contract) return null;
+        const contractDep = state.maps?.contractDeps?.get(clean(contract.contract_id));
+        const branchId = clean(contractDep?.branch_id || contract.contract_id);
+        return state.maps?.branches?.get(branchId) || null;
+    }
+
+    function firstBillInfoForBranch(branchId) {
+        const rows = state.maps.billInfoByBranch.get(clean(branchId)) || [];
+        return rows[0] || null;
+    }
+
+    function resolveSerial(contract, machine) {
+        return clean(contract?.xserial) || clean(machine?.serial) || '';
+    }
+
+    function particularCode(id) {
+        const row = state.raw.particulars.find((entry) => Number(entry.id) === Number(id));
+        return row?.code || `#${id || '-'}`;
+    }
+
+    function particularLabel(row) {
+        const code = clean(row.code || row.particular_code);
+        const name = clean(row.name || row.description);
+        return code && name ? `${code} - ${name}` : code || name || `Particular ${row.id}`;
+    }
+
+    async function createDocument(collection, docId, data, integerFields = new Set(), doubleFields = new Set()) {
+        const params = new URLSearchParams({ documentId: clean(docId), key: FIREBASE_CONFIG.apiKey });
+        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}?${params.toString()}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: toFirestoreFields(data, integerFields, doubleFields) })
+        });
+        if (!response.ok) {
+            const detail = await response.text();
+            throw new Error(`Create ${collection}/${docId} failed (${response.status}) ${detail.slice(0, 160)}`);
+        }
+        return response.json();
+    }
+
+    async function patchDocument(collection, docId, data, integerFields = new Set(), doubleFields = new Set()) {
+        const keys = Object.keys(data).filter((key) => data[key] !== undefined && key !== '_docId');
+        const params = new URLSearchParams({ key: FIREBASE_CONFIG.apiKey });
+        keys.forEach((key) => params.append('updateMask.fieldPaths', key));
+        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(clean(docId))}?${params.toString()}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: toFirestoreFields(data, integerFields, doubleFields) })
+        });
+        if (!response.ok) {
+            const detail = await response.text();
+            throw new Error(`Update ${collection}/${docId} failed (${response.status}) ${detail.slice(0, 160)}`);
+        }
+        return response.json();
+    }
+
+    function toFirestoreFields(data, integerFields, doubleFields) {
+        const fields = {};
+        Object.entries(data).forEach(([key, value]) => {
+            if (value === undefined) return;
+            if (value === null) {
+                fields[key] = { nullValue: null };
+            } else if (integerFields.has(key)) {
+                fields[key] = { integerValue: String(numberOrZero(value)) };
+            } else if (doubleFields.has(key)) {
+                fields[key] = { doubleValue: Number(value || 0) || 0 };
+            } else if (typeof value === 'boolean') {
+                fields[key] = { booleanValue: value };
+            } else if (typeof value === 'number') {
+                if (Number.isInteger(value)) fields[key] = { integerValue: String(value) };
+                else fields[key] = { doubleValue: value };
+            } else {
+                fields[key] = { stringValue: clean(value) };
+            }
+        });
+        return fields;
+    }
+
+    function replaceLocalRow(rows, id, patch) {
+        const index = rows.findIndex((row) => clean(row.id || row._docId) === clean(id));
+        if (index >= 0) rows[index] = { ...rows[index], ...patch };
+    }
+
+    function nextNumericId(rows) {
+        const max = rows.reduce((highest, row) => Math.max(highest, Number(row.id || row._docId || 0) || 0), 0);
+        return String(max + 1);
+    }
+
+    function renderSelectOptions(id, rows, valueKey, labelFn) {
+        const select = byId(id);
+        if (!select) return;
+        const getValue = typeof valueKey === 'function' ? valueKey : (row) => row[valueKey];
+        const options = ['<option value=""></option>']
+            .concat((rows || [])
+                .filter(Boolean)
+                .sort((a, b) => clean(labelFn(a)).localeCompare(clean(labelFn(b))))
+                .map((row) => `<option value="${escapeAttr(getValue(row))}">${escapeHtml(labelFn(row))}</option>`));
+        select.innerHTML = options.join('');
+    }
+
+    function renderSelectOptionsFromObject(id, object) {
+        const select = byId(id);
+        if (!select) return;
+        select.innerHTML = Object.entries(object)
+            .map(([value, label]) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`)
+            .join('');
+    }
+
+    function renderDatalist(id, rows, labelFn) {
+        const list = byId(id);
+        if (!list) return;
+        list.innerHTML = (rows || [])
+            .filter(Boolean)
+            .sort((a, b) => clean(labelFn(a)).localeCompare(clean(labelFn(b))))
+            .map((row) => `<option value="${escapeAttr(labelFn(row))}"></option>`)
+            .join('');
+    }
+
+    function setStatus(text) {
+        setText('customerStatusPill', text);
+    }
+
+    function companyPickerValue(company) {
+        return `${companyName(company)} [${clean(company.id)}]`;
+    }
+
+    function companyName(company) {
+        return clean(company?.companyname || company?.company_name || company?.name || '');
+    }
+
+    function brandName(brand) {
+        return clean(brand?.brandname || brand?.brand_name || brand?.name || brand?.description || '');
+    }
+
+    function modelName(model) {
+        return clean(model?.modelname || model?.model_name || model?.description || model?.name || '');
+    }
+
+    function areaName(area) {
+        return clean(area?.area_name || area?.areaname || area?.name || area?.area || '');
+    }
+
+    function cityName(city) {
+        return clean(city?.city_name || city?.cityname || city?.name || city?.city || '');
+    }
+
+    function employeeName(employee) {
+        return clean(employee?.employee_name || employee?.empname || employee?.fullname || [employee?.firstname, employee?.lastname].filter(Boolean).join(' ') || employee?.name || `Agent ${employee?.id || ''}`);
+    }
+
+    function machineOptionLabel(machine) {
+        const serial = clean(machine.serial);
+        const model = modelName(state.maps.models?.get(clean(machine.model_id))) || clean(machine.description);
+        return `${serial || 'No serial'} - ${model || 'Machine'} [${clean(machine.id)}]`;
+    }
+
+    function findMachineBySerialValue(value) {
+        const raw = clean(value);
+        const idMatch = raw.match(/\[(\d+)\]\s*$/);
+        if (idMatch) return state.maps.machines.get(idMatch[1]) || null;
+        const serial = normalize(raw);
+        return state.raw.machines.find((machine) => normalize(machine.serial) === serial) || null;
+    }
+
+    function resolveBrandId(value) {
+        const raw = clean(value);
+        const found = state.raw.brands.find((brand) => normalize(brandName(brand)) === normalize(raw));
+        return clean(found?.id);
+    }
+
+    function resolveModelId(value) {
+        const raw = clean(value);
+        const found = state.raw.models.find((model) => normalize(modelName(model)) === normalize(raw));
+        return clean(found?.id);
+    }
+
+    function cityIdFromName(value) {
+        const city = state.raw.cities.find((row) => normalize(cityName(row)) === normalize(value));
+        return numberOrZero(city?.id);
+    }
+
+    function formatBranchAddress(branch) {
+        return [branch.room, branch.floor, branch.bldg, branch.street, branch.brgy, branch.city].filter(Boolean).join(', ');
+    }
+
+    function normalizeTimeValue(value) {
+        const raw = clean(value);
+        const match = raw.match(/(\d{1,2}):(\d{2})/);
+        if (!match) return '';
+        return `${match[1].padStart(2, '0')}:${match[2]}`;
+    }
+
+    function toDateInput(value) {
+        const raw = clean(value);
+        const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : '';
+    }
+
+    function valueOf(id) {
+        return clean(byId(id)?.value);
+    }
+
+    function checked(id) {
+        return Boolean(byId(id)?.checked);
+    }
+
+    function setInput(id, value, prop = 'value') {
+        const el = byId(id);
+        if (!el) return;
+        el[prop] = value;
+    }
+
+    function setText(id, value) {
+        const el = byId(id);
+        if (el) el.textContent = value;
+    }
+
+    function byId(id) {
+        return document.getElementById(id);
+    }
+
+    function clean(value) {
+        return String(value ?? '').trim();
+    }
+
+    function normalize(value) {
+        return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
+
+    function numberOrZero(value) {
+        const numeric = Number(clean(value).replace(/,/g, ''));
+        return Number.isFinite(numeric) ? numeric : 0;
+    }
+
+    function optionText(id) {
+        const select = byId(id);
+        return clean(select?.selectedOptions?.[0]?.textContent);
+    }
+
+    function escapeHtml(value) {
+        return MargaUtils.escapeHtml(clean(value));
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value).replace(/"/g, '&quot;');
+    }
+
+    function toggleButton(id, disabled) {
+        const button = byId(id);
+        if (!button) return;
+        button.disabled = Boolean(disabled);
+        button.classList.toggle('is-busy', Boolean(disabled));
+    }
+
+    return {
+        init,
+        reload: loadAllData
+    };
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.MargaAuth && !MargaAuth.requireAccess('customers')) return;
+
+    const user = window.MargaAuth?.getUser?.();
+    if (user) {
+        const userName = document.getElementById('userName');
+        const userRole = document.getElementById('userRole');
+        const userAvatar = document.getElementById('userAvatar');
+        if (userName) userName.textContent = user.name;
+        if (userRole) userRole.textContent = MargaAuth.getDisplayRoles(user);
+        if (userAvatar) userAvatar.textContent = user.name.charAt(0).toUpperCase();
+    }
+
+    CustomersApp.init();
+});
+
+function toggleSidebar() {
+    document.getElementById('sidebar')?.classList.toggle('open');
 }
