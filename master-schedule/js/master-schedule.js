@@ -74,6 +74,8 @@ const masterState = {
         positions: new Map(),
         troubles: new Map(),
         areas: new Map(),
+        models: new Map(),
+        deliveryInfoByBranch: new Map(),
         serviceRequests: new Map(),
         finalDeliveryReceipts: new Map()
     },
@@ -280,6 +282,22 @@ async function queryByReferenceIds(collection, ids, cache) {
         const slice = uniqueIds.slice(index, index + concurrency);
         const results = await Promise.all(slice.map(async (id) => {
             const docs = await queryEqualsLimit(collection, 'reference_id', id, 25).catch(() => []);
+            return [String(id), docs.map(parseFirestoreDoc).filter(Boolean)];
+        }));
+        results.forEach(([id, rows]) => cache.set(id, rows));
+    }
+}
+
+async function queryByFieldIds(collection, fieldPath, ids, cache) {
+    const uniqueIds = Array.from(new Set(
+        ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    )).filter((id) => !cache.has(String(id)));
+
+    const concurrency = 12;
+    for (let index = 0; index < uniqueIds.length; index += concurrency) {
+        const slice = uniqueIds.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map(async (id) => {
+            const docs = await queryEqualsLimit(collection, fieldPath, id, 10).catch(() => []);
             return [String(id), docs.map(parseFirestoreDoc).filter(Boolean)];
         }));
         results.forEach(([id, rows]) => cache.set(id, rows));
@@ -548,6 +566,48 @@ function branchCity(branch) {
     return clean(branch?.city || branch?.address_city || branch?.branch_city || branch?.municipality);
 }
 
+function compactAddress(value) {
+    return clean(value)
+        .replace(/\s*,\s*/g, ', ')
+        .replace(/(?:,\s*){2,}/g, ', ')
+        .replace(/^,\s*|,\s*$/g, '')
+        .replace(/\s+/g, ' ');
+}
+
+function cityFromAddress(address) {
+    const text = compactAddress(address);
+    if (!text) return '';
+    const known = [
+        'Makati', 'Pasay', 'Manila', 'Quezon City', 'Cubao', 'Mandaluyong', 'Pasig',
+        'Taguig', 'Paranaque', 'Parañaque', 'Las Pinas', 'Las Piñas', 'Muntinlupa',
+        'Marikina', 'Caloocan', 'Malabon', 'Navotas', 'Valenzuela', 'San Juan',
+        'Laguna', 'Binan', 'Biñan', 'Calamba', 'Cavite', 'Imus', 'Bacoor', 'Antipolo',
+        'Rizal', 'Bulacan', 'Pampanga'
+    ];
+    const found = known.find((city) => new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text));
+    if (found) return found;
+    const parts = text.split(',').map(clean).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
+}
+
+function deliveryInfoForBranch(branchId) {
+    const rows = masterState.lookups.deliveryInfoByBranch.get(String(branchId || '')) || [];
+    return rows.find((row) => clean(row.tdelivery_add || row.mdelivery_add || row.tcontact_person || row.mcontact_person)) || null;
+}
+
+function scheduleAddress(row, branch, deliveryInfo) {
+    return compactAddress(
+        deliveryInfo?.tdelivery_add ||
+        deliveryInfo?.mdelivery_add ||
+        branch?.branch_address ||
+        [branch?.room, branch?.floor, branch?.bldg, branch?.street, branch?.brgy, branch?.city].filter(Boolean).join(', ')
+    );
+}
+
+function scheduleCity(row, branch, deliveryInfo, address) {
+    return clean(branchCity(branch) || deliveryInfo?.city || deliveryInfo?.city_name) || cityFromAddress(address);
+}
+
 function areaFromCity(city) {
     const row = masterState.areaCityRows.get(slug(city));
     return clean(row?.area);
@@ -571,8 +631,22 @@ function parseJsonArray(value) {
     }
 }
 
+function modelLabel(model, machine = null, row = {}) {
+    return clean(
+        model?.modelname ||
+        model?.model ||
+        model?.model_name ||
+        model?.description ||
+        machine?.description ||
+        machine?.modelname ||
+        row.model_name ||
+        row.model
+    );
+}
+
 function machineModel(machine, row = {}) {
-    return clean(row.model || row.model_name || machine?.model || machine?.model_id || machine?.description);
+    const model = masterState.lookups.models.get(String(machine?.model_id || row.model_id || ''));
+    return modelLabel(model, machine, row) || clean(machine?.model_id || row.model || row.model_name);
 }
 
 function machineSerial(machine, row = {}) {
@@ -591,11 +665,15 @@ function buildLegacyScheduleRow(row) {
     const purposeKey = /billing|invoice/i.test(purpose) ? 'billing'
         : (/collection/i.test(purpose) ? 'collection' : (/toner|ink|deliver/i.test(purpose) ? 'delivery' : 'service'));
     const branchName = clean(contractDep?.departmentname || branch?.branchname || row.branch_name) || 'Main';
-    const model = machineModel(machine, { ...row, model: contract?.model || contract?.model_id });
+    const model = machineModel(machine, row);
     const serial = machineSerial(machine, row);
     const assignedTo = employeeName(employee, row.tech_id);
     const area = areaFromBranch(row.branch_id, branch, purposeKey);
     const customer = clean(company?.companyname || row.company_name || row.client || branch?.companyname) || 'Unknown Customer';
+    const deliveryInfo = deliveryInfoForBranch(row.branch_id);
+    const address = scheduleAddress(row, branch, deliveryInfo);
+    const city = scheduleCity(row, branch, deliveryInfo, address);
+    const tin = clean(company?.company_tin || company?.tin || company?.tin_no || company?.tin_number || row.tin);
     const originalDate = dateOnly(row.original_sched) || dateOnly(row.task_datetime);
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const scheduleId = Number(row.id || row._docId || 0);
@@ -616,10 +694,13 @@ function buildLegacyScheduleRow(row) {
         routeSource,
         purpose,
         area,
+        tin,
         customer,
         branch: branchName,
         model,
         serial,
+        city,
+        address,
         assignedTo,
         status: lifecycle,
         originalDate,
@@ -631,7 +712,7 @@ function buildLegacyScheduleRow(row) {
         trouble: clean(trouble?.trouble),
         remarks: clean(row.route_remarks || row.remarks || row.caller),
         searchText: [
-            purpose, area, customer, branchName, model, serial, assignedTo, row.invoice_num,
+            purpose, area, tin, customer, branchName, model, serial, city, address, assignedTo, row.invoice_num,
             trouble?.trouble, row.remarks, lifecycle, readyStatus, originalDate, routeSource
         ].join(' ')
     };
@@ -659,10 +740,14 @@ function buildWebScheduleRow(row) {
         companyId: String(row.company_id || ''),
         purpose,
         area,
+        tin: clean(row.tin || row.company_tin || row.tin_no),
         customer: clean(row.customer || row.company_name) || 'Unknown Customer',
         branch: clean(row.branch || row.branch_name) || 'Main',
         model: clean(row.model || row.model_name),
         serial: clean(row.serial || row.serial_number),
+        trouble: clean(row.trouble || row.issue || row.remarks),
+        city: clean(row.city),
+        address: compactAddress(row.address || row.delivery_address || row.collection_address),
         assignedTo,
         status: clean(row.status || 'Active') || 'Active',
         originalDate,
@@ -671,7 +756,7 @@ function buildWebScheduleRow(row) {
         readyStatus: clean(row.ready_status || 'N/A') || 'N/A',
         readyLabel: readyLabel(clean(row.ready_status || 'N/A') || 'N/A'),
         sourceNote: 'Web Schedule',
-        searchText: [purpose, area, row.customer, row.branch, row.model, row.serial, assignedTo, row.status, originalDate].join(' ')
+        searchText: [purpose, area, row.tin, row.customer, row.branch, row.model, row.serial, row.city, row.address, assignedTo, row.status, originalDate].join(' ')
     };
 }
 
@@ -692,10 +777,14 @@ function buildPlannerScheduleRow(row) {
         techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
         purpose,
         area,
+        tin: clean(row.tin || row.company_tin || row.tin_no),
         customer: row.company_name || row.account_name || 'Unknown Customer',
         branch: row.primary_branch_name || branchNames[0] || 'Main',
         model: row.model || '',
         serial: serials[0] || row.serial || '',
+        trouble: clean(row.trouble || row.issue || row.remarks),
+        city: clean(row.city),
+        address: compactAddress(row.address || row.delivery_address || row.collection_address),
         assignedTo,
         status: row.planner_status || row.task_status || 'Suggested',
         originalDate,
@@ -704,7 +793,7 @@ function buildPlannerScheduleRow(row) {
         readyStatus: 'N/A',
         readyLabel: readyLabel('N/A'),
         sourceNote: 'Planner',
-        searchText: [purpose, area, row.company_name, row.account_name, row.primary_branch_name, serials.join(' '), assignedTo, originalDate].join(' ')
+        searchText: [purpose, area, row.tin, row.company_name, row.account_name, row.primary_branch_name, serials.join(' '), row.city, row.address, assignedTo, originalDate].join(' ')
     };
 }
 
@@ -729,9 +818,12 @@ async function hydrateLegacyLookups(rows) {
 
     const branchCompanyIds = Array.from(masterState.lookups.branches.values()).map((branch) => branch?.company_id);
     const areaIds = Array.from(masterState.lookups.branches.values()).map((branch) => branch?.area_id);
+    const modelIds = Array.from(masterState.lookups.machines.values()).map((machine) => machine?.model_id);
     await Promise.all([
         fetchMany('tbl_companylist', branchCompanyIds, masterState.lookups.companies),
-        fetchMany('tbl_area', areaIds, masterState.lookups.areas)
+        fetchMany('tbl_area', areaIds, masterState.lookups.areas),
+        fetchMany('tbl_model', modelIds, masterState.lookups.models),
+        queryByFieldIds('tbl_deliveryinfo', 'branch_id', branchIds, masterState.lookups.deliveryInfoByBranch)
     ]);
 }
 
@@ -1001,13 +1093,13 @@ function renderScheduleTable(rows) {
         <table class="master-table">
             <thead>
                 <tr>
+                    <th>TIN #</th>
+                    <th>Customer / Branch</th>
                     <th>Purpose</th>
-                    <th>Area</th>
-                    <th>Customer Name</th>
-                    <th>Branch</th>
                     <th>Model</th>
-                    <th>Serial</th>
-                    <th>Original Date</th>
+                    <th>Trouble</th>
+                    <th>City</th>
+                    <th>Address</th>
                     <th>Days Pending</th>
                     <th>Ready</th>
                     <th>Assigned To</th>
@@ -1048,16 +1140,19 @@ function renderMasterScheduleRow(row) {
     const canMove = row.sourceBucket !== 'pending-not-routed';
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
-            <td>${escapeHtml(row.purpose || '-')}</td>
-            <td>${escapeHtml(row.area || '-')}</td>
-            <td>${escapeHtml(row.customer || '-')}</td>
-            <td>${escapeHtml(row.branch || '-')}</td>
-            <td class="numeric">${escapeHtml(row.model || '-')}</td>
-            <td class="numeric">${escapeHtml(row.serial || '-')}</td>
-            <td>${escapeHtml(formatShortDate(row.originalDate))}</td>
-            <td class="numeric">${escapeHtml(row.daysPending === '' ? '-' : row.daysPending)}</td>
-            <td><span class="ready-pill ${readyClass}">${escapeHtml(row.readyStatus || 'N/A')}</span></td>
-            <td>
+            <td data-label="TIN #">${escapeHtml(row.tin || '-')}</td>
+            <td data-label="Customer / Branch" class="schedule-account-cell">
+                <strong>${escapeHtml(row.customer || '-')}</strong>
+                <span>${escapeHtml(row.branch || '-')}</span>
+            </td>
+            <td data-label="Purpose">${escapeHtml(row.purpose || '-')}</td>
+            <td data-label="Model">${escapeHtml(row.model || '-')}</td>
+            <td data-label="Trouble">${escapeHtml(row.trouble || row.remarks || '-')}</td>
+            <td data-label="City">${escapeHtml(row.city || '-')}</td>
+            <td data-label="Address" class="schedule-address-cell">${escapeHtml(row.address || '-')}</td>
+            <td data-label="Days Pending" class="numeric">${escapeHtml(row.daysPending === '' ? '-' : row.daysPending)}</td>
+            <td data-label="Ready"><span class="ready-pill ${readyClass}">${escapeHtml(row.readyStatus || 'N/A')}</span></td>
+            <td data-label="Assigned To">
                 <select class="staff-select" ${canMove ? '' : 'disabled'} onchange="reassignScheduleFromSelect('${escapeHtml(row.rowKey)}', this.value)">
                     ${staffOptions}
                 </select>
@@ -1220,13 +1315,13 @@ function renderScheduleHtml(rows, title = 'Master Schedule') {
                 <table>
                     <thead>
                         <tr>
+                            <th>TIN #</th>
+                            <th>Customer / Branch</th>
                             <th>Purpose</th>
-                            <th>Area</th>
-                            <th>Customer Name</th>
-                            <th>Branch</th>
                             <th>Model</th>
-                            <th>Serial</th>
-                            <th>Original Date</th>
+                            <th>Trouble</th>
+                            <th>City</th>
+                            <th>Address</th>
                             <th>Days Pending</th>
                             <th>Ready</th>
                             <th>Assigned To</th>
@@ -1238,13 +1333,13 @@ function renderScheduleHtml(rows, title = 'Master Schedule') {
                             .sort((a, b) => readySortValue(a.readyStatus) - readySortValue(b.readyStatus) || Number(b.daysPending || 0) - Number(a.daysPending || 0))
                             .map((row) => `
                                 <tr>
+                                    <td>${escapeHtml(row.tin || '-')}</td>
+                                    <td><strong>${escapeHtml(row.customer || '-')}</strong><br>${escapeHtml(row.branch || '-')}</td>
                                     <td>${escapeHtml(row.purpose || '-')}</td>
-                                    <td>${escapeHtml(row.area || '-')}</td>
-                                    <td>${escapeHtml(row.customer || '-')}</td>
-                                    <td>${escapeHtml(row.branch || '-')}</td>
                                     <td>${escapeHtml(row.model || '-')}</td>
-                                    <td>${escapeHtml(row.serial || '-')}</td>
-                                    <td>${escapeHtml(formatShortDate(row.originalDate))}</td>
+                                    <td>${escapeHtml(row.trouble || row.remarks || '-')}</td>
+                                    <td>${escapeHtml(row.city || '-')}</td>
+                                    <td>${escapeHtml(row.address || '-')}</td>
                                     <td>${escapeHtml(row.daysPending === '' ? '-' : row.daysPending)}</td>
                                     <td>${escapeHtml(row.readyStatus || 'N/A')}</td>
                                     <td>${escapeHtml(row.assignedTo || '-')}</td>
@@ -1280,11 +1375,11 @@ function printMasterSchedule() {
         <head>
             <title>Master Schedule ${escapeHtml(date)}${escapeHtml(suffix)}</title>
             <style>
-                body { font-family: Arial, sans-serif; color: #111827; padding: 18px; }
-                h1 { font-size: 22px; margin: 0 0 5px; }
-                h2 { font-size: 18px; margin: 0; }
-                table { border-collapse: collapse; width: 100%; min-width: 960px; font-size: 12px; }
-                th, td { border: 1px solid #111827; padding: 4px 6px; text-align: left; vertical-align: top; }
+                body { font-family: Arial, sans-serif; color: #111827; padding: 8px; }
+                h1 { font-size: 16px; margin: 0 0 3px; text-align: center; }
+                h2 { font-size: 13px; margin: 0; }
+                table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 8.5px; line-height: 1.15; }
+                th, td { border: 1px solid #111827; padding: 2px 3px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
                 th { font-weight: 800; }
                 .print-staff-page { break-after: page; page-break-after: always; min-height: calc(100vh - 36px); }
                 .print-staff-page:last-child { break-after: auto; page-break-after: auto; }
@@ -1292,11 +1387,21 @@ function printMasterSchedule() {
                     align-items: flex-start;
                     display: flex;
                     justify-content: space-between;
-                    gap: 24px;
-                    margin: 0 0 8px;
+                    gap: 10px;
+                    margin: 0 0 5px;
                 }
-                .print-page-header p { color: #4b5563; font-size: 11px; margin: 4px 0 0; text-align: right; }
-                @page { size: landscape; margin: 12mm; }
+                .print-page-header p { color: #4b5563; font-size: 8.5px; margin: 2px 0 0; text-align: right; }
+                th:nth-child(1), td:nth-child(1) { width: 9%; }
+                th:nth-child(2), td:nth-child(2) { width: 18%; }
+                th:nth-child(3), td:nth-child(3) { width: 8%; }
+                th:nth-child(4), td:nth-child(4) { width: 10%; }
+                th:nth-child(5), td:nth-child(5) { width: 11%; }
+                th:nth-child(6), td:nth-child(6) { width: 7%; }
+                th:nth-child(7), td:nth-child(7) { width: 20%; }
+                th:nth-child(8), td:nth-child(8) { width: 5%; text-align: center; }
+                th:nth-child(9), td:nth-child(9) { width: 5%; text-align: center; }
+                th:nth-child(10), td:nth-child(10) { width: 7%; }
+                @page { size: landscape; margin: 7mm; }
             </style>
         </head>
         <body>${renderScheduleHtml(rows, `Master Schedule - ${date}${suffix}`)}</body>
@@ -1361,7 +1466,7 @@ async function ensureSettingsData() {
             maxPages: 40
         }).catch(() => []),
         fetchCollection('tbl_companylist', {
-            fieldMask: ['id', 'companyname'],
+            fieldMask: ['id', 'companyname', 'company_tin', 'tin', 'tin_no', 'tin_number'],
             maxPages: 30
         }).catch(() => []),
         fetchCollection('tbl_empos', {

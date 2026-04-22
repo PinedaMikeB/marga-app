@@ -151,7 +151,7 @@
 
         .master-group {
             margin-bottom: 30px;
-            min-width: 900px;
+            min-width: 1080px;
         }
 
         .master-group h2 {
@@ -239,9 +239,11 @@
 
         .master-table {
             border-collapse: collapse;
-            min-width: 860px;
-            font-size: 12px;
+            min-width: 1080px;
+            font-size: 11px;
             color: #0f2742;
+            table-layout: fixed;
+            width: 100%;
         }
 
         .master-table th,
@@ -251,6 +253,7 @@
             height: 21px;
             vertical-align: middle;
             background: #fff;
+            overflow-wrap: anywhere;
         }
 
         .master-table th {
@@ -261,6 +264,22 @@
 
         .master-table td.numeric {
             text-align: right;
+        }
+
+        .schedule-account-cell strong,
+        .schedule-account-cell span {
+            display: block;
+        }
+
+        .schedule-account-cell span {
+            margin-top: 2px;
+            color: #637d99;
+            font-size: 10px;
+            font-weight: 750;
+        }
+
+        .schedule-address-cell {
+            line-height: 1.25;
         }
 
         .master-table td.action-cell {
@@ -475,6 +494,67 @@
                 min-width: 0;
             }
 
+            .master-group,
+            .master-table {
+                min-width: 0;
+            }
+
+            .ready-block h3,
+            .pending-staff-block h3 {
+                border-bottom: 1px solid #111827;
+            }
+
+            .master-table,
+            .master-table thead,
+            .master-table tbody,
+            .master-table tr,
+            .master-table th,
+            .master-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .master-table thead {
+                display: none;
+            }
+
+            .master-table tr {
+                border: 1px solid rgba(15, 23, 42, 0.22);
+                border-radius: 8px;
+                margin: 0 0 10px;
+                overflow: hidden;
+                background: #fff;
+            }
+
+            .master-table td {
+                display: grid;
+                grid-template-columns: 112px minmax(0, 1fr);
+                gap: 10px;
+                align-items: start;
+                border: 0;
+                border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+                min-height: 0;
+                padding: 9px 10px;
+                text-align: left;
+            }
+
+            .master-table td:last-child {
+                border-bottom: 0;
+            }
+
+            .master-table td::before {
+                content: attr(data-label);
+                color: #526f8d;
+                font-size: 10px;
+                font-weight: 900;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+
+            .master-table td.numeric {
+                text-align: left;
+            }
+
             .settings-layout,
             .client-settings-grid,
             .client-form-grid {
@@ -672,6 +752,6 @@
     </main>
 
     <script src="shared/js/firebase-config.js"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260422-route-ready-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260422-print-vbnet-cols-1"></script>
 </body>
 </html>
