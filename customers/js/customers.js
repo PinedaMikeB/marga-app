@@ -17,6 +17,8 @@ const CustomersApp = (() => {
             areas: [],
             cities: [],
             billInfo: [],
+            deliveryInfo: [],
+            collectionInfo: [],
             particulars: [],
             nature: [],
             industries: [],
@@ -56,6 +58,8 @@ const CustomersApp = (() => {
     const COMPANY_INTEGER_FIELDS = new Set(['id', 'company_nob', 'industry', 'hide', 'usecomname', 'has_code']);
     const BRANCH_INTEGER_FIELDS = new Set(['id', 'company_id', 'area_id', 'city_id', 'inactive', 'intrvl', 'volume', 'isurgent', 'address_type', 'earliest', 'no_netcon_spoilage']);
     const BILL_INTEGER_FIELDS = new Set(['id', 'branch_id', 'area_id', 'city_id', 'enduserarea_id', 'col_area_id']);
+    const DELIVERY_INTEGER_FIELDS = new Set(['id', 'branch_id', 'area_id', 'city_id']);
+    const COLLECTION_INTEGER_FIELDS = new Set(['id', 'branch_id', 'area_id', 'city_id']);
     const MACHINE_INTEGER_FIELDS = new Set(['id', 'brand_id', 'model_id', 'status_id', 'client_id', 'bmeter', 'ownership_id', 'type_id', 'condition_id', 'isclient']);
     const CONTRACT_INTEGER_FIELDS = new Set([
         'id',
@@ -110,6 +114,8 @@ const CustomersApp = (() => {
                 areas,
                 cities,
                 billInfo,
+                deliveryInfo,
+                collectionInfo,
                 particulars,
                 nature,
                 industries,
@@ -125,6 +131,8 @@ const CustomersApp = (() => {
                 fetchCollectionFast('tbl_area'),
                 fetchCollectionFast('tbl_city'),
                 fetchCollectionFast('tbl_billinfo'),
+                fetchOptionalCollection('tbl_deliveryinfo', []),
+                fetchOptionalCollection('tbl_collectioninfo', []),
                 fetchOptionalCollection('tbl_particulars', FALLBACK_PARTICULARS),
                 fetchOptionalCollection('tbl_nature', []),
                 fetchOptionalCollection('tbl_industry', []),
@@ -142,6 +150,8 @@ const CustomersApp = (() => {
                 areas,
                 cities,
                 billInfo,
+                deliveryInfo,
+                collectionInfo,
                 particulars: normalizeParticulars(particulars),
                 nature,
                 industries,
@@ -184,6 +194,8 @@ const CustomersApp = (() => {
             areas: toMap(state.raw.areas),
             cities: toMap(state.raw.cities),
             billInfoByBranch: new Map(),
+            deliveryInfoByBranch: new Map(),
+            collectionInfoByBranch: new Map(),
             contractsByBranch: new Map()
         };
 
@@ -192,6 +204,20 @@ const CustomersApp = (() => {
             if (!branchId) return;
             if (!state.maps.billInfoByBranch.has(branchId)) state.maps.billInfoByBranch.set(branchId, []);
             state.maps.billInfoByBranch.get(branchId).push(row);
+        });
+
+        state.raw.deliveryInfo.forEach((row) => {
+            const branchId = clean(row.branch_id);
+            if (!branchId) return;
+            if (!state.maps.deliveryInfoByBranch.has(branchId)) state.maps.deliveryInfoByBranch.set(branchId, []);
+            state.maps.deliveryInfoByBranch.get(branchId).push(row);
+        });
+
+        state.raw.collectionInfo.forEach((row) => {
+            const branchId = clean(row.branch_id);
+            if (!branchId) return;
+            if (!state.maps.collectionInfoByBranch.has(branchId)) state.maps.collectionInfoByBranch.set(branchId, []);
+            state.maps.collectionInfoByBranch.get(branchId).push(row);
         });
 
         state.raw.contracts.forEach((contract) => {
@@ -398,8 +424,10 @@ const CustomersApp = (() => {
         if (byId('branchPicker')) byId('branchPicker').value = state.selectedBranchId;
         const branch = state.maps.branches.get(state.selectedBranchId) || {};
         const billInfo = firstBillInfoForBranch(state.selectedBranchId) || {};
-        fillBranchForm(branch);
-        fillBillForm(billInfo);
+        const deliveryInfo = firstDeliveryInfoForBranch(state.selectedBranchId) || {};
+        const collectionInfo = firstCollectionInfoForBranch(state.selectedBranchId) || {};
+        fillBranchForm(branch, deliveryInfo, collectionInfo, billInfo);
+        fillBillForm(billInfo, collectionInfo);
         renderBranchSummary();
     }
 
@@ -411,14 +439,14 @@ const CustomersApp = (() => {
         state.selectedBranchId = '';
         state.newBranchMode = true;
         if (byId('branchPicker')) byId('branchPicker').value = '';
-        fillBranchForm({});
-        fillBillForm({});
+        fillBranchForm({}, {}, {}, {});
+        fillBillForm({}, {});
         setText('branchMachineCount', '0');
         setText('branchContractCount', '0');
         setStatus('New branch/dept');
     }
 
-    function fillBranchForm(branch) {
+    function fillBranchForm(branch, deliveryInfo = {}, collectionInfo = {}, billInfo = {}) {
         setInput('branchCode', branch.code || '');
         setInput('branchName', branch.branchname || '');
         setInput('branchRoom', branch.room || '');
@@ -434,45 +462,55 @@ const CustomersApp = (() => {
         setInput('branchSignatory', branch.signatory || '');
         setInput('branchDesignation', branch.designation || '');
         setInput('branchEmail', branch.email || '');
-        setInput('deliveryContact', branch.delivery_contact || '');
-        setInput('deliveryNum', branch.delivery_num || '');
-        setInput('deliveryDays', branch.delivery_days || '');
-        setInput('deliveryHours', branch.delivery_hours || '');
-        setInput('deliveryCity', branch.delivery_city || branch.city || '');
-        setInput('deliveryArea', clean(branch.delivery_area_id || branch.area_id || ''));
-        setInput('deliveryAddress', branch.delivery_address || branch.branch_address || formatBranchAddress(branch));
-        setInput('serviceContact', branch.service_contact || '');
-        setInput('serviceNum', branch.service_num || '');
-        setInput('serviceCity', branch.service_city || branch.city || '');
-        setInput('serviceArea', clean(branch.service_area_id || branch.area_id || ''));
-        setInput('serviceAddress', branch.service_address || branch.branch_address || formatBranchAddress(branch));
+        setInput('deliveryContact', deliveryInfo.tcontact_person || branch.delivery_contact || branch.signatory || '');
+        setInput('deliveryNum', deliveryInfo.tcontact_num || branch.delivery_num || '');
+        setInput('deliveryDays', deliveryInfo.toffice_days || branch.delivery_days || '');
+        setInput('deliveryHours', deliveryInfo.toffice_hours || branch.delivery_hours || '');
+        setInput('deliveryCity', cityNameFromId(deliveryInfo.city_id) || branch.delivery_city || branch.city || cityNameFromId(branch.city_id));
+        setInput('deliveryArea', clean(deliveryInfo.area_id || branch.delivery_area_id || branch.area_id || ''));
+        setInput('deliveryAddress', deliveryInfo.tdelivery_add || branch.delivery_address || branch.branch_address || formatBranchAddress(branch));
+
+        const serviceNumber = branch.service_num
+            || deliveryInfo.mcontact_num
+            || collectionInfo.releasenum
+            || collectionInfo.treasnum
+            || collectionInfo.cashnum
+            || extractPhoneLike(collectionInfo.last_contact)
+            || billInfo.endusercontactnum
+            || deliveryInfo.tcontact_num
+            || '';
+        setInput('serviceContact', branch.service_contact || deliveryInfo.mcontact_person || deliveryInfo.tcontact_person || branch.signatory || '');
+        setInput('serviceNum', serviceNumber);
+        setInput('serviceCity', branch.service_city || cityNameFromId(deliveryInfo.city_id) || branch.city || cityNameFromId(branch.city_id));
+        setInput('serviceArea', clean(branch.service_area_id || deliveryInfo.area_id || branch.area_id || ''));
+        setInput('serviceAddress', branch.service_address || deliveryInfo.mdelivery_add || deliveryInfo.tdelivery_add || branch.branch_address || formatBranchAddress(branch));
     }
 
-    function fillBillForm(billInfo) {
+    function fillBillForm(billInfo, collectionInfo = {}) {
         setInput('billEndUser', billInfo.endusername || '');
         setInput('billEndUserContact', billInfo.endusercontactnum || '');
         setInput('billPayeeName', billInfo.payeename || '');
         setInput('billPayeeContact', billInfo.payeecontactnum || '');
         setInput('billPayeeAddress', billInfo.payeeadd || billInfo.enduseradd || '');
-        setInput('billCity', billInfo.endusercity || cityName(state.maps.cities.get(clean(billInfo.city_id))) || '');
+        setInput('billCity', billInfo.endusercity || cityNameFromId(billInfo.city_id) || '');
         setInput('billArea', clean(billInfo.area_id || billInfo.enduserarea_id || ''));
         setInput('billLatitude', billInfo.latitude || '');
         setInput('billLongitude', billInfo.longitude || '');
-        setInput('acctContact', billInfo.acct_contact || '');
-        setInput('acctNum', billInfo.acct_num || '');
-        setInput('acctEmail', billInfo.acct_email || '');
-        setInput('cashierContact', billInfo.cashier_contact || '');
-        setInput('cashierNum', billInfo.cashier_num || '');
-        setInput('treasuryContact', billInfo.treasury_contact || '');
-        setInput('treasuryNum', billInfo.treasury_num || '');
-        setInput('releasingContact', billInfo.releasing_contact || '');
-        setInput('releasingNum', billInfo.releasing_num || '');
-        setInput('collectionDays', billInfo.col_days || '');
-        setInput('collectionFrom', normalizeTimeValue(billInfo.col_from));
-        setInput('collectionTo', normalizeTimeValue(billInfo.col_to));
-        setInput('collectionCity', billInfo.col_city || '');
-        setInput('collectionArea', clean(billInfo.col_area_id || ''));
-        setInput('collectionAddress', billInfo.col_address || '');
+        setInput('acctContact', collectionInfo.acctcon || billInfo.acct_contact || '');
+        setInput('acctNum', collectionInfo.acctnum || billInfo.acct_num || '');
+        setInput('acctEmail', isEmailLike(collectionInfo.acctnum) ? collectionInfo.acctnum : (billInfo.acct_email || ''));
+        setInput('cashierContact', collectionInfo.cashcon || billInfo.cashier_contact || '');
+        setInput('cashierNum', collectionInfo.cashnum || billInfo.cashier_num || '');
+        setInput('treasuryContact', collectionInfo.treascon || billInfo.treasury_contact || '');
+        setInput('treasuryNum', collectionInfo.treasnum || billInfo.treasury_num || '');
+        setInput('releasingContact', collectionInfo.releasecon || billInfo.releasing_contact || '');
+        setInput('releasingNum', collectionInfo.releasenum || billInfo.releasing_num || '');
+        setInput('collectionDays', collectionInfo.collection_days || billInfo.col_days || '');
+        setInput('collectionFrom', normalizeTimeValue(collectionInfo.time_from || billInfo.col_from));
+        setInput('collectionTo', normalizeTimeValue(collectionInfo.time_to || billInfo.col_to));
+        setInput('collectionCity', cityNameFromId(collectionInfo.city_id) || billInfo.col_city || '');
+        setInput('collectionArea', clean(collectionInfo.area_id || billInfo.col_area_id || ''));
+        setInput('collectionAddress', collectionInfo.releaseadd || billInfo.col_address || '');
     }
 
     function renderBranchSummary() {
@@ -559,14 +597,24 @@ const CustomersApp = (() => {
         const existingBill = firstBillInfoForBranch(branchId);
         const billId = existingBill?.id || nextNumericId(state.raw.billInfo);
         const billPayload = collectBillPayload(billId, branchId);
+        const existingDelivery = firstDeliveryInfoForBranch(branchId);
+        const deliveryId = existingDelivery?.id || nextNumericId(state.raw.deliveryInfo);
+        const deliveryPayload = collectDeliveryPayload(deliveryId, branchId);
+        const existingCollection = firstCollectionInfoForBranch(branchId);
+        const collectionId = existingCollection?.id || nextNumericId(state.raw.collectionInfo);
+        const collectionPayload = collectCollectionPayload(collectionId, branchId);
 
         try {
             toggleButton(createNew ? 'saveBranchBtn' : 'updateBranchBtn', true);
             if (createNew || state.newBranchMode) {
                 await createDocument('tbl_branchinfo', branchId, branchPayload, BRANCH_INTEGER_FIELDS);
                 await createDocument('tbl_billinfo', billId, billPayload, BILL_INTEGER_FIELDS);
+                await createDocument('tbl_deliveryinfo', deliveryId, deliveryPayload, DELIVERY_INTEGER_FIELDS);
+                await createDocument('tbl_collectioninfo', collectionId, collectionPayload, COLLECTION_INTEGER_FIELDS);
                 state.raw.branches.push({ ...branchPayload, id: Number(branchId) });
                 state.raw.billInfo.push({ ...billPayload, id: Number(billId) });
+                state.raw.deliveryInfo.push({ ...deliveryPayload, id: Number(deliveryId) });
+                state.raw.collectionInfo.push({ ...collectionPayload, id: Number(collectionId) });
                 MargaUtils.showToast('New branch information saved.', 'success');
             } else {
                 await patchDocument('tbl_branchinfo', branchId, branchPayload, BRANCH_INTEGER_FIELDS);
@@ -576,6 +624,20 @@ const CustomersApp = (() => {
                 } else {
                     await createDocument('tbl_billinfo', billId, billPayload, BILL_INTEGER_FIELDS);
                     state.raw.billInfo.push({ ...billPayload, id: Number(billId) });
+                }
+                if (existingDelivery?.id) {
+                    await patchDocument('tbl_deliveryinfo', existingDelivery.id, deliveryPayload, DELIVERY_INTEGER_FIELDS);
+                    replaceLocalRow(state.raw.deliveryInfo, existingDelivery.id, deliveryPayload);
+                } else {
+                    await createDocument('tbl_deliveryinfo', deliveryId, deliveryPayload, DELIVERY_INTEGER_FIELDS);
+                    state.raw.deliveryInfo.push({ ...deliveryPayload, id: Number(deliveryId) });
+                }
+                if (existingCollection?.id) {
+                    await patchDocument('tbl_collectioninfo', existingCollection.id, collectionPayload, COLLECTION_INTEGER_FIELDS);
+                    replaceLocalRow(state.raw.collectionInfo, existingCollection.id, collectionPayload);
+                } else {
+                    await createDocument('tbl_collectioninfo', collectionId, collectionPayload, COLLECTION_INTEGER_FIELDS);
+                    state.raw.collectionInfo.push({ ...collectionPayload, id: Number(collectionId) });
                 }
                 replaceLocalRow(state.raw.branches, branchId, branchPayload);
                 MargaUtils.showToast('Branch information updated.', 'success');
@@ -637,6 +699,27 @@ const CustomersApp = (() => {
         };
     }
 
+    function collectDeliveryPayload(deliveryId, branchId) {
+        return {
+            id: Number(deliveryId),
+            branch_id: Number(branchId),
+            tcontact_person: valueOf('deliveryContact'),
+            tcontact_num: valueOf('deliveryNum'),
+            toffice_days: valueOf('deliveryDays'),
+            toffice_hours: valueOf('deliveryHours'),
+            city_id: cityIdFromName(valueOf('deliveryCity')),
+            area_id: numberOrZero(valueOf('deliveryArea')),
+            tdelivery_add: valueOf('deliveryAddress'),
+            mcontact_person: valueOf('serviceContact'),
+            mcontact_num: valueOf('serviceNum'),
+            moffice_days: '',
+            moffice_hours: '',
+            mdelivery_add: valueOf('serviceAddress'),
+            latitude: valueOf('branchLatitude') || valueOf('billLatitude'),
+            longitude: valueOf('branchLongitude') || valueOf('billLongitude')
+        };
+    }
+
     function collectBillPayload(billId, branchId) {
         return {
             id: Number(billId),
@@ -667,6 +750,33 @@ const CustomersApp = (() => {
             col_city: valueOf('collectionCity'),
             col_area_id: numberOrZero(valueOf('collectionArea')),
             col_address: valueOf('collectionAddress')
+        };
+    }
+
+    function collectCollectionPayload(collectionId, branchId) {
+        return {
+            id: Number(collectionId),
+            branch_id: Number(branchId),
+            acctcon: valueOf('acctContact'),
+            acctnum: valueOf('acctNum') || valueOf('acctEmail'),
+            cashcon: valueOf('cashierContact'),
+            cashnum: valueOf('cashierNum'),
+            treascon: valueOf('treasuryContact'),
+            treasnum: valueOf('treasuryNum'),
+            releasecon: valueOf('releasingContact'),
+            releasenum: valueOf('releasingNum'),
+            collection_days: valueOf('collectionDays'),
+            time_from: timeInputToLegacyDate(valueOf('collectionFrom')),
+            time_to: timeInputToLegacyDate(valueOf('collectionTo')),
+            city_id: cityIdFromName(valueOf('collectionCity')),
+            area_id: numberOrZero(valueOf('collectionArea')),
+            releaseadd: valueOf('collectionAddress'),
+            latitude: valueOf('billLatitude') || valueOf('branchLatitude'),
+            longitude: valueOf('billLongitude') || valueOf('branchLongitude'),
+            followup_days: '',
+            followup_time: '',
+            collection_hours: '',
+            last_contact: ''
         };
     }
 
@@ -1047,6 +1157,16 @@ const CustomersApp = (() => {
         return rows[0] || null;
     }
 
+    function firstDeliveryInfoForBranch(branchId) {
+        const rows = state.maps.deliveryInfoByBranch.get(clean(branchId)) || [];
+        return rows[0] || null;
+    }
+
+    function firstCollectionInfoForBranch(branchId) {
+        const rows = state.maps.collectionInfoByBranch.get(clean(branchId)) || [];
+        return rows[0] || null;
+    }
+
     function resolveSerial(contract, machine) {
         return clean(contract?.xserial) || clean(machine?.serial) || '';
     }
@@ -1182,6 +1302,10 @@ const CustomersApp = (() => {
         return clean(city?.city_name || city?.cityname || city?.name || city?.city || '');
     }
 
+    function cityNameFromId(cityId) {
+        return cityName(state.maps.cities?.get(clean(cityId)));
+    }
+
     function employeeName(employee) {
         return clean(employee?.employee_name || employee?.empname || employee?.fullname || [employee?.firstname, employee?.lastname].filter(Boolean).join(' ') || employee?.name || `Agent ${employee?.id || ''}`);
     }
@@ -1226,6 +1350,21 @@ const CustomersApp = (() => {
         const match = raw.match(/(\d{1,2}):(\d{2})/);
         if (!match) return '';
         return `${match[1].padStart(2, '0')}:${match[2]}`;
+    }
+
+    function timeInputToLegacyDate(value) {
+        const time = normalizeTimeValue(value);
+        return time ? `2017-03-10 ${time}:00` : '';
+    }
+
+    function extractPhoneLike(value) {
+        const raw = clean(value);
+        const match = raw.match(/(?:\+?63|0)\d[\d\s-]{6,}/);
+        return match ? match[0].trim().replace(/[^\d]+$/, '') : '';
+    }
+
+    function isEmailLike(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean(value));
     }
 
     function toDateInput(value) {
