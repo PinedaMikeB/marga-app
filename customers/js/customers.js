@@ -312,14 +312,43 @@ const CustomersApp = (() => {
 
     function handleCompanyPicker() {
         const value = clean(byId('customerCompanyPicker')?.value);
-        const idMatch = value.match(/\[(\d+)\]\s*$/);
-        let company = idMatch ? state.maps.companies.get(idMatch[1]) : null;
-        if (!company && value) {
-            const normalized = normalize(value.replace(/\[\d+\]\s*$/, ''));
-            company = state.raw.companies.find((row) => normalize(companyName(row)) === normalized)
-                || state.raw.companies.find((row) => normalize(companyName(row)).includes(normalized));
+        const company = findCompanyFromPickerValue(value);
+        if (company) {
+            selectCompany(clean(company.id));
+            return;
         }
-        if (company) selectCompany(clean(company.id));
+
+        beginNewCompanyDraft(value);
+    }
+
+    function findCompanyFromPickerValue(value) {
+        const normalizedValue = clean(value);
+        if (!normalizedValue) return null;
+        return state.raw.companies.find((company) => companyPickerValue(company) === normalizedValue) || null;
+    }
+
+    function beginNewCompanyDraft(value) {
+        const typedName = clean(value).replace(/\s*\[\d+\]\s*$/, '');
+        state.selectedCompanyId = '';
+        state.selectedBranchId = '';
+        state.selectedContractId = '';
+        state.selectedMachineId = '';
+        state.newBranchMode = true;
+
+        setInput('companyName', typedName);
+        setInput('companyTin', '');
+        setInput('businessStyle', '');
+        setInput('natureOfBusiness', '');
+        setInput('businessIndustry', '');
+        setInput('companyIdDisplay', '');
+
+        const branchPicker = byId('branchPicker');
+        if (branchPicker) branchPicker.innerHTML = '';
+        fillBranchForm({});
+        fillBillForm({});
+        setText('branchMachineCount', '0');
+        setText('branchContractCount', '0');
+        setStatus(typedName ? 'New company draft' : 'Ready');
     }
 
     function selectCompany(companyId, preferredBranchId = '') {
