@@ -1,6 +1,20 @@
 const MASTER_API_KEY = FIREBASE_CONFIG.apiKey;
 const MASTER_BASE_URL = FIREBASE_CONFIG.baseUrl;
 const MASTER_LIMIT = 1200;
+const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
+const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
+const PENDING_NOT_ROUTED_LOOKBACK_DAYS = 45;
+const ZERO_DATETIME = '0000-00-00 00:00:00';
+const LEGACY_EMPTY_DATETIME_VALUES = new Set([
+    '',
+    ZERO_DATETIME,
+    'undefined',
+    'undefined 00:00:00',
+    'null',
+    'null 00:00:00',
+    'invalid date',
+    'nan'
+]);
 
 const DEFAULT_AREAS = [
     'South 1', 'South 2', 'South 3',
@@ -24,6 +38,7 @@ const MASTER_PURPOSE_LABELS = {
     3: 'Deliver Toner',
     4: 'Deliver Ink',
     5: 'Service',
+    7: 'Purchasing',
     8: 'Printed Billing',
     9: 'Others'
 };
@@ -37,8 +52,10 @@ const CLIENT_INFO_TYPES = [
 
 const masterState = {
     rows: [],
+    pendingRows: [],
     settingsLoaded: false,
     reassigning: false,
+    routeSourceLabel: 'Saved',
     selectedArea: DEFAULT_AREAS[0],
     selectedTechId: '',
     selectedBranchId: '',
@@ -56,7 +73,9 @@ const masterState = {
         employees: new Map(),
         positions: new Map(),
         troubles: new Map(),
-        areas: new Map()
+        areas: new Map(),
+        serviceRequests: new Map(),
+        finalDeliveryReceipts: new Map()
     },
     settings: {
         branches: [],
@@ -164,11 +183,35 @@ async function queryDateRange(collection, fieldPath, start, end) {
     });
 }
 
+async function queryDateRangeLimit(collection, fieldPath, start, end, limit = MASTER_LIMIT) {
+    return runStructuredQuery({
+        from: [{ collectionId: collection }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    { fieldFilter: { field: { fieldPath }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(start) } },
+                    { fieldFilter: { field: { fieldPath }, op: 'LESS_THAN_OR_EQUAL', value: firestoreValue(end) } }
+                ]
+            }
+        },
+        limit
+    });
+}
+
 async function queryEquals(collection, fieldPath, value) {
     return runStructuredQuery({
         from: [{ collectionId: collection }],
         where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: firestoreValue(value) } },
         limit: MASTER_LIMIT
+    });
+}
+
+async function queryEqualsLimit(collection, fieldPath, value, limit = MASTER_LIMIT) {
+    return runStructuredQuery({
+        from: [{ collectionId: collection }],
+        where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: firestoreValue(value) } },
+        limit
     });
 }
 
@@ -210,6 +253,37 @@ async function fetchMany(collection, ids, cache) {
         const doc = await fetchDoc(collection, id).catch(() => null);
         if (doc) cache.set(id, doc);
     }));
+}
+
+async function fetchDocsByIdList(collection, ids) {
+    const uniqueIds = Array.from(new Set(
+        ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    ));
+    if (!uniqueIds.length) return new Map();
+
+    const docs = await Promise.all(uniqueIds.map((id) => fetchDoc(collection, String(id)).catch(() => null)));
+    return new Map(
+        docs
+            .filter(Boolean)
+            .map((doc) => [String(doc.id || doc._docId || ''), doc])
+            .filter(([key]) => key)
+    );
+}
+
+async function queryByReferenceIds(collection, ids, cache) {
+    const uniqueIds = Array.from(new Set(
+        ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    )).filter((id) => !cache.has(String(id)));
+
+    const concurrency = 12;
+    for (let index = 0; index < uniqueIds.length; index += concurrency) {
+        const slice = uniqueIds.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map(async (id) => {
+            const docs = await queryEqualsLimit(collection, 'reference_id', id, 25).catch(() => []);
+            return [String(id), docs.map(parseFirestoreDoc).filter(Boolean)];
+        }));
+        results.forEach(([id, rows]) => cache.set(id, rows));
+    }
 }
 
 async function setDoc(collection, docId, row) {
@@ -273,6 +347,71 @@ function normalizeSearch(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function normalizeLegacyDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const compact = text.replace(/[T]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (LEGACY_EMPTY_DATETIME_VALUES.has(compact)) return '';
+    if (compact.startsWith('undefined ') || compact.startsWith('null ')) return '';
+    return text;
+}
+
+function dateOnly(value) {
+    return normalizeLegacyDateTime(value).slice(0, 10);
+}
+
+function addDays(dateText, days) {
+    const parsed = new Date(`${dateText}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return '';
+    parsed.setDate(parsed.getDate() + days);
+    return formatDateYmd(parsed);
+}
+
+function daysBetween(startDate, endDate) {
+    if (!startDate || !endDate) return '';
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+    return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function formatShortDate(dateText) {
+    if (!dateText) return '-';
+    const parsed = new Date(`${dateText}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return dateText;
+    return parsed.toLocaleDateString('en-PH', { month: 'short', day: '2-digit', year: '2-digit' });
+}
+
+function getRouteTaskDateTime(row) {
+    return clean(row?.route_task_datetime) || clean(row?.task_datetime);
+}
+
+function getAssignedStaffId(row) {
+    return Number(row?.route_tech_id || row?.tech_id || 0) || 0;
+}
+
+function isRouteCancelled(row) {
+    return Number(row?.route_iscancelled || row?.iscancel || row?.iscancelled || 0) === 1;
+}
+
+function isScheduleClosed(row) {
+    if (isRouteCancelled(row)) return false;
+    const routeFinished = normalizeLegacyDateTime(row?.route_date_finished);
+    if (routeFinished) return true;
+    const routeStatus = row?.route_status === '' || row?.route_status === undefined || row?.route_status === null
+        ? null
+        : Number(row.route_status);
+    if (routeStatus === 0) return true;
+    return Boolean(normalizeLegacyDateTime(row?.date_finished));
+}
+
+function lifecycleStatus(row) {
+    if (isRouteCancelled(row)) return 'Cancelled';
+    if (isScheduleClosed(row)) return 'Closed';
+    if (Number(row?.isongoing || row?.pending_parts || 0) === 1) return 'Ongoing';
+    return 'Active';
+}
+
 function employeeName(employee, fallbackId = '') {
     if (!employee) return fallbackId ? `ID ${fallbackId}` : 'Unassigned';
     const nickname = clean(employee.nickname);
@@ -311,6 +450,98 @@ function purposeFromLegacy(row, trouble) {
     if (clue.includes('collection')) return 'Confirmed Collection';
     if (clue.includes('billing') || clue.includes('invoice')) return 'Printed Billing';
     return explicit || `Purpose ${purposeId || '-'}`;
+}
+
+function pickLatestRouteRows(rows, selectedDate) {
+    const latestBySchedule = new Map();
+
+    rows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId <= 0) return;
+        if (selectedDate && String(row.task_datetime || '').slice(0, 10) !== selectedDate) return;
+        if (Number(row.iscancelled || row.iscancel || 0) === 1) return;
+        const current = latestBySchedule.get(scheduleId);
+        if (!current || Number(row.id || 0) > Number(current.id || 0)) {
+            latestBySchedule.set(scheduleId, row);
+        }
+    });
+
+    return Array.from(latestBySchedule.values());
+}
+
+async function buildRouteBoundSchedules(routeRows, routeSourceLabel) {
+    const scheduleIds = routeRows.map((row) => Number(row.schedule_id || 0)).filter((id) => id > 0);
+    const scheduleMap = await fetchDocsByIdList('tbl_schedule', scheduleIds);
+
+    return routeRows
+        .map((routeRow) => {
+            const scheduleId = Number(routeRow.schedule_id || 0);
+            const schedule = scheduleMap.get(String(scheduleId));
+            if (!schedule) return null;
+            return {
+                ...schedule,
+                task_datetime: clean(routeRow.task_datetime || schedule.task_datetime),
+                tech_id: Number(routeRow.tech_id || schedule.tech_id || 0) || 0,
+                route_id: Number(routeRow.id || 0) || 0,
+                route_doc_id: routeRow._docId || String(routeRow.id || ''),
+                route_source: routeRow._routeSource || routeSourceLabel,
+                route_tech_id: Number(routeRow.tech_id || 0) || 0,
+                route_task_datetime: clean(routeRow.task_datetime),
+                route_status: routeRow.status ?? '',
+                route_iscancelled: Number(routeRow.iscancelled || routeRow.iscancel || 0) || 0,
+                route_date_finished: clean(routeRow.date_finished),
+                route_remarks: clean(routeRow.remarks),
+                route_timestmp: clean(routeRow.timestmp),
+                route_bridge_pushed_at: clean(routeRow.bridge_pushed_at)
+            };
+        })
+        .filter(Boolean);
+}
+
+function mergeRouteRows(savedRows, printedRows, date) {
+    const routeBySchedule = new Map();
+    pickLatestRouteRows(printedRows, date).forEach((row) => {
+        routeBySchedule.set(Number(row.schedule_id || 0), { ...row, _routeSource: 'Printed' });
+    });
+    pickLatestRouteRows(savedRows, date).forEach((row) => {
+        routeBySchedule.set(Number(row.schedule_id || 0), { ...row, _routeSource: 'Saved' });
+    });
+    return Array.from(routeBySchedule.values());
+}
+
+function activeServiceRequests(scheduleId) {
+    return (masterState.lookups.serviceRequests.get(String(scheduleId)) || [])
+        .filter((row) => Number(row.iscancelled || 0) !== 1)
+        .filter((row) => !normalizeLegacyDateTime(row.close_date));
+}
+
+function activeFinalReceipts(scheduleId) {
+    return (masterState.lookups.finalDeliveryReceipts.get(String(scheduleId)) || [])
+        .filter((row) => Number(row.iscancelled || 0) !== 1);
+}
+
+function readyStatusForSchedule(row) {
+    const purposeId = Number(row.purpose_id || 0);
+    const purposeText = purposeFromLegacy(row, masterState.lookups.troubles.get(String(row.trouble_id || ''))).toLowerCase();
+    if (purposeId === 7 || purposeText.includes('purchasing')) return 'N/A';
+
+    const scheduleId = Number(row.id || row._docId || 0);
+    const requests = activeServiceRequests(scheduleId);
+    if (!requests.length) return 'YES';
+
+    return activeFinalReceipts(scheduleId).length ? 'YES' : 'NO';
+}
+
+function readyLabel(value) {
+    if (value === 'YES') return 'Ready YES';
+    if (value === 'NO') return 'Ready NO';
+    return 'Ready N/A';
+}
+
+function readyClassName(value) {
+    if (value === 'YES') return 'ready-yes';
+    if (value === 'NO') return 'ready-no';
+    return 'ready-na';
 }
 
 function branchCity(branch) {
@@ -365,14 +596,24 @@ function buildLegacyScheduleRow(row) {
     const assignedTo = employeeName(employee, row.tech_id);
     const area = areaFromBranch(row.branch_id, branch, purposeKey);
     const customer = clean(company?.companyname || row.company_name || row.client || branch?.companyname) || 'Unknown Customer';
+    const originalDate = dateOnly(row.original_sched) || dateOnly(row.task_datetime);
+    const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+    const scheduleId = Number(row.id || row._docId || 0);
+    const readyStatus = readyStatusForSchedule(row);
+    const routeSource = clean(row.route_source || row.sourceBucket || 'Saved');
+    const lifecycle = lifecycleStatus(row);
 
     return {
-        source: 'legacy',
-        rowKey: `legacy_${row._docId || row.id || ''}`,
+        source: routeSource === 'pending-not-routed' ? 'pending' : 'legacy-route',
+        sourceBucket: row.sourceBucket || 'daily-route',
+        rowKey: `${row.sourceBucket || 'route'}_${row._docId || row.id || ''}`,
         docId: row._docId || row.id || '',
         techId: String(row.tech_id || ''),
         branchId: String(row.branch_id || ''),
         companyId: String(row.company_id || branch?.company_id || ''),
+        scheduleId,
+        routeId: Number(row.route_id || 0) || 0,
+        routeSource,
         purpose,
         area,
         customer,
@@ -380,8 +621,19 @@ function buildLegacyScheduleRow(row) {
         model,
         serial,
         assignedTo,
-        status: 'Active',
-        searchText: [purpose, area, customer, branchName, model, serial, assignedTo, row.invoice_num, trouble?.trouble].join(' ')
+        status: lifecycle,
+        originalDate,
+        routeDate: dateOnly(getRouteTaskDateTime(row)),
+        daysPending: originalDate ? daysBetween(originalDate, selectedDate) : '',
+        readyStatus,
+        readyLabel: readyLabel(readyStatus),
+        sourceNote: routeSource === 'pending-not-routed' ? 'Pending Not Routed' : `${routeSource} Route`,
+        trouble: clean(trouble?.trouble),
+        remarks: clean(row.route_remarks || row.remarks || row.caller),
+        searchText: [
+            purpose, area, customer, branchName, model, serial, assignedTo, row.invoice_num,
+            trouble?.trouble, row.remarks, lifecycle, readyStatus, originalDate, routeSource
+        ].join(' ')
     };
 }
 
@@ -393,9 +645,12 @@ function buildWebScheduleRow(row) {
         : (/collection/i.test(purpose) ? 'collection' : (/toner|ink|deliver/i.test(purpose) ? 'delivery' : 'service'));
     const area = clean(row.area || row.area_group) || areaFromBranch(branchId, branch, purposeKey);
     const assignedTo = clean(row.assigned_to || row.collector) || 'Collector';
+    const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+    const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
 
     return {
         source: 'web',
+        sourceBucket: 'daily-route',
         rowKey: `web_${row._docId || ''}`,
         docId: row._docId,
         original: row,
@@ -410,7 +665,13 @@ function buildWebScheduleRow(row) {
         serial: clean(row.serial || row.serial_number),
         assignedTo,
         status: clean(row.status || 'Active') || 'Active',
-        searchText: [purpose, area, row.customer, row.branch, row.model, row.serial, assignedTo, row.status].join(' ')
+        originalDate,
+        routeDate: selectedDate,
+        daysPending: daysBetween(originalDate, selectedDate),
+        readyStatus: clean(row.ready_status || 'N/A') || 'N/A',
+        readyLabel: readyLabel(clean(row.ready_status || 'N/A') || 'N/A'),
+        sourceNote: 'Web Schedule',
+        searchText: [purpose, area, row.customer, row.branch, row.model, row.serial, assignedTo, row.status, originalDate].join(' ')
     };
 }
 
@@ -420,9 +681,12 @@ function buildPlannerScheduleRow(row) {
     const purpose = row.department === 'collection' ? 'Confirmed Collection' : 'Printed Billing';
     const area = clean(row.area || row.area_group) || 'N/A';
     const assignedTo = clean(row.assigned_staff_name || row.suggested_staff_name || row.suggested_messenger_name) || 'Suggested / Unassigned';
+    const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+    const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
 
     return {
         source: 'planner',
+        sourceBucket: 'daily-route',
         rowKey: `planner_${row._docId || row.id || ''}`,
         docId: row._docId || row.id || '',
         techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
@@ -434,7 +698,13 @@ function buildPlannerScheduleRow(row) {
         serial: serials[0] || row.serial || '',
         assignedTo,
         status: row.planner_status || row.task_status || 'Suggested',
-        searchText: [purpose, area, row.company_name, row.account_name, row.primary_branch_name, serials.join(' '), assignedTo].join(' ')
+        originalDate,
+        routeDate: selectedDate,
+        daysPending: daysBetween(originalDate, selectedDate),
+        readyStatus: 'N/A',
+        readyLabel: readyLabel('N/A'),
+        sourceNote: 'Planner',
+        searchText: [purpose, area, row.company_name, row.account_name, row.primary_branch_name, serials.join(' '), assignedTo, originalDate].join(' ')
     };
 }
 
@@ -463,6 +733,71 @@ async function hydrateLegacyLookups(rows) {
         fetchMany('tbl_companylist', branchCompanyIds, masterState.lookups.companies),
         fetchMany('tbl_area', areaIds, masterState.lookups.areas)
     ]);
+}
+
+async function hydrateReadyLookups(rows) {
+    const requestCandidates = rows.filter((row) => {
+        const purposeId = Number(row.purpose_id || 0);
+        const clue = `${row.remarks || ''} ${row.route_remarks || ''}`.toLowerCase();
+        return Number(row.withrequest || 0) === 1
+            || purposeId === 3
+            || purposeId === 4
+            || purposeId === 7
+            || /toner|ink|cartridge|drum|fuser|scanner|pcr|blade|change unit|pull out|machine/.test(clue);
+    });
+    const requestIds = requestCandidates.map((row) => row.id || row._docId);
+    await queryByReferenceIds('tbl_newfordr', requestIds, masterState.lookups.serviceRequests);
+
+    const finalDrIds = requestIds.filter((id) => activeServiceRequests(id).length);
+    await queryByReferenceIds('tbl_finaldr', finalDrIds, masterState.lookups.finalDeliveryReceipts);
+}
+
+async function loadPendingNotRoutedRows(date, routeRows) {
+    const routedIds = new Set(routeRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0));
+    const staffIds = new Set(routeRows.map(getAssignedStaffId).filter(Boolean));
+    if (!staffIds.length) return [];
+
+    const sinceDate = addDays(date, -PENDING_NOT_ROUTED_LOOKBACK_DAYS);
+    const pendingRows = [];
+    const days = [];
+    for (let cursor = sinceDate; cursor && cursor < date; cursor = addDays(cursor, 1)) {
+        days.push(cursor);
+    }
+
+    const concurrency = 6;
+    for (let index = 0; index < days.length; index += concurrency) {
+        const slice = days.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map((day) => (
+            queryDateRange('tbl_schedule', 'task_datetime', `${day} 00:00:00`, `${day} 23:59:59`).catch(() => [])
+        )));
+        results.flat().map(parseFirestoreDoc).filter(Boolean).forEach((row) => {
+            const staffId = Number(row.tech_id || 0) || 0;
+            const scheduleId = Number(row.id || row._docId || 0);
+            const taskDate = dateOnly(row.task_datetime);
+            if (!staffIds.has(staffId)) return;
+            if (!scheduleId || routedIds.has(scheduleId)) return;
+            if (!taskDate || taskDate >= date || taskDate < sinceDate) return;
+            if (Number(row.iscancel || row.iscancelled || 0) === 1) return;
+            if (normalizeLegacyDateTime(row.date_finished)) return;
+            pendingRows.push({
+                ...row,
+                sourceBucket: 'pending-not-routed',
+                route_source: 'pending-not-routed',
+                route_task_datetime: row.task_datetime,
+                route_tech_id: row.tech_id,
+                route_status: row.status ?? ''
+            });
+        });
+    }
+
+    const unique = new Map();
+    pendingRows.forEach((row) => unique.set(Number(row.id || row._docId || 0), row));
+    return Array.from(unique.values()).sort((a, b) => {
+        const left = dateOnly(a.task_datetime);
+        const right = dateOnly(b.task_datetime);
+        if (left !== right) return left.localeCompare(right);
+        return Number(a.id || 0) - Number(b.id || 0);
+    });
 }
 
 async function loadMasterConfigs() {
@@ -519,27 +854,38 @@ async function loadMasterSchedule() {
         await ensureSettingsData();
         const start = `${date} 00:00:00`;
         const end = `${date} 23:59:59`;
-        const [legacyDocs, plannerDocs, webDocs] = await Promise.all([
-            queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
+        const [printedDocs, savedDocs, plannerDocs, webDocs] = await Promise.all([
+            queryDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', start, end).catch(() => []),
+            queryDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', start, end).catch(() => []),
             queryEquals('tbl_schedule_planner', 'schedule_date', date).catch(() => []),
             queryEquals('marga_master_schedule', 'schedule_date', date).catch(() => [])
         ]);
 
-        const legacyRows = legacyDocs.map(parseFirestoreDoc);
+        const printedRows = printedDocs.map(parseFirestoreDoc).filter(Boolean);
+        const savedRows = savedDocs.map(parseFirestoreDoc).filter(Boolean);
+        const routeRows = mergeRouteRows(savedRows, printedRows, date);
+        const routeSourceLabel = savedRows.length ? 'Saved' : 'Printed';
+        const legacyRows = await buildRouteBoundSchedules(routeRows, routeSourceLabel);
+        const pendingRawRows = await loadPendingNotRoutedRows(date, legacyRows);
+        const lookupRows = [...legacyRows, ...pendingRawRows];
         const plannerRows = plannerDocs.map(parseFirestoreDoc);
         const webRows = webDocs.map(parseFirestoreDoc);
-        await hydrateLegacyLookups(legacyRows);
+        await hydrateLegacyLookups(lookupRows);
+        await hydrateReadyLookups(lookupRows);
 
+        masterState.routeSourceLabel = routeSourceLabel;
         masterState.rows = [
             ...webRows.map(buildWebScheduleRow),
             ...legacyRows.map(buildLegacyScheduleRow),
             ...plannerRows.map(buildPlannerScheduleRow)
         ].sort((a, b) => {
             if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
+            if (a.readyStatus !== b.readyStatus) return ['YES', 'NO', 'N/A'].indexOf(a.readyStatus) - ['YES', 'NO', 'N/A'].indexOf(b.readyStatus);
             if (a.area !== b.area) return a.area.localeCompare(b.area);
             if (a.purpose !== b.purpose) return a.purpose.localeCompare(b.purpose);
             return a.customer.localeCompare(b.customer);
         });
+        masterState.pendingRows = pendingRawRows.map(buildLegacyScheduleRow);
 
         renderMasterSchedule();
         renderSettingsIfVisible();
@@ -563,18 +909,46 @@ function getVisibleRows() {
     });
 }
 
+function getVisiblePendingRows() {
+    const statusFilter = clean(document.getElementById('masterStatusInput')?.value || 'active').toLowerCase();
+    const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
+
+    return masterState.pendingRows.filter((row) => {
+        const isCancelled = clean(row.status).toLowerCase() === 'cancelled';
+        if (statusFilter === 'active' && isCancelled) return false;
+        if (statusFilter === 'cancelled' && !isCancelled) return false;
+        if (search && !normalizeSearch(row.searchText).includes(search)) return false;
+        return true;
+    });
+}
+
+function readySortValue(value) {
+    if (value === 'YES') return 0;
+    if (value === 'NO') return 1;
+    return 2;
+}
+
 function renderMasterSchedule() {
     const rows = getVisibleRows();
+    const pendingRows = getVisiblePendingRows();
     const sheet = document.getElementById('masterScheduleSheet');
     const count = document.getElementById('masterCount');
-    if (count) count.textContent = `${rows.length.toLocaleString()} schedule${rows.length === 1 ? '' : 's'}`;
+    if (count) {
+        const pendingText = pendingRows.length ? ` · ${pendingRows.length.toLocaleString()} pending not routed` : '';
+        count.textContent = `${rows.length.toLocaleString()} routed schedule${rows.length === 1 ? '' : 's'}${pendingText}`;
+    }
     renderPrintStaffOptions();
     if (!sheet) return;
 
-    if (!rows.length) {
+    if (!rows.length && !pendingRows.length) {
         sheet.innerHTML = '<div class="master-empty">No schedules found for this date/filter.</div>';
         return;
     }
+
+    const routeSummary = rows.reduce((acc, row) => {
+        acc[row.readyStatus || 'N/A'] = (acc[row.readyStatus || 'N/A'] || 0) + 1;
+        return acc;
+    }, {});
 
     const groups = new Map();
     rows.forEach((row) => {
@@ -584,35 +958,94 @@ function renderMasterSchedule() {
     });
 
     sheet.innerHTML = `
-        <section class="master-group">
-            <h1 style="margin:0 0 18px;font-size:28px;color:#111827;">Master Schedule</h1>
+        <section class="master-group master-summary">
+            <h1>Master Schedule</h1>
+            <div class="master-summary-pills">
+                <span>Route source: ${escapeHtml(masterState.routeSourceLabel || 'Saved')}</span>
+                <span>Ready YES: ${routeSummary.YES || 0}</span>
+                <span>Ready NO: ${routeSummary.NO || 0}</span>
+                <span>Ready N/A: ${routeSummary['N/A'] || 0}</span>
+            </div>
         </section>
         ${Array.from(groups.entries()).map(([group, groupRows]) => `
             <section class="master-group">
                 <h2>${escapeHtml(group)}</h2>
-                <table class="master-table">
-                    <thead>
-                        <tr>
-                            <th>Purpose</th>
-                            <th>Area</th>
-                            <th>Customer Name</th>
-                            <th>Branch</th>
-                            <th>Model</th>
-                            <th>Serial</th>
-                            <th>Assigned To</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${groupRows.map(renderMasterScheduleRow).join('')}
-                    </tbody>
-                </table>
+                ${renderReadyTables(groupRows)}
             </section>
         `).join('')}
+        ${pendingRows.length ? renderPendingNotRouted(pendingRows) : ''}
+    `;
+}
+
+function renderReadyTables(rows) {
+    const groups = new Map();
+    rows
+        .slice()
+        .sort((a, b) => readySortValue(a.readyStatus) - readySortValue(b.readyStatus) || Number(b.daysPending || 0) - Number(a.daysPending || 0))
+        .forEach((row) => {
+            const key = row.readyStatus || 'N/A';
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(row);
+        });
+
+    return Array.from(groups.entries()).map(([ready, readyRows]) => `
+        <div class="ready-block ${readyClassName(ready)}">
+            <h3>${escapeHtml(readyLabel(ready))}</h3>
+            ${renderScheduleTable(readyRows)}
+        </div>
+    `).join('');
+}
+
+function renderScheduleTable(rows) {
+    return `
+        <table class="master-table">
+            <thead>
+                <tr>
+                    <th>Purpose</th>
+                    <th>Area</th>
+                    <th>Customer Name</th>
+                    <th>Branch</th>
+                    <th>Model</th>
+                    <th>Serial</th>
+                    <th>Original Date</th>
+                    <th>Days Pending</th>
+                    <th>Ready</th>
+                    <th>Assigned To</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map(renderMasterScheduleRow).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderPendingNotRouted(rows) {
+    const grouped = new Map();
+    rows.forEach((row) => {
+        const key = row.assignedTo || 'Unassigned';
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(row);
+    });
+
+    return `
+        <section class="master-group pending-not-routed">
+            <h2>Pending Not Routed</h2>
+            <p class="master-note">Older assigned schedules not included in today route. Team leader should close, cancel, reassign, or route these later.</p>
+            ${Array.from(grouped.entries()).map(([staff, staffRows]) => `
+                <div class="pending-staff-block">
+                    <h3>${escapeHtml(staff)}</h3>
+                    ${renderScheduleTable(staffRows)}
+                </div>
+            `).join('')}
+        </section>
     `;
 }
 
 function renderMasterScheduleRow(row) {
     const staffOptions = renderStaffSelectOptions(row);
+    const readyClass = readyClassName(row.readyStatus);
+    const canMove = row.sourceBucket !== 'pending-not-routed';
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td>${escapeHtml(row.purpose || '-')}</td>
@@ -621,8 +1054,11 @@ function renderMasterScheduleRow(row) {
             <td>${escapeHtml(row.branch || '-')}</td>
             <td class="numeric">${escapeHtml(row.model || '-')}</td>
             <td class="numeric">${escapeHtml(row.serial || '-')}</td>
+            <td>${escapeHtml(formatShortDate(row.originalDate))}</td>
+            <td class="numeric">${escapeHtml(row.daysPending === '' ? '-' : row.daysPending)}</td>
+            <td><span class="ready-pill ${readyClass}">${escapeHtml(row.readyStatus || 'N/A')}</span></td>
             <td>
-                <select class="staff-select" onchange="reassignScheduleFromSelect('${escapeHtml(row.rowKey)}', this.value)">
+                <select class="staff-select" ${canMove ? '' : 'disabled'} onchange="reassignScheduleFromSelect('${escapeHtml(row.rowKey)}', this.value)">
                     ${staffOptions}
                 </select>
             </td>
@@ -659,7 +1095,7 @@ async function updateScheduleOwner(row, employee) {
     const staffName = employeeName(employee, staffId);
     if (!row || !staffId) return;
 
-    if (row.source === 'legacy') {
+    if (row.source === 'legacy' || row.source === 'legacy-route') {
         await updateDocFields('tbl_schedule', row.docId, { tech_id: Number(staffId) || staffId });
     } else if (row.source === 'web') {
         await updateDocFields('marga_master_schedule', row.docId, {
@@ -790,21 +1226,30 @@ function renderScheduleHtml(rows, title = 'Master Schedule') {
                             <th>Branch</th>
                             <th>Model</th>
                             <th>Serial</th>
+                            <th>Original Date</th>
+                            <th>Days Pending</th>
+                            <th>Ready</th>
                             <th>Assigned To</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${groupRows.map((row) => `
-                            <tr>
-                                <td>${escapeHtml(row.purpose || '-')}</td>
-                                <td>${escapeHtml(row.area || '-')}</td>
-                                <td>${escapeHtml(row.customer || '-')}</td>
-                                <td>${escapeHtml(row.branch || '-')}</td>
-                                <td>${escapeHtml(row.model || '-')}</td>
-                                <td>${escapeHtml(row.serial || '-')}</td>
-                                <td>${escapeHtml(row.assignedTo || '-')}</td>
-                            </tr>
-                        `).join('')}
+                        ${groupRows
+                            .slice()
+                            .sort((a, b) => readySortValue(a.readyStatus) - readySortValue(b.readyStatus) || Number(b.daysPending || 0) - Number(a.daysPending || 0))
+                            .map((row) => `
+                                <tr>
+                                    <td>${escapeHtml(row.purpose || '-')}</td>
+                                    <td>${escapeHtml(row.area || '-')}</td>
+                                    <td>${escapeHtml(row.customer || '-')}</td>
+                                    <td>${escapeHtml(row.branch || '-')}</td>
+                                    <td>${escapeHtml(row.model || '-')}</td>
+                                    <td>${escapeHtml(row.serial || '-')}</td>
+                                    <td>${escapeHtml(formatShortDate(row.originalDate))}</td>
+                                    <td>${escapeHtml(row.daysPending === '' ? '-' : row.daysPending)}</td>
+                                    <td>${escapeHtml(row.readyStatus || 'N/A')}</td>
+                                    <td>${escapeHtml(row.assignedTo || '-')}</td>
+                                </tr>
+                            `).join('')}
                     </tbody>
                 </table>
             </section>
