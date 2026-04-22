@@ -24,10 +24,6 @@
             </div>
             <div class="field-actions">
                 <input type="date" id="fieldDate" class="ops-date-input">
-                <label class="ops-toggle">
-                    <input type="checkbox" id="fieldCarryover">
-                    <span>Printed route only</span>
-                </label>
                 <button type="button" class="btn btn-secondary btn-sm" id="fieldRefresh">Refresh</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="fieldLogout">Logout</button>
             </div>
@@ -39,9 +35,18 @@
             <div class="card-header">
                 <h3>Tasks</h3>
                 <div class="card-actions">
+                    <div class="field-tabs" role="tablist" aria-label="Task view">
+                        <button type="button" class="field-tab is-active" id="fieldTodayTab" data-tab="today" role="tab" aria-selected="true">
+                            Today <span id="fieldTodayCount">0</span>
+                        </button>
+                        <button type="button" class="field-tab" id="fieldCarryoverTab" data-tab="carryover" role="tab" aria-selected="false">
+                            Carry Over <span id="fieldCarryoverCount">0</span>
+                        </button>
+                    </div>
                     <select id="fieldStatusFilter" class="ops-purpose-filter" aria-label="Status filter">
                         <option value="all">All Status</option>
                         <option value="pending">Pending</option>
+                        <option value="carryover">Carryover</option>
                         <option value="ongoing">Ongoing (Parts)</option>
                         <option value="closed">Closed</option>
                         <option value="cancelled">Cancelled</option>
@@ -297,6 +302,6 @@
     <script src="../shared/js/auth.js"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
-    <script src="js/field.js?v=20260324-3"></script>
+    <script src="js/field.js?v=20260422-carryover-tabs-1"></script>
 </body>
 </html>

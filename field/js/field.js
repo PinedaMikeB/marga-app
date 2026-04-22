@@ -3,7 +3,7 @@ if (!MargaAuth.requireAccess('field')) {
 }
 
 const FIELD_QUERY_LIMIT = 5000;
-const FIELD_CARRYOVER_DAYS = 14;
+const FIELD_CARRYOVER_DAYS = 45;
 const PARTS_CATALOG_QUERY_LIMIT = 12000;
 const DELIVERY_RECEIPT_LINE_LIMIT = 100;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
@@ -74,10 +74,12 @@ const caches = {
 
 const state = {
     selectedDate: '',
-    includeCarryover: false,
+    activeTab: 'today',
     statusFilter: 'all',
     staffId: null,
     routeSourceLabel: 'Printed',
+    todayRows: [],
+    carryoverRows: [],
     rows: [],
     modalScheduleId: null,
     modalMachineId: null,
@@ -108,16 +110,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateInput = document.getElementById('fieldDate');
     dateInput.value = formatDateYmd(new Date());
 
-    document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule());
-    const carryoverToggle = document.getElementById('fieldCarryover');
-    if (carryoverToggle) {
-        carryoverToggle.checked = false;
-        carryoverToggle.disabled = true;
-        carryoverToggle.closest('.ops-toggle')?.setAttribute('title', 'Printed route view only');
-    }
+    document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
+    document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
+        button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
+    });
     document.getElementById('fieldStatusFilter').addEventListener('change', () => {
         state.statusFilter = document.getElementById('fieldStatusFilter').value;
-        renderList();
+        renderActiveView();
     });
     dateInput.addEventListener('change', () => loadMySchedule());
     document.getElementById('fieldLogout').addEventListener('click', () => MargaAuth.logout());
@@ -518,6 +517,48 @@ function getStatusMeta(row) {
     return { key, label: 'Pending', className: 'status-pending' };
 }
 
+function activeRows() {
+    return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
+}
+
+function setActiveTab(tab) {
+    state.activeTab = tab === 'carryover' ? 'carryover' : 'today';
+    state.statusFilter = 'all';
+    const statusFilter = document.getElementById('fieldStatusFilter');
+    if (statusFilter) statusFilter.value = 'all';
+    renderActiveView();
+}
+
+function updateTabControls() {
+    document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
+        const isActive = button.dataset.tab === state.activeTab;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+
+    const todayCount = document.getElementById('fieldTodayCount');
+    const carryoverCount = document.getElementById('fieldCarryoverCount');
+    if (todayCount) todayCount.textContent = String(state.todayRows.length);
+    if (carryoverCount) carryoverCount.textContent = String(state.carryoverRows.length);
+}
+
+function updateSubtitle() {
+    const subtitle = document.getElementById('fieldSubtitle');
+    if (!subtitle) return;
+    const date = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
+    const todaySource = state.routeSourceLabel.toLowerCase();
+    const view = state.activeTab === 'carryover' ? 'carry-over' : todaySource;
+    const count = activeRows().length;
+    subtitle.textContent = `${count} ${view} task(s) for ${date}.`;
+}
+
+function renderActiveView() {
+    updateTabControls();
+    renderKpis(activeRows());
+    renderList();
+    updateSubtitle();
+}
+
 function formatTaskDateTime(value) {
     const safeValue = normalizeLegacyDateTime(value);
     if (!safeValue) return '-';
@@ -707,9 +748,10 @@ function renderKpis(rows) {
         acc[k] = (acc[k] || 0) + 1;
         return acc;
     }, {});
+    const primaryLabel = state.activeTab === 'carryover' ? 'Carry Over' : 'Printed Today';
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi"><div class="label">Printed Today</div><div class="value">${rows.filter((r) => getRouteTaskDateTime(r).startsWith(state.selectedDate)).length}</div></div>
+        <div class="field-kpi"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${rows.length}</div></div>
         <div class="field-kpi"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
         <div class="field-kpi"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
         <div class="field-kpi"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
@@ -719,12 +761,16 @@ function renderKpis(rows) {
 
 function renderList() {
     const list = document.getElementById('fieldList');
+    const rows = activeRows();
     const filtered = state.statusFilter === 'all'
-        ? state.rows
-        : state.rows.filter((r) => getStatusKey(r) === state.statusFilter);
+        ? rows
+        : rows.filter((r) => getStatusKey(r) === state.statusFilter);
 
     if (!filtered.length) {
-        list.innerHTML = '<div class="loading-cell">No tasks for selected date/filter.</div>';
+        const emptyText = state.activeTab === 'carryover'
+            ? 'No carry-over tasks for selected date/filter.'
+            : 'No current tasks for selected date/filter.';
+        list.innerHTML = `<div class="loading-cell">${sanitize(emptyText)}</div>`;
         return;
     }
 
@@ -750,6 +796,9 @@ function renderList() {
         const machineLine = brandName || modelName
             ? `${sanitize(brandName)} ${sanitize(modelName)}`.trim()
             : 'Machine';
+        const routeSourceLine = state.activeTab === 'carryover'
+            ? `<div class="sub"><strong>Source:</strong> ${sanitize(row.route_source || 'Carry Over')}</div>`
+            : '';
         const partsNote = Number(row.pending_parts || 0) === 1 || Number(row.isongoing || 0) === 1
             ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
             : '';
@@ -764,6 +813,7 @@ function renderList() {
                         <div class="sub">${sanitize(clientName)} · ${sanitize(branchName)} · ${sanitize(areaName)}</div>
                         <div class="sub">${machineLine} · Serial: <strong>${sanitize(machineSerial)}</strong></div>
                         <div class="sub">${sanitize(taskNotes)}</div>
+                        ${routeSourceLine}
                         ${partsNote}
                     </div>
                     <div class="field-task-actions">
@@ -786,8 +836,92 @@ function renderList() {
     });
 }
 
-async function loadMySchedule() {
+function isFinishedOrCancelled(row) {
+    if (Number(row.route_iscancelled || row.iscancelled || row.iscancel || 0) === 1) return true;
+    if (normalizeLegacyDateTime(row.route_date_finished || row.date_finished)) return true;
+    const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
+        ? null
+        : Number(row.route_status);
+    return routeStatus === 0;
+}
+
+function asOlderCarryoverRow(row) {
+    return {
+        ...row,
+        route_id: 0,
+        route_doc_id: '',
+        route_source: 'Older Pending',
+        route_tech_id: Number(row.tech_id || 0) || 0,
+        route_task_datetime: String(row.task_datetime || ''),
+        route_status: '',
+        route_iscancelled: Number(row.iscancel || row.iscancelled || 0) || 0,
+        route_date_finished: String(row.date_finished || ''),
+        route_remarks: String(row.remarks || row.caller || '').trim()
+    };
+}
+
+async function loadOlderCarryoverRows(date, excludedScheduleIds) {
+    const days = [];
+    for (let index = 1; index <= FIELD_CARRYOVER_DAYS; index += 1) {
+        days.push(addDaysYmd(date, -index));
+    }
+
+    const rows = [];
+    const concurrency = 6;
+    for (let index = 0; index < days.length; index += concurrency) {
+        const slice = days.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map((day) => (
+            queryByDateRange('tbl_schedule', 'task_datetime', `${day} 00:00:00`, `${day} 23:59:59`).catch(() => [])
+        )));
+        results.flat().map(parseFirestoreDoc).filter(Boolean).forEach((row) => {
+            const scheduleId = Number(row.id || row._docId || 0);
+            if (!scheduleId || excludedScheduleIds.has(scheduleId)) return;
+            if (Number(row.tech_id || 0) !== Number(state.staffId || 0)) return;
+            if (isFinishedOrCancelled(row)) return;
+            rows.push(asOlderCarryoverRow(row));
+        });
+    }
+
+    return rows;
+}
+
+async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
+    const printedScheduleIds = new Set(printedRows.map((row) => Number(row.schedule_id || 0)).filter((id) => id > 0));
+    const currentScheduleIds = new Set(todayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
+
+    const savedCarryoverRoutes = savedRows
+        .filter((row) => !printedScheduleIds.has(Number(row.schedule_id || 0)))
+        .filter((row) => Number(row.iscancelled || row.iscancel || 0) !== 1);
+
+    const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'carry over'))
+        .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+        .filter((row) => !isFinishedOrCancelled(row));
+
+    savedCarryoverRows.forEach((row) => {
+        currentScheduleIds.add(Number(row.id || 0));
+        row.route_source = 'Saved Carry Over';
+    });
+
+    const olderRows = await loadOlderCarryoverRows(date, currentScheduleIds);
+    const combined = [...savedCarryoverRows, ...olderRows];
+    const unique = new Map();
+    combined.forEach((row) => {
+        const scheduleId = Number(row.id || row._docId || 0);
+        if (!scheduleId) return;
+        if (!unique.has(scheduleId)) unique.set(scheduleId, row);
+    });
+
+    return Array.from(unique.values())
+        .sort((a, b) => (
+            String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) ||
+            (Number(a.id || 0) - Number(b.id || 0))
+        ));
+}
+
+async function loadMySchedule(options = {}) {
     const date = document.getElementById('fieldDate').value || formatDateYmd(new Date());
+    const { keepTab = false } = options;
+    if (!keepTab) state.activeTab = 'today';
     state.selectedDate = date;
     const subtitle = document.getElementById('fieldSubtitle');
     subtitle.textContent = 'Loading printed route...';
@@ -807,17 +941,24 @@ async function loadMySchedule() {
         const routeRows = printedRows.length ? printedRows : savedRows;
         const routeSourceLabel = printedRows.length ? 'Printed' : 'Saved';
 
-        const all = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
+        const todayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
             .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
 
         state.routeSourceLabel = routeSourceLabel;
-        state.rows = all;
-        await hydrateLookups(all);
-        renderKpis(all);
-        renderList();
+        state.todayRows = todayRows;
+        state.carryoverRows = [];
+        state.rows = todayRows;
+        await hydrateLookups(todayRows);
+        renderActiveView();
 
-        subtitle.textContent = `${all.length} ${routeSourceLabel.toLowerCase()} task(s) for ${date}.`;
+        const carryoverCount = document.getElementById('fieldCarryoverCount');
+        if (carryoverCount) carryoverCount.textContent = '...';
+        const carryoverRows = await buildCarryoverRows({ date, printedRows, savedRows, todayRows });
+        state.carryoverRows = carryoverRows;
+        state.rows = [...todayRows, ...carryoverRows];
+        await hydrateLookups(carryoverRows);
+        renderActiveView();
     } catch (err) {
         console.error('Field load failed:', err);
         subtitle.textContent = 'Failed to load tasks.';

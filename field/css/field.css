@@ -92,6 +92,47 @@
     margin-top: 1rem;
 }
 
+.field-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(187, 212, 237, 0.72);
+    border-radius: 14px;
+    background: rgba(239, 246, 255, 0.76);
+}
+
+.field-tab {
+    border: none;
+    border-radius: 11px;
+    background: transparent;
+    color: #4f6885;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 850;
+    padding: 0.48rem 0.68rem;
+    transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+    white-space: nowrap;
+}
+
+.field-tab span {
+    display: inline-grid;
+    min-width: 1.45rem;
+    margin-left: 0.35rem;
+    padding: 0.08rem 0.35rem;
+    border-radius: 999px;
+    background: rgba(30, 58, 95, 0.08);
+    color: inherit;
+    place-items: center;
+}
+
+.field-tab.is-active {
+    background: #fff;
+    color: #1d4ed8;
+    box-shadow: 0 6px 18px rgba(30, 64, 175, 0.12);
+}
+
 .field-list {
     padding: 0.75rem 1rem 1rem;
     display: grid;
@@ -401,6 +442,16 @@
         justify-content: flex-start;
     }
 
+    .card-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .field-tabs {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
     .field-kpis {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -458,6 +509,21 @@
     .field-actions .ops-toggle {
         width: 100%;
         justify-content: center;
+    }
+
+    .card-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .field-tabs,
+    .card-actions select {
+        width: 100%;
+    }
+
+    .field-tab {
+        flex: 1;
+        text-align: center;
     }
 
     .field-kpis {
