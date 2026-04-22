@@ -145,13 +145,14 @@ Collections matrix usability rule:
   - `TIN #`, `Customer / Branch`, `Purpose`, `Model`, `Trouble`, `City`, `Address`, `Days Pending`, `Ready`, `Assigned To`
 
 ## General Production Rules
-- General Production is planned but not implemented as of 2026-04-22.
+- General Production first pass exists as `general-production/` as of 2026-04-22.
 - This module is the production planning dashboard for machine requests and machine readiness.
-- Build it as its own module/page and navigation entry; do not mix it into Billing, Collections, Service, or Master Schedule patches.
-- Use the `frontend-design` skill and keep the UI operational/dense rather than marketing-style.
-- Before coding behavior, discover and confirm the real source tables and status IDs. Do not hard-code machine status IDs from screenshots.
+- Keep it as its own module/page and navigation entry; do not mix it into Billing, Collections, Service, or Master Schedule patches.
+- Keep the UI operational/dense rather than marketing-style.
+- Status source should prefer `tbl_newmachinestatus`; fallback status IDs are allowed only as a defensive UI fallback.
+- Before office rollout, verify each source-table mapping against live SQL/Firebase rows.
 
-Planned General Production dashboard panels:
+General Production dashboard panels:
 - `Machine Requests`: customer machine-change requests coming from Service.
 - `For Termination / Upgrade`: service-driven termination/upgrade requests.
 - `Source: To Purchase`: machines that must be bought, from purchase request flow.
@@ -160,7 +161,7 @@ Planned General Production dashboard panels:
 - `For Overhauling`: returned field machines no longer tied to a customer; future General Inventory should feed this when returned machines are received.
 - `Under Repair`: machines assigned to a technician and currently being overhauled.
 
-Planned Machine Checker behavior:
+Machine Checker behavior:
 - Button on General Production near refresh controls.
 - Status Changer section:
   - serial dropdown/search
@@ -173,7 +174,7 @@ Planned Machine Checker behavior:
   - serial
   - brand new / second hand
   - DP/date
-  - save as new machine after confirming required fields/table schema
+  - save as new machine in `tbl_machine` with source fields for General Production review
 - Status labels observed in the VB.NET screenshot include:
   - `IN STOCK`
   - `FOR DELIVERY`
@@ -222,21 +223,20 @@ From the latest confirmed module checks:
   - Field App showed 15 printed tasks.
   - The same 15 schedule IDs existed in Master Schedule printed-route data.
   - Field App also has a secondary Carry Over tab for planning follow-up work.
-- General Production is the next planned module, but implementation was intentionally deferred to the next chat.
+- General Production first-pass module exists locally and should be live-verified after deployment.
 
 ## Safe Next Work Sequence
 1. Start next session by reading `HANDOFF.md` and this `MASTERPLAN.md`.
-2. Implement General Production only after table/status discovery:
-   - inspect Service machine request / change-unit / termination-upgrade signals
-   - inspect purchase request data that can feed `Source: To Purchase`
-   - inspect machine status tables and `tbl_machine` fields
-   - inspect any existing overhauling/repair assignment tables or conventions
-3. Build General Production as a new isolated module and nav item.
-4. Add the dashboard panels first, then Machine Checker.
-5. Keep Today vs Carry Over Field App behavior intact.
-6. Preserve the accepted Collections month-matrix format.
-7. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
-8. Re-verify Billing presentation after any Billing matrix changes.
+2. Verify General Production live data grouping:
+   - Service machine request / change-unit / termination-upgrade signals
+   - purchase request data feeding `Source: To Purchase`
+   - `tbl_newmachinestatus` and `tbl_machine.status_id`
+   - overhauling/repair assignment tables or conventions
+3. Test Machine Checker status changes on a non-critical serial before office use.
+4. Keep Today vs Carry Over Field App behavior intact.
+5. Preserve the accepted Collections month-matrix format.
+6. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
+7. Re-verify Billing presentation after any Billing matrix changes.
 
 ## Rollback Reference
 - `8df832d`: current protected Billing baseline

@@ -18,13 +18,13 @@ const MargaAuth = {
 
     // Module permissions per role
     PERMISSIONS: {
-        admin: ['customers', 'billing', 'master-schedule', 'apd', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
-        billing: ['customers', 'billing', 'apd', 'pettycash', 'reports'],
-        collection: ['customers', 'collections', 'master-schedule', 'reports'],
-        service: ['customers', 'service', 'inventory', 'field'],
+        admin: ['customers', 'billing', 'schedule', 'master-schedule', 'apd', 'collections', 'service', 'general-production', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+        billing: ['customers', 'billing', 'schedule', 'apd', 'pettycash', 'reports'],
+        collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
+        service: ['customers', 'service', 'schedule', 'general-production', 'inventory', 'field'],
         hr: ['hr', 'settings'],
         technician: ['field'],
-        messenger: ['field'],
+        messenger: ['field', 'schedule'],
         viewer: ['customers', 'reports']
     },
 
@@ -243,7 +243,12 @@ const MargaAuth = {
         const userModules = this.normalizeModules(this.currentUser.allowed_modules);
         if (hasUserOverride) return userModules;
         const roleModules = this.normalizeModules(this.currentUser.role_modules);
-        if (roleModules.length) return roleModules;
+        if (roleModules.length) {
+            return [...new Set([
+                ...roleModules,
+                ...this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role)
+            ])];
+        }
         return this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role);
     },
 

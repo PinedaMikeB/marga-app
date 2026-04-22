@@ -57,6 +57,15 @@
                     <span>Billing</span>
                 </a>
 
+                <a href="schedule/" class="nav-item" data-module="schedule">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M8 2v4M16 2v4M3 10h18"/>
+                        <rect x="3" y="4" width="18" height="18" rx="2"/>
+                        <path d="M8 15h4M8 18h8"/>
+                    </svg>
+                    <span>Schedule Planner</span>
+                </a>
+
                 <a href="apd/" class="nav-item" data-module="apd">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M4 6h16"/>
@@ -97,6 +106,15 @@
                         <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
                     </svg>
                     <span>Service</span>
+                </a>
+
+                <a href="general-production/" class="nav-item" data-module="general-production">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 18V8l8-4 8 4v10"/>
+                        <path d="M8 18v-6h8v6"/>
+                        <path d="M3 18h18"/>
+                    </svg>
+                    <span>General Production</span>
                 </a>
             </div>
 
@@ -365,11 +383,13 @@
 	        const MODULE_TILE_CONFIG = {
 	            customers: { label: 'Customers', href: 'customers.html', note: 'Profiles, branches, machines' },
 	            billing: { label: 'Billing', href: 'billing/', note: 'Invoices, billing runs, due schedules' },
+	            schedule: { label: 'Schedule Planner', href: 'schedule/', note: 'Messenger routes, billing delivery, collection, and errands' },
 	            'master-schedule': { label: 'Master Schedule', href: 'master-schedule.html', note: 'Billing, collection, toner, ink, service, and PM calendar' },
 	            apd: { label: 'APD', href: 'apd/', note: 'Payables planning, check register, and disbursement control' },
 	            pettycash: { label: 'Petty Cash', href: 'pettycash/', note: 'Daily petty cash ledger, liquidation, and replenishment request printing' },
 	            collections: { label: 'Collections', href: 'collections.html', note: 'Collections, ORs, check follow-up' },
 	            service: { label: 'Service Dispatch', href: 'service/index.html', note: 'Task queue, assignment, transfer' },
+	            'general-production': { label: 'General Production', href: 'general-production/', note: 'Machine requests, readiness, and machine checker' },
 	            field: { label: 'Field App', href: 'field/index.html', note: 'Tech/messenger daily tasks, close and pending flow' },
 	            inventory: { label: 'Inventory', href: 'inventory/', note: 'Parts, toner, stock movements' },
 	            hr: { label: 'Human Resource', href: 'hr/', note: 'Employees, position mapping' },

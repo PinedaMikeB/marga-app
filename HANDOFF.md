@@ -8,9 +8,9 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
-- Continue from the accepted Master Schedule and Field App route work before starting the next module.
-- Next planned module is **General Production**. It has not been implemented yet; the user cancelled adding it in this session and asked to update the docs for the next chat.
-- General Production should be planned from the legacy VB.NET production screen screenshots before coding.
+- General Production first-pass module has been added from the legacy VB.NET production screen references.
+- Next safe step is live data verification for General Production: confirm which source rows appear under Machine Requests, Termination/Upgrade, Purchase, Overhauling, Machine Ready, For Overhauling, and Under Repair.
+- Machine Checker exists in General Production with status changer and add-new-machine form; verify live write behavior before office use.
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.
@@ -100,30 +100,45 @@ Important Collections SN rule:
 | Master Schedule | Accepted / In Progress | Uses `tbl_savedscheds`/`tbl_printedscheds` joined to `tbl_schedule`; print layout is grouped by staff and now matches VBNet columns closely. | Keep daily printed route and carry-over logic aligned with Field App. |
 | Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs for follow-up/planning. | Keep today route fast; optimize carry-over via backend if the 45-day scan becomes slow. |
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
-| General Production | Planned / Not Started | User wants a new module for machine requests, termination/upgrade, purchase source, overhauling source, machine ready, for overhauling, and under repair. | Next session should analyze source tables/status IDs first, then implement the module shell and Machine Checker. |
+| General Production | First Pass / In Progress | New isolated `general-production/` module with VB.NET-inspired production dashboard, machine-family filter, exports, and Machine Checker modal. Reads machine, service/schedule, contract, production queue, purchase, pickup, shutdown, and status sources when present. | Verify live data grouping and Machine Checker writes before office rollout; then tune source-table mappings from actual production rows. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
 
 ## Next Actions
-1. Start the next chat by implementing **General Production**, but only after source-table discovery.
-2. General Production first pass should be a new module/page and navigation entry, not a shared refactor.
-3. Build a production dashboard with these VB.NET-inspired panels:
-   - `Machine Requests`: machines requested by customers for replacement/change from Service.
-   - `For Termination / Upgrade`: service-driven termination or upgrade cases.
-   - `Source: To Purchase`: machines needed from purchase requests.
-   - `Source: From Overhauling`: machines from office/overhauling flow that can satisfy requests.
-   - `Machine Ready`: overhauled or brand-new machines ready for delivery.
-   - `For Overhauling`: returned field machines no longer tied to a customer; future General Inventory will feed this.
-   - `Under Repair`: machines assigned to a technician and currently being overhauled.
-4. Add `Machine Checker` in General Production after the dashboard shell:
-   - Status Changer: serial, model, status dropdown, save.
-   - Add New Machine: brand, model, serial, brand new/second hand, DP/date, save.
-   - Use the existing machine status table/source once confirmed; do not hard-code status IDs blindly.
-5. Keep Billing/Collections/Master Schedule stable while adding General Production.
+1. Open `/general-production/` locally and on Netlify after deploy; verify the seven dashboard panels against the legacy VB.NET screenshot.
+2. Confirm Machine Requests and Termination/Upgrade are pulling the correct Service rows from real office data.
+3. Confirm `Source: To Purchase`, `Source: From Overhauling`, `For Overhauling`, and `Under Repair` mappings with actual synced tables; adjust source filters if SQL shows better tables.
+4. Test Machine Checker on a non-critical serial before office use:
+   - Status Changer patches `tbl_machine.status_id`.
+   - Add New Machine creates a `tbl_machine` row with brand/model/serial/condition/DP date.
+5. Keep Billing/Collections/Master Schedule stable while tuning General Production.
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-22 - General Production First Pass Implemented
+- Added isolated `general-production/` module with a dense dashboard inspired by the provided VB.NET screenshots.
+- Dashboard panels added:
+  - `Machine Requests`
+  - `For Termination / Upgrade`
+  - `Source: To Purchase`
+  - `Source: From Overhauling`
+  - `Machine Ready`
+  - `For Overhauling`
+  - `Under Repair`
+- Added top controls: search, All/Laser/Inkjet filter, `Refresh All`, CSV exports, and `Machine Checker`.
+- Added Machine Checker modal:
+  - Status Changer for existing serial/model/status.
+  - Add New Machine form for brand/model/serial/brand-new-or-second-hand/DP date.
+- Wired module into Dashboard, Service, Inventory, Settings nav, Settings module registry, and admin/service permissions.
+- Status source prefers `tbl_newmachinestatus` and falls back to the confirmed status list from the earlier migration helper.
+- Local checks passed:
+  - `node --check general-production/js/general-production.js`
+  - `node --check shared/js/auth.js`
+  - `node --check settings/js/settings.js`
+  - `node --check shared/js/utils.js`
+  - `git diff --check`
+
 ### 2026-04-22 - General Production Planned, Implementation Deferred
 - User asked for a new **General Production** module based on VB.NET screenshots, then cancelled implementation and asked to update `HANDOFF.md` and `MASTERPLAN.md` for the next chat.
 - No General Production code should be assumed complete from this session.

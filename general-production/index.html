@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - General Production</title>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/general-production.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Operations</div>
+                <a href="../dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+                <a href="../master-schedule.html" class="nav-item" data-module="master-schedule">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M8 2v4M16 2v4M3 10h18"/>
+                        <rect x="3" y="4" width="18" height="18" rx="2"/>
+                        <path d="M7 14h5M7 18h10"/>
+                    </svg>
+                    <span>Master Schedule</span>
+                </a>
+                <a href="index.html" class="nav-item active" data-module="general-production">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 18V8l8-4 8 4v10"/>
+                        <path d="M8 18v-6h8v6"/>
+                        <path d="M3 18h18"/>
+                    </svg>
+                    <span>General Production</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Management</div>
+                <a href="../inventory/" class="nav-item" data-module="inventory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                        <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>
+                    </svg>
+                    <span>Inventory</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content gp-main">
+        <header class="main-header gp-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <div class="gp-eyebrow">Production Desk</div>
+                <h1>General Production</h1>
+                <p id="gpSubtitle">Loading machine requests and readiness queues...</p>
+            </div>
+            <div class="header-actions gp-actions">
+                <div class="gp-status" id="gpStatusPill">Loading...</div>
+                <button type="button" class="btn btn-secondary btn-sm" id="gpRefreshBtn">Refresh All</button>
+                <button type="button" class="btn btn-primary btn-sm" id="machineCheckerBtn">Machine Checker</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content gp-content">
+            <section class="gp-request-board animate-in">
+                <div class="gp-board-toolbar">
+                    <div>
+                        <h2>Machine Requests</h2>
+                        <span id="requestMeta">0 request(s)</span>
+                    </div>
+                    <label class="gp-search">
+                        <span>Search</span>
+                        <input type="search" id="gpSearchInput" placeholder="Client, serial, model, remarks">
+                    </label>
+                    <div class="gp-segment" role="group" aria-label="Machine type">
+                        <button type="button" class="is-active" data-family="all">All</button>
+                        <button type="button" data-family="laser">Laser</button>
+                        <button type="button" data-family="inkjet">Inkjet</button>
+                    </div>
+                    <button type="button" class="gp-link-btn" data-export="requests">Export</button>
+                </div>
+                <div class="gp-table-shell gp-request-shell">
+                    <table class="gp-table">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Type</th>
+                                <th>Client</th>
+                                <th>Brand</th>
+                                <th>Existing Mach</th>
+                                <th>Age</th>
+                                <th>Requests</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requestsTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="gp-panel-grid">
+                <article class="gp-panel animate-in" style="animation-delay: 0.04s">
+                    <div class="gp-panel-head">
+                        <h3>For Termination / Upgrade</h3>
+                        <strong id="terminationCount">0</strong>
+                        <button type="button" class="gp-link-btn" data-export="termination">Export</button>
+                    </div>
+                    <div class="gp-table-shell">
+                        <table class="gp-table gp-compact-table">
+                            <thead><tr><th>Sts</th><th>Client</th><th>Brand</th><th>Model</th></tr></thead>
+                            <tbody id="terminationTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="gp-panel animate-in" style="animation-delay: 0.08s">
+                    <div class="gp-panel-head">
+                        <h3>Source: To Purchase</h3>
+                        <strong id="purchaseCount">0</strong>
+                        <button type="button" class="gp-link-btn" data-export="purchase">Export</button>
+                    </div>
+                    <div class="gp-table-shell">
+                        <table class="gp-table gp-compact-table">
+                            <thead><tr><th>Type</th><th>Client</th><th>Machine</th><th>Age</th></tr></thead>
+                            <tbody id="purchaseTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="gp-panel animate-in" style="animation-delay: 0.12s">
+                    <div class="gp-panel-head">
+                        <h3>Source: From Overhauling</h3>
+                        <strong id="overhaulSourceCount">0</strong>
+                        <button type="button" class="gp-link-btn" data-export="overhaulSource">Export</button>
+                    </div>
+                    <div class="gp-table-shell">
+                        <table class="gp-table gp-compact-table">
+                            <thead><tr><th>Type</th><th>Client</th><th>Machine</th><th>Age</th></tr></thead>
+                            <tbody id="overhaulSourceTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="gp-panel animate-in" style="animation-delay: 0.16s">
+                    <div class="gp-panel-head">
+                        <h3>Machine Ready</h3>
+                        <strong id="readyCount">0</strong>
+                        <button type="button" class="gp-link-btn" data-export="ready">Export</button>
+                    </div>
+                    <div class="gp-table-shell">
+                        <table class="gp-table gp-compact-table">
+                            <thead><tr><th>Brand</th><th>Model</th><th>Serial</th></tr></thead>
+                            <tbody id="readyTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="gp-panel animate-in" style="animation-delay: 0.2s">
+                    <div class="gp-panel-head">
+                        <h3>For Overhauling</h3>
+                        <strong id="forOverhaulCount">0</strong>
+                        <button type="button" class="gp-link-btn" data-export="forOverhaul">Export</button>
+                    </div>
+                    <div class="gp-table-shell">
+                        <table class="gp-table gp-compact-table">
+                            <thead><tr><th>Brand</th><th>Model</th><th>Serial</th></tr></thead>
+                            <tbody id="forOverhaulTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="gp-panel animate-in" style="animation-delay: 0.24s">
+                    <div class="gp-panel-head">
+                        <h3>Under Repair</h3>
+                        <strong id="underRepairCount">0</strong>
+                        <button type="button" class="gp-link-btn" data-export="underRepair">Export</button>
+                    </div>
+                    <div class="gp-table-shell">
+                        <table class="gp-table gp-compact-table">
+                            <thead><tr><th>Brand</th><th>Model</th><th>Serial</th><th>Tech</th></tr></thead>
+                            <tbody id="underRepairTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+        </div>
+    </main>
+
+    <div class="gp-overlay" id="machineCheckerOverlay"></div>
+    <div class="gp-modal" id="machineCheckerModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="gp-modal-head">
+            <h2>Machine Checker</h2>
+            <button type="button" class="gp-close-btn" id="machineCheckerCloseBtn" aria-label="Close Machine Checker">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="gp-modal-body">
+            <section class="gp-checker-section">
+                <h3>Status Changer</h3>
+                <form id="statusChangerForm" class="gp-form-grid">
+                    <label class="gp-field gp-field-full">
+                        <span>Serial</span>
+                        <input type="search" id="statusSerialInput" list="machineSerialOptions" autocomplete="off">
+                    </label>
+                    <label class="gp-field">
+                        <span>Model</span>
+                        <input type="text" id="statusModelInput" readonly>
+                    </label>
+                    <label class="gp-field">
+                        <span>Status</span>
+                        <select id="statusSelect"></select>
+                    </label>
+                    <button type="submit" class="gp-save-btn gp-field-full" id="statusSaveBtn">Save</button>
+                </form>
+            </section>
+
+            <section class="gp-checker-section">
+                <h3>Add New Machine</h3>
+                <form id="addMachineForm" class="gp-form-grid">
+                    <label class="gp-field">
+                        <span>Brand</span>
+                        <select id="newMachineBrandInput"></select>
+                    </label>
+                    <label class="gp-field">
+                        <span>Model</span>
+                        <select id="newMachineModelInput"></select>
+                    </label>
+                    <label class="gp-field gp-field-full">
+                        <span>Serial</span>
+                        <input type="text" id="newMachineSerialInput" autocomplete="off" required>
+                    </label>
+                    <div class="gp-radio-row gp-field-full">
+                        <label><input type="radio" name="newMachineCondition" value="brand_new" checked> Brand New</label>
+                        <label><input type="radio" name="newMachineCondition" value="second_hand"> Second Hand</label>
+                    </div>
+                    <label class="gp-field gp-field-full">
+                        <span>DP</span>
+                        <input type="date" id="newMachineDpInput">
+                    </label>
+                    <button type="submit" class="gp-save-btn gp-field-full" id="newMachineSaveBtn">Save</button>
+                </form>
+            </section>
+        </div>
+    </div>
+
+    <datalist id="machineSerialOptions"></datalist>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/offline-sync.js"></script>
+    <script src="js/general-production.js"></script>
+</body>
+</html>

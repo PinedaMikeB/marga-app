@@ -20,10 +20,12 @@ const SETTINGS_STATE = {
 const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
     { id: 'billing', label: 'Billing Module', dashboardLabel: 'Billing', route: 'billing/', note: 'Invoices, billing runs, due schedules' },
+    { id: 'schedule', label: 'Schedule Planner Module', dashboardLabel: 'Schedule Planner', route: 'schedule/', note: 'Messenger routes, billing delivery, collection, and errands' },
     { id: 'master-schedule', label: 'Master Schedule Module', dashboardLabel: 'Master Schedule', route: 'master-schedule.html', note: 'Billing, collection, toner, ink, service, and PM calendar' },
     { id: 'apd', label: 'Accounts Payable and Disbursement Module', dashboardLabel: 'APD', route: 'apd/', note: 'Supplier invoices, due planning, check printing, and disbursement control' },
     { id: 'collections', label: 'Collections Module', dashboardLabel: 'Collections', route: 'collections.html', note: 'Collections, ORs, check follow-up' },
     { id: 'service', label: 'Customer Service Module', dashboardLabel: 'Service Dispatch', route: 'service/index.html', note: 'Task queue, assignment, transfer' },
+    { id: 'general-production', label: 'General Production Module', dashboardLabel: 'General Production', route: 'general-production/', note: 'Machine requests, production sources, and machine checker' },
     { id: 'field', label: 'Service Field App (Tech/Messenger)', dashboardLabel: 'Field App', route: 'field/index.html', note: 'Tech and messenger daily tasks' },
     { id: 'inventory', label: 'Inventory Module', dashboardLabel: 'Inventory', route: 'inventory/', note: 'Parts, toner, stock movements' },
     { id: 'hr', label: 'Human Resource Module', dashboardLabel: 'Human Resource', route: 'hr/', note: 'Employees, position mapping' },
@@ -50,13 +52,13 @@ const BASE_ROLE_OPTIONS = [
 let ROLE_OPTIONS = BASE_ROLE_OPTIONS.map((role) => ({ ...role }));
 
 const BASE_ROLE_DEFAULTS = {
-    admin: ['customers', 'billing', 'master-schedule', 'apd', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
-    billing: ['customers', 'billing', 'apd', 'pettycash', 'reports'],
-    collection: ['customers', 'collections', 'master-schedule', 'reports'],
-    service: ['customers', 'service', 'inventory', 'field'],
+    admin: ['customers', 'billing', 'schedule', 'master-schedule', 'apd', 'collections', 'service', 'general-production', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+    billing: ['customers', 'billing', 'schedule', 'apd', 'pettycash', 'reports'],
+    collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
+    service: ['customers', 'service', 'schedule', 'general-production', 'inventory', 'field'],
     hr: ['hr', 'settings'],
     technician: ['field'],
-    messenger: ['field'],
+    messenger: ['field', 'schedule'],
     viewer: ['customers', 'reports']
 };
 
