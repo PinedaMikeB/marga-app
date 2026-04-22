@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-04-21
+Last Updated: 2026-04-22
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -61,6 +61,11 @@ Current Collections target state:
 - Include unpaid invoices/accounts that still need collection follow-up.
 - Show real serials in SN.
 - Make the month matrix usable on desktop and mobile.
+
+Current operations scheduling state:
+- Master Schedule is now a working planning/print surface for daily routes.
+- Field App shows the staff member's current printed route by default and has a Carry Over tab for saved/unprinted or older open assigned jobs.
+- These schedule features should stay aligned: printed route is the daily route; carry-over is for follow-up/planning and should not replace today's default view.
 
 ## Core Architecture
 - Frontend-first web app hosted on Netlify.
@@ -126,6 +131,67 @@ Collections matrix usability rule:
 - Service must not use raw `tbl_machine.client_id` as the customer source of truth.
 - Model display should prefer the corrected contract/machine resolver and avoid old mismatched helper paths.
 
+## Master Schedule And Field App Rules
+- Master Schedule's actual daily route should use `tbl_savedscheds` / `tbl_printedscheds` joined to `tbl_schedule`, not raw `tbl_schedule` alone.
+- Printed route is the operational list that field staff carry for the day.
+- Field App must default to the current printed route / Today view.
+- Field App Carry Over is a secondary tab for:
+  - saved/unprinted route jobs assigned to that staff
+  - older open assigned service/delivery jobs that still need follow-up
+  - pending parts or machine replacement planning
+- Keep Today fast. If Carry Over scanning becomes slow, move the historical lookup into a backend endpoint instead of blocking initial render.
+- Daily printed schedule format should remain close to VB.NET:
+  - grouped/page-broken by staff
+  - `TIN #`, `Customer / Branch`, `Purpose`, `Model`, `Trouble`, `City`, `Address`, `Days Pending`, `Ready`, `Assigned To`
+
+## General Production Rules
+- General Production is planned but not implemented as of 2026-04-22.
+- This module is the production planning dashboard for machine requests and machine readiness.
+- Build it as its own module/page and navigation entry; do not mix it into Billing, Collections, Service, or Master Schedule patches.
+- Use the `frontend-design` skill and keep the UI operational/dense rather than marketing-style.
+- Before coding behavior, discover and confirm the real source tables and status IDs. Do not hard-code machine status IDs from screenshots.
+
+Planned General Production dashboard panels:
+- `Machine Requests`: customer machine-change requests coming from Service.
+- `For Termination / Upgrade`: service-driven termination/upgrade requests.
+- `Source: To Purchase`: machines that must be bought, from purchase request flow.
+- `Source: From Overhauling`: machines coming from office/overhauling that can satisfy requests.
+- `Machine Ready`: overhauled or brand-new machines ready to deliver.
+- `For Overhauling`: returned field machines no longer tied to a customer; future General Inventory should feed this when returned machines are received.
+- `Under Repair`: machines assigned to a technician and currently being overhauled.
+
+Planned Machine Checker behavior:
+- Button on General Production near refresh controls.
+- Status Changer section:
+  - serial dropdown/search
+  - model display/dropdown
+  - status dropdown
+  - save changes to the confirmed machine status source
+- Add New Machine section:
+  - brand
+  - model
+  - serial
+  - brand new / second hand
+  - DP/date
+  - save as new machine after confirming required fields/table schema
+- Status labels observed in the VB.NET screenshot include:
+  - `IN STOCK`
+  - `FOR DELIVERY`
+  - `DELIVERED`
+  - `USED / IN THE COMPANY`
+  - `JUNK`
+  - `FOR OVERHAULING`
+  - `UNDER REPAIR`
+  - `FOR PARTS`
+  - `FOR SALE`
+  - `TRADE IN`
+  - `OUTSIDE REPAIR`
+  - `MISSING`
+  - `OLD`
+  - `UNDER QC`
+  - `N/A`
+  - `Delivered (No Contract/To Receive)`
+
 ## APD And Petty Cash Rules
 - APD and Petty Cash are separate workflows and should not be mixed into Billing/Collections patches.
 - Keep finance workflow changes isolated from customer/billing resolver work.
@@ -148,17 +214,29 @@ Collections matrix usability rule:
   - keep `Total` as the far-right terminal column
 
 ## Current Known Live Status
-From the latest Collections screenshot on 2026-04-21 11:56 AM:
+From the latest confirmed module checks:
 - Collections month-to-month matrix scroll format is accepted by the user.
 - User likes it more than Billing's current month-to-month format.
 - Preserve this format for Collections and consider it for a future Billing matrix update.
-
-Collections still needs ongoing parity work, but the matrix navigation format itself is no longer the blocker.
+- Master Schedule/Field App daily printed-route alignment was checked for Crispin on 2026-04-22:
+  - Field App showed 15 printed tasks.
+  - The same 15 schedule IDs existed in Master Schedule printed-route data.
+  - Field App also has a secondary Carry Over tab for planning follow-up work.
+- General Production is the next planned module, but implementation was intentionally deferred to the next chat.
 
 ## Safe Next Work Sequence
-1. Preserve the accepted Collections month-matrix format.
-2. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
-3. Re-verify Billing presentation after any Billing matrix changes.
+1. Start next session by reading `HANDOFF.md` and this `MASTERPLAN.md`.
+2. Implement General Production only after table/status discovery:
+   - inspect Service machine request / change-unit / termination-upgrade signals
+   - inspect purchase request data that can feed `Source: To Purchase`
+   - inspect machine status tables and `tbl_machine` fields
+   - inspect any existing overhauling/repair assignment tables or conventions
+3. Build General Production as a new isolated module and nav item.
+4. Add the dashboard panels first, then Machine Checker.
+5. Keep Today vs Carry Over Field App behavior intact.
+6. Preserve the accepted Collections month-matrix format.
+7. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
+8. Re-verify Billing presentation after any Billing matrix changes.
 
 ## Rollback Reference
 - `8df832d`: current protected Billing baseline

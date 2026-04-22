@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-04-21
+Last Updated: 2026-04-22
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,8 +8,10 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
+- Continue from the accepted Master Schedule and Field App route work before starting the next module.
+- Next planned module is **General Production**. It has not been implemented yet; the user cancelled adding it in this session and asked to update the docs for the next chat.
+- General Production should be planned from the legacy VB.NET production screen screenshots before coding.
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
-- Keep Collections aligned to the Billing customer universe plus unpaid invoices.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
@@ -28,6 +30,10 @@ Start every new Marga-App thread by reading:
   - `606509e` `Fix collections month matrix scrolling`
   - `e0d2755` `Harden collections month auto scroll`
   - `dbc320d` `Constrain collections matrix viewport`
+- Current live Master Schedule / Field App work already pushed on `main`:
+  - `3f3ab9c` `Use route data for master schedule readiness`
+  - `caafb64` `Match master schedule print columns to VBNet`
+  - `dec0127` `Add carryover tab to field app`
 
 ## Accepted Collections Matrix Format
 Reference the latest accepted live observation:
@@ -91,18 +97,60 @@ Important Collections SN rule:
 | --- | --- | --- | --- |
 | Billing | Protected / In Progress | Working save-first workflow, grouped RTP support, multimeter totals, search stability, Firebase print templates. | Consider adopting the accepted Collections matrix format only after separate Billing regression checks. |
 | Collections | Accepted / In Progress | Uses Billing-based coverage plus unpaid invoices. Matrix scroll format is accepted live: whole-sheet horizontal movement, visible arrows/Latest, Total at far right. | Preserve this format while continuing Collections parity work. |
+| Master Schedule | Accepted / In Progress | Uses `tbl_savedscheds`/`tbl_printedscheds` joined to `tbl_schedule`; print layout is grouped by staff and now matches VBNet columns closely. | Keep daily printed route and carry-over logic aligned with Field App. |
+| Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs for follow-up/planning. | Keep today route fast; optimize carry-over via backend if the 45-day scan becomes slow. |
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
+| General Production | Planned / Not Started | User wants a new module for machine requests, termination/upgrade, purchase source, overhauling source, machine ready, for overhauling, and under repair. | Next session should analyze source tables/status IDs first, then implement the module shell and Machine Checker. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
 
 ## Next Actions
-1. Preserve the accepted Collections matrix format as the reference implementation.
-2. If Billing month-to-month comparison is revisited, evaluate porting this exact format: whole-sheet movement, no sticky left columns, visible arrows/Latest, auto-current-month window, Total at far right.
-3. Keep Billing protected; any Billing matrix port needs separate live verification for save/print/invoice lookup behavior.
-4. Continue module work without reverting unrelated dirty files.
+1. Start the next chat by implementing **General Production**, but only after source-table discovery.
+2. General Production first pass should be a new module/page and navigation entry, not a shared refactor.
+3. Build a production dashboard with these VB.NET-inspired panels:
+   - `Machine Requests`: machines requested by customers for replacement/change from Service.
+   - `For Termination / Upgrade`: service-driven termination or upgrade cases.
+   - `Source: To Purchase`: machines needed from purchase requests.
+   - `Source: From Overhauling`: machines from office/overhauling flow that can satisfy requests.
+   - `Machine Ready`: overhauled or brand-new machines ready for delivery.
+   - `For Overhauling`: returned field machines no longer tied to a customer; future General Inventory will feed this.
+   - `Under Repair`: machines assigned to a technician and currently being overhauled.
+4. Add `Machine Checker` in General Production after the dashboard shell:
+   - Status Changer: serial, model, status dropdown, save.
+   - Add New Machine: brand, model, serial, brand new/second hand, DP/date, save.
+   - Use the existing machine status table/source once confirmed; do not hard-code status IDs blindly.
+5. Keep Billing/Collections/Master Schedule stable while adding General Production.
+6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-22 - General Production Planned, Implementation Deferred
+- User asked for a new **General Production** module based on VB.NET screenshots, then cancelled implementation and asked to update `HANDOFF.md` and `MASTERPLAN.md` for the next chat.
+- No General Production code should be assumed complete from this session.
+- Next chat should analyze sources before coding:
+  - service module records that indicate machine change requests
+  - service termination/upgrade signals
+  - purchase request sources
+  - machine status/status ID tables
+  - inventory/returned-machine source for future General Inventory
+- Requested Machine Checker behavior:
+  - status changer for existing machine serial/model/status
+  - add new machine form for brand/model/serial/new-or-second-hand/DP date
+  - statuses shown in the screenshot include `IN STOCK`, `FOR DELIVERY`, `DELIVERED`, `USED / IN THE COMPANY`, `JUNK`, `FOR OVERHAULING`, `UNDER REPAIR`, `FOR PARTS`, `FOR SALE`, `TRADE IN`, `OUTSIDE REPAIR`, `MISSING`, `OLD`, `UNDER QC`, `N/A`, and `Delivered (No Contract/To Receive)`.
+
+### 2026-04-22 - Field App Carry Over Tab
+- Commit `dec0127` added Field App tabs:
+  - `Today` is the default current printed route view.
+  - `Carry Over` shows saved/unprinted carry-over work plus older open assigned jobs up to 45 days back.
+- For Crispin on 2026-04-22, data check showed 15 Today tasks and 35 Carry Over tasks.
+- Today route renders before carry-over scan completes so the field staff default view stays fast.
+
+### 2026-04-22 - Master Schedule And Printed Route Alignment
+- Commit `3f3ab9c` made Master Schedule use `tbl_savedscheds` / `tbl_printedscheds` joined to `tbl_schedule`, with Ready YES/NO/N/A grouping and Pending Not Routed.
+- Commit `caafb64` changed Master Schedule print columns to match the VB.NET daily schedule request:
+  - `TIN #`, `Customer / Branch`, `Purpose`, `Model`, `Trouble`, `City`, `Address`, `Days Pending`, `Ready`, `Assigned To`.
+- Verified Field App's Crispin printed route matched the 15 printed-route schedule IDs from Master Schedule for 2026-04-22.
+
 ### 2026-04-21 - Collections Matrix Format Accepted
 - User confirmed the live Collections month-to-month matrix now works and is preferred over Billing's current matrix format.
 - Accepted behavior:
