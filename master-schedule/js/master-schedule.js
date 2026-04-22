@@ -772,10 +772,15 @@ function renderScheduleHtml(rows, title = 'Master Schedule') {
     });
 
     return `
-        <h1>${escapeHtml(title)}</h1>
         ${Array.from(groups.entries()).map(([staff, groupRows]) => `
-            <section class="print-group">
-                <h2>${escapeHtml(staff)}</h2>
+            <section class="print-staff-page">
+                <header class="print-page-header">
+                    <div>
+                        <h1>${escapeHtml(title)}</h1>
+                        <h2>${escapeHtml(staff)}</h2>
+                    </div>
+                    <p>Open Marga App and login to view this schedule on the device.</p>
+                </header>
                 <table>
                     <thead>
                         <tr>
@@ -831,12 +836,21 @@ function printMasterSchedule() {
             <title>Master Schedule ${escapeHtml(date)}${escapeHtml(suffix)}</title>
             <style>
                 body { font-family: Arial, sans-serif; color: #111827; padding: 18px; }
-                h1 { font-size: 28px; margin: 0 0 18px; }
-                h2 { font-size: 18px; margin: 24px 0 5px; }
-                table { border-collapse: collapse; min-width: 960px; font-size: 12px; }
+                h1 { font-size: 22px; margin: 0 0 5px; }
+                h2 { font-size: 18px; margin: 0; }
+                table { border-collapse: collapse; width: 100%; min-width: 960px; font-size: 12px; }
                 th, td { border: 1px solid #111827; padding: 4px 6px; text-align: left; vertical-align: top; }
                 th { font-weight: 800; }
-                .print-group { page-break-inside: avoid; margin-bottom: 24px; }
+                .print-staff-page { break-after: page; page-break-after: always; min-height: calc(100vh - 36px); }
+                .print-staff-page:last-child { break-after: auto; page-break-after: auto; }
+                .print-page-header {
+                    align-items: flex-start;
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 24px;
+                    margin: 0 0 8px;
+                }
+                .print-page-header p { color: #4b5563; font-size: 11px; margin: 4px 0 0; text-align: right; }
                 @page { size: landscape; margin: 12mm; }
             </style>
         </head>
