@@ -82,6 +82,39 @@
             overflow: hidden;
         }
 
+        .master-tabs,
+        .settings-tabs {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin: 0 0 14px;
+            flex-wrap: wrap;
+        }
+
+        .master-tab,
+        .settings-tab {
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            background: rgba(255, 255, 255, 0.86);
+            color: #284e73;
+            border-radius: 8px;
+            padding: 9px 14px;
+            font-size: 13px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .master-tab.active,
+        .settings-tab.active {
+            background: #1f5ea8;
+            border-color: #1f5ea8;
+            color: #fff;
+        }
+
+        .master-view.hidden,
+        .settings-panel.hidden {
+            display: none;
+        }
+
         .master-card-head {
             display: flex;
             justify-content: space-between;
@@ -113,21 +146,21 @@
         }
 
         .master-group {
-            margin-bottom: 28px;
-            min-width: 820px;
+            margin-bottom: 30px;
+            min-width: 900px;
         }
 
         .master-group h2 {
-            margin: 0 0 8px;
+            margin: 0 0 4px;
             color: #111827;
-            font-size: 20px;
+            font-size: 19px;
             line-height: 1.2;
         }
 
         .master-table {
             border-collapse: collapse;
-            min-width: 720px;
-            font-size: 13px;
+            min-width: 860px;
+            font-size: 12px;
             color: #0f2742;
         }
 
@@ -135,7 +168,7 @@
         .master-table td {
             border: 1px solid #111827;
             padding: 4px 7px;
-            height: 24px;
+            height: 21px;
             vertical-align: middle;
             background: #fff;
         }
@@ -179,6 +212,152 @@
             color: #9f1239;
         }
 
+        .settings-layout {
+            display: grid;
+            grid-template-columns: minmax(190px, 0.7fr) minmax(260px, 1fr) minmax(260px, 1fr);
+            gap: 18px;
+            align-items: start;
+        }
+
+        .settings-block {
+            min-height: 360px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 8px;
+            background: #fff;
+            padding: 12px;
+        }
+
+        .settings-block h3 {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: #153b60;
+            text-align: center;
+        }
+
+        .settings-list {
+            width: 100%;
+            min-height: 300px;
+            border: 1px solid rgba(15, 23, 42, 0.28);
+            border-radius: 4px;
+            background: #fff;
+            color: #0f2742;
+            font-size: 13px;
+        }
+
+        .settings-list option {
+            padding: 5px;
+        }
+
+        .settings-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .settings-row input,
+        .settings-row select,
+        .settings-field input,
+        .settings-field select,
+        .settings-field textarea,
+        .client-search {
+            width: 100%;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            border-radius: 6px;
+            padding: 8px 9px;
+            color: #153b60;
+            font-size: 13px;
+        }
+
+        .settings-shuttle {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .settings-status {
+            margin-top: 10px;
+            color: #4f6b88;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .client-settings-grid {
+            display: grid;
+            grid-template-columns: minmax(260px, 0.9fr) minmax(440px, 1.3fr);
+            gap: 16px;
+        }
+
+        .client-results {
+            max-height: 430px;
+            overflow: auto;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 8px;
+            background: #fff;
+            margin-top: 10px;
+        }
+
+        .client-result {
+            width: 100%;
+            border: 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            background: #fff;
+            padding: 9px 10px;
+            text-align: left;
+            cursor: pointer;
+            color: #153b60;
+        }
+
+        .client-result.active,
+        .client-result:hover {
+            background: #eff6ff;
+        }
+
+        .client-result strong,
+        .client-result span {
+            display: block;
+        }
+
+        .client-result span {
+            margin-top: 2px;
+            color: #607895;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .client-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .client-info-card {
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            background: #fff;
+        }
+
+        .client-info-card h3 {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: #153b60;
+        }
+
+        .settings-field {
+            display: grid;
+            gap: 4px;
+            margin-bottom: 7px;
+        }
+
+        .settings-field label {
+            color: #526f8d;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
         @media (max-width: 900px) {
             .master-content {
                 margin-left: 0;
@@ -198,6 +377,12 @@
             .master-control select {
                 width: 100%;
                 min-width: 0;
+            }
+
+            .settings-layout,
+            .client-settings-grid,
+            .client-form-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -263,18 +448,114 @@
             </div>
         </header>
 
-        <section class="master-card">
-            <div class="master-card-head">
-                <strong>Schedule Format</strong>
-                <span id="masterCount">Loading schedules...</span>
-            </div>
-            <div class="master-sheet" id="masterScheduleSheet">
-                <div class="master-empty">Loading Master Schedule...</div>
-            </div>
+        <div class="master-tabs">
+            <button class="master-tab active" type="button" data-master-view="schedule">Master Schedule</button>
+            <button class="master-tab" type="button" data-master-view="settings">Settings</button>
+        </div>
+
+        <section class="master-view" id="masterScheduleView">
+            <section class="master-card">
+                <div class="master-card-head">
+                    <strong>Schedule Format</strong>
+                    <span id="masterCount">Loading schedules...</span>
+                </div>
+                <div class="master-sheet" id="masterScheduleSheet">
+                    <div class="master-empty">Loading Master Schedule...</div>
+                </div>
+            </section>
+        </section>
+
+        <section class="master-view hidden" id="masterSettingsView">
+            <section class="master-card">
+                <div class="master-card-head">
+                    <strong>Settings</strong>
+                    <span id="settingsStatus">Area and assignment setup</span>
+                </div>
+                <div class="master-sheet">
+                    <div class="settings-tabs">
+                        <button class="settings-tab active" type="button" data-settings-tab="area">Set Area</button>
+                        <button class="settings-tab" type="button" data-settings-tab="tech">Setup Technicians</button>
+                        <button class="settings-tab" type="button" data-settings-tab="client">Setup Client's Area</button>
+                    </div>
+
+                    <div class="settings-panel" id="areaSettingsPanel">
+                        <div class="settings-layout">
+                            <div class="settings-block">
+                                <h3>Area</h3>
+                                <select class="settings-list" id="areaList" size="16"></select>
+                                <div class="settings-row">
+                                    <input id="newAreaInput" type="text" placeholder="New area">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="addAreaBtn">Add</button>
+                                </div>
+                            </div>
+                            <div class="settings-block">
+                                <h3>Assigned City</h3>
+                                <select class="settings-list" id="assignedCityList" size="16"></select>
+                                <div class="settings-shuttle">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="unassignCityBtn">&lt;-</button>
+                                </div>
+                            </div>
+                            <div class="settings-block">
+                                <h3>Available City</h3>
+                                <select class="settings-list" id="availableCityList" size="16"></select>
+                                <div class="settings-row">
+                                    <input id="newCityInput" type="text" placeholder="New city">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="addCityBtn">Add</button>
+                                </div>
+                                <div class="settings-shuttle">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="assignCityBtn">-&gt;</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-panel hidden" id="techSettingsPanel">
+                        <div class="settings-layout">
+                            <div class="settings-block">
+                                <h3>Technicians/Messengers</h3>
+                                <select class="settings-list" id="techList" size="16"></select>
+                            </div>
+                            <div class="settings-block">
+                                <h3>Assigned Area</h3>
+                                <select class="settings-list" id="techAssignedAreaList" size="16"></select>
+                                <div class="settings-shuttle">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="unassignTechAreaBtn">&lt;-</button>
+                                </div>
+                            </div>
+                            <div class="settings-block">
+                                <h3>Available Areas</h3>
+                                <select class="settings-list" id="techAvailableAreaList" size="16"></select>
+                                <div class="settings-row">
+                                    <input id="newTechAreaInput" type="text" placeholder="New area">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="addTechAreaBtn">Add Area</button>
+                                </div>
+                                <div class="settings-shuttle">
+                                    <button class="btn btn-secondary btn-sm" type="button" id="assignTechAreaBtn">&lt;-</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-panel hidden" id="clientSettingsPanel">
+                        <div class="client-settings-grid">
+                            <div>
+                                <div class="settings-field">
+                                    <label for="clientSearchInput">Company / Branch Search</label>
+                                    <input class="client-search" id="clientSearchInput" type="search" placeholder="Type company or branch">
+                                </div>
+                                <div class="client-results" id="clientResults"></div>
+                            </div>
+                            <div id="clientAreaEditor">
+                                <div class="master-empty">Select a company or branch to set service, billing, collection, and delivery area.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </section>
     </main>
 
     <script src="shared/js/firebase-config.js"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260421-masterschedule-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260422-settings-1"></script>
 </body>
 </html>
