@@ -270,9 +270,10 @@
             <section class="gp-checker-section">
                 <h3>Status Changer</h3>
                 <form id="statusChangerForm" class="gp-form-grid">
-                    <label class="gp-field gp-field-full">
+                    <label class="gp-field gp-field-full gp-serial-field">
                         <span>Serial</span>
-                        <input type="search" id="statusSerialInput" list="machineSerialOptions" autocomplete="off" placeholder="Search serial number">
+                        <input type="search" id="statusSerialInput" autocomplete="off" placeholder="Search serial number">
+                        <div class="gp-serial-results hidden" id="statusSerialResults" role="listbox" aria-label="Machine serial results"></div>
                     </label>
                     <p class="gp-machine-context gp-field-full" id="statusMachineContext">Search a machine serial to inspect status and customer context.</p>
                     <label class="gp-field">
@@ -315,8 +316,6 @@
             </section>
         </div>
     </div>
-
-    <datalist id="machineSerialOptions"></datalist>
 
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/utils.js"></script>

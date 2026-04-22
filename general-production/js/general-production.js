@@ -71,7 +71,9 @@ const GP_STATE = {
         underRepair: []
     },
     view: {},
-    selectedMachine: null
+    selectedMachine: null,
+    machineCheckerRecords: [],
+    machineCheckerActiveIndex: -1
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -118,7 +120,12 @@ function bindControls() {
         button.addEventListener('click', () => exportRows(button.dataset.export));
     });
 
-    document.getElementById('statusSerialInput').addEventListener('input', () => syncMachineCheckerFromSerial());
+    document.getElementById('statusSerialInput').addEventListener('input', handleSerialSearchInput);
+    document.getElementById('statusSerialInput').addEventListener('focus', handleSerialSearchInput);
+    document.getElementById('statusSerialInput').addEventListener('keydown', handleSerialSearchKeydown);
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.gp-serial-field')) hideSerialResults();
+    });
     document.getElementById('statusChangerForm').addEventListener('submit', saveMachineStatus);
     document.getElementById('newMachineBrandInput').addEventListener('change', () => populateModelOptions());
     document.getElementById('addMachineForm').addEventListener('submit', saveNewMachine);
@@ -149,7 +156,8 @@ async function loadProductionData() {
             terminationRecords,
             shutdownRows,
             shutdownMachines,
-            machineHistory
+            machineHistory,
+            billingMachineRows
         ] = await Promise.all([
             fetchOptionalCollection('tbl_machine', 1200),
             fetchOptionalCollection('tbl_model', 600),
@@ -168,7 +176,11 @@ async function loadProductionData() {
             fetchLatestRows('tbl_terminationrecords', 500).catch(() => fetchOptionalCollection('tbl_terminationrecords', 500)),
             fetchLatestRows('tbl_forshutdown', 500).catch(() => fetchOptionalCollection('tbl_forshutdown', 500)),
             fetchLatestRows('tbl_shutdownmachines', 500).catch(() => fetchOptionalCollection('tbl_shutdownmachines', 500)),
-            fetchLatestRows('tbl_newmachinehistory', 900).catch(() => fetchOptionalCollection('tbl_newmachinehistory', 900))
+            fetchLatestRows('tbl_newmachinehistory', 900).catch(() => fetchOptionalCollection('tbl_newmachinehistory', 900)),
+            fetchBillingMachineRows().catch((error) => {
+                console.warn('Billing machine rows unavailable for Machine Checker.', error);
+                return [];
+            })
         ]);
 
         GP_STATE.raw = {
@@ -188,7 +200,8 @@ async function loadProductionData() {
             terminationRecords,
             shutdownRows,
             shutdownMachines,
-            machineHistory
+            machineHistory,
+            billingMachineRows
         };
         GP_STATE.statuses = normalizeStatuses(machineStatuses);
         buildLookupMaps();
@@ -236,6 +249,29 @@ async function fetchLatestRows(collectionId, limit = 500, orderField = 'id') {
     return payload
         .map((item) => item.document ? MargaUtils.parseFirestoreDoc(item.document) : null)
         .filter(Boolean);
+}
+
+async function fetchBillingMachineRows() {
+    const now = new Date();
+    const params = new URLSearchParams();
+    params.set('end_year', String(now.getFullYear()));
+    params.set('end_month', String(now.getMonth() + 1));
+    params.set('months_back', '6');
+    params.set('row_limit', '5000');
+    params.set('latest_limit', '100');
+    params.set('max_billing_pages', '10');
+    params.set('max_schedule_pages', '10');
+    params.set('include_rows', 'true');
+    params.set('include_active_rows', 'true');
+    params.set('include_machine_history', 'true');
+    params.set('refresh_cache', 'false');
+
+    const response = await fetch(`/.netlify/functions/openclaw-billing-cohort?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || `Billing machine rows failed (${response.status})`);
+    }
+    return Array.isArray(payload?.month_matrix?.rows) ? payload.month_matrix.rows : [];
 }
 
 function normalizeStatuses(rows) {
@@ -640,22 +676,13 @@ function populateStatusOptions() {
 }
 
 function populateSerialOptions() {
-    const datalist = document.getElementById('machineSerialOptions');
-    datalist.innerHTML = buildMachineCheckerRecords()
-        .map((record) => {
-            const label = [
-                record.model,
-                record.status,
-                record.customer
-            ].filter(Boolean).join(' - ');
-            return `<option value="${escapeHtml(record.serial)}" label="${escapeHtml(label)}"></option>`;
-        })
-        .join('');
+    GP_STATE.machineCheckerRecords = buildMachineCheckerRecords();
+    renderSerialResults('');
 }
 
-function populateStatusModelOptions(machine) {
+function populateStatusModelOptions(machine, preferredModel = '') {
     const select = document.getElementById('statusModelInput');
-    const currentModel = clean(machine ? getMachineModel(machine) : '');
+    const currentModel = clean(preferredModel) || clean(machine ? getMachineModel(machine) : '');
     const seen = new Set();
     const models = [];
 
@@ -717,30 +744,56 @@ function populateModelOptions() {
 
 function buildMachineCheckerRecords() {
     const recordsBySerial = new Map();
+    (GP_STATE.raw.billingMachineRows || []).forEach((row) => {
+        const serial = normalizeMachineSerialNumber(row.serial_number);
+        if (!serial) return;
+        const machine = GP_STATE.maps.machines.get(String(row.machine_id || '')) || null;
+        const record = buildMachineCheckerRecord(machine, serial, 0, {
+            source: 'billing',
+            machineId: String(row.machine_id || '').trim(),
+            contractmainId: String(row.contractmain_id || '').trim(),
+            model: clean(row.machine_label),
+            customer: buildClientName(
+                { companyname: row.company_name },
+                { branchname: row.branch_name }
+            )
+        });
+        mergeMachineCheckerRecord(recordsBySerial, normalizeSerial(serial), record);
+    });
+
     (GP_STATE.raw.machines || []).forEach((machine) => {
         const serials = getMachineSerialCandidates(machine);
         if (!serials.length) return;
-        const record = buildMachineCheckerRecord(machine, serials[0], 0);
-        const serialKey = normalizeSerial(record.serial);
-        if (!serialKey) return;
-        mergeMachineCheckerRecord(recordsBySerial, serialKey, record);
+        serials.forEach((serial, aliasIndex) => {
+            const record = buildMachineCheckerRecord(machine, serial, aliasIndex);
+            const serialKey = normalizeSerial(record.serial);
+            if (!serialKey) return;
+            mergeMachineCheckerRecord(recordsBySerial, serialKey, record);
+        });
     });
     return Array.from(recordsBySerial.values()).sort(compareMachineCheckerRecords);
 }
 
-function buildMachineCheckerRecord(machine, serial, aliasIndex = 0) {
-    const machineId = machineKey(machine);
+function buildMachineCheckerRecord(machine, serial, aliasIndex = 0, overrides = {}) {
+    const machineId = String(overrides.machineId || machineKey(machine)).trim();
+    const model = clean(overrides.model) || getMachineModel(machine);
+    const brand = getMachineBrand(machine) || inferBrandFromText(model);
+    const status = getMachineStatusLabel(machine);
+    const customer = clean(overrides.customer) || resolveMachineCustomer(machine);
     return {
         machine,
         machineId,
+        contractmainId: String(overrides.contractmainId || '').trim(),
+        source: overrides.source || 'machine',
         serial,
-        model: getMachineModel(machine),
-        brand: getMachineBrand(machine),
-        status: getMachineStatusLabel(machine),
-        customer: resolveMachineCustomer(machine),
+        model,
+        brand,
+        status,
+        customer,
         duplicateCount: 1,
         duplicateMachineIds: new Set([machineId]),
-        score: scoreMachineCheckerRecord(machine, serial, aliasIndex)
+        score: scoreMachineCheckerRecord(machine, serial, aliasIndex, overrides.source),
+        searchText: buildMachineCheckerSearchText({ serial, model, brand, status, customer, machineId })
     };
 }
 
@@ -766,17 +819,7 @@ function mergeMachineCheckerRecord(recordsBySerial, serialKey, record) {
 function findMachineCheckerRecord(serialValue) {
     const serialKey = normalizeMachineSerialNumber(serialValue);
     if (!serialKey) return null;
-
-    const recordsBySerial = new Map();
-    (GP_STATE.raw.machines || []).forEach((machine) => {
-        getMachineSerialCandidates(machine).forEach((serial, aliasIndex) => {
-            const key = normalizeSerial(serial);
-            if (!key) return;
-            mergeMachineCheckerRecord(recordsBySerial, key, buildMachineCheckerRecord(machine, serial, aliasIndex));
-        });
-    });
-
-    return recordsBySerial.get(serialKey) || null;
+    return (GP_STATE.machineCheckerRecords || []).find((record) => normalizeSerial(record.serial) === serialKey) || null;
 }
 
 function getMachineSerialCandidates(machine) {
@@ -802,8 +845,8 @@ function getContractSerialsForMachine(machine) {
         .map((contract) => contract?.xserial || contract?.serial || contract?.serial_number);
 }
 
-function scoreMachineCheckerRecord(machine, serial, aliasIndex) {
-    let score = aliasIndex === 0 ? 20 : 5;
+function scoreMachineCheckerRecord(machine, serial, aliasIndex, source = 'machine') {
+    let score = source === 'billing' ? 120 : (aliasIndex === 0 ? 20 : 5);
     if (/[A-Z]/.test(serial)) score += 8;
     if (getMachineModel(machine)) score += 4;
     if (Number(machine?.status_id || 0) > 0) score += 3;
@@ -812,11 +855,120 @@ function scoreMachineCheckerRecord(machine, serial, aliasIndex) {
 }
 
 function compareMachineCheckerRecords(left, right) {
+    const leftSource = left.source === 'billing' ? 0 : 1;
+    const rightSource = right.source === 'billing' ? 0 : 1;
     const leftGroup = /[A-Z]/.test(left.serial) ? 0 : 1;
     const rightGroup = /[A-Z]/.test(right.serial) ? 0 : 1;
-    return leftGroup - rightGroup
+    return leftSource - rightSource
+        || leftGroup - rightGroup
         || left.serial.localeCompare(right.serial, undefined, { numeric: true })
         || left.model.localeCompare(right.model, undefined, { numeric: true });
+}
+
+function buildMachineCheckerSearchText(record) {
+    return [
+        record.serial,
+        normalizeSerial(record.serial),
+        record.model,
+        record.brand,
+        record.status,
+        record.customer,
+        record.machineId
+    ].join(' ').toLowerCase();
+}
+
+function getSerialSearchMatches(value) {
+    const query = clean(value).toLowerCase();
+    const serialQuery = normalizeSerial(value).toLowerCase();
+    const records = GP_STATE.machineCheckerRecords || [];
+    if (!query && !serialQuery) return records.slice(0, 60);
+    return records
+        .filter((record) => {
+            const serial = normalizeSerial(record.serial).toLowerCase();
+            return serial.includes(serialQuery)
+                || String(record.searchText || '').includes(query);
+        })
+        .slice(0, 60);
+}
+
+function renderSerialResults(value) {
+    const results = document.getElementById('statusSerialResults');
+    if (!results) return;
+    const matches = getSerialSearchMatches(value);
+    GP_STATE.machineCheckerActiveIndex = matches.length ? 0 : -1;
+    if (!matches.length) {
+        results.innerHTML = '<div class="gp-serial-empty">No matching serial found.</div>';
+        results.classList.remove('hidden');
+        return;
+    }
+    results.innerHTML = matches.map((record, index) => {
+        const meta = [
+            record.brand,
+            record.model,
+            record.status,
+            record.customer
+        ].filter(Boolean).join(' - ');
+        return `
+            <button type="button" class="gp-serial-option ${index === 0 ? 'is-active' : ''}" data-serial="${escapeHtml(record.serial)}" role="option">
+                <span class="gp-serial-main">${escapeHtml(record.serial)}</span>
+                <span class="gp-serial-meta">${escapeHtml(meta || 'No model/status context')}</span>
+            </button>
+        `;
+    }).join('');
+    results.classList.remove('hidden');
+    results.querySelectorAll('.gp-serial-option').forEach((button) => {
+        button.addEventListener('click', () => selectMachineCheckerRecord(button.dataset.serial));
+    });
+}
+
+function hideSerialResults() {
+    document.getElementById('statusSerialResults')?.classList.add('hidden');
+}
+
+function handleSerialSearchInput(event) {
+    const value = event.target.value;
+    renderSerialResults(value);
+    const exact = findMachineCheckerRecord(value);
+    if (exact) {
+        syncMachineCheckerFromRecord(exact, { updateInput: false });
+    } else {
+        GP_STATE.selectedMachine = null;
+        populateStatusModelOptions(null);
+        renderStatusMachineContext(null);
+    }
+}
+
+function handleSerialSearchKeydown(event) {
+    const results = document.getElementById('statusSerialResults');
+    if (!results || results.classList.contains('hidden')) return;
+    const options = [...results.querySelectorAll('.gp-serial-option')];
+    if (!options.length) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        GP_STATE.machineCheckerActiveIndex = (GP_STATE.machineCheckerActiveIndex + direction + options.length) % options.length;
+        options.forEach((option, index) => option.classList.toggle('is-active', index === GP_STATE.machineCheckerActiveIndex));
+        options[GP_STATE.machineCheckerActiveIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+
+    if (event.key === 'Enter') {
+        const active = options[GP_STATE.machineCheckerActiveIndex] || options[0];
+        if (!active) return;
+        event.preventDefault();
+        selectMachineCheckerRecord(active.dataset.serial);
+    }
+
+    if (event.key === 'Escape') {
+        hideSerialResults();
+    }
+}
+
+function selectMachineCheckerRecord(serial) {
+    const record = findMachineCheckerRecord(serial);
+    if (!record) return;
+    syncMachineCheckerFromRecord(record, { updateInput: true });
+    hideSerialResults();
 }
 
 function renderStatusMachineContext(record) {
@@ -827,14 +979,19 @@ function renderStatusMachineContext(record) {
         return;
     }
     const duplicateWarning = record.duplicateCount > 1 ? ` - duplicate serial on ${record.duplicateCount} machine records` : '';
-    context.innerHTML = `<strong>${escapeHtml(record.serial)}</strong> - ${escapeHtml(record.model || 'No model')} - ${escapeHtml(record.status || 'No status')}${record.customer ? ` - ${escapeHtml(record.customer)}` : ''}${escapeHtml(duplicateWarning)}`;
+    const machineLabel = [record.brand, record.model].filter(Boolean).join(' ') || 'No model';
+    context.innerHTML = `<strong>${escapeHtml(record.serial)}</strong> - ${escapeHtml(machineLabel)} - ${escapeHtml(record.status || 'No status')}${record.customer ? ` - ${escapeHtml(record.customer)}` : ''}${escapeHtml(duplicateWarning)}`;
 }
 
 function openMachineChecker() {
     document.getElementById('machineCheckerOverlay').classList.add('visible');
     document.getElementById('machineCheckerModal').classList.add('open');
     document.getElementById('machineCheckerModal').setAttribute('aria-hidden', 'false');
-    setTimeout(() => document.getElementById('statusSerialInput').focus(), 30);
+    setTimeout(() => {
+        const input = document.getElementById('statusSerialInput');
+        input.focus();
+        renderSerialResults(input.value);
+    }, 30);
 }
 
 function closeMachineChecker() {
@@ -843,14 +1000,13 @@ function closeMachineChecker() {
     document.getElementById('machineCheckerModal').setAttribute('aria-hidden', 'true');
 }
 
-function syncMachineCheckerFromSerial() {
+function syncMachineCheckerFromRecord(record, options = {}) {
     const input = document.getElementById('statusSerialInput');
-    const record = findMachineCheckerRecord(input.value);
     const machine = record?.machine || null;
     GP_STATE.selectedMachine = machine;
-    populateStatusModelOptions(machine);
+    populateStatusModelOptions(machine, record?.model || '');
     renderStatusMachineContext(record);
-    if (record && input.value !== record.serial) input.value = record.serial;
+    if (options.updateInput && record && input.value !== record.serial) input.value = record.serial;
     if (machine) {
         const select = document.getElementById('statusSelect');
         const statusId = String(Number(machine.status_id || 0));
