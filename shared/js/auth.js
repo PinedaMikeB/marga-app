@@ -18,9 +18,9 @@ const MargaAuth = {
 
     // Module permissions per role
     PERMISSIONS: {
-        admin: ['customers', 'billing', 'apd', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+        admin: ['customers', 'billing', 'master-schedule', 'apd', 'collections', 'service', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
         billing: ['customers', 'billing', 'apd', 'pettycash', 'reports'],
-        collection: ['customers', 'collections', 'reports'],
+        collection: ['customers', 'collections', 'master-schedule', 'reports'],
         service: ['customers', 'service', 'inventory', 'field'],
         hr: ['hr', 'settings'],
         technician: ['field'],
