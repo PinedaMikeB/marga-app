@@ -78,6 +78,10 @@
             font-weight: 650;
         }
 
+        .master-control.compact select {
+            min-width: 145px;
+        }
+
         .master-card {
             overflow: hidden;
         }
@@ -186,6 +190,22 @@
         .master-table td.action-cell {
             border-color: rgba(148, 163, 184, 0.55);
             min-width: 132px;
+        }
+
+        .staff-select {
+            width: 100%;
+            min-width: 140px;
+            border: 1px solid rgba(148, 163, 184, 0.55);
+            border-radius: 4px;
+            padding: 4px 6px;
+            background: #fff;
+            color: #0f2742;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .print-only {
+            display: none;
         }
 
         .master-empty {
@@ -444,7 +464,27 @@
                     <label for="masterSearchInput">Search</label>
                     <input type="search" id="masterSearchInput" placeholder="Customer, branch, serial, assigned">
                 </div>
+                <div class="master-control compact">
+                    <label for="masterMoveScopeInput">Move Scope</label>
+                    <select id="masterMoveScopeInput">
+                        <option value="row">This row only</option>
+                        <option value="staff">Whole staff schedule</option>
+                    </select>
+                </div>
+                <div class="master-control compact">
+                    <label for="masterPrintScopeInput">Print</label>
+                    <select id="masterPrintScopeInput">
+                        <option value="all">All schedules</option>
+                        <option value="visible">Visible filter</option>
+                        <option value="staff">Selected staff</option>
+                    </select>
+                </div>
+                <div class="master-control compact">
+                    <label for="masterPrintStaffInput">Staff</label>
+                    <select id="masterPrintStaffInput"></select>
+                </div>
                 <button class="btn btn-primary" id="masterRefreshBtn" type="button">Refresh</button>
+                <button class="btn btn-secondary" id="masterPrintBtn" type="button">Print Schedule</button>
             </div>
         </header>
 
@@ -556,6 +596,6 @@
     </main>
 
     <script src="shared/js/firebase-config.js"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260422-settings-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260422-reassign-print-1"></script>
 </body>
 </html>

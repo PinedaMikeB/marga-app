@@ -29,6 +29,7 @@ Current bridge output covers:
 The bridge only writes these `tbl_schedule` fields back to MySQL:
 
 - `serial`
+- `tech_id`
 - `isongoing`
 - `date_finished`
 - `closedby`

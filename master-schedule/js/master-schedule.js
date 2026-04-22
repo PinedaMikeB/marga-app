@@ -38,6 +38,7 @@ const CLIENT_INFO_TYPES = [
 const masterState = {
     rows: [],
     settingsLoaded: false,
+    reassigning: false,
     selectedArea: DEFAULT_AREAS[0],
     selectedTechId: '',
     selectedBranchId: '',
@@ -53,6 +54,7 @@ const masterState = {
         contracts: new Map(),
         contractDeps: new Map(),
         employees: new Map(),
+        positions: new Map(),
         troubles: new Map(),
         areas: new Map()
     },
@@ -70,6 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterStatusInput')?.addEventListener('change', renderMasterSchedule);
     document.getElementById('masterSearchInput')?.addEventListener('input', renderMasterSchedule);
     document.getElementById('masterRefreshBtn')?.addEventListener('click', loadMasterSchedule);
+    document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
+    document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
 
     document.querySelectorAll('[data-master-view]').forEach((button) => {
         button.addEventListener('click', () => switchMasterView(button.dataset.masterView));
@@ -223,6 +227,29 @@ async function setDoc(collection, docId, row) {
     return payload;
 }
 
+async function updateDocFields(collection, docId, row) {
+    const safeDocId = encodeURIComponent(String(docId || '').trim());
+    const entries = Object.entries(row).filter(([key]) => !key.startsWith('_') && key !== 'searchText');
+    if (!safeDocId || !entries.length) return null;
+
+    const params = new URLSearchParams({ key: MASTER_API_KEY });
+    entries.forEach(([key]) => params.append('updateMask.fieldPaths', key));
+
+    const fields = {};
+    entries.forEach(([key, value]) => {
+        fields[key] = firestoreValue(value);
+    });
+
+    const response = await fetch(`${MASTER_BASE_URL}/${collection}/${safeDocId}?${params.toString()}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || 'Update failed.');
+    return payload;
+}
+
 async function deleteDoc(collection, docId) {
     const response = await fetch(`${MASTER_BASE_URL}/${collection}/${encodeURIComponent(String(docId))}?key=${MASTER_API_KEY}`, { method: 'DELETE' });
     if (!response.ok && response.status !== 404) {
@@ -252,6 +279,27 @@ function employeeName(employee, fallbackId = '') {
     const first = clean(employee.firstname);
     const last = clean(employee.lastname);
     return nickname || `${first} ${last}`.trim() || clean(employee.name) || `ID ${fallbackId}`;
+}
+
+function employeeRole(employee) {
+    const position = masterState.lookups.positions.get(String(employee?.position_id || ''));
+    const label = clean(position?.position || position?.position_name || position?.name || employee?.position).toLowerCase();
+    const positionId = Number(employee?.position_id || 0);
+    if (positionId === 5 || label.includes('technician') || label.includes('tech')) return 'Technician';
+    if (positionId === 9 || label.includes('messenger') || label.includes('driver')) return label.includes('driver') ? 'Driver' : 'Messenger';
+    if (label.includes('driver')) return 'Driver';
+    return label ? clean(position?.position || position?.name || employee?.position) : 'Staff';
+}
+
+function isScheduleStaff(employee) {
+    const role = employeeRole(employee).toLowerCase();
+    return role.includes('technician') || role.includes('messenger') || role.includes('driver');
+}
+
+function scheduleStaffOptions() {
+    const employees = masterState.settings.employees;
+    const filtered = employees.filter(isScheduleStaff);
+    return filtered.length ? filtered : employees;
 }
 
 function purposeFromLegacy(row, trouble) {
@@ -320,7 +368,9 @@ function buildLegacyScheduleRow(row) {
 
     return {
         source: 'legacy',
+        rowKey: `legacy_${row._docId || row.id || ''}`,
         docId: row._docId || row.id || '',
+        techId: String(row.tech_id || ''),
         branchId: String(row.branch_id || ''),
         companyId: String(row.company_id || branch?.company_id || ''),
         purpose,
@@ -346,8 +396,10 @@ function buildWebScheduleRow(row) {
 
     return {
         source: 'web',
+        rowKey: `web_${row._docId || ''}`,
         docId: row._docId,
         original: row,
+        techId: String(row.assigned_to_id || row.tech_id || ''),
         branchId,
         companyId: String(row.company_id || ''),
         purpose,
@@ -371,7 +423,9 @@ function buildPlannerScheduleRow(row) {
 
     return {
         source: 'planner',
+        rowKey: `planner_${row._docId || row.id || ''}`,
         docId: row._docId || row.id || '',
+        techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
         purpose,
         area,
         customer: row.company_name || row.account_name || 'Unknown Customer',
@@ -462,6 +516,7 @@ async function loadMasterSchedule() {
 
     try {
         await loadMasterConfigs();
+        await ensureSettingsData();
         const start = `${date} 00:00:00`;
         const end = `${date} 23:59:59`;
         const [legacyDocs, plannerDocs, webDocs] = await Promise.all([
@@ -513,6 +568,7 @@ function renderMasterSchedule() {
     const sheet = document.getElementById('masterScheduleSheet');
     const count = document.getElementById('masterCount');
     if (count) count.textContent = `${rows.length.toLocaleString()} schedule${rows.length === 1 ? '' : 's'}`;
+    renderPrintStaffOptions();
     if (!sheet) return;
 
     if (!rows.length) {
@@ -556,17 +612,240 @@ function renderMasterSchedule() {
 }
 
 function renderMasterScheduleRow(row) {
+    const staffOptions = renderStaffSelectOptions(row);
     return `
-        <tr>
+        <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td>${escapeHtml(row.purpose || '-')}</td>
             <td>${escapeHtml(row.area || '-')}</td>
             <td>${escapeHtml(row.customer || '-')}</td>
             <td>${escapeHtml(row.branch || '-')}</td>
             <td class="numeric">${escapeHtml(row.model || '-')}</td>
             <td class="numeric">${escapeHtml(row.serial || '-')}</td>
-            <td>${escapeHtml(row.assignedTo || '-')}</td>
+            <td>
+                <select class="staff-select" onchange="reassignScheduleFromSelect('${escapeHtml(row.rowKey)}', this.value)">
+                    ${staffOptions}
+                </select>
+            </td>
         </tr>
     `;
+}
+
+function renderStaffSelectOptions(row) {
+    const staff = scheduleStaffOptions();
+    const selectedId = clean(row.techId);
+    const selectedKnown = selectedId && staff.some((employee) => String(employee.id) === selectedId);
+    const options = [];
+    if (!selectedKnown && row.assignedTo) {
+        options.push(`<option value="" selected>${escapeHtml(row.assignedTo)}</option>`);
+    }
+    options.push(...staff.map((employee) => {
+        const id = String(employee.id);
+        const selected = selectedId ? id === selectedId : employeeName(employee, id) === row.assignedTo;
+        return `<option value="${escapeHtml(id)}"${selected ? ' selected' : ''}>${escapeHtml(employeeName(employee, id))}</option>`;
+    }));
+    return options.join('');
+}
+
+function findScheduleRow(rowKey) {
+    return masterState.rows.find((row) => row.rowKey === rowKey);
+}
+
+function getStaffById(staffId) {
+    return masterState.lookups.employees.get(String(staffId || '')) || null;
+}
+
+async function updateScheduleOwner(row, employee) {
+    const staffId = String(employee?.id || '').trim();
+    const staffName = employeeName(employee, staffId);
+    if (!row || !staffId) return;
+
+    if (row.source === 'legacy') {
+        await updateDocFields('tbl_schedule', row.docId, { tech_id: Number(staffId) || staffId });
+    } else if (row.source === 'web') {
+        await updateDocFields('marga_master_schedule', row.docId, {
+            assigned_to_id: staffId,
+            assigned_to: staffName,
+            updated_at: new Date().toISOString()
+        });
+    } else if (row.source === 'planner') {
+        await updateDocFields('tbl_schedule_planner', row.docId, {
+            assigned_staff_id: staffId,
+            assigned_staff_name: staffName,
+            updated_at: new Date().toISOString()
+        });
+    }
+
+    row.techId = staffId;
+    row.assignedTo = staffName;
+    row.searchText = [row.purpose, row.area, row.customer, row.branch, row.model, row.serial, row.assignedTo].join(' ');
+}
+
+async function reassignScheduleFromSelect(rowKey, staffId) {
+    const row = findScheduleRow(rowKey);
+    const employee = getStaffById(staffId);
+    if (!row || !employee || masterState.reassigning) {
+        renderMasterSchedule();
+        return;
+    }
+
+    const oldStaff = row.assignedTo || 'Unassigned';
+    const newStaff = employeeName(employee, staffId);
+    if (oldStaff === newStaff) return;
+
+    const scope = clean(document.getElementById('masterMoveScopeInput')?.value || 'row');
+    const targets = scope === 'staff'
+        ? masterState.rows.filter((item) => item.assignedTo === oldStaff && clean(item.status).toLowerCase() !== 'cancelled')
+        : [row];
+
+    if (targets.length > 1) {
+        const ok = window.confirm(`Move ${targets.length} schedule row(s) assigned to ${oldStaff} to ${newStaff}?`);
+        if (!ok) {
+            renderMasterSchedule();
+            return;
+        }
+    }
+
+    masterState.reassigning = true;
+    const count = document.getElementById('masterCount');
+    if (count) count.textContent = `Moving ${targets.length} schedule row(s)...`;
+
+    try {
+        for (const target of targets) {
+            await updateScheduleOwner(target, employee);
+        }
+        masterState.rows.sort((a, b) => {
+            if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
+            if (a.area !== b.area) return a.area.localeCompare(b.area);
+            return a.customer.localeCompare(b.customer);
+        });
+        renderMasterSchedule();
+        if (count) count.textContent = `Moved ${targets.length} schedule row(s) to ${newStaff}.`;
+    } catch (error) {
+        console.error('Schedule reassignment failed:', error);
+        if (count) count.textContent = `Move failed: ${error.message || error}`;
+        renderMasterSchedule();
+    } finally {
+        masterState.reassigning = false;
+    }
+}
+
+function activeRows() {
+    return masterState.rows.filter((row) => clean(row.status).toLowerCase() !== 'cancelled');
+}
+
+function uniqueAssignedStaff(rows = activeRows()) {
+    return Array.from(new Set(rows.map((row) => row.assignedTo || 'Unassigned'))).filter(Boolean).sort();
+}
+
+function renderPrintStaffOptions() {
+    const select = document.getElementById('masterPrintStaffInput');
+    if (!select) return;
+    const current = select.value;
+    const staff = uniqueAssignedStaff();
+    select.innerHTML = staff.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    if (staff.includes(current)) select.value = current;
+    updatePrintStaffVisibility();
+}
+
+function updatePrintStaffVisibility() {
+    const scope = clean(document.getElementById('masterPrintScopeInput')?.value || 'all');
+    const staffInput = document.getElementById('masterPrintStaffInput');
+    if (staffInput) staffInput.disabled = scope !== 'staff';
+}
+
+function rowsForPrint() {
+    const scope = clean(document.getElementById('masterPrintScopeInput')?.value || 'all');
+    if (scope === 'visible') return getVisibleRows();
+    if (scope === 'staff') {
+        const staff = clean(document.getElementById('masterPrintStaffInput')?.value);
+        return activeRows().filter((row) => row.assignedTo === staff);
+    }
+    return activeRows();
+}
+
+function renderScheduleHtml(rows, title = 'Master Schedule') {
+    const groups = new Map();
+    rows.forEach((row) => {
+        const key = row.assignedTo || 'Unassigned';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+    });
+
+    return `
+        <h1>${escapeHtml(title)}</h1>
+        ${Array.from(groups.entries()).map(([staff, groupRows]) => `
+            <section class="print-group">
+                <h2>${escapeHtml(staff)}</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Purpose</th>
+                            <th>Area</th>
+                            <th>Customer Name</th>
+                            <th>Branch</th>
+                            <th>Model</th>
+                            <th>Serial</th>
+                            <th>Assigned To</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${groupRows.map((row) => `
+                            <tr>
+                                <td>${escapeHtml(row.purpose || '-')}</td>
+                                <td>${escapeHtml(row.area || '-')}</td>
+                                <td>${escapeHtml(row.customer || '-')}</td>
+                                <td>${escapeHtml(row.branch || '-')}</td>
+                                <td>${escapeHtml(row.model || '-')}</td>
+                                <td>${escapeHtml(row.serial || '-')}</td>
+                                <td>${escapeHtml(row.assignedTo || '-')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </section>
+        `).join('')}
+    `;
+}
+
+function printMasterSchedule() {
+    const rows = rowsForPrint();
+    if (!rows.length) {
+        window.alert('No schedule rows to print for the selected option.');
+        return;
+    }
+
+    const date = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+    const scope = clean(document.getElementById('masterPrintScopeInput')?.value || 'all');
+    const staff = clean(document.getElementById('masterPrintStaffInput')?.value);
+    const suffix = scope === 'staff' && staff ? ` - ${staff}` : '';
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) {
+        window.alert('Please allow pop-ups to print the schedule.');
+        return;
+    }
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Master Schedule ${escapeHtml(date)}${escapeHtml(suffix)}</title>
+            <style>
+                body { font-family: Arial, sans-serif; color: #111827; padding: 18px; }
+                h1 { font-size: 28px; margin: 0 0 18px; }
+                h2 { font-size: 18px; margin: 24px 0 5px; }
+                table { border-collapse: collapse; min-width: 960px; font-size: 12px; }
+                th, td { border: 1px solid #111827; padding: 4px 6px; text-align: left; vertical-align: top; }
+                th { font-weight: 800; }
+                .print-group { page-break-inside: avoid; margin-bottom: 24px; }
+                @page { size: landscape; margin: 12mm; }
+            </style>
+        </head>
+        <body>${renderScheduleHtml(rows, `Master Schedule - ${date}${suffix}`)}</body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 250);
 }
 
 function allAreas() {
@@ -613,7 +892,7 @@ async function ensureSettingsData() {
     if (masterState.settingsLoaded) return;
     setSettingsStatus('Loading setup data...');
 
-    const [employeeRows, branchRows, companyRows] = await Promise.all([
+    const [employeeRows, branchRows, companyRows, positionRows] = await Promise.all([
         fetchCollection('tbl_employee', {
             fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id'],
             maxPages: 40
@@ -625,6 +904,10 @@ async function ensureSettingsData() {
         fetchCollection('tbl_companylist', {
             fieldMask: ['id', 'companyname'],
             maxPages: 30
+        }).catch(() => []),
+        fetchCollection('tbl_empos', {
+            fieldMask: ['id', 'position', 'position_name', 'name'],
+            maxPages: 10
         }).catch(() => [])
     ]);
 
@@ -636,6 +919,9 @@ async function ensureSettingsData() {
     });
     branchRows.forEach((branch) => {
         if (branch.id) masterState.lookups.branches.set(String(branch.id), branch);
+    });
+    positionRows.forEach((position) => {
+        if (position.id) masterState.lookups.positions.set(String(position.id), position);
     });
 
     masterState.settings.employees = employeeRows
@@ -702,13 +988,13 @@ function renderAreaSettings() {
 }
 
 function renderTechSettings() {
-    const techs = masterState.settings.employees;
+    const techs = scheduleStaffOptions();
     if (!masterState.selectedTechId && techs[0]) masterState.selectedTechId = String(techs[0].id);
     const list = document.getElementById('techList');
     if (list) {
         list.innerHTML = techs.map((employee) => `
             <option value="${escapeHtml(employee.id)}"${String(employee.id) === masterState.selectedTechId ? ' selected' : ''}>
-                ${escapeHtml(employeeName(employee, employee.id))}
+                ${escapeHtml(employeeName(employee, employee.id))} - ${escapeHtml(employeeRole(employee))}
             </option>
         `).join('');
     }
@@ -916,3 +1202,4 @@ async function saveClientArea() {
 
 window.selectClientBranch = selectClientBranch;
 window.saveClientArea = saveClientArea;
+window.reassignScheduleFromSelect = reassignScheduleFromSelect;

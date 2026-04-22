@@ -1,4 +1,5 @@
 const SCHEDULE_SAFE_REVERSE_FIELDS = [
+  "tech_id",
   "serial",
   "isongoing",
   "date_finished",
@@ -12,7 +13,7 @@ const SCHEDULE_SAFE_REVERSE_FIELDS = [
   "dev_remarks",
 ];
 
-export const OFFICE_SYNC_MANIFEST_VERSION = "2026-04-01";
+export const OFFICE_SYNC_MANIFEST_VERSION = "2026-04-22";
 
 export const OFFICE_SYNC_MANIFEST = {
   version: OFFICE_SYNC_MANIFEST_VERSION,
