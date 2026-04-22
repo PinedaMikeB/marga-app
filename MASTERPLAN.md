@@ -62,6 +62,11 @@ Current Collections target state:
 - Show real serials in SN.
 - Make the month matrix usable on desktop and mobile.
 
+Current Customers target state:
+- Next user-requested focus is continuing the existing Customer module in `customers/`.
+- Customers must use the same customer/branch/machine/serial truth as Billing and Collections.
+- Do not rebuild Customers from scratch; improve the existing directory, profile panel, branch/machine tabs, and customer form carefully.
+
 Current operations scheduling state:
 - Master Schedule is now a working planning/print surface for daily routes.
 - Field App shows the staff member's current printed route by default and has a Carry Over tab for saved/unprinted or older open assigned jobs.
@@ -91,6 +96,24 @@ Rules:
 - Do not treat raw `tbl_companylist` as the active customer list.
 - Do not treat raw `tbl_machine.client_id` as the primary customer locator.
 - Do not let one module invent a different customer/serial truth from another.
+- Customer, Billing, Collections, Service, and General Production must agree on the same serial/customer relationship wherever possible.
+
+## Customer Module Rules
+- Existing Customer module files:
+  - `customers/index.html`
+  - `customers/js/customers.js`
+  - `customers/js/customer-form.js`
+  - `customers/css/customers.css`
+  - `customers/css/customer-form.css`
+- The Customer directory should show companies/branches/accounts through active contracts and recent billed coverage, not raw companies alone.
+- Customer profile/detail views should make branch, bill info, contract, machine, model, and serial relationships inspectable.
+- Serial display must prefer `tbl_contractmain.xserial`, then `tbl_machine.serial`.
+- Customer form save behavior touches company, branch, contract, and machine records; changes must be small and verified because these records are shared by Billing, Collections, Service, and General Production.
+- Good next work sequence for Customers:
+  - inspect current `customers/js/customers.js` grouping
+  - compare it to Billing matrix rows and the Active Contract Customer Graph
+  - fix visible customer/branch/machine/serial mismatches
+  - only then polish layout or forms
 
 ## Billing Rules
 - Billing is still the most fragile module.
@@ -145,12 +168,18 @@ Collections matrix usability rule:
   - `TIN #`, `Customer / Branch`, `Purpose`, `Model`, `Trouble`, `City`, `Address`, `Days Pending`, `Ready`, `Assigned To`
 
 ## General Production Rules
-- General Production first pass exists as `general-production/` as of 2026-04-22.
+- General Production exists as `general-production/` and is live as of 2026-04-22.
 - This module is the production planning dashboard for machine requests and machine readiness.
 - Keep it as its own module/page and navigation entry; do not mix it into Billing, Collections, Service, or Master Schedule patches.
 - Keep the UI operational/dense rather than marketing-style.
 - Status source should prefer `tbl_newmachinestatus`; fallback status IDs are allowed only as a defensive UI fallback.
 - Before office rollout, verify each source-table mapping against live SQL/Firebase rows.
+- Current live General Production commits:
+  - `e835737` `Add General Production module`
+  - `c96f4de` `Tune General Production legacy counts`
+  - `c338d13` `Fix General Production machine checker serials`
+  - `e64e5b6` `Use billing serials in machine checker`
+- Live URL: `https://margaapp.netlify.app/general-production/`
 
 General Production dashboard panels:
 - `Machine Requests`: customer machine-change requests coming from Service.
@@ -164,7 +193,7 @@ General Production dashboard panels:
 Machine Checker behavior:
 - Button on General Production near refresh controls.
 - Status Changer section:
-  - serial dropdown/search
+  - custom searchable serial dropdown
   - model display/dropdown
   - status dropdown
   - save changes to the confirmed machine status source
@@ -192,6 +221,17 @@ Machine Checker behavior:
   - `UNDER QC`
   - `N/A`
   - `Delivered (No Contract/To Receive)`
+- Machine Checker identity rule:
+  - Load Billing matrix rows from `openclaw-billing-cohort` first, because Billing has the accepted real serial/customer context.
+  - Fall back to `tbl_machine` for machines not represented in Billing.
+  - Bind the selected serial to the exact `tbl_machine.id` before saving status/model.
+- Known Machine Checker data mismatch example:
+  - `E80726L3H798535` is `tbl_machine/3482`, `DCP-T720DW`, `status_id: 2`.
+  - `tbl_newmachinestatus/2` is `FOR DELIVERY`.
+  - Billing has active contract `tbl_contractmain/5481` for Five Star Global Logistics Inc., branch `3635`.
+  - Machine history `tbl_newmachinehistory/22004` also says `status_id: 2`, remarks `For Delivery`.
+  - Conclusion: status is a real machine-master value, but the data is stale/inconsistent because the active billing contract exists.
+  - Future improvement: show a warning when active billing contract exists but machine master status remains `FOR DELIVERY`.
 
 ## APD And Petty Cash Rules
 - APD and Petty Cash are separate workflows and should not be mixed into Billing/Collections patches.
@@ -216,6 +256,7 @@ Machine Checker behavior:
 
 ## Current Known Live Status
 From the latest confirmed module checks:
+- Next user-requested work is the Customer module.
 - Collections month-to-month matrix scroll format is accepted by the user.
 - User likes it more than Billing's current month-to-month format.
 - Preserve this format for Collections and consider it for a future Billing matrix update.
@@ -223,20 +264,28 @@ From the latest confirmed module checks:
   - Field App showed 15 printed tasks.
   - The same 15 schedule IDs existed in Master Schedule printed-route data.
   - Field App also has a secondary Carry Over tab for planning follow-up work.
-- General Production first-pass module exists locally and should be live-verified after deployment.
+- General Production is live and deployed; Machine Checker serial search now uses Billing serial truth first.
+- Correct site is `https://margaapp.netlify.app` with two `p`s.
 
 ## Safe Next Work Sequence
 1. Start next session by reading `HANDOFF.md` and this `MASTERPLAN.md`.
-2. Verify General Production live data grouping:
+2. Continue the Customer module in `customers/`; do not start from scratch.
+3. Verify Customer module grouping against the Active Contract Customer Graph and Billing matrix rows:
+   - company/branch grouping
+   - active contract membership
+   - machine/model/serial display
+   - billing information/profile details
+4. Preserve Billing, Collections, Master Schedule, Field App, and General Production behavior while changing Customers.
+5. If returning to General Production later, add active-contract vs machine-master-status mismatch warnings.
+6. Optional General Production tuning remains:
    - Service machine request / change-unit / termination-upgrade signals
    - purchase request data feeding `Source: To Purchase`
    - `tbl_newmachinestatus` and `tbl_machine.status_id`
    - overhauling/repair assignment tables or conventions
-3. Test Machine Checker status changes on a non-critical serial before office use.
-4. Keep Today vs Carry Over Field App behavior intact.
-5. Preserve the accepted Collections month-matrix format.
-6. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
-7. Re-verify Billing presentation after any Billing matrix changes.
+7. Keep Today vs Carry Over Field App behavior intact.
+8. Preserve the accepted Collections month-matrix format.
+9. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
+10. Re-verify Billing presentation after any Billing matrix changes.
 
 ## Rollback Reference
 - `8df832d`: current protected Billing baseline

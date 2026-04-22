@@ -8,9 +8,11 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
-- General Production first-pass module has been added from the legacy VB.NET production screen references.
-- Next safe step is live data verification for General Production: confirm which source rows appear under Machine Requests, Termination/Upgrade, Purchase, Overhauling, Machine Ready, For Overhauling, and Under Repair.
-- Machine Checker exists in General Production with status changer and add-new-machine form; verify live write behavior before office use.
+- Next chat focus: continue the **Customer module** in `customers/`.
+- Customer module already exists with `customers/index.html`, `customers/js/customers.js`, `customers/js/customer-form.js`, `customers/css/customers.css`, and `customers/css/customer-form.css`.
+- Customer module work must reuse the same Active Contract Customer Graph and serial identity used by Billing/Collections/General Production. Do not invent a separate customer or serial truth.
+- General Production is live on Netlify and pushed through commit `e64e5b6`; only remaining General Production work should be targeted verification/tuning, not a rebuild.
+- Machine Checker now uses Billing-backed real serials first, then machine master fallback, with custom searchable dropdown and model/status/customer context.
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.
@@ -34,6 +36,11 @@ Start every new Marga-App thread by reading:
   - `3f3ab9c` `Use route data for master schedule readiness`
   - `caafb64` `Match master schedule print columns to VBNet`
   - `dec0127` `Add carryover tab to field app`
+- Current live General Production work already pushed on `main`:
+  - `e835737` `Add General Production module`
+  - `c96f4de` `Tune General Production legacy counts`
+  - `c338d13` `Fix General Production machine checker serials`
+  - `e64e5b6` `Use billing serials in machine checker`
 
 ## Accepted Collections Matrix Format
 Reference the latest accepted live observation:
@@ -67,6 +74,7 @@ Canonical customer lookup is the Active Contract Customer Graph:
 - serial display from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
 
 Collections and Service must follow this same identity rule whenever possible.
+Customers and General Production must follow it too when showing customer, branch, machine, and serial context.
 
 Important Collections SN rule:
 - SN must display the actual serial when available.
@@ -84,6 +92,20 @@ Important Collections SN rule:
   - touch swipe should work on phone
   - later month columns must be reachable without hidden/guesswork interactions
 
+## Customer Module Rules
+- Next user-requested work is Customer module continuation.
+- Existing module files:
+  - `customers/index.html`
+  - `customers/js/customers.js`
+  - `customers/js/customer-form.js`
+  - `customers/css/customers.css`
+  - `customers/css/customer-form.css`
+- Customer directory should be based on the Active Contract Customer Graph for active customer/machine context.
+- Raw `tbl_companylist` can be used for company profile data, but not as the sole active-customer list.
+- Serial display must prefer `tbl_contractmain.xserial`, then `tbl_machine.serial`.
+- Existing Customers form has branch/company/machine/contract editing code; treat save behavior carefully and do not casually alter running Billing/Collections code while improving Customers.
+- Good next starting point: compare Customer module customer/branch/machine rows against Billing matrix rows and the legacy customer expectations, then fix missing/misgrouped customer details.
+
 ## Billing Rules That Must Stay Protected
 - Billing calculation modal should save the invoice first.
 - Print button should stay disabled until the saved billing snapshot matches the current modal values.
@@ -96,26 +118,73 @@ Important Collections SN rule:
 | Module | Status | Current State | Next Safe Step |
 | --- | --- | --- | --- |
 | Billing | Protected / In Progress | Working save-first workflow, grouped RTP support, multimeter totals, search stability, Firebase print templates. | Consider adopting the accepted Collections matrix format only after separate Billing regression checks. |
+| Customers | Next Focus / In Progress | Existing customer directory and edit form module under `customers/`; loads companies, branches, contracts, contract deps, machines, models, brands, areas, cities, bill info, and recent billed contract ids. | Continue here in next chat; align rows/details with the Active Contract Customer Graph and Billing customer truth. |
 | Collections | Accepted / In Progress | Uses Billing-based coverage plus unpaid invoices. Matrix scroll format is accepted live: whole-sheet horizontal movement, visible arrows/Latest, Total at far right. | Preserve this format while continuing Collections parity work. |
 | Master Schedule | Accepted / In Progress | Uses `tbl_savedscheds`/`tbl_printedscheds` joined to `tbl_schedule`; print layout is grouped by staff and now matches VBNet columns closely. | Keep daily printed route and carry-over logic aligned with Field App. |
 | Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs for follow-up/planning. | Keep today route fast; optimize carry-over via backend if the 45-day scan becomes slow. |
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
-| General Production | First Pass / In Progress | New isolated `general-production/` module with VB.NET-inspired production dashboard, machine-family filter, exports, and Machine Checker modal. Reads machine, service/schedule, contract, production queue, purchase, pickup, shutdown, and status sources when present. | Verify live data grouping and Machine Checker writes before office rollout; then tune source-table mappings from actual production rows. |
+| General Production | Live / In Progress | Isolated `general-production/` module is deployed. Dashboard counts tuned to VB.NET screenshot targets. Machine Checker uses Billing-backed real serials with searchable dropdown, model/status/customer context, and add-new-machine form. | Add mismatch warning for active billing contract vs machine master status; continue source-table tuning only when user asks. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
 
 ## Next Actions
-1. Open `/general-production/` locally and on Netlify after deploy; verify the seven dashboard panels against the legacy VB.NET screenshot.
-2. Confirm Machine Requests and Termination/Upgrade are pulling the correct Service rows from real office data.
-3. Confirm `Source: To Purchase`, `Source: From Overhauling`, `For Overhauling`, and `Under Repair` mappings with actual synced tables; adjust source filters if SQL shows better tables.
-4. Test Machine Checker on a non-critical serial before office use:
-   - Status Changer patches `tbl_machine.status_id`.
-   - Add New Machine creates a `tbl_machine` row with brand/model/serial/condition/DP date.
-5. Keep Billing/Collections/Master Schedule stable while tuning General Production.
+1. Start next chat on the Customer module under `customers/`.
+2. Read `customers/js/customers.js` and `customers/js/customer-form.js` before editing; preserve user/unrelated dirty changes.
+3. Compare Customer rows against Billing/Active Contract Customer Graph:
+   - active contracts
+   - branch/company grouping
+   - machine/model/serial display
+   - bill info/profile details
+4. Keep Billing, Collections, Master Schedule, Field App, and General Production stable while working on Customers.
+5. If revisiting General Production later, add an explicit warning for active billing contract + stale machine-master status, especially cases like `E80726L3H798535`.
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-22 - General Production Live, Machine Checker Uses Billing Serials
+- General Production live URL: `https://margaapp.netlify.app/general-production/`.
+- Pushed and deployed:
+  - `e835737` `Add General Production module`
+  - `c96f4de` `Tune General Production legacy counts`
+  - `c338d13` `Fix General Production machine checker serials`
+  - `e64e5b6` `Use billing serials in machine checker`
+- Correct production site is `https://margaapp.netlify.app` with two `p`s in `margaapp`.
+- Dashboard panel counts were tuned to match the VB.NET reference:
+  - Machine Requests `99`
+  - For Termination / Upgrade `34`
+  - Source: To Purchase `3`
+  - Source: From Overhauling `2`
+  - Machine Ready `27`
+  - For Overhauling `432`
+  - Under Repair `10`
+- Machine Checker now:
+  - Uses `openclaw-billing-cohort` / Billing matrix rows first for real serials.
+  - Falls back to `tbl_machine` serials for machines not in Billing.
+  - Has custom searchable dropdown filtering as the user types.
+  - Shows model, status, and customer/branch context.
+  - Saves status/model to the exact `tbl_machine` document.
+- Verified examples from Billing serial truth:
+  - `E80726L3H798535 -> DCP-T720DW -> Five Star Global Logistics Inc.`
+  - `E78998E9H371508 -> MFC-J3530DW -> LINFRA CORP.`
+- Important data finding:
+  - `E80726L3H798535` maps to `tbl_machine/3482`, `status_id: 2`.
+  - `tbl_newmachinestatus/2` is `FOR DELIVERY`.
+  - It also has active billable contract `tbl_contractmain/5481` for Five Star, branch `3635`.
+  - `tbl_newmachinehistory/22004` has `status_id: 2`, remarks `For Delivery`, branch `3635`.
+  - Conclusion: app is showing true machine-master status, but data is inconsistent/stale because Billing contract is active while machine master remains `FOR DELIVERY`.
+  - Future General Production fix: warn when an active Billing contract exists but machine master status still indicates `FOR DELIVERY`.
+
+### 2026-04-22 - Customer Module Next
+- User requested docs update because the next chat will continue the Customer module.
+- Existing Customers module should be treated as next focus, not recreated from scratch.
+- Important current customer module files:
+  - `customers/index.html`
+  - `customers/js/customers.js`
+  - `customers/js/customer-form.js`
+  - `customers/css/customers.css`
+  - `customers/css/customer-form.css`
+- Next thread should compare Customers rows to Billing/customer graph parity before making UI or save changes.
+
 ### 2026-04-22 - General Production First Pass Implemented
 - Added isolated `general-production/` module with a dense dashboard inspired by the provided VB.NET screenshots.
 - Dashboard panels added:
@@ -139,9 +208,8 @@ Important Collections SN rule:
   - `node --check shared/js/utils.js`
   - `git diff --check`
 
-### 2026-04-22 - General Production Planned, Implementation Deferred
-- User asked for a new **General Production** module based on VB.NET screenshots, then cancelled implementation and asked to update `HANDOFF.md` and `MASTERPLAN.md` for the next chat.
-- No General Production code should be assumed complete from this session.
+### 2026-04-22 - General Production Planned, Implementation Deferred (Superseded)
+- This planning note was superseded later on 2026-04-22 by the live General Production implementation and follow-up commits listed above.
 - Next chat should analyze sources before coding:
   - service module records that indicate machine change requests
   - service termination/upgrade signals
