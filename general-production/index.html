@@ -330,9 +330,10 @@
         <form class="gp-modal-body" id="productionActionForm">
             <div class="gp-action-summary" id="productionActionSummary"></div>
             <p class="gp-action-note" id="productionActionNote"></p>
-            <label class="gp-field gp-field-full" id="productionTechField">
+            <label class="gp-field gp-field-full gp-tech-field" id="productionTechField">
                 <span>Assigned Tech</span>
-                <input type="text" id="productionTechInput" autocomplete="off" placeholder="Name of technician">
+                <input type="search" id="productionTechInput" autocomplete="off" placeholder="Search technician">
+                <div class="gp-serial-results hidden" id="productionTechResults" role="listbox" aria-label="Technician results"></div>
             </label>
             <div class="gp-action-buttons">
                 <button type="button" class="btn btn-secondary btn-sm" id="productionActionCancelBtn">Cancel</button>

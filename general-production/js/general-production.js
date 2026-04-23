@@ -74,6 +74,9 @@ const GP_STATE = {
     selectedMachine: null,
     machineCheckerRecords: [],
     machineCheckerActiveIndex: -1,
+    technicianOptions: [],
+    technicianActiveIndex: -1,
+    selectedTechnician: null,
     productionAction: null
 };
 
@@ -124,8 +127,12 @@ function bindControls() {
     document.getElementById('statusSerialInput').addEventListener('input', handleSerialSearchInput);
     document.getElementById('statusSerialInput').addEventListener('focus', handleSerialSearchInput);
     document.getElementById('statusSerialInput').addEventListener('keydown', handleSerialSearchKeydown);
+    document.getElementById('productionTechInput').addEventListener('input', handleTechnicianSearchInput);
+    document.getElementById('productionTechInput').addEventListener('focus', handleTechnicianSearchInput);
+    document.getElementById('productionTechInput').addEventListener('keydown', handleTechnicianSearchKeydown);
     document.addEventListener('click', (event) => {
         if (!event.target.closest('.gp-serial-field')) hideSerialResults();
+        if (!event.target.closest('.gp-tech-field')) hideTechnicianResults();
     });
     document.getElementById('statusChangerForm').addEventListener('submit', saveMachineStatus);
     document.getElementById('newMachineBrandInput').addEventListener('change', () => populateModelOptions());
@@ -583,7 +590,7 @@ function normalizeMachineRow(row) {
         age: ageInDays(firstDateValue(row.dp_date, row.date_purchased, row.dr_date, row.tmestamp)),
         requests: clean(status?.status) || 'N/A',
         remarks: clean(row.remarks),
-        tech: clean(row.production_assigned_tech || row.assigned_tech_name || row.tech_name) || staffName(row.tech_id || row.assigned_tech_id),
+        tech: clean(row.production_assigned_tech || row.assigned_tech_name || row.tech_name) || staffName(row.production_assigned_tech_id || row.assigned_tech_id || row.tech_id),
         statusId,
         isField: isMachineInField(row),
         family: detectFamily([brand, model, row.description, row.remarks].join(' ')),
@@ -678,6 +685,7 @@ function passesFilters(row) {
 function populateMachineCheckerOptions() {
     populateStatusOptions();
     populateSerialOptions();
+    populateTechnicianOptions();
     populateStatusModelOptions(null);
     renderStatusMachineContext(null);
     populateBrandOptions();
@@ -695,6 +703,183 @@ function populateStatusOptions() {
 function populateSerialOptions() {
     GP_STATE.machineCheckerRecords = buildMachineCheckerRecords();
     renderSerialResults('');
+}
+
+function populateTechnicianOptions() {
+    GP_STATE.technicianOptions = buildTechnicianOptions();
+    GP_STATE.selectedTechnician = null;
+    hideTechnicianResults();
+}
+
+function buildTechnicianOptions() {
+    const allEmployees = (GP_STATE.raw.employees || [])
+        .map((employee) => {
+            const id = String(employee._docId || employee.id || '').trim();
+            const label = employeeDisplayName(employee);
+            const meta = employeeTechMeta(employee);
+            return {
+                id,
+                label,
+                value: label,
+                meta,
+                employee,
+                searchText: [id, label, meta, employee.nickname, employee.firstname, employee.lastname, employee.name, employee.marga_fullname]
+                    .join(' ')
+                    .toLowerCase()
+            };
+        })
+        .filter((option) => option.id && option.label && !isExcludedEmployee(option.employee));
+
+    const technicianRows = allEmployees.filter((option) => isTechnicianEmployee(option.employee));
+    const source = technicianRows.length >= 3 ? technicianRows : allEmployees;
+    return dedupeRows(source, 'id')
+        .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+}
+
+function employeeDisplayName(employee) {
+    if (!employee) return '';
+    const first = clean(employee.firstname || employee.first_name);
+    const last = clean(employee.lastname || employee.last_name);
+    const fullName = clean(`${first} ${last}`);
+    return [
+        employee.marga_fullname,
+        employee.fullname,
+        employee.full_name,
+        employee.name,
+        fullName,
+        employee.nickname,
+        employee.username,
+        employee.email
+    ].map(clean).find(Boolean) || '';
+}
+
+function employeeTechMeta(employee) {
+    const displayName = employeeDisplayName(employee);
+    const nickname = clean(employee?.nickname || employee?.nick_name);
+    return [
+        clean(employee?.position_label || employee?.position || employee?.job_title || employee?.role || employee?.marga_role),
+        nickname && normalizeLoose(nickname) !== normalizeLoose(displayName) ? nickname : '',
+        employee?._docId || employee?.id ? `ID ${employee._docId || employee.id}` : ''
+    ].filter(Boolean).join(' - ');
+}
+
+function isTechnicianEmployee(employee) {
+    const text = [
+        employee?.marga_role,
+        employee?.role,
+        employee?.position,
+        employee?.position_label,
+        employee?.job_title,
+        employee?.department,
+        employee?.group
+    ].join(' ').toLowerCase();
+    return /\b(tech|technician|service|field|repair|production|overhaul)\b/.test(text)
+        || isEnabledFlag(employee?.service)
+        || isEnabledFlag(employee?.field)
+        || isEnabledFlag(employee?.production)
+        || isEnabledFlag(employee?.is_technician)
+        || isEnabledFlag(employee?.istech)
+        || isEnabledFlag(employee?.tech);
+}
+
+function isExcludedEmployee(employee) {
+    return isEnabledFlag(employee?.isexclude)
+        || isEnabledFlag(employee?.is_excluded)
+        || isEnabledFlag(employee?.isdeleted)
+        || isEnabledFlag(employee?.is_deleted)
+        || isEnabledFlag(employee?.deleted);
+}
+
+function isEnabledFlag(value) {
+    return ['1', 'true', 'yes', 'y'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+function getTechnicianSearchMatches(value) {
+    const query = clean(value).toLowerCase();
+    const looseQuery = normalizeLoose(value);
+    const options = GP_STATE.technicianOptions || [];
+    if (!query && !looseQuery) return options.slice(0, 60);
+    return options
+        .filter((option) => String(option.searchText || '').includes(query)
+            || normalizeLoose(`${option.label} ${option.meta} ${option.id}`).includes(looseQuery))
+        .slice(0, 60);
+}
+
+function findTechnicianOption(value) {
+    const text = clean(value);
+    const key = normalizeLoose(text);
+    if (!key) return null;
+    return (GP_STATE.technicianOptions || []).find((option) => (
+        normalizeLoose(option.label) === key
+        || normalizeLoose(option.value) === key
+        || String(option.id) === text
+    )) || null;
+}
+
+function renderTechnicianResults(value) {
+    const results = document.getElementById('productionTechResults');
+    if (!results) return;
+    const matches = getTechnicianSearchMatches(value);
+    GP_STATE.technicianActiveIndex = matches.length ? 0 : -1;
+    if (!matches.length) {
+        results.innerHTML = '<div class="gp-serial-empty">No matching technician found.</div>';
+        results.classList.remove('hidden');
+        return;
+    }
+    results.innerHTML = matches.map((option, index) => `
+        <button type="button" class="gp-serial-option ${index === 0 ? 'is-active' : ''}" data-tech-id="${escapeHtml(option.id)}" role="option">
+            <span class="gp-serial-main">${escapeHtml(option.label)}</span>
+            <span class="gp-serial-meta">${escapeHtml(option.meta || 'Technician')}</span>
+        </button>
+    `).join('');
+    results.classList.remove('hidden');
+    results.querySelectorAll('.gp-serial-option').forEach((button) => {
+        button.addEventListener('click', () => selectTechnician(button.dataset.techId));
+    });
+}
+
+function hideTechnicianResults() {
+    document.getElementById('productionTechResults')?.classList.add('hidden');
+}
+
+function handleTechnicianSearchInput(event) {
+    const value = event.target.value;
+    GP_STATE.selectedTechnician = findTechnicianOption(value);
+    renderTechnicianResults(value);
+}
+
+function handleTechnicianSearchKeydown(event) {
+    const results = document.getElementById('productionTechResults');
+    if (!results || results.classList.contains('hidden')) return;
+    const options = [...results.querySelectorAll('.gp-serial-option')];
+    if (!options.length) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        GP_STATE.technicianActiveIndex = (GP_STATE.technicianActiveIndex + direction + options.length) % options.length;
+        options.forEach((option, index) => option.classList.toggle('is-active', index === GP_STATE.technicianActiveIndex));
+        options[GP_STATE.technicianActiveIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+
+    if (event.key === 'Enter') {
+        const active = options[GP_STATE.technicianActiveIndex] || options[0];
+        if (!active) return;
+        event.preventDefault();
+        selectTechnician(active.dataset.techId);
+    }
+
+    if (event.key === 'Escape') {
+        hideTechnicianResults();
+    }
+}
+
+function selectTechnician(techId) {
+    const option = (GP_STATE.technicianOptions || []).find((item) => String(item.id) === String(techId));
+    if (!option) return;
+    GP_STATE.selectedTechnician = option;
+    document.getElementById('productionTechInput').value = option.label;
+    hideTechnicianResults();
 }
 
 function populateStatusModelOptions(machine, preferredModel = '') {
@@ -1059,12 +1244,17 @@ function openProductionActionModal(action, row) {
     techField.style.display = isAssign ? 'grid' : 'none';
     techInput.required = isAssign;
     techInput.value = isAssign ? clean(row.tech) : '';
+    GP_STATE.selectedTechnician = isAssign ? findTechnicianOption(techInput.value) : null;
     document.getElementById('productionActionSaveBtn').textContent = isAssign ? 'Assign' : 'Mark Ready';
 
     document.getElementById('productionActionOverlay').classList.add('visible');
     document.getElementById('productionActionModal').classList.add('open');
     document.getElementById('productionActionModal').setAttribute('aria-hidden', 'false');
-    setTimeout(() => (isAssign ? techInput : document.getElementById('productionActionSaveBtn')).focus(), 30);
+    setTimeout(() => {
+        const target = isAssign ? techInput : document.getElementById('productionActionSaveBtn');
+        target.focus();
+        if (isAssign) renderTechnicianResults(techInput.value);
+    }, 30);
 }
 
 function closeProductionActionModal() {
@@ -1072,6 +1262,8 @@ function closeProductionActionModal() {
     document.getElementById('productionActionModal').classList.remove('open');
     document.getElementById('productionActionModal').setAttribute('aria-hidden', 'true');
     GP_STATE.productionAction = null;
+    GP_STATE.selectedTechnician = null;
+    hideTechnicianResults();
 }
 
 async function saveProductionAction(event) {
@@ -1084,8 +1276,13 @@ async function saveProductionAction(event) {
 
     const isAssign = actionState.action === 'assignRepair';
     const techName = clean(document.getElementById('productionTechInput').value);
+    const technician = GP_STATE.selectedTechnician || findTechnicianOption(techName);
     if (isAssign && !techName) {
-        alert('Enter the assigned technician name.');
+        alert('Select the assigned technician.');
+        return;
+    }
+    if (isAssign && GP_STATE.technicianOptions.length && !technician) {
+        alert('Select a technician from the dropdown.');
         return;
     }
 
@@ -1100,11 +1297,15 @@ async function saveProductionAction(event) {
     const button = document.getElementById('productionActionSaveBtn');
     button.disabled = true;
     try {
+        const technicianId = clean(technician?.id);
+        const selectedTechName = clean(technician?.label) || techName;
         const fields = isAssign
             ? {
                 status_id: 8,
-                production_assigned_tech: techName,
-                assigned_tech_name: techName,
+                production_assigned_tech: selectedTechName,
+                assigned_tech_name: selectedTechName,
+                production_assigned_tech_id: technicianId,
+                assigned_tech_id: technicianId ? Number(technicianId) || technicianId : '',
                 production_repair_started_at: now,
                 production_repair_started_by: currentUserLabel(),
                 production_status_updated_at: now,
@@ -1114,8 +1315,11 @@ async function saveProductionAction(event) {
             : {
                 status_id: 1,
                 production_last_repair_tech: clean(machine.production_assigned_tech || machine.assigned_tech_name || machine.tech_name),
+                production_last_repair_tech_id: clean(machine.production_assigned_tech_id || machine.assigned_tech_id || ''),
                 production_assigned_tech: '',
                 assigned_tech_name: '',
+                production_assigned_tech_id: '',
+                assigned_tech_id: '',
                 production_ready_at: now,
                 production_ready_by: currentUserLabel(),
                 production_status_updated_at: now,
@@ -1398,7 +1602,7 @@ function staffName(id) {
     if (!staffId || staffId === '0') return '';
     const employee = GP_STATE.maps.employees.get(staffId);
     if (!employee) return `Staff #${staffId}`;
-    return clean(employee.nickname || employee.firstname || employee.name || `${employee.firstname || ''} ${employee.lastname || ''}`) || `Staff #${staffId}`;
+    return employeeDisplayName(employee) || `Staff #${staffId}`;
 }
 
 function detectFamily(value) {

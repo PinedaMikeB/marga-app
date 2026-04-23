@@ -438,7 +438,8 @@ body {
     grid-column: 1 / -1;
 }
 
-.gp-serial-field {
+.gp-serial-field,
+.gp-tech-field {
     position: relative;
 }
 
