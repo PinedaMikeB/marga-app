@@ -394,12 +394,19 @@ function getSelectedReleaseUnit() {
     return document.querySelector('input[name="newReqReleaseUnit"]:checked')?.value === 'set' ? 'set' : 'pc';
 }
 
-function buildReleaseRequestSummary({ category, itemRstd, unit }) {
+function normalizeReleaseQtyValue(value) {
+    const qty = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(qty) || qty <= 0) return 1;
+    return Math.max(1, Math.min(50, qty));
+}
+
+function buildReleaseRequestSummary({ category, itemRstd, unit, qty }) {
     const normalizedCategory = normalizeReleaseCategoryValue(category);
     const item = String(itemRstd || '').trim();
     const requestLabel = item || normalizedCategory;
     if (!requestLabel) return '';
-    return `1 ${unit === 'set' ? 'set' : 'pc'} ${requestLabel}`.trim();
+    const safeQty = normalizeReleaseQtyValue(qty);
+    return `${safeQty} ${unit === 'set' ? 'set' : 'pc'} ${requestLabel}`.trim();
 }
 
 function cacheMachineBySerial(machine) {
@@ -1196,6 +1203,7 @@ async function openNewRequestModal() {
     const serialInput = document.getElementById('newReqSerialNumber');
     const releaseCategorySelect = document.getElementById('newReqReleaseCategory');
     const releaseItemRstdInput = document.getElementById('newReqReleaseItemRstd');
+    const releaseQtyInput = document.getElementById('newReqReleaseQty');
     const releaseUnitInputs = Array.from(document.querySelectorAll('input[name="newReqReleaseUnit"]'));
     const companyPanel = document.getElementById('newReqCompanyPanel');
     const branchPanel = document.getElementById('newReqBranchPanel');
@@ -1213,6 +1221,7 @@ async function openNewRequestModal() {
     releaseCategorySelect.value = '';
     releaseCategorySelect.dataset.autoValue = '';
     releaseItemRstdInput.value = '';
+    releaseQtyInput.value = '1';
     releaseUnitInputs.forEach((input) => {
         input.checked = input.value === 'pc';
     });
@@ -1866,11 +1875,13 @@ async function saveNewServiceRequest() {
     const remarks = (document.getElementById('newReqRemarks').value || '').trim();
     const releaseCategory = normalizeReleaseCategoryValue(document.getElementById('newReqReleaseCategory')?.value || '');
     const releaseItemRstd = (document.getElementById('newReqReleaseItemRstd')?.value || '').trim();
+    const releaseQty = normalizeReleaseQtyValue(document.getElementById('newReqReleaseQty')?.value || 1);
     const releaseUnit = getSelectedReleaseUnit();
     const releaseSummary = buildReleaseRequestSummary({
         category: releaseCategory,
         itemRstd: releaseItemRstd,
-        unit: releaseUnit
+        unit: releaseUnit,
+        qty: releaseQty
     });
     const hasReleaseRequest = Boolean(releaseCategory || releaseItemRstd);
     const statusValue = Number(document.getElementById('newReqStatus')?.value || 1);
@@ -1943,6 +1954,10 @@ async function saveNewServiceRequest() {
     }
     if (releaseItemRstd && !releaseCategory) {
         alert('Please choose a release category for Item Rstd.');
+        return;
+    }
+    if ((releaseCategory || releaseItemRstd) && releaseQty <= 0) {
+        alert('Please enter a valid quantity for the release request.');
         return;
     }
     if (saveContact && !normalizeContactNumber(phone)) {
@@ -2018,8 +2033,8 @@ async function saveNewServiceRequest() {
             release_request_item_rstd: releaseItemRstd,
             release_request_unit: releaseUnit,
             release_request_summary: releaseSummary,
-            release_request_qty: 1,
-            releasing_pending_qty: 1,
+            release_request_qty: releaseQty,
+            releasing_pending_qty: releaseQty,
             releasing_dr_done: 0
         } : {})
     };
