@@ -84,7 +84,8 @@ const releaseState = {
         urgentOnly: false,
         backJobOnly: false
     },
-    pendingPreview: null
+    pendingPreview: null,
+    lastSavedDrSignature: ''
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -111,6 +112,7 @@ function hydrateUserChrome() {
 function bindReleaseControls() {
     document.getElementById('releaseRefreshBtn').addEventListener('click', () => loadReleasingData());
     document.getElementById('releasePrintBtn').addEventListener('click', openReleasePreview);
+    document.getElementById('releaseClearCreateBtn').addEventListener('click', clearCreateDrSection);
     document.getElementById('releaseSearchBtn').addEventListener('click', () => {
         const value = clean(document.getElementById('releaseSearchInput').value);
         maybeLoadExactReference(value);
@@ -628,6 +630,25 @@ function hideReleaseCreateContextMenu() {
 function sendCreateRowBack(key) {
     if (!key) return;
     releaseState.createRows = releaseState.createRows.filter((row) => row.key !== key);
+    releaseState.lastSavedDrSignature = '';
+    renderReleaseTables();
+}
+
+function clearCreateDrSection() {
+    if (!releaseState.createRows.length) {
+        document.getElementById('releaseBeginningMeterInput').value = '';
+        document.getElementById('releaseDrNumberInput').value = '';
+        releaseState.pendingPreview = null;
+        releaseState.lastSavedDrSignature = '';
+        return;
+    }
+    if (!window.confirm('Clear all items from Create DR?')) return;
+    releaseState.createRows = [];
+    releaseState.pendingPreview = null;
+    releaseState.lastSavedDrSignature = '';
+    document.getElementById('releaseBeginningMeterInput').value = '';
+    document.getElementById('releaseDrNumberInput').value = '';
+    closeReleasePreview();
     renderReleaseTables();
 }
 
@@ -652,6 +673,7 @@ function addRowToCreate(key) {
     }
     if (!releaseState.createRows.some((entry) => entry.key === row.key)) {
         releaseState.createRows.push(row);
+        releaseState.lastSavedDrSignature = '';
     }
     renderReleaseTables();
 }
@@ -708,6 +730,7 @@ function saveReleaseDetail(event) {
     releaseState.detailDrafts.set(row.key, draft);
     Object.assign(row, draft, { detailsAdded: true, readyForDr: true });
     releaseState.createRows = releaseState.createRows.map((entry) => entry.key === row.key ? row : entry);
+    releaseState.lastSavedDrSignature = '';
     closeReleaseDetailModal();
     renderReleaseTables();
 }
@@ -762,6 +785,21 @@ function buildPrintPayload() {
         items: releaseState.createRows.map((row) => ({ ...row, qty: 1 })),
         currentCartridges: buildCurrentCartridgeText(releaseState.createRows)
     };
+}
+
+function buildDrSaveSignature(payload) {
+    return JSON.stringify({
+        referenceNo: payload.referenceNo,
+        drNumber: payload.drNumber,
+        bmeter: payload.bmeter,
+        items: payload.items.map((item) => ({
+            key: item.key,
+            refNo: item.refNo,
+            serial: item.serial,
+            notes: item.notes,
+            model: item.model
+        }))
+    });
 }
 
 function buildCurrentCartridgeText(rows) {
@@ -1258,17 +1296,21 @@ function buildDrPrintHtml(payload, mode = 'screen') {
 async function printAndSaveRelease() {
     const payload = releaseState.pendingPreview || buildPrintPayload();
     const button = document.getElementById('releasePreviewPrintBtn');
+    const printWindow = openPrintWindow(`marga_dr_${payload.drNumber || payload.referenceNo}`);
+    if (!printWindow) return;
+    const saveSignature = buildDrSaveSignature(payload);
     button.disabled = true;
     try {
-        await saveReleaseDr(payload);
-        printHtmlDocument(buildPrintDocument(payload), `marga_dr_${payload.drNumber || payload.referenceNo}`);
-        closeReleasePreview();
-        releaseState.createRows = [];
-        document.getElementById('releaseBeginningMeterInput').value = '';
-        document.getElementById('releaseDrNumberInput').value = '';
-        await loadReleasingData();
-        MargaUtils.showToast(`DR ${payload.drNumber} saved.`, 'success');
+        if (releaseState.lastSavedDrSignature !== saveSignature) {
+            await saveReleaseDr(payload);
+            releaseState.lastSavedDrSignature = saveSignature;
+            MargaUtils.showToast(`DR ${payload.drNumber} saved.`, 'success');
+        } else {
+            MargaUtils.showToast(`DR ${payload.drNumber} already saved. Reopening print.`, 'success');
+        }
+        writePrintHtmlDocument(printWindow, buildPrintDocument(payload));
     } catch (error) {
+        printWindow.close();
         console.error('Print and save DR failed:', error);
         alert(`Failed to save DR: ${error.message || error}`);
     } finally {
@@ -1423,12 +1465,20 @@ async function allocateNextId(collection) {
     return next;
 }
 
-function printHtmlDocument(html, windowName) {
+function openPrintWindow(windowName) {
     const printWindow = window.open('', windowName, 'width=1000,height=760');
     if (!printWindow) {
         alert('Please allow pop-ups to print the DR.');
-        return;
+        return null;
     }
+    printWindow.document.write('<!DOCTYPE html><html><head><title>Preparing DR</title></head><body style="font-family:Arial,sans-serif;padding:24px;">Preparing DR print...</body></html>');
+    printWindow.document.close();
+    return printWindow;
+}
+
+function writePrintHtmlDocument(printWindow, html) {
+    if (!printWindow) return;
+    printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
@@ -1441,6 +1491,12 @@ function printHtmlDocument(html, windowName) {
     };
     printWindow.addEventListener('load', triggerPrint, { once: true });
     window.setTimeout(triggerPrint, 500);
+}
+
+function printHtmlDocument(html, windowName) {
+    const printWindow = openPrintWindow(windowName);
+    if (!printWindow) return;
+    writePrintHtmlDocument(printWindow, html);
 }
 
 function buildPrintDocument(payload) {

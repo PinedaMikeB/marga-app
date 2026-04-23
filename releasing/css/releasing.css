@@ -320,13 +320,19 @@ body {
 
 .release-create-fields {
     display: grid;
-    grid-template-columns: 8rem 8rem;
+    grid-template-columns: auto 8rem 8rem;
     gap: 0.65rem;
+    align-items: end;
 }
 
 .release-create-fields label {
     display: grid;
     gap: 0.22rem;
+}
+
+.release-create-clear {
+    display: flex;
+    align-items: end;
 }
 
 .release-drop-zone {
