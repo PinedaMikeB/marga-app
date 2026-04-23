@@ -82,6 +82,67 @@
             min-width: 145px;
         }
 
+        .master-search-control {
+            flex: 1 1 360px;
+            min-width: min(100%, 360px);
+        }
+
+        .master-search-shell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            min-width: 0;
+            padding: 6px;
+            border-radius: 16px;
+            background:
+                linear-gradient(135deg, rgba(219, 234, 254, 0.9), rgba(239, 246, 255, 0.94)),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78));
+            border: 1px solid rgba(96, 165, 250, 0.34);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 14px 32px rgba(29, 78, 216, 0.12);
+        }
+
+        .master-search-shell input {
+            flex: 1;
+            min-width: 0;
+            border: 0;
+            border-radius: 12px;
+            padding: 11px 14px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.14);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .master-search-shell input:focus {
+            outline: 2px solid rgba(37, 99, 235, 0.18);
+            outline-offset: 0;
+        }
+
+        .master-search-clear {
+            border: 0;
+            border-radius: 999px;
+            padding: 9px 12px;
+            background: #1f5ea8;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 10px 18px rgba(31, 94, 168, 0.22);
+        }
+
+        .master-search-clear[hidden] {
+            display: none;
+        }
+
+        .master-search-meta {
+            color: #5d7693;
+            font-size: 11px;
+            font-weight: 750;
+        }
+
         .master-card {
             overflow: hidden;
         }
@@ -276,6 +337,14 @@
             color: #637d99;
             font-size: 10px;
             font-weight: 750;
+        }
+
+        .schedule-reference {
+            color: #1d4f83;
+            font-size: 10px;
+            font-weight: 850;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
         }
 
         .schedule-address-cell {
@@ -616,9 +685,13 @@
                         <option value="cancelled">Cancelled</option>
                     </select>
                 </div>
-                <div class="master-control">
-                    <label for="masterSearchInput">Search</label>
-                    <input type="search" id="masterSearchInput" placeholder="Customer, branch, serial, assigned">
+                <div class="master-control master-search-control">
+                    <label for="masterSearchInput">Find Schedule</label>
+                    <div class="master-search-shell">
+                        <input type="search" id="masterSearchInput" placeholder="Serial, reference no., customer, branch">
+                        <button type="button" class="master-search-clear" id="masterSearchClearBtn" hidden>Clear</button>
+                    </div>
+                    <span class="master-search-meta" id="masterSearchMeta">Find by serial, reference no., customer, or branch.</span>
                 </div>
                 <div class="master-control compact">
                     <label for="masterMoveScopeInput">Move Scope</label>

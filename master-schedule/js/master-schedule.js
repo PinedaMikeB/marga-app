@@ -87,11 +87,24 @@ const masterState = {
 
 document.addEventListener('DOMContentLoaded', () => {
     const dateInput = document.getElementById('masterDateInput');
+    const searchInput = document.getElementById('masterSearchInput');
     dateInput.value = formatDateYmd(new Date());
     dateInput.addEventListener('change', loadMasterSchedule);
 
     document.getElementById('masterStatusInput')?.addEventListener('change', renderMasterSchedule);
-    document.getElementById('masterSearchInput')?.addEventListener('input', renderMasterSchedule);
+    searchInput?.addEventListener('input', renderMasterSchedule);
+    searchInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && searchInput.value) {
+            searchInput.value = '';
+            renderMasterSchedule();
+        }
+    });
+    document.getElementById('masterSearchClearBtn')?.addEventListener('click', () => {
+        if (!searchInput) return;
+        searchInput.value = '';
+        searchInput.focus();
+        renderMasterSchedule();
+    });
     document.getElementById('masterRefreshBtn')?.addEventListener('click', loadMasterSchedule);
     document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
     document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
@@ -307,7 +320,7 @@ async function queryByFieldIds(collection, fieldPath, ids, cache) {
 async function setDoc(collection, docId, row) {
     const fields = {};
     Object.entries(row).forEach(([key, value]) => {
-        if (!key.startsWith('_') && key !== 'searchText') fields[key] = firestoreValue(value);
+        if (!key.startsWith('_') && key !== 'searchText' && key !== 'searchIndex') fields[key] = firestoreValue(value);
     });
     const response = await fetch(`${MASTER_BASE_URL}/${collection}/${encodeURIComponent(String(docId))}?key=${MASTER_API_KEY}`, {
         method: 'PATCH',
@@ -321,7 +334,7 @@ async function setDoc(collection, docId, row) {
 
 async function updateDocFields(collection, docId, row) {
     const safeDocId = encodeURIComponent(String(docId || '').trim());
-    const entries = Object.entries(row).filter(([key]) => !key.startsWith('_') && key !== 'searchText');
+    const entries = Object.entries(row).filter(([key]) => !key.startsWith('_') && key !== 'searchText' && key !== 'searchIndex');
     if (!safeDocId || !entries.length) return null;
 
     const params = new URLSearchParams({ key: MASTER_API_KEY });
@@ -363,6 +376,112 @@ function clean(value) {
 
 function normalizeSearch(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function flattenSearchValues(values) {
+    return values.flatMap((value) => {
+        if (Array.isArray(value)) return flattenSearchValues(value);
+        if (value === null || value === undefined) return [];
+        return [String(value)];
+    });
+}
+
+function uniqueSearchValues(...values) {
+    return Array.from(new Set(
+        flattenSearchValues(values)
+            .map(clean)
+            .filter(Boolean)
+    ));
+}
+
+function extractReferenceTokens(row = {}) {
+    return uniqueSearchValues(
+        row.reference_no,
+        row.referenceNo,
+        row.reference_num,
+        row.reference_id,
+        row.referenceid,
+        row.ref_no,
+        row.refno,
+        row.ref_number,
+        row.invoice_num,
+        row.invoice_no,
+        row.invoiceno,
+        row.invoice_id,
+        row.invoiceid,
+        row.job_order_no,
+        row.joborder_no,
+        row.service_call_no,
+        row.collection_no,
+        row.request_no,
+        row.request_id,
+        row.id,
+        row._docId,
+        row.docId,
+        row.schedule_id,
+        row.scheduleId,
+        row.route_id,
+        row.routeId,
+        row.route_doc_id
+    );
+}
+
+function pickReferenceNo(row = {}, fallbackId = '') {
+    const preferred = uniqueSearchValues(
+        row.reference_no,
+        row.referenceNo,
+        row.reference_num,
+        row.ref_no,
+        row.refno,
+        row.ref_number,
+        row.invoice_num,
+        row.invoice_no,
+        row.invoiceno,
+        row.invoice_id,
+        row.invoiceid,
+        row.job_order_no,
+        row.joborder_no,
+        row.service_call_no,
+        row.collection_no,
+        row.request_no
+    );
+    if (preferred.length) return preferred[0];
+
+    const fallback = clean(fallbackId || row.id || row.schedule_id || '');
+    return fallback;
+}
+
+function composeSearchText(...values) {
+    return uniqueSearchValues(values).join(' ');
+}
+
+function buildMasterRowSearchText(row) {
+    return composeSearchText(
+        extractReferenceTokens(row),
+        row.referenceNo,
+        row.purpose,
+        row.area,
+        row.tin,
+        row.customer,
+        row.branch,
+        row.model,
+        row.serial,
+        row.city,
+        row.address,
+        row.assignedTo,
+        row.status,
+        row.trouble,
+        row.remarks,
+        row.readyStatus,
+        row.originalDate,
+        row.sourceNote
+    );
+}
+
+function refreshMasterRowSearch(row) {
+    row.searchText = buildMasterRowSearchText(row);
+    row.searchIndex = normalizeSearch(row.searchText);
+    return row;
 }
 
 function normalizeLegacyDateTime(value) {
@@ -680,8 +799,7 @@ function buildLegacyScheduleRow(row) {
     const readyStatus = readyStatusForSchedule(row);
     const routeSource = clean(row.route_source || row.sourceBucket || 'Saved');
     const lifecycle = lifecycleStatus(row);
-
-    return {
+    const data = {
         source: routeSource === 'pending-not-routed' ? 'pending' : 'legacy-route',
         sourceBucket: row.sourceBucket || 'daily-route',
         rowKey: `${row.sourceBucket || 'route'}_${row._docId || row.id || ''}`,
@@ -692,6 +810,7 @@ function buildLegacyScheduleRow(row) {
         scheduleId,
         routeId: Number(row.route_id || 0) || 0,
         routeSource,
+        referenceNo: pickReferenceNo(row, scheduleId),
         purpose,
         area,
         tin,
@@ -710,12 +829,10 @@ function buildLegacyScheduleRow(row) {
         readyLabel: readyLabel(readyStatus),
         sourceNote: routeSource === 'pending-not-routed' ? 'Pending Not Routed' : `${routeSource} Route`,
         trouble: clean(trouble?.trouble),
-        remarks: clean(row.route_remarks || row.remarks || row.caller),
-        searchText: [
-            purpose, area, tin, customer, branchName, model, serial, city, address, assignedTo, row.invoice_num,
-            trouble?.trouble, row.remarks, lifecycle, readyStatus, originalDate, routeSource
-        ].join(' ')
+        remarks: clean(row.route_remarks || row.remarks || row.caller)
     };
+
+    return refreshMasterRowSearch(data);
 }
 
 function buildWebScheduleRow(row) {
@@ -728,8 +845,7 @@ function buildWebScheduleRow(row) {
     const assignedTo = clean(row.assigned_to || row.collector) || 'Collector';
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
-
-    return {
+    const data = {
         source: 'web',
         sourceBucket: 'daily-route',
         rowKey: `web_${row._docId || ''}`,
@@ -738,6 +854,7 @@ function buildWebScheduleRow(row) {
         techId: String(row.assigned_to_id || row.tech_id || ''),
         branchId,
         companyId: String(row.company_id || ''),
+        referenceNo: pickReferenceNo(row),
         purpose,
         area,
         tin: clean(row.tin || row.company_tin || row.tin_no),
@@ -755,9 +872,10 @@ function buildWebScheduleRow(row) {
         daysPending: daysBetween(originalDate, selectedDate),
         readyStatus: clean(row.ready_status || 'N/A') || 'N/A',
         readyLabel: readyLabel(clean(row.ready_status || 'N/A') || 'N/A'),
-        sourceNote: 'Web Schedule',
-        searchText: [purpose, area, row.tin, row.customer, row.branch, row.model, row.serial, row.city, row.address, assignedTo, row.status, originalDate].join(' ')
+        sourceNote: 'Web Schedule'
     };
+
+    return refreshMasterRowSearch(data);
 }
 
 function buildPlannerScheduleRow(row) {
@@ -768,13 +886,13 @@ function buildPlannerScheduleRow(row) {
     const assignedTo = clean(row.assigned_staff_name || row.suggested_staff_name || row.suggested_messenger_name) || 'Suggested / Unassigned';
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
-
-    return {
+    const data = {
         source: 'planner',
         sourceBucket: 'daily-route',
         rowKey: `planner_${row._docId || row.id || ''}`,
         docId: row._docId || row.id || '',
         techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
+        referenceNo: pickReferenceNo(row, row.id || row._docId),
         purpose,
         area,
         tin: clean(row.tin || row.company_tin || row.tin_no),
@@ -792,9 +910,10 @@ function buildPlannerScheduleRow(row) {
         daysPending: daysBetween(originalDate, selectedDate),
         readyStatus: 'N/A',
         readyLabel: readyLabel('N/A'),
-        sourceNote: 'Planner',
-        searchText: [purpose, area, row.tin, row.company_name, row.account_name, row.primary_branch_name, serials.join(' '), row.city, row.address, assignedTo, originalDate].join(' ')
+        sourceNote: 'Planner'
     };
+
+    return refreshMasterRowSearch(data);
 }
 
 async function hydrateLegacyLookups(rows) {
@@ -996,7 +1115,7 @@ function getVisibleRows() {
         const isCancelled = clean(row.status).toLowerCase() === 'cancelled';
         if (statusFilter === 'active' && isCancelled) return false;
         if (statusFilter === 'cancelled' && !isCancelled) return false;
-        if (search && !normalizeSearch(row.searchText).includes(search)) return false;
+        if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
         return true;
     });
 }
@@ -1009,7 +1128,7 @@ function getVisiblePendingRows() {
         const isCancelled = clean(row.status).toLowerCase() === 'cancelled';
         if (statusFilter === 'active' && isCancelled) return false;
         if (statusFilter === 'cancelled' && !isCancelled) return false;
-        if (search && !normalizeSearch(row.searchText).includes(search)) return false;
+        if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
         return true;
     });
 }
@@ -1025,10 +1144,14 @@ function renderMasterSchedule() {
     const pendingRows = getVisiblePendingRows();
     const sheet = document.getElementById('masterScheduleSheet');
     const count = document.getElementById('masterCount');
+    const searchQuery = clean(document.getElementById('masterSearchInput')?.value || '');
+    const totalMatches = rows.length + pendingRows.length;
     if (count) {
         const pendingText = pendingRows.length ? ` · ${pendingRows.length.toLocaleString()} pending not routed` : '';
-        count.textContent = `${rows.length.toLocaleString()} routed schedule${rows.length === 1 ? '' : 's'}${pendingText}`;
+        const searchText = searchQuery ? ` · ${totalMatches.toLocaleString()} match${totalMatches === 1 ? '' : 'es'}` : '';
+        count.textContent = `${rows.length.toLocaleString()} routed schedule${rows.length === 1 ? '' : 's'}${pendingText}${searchText}`;
     }
+    updateSearchDecorations(searchQuery, totalMatches);
     renderPrintStaffOptions();
     if (!sheet) return;
 
@@ -1057,6 +1180,7 @@ function renderMasterSchedule() {
                 <span>Ready YES: ${routeSummary.YES || 0}</span>
                 <span>Ready NO: ${routeSummary.NO || 0}</span>
                 <span>Ready N/A: ${routeSummary['N/A'] || 0}</span>
+                ${searchQuery ? `<span>Search: ${escapeHtml(searchQuery)}</span>` : ''}
             </div>
         </section>
         ${Array.from(groups.entries()).map(([group, groupRows]) => `
@@ -1144,6 +1268,7 @@ function renderMasterScheduleRow(row) {
             <td data-label="Customer / Branch" class="schedule-account-cell">
                 <strong>${escapeHtml(row.customer || '-')}</strong>
                 <span>${escapeHtml(row.branch || '-')}</span>
+                ${row.referenceNo ? `<span class="schedule-reference">Ref ${escapeHtml(row.referenceNo)}</span>` : ''}
             </td>
             <td data-label="Purpose">${escapeHtml(row.purpose || '-')}</td>
             <td data-label="Model">${escapeHtml(row.model || '-')}</td>
@@ -1208,7 +1333,17 @@ async function updateScheduleOwner(row, employee) {
 
     row.techId = staffId;
     row.assignedTo = staffName;
-    row.searchText = [row.purpose, row.area, row.customer, row.branch, row.model, row.serial, row.assignedTo].join(' ');
+    refreshMasterRowSearch(row);
+}
+
+function updateSearchDecorations(searchQuery = '', matchCount = 0) {
+    const clearButton = document.getElementById('masterSearchClearBtn');
+    const meta = document.getElementById('masterSearchMeta');
+    if (clearButton) clearButton.hidden = !searchQuery;
+    if (!meta) return;
+    meta.textContent = searchQuery
+        ? `${matchCount.toLocaleString()} match${matchCount === 1 ? '' : 'es'} for "${searchQuery}" across serial, reference, customer, and branch.`
+        : 'Find by serial, reference no., customer, or branch.';
 }
 
 async function reassignScheduleFromSelect(rowKey, staffId) {
