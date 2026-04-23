@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA - Releasing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/releasing.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Operations</div>
+                <a href="../dashboard.html" class="nav-item" data-module="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+                <a href="../master-schedule.html" class="nav-item" data-module="master-schedule">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M8 2v4M16 2v4M3 10h18"/>
+                        <rect x="3" y="4" width="18" height="18" rx="2"/>
+                        <path d="M7 14h5M7 18h10"/>
+                    </svg>
+                    <span>Master Schedule</span>
+                </a>
+                <a href="../general-production/" class="nav-item" data-module="general-production">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 18V8l8-4 8 4v10"/>
+                        <path d="M8 18v-6h8v6"/>
+                        <path d="M3 18h18"/>
+                    </svg>
+                    <span>General Production</span>
+                </a>
+                <a href="index.html" class="nav-item active" data-module="releasing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 7h16v10H4z"/>
+                        <path d="M8 7V4h8v3"/>
+                        <path d="M8 17v3h8v-3"/>
+                        <path d="M7 12h10"/>
+                    </svg>
+                    <span>Releasing</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Management</div>
+                <a href="../inventory/" class="nav-item" data-module="inventory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                        <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>
+                    </svg>
+                    <span>Inventory</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content release-main">
+        <header class="main-header release-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <div class="release-eyebrow">DR Desk</div>
+                <h1>Releasing</h1>
+                <p id="releaseSubtitle">Loading delivery receipt queue...</p>
+            </div>
+            <div class="header-actions release-actions">
+                <div class="release-status" id="releaseStatusPill">Loading...</div>
+                <button type="button" class="btn btn-secondary btn-sm" id="releaseRefreshBtn">Refresh</button>
+                <button type="button" class="btn btn-primary btn-sm" id="releasePrintBtn">Print and Save</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content release-content">
+            <section class="release-panel release-list-panel animate-in">
+                <div class="release-panel-head">
+                    <div>
+                        <h2>DR Item List</h2>
+                        <span id="releaseQueueMeta">Total: 0</span>
+                    </div>
+                    <label class="release-search">
+                        <span>Search</span>
+                        <div class="release-search-row">
+                            <input type="search" id="releaseSearchInput" placeholder="Ticket no, reference no, client, notes">
+                            <button type="button" class="release-go-btn" id="releaseSearchBtn">Go</button>
+                        </div>
+                    </label>
+                    <div class="release-flags">
+                        <label><input type="checkbox" id="releaseBackJobFilter"> Back job</label>
+                        <label><input type="checkbox" id="releaseUrgentFilter"> Urgent Transfer</label>
+                        <label><input type="checkbox" id="releaseCartridgeFilter"> Load Cartridge Only</label>
+                    </div>
+                </div>
+                <div class="release-table-shell">
+                    <table class="release-table">
+                        <thead>
+                            <tr>
+                                <th>Ref No.</th>
+                                <th>Company</th>
+                                <th>Category</th>
+                                <th>Brand</th>
+                                <th>Model</th>
+                                <th>Description</th>
+                                <th>Serial</th>
+                                <th>Notes</th>
+                                <th>Age</th>
+                            </tr>
+                        </thead>
+                        <tbody id="releaseQueueBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="release-panel release-create-panel animate-in" style="animation-delay: 0.06s">
+                <div class="release-create-head">
+                    <div>
+                        <h2>Create DR</h2>
+                        <div class="release-create-meta">
+                            <strong>Client:</strong> <span id="releaseClientLabel">...</span>
+                            <strong>Reference No.:</strong> <span id="releaseRefLabel">...</span>
+                        </div>
+                    </div>
+                    <div class="release-create-fields">
+                        <label>
+                            <span>B. Meter</span>
+                            <input type="text" id="releaseBeginningMeterInput" inputmode="numeric">
+                        </label>
+                        <label>
+                            <span>DR No.</span>
+                            <input type="text" id="releaseDrNumberInput" inputmode="numeric">
+                        </label>
+                    </div>
+                </div>
+                <div class="release-drop-zone" id="releaseDropZone">
+                    <div class="release-drop-copy" id="releaseDropCopy">Double-click an item to add model/serial details, then drag it here.</div>
+                    <div class="release-table-shell release-create-shell">
+                        <table class="release-table">
+                            <thead>
+                                <tr>
+                                    <th>Ref No.</th>
+                                    <th>Company</th>
+                                    <th>Category</th>
+                                    <th>Brand</th>
+                                    <th>Model</th>
+                                    <th>Description</th>
+                                    <th>Serial</th>
+                                </tr>
+                            </thead>
+                            <tbody id="releaseCreateBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div class="release-overlay" id="releaseDetailOverlay"></div>
+    <div class="release-modal release-detail-modal" id="releaseDetailModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="release-modal-head">
+            <h2 id="releaseDetailTitle">Item Details</h2>
+            <button type="button" class="release-close-btn" id="releaseDetailCloseBtn" aria-label="Close item details">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <form class="release-modal-body" id="releaseDetailForm">
+            <div class="release-detail-summary" id="releaseDetailSummary"></div>
+            <div class="release-form-grid">
+                <label class="release-field">
+                    <span>Brand</span>
+                    <input type="text" id="releaseDetailBrandInput" placeholder="N/A">
+                </label>
+                <label class="release-field">
+                    <span>Model</span>
+                    <input type="text" id="releaseDetailModelInput" placeholder="Model" list="releaseModelList">
+                    <datalist id="releaseModelList"></datalist>
+                </label>
+                <label class="release-field">
+                    <span>Description</span>
+                    <input type="text" id="releaseDetailDescriptionInput" placeholder="Description">
+                </label>
+                <label class="release-field">
+                    <span>Serial</span>
+                    <input type="text" id="releaseDetailSerialInput" placeholder="Serial">
+                </label>
+                <label class="release-field release-field-full">
+                    <span>Notes</span>
+                    <textarea id="releaseDetailNotesInput" rows="3" placeholder="Color, item notes, cartridge remark..."></textarea>
+                </label>
+            </div>
+            <div class="release-action-row">
+                <button type="button" class="btn btn-secondary btn-sm" id="releaseDetailCancelBtn">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Save Details</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="release-overlay" id="releasePreviewOverlay"></div>
+    <div class="release-modal release-preview-modal" id="releasePreviewModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="release-modal-head">
+            <h2>Print Preview</h2>
+            <button type="button" class="release-close-btn" id="releasePreviewCloseBtn" aria-label="Close print preview">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="release-preview-body">
+            <div class="release-preview-page" id="releasePreviewPage"></div>
+        </div>
+        <div class="release-preview-footer">
+            <button type="button" class="btn btn-primary btn-sm" id="releasePreviewPrintBtn">Print and Save</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="releasePreviewCancelBtn">Cancel</button>
+        </div>
+    </div>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="../shared/js/offline-sync.js"></script>
+    <script src="js/releasing.js"></script>
+</body>
+</html>
