@@ -300,7 +300,7 @@
 
         .master-table {
             border-collapse: collapse;
-            min-width: 1080px;
+            min-width: 1260px;
             font-size: 11px;
             color: #0f2742;
             table-layout: fixed;
@@ -356,9 +356,16 @@
             min-width: 132px;
         }
 
+        .master-table td.assigned-cell,
+        .master-table td.status-cell {
+            width: 168px;
+        }
+
         .staff-select {
             width: 100%;
-            min-width: 140px;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
             border: 1px solid rgba(148, 163, 184, 0.55);
             border-radius: 4px;
             padding: 4px 6px;
@@ -366,6 +373,258 @@
             color: #0f2742;
             font-size: 12px;
             font-weight: 650;
+        }
+
+        .schedule-status-cell {
+            display: grid;
+            gap: 6px;
+        }
+
+        .schedule-status-label {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 24px;
+            border-radius: 999px;
+            padding: 3px 10px;
+            background: #eff6ff;
+            color: #1d4f83;
+            font-size: 10px;
+            font-weight: 850;
+            text-align: center;
+        }
+
+        .schedule-status-label.closed-fixed {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .schedule-status-label.closed-under-observation {
+            background: #e0f2fe;
+            color: #0c4a6e;
+        }
+
+        .schedule-status-label.closed-over-the-phone {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+
+        .schedule-status-label.closed-via-field-app {
+            background: #fae8ff;
+            color: #86198f;
+        }
+
+        .schedule-status-label.open-with-request {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .schedule-status-view {
+            width: 100%;
+            border: 1px solid rgba(31, 94, 168, 0.24);
+            border-radius: 6px;
+            padding: 6px 10px;
+            background: linear-gradient(180deg, #ffffff, #eef6ff);
+            color: #1f5ea8;
+            font-size: 11px;
+            font-weight: 850;
+            cursor: pointer;
+        }
+
+        .master-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1900;
+            display: none;
+            background: rgba(15, 23, 42, 0.42);
+        }
+
+        .master-modal-overlay.visible {
+            display: block;
+        }
+
+        .master-status-modal {
+            position: fixed;
+            inset: 50% auto auto 50%;
+            z-index: 1910;
+            display: none;
+            width: min(720px, calc(100vw - 28px));
+            max-height: calc(100vh - 28px);
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 16px;
+            overflow: hidden;
+            background: #ffffff;
+            box-shadow: 0 32px 90px rgba(15, 23, 42, 0.28);
+        }
+
+        .master-status-modal.open {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        .master-modal-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            padding: 16px 18px;
+            background: linear-gradient(180deg, #eff6ff, #ffffff);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+        }
+
+        .master-modal-head h2 {
+            margin: 0;
+            color: #173d63;
+            font-size: 18px;
+        }
+
+        .master-modal-head p {
+            margin: 4px 0 0;
+            color: #5b6f89;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .master-modal-close {
+            border: 0;
+            border-radius: 999px;
+            width: 36px;
+            height: 36px;
+            background: #e2e8f0;
+            color: #0f2742;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .master-modal-body {
+            display: grid;
+            gap: 14px;
+            padding: 18px;
+            overflow: auto;
+            background: #f8fbff;
+        }
+
+        .master-status-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .master-status-summary-card {
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 12px;
+            padding: 11px 12px;
+            background: #ffffff;
+        }
+
+        .master-status-summary-card span {
+            display: block;
+            color: #5b6f89;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .master-status-summary-card strong {
+            display: block;
+            margin-top: 4px;
+            color: #173d63;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .master-status-editor,
+        .master-status-activity {
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 12px;
+            padding: 14px;
+            background: #ffffff;
+        }
+
+        .master-status-editor h3,
+        .master-status-activity h3 {
+            margin: 0 0 10px;
+            color: #173d63;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .master-status-field {
+            display: grid;
+            gap: 6px;
+        }
+
+        .master-status-field label {
+            color: #526f8d;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .master-status-field select {
+            width: 100%;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 10px;
+            padding: 11px 12px;
+            color: #153b60;
+            background: #fff;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .master-status-help {
+            margin: 8px 0 0;
+            color: #607895;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .master-status-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .master-activity-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .master-activity-entry {
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 10px;
+            padding: 11px 12px;
+            background: #f8fbff;
+        }
+
+        .master-activity-entry strong,
+        .master-activity-entry span {
+            display: block;
+        }
+
+        .master-activity-entry strong {
+            color: #153b60;
+            font-size: 12px;
+        }
+
+        .master-activity-entry span {
+            margin-top: 3px;
+            color: #607895;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.45;
+        }
+
+        .master-activity-empty {
+            color: #607895;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .print-only {
@@ -626,7 +885,8 @@
 
             .settings-layout,
             .client-settings-grid,
-            .client-form-grid {
+            .client-form-grid,
+            .master-status-summary {
                 grid-template-columns: 1fr;
             }
         }
@@ -824,7 +1084,60 @@
         </section>
     </main>
 
+    <div class="master-modal-overlay" id="masterStatusOverlay"></div>
+    <section class="master-status-modal" id="masterStatusModal" aria-hidden="true">
+        <div class="master-modal-head">
+            <div>
+                <h2>Schedule Status</h2>
+                <p id="masterStatusModalSubtitle">View and update progress for this schedule.</p>
+            </div>
+            <button type="button" class="master-modal-close" id="masterStatusCloseBtn" aria-label="Close status modal">&times;</button>
+        </div>
+        <div class="master-modal-body">
+            <div class="master-status-summary">
+                <div class="master-status-summary-card">
+                    <span>Customer</span>
+                    <strong id="masterStatusCustomer">-</strong>
+                </div>
+                <div class="master-status-summary-card">
+                    <span>Reference</span>
+                    <strong id="masterStatusReference">-</strong>
+                </div>
+                <div class="master-status-summary-card">
+                    <span>Assigned To</span>
+                    <strong id="masterStatusAssignedTo">-</strong>
+                </div>
+            </div>
+
+            <section class="master-status-editor">
+                <h3>Status Update</h3>
+                <div class="master-status-field">
+                    <label for="masterStatusValueInput">Current Status</label>
+                    <select id="masterStatusValueInput">
+                        <option value="closed_fixed">Closed (Fixed)</option>
+                        <option value="closed_under_observation">Closed (Under Observation)</option>
+                        <option value="closed_over_the_phone">Closed (Over The Phone)</option>
+                        <option value="closed_via_field_app">Closed (Via Field App)</option>
+                        <option value="open_with_request">Open (With Request)</option>
+                    </select>
+                </div>
+                <p class="master-status-help">Choosing `Open (With Request)` keeps the schedule active for follow-up parts or toner delivery and keeps the audit trail for later analysis.</p>
+                <div class="master-status-actions">
+                    <button class="btn btn-secondary" type="button" id="masterStatusCancelBtn">Close</button>
+                    <button class="btn btn-primary" type="button" id="masterStatusSaveBtn">Save Status</button>
+                </div>
+            </section>
+
+            <section class="master-status-activity">
+                <h3>Activity Log</h3>
+                <div class="master-activity-list" id="masterActivityList">
+                    <div class="master-activity-empty">No recorded activity yet.</div>
+                </div>
+            </section>
+        </div>
+    </section>
+
     <script src="shared/js/firebase-config.js"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260422-print-vbnet-cols-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260423-status-audit-1"></script>
 </body>
 </html>

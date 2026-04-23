@@ -3,6 +3,7 @@ const MASTER_BASE_URL = FIREBASE_CONFIG.baseUrl;
 const MASTER_LIMIT = 1200;
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
+const MASTER_ACTIVITY_COLLECTION = 'marga_master_schedule_activity';
 const PENDING_NOT_ROUTED_LOOKBACK_DAYS = 45;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
@@ -50,6 +51,14 @@ const CLIENT_INFO_TYPES = [
     { key: 'delivery', label: 'Delivery Info' }
 ];
 
+const MASTER_STATUS_OPTIONS = [
+    { value: 'closed_fixed', label: 'Closed (Fixed)' },
+    { value: 'closed_under_observation', label: 'Closed (Under Observation)' },
+    { value: 'closed_over_the_phone', label: 'Closed (Over The Phone)' },
+    { value: 'closed_via_field_app', label: 'Closed (Via Field App)' },
+    { value: 'open_with_request', label: 'Open (With Request)' }
+];
+
 const masterState = {
     rows: [],
     pendingRows: [],
@@ -60,6 +69,7 @@ const masterState = {
         routed: 0,
         unrouted: 0
     },
+    selectedStatusRowKey: '',
     selectedArea: DEFAULT_AREAS[0],
     selectedTechId: '',
     selectedBranchId: '',
@@ -83,6 +93,7 @@ const masterState = {
         serviceRequests: new Map(),
         finalDeliveryReceipts: new Map()
     },
+    activityLogs: new Map(),
     settings: {
         branches: [],
         employees: []
@@ -112,6 +123,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterRefreshBtn')?.addEventListener('click', loadMasterSchedule);
     document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
     document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
+    document.getElementById('masterStatusOverlay')?.addEventListener('click', closeMasterStatusModal);
+    document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
+    document.getElementById('masterStatusCancelBtn')?.addEventListener('click', closeMasterStatusModal);
+    document.getElementById('masterStatusSaveBtn')?.addEventListener('click', saveMasterStatusFromModal);
 
     document.querySelectorAll('[data-master-view]').forEach((button) => {
         button.addEventListener('click', () => switchMasterView(button.dataset.masterView));
@@ -367,6 +382,45 @@ async function deleteDoc(collection, docId) {
     }
 }
 
+async function loadActivityLogEntries(activityKey) {
+    if (!activityKey) return [];
+    const docs = await queryEqualsLimit(MASTER_ACTIVITY_COLLECTION, 'activity_key', activityKey, 80).catch(() => []);
+    const rows = docs.map(parseFirestoreDoc).filter(Boolean).sort((left, right) => {
+        const leftAt = clean(left.created_at);
+        const rightAt = clean(right.created_at);
+        return rightAt.localeCompare(leftAt);
+    });
+    masterState.activityLogs.set(activityKey, rows);
+    return rows;
+}
+
+async function appendActivityLog(row, entry) {
+    if (!row?.activityKey) return null;
+    const createdAt = new Date().toISOString();
+    const docId = buildActivityDocId();
+    const payload = {
+        id: docId,
+        activity_key: row.activityKey,
+        source: row.source,
+        doc_id: row.docId || '',
+        schedule_id: Number(row.scheduleId || 0) || 0,
+        reference_no: row.referenceNo || '',
+        customer: row.customer || '',
+        branch: row.branch || '',
+        assigned_to: row.assignedTo || '',
+        master_status: row.masterStatusValue || '',
+        action_type: entry.actionType || '',
+        action_label: entry.actionLabel || '',
+        detail: entry.detail || '',
+        actor: currentActorLabel(),
+        created_at: createdAt
+    };
+    await setDoc(MASTER_ACTIVITY_COLLECTION, docId, payload);
+    const current = masterState.activityLogs.get(row.activityKey) || [];
+    masterState.activityLogs.set(row.activityKey, [{ ...payload, _docId: docId }, ...current]);
+    return payload;
+}
+
 function slug(value) {
     return String(value || '')
         .toLowerCase()
@@ -376,6 +430,55 @@ function slug(value) {
 
 function clean(value) {
     return String(value || '').trim();
+}
+
+function currentActorLabel() {
+    if (window.MargaAuth?.getUser) {
+        const user = window.MargaAuth.getUser();
+        const name = clean(user?.name || user?.username || user?.email);
+        if (name) return name;
+    }
+    return clean(document.getElementById('userName')?.textContent) || 'Master Schedule';
+}
+
+function statusOptionByValue(value) {
+    return MASTER_STATUS_OPTIONS.find((option) => option.value === value) || null;
+}
+
+function statusLabel(value) {
+    return statusOptionByValue(value)?.label || 'Not Set';
+}
+
+function statusClassName(value) {
+    return String(value || '').replace(/_/g, '-');
+}
+
+function normalizeStoredStatusValue(row = {}) {
+    const raw = clean(
+        row.master_schedule_status
+        || row.master_status
+        || row.schedule_status_label
+        || row.masterScheduleStatus
+    ).toLowerCase();
+    return MASTER_STATUS_OPTIONS.some((option) => option.value === raw) ? raw : '';
+}
+
+function deriveMasterStatusValue(row) {
+    const stored = normalizeStoredStatusValue(row);
+    if (stored) return stored;
+    if (scheduleNeedsDeliveryReceipt(row)) return 'open_with_request';
+    if (clean(row.status).toLowerCase() === 'closed') return 'closed_fixed';
+    return '';
+}
+
+function buildActivityKey(source, docId, fallbackId = '') {
+    return [clean(source) || 'schedule', clean(docId) || clean(fallbackId) || 'unknown'].join(':');
+}
+
+function buildActivityDocId() {
+    const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+    const random = Math.random().toString(36).slice(2, 8);
+    return `activity_${stamp}_${random}`;
 }
 
 function normalizeSearch(value) {
@@ -474,6 +577,7 @@ function buildMasterRowSearchText(row) {
         row.address,
         row.assignedTo,
         row.status,
+        row.masterStatusLabel,
         row.trouble,
         row.remarks,
         row.readyStatus,
@@ -735,6 +839,7 @@ function scheduleNeedsDeliveryReceipt(row) {
     const purposeText = purposeFromLegacy(row, masterState.lookups.troubles.get(String(row?.trouble_id || ''))).toLowerCase();
     if (purposeId === 7 || purposeText.includes('purchasing')) return false;
     if (Number(row?.releasing_dr_done || 0) === 1) return false;
+    if (normalizeStoredStatusValue(row) === 'open_with_request' || clean(row?.masterStatusValue) === 'open_with_request') return true;
     if (hasExplicitReleaseRequest(row)) return true;
     if (Number(row?.withrequest || 0) === 1) return true;
     if (purposeId === 3 || purposeId === 4) return true;
@@ -889,6 +994,7 @@ function buildLegacyScheduleRow(row) {
     const readyStatus = readyStatusForSchedule(row);
     const routeSource = clean(row.route_source || row.sourceBucket || 'Saved');
     const lifecycle = lifecycleStatus(row);
+    const masterStatusValue = deriveMasterStatusValue(row);
     const sourceNote = routeSource === 'pending-not-routed'
         ? 'Pending Not Routed'
         : (routeSource === 'Schedule' ? 'Awaiting Route' : `${routeSource} Route`);
@@ -904,6 +1010,7 @@ function buildLegacyScheduleRow(row) {
         routeId: Number(row.route_id || 0) || 0,
         routeSource,
         referenceNo: pickReferenceNo(row, scheduleId),
+        activityKey: buildActivityKey('tbl_schedule', row._docId || row.id || scheduleId, scheduleId),
         purpose,
         area,
         tin,
@@ -915,6 +1022,8 @@ function buildLegacyScheduleRow(row) {
         address,
         assignedTo,
         status: lifecycle,
+        masterStatusValue,
+        masterStatusLabel: statusLabel(masterStatusValue),
         originalDate,
         routeDate: dateOnly(getRouteTaskDateTime(row)),
         daysPending: originalDate ? daysBetween(originalDate, selectedDate) : '',
@@ -938,6 +1047,7 @@ function buildWebScheduleRow(row) {
     const assignedTo = clean(row.assigned_to || row.collector) || 'Collector';
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
+    const masterStatusValue = deriveMasterStatusValue(row);
     const data = {
         source: 'web',
         sourceBucket: 'daily-route',
@@ -948,6 +1058,7 @@ function buildWebScheduleRow(row) {
         branchId,
         companyId: String(row.company_id || ''),
         referenceNo: pickReferenceNo(row),
+        activityKey: buildActivityKey('marga_master_schedule', row._docId, row._docId),
         purpose,
         area,
         tin: clean(row.tin || row.company_tin || row.tin_no),
@@ -960,6 +1071,8 @@ function buildWebScheduleRow(row) {
         address: compactAddress(row.address || row.delivery_address || row.collection_address),
         assignedTo,
         status: clean(row.status || 'Active') || 'Active',
+        masterStatusValue,
+        masterStatusLabel: statusLabel(masterStatusValue),
         originalDate,
         routeDate: selectedDate,
         daysPending: daysBetween(originalDate, selectedDate),
@@ -979,6 +1092,7 @@ function buildPlannerScheduleRow(row) {
     const assignedTo = clean(row.assigned_staff_name || row.suggested_staff_name || row.suggested_messenger_name) || 'Suggested / Unassigned';
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
+    const masterStatusValue = deriveMasterStatusValue(row);
     const data = {
         source: 'planner',
         sourceBucket: 'daily-route',
@@ -986,6 +1100,7 @@ function buildPlannerScheduleRow(row) {
         docId: row._docId || row.id || '',
         techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
         referenceNo: pickReferenceNo(row, row.id || row._docId),
+        activityKey: buildActivityKey('tbl_schedule_planner', row._docId || row.id || '', row.id || row._docId),
         purpose,
         area,
         tin: clean(row.tin || row.company_tin || row.tin_no),
@@ -998,6 +1113,8 @@ function buildPlannerScheduleRow(row) {
         address: compactAddress(row.address || row.delivery_address || row.collection_address),
         assignedTo,
         status: row.planner_status || row.task_status || 'Suggested',
+        masterStatusValue,
+        masterStatusLabel: statusLabel(masterStatusValue),
         originalDate,
         routeDate: selectedDate,
         daysPending: daysBetween(originalDate, selectedDate),
@@ -1327,6 +1444,7 @@ function renderScheduleTable(rows) {
                     <th>Days Pending</th>
                     <th>Ready</th>
                     <th>Assigned To</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -1362,6 +1480,8 @@ function renderMasterScheduleRow(row) {
     const staffOptions = renderStaffSelectOptions(row);
     const readyClass = readyClassName(row.readyStatus);
     const canMove = row.sourceBucket !== 'pending-not-routed';
+    const displayStatus = row.masterStatusLabel || 'Not Set';
+    const displayStatusClass = row.masterStatusValue ? statusClassName(row.masterStatusValue) : '';
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td data-label="TIN #">${escapeHtml(row.tin || '-')}</td>
@@ -1377,10 +1497,16 @@ function renderMasterScheduleRow(row) {
             <td data-label="Address" class="schedule-address-cell">${escapeHtml(row.address || '-')}</td>
             <td data-label="Days Pending" class="numeric">${escapeHtml(row.daysPending === '' ? '-' : row.daysPending)}</td>
             <td data-label="Ready"><span class="ready-pill ${readyClass}">${escapeHtml(row.readyStatus || 'N/A')}</span></td>
-            <td data-label="Assigned To">
+            <td data-label="Assigned To" class="assigned-cell">
                 <select class="staff-select" ${canMove ? '' : 'disabled'} onchange="reassignScheduleFromSelect('${escapeHtml(row.rowKey)}', this.value)">
                     ${staffOptions}
                 </select>
+            </td>
+            <td data-label="Status" class="status-cell">
+                <div class="schedule-status-cell">
+                    <span class="schedule-status-label ${escapeHtml(displayStatusClass)}">${escapeHtml(displayStatus)}</span>
+                    <button type="button" class="schedule-status-view" onclick="openMasterStatusModal('${escapeHtml(row.rowKey)}')">View</button>
+                </div>
             </td>
         </tr>
     `;
@@ -1403,7 +1529,9 @@ function renderStaffSelectOptions(row) {
 }
 
 function findScheduleRow(rowKey) {
-    return masterState.rows.find((row) => row.rowKey === rowKey);
+    return masterState.rows.find((row) => row.rowKey === rowKey)
+        || masterState.pendingRows.find((row) => row.rowKey === rowKey)
+        || null;
 }
 
 function getStaffById(staffId) {
@@ -1434,6 +1562,120 @@ async function updateScheduleOwner(row, employee) {
     row.techId = staffId;
     row.assignedTo = staffName;
     refreshMasterRowSearch(row);
+}
+
+async function saveScheduleStatus(row, nextStatusValue) {
+    const nextStatusLabel = statusLabel(nextStatusValue);
+    const updatedAt = new Date().toISOString();
+    const payload = {
+        master_schedule_status: nextStatusValue,
+        master_schedule_status_label: nextStatusLabel,
+        master_schedule_status_updated_at: updatedAt,
+        master_schedule_status_updated_by: currentActorLabel()
+    };
+
+    if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
+        await updateDocFields('tbl_schedule', row.docId, payload);
+    } else if (row.source === 'web') {
+        await updateDocFields('marga_master_schedule', row.docId, payload);
+    } else if (row.source === 'planner') {
+        await updateDocFields('tbl_schedule_planner', row.docId, payload);
+    }
+
+    row.masterStatusValue = nextStatusValue;
+    row.masterStatusLabel = nextStatusLabel;
+    row.readyStatus = readyStatusForSchedule(row);
+    row.readyLabel = readyLabel(row.readyStatus);
+    refreshMasterRowSearch(row);
+}
+
+function renderActivityList(entries = []) {
+    const container = document.getElementById('masterActivityList');
+    if (!container) return;
+    if (!entries.length) {
+        container.innerHTML = '<div class="master-activity-empty">No recorded activity yet.</div>';
+        return;
+    }
+    container.innerHTML = entries.map((entry) => `
+        <article class="master-activity-entry">
+            <strong>${escapeHtml(entry.action_label || 'Activity')}</strong>
+            <span>${escapeHtml(entry.detail || 'No details provided.')}</span>
+            <span>${escapeHtml(entry.actor || 'Master Schedule')} · ${escapeHtml(formatActivityTimestamp(entry.created_at))}</span>
+        </article>
+    `).join('');
+}
+
+function formatActivityTimestamp(value) {
+    const text = clean(value);
+    if (!text) return 'No timestamp';
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return text;
+    return parsed.toLocaleString('en-PH', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+async function openMasterStatusModal(rowKey) {
+    const row = findScheduleRow(rowKey);
+    if (!row) return;
+    masterState.selectedStatusRowKey = rowKey;
+    document.getElementById('masterStatusCustomer').textContent = row.customer || '-';
+    document.getElementById('masterStatusReference').textContent = row.referenceNo || row.docId || '-';
+    document.getElementById('masterStatusAssignedTo').textContent = row.assignedTo || 'Unassigned';
+    document.getElementById('masterStatusModalSubtitle').textContent = `${row.branch || 'Main'} · ${row.purpose || 'Schedule'} · ${row.sourceNote || 'Master Schedule'}`;
+    document.getElementById('masterStatusValueInput').value = row.masterStatusValue || 'closed_fixed';
+    document.getElementById('masterStatusOverlay')?.classList.add('visible');
+    document.getElementById('masterStatusModal')?.classList.add('open');
+    document.getElementById('masterStatusModal')?.setAttribute('aria-hidden', 'false');
+    renderActivityList(masterState.activityLogs.get(row.activityKey) || []);
+    const entries = await loadActivityLogEntries(row.activityKey);
+    if (masterState.selectedStatusRowKey === rowKey) renderActivityList(entries);
+}
+
+function closeMasterStatusModal() {
+    masterState.selectedStatusRowKey = '';
+    document.getElementById('masterStatusOverlay')?.classList.remove('visible');
+    document.getElementById('masterStatusModal')?.classList.remove('open');
+    document.getElementById('masterStatusModal')?.setAttribute('aria-hidden', 'true');
+}
+
+async function saveMasterStatusFromModal() {
+    const row = findScheduleRow(masterState.selectedStatusRowKey);
+    if (!row) {
+        closeMasterStatusModal();
+        return;
+    }
+    const nextStatusValue = clean(document.getElementById('masterStatusValueInput')?.value || '');
+    if (!nextStatusValue) return;
+    if (nextStatusValue === clean(row.masterStatusValue)) {
+        closeMasterStatusModal();
+        return;
+    }
+    const previousLabel = row.masterStatusLabel || 'Not Set';
+    const nextLabel = statusLabel(nextStatusValue);
+    const saveBtn = document.getElementById('masterStatusSaveBtn');
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+        await saveScheduleStatus(row, nextStatusValue);
+        await appendActivityLog(row, {
+            actionType: 'status_update',
+            actionLabel: 'Status Updated',
+            detail: `Changed status from ${previousLabel} to ${nextLabel}.`
+        });
+        const entries = masterState.activityLogs.get(row.activityKey) || [];
+        renderActivityList(entries);
+        renderMasterSchedule();
+        closeMasterStatusModal();
+    } catch (error) {
+        console.error('Master status update failed:', error);
+        window.alert(`Unable to save status: ${error.message || error}`);
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
 }
 
 function updateSearchDecorations(searchQuery = '', matchCount = 0) {
@@ -1477,7 +1719,13 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
 
     try {
         for (const target of targets) {
+            const previousOwner = target.assignedTo || 'Unassigned';
             await updateScheduleOwner(target, employee);
+            await appendActivityLog(target, {
+                actionType: 'reassign',
+                actionLabel: 'Assigned Staff Updated',
+                detail: `Reassigned from ${previousOwner} to ${newStaff}.`
+            });
         }
         masterState.rows.sort((a, b) => {
             if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
@@ -1498,6 +1746,8 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
 function activeRows() {
     return masterState.rows.filter((row) => clean(row.status).toLowerCase() !== 'cancelled');
 }
+
+window.openMasterStatusModal = openMasterStatusModal;
 
 function uniqueAssignedStaff(rows = activeRows()) {
     return Array.from(new Set(rows.map((row) => row.assignedTo || 'Unassigned'))).filter(Boolean).sort();
