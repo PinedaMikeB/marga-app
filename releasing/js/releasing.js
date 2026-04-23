@@ -170,6 +170,7 @@ function bindReleaseControls() {
     document.getElementById('releaseDetailOverlay').addEventListener('click', closeReleaseDetailModal);
     document.getElementById('releaseDetailCloseBtn').addEventListener('click', closeReleaseDetailModal);
     document.getElementById('releaseDetailCancelBtn').addEventListener('click', closeReleaseDetailModal);
+    document.getElementById('releaseDetailSaveAddBtn').addEventListener('click', () => saveReleaseDetail(null, { addToCreate: true }));
     document.getElementById('releaseDetailForm').addEventListener('submit', saveReleaseDetail);
 
     document.getElementById('releasePreviewOverlay').addEventListener('click', closeReleasePreview);
@@ -742,10 +743,11 @@ function setReleaseDetailOpen(open) {
     document.getElementById('releaseDetailModal').setAttribute('aria-hidden', open ? 'false' : 'true');
 }
 
-function saveReleaseDetail(event) {
-    event.preventDefault();
+function saveReleaseDetail(event, options = {}) {
+    event?.preventDefault();
     const row = findRow(releaseState.selectedDetailKey);
     if (!row) return;
+    const { addToCreate = false } = options;
     const draft = {
         brand: clean(document.getElementById('releaseDetailBrandInput').value) || 'N/A',
         model: clean(document.getElementById('releaseDetailModelInput').value) || 'N/A',
@@ -767,6 +769,10 @@ function saveReleaseDetail(event) {
     releaseState.createRows = releaseState.createRows.map((entry) => entry.key === row.key ? row : entry);
     releaseState.lastSavedDrSignature = '';
     closeReleaseDetailModal();
+    if (addToCreate) {
+        addRowToCreate(row.key);
+        return;
+    }
     renderReleaseTables();
 }
 

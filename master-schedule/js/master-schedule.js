@@ -721,16 +721,42 @@ function activeFinalReceipts(scheduleId) {
         .filter((row) => Number(row.iscancelled || 0) !== 1);
 }
 
+function hasExplicitReleaseRequest(row) {
+    return Boolean(
+        clean(row?.release_request_category)
+        || clean(row?.release_request_item_rstd)
+        || clean(row?.release_request_summary)
+        || clean(row?.release_request_qty)
+    );
+}
+
+function scheduleNeedsDeliveryReceipt(row) {
+    const purposeId = Number(row?.purpose_id || 0);
+    const purposeText = purposeFromLegacy(row, masterState.lookups.troubles.get(String(row?.trouble_id || ''))).toLowerCase();
+    if (purposeId === 7 || purposeText.includes('purchasing')) return false;
+    if (Number(row?.releasing_dr_done || 0) === 1) return false;
+    if (hasExplicitReleaseRequest(row)) return true;
+    if (Number(row?.withrequest || 0) === 1) return true;
+    if (purposeId === 3 || purposeId === 4) return true;
+
+    const clue = [
+        purposeText,
+        row?.remarks,
+        row?.route_remarks,
+        row?.customer_request
+    ].join(' ').toLowerCase();
+
+    return /toner|ink|cartridge|drum|fuser|scanner|pcr|blade|change unit|pull out|machine/.test(clue);
+}
+
 function readyStatusForSchedule(row) {
-    const purposeId = Number(row.purpose_id || 0);
-    const purposeText = purposeFromLegacy(row, masterState.lookups.troubles.get(String(row.trouble_id || ''))).toLowerCase();
+    const purposeId = Number(row?.purpose_id || 0);
+    const purposeText = purposeFromLegacy(row, masterState.lookups.troubles.get(String(row?.trouble_id || ''))).toLowerCase();
     if (purposeId === 7 || purposeText.includes('purchasing')) return 'N/A';
 
     const scheduleId = Number(row.id || row._docId || 0);
-    const requests = activeServiceRequests(scheduleId);
-    if (!requests.length) return 'YES';
-
-    return activeFinalReceipts(scheduleId).length ? 'YES' : 'NO';
+    if (activeFinalReceipts(scheduleId).length) return 'YES';
+    return scheduleNeedsDeliveryReceipt(row) ? 'NO' : 'YES';
 }
 
 function readyLabel(value) {
