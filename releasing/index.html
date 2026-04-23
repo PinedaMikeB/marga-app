@@ -201,7 +201,7 @@
                     </div>
                 </div>
                 <div class="release-drop-zone" id="releaseDropZone">
-                    <div class="release-drop-copy" id="releaseDropCopy">Right-click a ready item and choose Add to DR.</div>
+                    <div class="release-drop-copy" id="releaseDropCopy">Right-click a ready item and choose Add to DR. Right-click an added item to send it back.</div>
                     <div class="release-table-shell release-create-shell">
                         <table class="release-table">
                             <thead>
@@ -227,6 +227,9 @@
     <div class="release-context-menu hidden" id="releaseContextMenu" role="menu">
         <button type="button" id="releaseContextAddBtn" role="menuitem">Add to DR</button>
         <button type="button" id="releaseContextEditBtn" role="menuitem">Edit Details</button>
+    </div>
+    <div class="release-context-menu hidden" id="releaseCreateContextMenu" role="menu">
+        <button type="button" id="releaseCreateContextReturnBtn" role="menuitem">Send back to DR Item List</button>
     </div>
 
     <div class="release-modal release-detail-modal" id="releaseDetailModal" role="dialog" aria-modal="true" aria-hidden="true">

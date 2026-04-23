@@ -43,7 +43,17 @@ const DR_PRINT_CALIBRATION = {
 };
 
 const DR_PRINT_CALIBRATION_STORAGE_KEY = 'marga_dr_print_calibration_v1';
+const DR_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_dr_print_templates_v1';
+const DR_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_dr_print_active_template_v1';
+const DR_PRINT_TEMPLATE_FIRESTORE_COLLECTION = 'tbl_app_settings';
+const DR_PRINT_TEMPLATE_FIRESTORE_DOC_ID = 'releasing_dr_print_templates_v1';
+const DR_PRINT_TEMPLATE_SETTING_KEY = 'releasing_dr_print_templates';
 let currentDrPrintCalibration = loadDrPrintCalibration();
+let currentDrPrintTemplates = {};
+let currentDrPrintTemplateName = 'Default';
+let drPrintTemplatesFirebasePromise = null;
+let drPrintTemplatesLoadedFromFirebase = false;
+initializeDrPrintTemplateState();
 
 const releaseState = {
     loading: false,
@@ -52,6 +62,7 @@ const releaseState = {
     createRows: [],
     selectedDetailKey: '',
     contextRowKey: '',
+    createContextRowKey: '',
     detailDrafts: new Map(),
     savedFinalRefs: new Set(),
     referenceFetches: new Set(),
@@ -133,13 +144,26 @@ function bindReleaseControls() {
         hideReleaseContextMenu();
         openReleaseDetailModal(key);
     });
+    document.getElementById('releaseCreateContextReturnBtn').addEventListener('click', () => {
+        sendCreateRowBack(releaseState.createContextRowKey);
+        hideReleaseCreateContextMenu();
+    });
     document.addEventListener('click', (event) => {
-        if (!event.target.closest('#releaseContextMenu')) hideReleaseContextMenu();
+        if (!event.target.closest('#releaseContextMenu, #releaseCreateContextMenu')) {
+            hideReleaseContextMenu();
+            hideReleaseCreateContextMenu();
+        }
     });
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') hideReleaseContextMenu();
+        if (event.key === 'Escape') {
+            hideReleaseContextMenu();
+            hideReleaseCreateContextMenu();
+        }
     });
-    window.addEventListener('scroll', hideReleaseContextMenu, true);
+    window.addEventListener('scroll', () => {
+        hideReleaseContextMenu();
+        hideReleaseCreateContextMenu();
+    }, true);
 
     document.getElementById('releaseDetailOverlay').addEventListener('click', closeReleaseDetailModal);
     document.getElementById('releaseDetailCloseBtn').addEventListener('click', closeReleaseDetailModal);
@@ -540,7 +564,7 @@ function renderCreateRows() {
     }
     copy.style.display = 'none';
     tbody.innerHTML = releaseState.createRows.map((row) => `
-        <tr data-row-key="${escapeAttr(row.key)}" title="Double-click to remove from Create DR">
+        <tr data-row-key="${escapeAttr(row.key)}" title="Right-click to send back to DR Item List">
             <td>${escapeHtml(row.refNo)}</td>
             <td>${escapeHtml(row.company)}</td>
             <td>${escapeHtml(row.category)}</td>
@@ -551,9 +575,9 @@ function renderCreateRows() {
         </tr>
     `).join('');
     tbody.querySelectorAll('tr[data-row-key]').forEach((tr) => {
-        tr.addEventListener('dblclick', () => {
-            releaseState.createRows = releaseState.createRows.filter((row) => row.key !== tr.dataset.rowKey);
-            renderReleaseTables();
+        tr.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            openReleaseCreateContextMenu(tr.dataset.rowKey, event.clientX, event.clientY);
         });
     });
     updateCreateLabels();
@@ -562,6 +586,7 @@ function renderCreateRows() {
 function openReleaseContextMenu(key, x, y) {
     const row = findRow(key);
     if (!row) return;
+    hideReleaseCreateContextMenu();
     releaseState.contextRowKey = key;
     const menu = document.getElementById('releaseContextMenu');
     const addBtn = document.getElementById('releaseContextAddBtn');
@@ -578,6 +603,32 @@ function openReleaseContextMenu(key, x, y) {
 function hideReleaseContextMenu() {
     document.getElementById('releaseContextMenu')?.classList.add('hidden');
     releaseState.contextRowKey = '';
+}
+
+function openReleaseCreateContextMenu(key, x, y) {
+    const row = releaseState.createRows.find((entry) => entry.key === key);
+    if (!row) return;
+    hideReleaseContextMenu();
+    releaseState.createContextRowKey = key;
+    const menu = document.getElementById('releaseCreateContextMenu');
+    menu.classList.remove('hidden');
+    const menuWidth = menu.offsetWidth || 208;
+    const menuHeight = menu.offsetHeight || 44;
+    const left = Math.min(x, window.innerWidth - menuWidth - 8);
+    const top = Math.min(y, window.innerHeight - menuHeight - 8);
+    menu.style.left = `${Math.max(8, left)}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideReleaseCreateContextMenu() {
+    document.getElementById('releaseCreateContextMenu')?.classList.add('hidden');
+    releaseState.createContextRowKey = '';
+}
+
+function sendCreateRowBack(key) {
+    if (!key) return;
+    releaseState.createRows = releaseState.createRows.filter((row) => row.key !== key);
+    renderReleaseTables();
 }
 
 function updateCreateLabels() {
@@ -661,7 +712,7 @@ function saveReleaseDetail(event) {
     renderReleaseTables();
 }
 
-function openReleasePreview() {
+async function openReleasePreview() {
     if (!releaseState.createRows.length) {
         alert('Add at least one ready item to Create DR.');
         return;
@@ -679,6 +730,7 @@ function openReleasePreview() {
     }
     const payload = buildPrintPayload();
     releaseState.pendingPreview = payload;
+    await ensureDrPrintTemplatesReady();
     renderDrPrintAdjustmentControls();
     renderActiveDrPreview();
     setReleasePreviewOpen(true);
@@ -758,18 +810,197 @@ function loadDrPrintCalibration() {
     }
 }
 
-function saveDrPrintCalibration(nextValue) {
+function normalizeDrPrintTemplateName(value = '') {
+    const normalized = String(value || '').trim().replace(/\s+/g, ' ');
+    return normalized.slice(0, 48) || 'Default';
+}
+
+function drPrintCalibrationsEqual(left, right) {
+    return JSON.stringify(normalizeDrPrintCalibration(left)) === JSON.stringify(normalizeDrPrintCalibration(right));
+}
+
+function loadDrPrintTemplates() {
+    const templates = { Default: normalizeDrPrintCalibration(DR_PRINT_CALIBRATION) };
+    try {
+        const parsed = JSON.parse(localStorage.getItem(DR_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY) || '{}');
+        Object.entries(parsed || {}).forEach(([templateName, calibration]) => {
+            templates[normalizeDrPrintTemplateName(templateName)] = normalizeDrPrintCalibration(calibration);
+        });
+    } catch (error) {
+        console.warn('Unable to load DR print templates.', error);
+    }
+    return templates;
+}
+
+function saveDrPrintTemplates(nextTemplates = currentDrPrintTemplates) {
+    currentDrPrintTemplates = Object.fromEntries(Object.entries(nextTemplates || {}).map(([templateName, calibration]) => [
+        normalizeDrPrintTemplateName(templateName),
+        normalizeDrPrintCalibration(calibration)
+    ]));
+    if (!Object.keys(currentDrPrintTemplates).length) {
+        currentDrPrintTemplates.Default = normalizeDrPrintCalibration(DR_PRINT_CALIBRATION);
+    }
+    try {
+        localStorage.setItem(DR_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(currentDrPrintTemplates));
+    } catch (error) {
+        console.warn('Unable to save DR print template library.', error);
+    }
+    return currentDrPrintTemplates;
+}
+
+function loadDrPrintActiveTemplateName() {
+    try {
+        return normalizeDrPrintTemplateName(localStorage.getItem(DR_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY) || 'Default');
+    } catch (error) {
+        return 'Default';
+    }
+}
+
+function saveDrPrintActiveTemplateName(templateName) {
+    currentDrPrintTemplateName = normalizeDrPrintTemplateName(templateName);
+    try {
+        localStorage.setItem(DR_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY, currentDrPrintTemplateName);
+    } catch (error) {
+        console.warn('Unable to save active DR print template.', error);
+    }
+    return currentDrPrintTemplateName;
+}
+
+function parseDrPrintTemplateJson(value) {
+    try {
+        const parsed = JSON.parse(value || '{}');
+        return Object.fromEntries(Object.entries(parsed || {}).map(([templateName, calibration]) => [
+            normalizeDrPrintTemplateName(templateName),
+            normalizeDrPrintCalibration(calibration)
+        ]));
+    } catch (error) {
+        return {};
+    }
+}
+
+function initializeDrPrintTemplateState() {
+    currentDrPrintTemplates = loadDrPrintTemplates();
+    const storedCalibration = loadDrPrintCalibration();
+    const storedActive = loadDrPrintActiveTemplateName();
+    let hasStoredActive = false;
+    try {
+        hasStoredActive = Boolean(localStorage.getItem(DR_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY));
+    } catch (error) {
+        hasStoredActive = false;
+    }
+    if (hasStoredActive && currentDrPrintTemplates[storedActive]) {
+        currentDrPrintTemplateName = storedActive;
+        currentDrPrintCalibration = normalizeDrPrintCalibration(currentDrPrintTemplates[storedActive]);
+        return;
+    }
+    if (!drPrintCalibrationsEqual(storedCalibration, DR_PRINT_CALIBRATION)) {
+        currentDrPrintTemplateName = 'Saved DR Layout';
+        currentDrPrintTemplates[currentDrPrintTemplateName] = storedCalibration;
+        currentDrPrintCalibration = storedCalibration;
+    } else {
+        currentDrPrintTemplateName = 'Default';
+        currentDrPrintCalibration = normalizeDrPrintCalibration(DR_PRINT_CALIBRATION);
+    }
+    saveDrPrintTemplates(currentDrPrintTemplates);
+    saveDrPrintActiveTemplateName(currentDrPrintTemplateName);
+}
+
+async function loadDrPrintTemplatesFromFirestore() {
+    const doc = await fetchDoc(DR_PRINT_TEMPLATE_FIRESTORE_COLLECTION, DR_PRINT_TEMPLATE_FIRESTORE_DOC_ID);
+    if (!doc) return null;
+    return {
+        templates: {
+            Default: normalizeDrPrintCalibration(DR_PRINT_CALIBRATION),
+            ...parseDrPrintTemplateJson(doc.templates_json)
+        },
+        activeTemplateName: normalizeDrPrintTemplateName(doc.active_template_name || 'Default')
+    };
+}
+
+async function saveDrPrintTemplatesToFirestore() {
+    return setDocument(DR_PRINT_TEMPLATE_FIRESTORE_COLLECTION, DR_PRINT_TEMPLATE_FIRESTORE_DOC_ID, {
+        setting_key: DR_PRINT_TEMPLATE_SETTING_KEY,
+        active_template_name: currentDrPrintTemplateName,
+        templates_json: JSON.stringify(currentDrPrintTemplates),
+        updated_at: new Date().toISOString(),
+        source_module: 'releasing'
+    }, {
+        label: 'DR print templates',
+        dedupeKey: `${DR_PRINT_TEMPLATE_FIRESTORE_COLLECTION}:${DR_PRINT_TEMPLATE_FIRESTORE_DOC_ID}`
+    });
+}
+
+async function ensureDrPrintTemplatesReady(options = {}) {
+    if (drPrintTemplatesLoadedFromFirebase && !options.force) return currentDrPrintTemplates;
+    if (drPrintTemplatesFirebasePromise && !options.force) return drPrintTemplatesFirebasePromise;
+    drPrintTemplatesFirebasePromise = (async () => {
+        try {
+            const firebaseState = await loadDrPrintTemplatesFromFirestore();
+            if (firebaseState?.templates) {
+                currentDrPrintTemplates = saveDrPrintTemplates({
+                    ...currentDrPrintTemplates,
+                    ...firebaseState.templates
+                });
+                const nextActive = currentDrPrintTemplates[firebaseState.activeTemplateName]
+                    ? firebaseState.activeTemplateName
+                    : currentDrPrintTemplateName;
+                applyDrPrintTemplate(nextActive);
+            }
+            drPrintTemplatesLoadedFromFirebase = true;
+        } catch (error) {
+            console.warn('Unable to sync DR print templates from Firebase.', error);
+        } finally {
+            drPrintTemplatesFirebasePromise = null;
+        }
+        return currentDrPrintTemplates;
+    })();
+    return drPrintTemplatesFirebasePromise;
+}
+
+function saveDrPrintCalibration(nextValue, options = {}) {
+    const shouldPersistTemplate = options.persistTemplate !== false;
     currentDrPrintCalibration = normalizeDrPrintCalibration(nextValue);
     try {
         localStorage.setItem(DR_PRINT_CALIBRATION_STORAGE_KEY, JSON.stringify(currentDrPrintCalibration));
     } catch (error) {
         console.warn('Unable to save DR print adjustment locally.', error);
     }
+    if (shouldPersistTemplate) {
+        currentDrPrintTemplates[currentDrPrintTemplateName] = currentDrPrintCalibration;
+        saveDrPrintTemplates(currentDrPrintTemplates);
+    }
     return currentDrPrintCalibration;
 }
 
 function resetDrPrintCalibration() {
+    saveDrPrintActiveTemplateName('Default');
     return saveDrPrintCalibration(DR_PRINT_CALIBRATION);
+}
+
+function applyDrPrintTemplate(templateName) {
+    const normalizedName = normalizeDrPrintTemplateName(templateName);
+    const nextCalibration = currentDrPrintTemplates[normalizedName];
+    if (!nextCalibration) return currentDrPrintCalibration;
+    saveDrPrintActiveTemplateName(normalizedName);
+    return saveDrPrintCalibration(nextCalibration, { persistTemplate: false });
+}
+
+function saveCurrentDrPrintTemplate(templateName) {
+    const normalizedName = normalizeDrPrintTemplateName(templateName || currentDrPrintTemplateName);
+    saveDrPrintActiveTemplateName(normalizedName);
+    currentDrPrintTemplates[normalizedName] = normalizeDrPrintCalibration(currentDrPrintCalibration);
+    saveDrPrintTemplates(currentDrPrintTemplates);
+    return currentDrPrintTemplates[normalizedName];
+}
+
+function deleteDrPrintTemplate(templateName) {
+    const normalizedName = normalizeDrPrintTemplateName(templateName);
+    if (normalizedName === 'Default') return currentDrPrintCalibration;
+    const nextTemplates = { ...currentDrPrintTemplates };
+    delete nextTemplates[normalizedName];
+    saveDrPrintTemplates(nextTemplates);
+    const nextActive = currentDrPrintTemplates[currentDrPrintTemplateName] ? currentDrPrintTemplateName : 'Default';
+    return applyDrPrintTemplate(nextActive);
 }
 
 function getDrPrintPaperDimensions(calibration = currentDrPrintCalibration) {
@@ -815,7 +1046,25 @@ function buildDrSectionStyle(sectionKey, mode = 'print') {
 function renderDrPrintAdjustmentControls() {
     const panel = document.getElementById('releasePrintAdjustPanel');
     if (!panel) return;
+    const templateOptions = Object.keys(currentDrPrintTemplates)
+        .sort((left, right) => left.localeCompare(right))
+        .map((templateName) => `<option value="${escapeAttr(templateName)}"${templateName === currentDrPrintTemplateName ? ' selected' : ''}>${escapeHtml(templateName)}</option>`)
+        .join('');
     panel.innerHTML = `
+        <div class="release-template-grid">
+            <label class="release-print-field">
+                <span>Template</span>
+                <select id="releasePrintTemplateSelect">${templateOptions}</select>
+            </label>
+            <label class="release-print-field">
+                <span>Template Name</span>
+                <input type="text" id="releasePrintTemplateNameInput" value="${escapeAttr(currentDrPrintTemplateName)}" placeholder="DR preprint layout">
+            </label>
+            <div class="release-template-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="releasePrintSaveTemplateBtn">Save Template</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="releasePrintDeleteTemplateBtn"${currentDrPrintTemplateName === 'Default' ? ' disabled' : ''}>Delete</button>
+            </div>
+        </div>
         <div class="release-print-grid">
             <label class="release-print-field">
                 <span>Paper W (cm)</span>
@@ -869,15 +1118,40 @@ function renderDrPrintAdjustmentControls() {
 
 function handleDrPrintControlInput(event) {
     const target = event.target;
+    if (target?.id === 'releasePrintTemplateSelect') {
+        applyDrPrintTemplate(target.value);
+        renderDrPrintAdjustmentControls();
+        renderActiveDrPreview();
+        return;
+    }
     if (!target?.matches?.('[data-dr-print-control], [data-dr-section-key][data-dr-section-field]')) return;
     updateDrPrintCalibrationFromControls();
 }
 
-function handleDrPrintToolClick(event) {
-    if (event.target?.id !== 'releasePrintResetBtn') return;
-    resetDrPrintCalibration();
-    renderDrPrintAdjustmentControls();
-    renderActiveDrPreview();
+async function handleDrPrintToolClick(event) {
+    if (event.target?.id === 'releasePrintResetBtn') {
+        resetDrPrintCalibration();
+        renderDrPrintAdjustmentControls();
+        renderActiveDrPreview();
+        return;
+    }
+    if (event.target?.id === 'releasePrintSaveTemplateBtn') {
+        const nameInput = document.getElementById('releasePrintTemplateNameInput');
+        saveCurrentDrPrintTemplate(nameInput?.value || currentDrPrintTemplateName);
+        renderDrPrintAdjustmentControls();
+        renderActiveDrPreview();
+        await saveDrPrintTemplatesToFirestore().catch((error) => console.warn('Unable to sync DR print template save.', error));
+        MargaUtils.showToast(`DR print template "${currentDrPrintTemplateName}" saved.`, 'success');
+        return;
+    }
+    if (event.target?.id === 'releasePrintDeleteTemplateBtn') {
+        const deletedTemplate = currentDrPrintTemplateName;
+        deleteDrPrintTemplate(currentDrPrintTemplateName);
+        renderDrPrintAdjustmentControls();
+        renderActiveDrPreview();
+        await saveDrPrintTemplatesToFirestore().catch((error) => console.warn('Unable to sync DR print template delete.', error));
+        MargaUtils.showToast(`DR print template "${deletedTemplate}" deleted.`, 'success');
+    }
 }
 
 function updateDrPrintCalibrationFromControls() {

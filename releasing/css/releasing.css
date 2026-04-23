@@ -272,6 +272,10 @@ body {
     cursor: context-menu;
 }
 
+.release-create-shell tbody tr:not(.release-empty-row) {
+    cursor: context-menu;
+}
+
 .release-table tbody tr.is-ready td:first-child {
     border-left: 4px solid var(--rel-blue);
 }
@@ -391,6 +395,10 @@ body {
 .release-context-menu button:disabled {
     color: #858b83;
     cursor: not-allowed;
+}
+
+#releaseCreateContextMenu {
+    min-width: 13rem;
 }
 
 .release-modal {
@@ -541,10 +549,23 @@ body {
 }
 
 .release-print-grid,
-.release-section-grid {
+.release-section-grid,
+.release-template-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.62rem;
+}
+
+.release-template-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    margin-bottom: 0.9rem;
+}
+
+.release-template-actions {
+    display: flex;
+    grid-column: 1 / -1;
+    gap: 0.45rem;
+    align-items: flex-end;
 }
 
 .release-print-section-title {
@@ -587,7 +608,8 @@ body {
     text-transform: uppercase;
 }
 
-.release-print-field input {
+.release-print-field input,
+.release-print-field select {
     width: 100%;
     border: 1px solid #d2dcc8;
     border-radius: 6px;
