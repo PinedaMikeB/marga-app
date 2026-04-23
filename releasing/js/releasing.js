@@ -24,6 +24,7 @@ const releaseState = {
     viewRows: [],
     createRows: [],
     selectedDetailKey: '',
+    contextRowKey: '',
     detailDrafts: new Map(),
     savedFinalRefs: new Set(),
     referenceFetches: new Set(),
@@ -96,10 +97,22 @@ function bindReleaseControls() {
         renderReleaseTables();
     });
 
-    const dropZone = document.getElementById('releaseDropZone');
-    dropZone.addEventListener('dragover', handleCreateDragOver);
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('is-over'));
-    dropZone.addEventListener('drop', handleCreateDrop);
+    document.getElementById('releaseContextAddBtn').addEventListener('click', () => {
+        addRowToCreate(releaseState.contextRowKey);
+        hideReleaseContextMenu();
+    });
+    document.getElementById('releaseContextEditBtn').addEventListener('click', () => {
+        const key = releaseState.contextRowKey;
+        hideReleaseContextMenu();
+        openReleaseDetailModal(key);
+    });
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('#releaseContextMenu')) hideReleaseContextMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') hideReleaseContextMenu();
+    });
+    window.addEventListener('scroll', hideReleaseContextMenu, true);
 
     document.getElementById('releaseDetailOverlay').addEventListener('click', closeReleaseDetailModal);
     document.getElementById('releaseDetailCloseBtn').addEventListener('click', closeReleaseDetailModal);
@@ -238,18 +251,20 @@ function buildReleaseRows() {
     (releaseState.raw.requestItems || []).forEach((item) => {
         if (!isActiveRequestItem(item)) return;
         const ref = String(item.reference_id || '').trim();
-        if (!ref || releaseState.savedFinalRefs.has(ref)) return;
+        if (!ref) return;
         const schedule = schedulesByRef.get(ref) || null;
         if (schedule && !isDeliverySchedule(schedule)) return;
         itemScheduleRefs.add(ref);
-        itemRows.push(normalizeReleaseItem(item, schedule));
+        itemRows.push(...expandReleaseItemRows(item, schedule));
     });
 
     (releaseState.raw.schedules || []).forEach((schedule) => {
         const ref = String(schedule.id || schedule._docId || '').trim();
-        if (!ref || itemScheduleRefs.has(ref) || releaseState.savedFinalRefs.has(ref)) return;
+        if (!ref || itemScheduleRefs.has(ref)) return;
         if (!isDeliverySchedule(schedule)) return;
-        itemRows.push(normalizeReleaseItem(null, schedule));
+        const pendingQty = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
+        if (releaseState.savedFinalRefs.has(ref) && (pendingQty === null || pendingQty <= 0)) return;
+        itemRows.push(...expandReleaseItemRows(null, schedule));
     });
 
     releaseState.rows = itemRows
@@ -279,11 +294,16 @@ function populateModelDatalist() {
 function isActiveRequestItem(item) {
     if (!item) return false;
     if (Number(item.iscancelled || 0) === 1) return false;
+    if (Number(item.releasing_finaldr_id || item.rd_id || 0) > 0) return false;
+    if (requestQuantity(item) <= 0) return false;
     return !normalizeLegacyDate(item.close_date);
 }
 
 function isDeliverySchedule(schedule) {
     if (!schedule || Number(schedule.iscancel || schedule.iscancelled || 0) === 1) return false;
+    if (Number(schedule.releasing_dr_done || 0) === 1) return false;
+    const pendingQty = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
+    if (pendingQty !== null && pendingQty <= 0) return false;
     const purposeId = Number(schedule.purpose_id || 0);
     if (purposeId === 3 || purposeId === 4) return true;
     const text = [
@@ -295,7 +315,38 @@ function isDeliverySchedule(schedule) {
     return /toner|ink|cartridge|drum|load/.test(text);
 }
 
-function normalizeReleaseItem(item, schedule) {
+function expandReleaseItemRows(item, schedule) {
+    const qty = requestQuantity(item, schedule);
+    return Array.from({ length: qty }, (_, index) => normalizeReleaseItem(item, schedule, index + 1, qty)).filter(Boolean);
+}
+
+function requestQuantity(item, schedule = null) {
+    const direct = recordQuantity(item, ['qty', 'quantity', 'request_qty', 'release_pending_qty']);
+    if (direct !== null) return direct > 0 ? Math.min(direct, 50) : 0;
+    if (item) return 1;
+    const pending = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
+    if (pending !== null) return pending > 0 ? Math.min(pending, 50) : 0;
+    const text = clean(`${schedule?.customer_request || ''} ${schedule?.remarks || ''}`);
+    const match = text.match(/(?:^|\s)(\d{1,2})\s*(?:pc|pcs|piece|pieces|black|cyan|magenta|yellow)\b/i);
+    const inferred = Number(match?.[1] || 1);
+    if (!Number.isFinite(inferred) || inferred <= 0) return 1;
+    return Math.min(Math.trunc(inferred), 50);
+}
+
+function recordQuantity(record, fields) {
+    if (!record) return null;
+    for (const field of fields) {
+        if (!Object.prototype.hasOwnProperty.call(record, field)) continue;
+        const value = record[field];
+        if (value === null || value === undefined || value === '') continue;
+        const qty = Number(value);
+        if (!Number.isFinite(qty)) continue;
+        return Math.trunc(qty);
+    }
+    return null;
+}
+
+function normalizeReleaseItem(item, schedule, unitIndex = 1, totalQty = 1) {
     const refNo = String(item?.reference_id || schedule?.id || schedule?._docId || '').trim();
     if (!refNo) return null;
     const branchId = Number(item?.client_id || schedule?.branch_id || 0) || 0;
@@ -318,33 +369,43 @@ function normalizeReleaseItem(item, schedule) {
     if (!seed.brand && seed.model) seed.brand = inferBrand(seed.model);
     if (!seed.description && purposeId === 3) seed.description = clean(schedule?.customer_request || schedule?.remarks || trouble?.trouble) || 'N/A';
 
-    const draft = releaseState.detailDrafts.get(rowKey(refNo, item, schedule)) || {};
+    const key = rowKey(refNo, item, schedule, unitIndex);
+    const draft = releaseState.detailDrafts.get(key) || {};
     const merged = { ...seed, ...draft };
     const companyLabel = buildClientName(company, branch) || clean(item?.company || schedule?.company || '') || 'Unknown Client';
     const requestDate = firstDate(schedule?.task_datetime, schedule?.original_sched, item?.tmestmp, item?.tmstmp);
+    const serial = clean(merged.serial) || 'N/A';
+    const notes = clean(merged.notes) || 'N/A';
+    const readyForDr = realValue(serial) && realValue(notes);
 
     return {
-        key: rowKey(refNo, item, schedule),
+        key,
         refNo,
+        sourceKey: item ? `item:${item._docId || item.id}` : `schedule:${refNo}`,
+        unitIndex,
+        totalQty,
         company: companyLabel,
         branchId,
         category,
         brand: clean(merged.brand) || 'N/A',
         model: clean(merged.model) || 'N/A',
         description: clean(merged.description) || 'N/A',
-        serial: clean(merged.serial) || 'N/A',
-        notes: clean(merged.notes) || 'N/A',
+        serial,
+        notes,
         age: ageInDays(requestDate),
         isCartridge: /cartridge/i.test(category),
         isUrgent: Number(schedule?.super_urgent || 0) === 1 || /urgent|rush|asap/i.test(`${schedule?.remarks || ''} ${item?.remarks || ''}`),
         isBackJob: /back\s*job|backjob/i.test(`${schedule?.remarks || ''} ${item?.remarks || ''}`),
-        detailsAdded: Boolean(draft.detailsAdded || item?.release_details_added),
+        detailsAdded: Boolean(draft.detailsAdded || item?.release_details_added || readyForDr),
+        readyForDr,
         itemDocId: String(item?._docId || item?.id || '').trim(),
         scheduleDocId: String(schedule?._docId || schedule?.id || refNo).trim(),
         item,
         schedule,
         searchText: [
             refNo,
+            unitIndex,
+            totalQty,
             companyLabel,
             category,
             merged.brand,
@@ -358,11 +419,12 @@ function normalizeReleaseItem(item, schedule) {
     };
 }
 
-function rowKey(refNo, item, schedule) {
+function rowKey(refNo, item, schedule, unitIndex = 1) {
     return [
         refNo,
         item?._docId || item?.id || 'schedule',
-        schedule?._docId || schedule?.id || ''
+        schedule?._docId || schedule?.id || '',
+        unitIndex
     ].join(':');
 }
 
@@ -405,14 +467,17 @@ function renderQueueRows(rows) {
     }
     tbody.innerHTML = rows.map((row) => {
         const classes = [
-            row.detailsAdded ? 'is-ready' : '',
+            row.readyForDr ? 'is-ready' : '',
             row.isCartridge ? 'is-cartridge' : '',
             row.isUrgent ? 'is-urgent' : '',
             row.isBackJob ? 'is-backjob' : '',
             isCreateRow(row.key) ? 'is-selected' : ''
         ].filter(Boolean).join(' ');
+        const title = row.readyForDr
+            ? `Right-click to add to DR. Unit ${row.unitIndex} of ${row.totalQty}.`
+            : `Double-click to add serial and notes. Unit ${row.unitIndex} of ${row.totalQty}.`;
         return `
-            <tr class="${classes}" data-row-key="${escapeAttr(row.key)}" draggable="${row.detailsAdded ? 'true' : 'false'}" title="${row.detailsAdded ? 'Drag to Create DR' : 'Double-click to add model/serial details'}">
+            <tr class="${classes}" data-row-key="${escapeAttr(row.key)}" title="${escapeAttr(title)}">
                 <td>${escapeHtml(row.refNo)}</td>
                 <td>${escapeHtml(row.company)}</td>
                 <td>${escapeHtml(row.category)}</td>
@@ -427,15 +492,9 @@ function renderQueueRows(rows) {
     }).join('');
     tbody.querySelectorAll('tr[data-row-key]').forEach((tr) => {
         tr.addEventListener('dblclick', () => openReleaseDetailModal(tr.dataset.rowKey));
-        tr.addEventListener('dragstart', (event) => {
-            const row = findRow(tr.dataset.rowKey);
-            if (!row?.detailsAdded) {
-                event.preventDefault();
-                openReleaseDetailModal(tr.dataset.rowKey);
-                return;
-            }
-            event.dataTransfer.setData('text/plain', row.key);
-            event.dataTransfer.effectAllowed = 'copyMove';
+        tr.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            openReleaseContextMenu(tr.dataset.rowKey, event.clientX, event.clientY);
         });
     });
 }
@@ -444,7 +503,7 @@ function renderCreateRows() {
     const tbody = document.getElementById('releaseCreateBody');
     const copy = document.getElementById('releaseDropCopy');
     if (!releaseState.createRows.length) {
-        tbody.innerHTML = '<tr class="release-empty-row"><td colspan="7">Drop detailed DR items here.</td></tr>';
+        tbody.innerHTML = '<tr class="release-empty-row"><td colspan="7">No items added to DR yet.</td></tr>';
         copy.style.display = '';
         updateCreateLabels();
         return;
@@ -470,31 +529,38 @@ function renderCreateRows() {
     updateCreateLabels();
 }
 
+function openReleaseContextMenu(key, x, y) {
+    const row = findRow(key);
+    if (!row) return;
+    releaseState.contextRowKey = key;
+    const menu = document.getElementById('releaseContextMenu');
+    const addBtn = document.getElementById('releaseContextAddBtn');
+    addBtn.disabled = !row.readyForDr || isCreateRow(row.key);
+    menu.classList.remove('hidden');
+    const menuWidth = menu.offsetWidth || 152;
+    const menuHeight = menu.offsetHeight || 84;
+    const left = Math.min(x, window.innerWidth - menuWidth - 8);
+    const top = Math.min(y, window.innerHeight - menuHeight - 8);
+    menu.style.left = `${Math.max(8, left)}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideReleaseContextMenu() {
+    document.getElementById('releaseContextMenu')?.classList.add('hidden');
+    releaseState.contextRowKey = '';
+}
+
 function updateCreateLabels() {
     const first = releaseState.createRows[0] || null;
     document.getElementById('releaseClientLabel').textContent = first ? first.company : '...';
     document.getElementById('releaseRefLabel').textContent = first ? first.refNo : '...';
 }
 
-function handleCreateDragOver(event) {
-    const key = event.dataTransfer?.types?.includes('text/plain');
-    if (!key) return;
-    event.preventDefault();
-    event.currentTarget.classList.add('is-over');
-    event.dataTransfer.dropEffect = 'copy';
-}
-
-function handleCreateDrop(event) {
-    event.preventDefault();
-    event.currentTarget.classList.remove('is-over');
-    const key = event.dataTransfer.getData('text/plain');
-    addRowToCreate(key);
-}
-
 function addRowToCreate(key) {
     const row = findRow(key);
     if (!row) return;
-    if (!row.detailsAdded) {
+    if (!row.readyForDr) {
+        alert('Add serial number and notes before adding this item to DR.');
         openReleaseDetailModal(key);
         return;
     }
@@ -554,8 +620,12 @@ function saveReleaseDetail(event) {
         alert('Cartridge requests require model and serial.');
         return;
     }
+    if (!realValue(draft.serial) || !realValue(draft.notes)) {
+        alert('Serial number and notes are required before this item can be added to DR.');
+        return;
+    }
     releaseState.detailDrafts.set(row.key, draft);
-    Object.assign(row, draft, { detailsAdded: true });
+    Object.assign(row, draft, { detailsAdded: true, readyForDr: true });
     releaseState.createRows = releaseState.createRows.map((entry) => entry.key === row.key ? row : entry);
     closeReleaseDetailModal();
     renderReleaseTables();
@@ -563,7 +633,7 @@ function saveReleaseDetail(event) {
 
 function openReleasePreview() {
     if (!releaseState.createRows.length) {
-        alert('Drag at least one detailed item into Create DR.');
+        alert('Add at least one ready item to Create DR.');
         return;
     }
     const drNumber = clean(document.getElementById('releaseDrNumberInput').value);
@@ -717,46 +787,114 @@ async function saveReleaseDr(payload) {
     });
 
     let nextItemId = await allocateNextId('tbl_newfordr');
-    for (const row of releaseState.createRows) {
-        const itemFields = {
-            reference_id: Number(row.refNo) || row.refNo,
-            original_reference_id: 0,
-            client_id: Number(row.branchId || 0) || 0,
-            rd_id: finalId,
-            source_id: 2,
-            status_id: 2,
-            rdtype_id: row.isCartridge ? 4 : 5,
-            qty: 1,
-            supplier_id: 0,
-            supplierX: 0,
-            iscancelled: 0,
-            close_date: '0000-00-00 00:00:00',
-            description: realValue(row.description) ? row.description : row.model,
-            remarks: row.notes,
-            release_brand: row.brand,
-            release_model: row.model,
-            release_description: row.description,
-            release_serial: row.serial,
-            release_notes: row.notes,
-            release_details_added: 1,
-            releasing_finaldr_id: finalId,
-            releasing_dr_number: payload.drNumber,
-            releasing_updated_at: now,
-            releasing_updated_by: currentUserLabel()
-        };
-        if (row.itemDocId) {
-            await patchDocument('tbl_newfordr', row.itemDocId, itemFields, {
-                label: `Update DR item ${row.refNo}`,
-                dedupeKey: `releasing-item-update:${row.itemDocId}:${payload.drNumber}`
+    const grouped = groupCreateRowsBySource();
+    for (const group of grouped) {
+        if (!group.itemDocId) {
+            const firstRow = group.rows[0];
+            const sourceQty = requestQuantity(null, firstRow.schedule);
+            const remainingQty = Math.max(0, sourceQty - group.rows.length);
+            if (group.scheduleDocId && sourceQty > 0) {
+                await patchDocument('tbl_schedule', group.scheduleDocId, {
+                    releasing_pending_qty: remainingQty,
+                    releasing_dr_done: remainingQty === 0 ? 1 : 0,
+                    releasing_split_at: now,
+                    releasing_split_by: currentUserLabel()
+                }, {
+                    label: `Update schedule DR qty ${firstRow.refNo}`,
+                    dedupeKey: `releasing-schedule-split:${group.scheduleDocId}:${payload.drNumber}:${group.rows.length}`
+                });
+            }
+            for (const row of group.rows) {
+                nextItemId = await createReleasedItemRow(row, finalId, payload, now, nextItemId);
+            }
+            continue;
+        }
+
+        const sourceQty = requestQuantity(group.rows[0].item, group.rows[0].schedule);
+        const selectedQty = group.rows.length;
+        if (sourceQty > selectedQty) {
+            await patchDocument('tbl_newfordr', group.itemDocId, {
+                qty: sourceQty - selectedQty,
+                release_pending_qty: sourceQty - selectedQty,
+                releasing_split_at: now,
+                releasing_split_by: currentUserLabel()
+            }, {
+                label: `Split DR item ${group.rows[0].refNo}`,
+                dedupeKey: `releasing-item-split:${group.itemDocId}:${payload.drNumber}:${selectedQty}`
             });
-        } else {
-            const id = nextItemId++;
-            await setDocument('tbl_newfordr', String(id), { id, ...itemFields, tmestmp: now }, {
-                label: `Create DR item ${row.refNo}`,
-                dedupeKey: `releasing-item-create:${row.refNo}:${row.key}:${payload.drNumber}`
-            });
+            for (const row of group.rows) {
+                nextItemId = await createReleasedItemRow(row, finalId, payload, now, nextItemId);
+            }
+            continue;
+        }
+
+        const [firstRow, ...extraRows] = group.rows;
+        await patchDocument('tbl_newfordr', group.itemDocId, buildReleasedItemFields(firstRow, finalId, payload, now), {
+            label: `Update DR item ${firstRow.refNo}`,
+            dedupeKey: `releasing-item-update:${group.itemDocId}:${payload.drNumber}`
+        });
+        for (const row of extraRows) {
+            nextItemId = await createReleasedItemRow(row, finalId, payload, now, nextItemId);
         }
     }
+}
+
+function groupCreateRowsBySource() {
+    const groups = new Map();
+    releaseState.createRows.forEach((row) => {
+        const key = row.itemDocId ? `item:${row.itemDocId}` : (row.sourceKey || row.key);
+        if (!groups.has(key)) {
+            groups.set(key, {
+                itemDocId: row.itemDocId,
+                scheduleDocId: row.itemDocId ? '' : row.scheduleDocId,
+                rows: []
+            });
+        }
+        groups.get(key).rows.push(row);
+    });
+    return Array.from(groups.values());
+}
+
+function buildReleasedItemFields(row, finalId, payload, now) {
+    return {
+        reference_id: Number(row.refNo) || row.refNo,
+        original_reference_id: 0,
+        client_id: Number(row.branchId || 0) || 0,
+        rd_id: finalId,
+        source_id: 2,
+        status_id: 2,
+        rdtype_id: row.isCartridge ? 4 : 5,
+        qty: 1,
+        supplier_id: 0,
+        supplierX: 0,
+        iscancelled: 0,
+        close_date: '0000-00-00 00:00:00',
+        description: realValue(row.description) ? row.description : row.model,
+        remarks: row.notes,
+        release_brand: row.brand,
+        release_model: row.model,
+        release_description: row.description,
+        release_serial: row.serial,
+        release_notes: row.notes,
+        release_details_added: 1,
+        releasing_source_item_id: row.itemDocId || '',
+        releasing_source_schedule_id: row.scheduleDocId || '',
+        releasing_source_unit_index: Number(row.unitIndex || 1),
+        releasing_source_qty: Number(row.totalQty || 1),
+        releasing_finaldr_id: finalId,
+        releasing_dr_number: payload.drNumber,
+        releasing_updated_at: now,
+        releasing_updated_by: currentUserLabel()
+    };
+}
+
+async function createReleasedItemRow(row, finalId, payload, now, nextItemId) {
+    const id = nextItemId;
+    await setDocument('tbl_newfordr', String(id), { id, ...buildReleasedItemFields(row, finalId, payload, now), tmestmp: now }, {
+        label: `Create DR item ${row.refNo}`,
+        dedupeKey: `releasing-item-create:${row.refNo}:${row.key}:${payload.drNumber}`
+    });
+    return nextItemId + 1;
 }
 
 async function allocateNextId(collection) {
@@ -848,7 +986,7 @@ async function maybeLoadExactReference(value) {
 
 function setReleaseLoadingRows() {
     document.getElementById('releaseQueueBody').innerHTML = '<tr class="release-empty-row"><td colspan="9">Loading...</td></tr>';
-    document.getElementById('releaseCreateBody').innerHTML = '<tr class="release-empty-row"><td colspan="7">Drop detailed DR items here.</td></tr>';
+    document.getElementById('releaseCreateBody').innerHTML = '<tr class="release-empty-row"><td colspan="7">No items added to DR yet.</td></tr>';
 }
 
 function setReleaseStatus(message, isError = false) {

@@ -269,7 +269,7 @@ body {
 }
 
 .release-table tbody tr.is-ready {
-    cursor: grab;
+    cursor: context-menu;
 }
 
 .release-table tbody tr.is-ready td:first-child {
@@ -330,12 +330,6 @@ body {
     background: linear-gradient(180deg, #ffffff, #fbfcf8);
 }
 
-.release-drop-zone.is-over {
-    outline: 3px solid rgba(138, 56, 162, 0.24);
-    outline-offset: -3px;
-    background: #fff8ff;
-}
-
 .release-drop-copy {
     padding: 0.72rem 0.9rem 0;
     color: var(--rel-muted);
@@ -357,6 +351,46 @@ body {
 
 .release-overlay.visible {
     display: block;
+}
+
+.release-context-menu {
+    position: fixed;
+    z-index: 1920;
+    display: grid;
+    min-width: 9.5rem;
+    overflow: hidden;
+    border: 1px solid #2f332f;
+    border-radius: 6px;
+    background: #171918;
+    box-shadow: 0 1rem 2.4rem rgba(20, 26, 20, 0.28);
+}
+
+.release-context-menu.hidden {
+    display: none;
+}
+
+.release-context-menu button {
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: #f5f5f0;
+    padding: 0.62rem 0.75rem;
+    font: 800 0.8rem 'Archivo', sans-serif;
+    text-align: left;
+    cursor: pointer;
+}
+
+.release-context-menu button:last-child {
+    border-bottom: 0;
+}
+
+.release-context-menu button:hover:not(:disabled) {
+    background: #343735;
+}
+
+.release-context-menu button:disabled {
+    color: #858b83;
+    cursor: not-allowed;
 }
 
 .release-modal {
