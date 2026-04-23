@@ -248,6 +248,14 @@ body {
     background: #fbfff0;
 }
 
+.gp-table tbody tr.gp-action-row {
+    cursor: pointer;
+}
+
+.gp-table tbody tr.gp-action-row:active {
+    background: #eff8d9;
+}
+
 .gp-table .gp-muted-cell {
     color: var(--gp-muted);
 }
@@ -314,6 +322,10 @@ body {
     overflow: hidden;
 }
 
+.gp-action-modal {
+    width: min(27rem, calc(100vw - 2rem));
+}
+
 .gp-modal.open {
     display: block;
 }
@@ -369,6 +381,46 @@ body {
     margin: 0 0 0.75rem;
     font-size: 0.9rem;
     font-weight: 800;
+}
+
+.gp-action-summary {
+    display: grid;
+    gap: 0.2rem;
+    border: 1px solid var(--gp-line);
+    border-radius: 6px;
+    background: #ffffff;
+    padding: 0.8rem;
+    color: var(--gp-ink);
+    font-weight: 800;
+}
+
+.gp-action-summary span {
+    color: var(--gp-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.gp-action-note {
+    margin: 0;
+    color: var(--gp-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.gp-action-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+
+.gp-action-buttons .btn {
+    min-width: 6rem;
+}
+
+.gp-action-buttons .btn:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
 }
 
 .gp-form-grid {

@@ -123,7 +123,7 @@ Important Collections SN rule:
 | Master Schedule | Accepted / In Progress | Uses `tbl_savedscheds`/`tbl_printedscheds` joined to `tbl_schedule`; print layout is grouped by staff and now matches VBNet columns closely. | Keep daily printed route and carry-over logic aligned with Field App. |
 | Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs for follow-up/planning. | Keep today route fast; optimize carry-over via backend if the 45-day scan becomes slow. |
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
-| General Production | Live / In Progress | Isolated `general-production/` module is deployed. Dashboard counts tuned to VB.NET screenshot targets. Machine Checker uses Billing-backed real serials with searchable dropdown, model/status/customer context, and add-new-machine form. | Add mismatch warning for active billing contract vs machine master status; continue source-table tuning only when user asks. |
+| General Production | Live / In Progress | Isolated `general-production/` module is deployed. Dashboard counts tuned to VB.NET screenshot targets. Machine Checker uses Billing-backed real serials with searchable dropdown, model/status/customer context, and add-new-machine form. For Overhauling rows can be double-clicked to assign a tech and move to Under Repair; Under Repair rows can be double-clicked to mark Machine Ready. | Add mismatch warning for active billing contract vs machine master status; continue source-table tuning only when user asks. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
@@ -141,6 +141,15 @@ Important Collections SN rule:
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-23 - General Production Repair Workflow Added
+- Added double-click production workflow:
+  - Double-click a `For Overhauling` machine row to open an assignment modal.
+  - Enter assigned technician name; save patches `tbl_machine.status_id` to `8` and stores `production_assigned_tech` / `assigned_tech_name`.
+  - Row moves to `Under Repair` immediately in the dashboard.
+  - Double-click an `Under Repair` row to open a ready confirmation modal.
+  - Save patches `tbl_machine.status_id` to `1`, clears current assigned tech fields, stores ready audit fields, and moves row to `Machine Ready`.
+- Scoped to `general-production/` only.
+
 ### 2026-04-22 - General Production Live, Machine Checker Uses Billing Serials
 - General Production live URL: `https://margaapp.netlify.app/general-production/`.
 - Pushed and deployed:

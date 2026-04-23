@@ -317,6 +317,30 @@
         </div>
     </div>
 
+    <div class="gp-overlay" id="productionActionOverlay"></div>
+    <div class="gp-modal gp-action-modal" id="productionActionModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="gp-modal-head">
+            <h2 id="productionActionTitle">Machine Action</h2>
+            <button type="button" class="gp-close-btn" id="productionActionCloseBtn" aria-label="Close Machine Action">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <form class="gp-modal-body" id="productionActionForm">
+            <div class="gp-action-summary" id="productionActionSummary"></div>
+            <p class="gp-action-note" id="productionActionNote"></p>
+            <label class="gp-field gp-field-full" id="productionTechField">
+                <span>Assigned Tech</span>
+                <input type="text" id="productionTechInput" autocomplete="off" placeholder="Name of technician">
+            </label>
+            <div class="gp-action-buttons">
+                <button type="button" class="btn btn-secondary btn-sm" id="productionActionCancelBtn">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm" id="productionActionSaveBtn">Save</button>
+            </div>
+        </form>
+    </div>
+
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/auth.js"></script>

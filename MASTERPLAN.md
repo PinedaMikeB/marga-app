@@ -233,6 +233,11 @@ Machine Checker behavior:
   - Conclusion: status is a real machine-master value, but the data is stale/inconsistent because the active billing contract exists.
   - Future improvement: show a warning when active billing contract exists but machine master status remains `FOR DELIVERY`.
 
+Production board workflow:
+- Double-clicking a `For Overhauling` machine row should open an assigned-tech modal, patch `tbl_machine.status_id` to `8`, and display the machine under `Under Repair` with the tech name.
+- Double-clicking an `Under Repair` machine row should open a ready confirmation modal, patch `tbl_machine.status_id` to `1`, and display the machine under `Machine Ready`.
+- Keep these transitions scoped to `tbl_machine` until a dedicated production job/history table is introduced.
+
 ## APD And Petty Cash Rules
 - APD and Petty Cash are separate workflows and should not be mixed into Billing/Collections patches.
 - Keep finance workflow changes isolated from customer/billing resolver work.

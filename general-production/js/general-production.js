@@ -73,7 +73,8 @@ const GP_STATE = {
     view: {},
     selectedMachine: null,
     machineCheckerRecords: [],
-    machineCheckerActiveIndex: -1
+    machineCheckerActiveIndex: -1,
+    productionAction: null
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -129,6 +130,10 @@ function bindControls() {
     document.getElementById('statusChangerForm').addEventListener('submit', saveMachineStatus);
     document.getElementById('newMachineBrandInput').addEventListener('change', () => populateModelOptions());
     document.getElementById('addMachineForm').addEventListener('submit', saveNewMachine);
+    document.getElementById('productionActionOverlay').addEventListener('click', closeProductionActionModal);
+    document.getElementById('productionActionCloseBtn').addEventListener('click', closeProductionActionModal);
+    document.getElementById('productionActionCancelBtn').addEventListener('click', closeProductionActionModal);
+    document.getElementById('productionActionForm').addEventListener('submit', saveProductionAction);
 }
 
 async function loadProductionData() {
@@ -578,7 +583,7 @@ function normalizeMachineRow(row) {
         age: ageInDays(firstDateValue(row.dp_date, row.date_purchased, row.dr_date, row.tmestamp)),
         requests: clean(status?.status) || 'N/A',
         remarks: clean(row.remarks),
-        tech: staffName(row.tech_id || row.assigned_tech_id),
+        tech: clean(row.production_assigned_tech || row.assigned_tech_name || row.tech_name) || staffName(row.tech_id || row.assigned_tech_id),
         statusId,
         isField: isMachineInField(row),
         family: detectFamily([brand, model, row.description, row.remarks].join(' ')),
@@ -618,23 +623,35 @@ function renderRequests(rows) {
 
 function renderSimpleRows(key, rows, columns) {
     const bodyId = `${key}TableBody`;
-    renderTableBody(bodyId, rows, columns, 'No rows found.');
+    renderTableBody(bodyId, rows, columns, 'No rows found.', key);
 }
 
-function renderTableBody(bodyId, rows, columns, emptyText) {
+function renderTableBody(bodyId, rows, columns, emptyText, boardKey = '') {
     const tbody = document.getElementById(bodyId);
     if (!rows.length) {
         tbody.innerHTML = `<tr class="gp-empty-row"><td colspan="${columns.length}">${escapeHtml(emptyText)}</td></tr>`;
         return;
     }
-    tbody.innerHTML = rows.map((row) => {
+    const actionable = boardKey === 'forOverhaul' || boardKey === 'underRepair';
+    tbody.innerHTML = rows.map((row, index) => {
         const cells = columns.map((column) => {
             const value = column === 'age' ? formatAge(row.age) : row[column];
             const cellClass = column === 'age' && Number(row.age || 0) > 60 ? 'gp-attention' : '';
             return `<td class="${cellClass}" title="${escapeHtml(value)}">${escapeHtml(value || '-')}</td>`;
         }).join('');
-        return `<tr>${cells}</tr>`;
+        return `<tr class="${actionable ? 'gp-action-row' : ''}" data-row-index="${index}">${cells}</tr>`;
     }).join('');
+    if (actionable) bindProductionBoardRows(tbody, boardKey, rows);
+}
+
+function bindProductionBoardRows(tbody, boardKey, rows) {
+    tbody.querySelectorAll('tr[data-row-index]').forEach((rowEl) => {
+        rowEl.addEventListener('dblclick', () => {
+            const row = rows[Number(rowEl.dataset.rowIndex || -1)];
+            if (!row) return;
+            openProductionActionModal(boardKey === 'forOverhaul' ? 'assignRepair' : 'markReady', row);
+        });
+    });
 }
 
 function setLoadingRows() {
@@ -1013,6 +1030,114 @@ function syncMachineCheckerFromRecord(record, options = {}) {
         if ([...select.options].some((option) => option.value === statusId)) {
             select.value = statusId;
         }
+    }
+}
+
+function openProductionActionModal(action, row) {
+    const machine = row?.raw || null;
+    if (!machine || !machineKey(machine)) {
+        alert('This row is not linked to a machine record yet.');
+        return;
+    }
+
+    GP_STATE.productionAction = { action, row, machine };
+    const isAssign = action === 'assignRepair';
+    const title = isAssign ? 'Assign Technician' : 'Mark Machine Ready';
+    const summary = [row.brand, row.model, row.serial].filter(Boolean).join(' - ') || row.machine || 'Machine';
+
+    document.getElementById('productionActionTitle').textContent = title;
+    document.getElementById('productionActionSummary').innerHTML = `
+        <div>${escapeHtml(summary)}</div>
+        <span>${escapeHtml(isAssign ? 'For Overhauling -> Under Repair' : 'Under Repair -> Machine Ready')}</span>
+    `;
+    document.getElementById('productionActionNote').textContent = isAssign
+        ? 'Enter the technician assigned to overhaul this machine. Saving will move it to Under Repair.'
+        : 'Saving will mark this machine ready and move it to Machine Ready.';
+
+    const techField = document.getElementById('productionTechField');
+    const techInput = document.getElementById('productionTechInput');
+    techField.style.display = isAssign ? 'grid' : 'none';
+    techInput.required = isAssign;
+    techInput.value = isAssign ? clean(row.tech) : '';
+    document.getElementById('productionActionSaveBtn').textContent = isAssign ? 'Assign' : 'Mark Ready';
+
+    document.getElementById('productionActionOverlay').classList.add('visible');
+    document.getElementById('productionActionModal').classList.add('open');
+    document.getElementById('productionActionModal').setAttribute('aria-hidden', 'false');
+    setTimeout(() => (isAssign ? techInput : document.getElementById('productionActionSaveBtn')).focus(), 30);
+}
+
+function closeProductionActionModal() {
+    document.getElementById('productionActionOverlay').classList.remove('visible');
+    document.getElementById('productionActionModal').classList.remove('open');
+    document.getElementById('productionActionModal').setAttribute('aria-hidden', 'true');
+    GP_STATE.productionAction = null;
+}
+
+async function saveProductionAction(event) {
+    event.preventDefault();
+    const actionState = GP_STATE.productionAction;
+    if (!actionState?.machine) {
+        alert('Select a machine row first.');
+        return;
+    }
+
+    const isAssign = actionState.action === 'assignRepair';
+    const techName = clean(document.getElementById('productionTechInput').value);
+    if (isAssign && !techName) {
+        alert('Enter the assigned technician name.');
+        return;
+    }
+
+    const machine = actionState.machine;
+    const docId = String(machine._docId || machine.id || '').trim();
+    if (!docId) {
+        alert('Machine document id is missing.');
+        return;
+    }
+
+    const now = new Date().toISOString();
+    const button = document.getElementById('productionActionSaveBtn');
+    button.disabled = true;
+    try {
+        const fields = isAssign
+            ? {
+                status_id: 8,
+                production_assigned_tech: techName,
+                assigned_tech_name: techName,
+                production_repair_started_at: now,
+                production_repair_started_by: currentUserLabel(),
+                production_status_updated_at: now,
+                production_status_updated_by: currentUserLabel(),
+                tmestamp: now
+            }
+            : {
+                status_id: 1,
+                production_last_repair_tech: clean(machine.production_assigned_tech || machine.assigned_tech_name || machine.tech_name),
+                production_assigned_tech: '',
+                assigned_tech_name: '',
+                production_ready_at: now,
+                production_ready_by: currentUserLabel(),
+                production_status_updated_at: now,
+                production_status_updated_by: currentUserLabel(),
+                tmestamp: now
+            };
+
+        await patchDocument('tbl_machine', docId, fields, {
+            label: isAssign ? `Assign overhaul tech ${clean(machine.serial)}` : `Mark machine ready ${clean(machine.serial)}`,
+            dedupeKey: `gp-production-action:${docId}:${isAssign ? 'repair' : 'ready'}:${now}`
+        });
+        Object.assign(machine, fields);
+        buildProductionRows();
+        populateSerialOptions();
+        renderAllBoards();
+        closeProductionActionModal();
+        MargaUtils.showToast(isAssign ? 'Machine moved to Under Repair.' : 'Machine moved to Machine Ready.', 'success');
+    } catch (error) {
+        console.error('Production action failed:', error);
+        alert(`Failed to save machine action: ${error.message || error}`);
+    } finally {
+        button.disabled = false;
     }
 }
 
