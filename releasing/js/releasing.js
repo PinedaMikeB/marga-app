@@ -499,12 +499,13 @@ function inferReleaseCategory(item, schedule, trouble) {
 }
 
 function renderReleaseTables() {
-    const rows = releaseState.rows.filter(passesReleaseFilters).slice(0, RELEASE_ROWS_PER_VIEW);
+    const availableRows = releaseState.rows.filter((row) => !isCreateRow(row.key));
+    const rows = availableRows.filter(passesReleaseFilters).slice(0, RELEASE_ROWS_PER_VIEW);
     releaseState.viewRows = rows;
     renderQueueRows(rows);
     renderCreateRows();
     document.getElementById('releaseQueueMeta').textContent = `Total: ${rows.length}`;
-    document.getElementById('releaseSubtitle').textContent = `${releaseState.rows.length} pending DR item(s), ${releaseState.createRows.length} item(s) in Create DR.`;
+    document.getElementById('releaseSubtitle').textContent = `${availableRows.length} pending DR item(s), ${releaseState.createRows.length} item(s) in Create DR.`;
 }
 
 function passesReleaseFilters(row) {
@@ -634,7 +635,7 @@ function sendCreateRowBack(key) {
     renderReleaseTables();
 }
 
-function clearCreateDrSection() {
+async function clearCreateDrSection() {
     if (!releaseState.createRows.length) {
         document.getElementById('releaseBeginningMeterInput').value = '';
         document.getElementById('releaseDrNumberInput').value = '';
@@ -643,13 +644,18 @@ function clearCreateDrSection() {
         return;
     }
     if (!window.confirm('Clear all items from Create DR?')) return;
+    const shouldRefreshFromFirebase = Boolean(releaseState.lastSavedDrSignature);
     releaseState.createRows = [];
     releaseState.pendingPreview = null;
     releaseState.lastSavedDrSignature = '';
     document.getElementById('releaseBeginningMeterInput').value = '';
     document.getElementById('releaseDrNumberInput').value = '';
     closeReleasePreview();
-    renderReleaseTables();
+    if (shouldRefreshFromFirebase) {
+        await loadReleasingData();
+    } else {
+        renderReleaseTables();
+    }
 }
 
 function updateCreateLabels() {
