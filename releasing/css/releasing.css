@@ -502,10 +502,16 @@ body {
 
 .release-preview-modal {
     width: min(76rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+}
+
+.release-preview-modal.open {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .release-preview-body {
-    max-height: calc(100vh - 9rem);
+    min-height: 0;
     overflow: auto;
     background: #e7e9e5;
     padding: 1rem;
@@ -637,6 +643,7 @@ body {
     padding: 0.7rem 1rem;
     border-top: 1px solid var(--rel-line);
     background: #f7f9f2;
+    flex-shrink: 0;
 }
 
 .dr-calibration-shell {
