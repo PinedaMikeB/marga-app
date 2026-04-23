@@ -281,7 +281,19 @@
             </button>
         </div>
         <div class="release-preview-body">
-            <div class="release-preview-page" id="releasePreviewPage"></div>
+            <aside class="release-print-adjust">
+                <div class="release-print-adjust-head">
+                    <div>
+                        <h3>Print Adjustment</h3>
+                        <p>Match the preview to the preprinted DR form.</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="releasePrintResetBtn">Reset</button>
+                </div>
+                <div id="releasePrintAdjustPanel"></div>
+            </aside>
+            <div class="release-preview-stage">
+                <div class="release-preview-page" id="releasePreviewPage"></div>
+            </div>
         </div>
         <div class="release-preview-footer">
             <button type="button" class="btn btn-primary btn-sm" id="releasePreviewPrintBtn">Print and Save</button>

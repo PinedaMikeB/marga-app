@@ -18,6 +18,33 @@ const RELEASE_PURPOSE_LABELS = {
     4: 'CARTRIDGE'
 };
 
+const DR_PREVIEW_MM_PX = 2.45;
+const DR_PRINT_SECTION_LAYOUT = {
+    company: { label: 'Section 1', subtitle: 'Company name and address', xMm: 18, yMm: 22 },
+    details: { label: 'Section 2', subtitle: 'Reference, B meter, items, current cartridges', xMm: 18, yMm: 55 },
+    releasedBy: { label: 'Section 3', subtitle: 'Released by', xMm: 56, yMm: 198 },
+    deliveryBy: { label: 'Section 4', subtitle: 'Deliver by', xMm: 134, yMm: 198 },
+    date: { label: 'Section 5', subtitle: 'Date', xMm: 168, yMm: 22 }
+};
+
+const DR_PRINT_CALIBRATION = {
+    paperWidthCm: 21.59,
+    paperHeightCm: 27.94,
+    scale: 1,
+    offsetXmm: 0,
+    offsetYmm: 0,
+    sections: {
+        company: { xMm: 0, yMm: 0, fontScale: 1 },
+        details: { xMm: 0, yMm: 0, fontScale: 1 },
+        releasedBy: { xMm: 0, yMm: 0, fontScale: 1 },
+        deliveryBy: { xMm: 0, yMm: 0, fontScale: 1 },
+        date: { xMm: 0, yMm: 0, fontScale: 1 }
+    }
+};
+
+const DR_PRINT_CALIBRATION_STORAGE_KEY = 'marga_dr_print_calibration_v1';
+let currentDrPrintCalibration = loadDrPrintCalibration();
+
 const releaseState = {
     loading: false,
     rows: [],
@@ -123,6 +150,9 @@ function bindReleaseControls() {
     document.getElementById('releasePreviewCloseBtn').addEventListener('click', closeReleasePreview);
     document.getElementById('releasePreviewCancelBtn').addEventListener('click', closeReleasePreview);
     document.getElementById('releasePreviewPrintBtn').addEventListener('click', printAndSaveRelease);
+    document.getElementById('releasePreviewModal').addEventListener('input', handleDrPrintControlInput);
+    document.getElementById('releasePreviewModal').addEventListener('change', handleDrPrintControlInput);
+    document.getElementById('releasePreviewModal').addEventListener('click', handleDrPrintToolClick);
 }
 
 async function loadReleasingData() {
@@ -649,7 +679,8 @@ function openReleasePreview() {
     }
     const payload = buildPrintPayload();
     releaseState.pendingPreview = payload;
-    document.getElementById('releasePreviewPage').innerHTML = buildDrPrintHtml(payload);
+    renderDrPrintAdjustmentControls();
+    renderActiveDrPreview();
     setReleasePreviewOpen(true);
 }
 
@@ -689,21 +720,214 @@ function buildCurrentCartridgeText(rows) {
     return values.length ? values.join(', ') : 'N/A';
 }
 
-function buildDrPrintHtml(payload) {
+function normalizeDrPrintCalibration(value = {}) {
+    const paperWidthCm = Number(value?.paperWidthCm ?? DR_PRINT_CALIBRATION.paperWidthCm);
+    const paperHeightCm = Number(value?.paperHeightCm ?? DR_PRINT_CALIBRATION.paperHeightCm);
+    const scale = Number(value?.scale ?? DR_PRINT_CALIBRATION.scale);
+    const offsetXmm = Number(value?.offsetXmm ?? DR_PRINT_CALIBRATION.offsetXmm);
+    const offsetYmm = Number(value?.offsetYmm ?? DR_PRINT_CALIBRATION.offsetYmm);
+    const rawSections = value?.sections || {};
+    return {
+        paperWidthCm: Number.isFinite(paperWidthCm) ? Math.max(10, Math.min(40, paperWidthCm)) : DR_PRINT_CALIBRATION.paperWidthCm,
+        paperHeightCm: Number.isFinite(paperHeightCm) ? Math.max(10, Math.min(40, paperHeightCm)) : DR_PRINT_CALIBRATION.paperHeightCm,
+        scale: Number.isFinite(scale) ? Math.max(0.7, Math.min(1.35, scale)) : DR_PRINT_CALIBRATION.scale,
+        offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-80, Math.min(80, offsetXmm)) : DR_PRINT_CALIBRATION.offsetXmm,
+        offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-80, Math.min(120, offsetYmm)) : DR_PRINT_CALIBRATION.offsetYmm,
+        sections: Object.fromEntries(Object.keys(DR_PRINT_SECTION_LAYOUT).map((sectionKey) => {
+            const defaults = DR_PRINT_CALIBRATION.sections[sectionKey];
+            const current = rawSections?.[sectionKey] || {};
+            const xMm = Number(current?.xMm ?? defaults.xMm);
+            const yMm = Number(current?.yMm ?? defaults.yMm);
+            const fontScale = Number(current?.fontScale ?? defaults.fontScale);
+            return [sectionKey, {
+                xMm: Number.isFinite(xMm) ? Math.max(-80, Math.min(80, xMm)) : defaults.xMm,
+                yMm: Number.isFinite(yMm) ? Math.max(-100, Math.min(140, yMm)) : defaults.yMm,
+                fontScale: Number.isFinite(fontScale) ? Math.max(0.65, Math.min(1.8, fontScale)) : defaults.fontScale
+            }];
+        }))
+    };
+}
+
+function loadDrPrintCalibration() {
+    try {
+        const raw = localStorage.getItem(DR_PRINT_CALIBRATION_STORAGE_KEY);
+        if (!raw) return normalizeDrPrintCalibration(DR_PRINT_CALIBRATION);
+        return normalizeDrPrintCalibration(JSON.parse(raw));
+    } catch (error) {
+        return normalizeDrPrintCalibration(DR_PRINT_CALIBRATION);
+    }
+}
+
+function saveDrPrintCalibration(nextValue) {
+    currentDrPrintCalibration = normalizeDrPrintCalibration(nextValue);
+    try {
+        localStorage.setItem(DR_PRINT_CALIBRATION_STORAGE_KEY, JSON.stringify(currentDrPrintCalibration));
+    } catch (error) {
+        console.warn('Unable to save DR print adjustment locally.', error);
+    }
+    return currentDrPrintCalibration;
+}
+
+function resetDrPrintCalibration() {
+    return saveDrPrintCalibration(DR_PRINT_CALIBRATION);
+}
+
+function getDrPrintPaperDimensions(calibration = currentDrPrintCalibration) {
+    return {
+        widthCm: calibration.paperWidthCm,
+        heightCm: calibration.paperHeightCm,
+        widthMm: calibration.paperWidthCm * 10,
+        heightMm: calibration.paperHeightCm * 10
+    };
+}
+
+function getDrPrintSectionCalibration(sectionKey) {
+    return currentDrPrintCalibration.sections?.[sectionKey] || DR_PRINT_CALIBRATION.sections[sectionKey];
+}
+
+function drSizeUnit(valueMm, mode = 'print') {
+    return mode === 'screen'
+        ? `${Number(valueMm || 0) * DR_PREVIEW_MM_PX}px`
+        : `${valueMm}mm`;
+}
+
+function buildDrPositionStyle(config = {}, mode = 'print') {
+    const parts = ['position:absolute'];
+    if (config.xMm !== undefined) parts.push(`left:${drSizeUnit(config.xMm, mode)}`);
+    if (config.yMm !== undefined) parts.push(`top:${drSizeUnit(config.yMm, mode)}`);
+    if (config.widthMm !== undefined) parts.push(`width:${drSizeUnit(config.widthMm, mode)}`);
+    if (config.textAlign) parts.push(`text-align:${config.textAlign}`);
+    return parts.join(';');
+}
+
+function buildDrSectionStyle(sectionKey, mode = 'print') {
+    const layout = DR_PRINT_SECTION_LAYOUT[sectionKey];
+    const calibration = getDrPrintSectionCalibration(sectionKey);
+    return [
+        'position:absolute',
+        `left:${drSizeUnit((layout?.xMm || 0) + (calibration?.xMm || 0), mode)}`,
+        `top:${drSizeUnit((layout?.yMm || 0) + (calibration?.yMm || 0), mode)}`,
+        'transform-origin:top left',
+        `transform:scale(${calibration?.fontScale || 1})`
+    ].join(';');
+}
+
+function renderDrPrintAdjustmentControls() {
+    const panel = document.getElementById('releasePrintAdjustPanel');
+    if (!panel) return;
+    panel.innerHTML = `
+        <div class="release-print-grid">
+            <label class="release-print-field">
+                <span>Paper W (cm)</span>
+                <input type="number" data-dr-print-control="paperWidthCm" step="0.1" min="10" max="40" value="${escapeAttr(String(currentDrPrintCalibration.paperWidthCm))}">
+            </label>
+            <label class="release-print-field">
+                <span>Paper H (cm)</span>
+                <input type="number" data-dr-print-control="paperHeightCm" step="0.1" min="10" max="40" value="${escapeAttr(String(currentDrPrintCalibration.paperHeightCm))}">
+            </label>
+            <label class="release-print-field">
+                <span>Left (mm)</span>
+                <input type="number" data-dr-print-control="offsetXmm" step="0.5" value="${escapeAttr(String(currentDrPrintCalibration.offsetXmm))}">
+            </label>
+            <label class="release-print-field">
+                <span>Top (mm)</span>
+                <input type="number" data-dr-print-control="offsetYmm" step="0.5" value="${escapeAttr(String(currentDrPrintCalibration.offsetYmm))}">
+            </label>
+            <label class="release-print-field">
+                <span>Scale</span>
+                <input type="number" data-dr-print-control="scale" step="0.01" min="0.7" max="1.35" value="${escapeAttr(String(currentDrPrintCalibration.scale))}">
+            </label>
+        </div>
+        <div class="release-print-section-title">Section Adjustments</div>
+        <div class="release-section-grid">
+            ${Object.entries(DR_PRINT_SECTION_LAYOUT).map(([sectionKey, layout]) => {
+                const calibration = getDrPrintSectionCalibration(sectionKey);
+                return `
+                    <div class="release-section-card">
+                        <h4>${escapeHtml(layout.label)}</h4>
+                        <p>${escapeHtml(layout.subtitle)}</p>
+                        <div class="release-print-grid">
+                            <label class="release-print-field">
+                                <span>X (mm)</span>
+                                <input type="number" data-dr-section-key="${escapeAttr(sectionKey)}" data-dr-section-field="xMm" step="0.5" value="${escapeAttr(String(calibration.xMm))}">
+                            </label>
+                            <label class="release-print-field">
+                                <span>Y (mm)</span>
+                                <input type="number" data-dr-section-key="${escapeAttr(sectionKey)}" data-dr-section-field="yMm" step="0.5" value="${escapeAttr(String(calibration.yMm))}">
+                            </label>
+                            <label class="release-print-field">
+                                <span>Font</span>
+                                <input type="number" data-dr-section-key="${escapeAttr(sectionKey)}" data-dr-section-field="fontScale" step="0.05" min="0.65" max="1.8" value="${escapeAttr(String(calibration.fontScale))}">
+                            </label>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function handleDrPrintControlInput(event) {
+    const target = event.target;
+    if (!target?.matches?.('[data-dr-print-control], [data-dr-section-key][data-dr-section-field]')) return;
+    updateDrPrintCalibrationFromControls();
+}
+
+function handleDrPrintToolClick(event) {
+    if (event.target?.id !== 'releasePrintResetBtn') return;
+    resetDrPrintCalibration();
+    renderDrPrintAdjustmentControls();
+    renderActiveDrPreview();
+}
+
+function updateDrPrintCalibrationFromControls() {
+    const modal = document.getElementById('releasePreviewModal');
+    const nextSections = Object.fromEntries(Object.keys(DR_PRINT_SECTION_LAYOUT).map((sectionKey) => {
+        const defaults = currentDrPrintCalibration.sections?.[sectionKey] || DR_PRINT_CALIBRATION.sections[sectionKey];
+        const sectionValues = { ...defaults };
+        modal.querySelectorAll('[data-dr-section-key][data-dr-section-field]').forEach((input) => {
+            if (input.dataset.drSectionKey !== sectionKey) return;
+            const field = input.dataset.drSectionField;
+            if (!field) return;
+            sectionValues[field] = Number(input.value || 0);
+        });
+        return [sectionKey, sectionValues];
+    }));
+    const controlValue = (key, fallback) => {
+        const input = modal.querySelector(`[data-dr-print-control="${key}"]`);
+        return input ? Number(input.value || 0) : fallback;
+    };
+    saveDrPrintCalibration({
+        paperWidthCm: controlValue('paperWidthCm', currentDrPrintCalibration.paperWidthCm),
+        paperHeightCm: controlValue('paperHeightCm', currentDrPrintCalibration.paperHeightCm),
+        offsetXmm: controlValue('offsetXmm', currentDrPrintCalibration.offsetXmm),
+        offsetYmm: controlValue('offsetYmm', currentDrPrintCalibration.offsetYmm),
+        scale: controlValue('scale', currentDrPrintCalibration.scale),
+        sections: nextSections
+    });
+    renderActiveDrPreview();
+}
+
+function renderActiveDrPreview() {
+    if (!releaseState.pendingPreview) return;
+    document.getElementById('releasePreviewPage').innerHTML = buildDrPrintHtml(releaseState.pendingPreview, 'screen');
+}
+
+function buildDrSectionedLayoutHtml(payload, mode = 'print') {
     return `
-        <div class="dr-print-doc">
-            <div class="dr-print-head">
-                <div>
-                    <h1>${escapeHtml(payload.client)}</h1>
-                    <div class="dr-print-address">${escapeHtml(payload.address || '')}</div>
-                </div>
-                <div class="dr-print-date">${escapeHtml(payload.date)}</div>
-            </div>
+        <div class="dr-section-block" style="${buildDrSectionStyle('company', mode)}">
+            <div class="dr-company-name" style="${buildDrPositionStyle({ xMm: 0, yMm: 0, widthMm: 150 }, mode)}">${escapeHtml(payload.client)}</div>
+            <div class="dr-company-address" style="${buildDrPositionStyle({ xMm: 0, yMm: 10, widthMm: 150 }, mode)}">${escapeHtml(payload.address || '')}</div>
+        </div>
+        <div class="dr-section-block" style="${buildDrSectionStyle('date', mode)}">
+            <div class="dr-print-date-text" style="${buildDrPositionStyle({ xMm: 0, yMm: 0, widthMm: 34 }, mode)}">${escapeHtml(payload.date)}</div>
+        </div>
+        <div class="dr-section-block" style="${buildDrSectionStyle('details', mode)}">
             <div class="dr-print-meta">
                 <div><strong>Reference No. :</strong>&nbsp;&nbsp;${escapeHtml(payload.referenceNo)}</div>
                 <div><strong>B. Meter :</strong>&nbsp;&nbsp;${escapeHtml(payload.bmeter || '')}</div>
             </div>
-            <table class="dr-print-table">
+            <table class="dr-print-table" style="${mode === 'screen' ? `width:${drSizeUnit(172, mode)}` : 'width:172mm'}">
                 <thead>
                     <tr>
                         <th>Category</th>
@@ -728,11 +952,32 @@ function buildDrPrintHtml(payload) {
                 </tbody>
             </table>
             <div class="dr-print-current">Current cartridges : &nbsp; ${escapeHtml(payload.currentCartridges)}</div>
-            <div class="dr-print-signatures">
-                <div>Released by :</div>
-                <div>Deliver by :</div>
-            </div>
         </div>
+        <div class="dr-section-block" style="${buildDrSectionStyle('releasedBy', mode)}">
+            <div style="${buildDrPositionStyle({ xMm: 0, yMm: 0, widthMm: 42, textAlign: 'center' }, mode)}">Released by :</div>
+        </div>
+        <div class="dr-section-block" style="${buildDrSectionStyle('deliveryBy', mode)}">
+            <div style="${buildDrPositionStyle({ xMm: 0, yMm: 0, widthMm: 42, textAlign: 'center' }, mode)}">Deliver by :</div>
+        </div>
+    `;
+}
+
+function buildDrPrintHtml(payload, mode = 'screen') {
+    const paper = getDrPrintPaperDimensions(currentDrPrintCalibration);
+    return `
+        <section class="dr-calibration-shell" aria-label="DR print preview">
+            <div
+                class="dr-calibration-paper"
+                style="--paper-width-mm:${paper.widthMm}; --paper-height-mm:${paper.heightMm};"
+            >
+                <div
+                    class="dr-calibration-sheet"
+                    style="transform: translate(${drSizeUnit(currentDrPrintCalibration.offsetXmm, mode)}, ${drSizeUnit(currentDrPrintCalibration.offsetYmm, mode)}) scale(${currentDrPrintCalibration.scale});"
+                >
+                    ${buildDrSectionedLayoutHtml(payload, mode)}
+                </div>
+            </div>
+        </section>
     `;
 }
 
@@ -925,30 +1170,70 @@ function printHtmlDocument(html, windowName) {
 }
 
 function buildPrintDocument(payload) {
+    const paper = getDrPrintPaperDimensions(currentDrPrintCalibration);
+    const paperWidth = `${paper.widthCm}cm`;
+    const paperHeight = `${paper.heightCm}cm`;
     return `
         <!DOCTYPE html>
         <html>
         <head>
             <title>DR ${escapeHtml(payload.drNumber || payload.referenceNo)}</title>
             <style>
-                body { margin: 0; background: #fff; font-family: Arial, sans-serif; color: #111; }
-                .print-wrap { padding: 18mm 17mm; }
-                .dr-print-doc { font-size: 13px; }
-                .dr-print-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12mm; margin-bottom: 16mm; }
-                .dr-print-head h1 { margin: 0 0 5mm; font-size: 17px; font-weight: 800; }
-                .dr-print-address { font-size: 13px; font-weight: 700; }
-                .dr-print-date { font-weight: 800; }
-                .dr-print-meta { display: grid; gap: 7mm; margin-bottom: 7mm; }
-                .dr-print-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
-                .dr-print-table th, .dr-print-table td { padding: 1.5mm 2mm; text-align: left; vertical-align: top; }
-                .dr-print-table th { font-size: 11px; font-weight: 800; }
+                @page { size: ${paperWidth} ${paperHeight}; margin: 0; }
+                * { box-sizing: border-box; }
+                html,
+                body {
+                    margin: 0;
+                    padding: 0;
+                    width: ${paperWidth};
+                    height: ${paperHeight};
+                    background: #fff;
+                    overflow: hidden;
+                }
+                body { font-family: Arial, sans-serif; color: #111; }
+                .print-wrap {
+                    position: relative;
+                    width: ${paperWidth};
+                    height: ${paperHeight};
+                    overflow: hidden;
+                    page-break-after: avoid;
+                }
+                .dr-calibration-shell,
+                .dr-calibration-paper {
+                    position: relative;
+                    width: ${paperWidth};
+                    height: ${paperHeight};
+                    overflow: hidden;
+                    background: transparent;
+                }
+                .dr-calibration-sheet {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 210mm;
+                    height: 270mm;
+                    color: #111;
+                    font-size: 3.6mm;
+                    font-weight: 700;
+                    line-height: 1.24;
+                    transform-origin: top left;
+                }
+                .dr-section-block,
+                .dr-block-field { position: absolute; }
+                .dr-company-name { font-size: 1.25em; font-weight: 900; line-height: 1.15; }
+                .dr-company-address { margin-top: 0.45em; font-weight: 800; }
+                .dr-print-date-text { font-weight: 900; }
+                .dr-print-meta { display: grid; gap: 7mm; margin: 0 0 7mm; }
+                .dr-print-table { border-collapse: collapse; table-layout: fixed; font-size: 3.2mm; }
+                .dr-print-table th,
+                .dr-print-table td { padding: 1.4mm 1.8mm; text-align: left; vertical-align: top; }
+                .dr-print-table th { font-size: 2.9mm; font-weight: 900; }
+                .dr-print-table .qty-cell,
                 .qty-cell { width: 14mm; text-align: center; }
-                .dr-print-current { margin: 9mm 0 23mm; font-weight: 800; }
-                .dr-print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 45mm; margin-top: 20mm; text-align: center; }
-                @page { size: letter portrait; margin: 8mm; }
+                .dr-print-current { margin: 8mm 0 0; font-weight: 900; }
             </style>
         </head>
-        <body><div class="print-wrap">${buildDrPrintHtml(payload)}</div></body>
+        <body><div class="print-wrap">${buildDrPrintHtml(payload, 'print')}</div></body>
         </html>
     `;
 }
