@@ -462,6 +462,42 @@
                     <span>Remarks</span>
                     <textarea id="newReqRemarks" rows="3" placeholder="Problem description, items, notes..."></textarea>
                 </label>
+
+                <div class="marga-form-section marga-field-full">Release Request</div>
+
+                <label class="marga-field">
+                    <span>Category</span>
+                    <select id="newReqReleaseCategory">
+                        <option value="">None</option>
+                        <option value="Toner / Ink">Toner / Ink</option>
+                        <option value="Cartridge">Cartridge</option>
+                        <option value="Parts">Parts</option>
+                        <option value="Others">Others</option>
+                    </select>
+                </label>
+
+                <label class="marga-field marga-field-wide">
+                    <span>Item Rstd</span>
+                    <input type="text" id="newReqReleaseItemRstd" placeholder="Requested item for DR Item List">
+                </label>
+
+                <div class="marga-field">
+                    <span>PC / Set</span>
+                    <div class="marga-unit-toggle" role="radiogroup" aria-label="PC or Set">
+                        <label class="marga-unit-pill">
+                            <input type="radio" name="newReqReleaseUnit" value="pc" checked>
+                            <span>PC</span>
+                        </label>
+                        <label class="marga-unit-pill">
+                            <input type="radio" name="newReqReleaseUnit" value="set">
+                            <span>Set</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="marga-inline-note marga-field-full">
+                    Saved release-request details flow into Releasing DR Item List automatically.
+                </div>
             </div>
         </div>
         <div class="marga-modal-footer">

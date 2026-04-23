@@ -30,6 +30,10 @@ const PURPOSE_LABELS = {
     8: 'Reading',
     9: 'Others'
 };
+const RELEASE_CATEGORY_DEFAULTS = {
+    3: 'Toner / Ink',
+    4: 'Cartridge'
+};
 const LOOKUP_COLLECTION_LIMITS = {
     tbl_employee: 2000,
     tbl_empos: 400,
@@ -373,6 +377,29 @@ function normalizeSerialNumber(value) {
 
 function normalizeContactNumber(value) {
     return String(value || '').replace(/\D+/g, '');
+}
+
+function normalizeReleaseCategoryValue(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const lowered = text.toLowerCase();
+    if (lowered.includes('toner') || lowered.includes('ink')) return 'Toner / Ink';
+    if (lowered.includes('cartridge')) return 'Cartridge';
+    if (lowered.includes('part')) return 'Parts';
+    if (lowered.includes('other')) return 'Others';
+    return text;
+}
+
+function getSelectedReleaseUnit() {
+    return document.querySelector('input[name="newReqReleaseUnit"]:checked')?.value === 'set' ? 'set' : 'pc';
+}
+
+function buildReleaseRequestSummary({ category, itemRstd, unit }) {
+    const normalizedCategory = normalizeReleaseCategoryValue(category);
+    const item = String(itemRstd || '').trim();
+    const requestLabel = item || normalizedCategory;
+    if (!requestLabel) return '';
+    return `1 ${unit === 'set' ? 'set' : 'pc'} ${requestLabel}`.trim();
 }
 
 function cacheMachineBySerial(machine) {
@@ -1163,9 +1190,13 @@ async function openNewRequestModal() {
     const troubleSelect = document.getElementById('newReqTrouble');
     const assigneeSearch = document.getElementById('newReqAssigneeSearch');
     const assigneeSelect = document.getElementById('newReqAssignee');
+    const purposeSelect = document.getElementById('newReqPurpose');
     const callerInput = document.getElementById('newReqCaller');
     const phoneInput = document.getElementById('newReqPhone');
     const serialInput = document.getElementById('newReqSerialNumber');
+    const releaseCategorySelect = document.getElementById('newReqReleaseCategory');
+    const releaseItemRstdInput = document.getElementById('newReqReleaseItemRstd');
+    const releaseUnitInputs = Array.from(document.querySelectorAll('input[name="newReqReleaseUnit"]'));
     const companyPanel = document.getElementById('newReqCompanyPanel');
     const branchPanel = document.getElementById('newReqBranchPanel');
     const serialPanel = document.getElementById('newReqSerialPanel');
@@ -1176,8 +1207,15 @@ async function openNewRequestModal() {
     branchSearch.value = '';
     troubleSearch.value = '';
     assigneeSearch.value = '';
+    purposeSelect.value = '5';
     serialInput.value = '';
     modelInput.value = '';
+    releaseCategorySelect.value = '';
+    releaseCategorySelect.dataset.autoValue = '';
+    releaseItemRstdInput.value = '';
+    releaseUnitInputs.forEach((input) => {
+        input.checked = input.value === 'pc';
+    });
     document.getElementById('newReqStatus').value = '1';
     document.getElementById('newReqSuperUrgent').checked = false;
     document.getElementById('newReqWithRequest').checked = false;
@@ -1540,6 +1578,16 @@ async function openNewRequestModal() {
         }
     }
 
+    function syncReleaseCategoryFromPurpose(force = false) {
+        const defaultCategory = RELEASE_CATEGORY_DEFAULTS[Number(purposeSelect.value || 0)] || '';
+        const currentCategory = String(releaseCategorySelect.value || '').trim();
+        const previousAuto = String(releaseCategorySelect.dataset.autoValue || '').trim();
+        if (force || !currentCategory || currentCategory === previousAuto) {
+            releaseCategorySelect.value = defaultCategory;
+        }
+        releaseCategorySelect.dataset.autoValue = defaultCategory;
+    }
+
     async function applySerialLookup() {
         const serialText = serialInput.value.trim();
         const token = ++opsState.newRequestLookupSeq;
@@ -1747,6 +1795,9 @@ async function openNewRequestModal() {
         applyMachineSelection(row);
     };
 
+    purposeSelect.onchange = () => syncReleaseCategoryFromPurpose(false);
+    syncReleaseCategoryFromPurpose(true);
+
     branchSelect.innerHTML = `<option value="">Select branch / department...</option>`;
     document.getElementById('newReqModal').onmousedown = (event) => {
         if (event.target.closest('.marga-combo-panel')) return;
@@ -1813,6 +1864,15 @@ async function saveNewServiceRequest() {
     let troubleId = Number(document.getElementById('newReqTrouble').value || 0);
     let assigneeId = Number(document.getElementById('newReqAssignee').value || 0);
     const remarks = (document.getElementById('newReqRemarks').value || '').trim();
+    const releaseCategory = normalizeReleaseCategoryValue(document.getElementById('newReqReleaseCategory')?.value || '');
+    const releaseItemRstd = (document.getElementById('newReqReleaseItemRstd')?.value || '').trim();
+    const releaseUnit = getSelectedReleaseUnit();
+    const releaseSummary = buildReleaseRequestSummary({
+        category: releaseCategory,
+        itemRstd: releaseItemRstd,
+        unit: releaseUnit
+    });
+    const hasReleaseRequest = Boolean(releaseCategory || releaseItemRstd);
     const statusValue = Number(document.getElementById('newReqStatus')?.value || 1);
     const superUrgent = document.getElementById('newReqSuperUrgent')?.checked ? 1 : 0;
     const withRequest = document.getElementById('newReqWithRequest')?.checked ? 1 : 0;
@@ -1881,6 +1941,10 @@ async function saveNewServiceRequest() {
         alert('Please select a branch.');
         return;
     }
+    if (releaseItemRstd && !releaseCategory) {
+        alert('Please choose a release category for Item Rstd.');
+        return;
+    }
     if (saveContact && !normalizeContactNumber(phone)) {
         alert('Please enter a phone number before saving it to the customer file.');
         return;
@@ -1943,11 +2007,21 @@ async function saveNewServiceRequest() {
         // App-specific tracking (safe in Firestore, doesn't break legacy)
         request_origin: origin,
         request_serial_number: serialNumber,
+        customer_request: releaseSummary,
         contractmain_id: Number(graphRow?.contractId || opsState.newRequestGraphRow?.contractId || 0) || 0,
         active_customer_graph_source: graphRow ? 'active_contract_customer_graph' : (matchedMachineId ? 'machine_fallback' : ''),
         from_mobileapp: 1,
         bridge_updated_at: bridgeUpdatedAt,
-        bridge_updated_by: bridgeUpdatedBy
+        bridge_updated_by: bridgeUpdatedBy,
+        ...(hasReleaseRequest ? {
+            release_request_category: releaseCategory,
+            release_request_item_rstd: releaseItemRstd,
+            release_request_unit: releaseUnit,
+            release_request_summary: releaseSummary,
+            release_request_qty: 1,
+            releasing_pending_qty: 1,
+            releasing_dr_done: 0
+        } : {})
     };
 
     // Fill other legacy fields with safe defaults to keep downstream code stable.
@@ -1981,7 +2055,7 @@ async function saveNewServiceRequest() {
         meter_reading: 0,
         tl_status: 0,
         tl_remarks: '',
-        customer_request: '',
+        customer_request: base.customer_request || '',
         collocutor: '',
         dev_remarks: ''
     };

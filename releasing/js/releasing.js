@@ -355,11 +355,30 @@ function isActiveRequestItem(item) {
     return !normalizeLegacyDate(item.close_date);
 }
 
+function hasExplicitReleaseRequest(schedule) {
+    return Boolean(
+        realValue(schedule?.release_request_category)
+        || realValue(schedule?.release_request_item_rstd)
+    );
+}
+
+function normalizeReleaseCategoryLabel(value) {
+    const text = clean(value);
+    if (!text) return '';
+    const lowered = text.toLowerCase();
+    if (lowered.includes('toner') || lowered.includes('ink')) return 'TONER / INK';
+    if (lowered.includes('cartridge')) return 'CARTRIDGE';
+    if (lowered.includes('part')) return 'PARTS';
+    if (lowered.includes('other')) return 'OTHERS';
+    return text.toUpperCase();
+}
+
 function isDeliverySchedule(schedule) {
     if (!schedule || Number(schedule.iscancel || schedule.iscancelled || 0) === 1) return false;
     if (Number(schedule.releasing_dr_done || 0) === 1) return false;
     const pendingQty = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
     if (pendingQty !== null && pendingQty <= 0) return false;
+    if (hasExplicitReleaseRequest(schedule)) return true;
     const purposeId = Number(schedule.purpose_id || 0);
     if (purposeId === 3 || purposeId === 4) return true;
     const text = [
@@ -382,6 +401,8 @@ function requestQuantity(item, schedule = null) {
     if (item) return 1;
     const pending = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
     if (pending !== null) return pending > 0 ? Math.min(pending, 50) : 0;
+    const explicit = recordQuantity(schedule, ['release_request_qty']);
+    if (explicit !== null) return explicit > 0 ? Math.min(explicit, 50) : 0;
     const text = clean(`${schedule?.customer_request || ''} ${schedule?.remarks || ''}`);
     const match = text.match(/(?:^|\s)(\d{1,2})\s*(?:pc|pcs|piece|pieces|black|cyan|magenta|yellow)\b/i);
     const inferred = Number(match?.[1] || 1);
@@ -412,18 +433,24 @@ function normalizeReleaseItem(item, schedule, unitIndex = 1, totalQty = 1) {
     const trouble = releaseState.maps.troubles.get(String(schedule?.trouble_id || '')) || null;
     const purposeId = Number(schedule?.purpose_id || 0);
     const category = inferReleaseCategory(item, schedule, trouble);
+    const releaseItemRstd = clean(schedule?.release_request_item_rstd || schedule?.item_rstd || '');
+    const releaseSummary = clean(schedule?.release_request_summary || schedule?.customer_request || '');
     const seed = {
         brand: clean(item?.release_brand || item?.brand || ''),
         model: clean(item?.release_model || ''),
-        description: clean(item?.release_description || item?.description || ''),
+        description: clean(item?.release_description || item?.description || releaseItemRstd),
         serial: clean(item?.release_serial || ''),
-        notes: clean(item?.release_notes || item?.remarks || schedule?.remarks || schedule?.customer_request || '')
+        notes: clean(item?.release_notes || item?.remarks || releaseSummary || schedule?.remarks || '')
     };
 
     if (!seed.model && machine) seed.model = clean(machine.description);
-    if (!seed.serial && machine && purposeId !== 3) seed.serial = clean(machine.serial);
+    if (!seed.serial && machine && (purposeId !== 3 || hasExplicitReleaseRequest(schedule))) {
+        seed.serial = clean(machine.serial);
+    }
     if (!seed.brand && seed.model) seed.brand = inferBrand(seed.model);
     if (!seed.description && purposeId === 3) seed.description = clean(schedule?.customer_request || schedule?.remarks || trouble?.trouble) || 'N/A';
+    if (!seed.description && realValue(category)) seed.description = category;
+    if (!seed.notes && releaseSummary) seed.notes = releaseSummary;
 
     const key = rowKey(refNo, item, schedule, unitIndex);
     const draft = releaseState.detailDrafts.get(key) || {};
@@ -485,6 +512,8 @@ function rowKey(refNo, item, schedule, unitIndex = 1) {
 }
 
 function inferReleaseCategory(item, schedule, trouble) {
+    const explicitCategory = normalizeReleaseCategoryLabel(schedule?.release_request_category || schedule?.release_category);
+    if (explicitCategory) return explicitCategory;
     const text = [
         item?.category,
         item?.rdtype_id,
