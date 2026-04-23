@@ -56,6 +56,10 @@ const masterState = {
     settingsLoaded: false,
     reassigning: false,
     routeSourceLabel: 'Saved',
+    routeCoverage: {
+        routed: 0,
+        unrouted: 0
+    },
     selectedArea: DEFAULT_AREAS[0],
     selectedTechId: '',
     selectedBranchId: '',
@@ -635,6 +639,66 @@ async function buildRouteBoundSchedules(routeRows, routeSourceLabel) {
         .filter(Boolean);
 }
 
+function overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows, selectedDate) {
+    const routeBySchedule = new Map();
+
+    pickLatestRouteRows(printedRows, selectedDate).forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId > 0) routeBySchedule.set(scheduleId, { ...row, _routeSource: 'Printed' });
+    });
+
+    pickLatestRouteRows(savedRows, selectedDate).forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId > 0) routeBySchedule.set(scheduleId, { ...row, _routeSource: 'Saved' });
+    });
+
+    const mergedRows = scheduleRows.map((schedule) => {
+        const scheduleId = Number(schedule.id || schedule._docId || 0);
+        const routeRow = routeBySchedule.get(scheduleId);
+        if (!routeRow) {
+            return {
+                ...schedule,
+                route_id: 0,
+                route_doc_id: '',
+                route_source: 'Schedule',
+                route_tech_id: 0,
+                route_task_datetime: '',
+                route_status: '',
+                route_iscancelled: 0,
+                route_date_finished: '',
+                route_remarks: '',
+                route_timestmp: '',
+                route_bridge_pushed_at: ''
+            };
+        }
+
+        return {
+            ...schedule,
+            task_datetime: clean(routeRow.task_datetime || schedule.task_datetime),
+            tech_id: Number(routeRow.tech_id || schedule.tech_id || 0) || 0,
+            route_id: Number(routeRow.id || 0) || 0,
+            route_doc_id: routeRow._docId || String(routeRow.id || ''),
+            route_source: routeRow._routeSource || 'Saved',
+            route_tech_id: Number(routeRow.tech_id || 0) || 0,
+            route_task_datetime: clean(routeRow.task_datetime),
+            route_status: routeRow.status ?? '',
+            route_iscancelled: Number(routeRow.iscancelled || routeRow.iscancel || 0) || 0,
+            route_date_finished: clean(routeRow.date_finished),
+            route_remarks: clean(routeRow.remarks),
+            route_timestmp: clean(routeRow.timestmp),
+            route_bridge_pushed_at: clean(routeRow.bridge_pushed_at)
+        };
+    });
+
+    return {
+        mergedRows,
+        routeCoverage: {
+            routed: mergedRows.filter((row) => Number(row.route_id || 0) > 0).length,
+            unrouted: mergedRows.filter((row) => Number(row.route_id || 0) <= 0).length
+        }
+    };
+}
+
 function mergeRouteRows(savedRows, printedRows, date) {
     const routeBySchedule = new Map();
     pickLatestRouteRows(printedRows, date).forEach((row) => {
@@ -799,6 +863,9 @@ function buildLegacyScheduleRow(row) {
     const readyStatus = readyStatusForSchedule(row);
     const routeSource = clean(row.route_source || row.sourceBucket || 'Saved');
     const lifecycle = lifecycleStatus(row);
+    const sourceNote = routeSource === 'pending-not-routed'
+        ? 'Pending Not Routed'
+        : (routeSource === 'Schedule' ? 'Awaiting Route' : `${routeSource} Route`);
     const data = {
         source: routeSource === 'pending-not-routed' ? 'pending' : 'legacy-route',
         sourceBucket: row.sourceBucket || 'daily-route',
@@ -827,7 +894,7 @@ function buildLegacyScheduleRow(row) {
         daysPending: originalDate ? daysBetween(originalDate, selectedDate) : '',
         readyStatus,
         readyLabel: readyLabel(readyStatus),
-        sourceNote: routeSource === 'pending-not-routed' ? 'Pending Not Routed' : `${routeSource} Route`,
+        sourceNote,
         trouble: clean(trouble?.trouble),
         remarks: clean(row.route_remarks || row.remarks || row.caller)
     };
@@ -1065,18 +1132,18 @@ async function loadMasterSchedule() {
         await ensureSettingsData();
         const start = `${date} 00:00:00`;
         const end = `${date} 23:59:59`;
-        const [printedDocs, savedDocs, plannerDocs, webDocs] = await Promise.all([
+        const [scheduleDocs, printedDocs, savedDocs, plannerDocs, webDocs] = await Promise.all([
+            queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
             queryDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', start, end).catch(() => []),
             queryDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', start, end).catch(() => []),
             queryEquals('tbl_schedule_planner', 'schedule_date', date).catch(() => []),
             queryEquals('marga_master_schedule', 'schedule_date', date).catch(() => [])
         ]);
 
+        const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
         const printedRows = printedDocs.map(parseFirestoreDoc).filter(Boolean);
         const savedRows = savedDocs.map(parseFirestoreDoc).filter(Boolean);
-        const routeRows = mergeRouteRows(savedRows, printedRows, date);
-        const routeSourceLabel = savedRows.length ? 'Saved' : 'Printed';
-        const legacyRows = await buildRouteBoundSchedules(routeRows, routeSourceLabel);
+        const { mergedRows: legacyRows, routeCoverage } = overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows, date);
         const pendingRawRows = await loadPendingNotRoutedRows(date, legacyRows);
         const lookupRows = [...legacyRows, ...pendingRawRows];
         const plannerRows = plannerDocs.map(parseFirestoreDoc);
@@ -1084,7 +1151,8 @@ async function loadMasterSchedule() {
         await hydrateLegacyLookups(lookupRows);
         await hydrateReadyLookups(lookupRows);
 
-        masterState.routeSourceLabel = routeSourceLabel;
+        masterState.routeSourceLabel = routeCoverage.routed ? 'Schedule + Routes' : 'Schedule';
+        masterState.routeCoverage = routeCoverage;
         masterState.rows = [
             ...webRows.map(buildWebScheduleRow),
             ...legacyRows.map(buildLegacyScheduleRow),
@@ -1146,10 +1214,14 @@ function renderMasterSchedule() {
     const count = document.getElementById('masterCount');
     const searchQuery = clean(document.getElementById('masterSearchInput')?.value || '');
     const totalMatches = rows.length + pendingRows.length;
+    const routedVisible = rows.filter((row) => Number(row.routeId || 0) > 0).length;
+    const awaitingRouteVisible = rows.filter((row) => row.source === 'legacy-route' && Number(row.routeId || 0) <= 0).length;
     if (count) {
         const pendingText = pendingRows.length ? ` · ${pendingRows.length.toLocaleString()} pending not routed` : '';
+        const routeText = awaitingRouteVisible ? ` · ${awaitingRouteVisible.toLocaleString()} awaiting route` : '';
+        const linkedText = routedVisible ? ` · ${routedVisible.toLocaleString()} route linked` : '';
         const searchText = searchQuery ? ` · ${totalMatches.toLocaleString()} match${totalMatches === 1 ? '' : 'es'}` : '';
-        count.textContent = `${rows.length.toLocaleString()} routed schedule${rows.length === 1 ? '' : 's'}${pendingText}${searchText}`;
+        count.textContent = `${rows.length.toLocaleString()} schedule${rows.length === 1 ? '' : 's'}${linkedText}${routeText}${pendingText}${searchText}`;
     }
     updateSearchDecorations(searchQuery, totalMatches);
     renderPrintStaffOptions();
@@ -1177,6 +1249,8 @@ function renderMasterSchedule() {
             <h1>Master Schedule</h1>
             <div class="master-summary-pills">
                 <span>Route source: ${escapeHtml(masterState.routeSourceLabel || 'Saved')}</span>
+                <span>Route linked: ${masterState.routeCoverage.routed || 0}</span>
+                <span>Awaiting route: ${masterState.routeCoverage.unrouted || 0}</span>
                 <span>Ready YES: ${routeSummary.YES || 0}</span>
                 <span>Ready NO: ${routeSummary.NO || 0}</span>
                 <span>Ready N/A: ${routeSummary['N/A'] || 0}</span>
