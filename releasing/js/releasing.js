@@ -2,7 +2,7 @@ if (!MargaAuth.requireAccess('releasing')) {
     throw new Error('Unauthorized access to Releasing module.');
 }
 
-const RELEASE_QUERY_LIMIT = 5000;
+const RELEASE_QUERY_LIMIT = 20000;
 const RELEASE_ROWS_PER_VIEW = 600;
 const RELEASE_ZERO_DATES = new Set([
     '',
@@ -307,10 +307,10 @@ function buildReleaseRows() {
 
     (releaseState.raw.requestItems || []).forEach((item) => {
         if (!isActiveRequestItem(item)) return;
-        if (!hasStructuredRequestItem(item)) return;
         const ref = String(item.reference_id || '').trim();
         if (!ref) return;
         const schedule = schedulesByRef.get(ref) || null;
+        if (!hasStructuredRequestItem(item) && !isLegacyDeliverySchedule(schedule)) return;
         itemScheduleRefs.add(ref);
         itemRows.push(...expandReleaseItemRows(item, schedule));
     });
@@ -318,7 +318,7 @@ function buildReleaseRows() {
     (releaseState.raw.schedules || []).forEach((schedule) => {
         const ref = String(schedule.id || schedule._docId || '').trim();
         if (!ref || itemScheduleRefs.has(ref)) return;
-        if (!hasExplicitReleaseRequest(schedule)) return;
+        if (!hasExplicitReleaseRequest(schedule) && !isLegacyDeliverySchedule(schedule)) return;
         const pendingQty = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
         if (releaseState.savedFinalRefs.has(ref) && (pendingQty === null || pendingQty <= 0)) return;
         itemRows.push(...expandReleaseItemRows(null, schedule));
@@ -382,10 +382,18 @@ function normalizeReleaseCategoryLabel(value) {
     return text.toUpperCase();
 }
 
+function isLegacyDeliverySchedule(schedule) {
+    if (!schedule) return false;
+    if (Number(schedule.iscancel || schedule.iscancelled || 0) === 1) return false;
+    if (Number(schedule.releasing_dr_done || 0) === 1) return false;
+    const purposeId = Number(schedule.purpose_id || 0);
+    return purposeId === 3 || purposeId === 4;
+}
+
 function isDeliverySchedule(schedule) {
     if (!schedule || Number(schedule.iscancel || schedule.iscancelled || 0) === 1) return false;
     if (Number(schedule.releasing_dr_done || 0) === 1) return false;
-    return hasExplicitReleaseRequest(schedule);
+    return hasExplicitReleaseRequest(schedule) || isLegacyDeliverySchedule(schedule);
 }
 
 function expandReleaseItemRows(item, schedule) {
