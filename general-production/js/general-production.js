@@ -48,6 +48,11 @@ const GP_STATE = {
     loading: false,
     family: 'all',
     search: '',
+    panelSearch: {
+        ready: '',
+        forOverhaul: '',
+        underRepair: ''
+    },
     raw: {},
     maps: {
         machines: new Map(),
@@ -124,6 +129,10 @@ function bindControls() {
         button.addEventListener('click', () => exportRows(button.dataset.export));
     });
 
+    bindPanelSearch('readySearchInput', 'ready');
+    bindPanelSearch('forOverhaulSearchInput', 'forOverhaul');
+    bindPanelSearch('underRepairSearchInput', 'underRepair');
+
     document.getElementById('statusSerialInput').addEventListener('input', handleSerialSearchInput);
     document.getElementById('statusSerialInput').addEventListener('focus', handleSerialSearchInput);
     document.getElementById('statusSerialInput').addEventListener('keydown', handleSerialSearchKeydown);
@@ -141,6 +150,15 @@ function bindControls() {
     document.getElementById('productionActionCloseBtn').addEventListener('click', closeProductionActionModal);
     document.getElementById('productionActionCancelBtn').addEventListener('click', closeProductionActionModal);
     document.getElementById('productionActionForm').addEventListener('submit', saveProductionAction);
+}
+
+function bindPanelSearch(inputId, key) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.addEventListener('input', MargaUtils.debounce((event) => {
+        GP_STATE.panelSearch[key] = normalizeLoose(event.target.value || '');
+        renderAllBoards();
+    }, 100));
 }
 
 async function loadProductionData() {
@@ -604,6 +622,9 @@ function renderAllBoards() {
     Object.keys(GP_STATE.rows).forEach((key) => {
         views[key] = GP_STATE.rows[key].filter(passesFilters).slice(0, GP_ROWS_PER_PANEL);
     });
+    ['ready', 'forOverhaul', 'underRepair'].forEach((key) => {
+        views[key] = views[key].filter((row) => passesPanelSerialFilter(row, key));
+    });
     GP_STATE.view = views;
 
     renderRequests(views.requests);
@@ -680,6 +701,12 @@ function passesFilters(row) {
     if (GP_STATE.family !== 'all' && row.family !== GP_STATE.family) return false;
     if (!GP_STATE.search) return true;
     return String(row.searchText || '').includes(GP_STATE.search);
+}
+
+function passesPanelSerialFilter(row, key) {
+    const query = GP_STATE.panelSearch?.[key] || '';
+    if (!query) return true;
+    return normalizeLoose(row?.serial || '').includes(query);
 }
 
 function populateMachineCheckerOptions() {
