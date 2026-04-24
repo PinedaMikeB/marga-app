@@ -397,8 +397,10 @@ function getSelectedReleaseUnit() {
 }
 
 function normalizeReleaseQtyValue(value) {
-    const qty = Number.parseInt(String(value ?? '').trim(), 10);
-    if (!Number.isFinite(qty) || qty <= 0) return 1;
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0;
+    const qty = Number.parseInt(raw, 10);
+    if (!Number.isFinite(qty) || qty <= 0) return 0;
     return Math.max(1, Math.min(50, qty));
 }
 
@@ -406,8 +408,8 @@ function buildReleaseRequestSummary({ category, itemRstd, unit, qty }) {
     const normalizedCategory = normalizeReleaseCategoryValue(category);
     const item = String(itemRstd || '').trim();
     const requestLabel = item || normalizedCategory;
-    if (!requestLabel) return '';
     const safeQty = normalizeReleaseQtyValue(qty);
+    if (!requestLabel || safeQty <= 0) return '';
     return `${safeQty} ${unit === 'set' ? 'set' : 'pc'} ${requestLabel}`.trim();
 }
 
@@ -486,7 +488,7 @@ function renderNewRequestReleaseItems() {
 function addCurrentReleaseRequestItem() {
     const draft = getCurrentReleaseRequestDraft();
     if (!draft) {
-        alert('Please choose a category and enter Item Rstd first.');
+        alert('Please choose a category, enter Item Rstd, and enter Qty first.');
         return;
     }
     if (!draft.category) {
@@ -495,6 +497,10 @@ function addCurrentReleaseRequestItem() {
     }
     if (!draft.itemRstd) {
         alert('Please enter Item Rstd before adding the release item.');
+        return;
+    }
+    if (normalizeReleaseQtyValue(draft.qty) <= 0) {
+        alert('Please enter Qty before adding the release item.');
         return;
     }
 

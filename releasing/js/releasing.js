@@ -307,10 +307,10 @@ function buildReleaseRows() {
 
     (releaseState.raw.requestItems || []).forEach((item) => {
         if (!isActiveRequestItem(item)) return;
+        if (!hasStructuredRequestItem(item)) return;
         const ref = String(item.reference_id || '').trim();
         if (!ref) return;
         const schedule = schedulesByRef.get(ref) || null;
-        if (schedule && !isDeliverySchedule(schedule) && !hasExplicitReleaseRequest(schedule)) return;
         itemScheduleRefs.add(ref);
         itemRows.push(...expandReleaseItemRows(item, schedule));
     });
@@ -318,7 +318,7 @@ function buildReleaseRows() {
     (releaseState.raw.schedules || []).forEach((schedule) => {
         const ref = String(schedule.id || schedule._docId || '').trim();
         if (!ref || itemScheduleRefs.has(ref)) return;
-        if (!isDeliverySchedule(schedule)) return;
+        if (!hasExplicitReleaseRequest(schedule)) return;
         const pendingQty = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
         if (releaseState.savedFinalRefs.has(ref) && (pendingQty === null || pendingQty <= 0)) return;
         itemRows.push(...expandReleaseItemRows(null, schedule));
@@ -357,10 +357,18 @@ function isActiveRequestItem(item) {
 }
 
 function hasExplicitReleaseRequest(schedule) {
-    return Boolean(
-        realValue(schedule?.release_request_category)
-        || realValue(schedule?.release_request_item_rstd)
-    );
+    const category = normalizeReleaseCategoryLabel(schedule?.release_request_category || schedule?.release_category);
+    const itemRstd = clean(schedule?.release_request_item_rstd || schedule?.item_rstd || '');
+    const qty = recordQuantity(schedule, ['release_request_qty', 'releasing_pending_qty', 'release_pending_qty']);
+    return Boolean(category && itemRstd && qty !== null && qty > 0);
+}
+
+function hasStructuredRequestItem(item) {
+    if (!item) return false;
+    const category = normalizeReleaseCategoryLabel(item?.category || item?.release_category);
+    const itemRstd = clean(item?.description || item?.release_description || item?.remarks || item?.release_notes || '');
+    const qty = requestQuantity(item);
+    return Boolean(category && itemRstd && qty > 0);
 }
 
 function normalizeReleaseCategoryLabel(value) {
@@ -377,18 +385,7 @@ function normalizeReleaseCategoryLabel(value) {
 function isDeliverySchedule(schedule) {
     if (!schedule || Number(schedule.iscancel || schedule.iscancelled || 0) === 1) return false;
     if (Number(schedule.releasing_dr_done || 0) === 1) return false;
-    const pendingQty = recordQuantity(schedule, ['releasing_pending_qty', 'release_pending_qty']);
-    if (pendingQty !== null && pendingQty <= 0) return false;
-    if (hasExplicitReleaseRequest(schedule)) return true;
-    const purposeId = Number(schedule.purpose_id || 0);
-    if (purposeId === 3 || purposeId === 4) return true;
-    const text = [
-        schedule.remarks,
-        schedule.customer_request,
-        schedule.route_remarks,
-        releaseState.maps.troubles.get(String(schedule.trouble_id || ''))?.trouble
-    ].join(' ').toLowerCase();
-    return /toner|ink|cartridge|drum|load/.test(text);
+    return hasExplicitReleaseRequest(schedule);
 }
 
 function expandReleaseItemRows(item, schedule) {
