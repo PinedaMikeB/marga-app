@@ -446,7 +446,7 @@ function recordQuantity(record, fields) {
 function normalizeReleaseItem(item, schedule, unitIndex = 1, totalQty = 1) {
     const refNo = String(item?.reference_id || schedule?.id || schedule?._docId || '').trim();
     if (!refNo) return null;
-    const branchId = Number(item?.client_id || schedule?.branch_id || 0) || 0;
+    const branchId = Number(schedule?.branch_id || item?.client_id || 0) || 0;
     const branch = releaseState.maps.branches.get(String(branchId)) || null;
     const company = releaseState.maps.companies.get(String(schedule?.company_id || branch?.company_id || '')) || null;
     const machine = releaseState.maps.machines.get(String(schedule?.serial || schedule?.mach_id || '')) || null;
