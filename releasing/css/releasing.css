@@ -120,8 +120,9 @@ body {
 
 .release-search-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 0.4rem;
+    align-items: center;
 }
 
 .release-go-btn {
@@ -137,6 +138,17 @@ body {
 .release-go-btn:hover {
     color: var(--rel-green);
     text-decoration: underline;
+}
+
+.release-export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-start;
+}
+
+.release-export-btn {
+    white-space: nowrap;
 }
 
 .release-search span,
@@ -808,8 +820,30 @@ body {
         justify-content: flex-start;
     }
 
+    .release-search-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .release-export-actions {
+        grid-column: 1 / -1;
+    }
+
     .release-create-fields {
         grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .release-search-row {
+        grid-template-columns: 1fr;
+    }
+
+    .release-export-actions {
+        width: 100%;
+    }
+
+    .release-export-btn {
+        flex: 1 1 100%;
     }
 }
 

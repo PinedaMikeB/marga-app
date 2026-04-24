@@ -17,6 +17,17 @@ const RELEASE_PURPOSE_LABELS = {
     3: 'TONER / INK',
     4: 'CARTRIDGE'
 };
+const RELEASE_EXPORT_COLUMNS = [
+    ['refNo', 'REF NO.'],
+    ['company', 'COMPANY'],
+    ['category', 'CATEGORY'],
+    ['brand', 'BRAND'],
+    ['model', 'MODEL'],
+    ['description', 'DESCRIPTION'],
+    ['serial', 'SERIAL'],
+    ['notes', 'NOTES'],
+    ['age', 'AGE']
+];
 
 const DR_PREVIEW_MM_PX = 2.45;
 const DR_PRINT_SECTION_LAYOUT = {
@@ -124,6 +135,9 @@ function bindReleaseControls() {
         maybeLoadExactReference(clean(event.target.value));
         renderReleaseTables();
     }, 180));
+    document.getElementById('releaseCopyVisibleBtn').addEventListener('click', () => copyReleaseRows({ visibleOnly: true }));
+    document.getElementById('releaseCopyAllBtn').addEventListener('click', () => copyReleaseRows({ visibleOnly: false }));
+    document.getElementById('releaseDownloadCsvBtn').addEventListener('click', downloadReleaseCsv);
     document.getElementById('releaseCartridgeFilter').addEventListener('change', (event) => {
         releaseState.filters.cartridgeOnly = event.target.checked;
         renderReleaseTables();
@@ -541,6 +555,89 @@ function renderReleaseTables() {
     renderCreateRows();
     document.getElementById('releaseQueueMeta').textContent = `Total: ${rows.length}`;
     document.getElementById('releaseSubtitle').textContent = `${availableRows.length} pending DR item(s), ${releaseState.createRows.length} item(s) in Create DR.`;
+}
+
+function getReleaseExportRows({ visibleOnly = false } = {}) {
+    const availableRows = releaseState.rows.filter((row) => !isCreateRow(row.key));
+    if (visibleOnly) return releaseState.viewRows || [];
+    return availableRows.filter(passesReleaseFilters);
+}
+
+function releaseExportCell(row, key) {
+    if (key === 'age') return formatAge(row.age);
+    return String(row?.[key] ?? '').trim();
+}
+
+function buildReleaseTsv(rows) {
+    const header = RELEASE_EXPORT_COLUMNS.map(([, label]) => label).join('\t');
+    const body = rows.map((row) => RELEASE_EXPORT_COLUMNS
+        .map(([key]) => releaseExportCell(row, key).replace(/\t/g, ' ').replace(/\r?\n/g, ' '))
+        .join('\t'));
+    return [header, ...body].join('\n');
+}
+
+function csvCell(value) {
+    const text = String(value ?? '');
+    if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+}
+
+function buildReleaseCsv(rows) {
+    const header = RELEASE_EXPORT_COLUMNS.map(([, label]) => csvCell(label)).join(',');
+    const body = rows.map((row) => RELEASE_EXPORT_COLUMNS
+        .map(([key]) => csvCell(releaseExportCell(row, key)))
+        .join(','));
+    return [header, ...body].join('\n');
+}
+
+async function copyTextToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+}
+
+async function copyReleaseRows({ visibleOnly = false } = {}) {
+    const rows = getReleaseExportRows({ visibleOnly });
+    if (!rows.length) {
+        setReleaseStatus('No DR rows to copy.', true);
+        return;
+    }
+    try {
+        await copyTextToClipboard(buildReleaseTsv(rows));
+        setReleaseStatus(`${visibleOnly ? 'Visible' : 'All pending'} DR rows copied for Google Sheets.`);
+    } catch (error) {
+        console.error('Copy release rows failed:', error);
+        setReleaseStatus('Copy failed. Try Download CSV.', true);
+    }
+}
+
+function downloadReleaseCsv() {
+    const rows = getReleaseExportRows({ visibleOnly: false });
+    if (!rows.length) {
+        setReleaseStatus('No DR rows to export.', true);
+        return;
+    }
+    const csv = buildReleaseCsv(rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `releasing-pending-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setReleaseStatus(`CSV downloaded with ${rows.length} pending DR row(s).`);
 }
 
 function passesReleaseFilters(row) {
