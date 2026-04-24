@@ -92,7 +92,7 @@ body {
 }
 
 .release-panel-head {
-    grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 24rem) auto;
+    grid-template-columns: minmax(12rem, 16rem) minmax(24rem, 1fr) auto;
     padding: 0.72rem 0.85rem;
 }
 
@@ -116,11 +116,18 @@ body {
 .release-search {
     display: grid;
     gap: 0.25rem;
+    min-width: 0;
+}
+
+.release-search-tools {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
 }
 
 .release-search-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.4rem;
     align-items: center;
 }
@@ -133,6 +140,7 @@ body {
     color: var(--rel-accent);
     font: 800 0.78rem 'Archivo', sans-serif;
     cursor: pointer;
+    padding: 0 0.35rem;
 }
 
 .release-go-btn:hover {
@@ -145,6 +153,7 @@ body {
     flex-wrap: wrap;
     gap: 0.35rem;
     justify-content: flex-start;
+    align-items: center;
 }
 
 .release-export-btn {
@@ -820,12 +829,8 @@ body {
         justify-content: flex-start;
     }
 
-    .release-search-row {
-        grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    .release-export-actions {
-        grid-column: 1 / -1;
+    .release-search-tools {
+        width: 100%;
     }
 
     .release-create-fields {
@@ -834,6 +839,15 @@ body {
 }
 
 @media (max-width: 720px) {
+    .release-content {
+        padding: 0.7rem;
+    }
+
+    .release-panel-head,
+    .release-create-head {
+        padding: 0.75rem;
+    }
+
     .release-search-row {
         grid-template-columns: 1fr;
     }
@@ -844,6 +858,53 @@ body {
 
     .release-export-btn {
         flex: 1 1 100%;
+    }
+
+    .release-go-btn {
+        width: 100%;
+        min-height: 2.35rem;
+        border: 1px solid rgba(138, 56, 162, 0.25);
+        background: rgba(255, 255, 255, 0.9);
+    }
+
+    .release-flags {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+    }
+
+    .release-flags label {
+        white-space: normal;
+    }
+
+    .release-table-shell {
+        max-height: 22rem;
+    }
+
+    .release-list-panel .release-table-shell {
+        max-height: 24rem;
+    }
+}
+
+@media (max-width: 560px) {
+    .release-header h1 {
+        font-size: 1.9rem;
+    }
+
+    .release-status {
+        min-width: 100%;
+    }
+
+    .release-actions {
+        width: 100%;
+    }
+
+    .release-actions .btn {
+        flex: 1 1 100%;
+    }
+
+    .release-create-fields {
+        grid-template-columns: 1fr;
     }
 }
 
