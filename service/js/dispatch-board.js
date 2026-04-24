@@ -83,7 +83,8 @@ const opsState = {
     routeSourceLabel: 'Printed',
     newRequestMachine: null,
     newRequestGraphRow: null,
-    newRequestLookupSeq: 0
+    newRequestLookupSeq: 0,
+    newRequestReleaseItems: []
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -156,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('newReqCloseBtn').addEventListener('click', closeNewRequestModal);
     document.getElementById('newReqCancelBtn').addEventListener('click', closeNewRequestModal);
     document.getElementById('newReqOverlay').addEventListener('click', closeNewRequestModal);
+    document.getElementById('newReqReleaseAddBtn').addEventListener('click', () => addCurrentReleaseRequestItem());
     document.getElementById('newReqSaveBtn').addEventListener('click', () => saveNewServiceRequest());
 
     const dispatchNote = document.getElementById('dispatchHeaderNote');
@@ -407,6 +409,99 @@ function buildReleaseRequestSummary({ category, itemRstd, unit, qty }) {
     if (!requestLabel) return '';
     const safeQty = normalizeReleaseQtyValue(qty);
     return `${safeQty} ${unit === 'set' ? 'set' : 'pc'} ${requestLabel}`.trim();
+}
+
+function buildReleaseItemsSummary(items) {
+    return (items || [])
+        .map((item) => buildReleaseRequestSummary(item))
+        .filter(Boolean)
+        .join('; ');
+}
+
+function buildReleaseRequestItemDraft({ category, itemRstd, qty, unit }) {
+    const normalizedCategory = normalizeReleaseCategoryValue(category);
+    const normalizedItem = String(itemRstd || '').trim();
+    if (!normalizedCategory && !normalizedItem) return null;
+    return {
+        key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        category: normalizedCategory,
+        itemRstd: normalizedItem,
+        qty: normalizeReleaseQtyValue(qty),
+        unit: unit === 'set' ? 'set' : 'pc'
+    };
+}
+
+function getCurrentReleaseRequestDraft() {
+    return buildReleaseRequestItemDraft({
+        category: document.getElementById('newReqReleaseCategory')?.value || '',
+        itemRstd: document.getElementById('newReqReleaseItemRstd')?.value || '',
+        qty: document.getElementById('newReqReleaseQty')?.value || 1,
+        unit: getSelectedReleaseUnit()
+    });
+}
+
+function clearCurrentReleaseRequestDraftInputs(options = {}) {
+    const preserveCategory = options.preserveCategory === true;
+    if (!preserveCategory) {
+        const categorySelect = document.getElementById('newReqReleaseCategory');
+        if (categorySelect) categorySelect.value = '';
+    }
+    const itemInput = document.getElementById('newReqReleaseItemRstd');
+    const qtyInput = document.getElementById('newReqReleaseQty');
+    if (itemInput) itemInput.value = '';
+    if (qtyInput) qtyInput.value = '1';
+    document.querySelectorAll('input[name="newReqReleaseUnit"]').forEach((input) => {
+        input.checked = input.value === 'pc';
+    });
+}
+
+function renderNewRequestReleaseItems() {
+    const tbody = document.getElementById('newReqReleaseItemsBody');
+    if (!tbody) return;
+    const items = opsState.newRequestReleaseItems || [];
+    if (!items.length) {
+        tbody.innerHTML = '<tr class="marga-release-empty-row"><td colspan="5">No release items added yet.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map((item) => `
+        <tr data-release-item-key="${MargaUtils.escapeHtml(item.key)}">
+            <td>${MargaUtils.escapeHtml(item.category)}</td>
+            <td>${MargaUtils.escapeHtml(item.itemRstd)}</td>
+            <td>${MargaUtils.escapeHtml(String(item.qty))}</td>
+            <td>${MargaUtils.escapeHtml(item.unit.toUpperCase())}</td>
+            <td><button type="button" class="btn btn-secondary btn-sm marga-release-remove-btn" data-release-remove-key="${MargaUtils.escapeHtml(item.key)}">Remove</button></td>
+        </tr>
+    `).join('');
+
+    tbody.querySelectorAll('[data-release-remove-key]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const key = String(button.dataset.releaseRemoveKey || '').trim();
+            opsState.newRequestReleaseItems = opsState.newRequestReleaseItems.filter((item) => item.key !== key);
+            renderNewRequestReleaseItems();
+        });
+    });
+}
+
+function addCurrentReleaseRequestItem() {
+    const draft = getCurrentReleaseRequestDraft();
+    if (!draft) {
+        alert('Please choose a category and enter Item Rstd first.');
+        return;
+    }
+    if (!draft.category) {
+        alert('Please choose a category before adding the release item.');
+        return;
+    }
+    if (!draft.itemRstd) {
+        alert('Please enter Item Rstd before adding the release item.');
+        return;
+    }
+
+    opsState.newRequestReleaseItems.push(draft);
+    renderNewRequestReleaseItems();
+    clearCurrentReleaseRequestDraftInputs({ preserveCategory: true });
+    document.getElementById('newReqReleaseItemRstd')?.focus();
 }
 
 function cacheMachineBySerial(machine) {
@@ -708,6 +803,67 @@ async function setDocument(collection, docId, fields) {
         throw new Error(payload?.error?.message || `Failed to set ${collection}/${docId}`);
     }
     return payload;
+}
+
+async function allocateNextNumericId(collection) {
+    const latestDocs = await runFirestoreQuery(collection, 1).catch(() => []);
+    const latestRow = latestDocs.map(parseFirestoreDoc).filter(Boolean)[0] || null;
+    const nextId = Number(latestRow?.id || 0) + 1;
+    if (!Number.isFinite(nextId) || nextId <= 0) {
+        throw new Error(`Unable to allocate new ${collection} id.`);
+    }
+    return nextId;
+}
+
+async function saveNewRequestReleaseItems({ scheduleId, branchId, items, nowIso, machineId, scheduleTechId }) {
+    if (!Array.isArray(items) || !items.length) return 0;
+    let nextItemId = await allocateNextNumericId('tbl_newfordr');
+
+    for (const item of items) {
+        const qty = normalizeReleaseQtyValue(item.qty);
+        const category = normalizeReleaseCategoryValue(item.category);
+        const itemRstd = String(item.itemRstd || '').trim();
+        const unit = item.unit === 'set' ? 'set' : 'pc';
+        const summary = buildReleaseRequestSummary({ category, itemRstd, qty, unit });
+        const rdTypeId = /cartridge/i.test(category) ? 4 : 5;
+        const doc = {
+            id: nextItemId,
+            reference_id: Number(scheduleId || 0) || scheduleId,
+            original_reference_id: 0,
+            client_id: Number(branchId || 0) || 0,
+            rd_id: 0,
+            source_id: 2,
+            status_id: 1,
+            rdtype_id: rdTypeId,
+            qty,
+            request_qty: qty,
+            release_pending_qty: qty,
+            supplier_id: 0,
+            supplierX: 0,
+            iscancelled: 0,
+            close_date: ZERO_DATETIME,
+            description: itemRstd,
+            remarks: summary,
+            category,
+            release_category: category,
+            release_request_unit: unit,
+            release_brand: '',
+            release_model: '',
+            release_description: itemRstd,
+            release_serial: '',
+            release_notes: summary,
+            release_details_added: 0,
+            releasing_finaldr_id: 0,
+            releasing_source_schedule_id: String(scheduleId || ''),
+            serial: Number(machineId || 0) || 0,
+            tech_id: Number(scheduleTechId || 0) || 0,
+            tmestmp: nowIso
+        };
+        await setDocument('tbl_newfordr', String(nextItemId), doc);
+        nextItemId += 1;
+    }
+
+    return items.length;
 }
 
 async function ensureAssignableEmployeesLoaded() {
@@ -1225,6 +1381,8 @@ async function openNewRequestModal() {
     releaseUnitInputs.forEach((input) => {
         input.checked = input.value === 'pc';
     });
+    opsState.newRequestReleaseItems = [];
+    renderNewRequestReleaseItems();
     document.getElementById('newReqStatus').value = '1';
     document.getElementById('newReqSuperUrgent').checked = false;
     document.getElementById('newReqWithRequest').checked = false;
@@ -1873,17 +2031,25 @@ async function saveNewServiceRequest() {
     let troubleId = Number(document.getElementById('newReqTrouble').value || 0);
     let assigneeId = Number(document.getElementById('newReqAssignee').value || 0);
     const remarks = (document.getElementById('newReqRemarks').value || '').trim();
-    const releaseCategory = normalizeReleaseCategoryValue(document.getElementById('newReqReleaseCategory')?.value || '');
-    const releaseItemRstd = (document.getElementById('newReqReleaseItemRstd')?.value || '').trim();
-    const releaseQty = normalizeReleaseQtyValue(document.getElementById('newReqReleaseQty')?.value || 1);
-    const releaseUnit = getSelectedReleaseUnit();
-    const releaseSummary = buildReleaseRequestSummary({
-        category: releaseCategory,
-        itemRstd: releaseItemRstd,
-        unit: releaseUnit,
-        qty: releaseQty
-    });
-    const hasReleaseRequest = Boolean(releaseCategory || releaseItemRstd);
+    const pendingReleaseDraft = getCurrentReleaseRequestDraft();
+    const releaseItems = [...(opsState.newRequestReleaseItems || [])];
+    if (pendingReleaseDraft && (pendingReleaseDraft.category || pendingReleaseDraft.itemRstd)) {
+        releaseItems.push(pendingReleaseDraft);
+    }
+    const hasReleaseRequest = releaseItems.length > 0;
+    const releaseSummary = buildReleaseItemsSummary(releaseItems);
+    const releaseCategory = hasReleaseRequest
+        ? (releaseItems.every((item) => item.category === releaseItems[0].category) ? releaseItems[0].category : 'MULTIPLE')
+        : '';
+    const releaseItemRstd = hasReleaseRequest
+        ? (releaseItems.length === 1 ? releaseItems[0].itemRstd : 'Multiple items')
+        : '';
+    const releaseUnit = hasReleaseRequest
+        ? (releaseItems.every((item) => item.unit === releaseItems[0].unit) ? releaseItems[0].unit : '')
+        : '';
+    const releaseQty = hasReleaseRequest
+        ? releaseItems.reduce((sum, item) => sum + normalizeReleaseQtyValue(item.qty), 0)
+        : 0;
     const statusValue = Number(document.getElementById('newReqStatus')?.value || 1);
     const superUrgent = document.getElementById('newReqSuperUrgent')?.checked ? 1 : 0;
     const withRequest = document.getElementById('newReqWithRequest')?.checked ? 1 : 0;
@@ -1952,12 +2118,20 @@ async function saveNewServiceRequest() {
         alert('Please select a branch.');
         return;
     }
-    if (releaseItemRstd && !releaseCategory) {
-        alert('Please choose a release category for Item Rstd.');
+    if (pendingReleaseDraft && !pendingReleaseDraft.category && pendingReleaseDraft.itemRstd) {
+        alert('Please choose a category before saving the pending release item.');
         return;
     }
-    if ((releaseCategory || releaseItemRstd) && releaseQty <= 0) {
-        alert('Please enter a valid quantity for the release request.');
+    if (pendingReleaseDraft && pendingReleaseDraft.category && !pendingReleaseDraft.itemRstd) {
+        alert('Please enter Item Rstd before saving the pending release item.');
+        return;
+    }
+    if (hasReleaseRequest && releaseItems.some((item) => !item.category || !item.itemRstd)) {
+        alert('Each release item needs both category and Item Rstd.');
+        return;
+    }
+    if (hasReleaseRequest && releaseItems.some((item) => normalizeReleaseQtyValue(item.qty) <= 0)) {
+        alert('Please enter a valid quantity for each release item.');
         return;
     }
     if (saveContact && !normalizeContactNumber(phone)) {
@@ -1972,11 +2146,11 @@ async function saveNewServiceRequest() {
     const taskDatetime = `${date} ${time.length === 5 ? `${time}:00` : time}`;
 
     // Allocate next schedule id (max + 1). Note: concurrent creates can collide; acceptable for now.
-    const maxDocs = await runFirestoreQuery('tbl_schedule', 1);
-    const maxRow = maxDocs.map(parseFirestoreDoc).filter(Boolean)[0] || null;
-    const nextId = Number(maxRow?.id || 0) + 1;
-    if (!Number.isFinite(nextId) || nextId <= 0) {
-        alert('Unable to allocate new schedule id.');
+    let nextId = 0;
+    try {
+        nextId = await allocateNextNumericId('tbl_schedule');
+    } catch (error) {
+        alert(error?.message || 'Unable to allocate new schedule id.');
         return;
     }
 
@@ -2034,7 +2208,7 @@ async function saveNewServiceRequest() {
             release_request_unit: releaseUnit,
             release_request_summary: releaseSummary,
             release_request_qty: releaseQty,
-            releasing_pending_qty: releaseQty,
+            releasing_pending_qty: 0,
             releasing_dr_done: 0
         } : {})
     };
@@ -2079,6 +2253,16 @@ async function saveNewServiceRequest() {
     saveBtn.disabled = true;
     try {
         await setDocument('tbl_schedule', nextId, fullDoc);
+        if (hasReleaseRequest) {
+            await saveNewRequestReleaseItems({
+                scheduleId: nextId,
+                branchId,
+                items: releaseItems,
+                nowIso: bridgeUpdatedAt,
+                machineId: matchedMachineId,
+                scheduleTechId: assigneeId || 0
+            });
+        }
         let contactMessage = '';
         try {
             const contactResult = await saveRequestContactIfNeeded({ branchId, caller, phone });
@@ -2093,7 +2277,7 @@ async function saveNewServiceRequest() {
         }
         closeNewRequestModal();
         await loadOperationsBoard();
-        alert(`Service request saved as schedule #${nextId}.${contactMessage}`);
+        alert(`Service request saved as schedule #${nextId}.${hasReleaseRequest ? ` ${releaseItems.length} release item(s) sent to Releasing.` : ''}${contactMessage}`);
     } catch (err) {
         console.error('Save request failed:', err);
         alert(`Failed to save request: ${err?.message || err}`);

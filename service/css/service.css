@@ -484,6 +484,60 @@
     line-height: 1.4;
 }
 
+.marga-release-add-field .btn {
+    width: 100%;
+    min-height: 2.6rem;
+}
+
+.marga-release-table-card {
+    gap: 0.45rem;
+}
+
+.marga-release-table-wrap {
+    border: 1px solid rgba(187, 212, 237, 0.78);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.76);
+    overflow: hidden;
+}
+
+.marga-release-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.marga-release-table th,
+.marga-release-table td {
+    padding: 0.58rem 0.7rem;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+    text-align: left;
+    font-size: 0.82rem;
+    color: #1f3657;
+}
+
+.marga-release-table th {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #587090;
+    font-weight: 900;
+    background: rgba(241, 245, 249, 0.75);
+}
+
+.marga-release-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.marga-release-empty-row td {
+    text-align: center;
+    color: #7a8ca4;
+}
+
+.marga-release-remove-btn {
+    padding: 0.28rem 0.58rem;
+    font-size: 0.72rem;
+    line-height: 1.1;
+}
+
 .ops-status-pill {
     display: inline-flex;
     align-items: center;
@@ -690,6 +744,12 @@
     .marga-field-wide,
     .marga-check-row {
         grid-column: 1 / -1;
+    }
+
+    .marga-release-table th,
+    .marga-release-table td {
+        padding: 0.5rem 0.58rem;
+        font-size: 0.78rem;
     }
 
     .marga-modal-header,

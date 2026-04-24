@@ -310,7 +310,7 @@ function buildReleaseRows() {
         const ref = String(item.reference_id || '').trim();
         if (!ref) return;
         const schedule = schedulesByRef.get(ref) || null;
-        if (schedule && !isDeliverySchedule(schedule)) return;
+        if (schedule && !isDeliverySchedule(schedule) && !hasExplicitReleaseRequest(schedule)) return;
         itemScheduleRefs.add(ref);
         itemRows.push(...expandReleaseItemRows(item, schedule));
     });
