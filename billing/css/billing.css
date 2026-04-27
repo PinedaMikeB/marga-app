@@ -1073,6 +1073,7 @@
     font-size: 0.82rem;
     line-height: 1.45;
     word-break: break-word;
+    white-space: pre-line;
 }
 
 .calc-note {
@@ -1628,6 +1629,67 @@
     color: var(--bill-danger);
     font-size: 0.82rem;
     font-weight: 700;
+}
+
+.calc-proof-preview {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+    color: var(--bill-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.calc-proof-preview img {
+    width: min(220px, 100%);
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.calc-approval-panel {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    align-items: center;
+    margin-top: 0.9rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid #f4c07c;
+    border-radius: 8px;
+    background: #fff7ed;
+    color: #8a4b05;
+}
+
+.calc-approval-panel.approved {
+    border-color: #86d39f;
+    background: #eefdf3;
+    color: #176534;
+}
+
+.calc-approval-panel.rejected {
+    border-color: #f7a3a3;
+    background: #fff1f2;
+    color: #991b1b;
+}
+
+.calc-approval-panel strong,
+.calc-approval-panel span {
+    display: block;
+}
+
+.calc-approval-panel span {
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.calc-approval-actions {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .rtp-preview-shell {

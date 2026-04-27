@@ -498,7 +498,10 @@ async function setFirestoreDocument(collection, docId, fields, options = {}) {
     Object.entries(fields).forEach(([key, value]) => {
         body.fields[key] = toFirestoreFieldValue(value);
     });
-    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}`, {
+    const updateMask = options.mode === 'patch'
+        ? `&${Object.keys(fields).map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`).join('&')}`
+        : '';
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}${updateMask}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -508,6 +511,54 @@ async function setFirestoreDocument(collection, docId, fields, options = {}) {
         throw new Error(payload?.error?.message || `Failed to save ${collection}/${docId}.`);
     }
     return { ok: true, queued: false, payload };
+}
+
+function getCurrentUserAudit() {
+    const user = window.MargaAuth?.getUser ? window.MargaAuth.getUser() : null;
+    return {
+        id: String(user?.id || user?.staff_id || user?.username || '').trim(),
+        name: String(user?.name || user?.username || 'Marga user').trim(),
+        role: String(user?.role || '').trim()
+    };
+}
+
+function resizeImageFileToDataUrl(file, { maxSide = 1280, quality = 0.72 } = {}) {
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            resolve({ dataUrl: '', name: '', type: '' });
+            return;
+        }
+        if (!String(file.type || '').startsWith('image/')) {
+            reject(new Error('Upload an image file for actual spoilage proof.'));
+            return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Unable to read the spoilage proof image.'));
+        reader.onload = () => {
+            const image = new Image();
+            image.onerror = () => reject(new Error('Unable to process the spoilage proof image.'));
+            image.onload = () => {
+                const ratio = Math.min(1, maxSide / Math.max(image.width || 1, image.height || 1));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round((image.width || 1) * ratio));
+                canvas.height = Math.max(1, Math.round((image.height || 1) * ratio));
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                if (dataUrl.length > 850000) {
+                    reject(new Error('Spoilage proof image is still too large. Please upload a smaller photo.'));
+                    return;
+                }
+                resolve({
+                    dataUrl,
+                    name: String(file.name || 'spoilage-proof.jpg').trim(),
+                    type: 'image/jpeg'
+                });
+            };
+            image.src = String(reader.result || '');
+        };
+        reader.readAsDataURL(file);
+    });
 }
 
 async function deleteFirestoreDocument(collection, docId) {
@@ -592,6 +643,7 @@ function billingSnapshotFromValues({
     previousMeter,
     presentMeter,
     spoilagePercent,
+    actualSpoilagePages = 0,
     billingMode = 'single_meter_rtp',
     linesSignature = ''
 } = {}) {
@@ -600,6 +652,7 @@ function billingSnapshotFromValues({
         previousMeter: Math.max(0, Number(previousMeter || 0) || 0),
         presentMeter: Math.max(0, Number(presentMeter || 0) || 0),
         spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2)),
+        actualSpoilagePages: Math.max(0, Number(actualSpoilagePages || 0) || 0),
         billingMode: String(billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
         linesSignature: String(linesSignature || '').trim()
     };
@@ -655,6 +708,7 @@ function billingSnapshotFromDoc(doc, fallback = {}) {
         previousMeter,
         presentMeter,
         spoilagePercent: Number.isFinite(spoilagePercent) ? spoilagePercent : fallback.spoilagePercent,
+        actualSpoilagePages: Number(doc?.actual_spoilage_pages ?? fallback.actualSpoilagePages ?? 0) || 0,
         billingMode: doc?.billing_mode || fallback.billingMode,
         linesSignature: doc?.billing_lines_signature || fallback.linesSignature
     });
@@ -667,6 +721,7 @@ function billingSnapshotsEqual(left, right) {
         && a.previousMeter === b.previousMeter
         && a.presentMeter === b.presentMeter
         && Math.abs(a.spoilagePercent - b.spoilagePercent) < 0.001
+        && a.actualSpoilagePages === b.actualSpoilagePages
         && a.billingMode === b.billingMode
         && (!a.linesSignature || !b.linesSignature || a.linesSignature === b.linesSignature);
 }
@@ -1175,7 +1230,10 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         present_meter2: Number(secondaryLine.presentMeter || 0) || 0,
         field_total_consumed: Number(estimate?.rawPages || 0) || 0,
         total_pages: Number(estimate?.netPages || 0) || 0,
-        spoilage_pages: Number(estimate?.spoilagePages || 0) || 0,
+        system_spoilage_pages: Number(estimate?.systemSpoilagePages ?? estimate?.spoilagePages ?? 0) || 0,
+        actual_spoilage_pages: Number(estimate?.actualSpoilagePages || 0) || 0,
+        total_spoilage_pages: Number(estimate?.totalSpoilagePages ?? estimate?.spoilagePages ?? 0) || 0,
+        spoilage_pages: Number(estimate?.totalSpoilagePages ?? estimate?.spoilagePages ?? 0) || 0,
         spoilage_percent: Number(snapshot.spoilagePercent || 0) || 0,
         spoilage_rate: Number((Number(snapshot.spoilagePercent || 0) / 100).toFixed(4)),
         billed_pages: Number(estimate?.billedPages || 0) || 0,
@@ -1208,6 +1266,18 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         billing_lines_count: lineItems.length,
         billing_lines_signature: linesSignature,
         billing_total_pages: Number(estimate?.billedPages || estimate?.pages || 0) || 0,
+        actual_spoilage_reason: String(estimate?.actualSpoilageReason || '').trim(),
+        actual_spoilage_proof_name: String(estimate?.actualSpoilageProofName || '').trim(),
+        actual_spoilage_proof_type: String(estimate?.actualSpoilageProofType || '').trim(),
+        actual_spoilage_proof_image: String(estimate?.actualSpoilageProofImage || '').trim(),
+        actual_spoilage_requested_by: String(estimate?.actualSpoilageRequestedBy || '').trim(),
+        actual_spoilage_requested_at: String(estimate?.actualSpoilageRequestedAt || '').trim(),
+        approval_status: Number(estimate?.actualSpoilagePages || 0) > 0
+            ? String(estimate?.approvalStatus || 'pending').trim()
+            : 'none',
+        approval_note: String(estimate?.approvalNote || '').trim(),
+        approved_by: String(estimate?.approvedBy || '').trim(),
+        approved_at: String(estimate?.approvedAt || '').trim(),
         updated_at: now.toISOString(),
         source_module: 'billing_dashboard',
         status: 0,
@@ -4027,6 +4097,17 @@ function calculateMeterLineEstimate({
     previousMeter = 0,
     presentMeter = 0,
     spoilagePercent = DEFAULT_SPOILAGE_RATE * 100,
+    actualSpoilagePages = 0,
+    actualSpoilageReason = '',
+    actualSpoilageProofImage = '',
+    actualSpoilageProofName = '',
+    actualSpoilageProofType = '',
+    approvalStatus = '',
+    approvalNote = '',
+    approvedBy = '',
+    approvedAt = '',
+    actualSpoilageRequestedBy = '',
+    actualSpoilageRequestedAt = '',
     forceFixed = false,
     row = null,
     missingMeterMessage = '',
@@ -4042,6 +4123,7 @@ function calculateMeterLineEstimate({
     const spoilageRate = Math.max(0, Number(spoilagePercent || 0) || 0) / 100;
     const isFixed = forceFixed || (!isReadingPricing(profile) && monthlyRate > 0);
     let rawPages = 0;
+    let systemSpoilagePages = 0;
     let spoilagePages = 0;
     let netPages = 0;
     let billedPages = 0;
@@ -4071,7 +4153,8 @@ function calculateMeterLineEstimate({
         }
 
         if (rawPages > 0) {
-            spoilagePages = Math.round(rawPages * spoilageRate);
+            systemSpoilagePages = Math.round(rawPages * spoilageRate);
+            spoilagePages = Math.min(rawPages, systemSpoilagePages + Math.max(0, Number(actualSpoilagePages || 0) || 0));
             netPages = Math.max(0, rawPages - spoilagePages);
             billedPages = monthlyQuota > 0 ? Math.max(netPages, monthlyQuota) : netPages;
             if (billedPages > 0 && pageRate > 0) {
@@ -4122,6 +4205,9 @@ function calculateMeterLineEstimate({
         rawPages,
         spoilagePercent: Number((spoilageRate * 100).toFixed(2)),
         spoilageRate,
+        systemSpoilagePages,
+        actualSpoilagePages: Math.max(0, Number(actualSpoilagePages || 0) || 0),
+        totalSpoilagePages: spoilagePages,
         spoilagePages,
         netPages,
         billedPages,
@@ -4140,6 +4226,18 @@ function calculateMeterLineEstimate({
         quotaVariance: monthlyQuota > 0 ? netPages - monthlyQuota : null,
         formula,
         warning,
+        actualSpoilageReason: String(actualSpoilageReason || '').trim(),
+        actualSpoilageProofImage: String(actualSpoilageProofImage || '').trim(),
+        actualSpoilageProofName: String(actualSpoilageProofName || '').trim(),
+        actualSpoilageProofType: String(actualSpoilageProofType || '').trim(),
+        actualSpoilageRequestedBy: String(actualSpoilageRequestedBy || '').trim(),
+        actualSpoilageRequestedAt: String(actualSpoilageRequestedAt || '').trim(),
+        approvalStatus: Math.max(0, Number(actualSpoilagePages || 0) || 0) > 0
+            ? String(approvalStatus || 'pending').trim()
+            : 'none',
+        approvalNote: String(approvalNote || '').trim(),
+        approvedBy: String(approvedBy || '').trim(),
+        approvedAt: String(approvedAt || '').trim(),
         missingMeterMessage,
         pendingPresentMessage,
         missingMeterSource: Boolean(missingMeterMessage && previous <= 0 && present <= 0)
@@ -4178,6 +4276,9 @@ function buildSavedLegacyBillingEstimate({ doc, context = {}, profile = {}, row 
         previousMeter,
         presentMeter,
         rawPages,
+        systemSpoilagePages: Number(doc?.system_spoilage_pages ?? spoilagePages) || 0,
+        actualSpoilagePages: Number(doc?.actual_spoilage_pages || 0) || 0,
+        totalSpoilagePages: spoilagePages,
         spoilagePages,
         netPages,
         billedPages: matchesQuotaFloor ? monthlyQuota : (Number(seedEstimate?.billedPages || 0) || netPages),
@@ -4194,6 +4295,14 @@ function buildSavedLegacyBillingEstimate({ doc, context = {}, profile = {}, row 
         pages: matchesQuotaFloor ? monthlyQuota : netPages,
         quotaVariance: monthlyQuota > 0 ? netPages - monthlyQuota : null,
         formula: 'saved_legacy_invoice_total',
+        actualSpoilageReason: String(doc?.actual_spoilage_reason || '').trim(),
+        actualSpoilageProofImage: String(doc?.actual_spoilage_proof_image || '').trim(),
+        actualSpoilageProofName: String(doc?.actual_spoilage_proof_name || '').trim(),
+        actualSpoilageProofType: String(doc?.actual_spoilage_proof_type || '').trim(),
+        approvalStatus: String(doc?.approval_status || (Number(doc?.actual_spoilage_pages || 0) > 0 ? 'pending' : 'none')).trim(),
+        approvalNote: String(doc?.approval_note || '').trim(),
+        approvedBy: String(doc?.approved_by || '').trim(),
+        approvedAt: String(doc?.approved_at || '').trim(),
         savedComputation: `Saved invoice ${savedInvoiceRef || 'record'} total is ${formatAmount(amountDue)}. Stored pages: ${formatCount(rawPages)} gross - ${formatCount(spoilagePages)} spoilage = ${formatCount(netPages)} net. This saved legacy invoice total is authoritative; editing the meter fields will recalculate a replacement amount.`,
         warning: meterDelta > 0 && rawPages > 0 && meterDelta !== rawPages
             ? `Linked meter movement is ${formatCount(meterDelta)} pages, while the saved billing record stores ${formatCount(rawPages)} pages. The saved invoice amount is being preserved for audit.`
@@ -4215,6 +4324,8 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
     const vatAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.vatAmount || 0), 0));
     const rawPages = lines.reduce((sum, line) => sum + Number(line.rawPages || 0), 0);
     const spoilagePages = lines.reduce((sum, line) => sum + Number(line.spoilagePages || 0), 0);
+    const systemSpoilagePages = lines.reduce((sum, line) => sum + Number(line.systemSpoilagePages ?? line.spoilagePages ?? 0), 0);
+    const actualSpoilagePages = lines.reduce((sum, line) => sum + Number(line.actualSpoilagePages || 0), 0);
     const netPages = lines.reduce((sum, line) => sum + Number(line.netPages || 0), 0);
     const billedPages = lines.reduce((sum, line) => sum + Number(line.billedPages || 0), 0);
     const quotaPages = lines.reduce((sum, line) => sum + Number(line.quotaPages || 0), 0);
@@ -4225,6 +4336,9 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
     return {
         lineItems: lines,
         rawPages,
+        systemSpoilagePages,
+        actualSpoilagePages,
+        totalSpoilagePages: spoilagePages,
         spoilagePages,
         netPages,
         billedPages,
@@ -4238,6 +4352,7 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
         netAmount,
         vatAmount,
         quotaVariance: null,
+        approvalStatus: actualSpoilagePages > 0 ? (lines.find((line) => line.approvalStatus)?.approvalStatus || 'pending') : 'none',
         formula: lines.length > 1 ? 'sum_of_billing_lines' : (lines[0]?.formula || fallbackFormula),
         warning: warnings.join(' ')
     };
@@ -4250,6 +4365,9 @@ function buildBillingLinesSignature(lineItems = []) {
         previousMeter: Number(line.previousMeter || 0) || 0,
         presentMeter: Number(line.presentMeter || 0) || 0,
         spoilagePercent: Number(line.spoilagePercent || 0) || 0,
+        actualSpoilagePages: Number(line.actualSpoilagePages || 0) || 0,
+        actualSpoilageReason: String(line.actualSpoilageReason || '').trim(),
+        actualSpoilageProofName: String(line.actualSpoilageProofName || '').trim(),
         pageRate: Number(line.pageRate || 0) || 0,
         succeedingRate: Number(line.succeedingRate || 0) || 0,
         monthlyQuota: Number(line.monthlyQuota || 0) || 0,
@@ -4353,13 +4471,24 @@ function buildBillingCalculationContext(row, monthKey) {
     };
 }
 
-function calculateBillingEstimate(context, previousMeterValue, presentMeterValue, spoilageRateValue = context?.spoilageRate) {
+function calculateBillingEstimate(context, previousMeterValue, presentMeterValue, spoilageRateValue = context?.spoilageRate, extras = {}) {
     return calculateMeterLineEstimate({
         label: context?.isFixed ? 'Fixed Rate' : 'Single Meter',
         profile: context?.profile || {},
         previousMeter: previousMeterValue,
         presentMeter: presentMeterValue,
         spoilagePercent: Math.max(0, Number(spoilageRateValue || 0) || 0) * 100,
+        actualSpoilagePages: extras.actualSpoilagePages ?? context?.actualSpoilagePages ?? 0,
+        actualSpoilageReason: extras.actualSpoilageReason ?? context?.actualSpoilageReason ?? '',
+        actualSpoilageProofImage: extras.actualSpoilageProofImage ?? context?.actualSpoilageProofImage ?? '',
+        actualSpoilageProofName: extras.actualSpoilageProofName ?? context?.actualSpoilageProofName ?? '',
+        actualSpoilageProofType: extras.actualSpoilageProofType ?? context?.actualSpoilageProofType ?? '',
+        actualSpoilageRequestedBy: extras.actualSpoilageRequestedBy ?? context?.actualSpoilageRequestedBy ?? '',
+        actualSpoilageRequestedAt: extras.actualSpoilageRequestedAt ?? context?.actualSpoilageRequestedAt ?? '',
+        approvalStatus: extras.approvalStatus ?? context?.approvalStatus ?? '',
+        approvalNote: extras.approvalNote ?? context?.approvalNote ?? '',
+        approvedBy: extras.approvedBy ?? context?.approvedBy ?? '',
+        approvedAt: extras.approvedAt ?? context?.approvedAt ?? '',
         forceFixed: Boolean(context?.isFixed),
         row: context?.row || null
     });
@@ -4598,7 +4727,26 @@ function formatLineComputation(line) {
     if (line.formula === 'present_lower_than_previous') {
         return line.warning || 'Present reading is lower than previous reading. Please check the present meter before billing this line.';
     }
-    return `${formatCount(line.rawPages || 0)} gross - ${formatCount(line.spoilagePages || 0)} spoilage = ${formatCount(line.netPages || 0)} net. ${formatCount(line.quotaPages || 0)} quota pages x ${formatAmount(line.pageRate || 0)} plus ${formatCount(line.succeedingPages || 0)} succeeding pages x ${formatAmount(line.succeedingRate || 0)} = ${formatAmount(line.amountDue || 0)}.`;
+    return formatBillingComputationFlow(line);
+}
+
+function formatBillingComputationFlow(estimate = {}) {
+    const systemSpoilage = Number(estimate.systemSpoilagePages ?? estimate.spoilagePages ?? 0) || 0;
+    const actualSpoilage = Number(estimate.actualSpoilagePages || 0) || 0;
+    const totalSpoilage = Number(estimate.totalSpoilagePages ?? estimate.spoilagePages ?? 0) || 0;
+    if (actualSpoilage > 0) {
+        return [
+            `Gross ${formatCount(estimate.rawPages || 0)}`,
+            `System spoilage ${formatCount(systemSpoilage)}`,
+            `Actual spoilage ${formatCount(actualSpoilage)}`,
+            `Net billable ${formatCount(estimate.netPages || 0)}`,
+            `${formatCount(estimate.quotaPages || 0)} quota x ${formatAmount(estimate.pageRate || 0)} = ${formatAmount(estimate.quotaAmount || 0)}`,
+            `${formatCount(estimate.succeedingPages || 0)} succeeding pages x ${formatAmount(estimate.succeedingRate || 0)} = ${formatAmount(estimate.succeedingAmount || 0)}`,
+            `Total = ${formatAmount(estimate.amountDue || 0)}`,
+            String(estimate.approvalStatus || '') === 'approved' ? 'Approved for invoice printing.' : 'Pending admin approval.'
+        ].join('\n');
+    }
+    return `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(totalSpoilage)} spoilage = ${formatCount(estimate.netPages || 0)} net. ${formatCount(estimate.quotaPages || 0)} quota pages x ${formatAmount(estimate.pageRate || 0)} plus ${formatCount(estimate.succeedingPages || 0)} succeeding pages x ${formatAmount(estimate.succeedingRate || 0)} = ${formatAmount(estimate.amountDue || 0)}.`;
 }
 
 function closeBillingCalcModal() {
@@ -4641,6 +4789,18 @@ async function openBillingCalcModal(rowId, monthKey) {
     if (requestToken !== billingCalcRequestToken) return;
 
     const savedBillingDoc = pickPrimaryBillingDoc(existingBillingDocs);
+    let savedBillingDocId = savedBillingDoc?._docId || '';
+    context.actualSpoilagePages = Number(savedBillingDoc?.actual_spoilage_pages || 0) || 0;
+    context.actualSpoilageReason = String(savedBillingDoc?.actual_spoilage_reason || '').trim();
+    context.actualSpoilageProofImage = String(savedBillingDoc?.actual_spoilage_proof_image || '').trim();
+    context.actualSpoilageProofName = String(savedBillingDoc?.actual_spoilage_proof_name || '').trim();
+    context.actualSpoilageProofType = String(savedBillingDoc?.actual_spoilage_proof_type || '').trim();
+    context.actualSpoilageRequestedBy = String(savedBillingDoc?.actual_spoilage_requested_by || '').trim();
+    context.actualSpoilageRequestedAt = String(savedBillingDoc?.actual_spoilage_requested_at || '').trim();
+    context.approvalStatus = String(savedBillingDoc?.approval_status || (context.actualSpoilagePages > 0 ? 'pending' : 'none')).trim();
+    context.approvalNote = String(savedBillingDoc?.approval_note || '').trim();
+    context.approvedBy = String(savedBillingDoc?.approved_by || '').trim();
+    context.approvedAt = String(savedBillingDoc?.approved_at || '').trim();
     let priorMachineReadingByRow = new Map();
     let rowPriorLookup = null;
     let linkedInvoiceReading = null;
@@ -4699,13 +4859,15 @@ async function openBillingCalcModal(rowId, monthKey) {
             invoiceNo: '',
             previousMeter: context.previousMeter,
             presentMeter: context.presentMeter,
-            spoilagePercent: (context.spoilageRate || 0) * 100
+            spoilagePercent: (context.spoilageRate || 0) * 100,
+            actualSpoilagePages: context.actualSpoilagePages || 0
         })
         : billingSnapshotFromValues({
             invoiceNo: '',
             previousMeter: context.previousMeter,
             presentMeter: context.presentMeter,
-            spoilagePercent: (context.spoilageRate || 0) * 100
+            spoilagePercent: (context.spoilageRate || 0) * 100,
+            actualSpoilagePages: context.actualSpoilagePages || 0
         });
     let estimate = calculateBillingEstimate(
         context,
@@ -4915,7 +5077,30 @@ async function openBillingCalcModal(rowId, monthKey) {
                             </div>
                             <div class="calc-field">
                                 <label>Spoilage Pages</label>
-                                <input type="text" id="calcSpoilagePagesValue" readonly value="${escapeHtml(formatCount(estimate.spoilagePages || 0))}">
+                                <input type="text" id="calcSpoilagePagesValue" readonly value="${escapeHtml(formatCount(estimate.systemSpoilagePages ?? estimate.spoilagePages ?? 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label for="calcActualSpoilageInput">Actual Spoilage</label>
+                                <input type="number" id="calcActualSpoilageInput" min="0" step="1" value="${escapeHtml(String(initialSnapshot.actualSpoilagePages || 0))}">
+                            </div>
+                            <div class="calc-field">
+                                <label>Total Spoilage</label>
+                                <input type="text" id="calcTotalSpoilageValue" readonly value="${escapeHtml(formatCount(estimate.totalSpoilagePages ?? estimate.spoilagePages ?? 0))}">
+                            </div>
+                            <div class="calc-field calc-field-span-2">
+                                <label for="calcActualSpoilageReasonInput">Actual Spoilage Reason</label>
+                                <textarea id="calcActualSpoilageReasonInput" rows="3" placeholder="Example: Additional spoilage discount due to frequent breakdown">${escapeHtml(context.actualSpoilageReason || '')}</textarea>
+                            </div>
+                            <div class="calc-field calc-field-span-2">
+                                <label for="calcActualSpoilageProofInput">Spoilage Proof Image</label>
+                                <input type="file" id="calcActualSpoilageProofInput" accept="image/*">
+                                <div class="calc-proof-preview" id="calcActualSpoilageProofPreview">
+                                    ${
+                                        context.actualSpoilageProofImage
+                                            ? `<img src="${escapeHtml(context.actualSpoilageProofImage)}" alt="Actual spoilage proof"><span>${escapeHtml(context.actualSpoilageProofName || 'Saved proof image')}</span>`
+                                            : '<span>No proof image uploaded.</span>'
+                                    }
+                                </div>
                             </div>
                             <div class="calc-field">
                                 <label>Net Consumption</label>
@@ -4968,6 +5153,16 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
                         }
                     </div>
+                    <div class="calc-approval-panel ${Number(estimate.actualSpoilagePages || 0) > 0 ? '' : 'hidden'}" id="calcApprovalPanel">
+                        <div>
+                            <strong id="calcApprovalTitle">${escapeHtml(estimate.approvalStatus === 'approved' ? 'Actual spoilage approved' : 'Pending admin approval')}</strong>
+                            <span id="calcApprovalCopy">${escapeHtml(estimate.approvalStatus === 'approved' ? `Approved by ${estimate.approvedBy || 'admin'}.` : 'Printing stays locked until an admin approves this actual spoilage discount.')}</span>
+                        </div>
+                        <div class="calc-approval-actions ${window.MargaAuth?.isAdmin?.() ? '' : 'hidden'}">
+                            <button class="btn btn-primary" type="button" id="calcApproveSpoilageBtn">Approve</button>
+                            <button class="btn btn-secondary" type="button" id="calcRejectSpoilageBtn">Reject</button>
+                        </div>
+                    </div>
                     <div class="calc-warning" id="calcWarningValue">${escapeHtml(estimate.warning || '')}</div>
                 </section>
                 <section class="calc-panel">
@@ -4992,7 +5187,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                             estimate.savedComputation
                                 ? estimate.savedComputation
                                 : context.isReading
-                                ? `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(estimate.spoilagePages || 0)} spoilage = ${formatCount(estimate.netPages || 0)} net. ${formatCount(estimate.quotaPages || 0)} quota pages x ${formatAmount(profile.page_rate || 0)} plus ${formatCount(estimate.succeedingPages || 0)} succeeding pages x ${formatAmount(estimate.succeedingRate || 0)} = ${formatAmount(estimate.amountDue || 0)}.`
+                                ? formatBillingComputationFlow(estimate)
                                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`
                         )}</div>
                     </div>
@@ -5083,9 +5278,14 @@ async function openBillingCalcModal(rowId, monthKey) {
     const previousInput = document.getElementById('calcPreviousMeterInput');
     const presentInput = document.getElementById('calcPresentMeterInput');
     const spoilageInput = document.getElementById('calcSpoilageInput');
+    const actualSpoilageInput = document.getElementById('calcActualSpoilageInput');
+    const actualSpoilageReasonInput = document.getElementById('calcActualSpoilageReasonInput');
+    const actualSpoilageProofInput = document.getElementById('calcActualSpoilageProofInput');
+    const actualSpoilageProofPreview = document.getElementById('calcActualSpoilageProofPreview');
     const amountValue = document.getElementById('calcAmountValue');
     const rawPagesValue = document.getElementById('calcRawPagesValue');
     const spoilagePagesValue = document.getElementById('calcSpoilagePagesValue');
+    const totalSpoilageValue = document.getElementById('calcTotalSpoilageValue');
     const netPagesValue = document.getElementById('calcNetPagesValue');
     const billedPagesValue = document.getElementById('calcBilledPagesValue');
     const succeedingPagesValue = document.getElementById('calcSucceedingPagesValue');
@@ -5095,6 +5295,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const quotaValue = document.getElementById('calcQuotaValue');
     const flowValue = document.getElementById('calcFlowValue');
     const warningValue = document.getElementById('calcWarningValue');
+    const approvalPanel = document.getElementById('calcApprovalPanel');
+    const approvalTitle = document.getElementById('calcApprovalTitle');
+    const approvalCopy = document.getElementById('calcApprovalCopy');
+    const approveSpoilageBtn = document.getElementById('calcApproveSpoilageBtn');
+    const rejectSpoilageBtn = document.getElementById('calcRejectSpoilageBtn');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
     const printBreakdownBtn = document.getElementById('calcPrintBreakdownBtn');
@@ -5133,6 +5338,15 @@ async function openBillingCalcModal(rowId, monthKey) {
     let workflowError = '';
     let pendingExclusionLineIndex = -1;
     let calculationEdited = false;
+    let actualSpoilageProof = {
+        dataUrl: context.actualSpoilageProofImage || '',
+        name: context.actualSpoilageProofName || '',
+        type: context.actualSpoilageProofType || ''
+    };
+    let approvalStatus = context.approvalStatus || 'none';
+    let approvalNote = context.approvalNote || '';
+    let approvedBy = context.approvedBy || '';
+    let approvedAt = context.approvedAt || '';
     const lineInputValues = new Map();
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
@@ -5251,7 +5465,20 @@ async function openBillingCalcModal(rowId, monthKey) {
             { ...context, isFixed: activeBillingMode === 'rtf' ? true : context.isFixed },
             previousInput ? previousInput.value : context.previousMeter,
             presentInput ? presentInput.value : context.presentMeter,
-            spoilageInput ? Number(spoilageInput.value || 0) / 100 : context.spoilageRate
+            spoilageInput ? Number(spoilageInput.value || 0) / 100 : context.spoilageRate,
+            {
+                actualSpoilagePages: actualSpoilageInput ? Number(actualSpoilageInput.value || 0) || 0 : 0,
+                actualSpoilageReason: actualSpoilageReasonInput?.value || '',
+                actualSpoilageProofImage: actualSpoilageProof.dataUrl || '',
+                actualSpoilageProofName: actualSpoilageProof.name || '',
+                actualSpoilageProofType: actualSpoilageProof.type || '',
+                actualSpoilageRequestedBy: context.actualSpoilageRequestedBy || '',
+                actualSpoilageRequestedAt: context.actualSpoilageRequestedAt || '',
+                approvalStatus,
+                approvalNote,
+                approvedBy,
+                approvedAt
+            }
         );
         next.billingMode = activeBillingMode;
         next.lineItems = [next];
@@ -5290,6 +5517,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             previousMeter: primaryLine ? primaryLine.previousMeter : (previousInput?.value || 0),
             presentMeter: primaryLine ? primaryLine.presentMeter : (presentInput?.value || 0),
             spoilagePercent: primaryLine ? primaryLine.spoilagePercent : (spoilageInput?.value || 0),
+            actualSpoilagePages: primaryLine ? primaryLine.actualSpoilagePages : (actualSpoilageInput?.value || 0),
             billingMode: activeBillingMode,
             linesSignature: buildBillingLinesSignature(activeEstimate?.lineItems || [])
         });
@@ -5299,6 +5527,8 @@ async function openBillingCalcModal(rowId, monthKey) {
         const currentSnapshot = buildCurrentSnapshot();
         const matchesSaved = savedDocExists && savedSnapshot ? billingSnapshotsEqual(savedSnapshot, currentSnapshot) : false;
         const isDirty = savedDocExists && !matchesSaved;
+        const needsApproval = Number(activeEstimate?.actualSpoilagePages || 0) > 0;
+        const approvalReady = !needsApproval || approvalStatus === 'approved';
 
         if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
         if (saveStatus) {
@@ -5309,13 +5539,35 @@ async function openBillingCalcModal(rowId, monthKey) {
                 saveStatus.textContent = `Save this billing first so it lands in ${savedMonthLabel} and unlocks printing.`;
             } else if (isDirty) {
                 saveStatus.textContent = `You changed the billing values. Save again to update ${savedMonthLabel} and re-enable printing.`;
+            } else if (needsApproval && !approvalReady) {
+                saveStatus.textContent = `Saved in ${savedMonthLabel}. Actual spoilage is ${approvalStatus === 'rejected' ? 'rejected' : 'pending admin approval'}, so printing is locked.`;
             } else {
                 saveStatus.textContent = `Saved in ${savedMonthLabel}. The month cell now owns invoice ${currentSnapshot.invoiceNo || 'N/A'} and Print ${printContractCode || 'Invoice'} is ready.`;
             }
         }
 
+        if (approvalPanel) {
+            approvalPanel.classList.toggle('hidden', !needsApproval);
+            approvalPanel.classList.toggle('approved', approvalStatus === 'approved');
+            approvalPanel.classList.toggle('rejected', approvalStatus === 'rejected');
+        }
+        if (approvalTitle) {
+            approvalTitle.textContent = approvalStatus === 'approved'
+                ? 'Actual spoilage approved'
+                : approvalStatus === 'rejected'
+                    ? 'Actual spoilage rejected'
+                    : 'Pending admin approval';
+        }
+        if (approvalCopy) {
+            approvalCopy.textContent = approvalStatus === 'approved'
+                ? `Approved by ${approvedBy || 'admin'}${approvedAt ? ` on ${formatUsDate(asValidDate(approvedAt))}` : ''}. Printing is unlocked.`
+                : approvalStatus === 'rejected'
+                    ? 'Printing is locked. Update the billing or request approval again.'
+                    : 'Printing stays locked until an admin approves this actual spoilage discount.';
+        }
+
         if (!canPrintInvoice) return;
-        const printEnabled = previewReady && matchesSaved;
+        const printEnabled = previewReady && matchesSaved && approvalReady;
         let printHint = 'Preparing preview...';
         if (previewReady) {
             if (workflowError) {
@@ -5324,6 +5576,10 @@ async function openBillingCalcModal(rowId, monthKey) {
                 printHint = `Save billing first to enable Print ${printContractCode || 'Invoice'}.`;
             } else if (isDirty) {
                 printHint = `Save your changes first so the printed ${printContractCode || 'invoice'} matches the saved invoice.`;
+            } else if (!approvalReady) {
+                printHint = approvalStatus === 'rejected'
+                    ? 'Actual spoilage was rejected. Printing is locked until the billing is updated and approved.'
+                    : 'Actual spoilage is pending admin approval. Printing is locked.';
             } else {
                 printHint = 'Ready to print. Turn off Headers and footers in More settings if the browser preview adds extra top space.';
             }
@@ -5427,7 +5683,8 @@ async function openBillingCalcModal(rowId, monthKey) {
         const next = calculateActiveEstimate();
         setElementDisplayValue(amountValue, formatAmount(next.amountDue || 0));
         setElementDisplayValue(rawPagesValue, formatCount(next.rawPages || 0));
-        setElementDisplayValue(spoilagePagesValue, formatCount(next.spoilagePages || 0));
+        setElementDisplayValue(spoilagePagesValue, formatCount(next.systemSpoilagePages ?? next.spoilagePages ?? 0));
+        setElementDisplayValue(totalSpoilageValue, formatCount(next.totalSpoilagePages ?? next.spoilagePages ?? 0));
         setElementDisplayValue(netPagesValue, formatCount(next.netPages || 0));
         setElementDisplayValue(billedPagesValue, formatCount(next.billedPages || 0));
         setElementDisplayValue(succeedingPagesValue, formatCount(next.succeedingPages || 0));
@@ -5446,7 +5703,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                 : next.savedComputation
                 ? next.savedComputation
                 : context.isReading
-                ? `${formatCount(next.rawPages || 0)} raw - ${formatCount(next.spoilagePages || 0)} spoilage = ${formatCount(next.netPages || 0)} net. ${formatCount(next.quotaPages || 0)} quota pages x ${formatAmount(profile.page_rate || 0)} plus ${formatCount(next.succeedingPages || 0)} succeeding pages x ${formatAmount(next.succeedingRate || 0)} = ${formatAmount(next.amountDue || 0)}.`
+                ? formatBillingComputationFlow(next)
                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
         }
         if (warningValue) warningValue.textContent = next.warning || '';
@@ -5466,14 +5723,55 @@ async function openBillingCalcModal(rowId, monthKey) {
     });
     const markCalculationEditedAndRecompute = () => {
         calculationEdited = true;
+        if (Number(actualSpoilageInput?.value || 0) > 0 && approvalStatus === 'approved') {
+            approvalStatus = 'pending';
+            approvalNote = '';
+            approvedBy = '';
+            approvedAt = '';
+        }
         recompute();
     };
     previousInput?.addEventListener('input', markCalculationEditedAndRecompute);
     presentInput?.addEventListener('input', markCalculationEditedAndRecompute);
     spoilageInput?.addEventListener('input', markCalculationEditedAndRecompute);
+    actualSpoilageInput?.addEventListener('input', () => {
+        calculationEdited = true;
+        approvalStatus = Number(actualSpoilageInput.value || 0) > 0 ? 'pending' : 'none';
+        approvalNote = '';
+        approvedBy = '';
+        approvedAt = '';
+        recompute();
+    });
+    actualSpoilageReasonInput?.addEventListener('input', () => {
+        calculationEdited = true;
+        if (Number(actualSpoilageInput?.value || 0) > 0 && approvalStatus === 'approved') approvalStatus = 'pending';
+        recompute();
+    });
+    actualSpoilageProofInput?.addEventListener('change', async () => {
+        const file = actualSpoilageProofInput.files?.[0] || null;
+        if (!file) return;
+        try {
+            actualSpoilageProof = await resizeImageFileToDataUrl(file);
+            if (actualSpoilageProofPreview) {
+                actualSpoilageProofPreview.innerHTML = `<img src="${escapeHtml(actualSpoilageProof.dataUrl)}" alt="Actual spoilage proof"><span>${escapeHtml(actualSpoilageProof.name)}</span>`;
+            }
+            calculationEdited = true;
+            if (Number(actualSpoilageInput?.value || 0) > 0) approvalStatus = 'pending';
+            recompute();
+        } catch (error) {
+            actualSpoilageProofInput.value = '';
+            MargaUtils.showToast(String(error?.message || 'Unable to upload proof image.'), 'error');
+        }
+    });
     modeTabs.forEach((tab) => tab.addEventListener('click', () => {
         activeBillingMode = tab.dataset.calcModeTab || activeBillingMode;
         calculationEdited = true;
+        if (Number(actualSpoilageInput?.value || 0) > 0 && approvalStatus === 'approved') {
+            approvalStatus = 'pending';
+            approvalNote = '';
+            approvedBy = '';
+            approvedAt = '';
+        }
         syncModeUi();
         recompute();
     }));
@@ -5598,8 +5896,99 @@ async function openBillingCalcModal(rowId, monthKey) {
         syncCalibrationInputs(calibration);
         renderCalcPreview(activeEstimate);
     });
+    const updateActualSpoilageApproval = async (nextStatus) => {
+        if (!savedBillingDocId) {
+            MargaUtils.showToast('Save the billing first before approval.', 'error');
+            return;
+        }
+        const audit = getCurrentUserAudit();
+        const nowIso = new Date().toISOString();
+        approvalStatus = nextStatus;
+        approvedBy = nextStatus === 'approved' ? audit.name : '';
+        approvedAt = nextStatus === 'approved' ? nowIso : '';
+        approvalNote = nextStatus === 'approved' ? 'Approved actual spoilage discount.' : 'Rejected actual spoilage discount.';
+        if (approveSpoilageBtn) approveSpoilageBtn.disabled = true;
+        if (rejectSpoilageBtn) rejectSpoilageBtn.disabled = true;
+        try {
+            await setFirestoreDocument('tbl_billing', savedBillingDocId, {
+                approval_status: approvalStatus,
+                approval_note: approvalNote,
+                approved_by: approvedBy,
+                approved_at: approvedAt,
+                approval_updated_by: audit.name,
+                approval_updated_at: nowIso,
+                updated_at: nowIso
+            }, {
+                mode: 'patch',
+                label: `Billing actual spoilage ${nextStatus}`,
+                dedupeKey: `tbl_billing:${savedBillingDocId}:actual-spoilage-${nextStatus}:${nowIso}`
+            });
+            activeEstimate = {
+                ...activeEstimate,
+                approvalStatus,
+                approvalNote,
+                approvedBy,
+                approvedAt
+            };
+            if (activeEstimate.lineItems?.[0]) {
+                activeEstimate.lineItems[0] = {
+                    ...activeEstimate.lineItems[0],
+                    approvalStatus,
+                    approvalNote,
+                    approvedBy,
+                    approvedAt
+                };
+            }
+            MargaUtils.showToast(
+                nextStatus === 'approved' ? 'Actual spoilage approved. Printing is unlocked.' : 'Actual spoilage rejected. Printing stays locked.',
+                nextStatus === 'approved' ? 'success' : 'error'
+            );
+            renderCalcPreview(activeEstimate);
+            syncCalcWorkflowState();
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to update approval.'), 'error');
+        } finally {
+            if (approveSpoilageBtn) approveSpoilageBtn.disabled = false;
+            if (rejectSpoilageBtn) rejectSpoilageBtn.disabled = false;
+        }
+    };
+    approveSpoilageBtn?.addEventListener('click', () => updateActualSpoilageApproval('approved'));
+    rejectSpoilageBtn?.addEventListener('click', () => updateActualSpoilageApproval('rejected'));
     saveBillingBtn?.addEventListener('click', async () => {
         activeEstimate = calculateActiveEstimate();
+        const actualSpoilagePages = Number(activeEstimate?.actualSpoilagePages || 0) || 0;
+        if (actualSpoilagePages > 0 && !actualSpoilageProof.dataUrl) {
+            workflowError = 'Upload a spoilage proof image before requesting approval.';
+            saveStatus?.classList.add('error');
+            if (inlinePrintHint) inlinePrintHint.classList.add('error');
+            MargaUtils.showToast(workflowError, 'error');
+            syncCalcWorkflowState();
+            return;
+        }
+        if (actualSpoilagePages > 0 && !String(activeEstimate.actualSpoilageReason || '').trim()) {
+            workflowError = 'Enter the actual spoilage reason before requesting approval.';
+            saveStatus?.classList.add('error');
+            MargaUtils.showToast(workflowError, 'error');
+            syncCalcWorkflowState();
+            return;
+        }
+        if (actualSpoilagePages > 0 && approvalStatus !== 'approved') {
+            const audit = getCurrentUserAudit();
+            approvalStatus = 'pending';
+            context.actualSpoilageRequestedBy = context.actualSpoilageRequestedBy || audit.name;
+            context.actualSpoilageRequestedAt = context.actualSpoilageRequestedAt || new Date().toISOString();
+            activeEstimate.approvalStatus = approvalStatus;
+            activeEstimate.actualSpoilageRequestedBy = context.actualSpoilageRequestedBy;
+            activeEstimate.actualSpoilageRequestedAt = context.actualSpoilageRequestedAt;
+            if (activeEstimate.lineItems?.[0]) {
+                activeEstimate.lineItems[0] = {
+                    ...activeEstimate.lineItems[0],
+                    approvalStatus,
+                    actualSpoilageRequestedBy: context.actualSpoilageRequestedBy,
+                    actualSpoilageRequestedAt: context.actualSpoilageRequestedAt
+                };
+            }
+        }
         const currentSnapshot = buildCurrentSnapshot();
         workflowError = '';
         invoiceInput?.classList.remove('input-error');
@@ -5642,17 +6031,23 @@ async function openBillingCalcModal(rowId, monthKey) {
                     ...result.fields
                 }];
             }
+            savedBillingDocId = result.docId || savedBillingDocId;
+            approvalStatus = String(result.fields?.approval_status || approvalStatus || 'none');
             syncCalcWorkflowState();
             const plannerCount = Number(plannerResult?.savedCount || 0) || 0;
             const plannerQueued = Boolean(plannerResult?.queued);
             const plannerMessage = plannerError
                 ? `Invoice saved, but Schedule Planner was not updated: ${plannerError}`
+                : approvalStatus === 'pending'
+                    ? `Saved Invoice ${currentSnapshot.invoiceNo} as pending admin approval for actual spoilage.`
                 : plannerQueued
                     ? `Invoice ${currentSnapshot.invoiceNo} was queued and the Schedule Planner request was queued too.`
                     : `Saved Invoice ${currentSnapshot.invoiceNo} and saved ${plannerCount || 1} request${plannerCount === 1 ? '' : 's'} to Schedule Planner.`;
             MargaUtils.showToast(
                 plannerError
                     ? `Invoice ${currentSnapshot.invoiceNo} saved. Schedule Planner needs retry.`
+                    : approvalStatus === 'pending'
+                        ? `Invoice ${currentSnapshot.invoiceNo} saved - pending admin approval.`
                     : result.queued || plannerQueued
                         ? `Invoice ${currentSnapshot.invoiceNo} queued for Billing and Schedule Planner.`
                         : `Saved Invoice ${currentSnapshot.invoiceNo} - saved to Schedule Planner.`,
@@ -5660,10 +6055,12 @@ async function openBillingCalcModal(rowId, monthKey) {
             );
             showBillingSaveResult({
                 type: plannerError ? 'error' : 'success',
-                title: plannerError ? 'Saved Invoice, Planner Failed' : (result.queued || plannerQueued ? 'Saved Invoice Queued' : 'Saved Invoice'),
+                title: plannerError ? 'Saved Invoice, Planner Failed' : (approvalStatus === 'pending' ? 'Pending Approval' : (result.queued || plannerQueued ? 'Saved Invoice Queued' : 'Saved Invoice')),
                 message: plannerError
                     ? plannerMessage
-                    : `${plannerMessage} Print ${printContractCode || 'Invoice'} is ready.`
+                    : approvalStatus === 'pending'
+                        ? `${plannerMessage} Print ${printContractCode || 'Invoice'} is locked until approval.`
+                        : `${plannerMessage} Print ${printContractCode || 'Invoice'} is ready.`
             });
             if (!result.queued) {
                 loadDashboard({ forceRefresh: true }).catch((error) => {
