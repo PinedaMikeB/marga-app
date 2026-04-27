@@ -55,6 +55,7 @@ let employeeLookupMap = new Map();
 let serviceHistoryCache = new Map();
 let currentCollectorWorkspace = null;
 let isSavingCollectorFollowup = false;
+let isSavingCollectorPayment = false;
 let isSavingCollectorProfileOverride = false;
 let isSavingCollectorSchedule = false;
 
@@ -316,6 +317,22 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function parseMoneyInput(value) {
+    const normalized = String(value || '').replace(/,/g, '').trim();
+    if (!normalized) return 0;
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatInputDateTime(value) {
+    const dateKey = String(value || '').trim();
+    return dateKey ? `${dateKey} 00:00:00` : 'undefined 00:00:00';
+}
+
+function createWebDocId(prefix) {
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getCollectorSearchTerm() {
@@ -1400,7 +1417,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['invoice_id', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number'],
+        fieldMask: ['id', 'invoice_id', 'invoice_num', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'tax_2307', 'tax_status', 'checkpayment_id', 'remarks'],
         maxPages: 260
     });
 
@@ -1414,16 +1431,28 @@ async function loadLookups() {
         }
 
         const amount = Number(getField(f, ['payment_amt']) || 0);
+        const tax2307 = Number(getField(f, ['tax_2307']) || 0);
         const balanceAmountRaw = getField(f, ['balance_amt']);
         const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
         const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
-        if (amount > 0 && paymentDate) {
+        if ((amount > 0 || tax2307 > 0) && paymentDate) {
             paymentEntries.push({
+                docId: getFirestoreDocumentId(doc),
+                id: String(getField(f, ['id']) || getFirestoreDocumentId(doc) || '').trim(),
                 invoiceId: invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '',
+                invoiceNo: String(getField(f, ['invoice_num']) || '').trim(),
                 amount,
                 balanceAmount,
                 paymentDate,
-                orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim()
+                datePaid: normalizeDate(getField(f, ['date_paid'])),
+                dateDeposit: normalizeDate(getField(f, ['date_deposit'])),
+                taxDatePaid: normalizeDate(getField(f, ['tax_date_paid'])),
+                orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim(),
+                paymentType: String(getField(f, ['payment_type']) || '').trim(),
+                tax2307,
+                taxStatus: String(getField(f, ['tax_status']) || '').trim(),
+                checkpaymentId: String(getField(f, ['checkpayment_id']) || '').trim(),
+                remarks: String(getField(f, ['remarks']) || '').trim()
             });
         }
     });
@@ -3789,6 +3818,137 @@ function renderServiceRows(rows) {
     `;
 }
 
+function getPaymentsForSelectedInvoice(invoice) {
+    if (!invoice) return [];
+    const keys = new Set([
+        invoice.invoiceId,
+        invoice.invoiceNo,
+        invoice.invoiceKey,
+        invoice.id
+    ].map((value) => String(value || '').trim()).filter(Boolean));
+
+    return paymentEntries
+        .filter((entry) => keys.has(String(entry.invoiceId || '').trim()) || keys.has(String(entry.invoiceNo || '').trim()))
+        .sort((left, right) => {
+            const leftTime = (left.paymentDate || new Date(0)).getTime();
+            const rightTime = (right.paymentDate || new Date(0)).getTime();
+            return rightTime - leftTime;
+        });
+}
+
+function renderPaymentHistoryRows(payments) {
+    if (!payments.length) return '<div class="collection-followup-empty">No saved payment record for this invoice yet.</div>';
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table">
+                <thead>
+                    <tr>
+                        <th>Paid Date</th>
+                        <th>OR No.</th>
+                        <th>Received</th>
+                        <th>2307</th>
+                        <th>Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${payments.slice(0, 12).map((payment) => `
+                        <tr>
+                            <td>${escapeHtml(formatDate(payment.datePaid || payment.paymentDate))}</td>
+                            <td>${escapeHtml(payment.orNumber || '-')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(payment.amount || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(payment.tax2307 || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(payment.balanceAmount || 0))}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxTotal, paymentBalance) {
+    const { selectedInvoice, branchBalance, cell } = workspace;
+    const invoiceNo = String(selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
+    const invoiceId = String(selectedInvoice?.invoiceId || selectedInvoice?.invoiceNo || '').trim();
+    const invoiceAmount = Number(selectedInvoice?.amount || cell?.displayBilledTotal || cell?.billedTotal || branchBalance || 0);
+
+    return `
+        <section class="collection-payment-tab-panel" id="collectorPaymentPanel" role="tabpanel" aria-labelledby="collectorPaymentTab" hidden>
+            <div class="collection-payment-layout">
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Payment Details</div>
+                    <div class="collection-payment-summary" id="collectorPaymentSummary" data-invoice-amount="${escapeHtml(invoiceAmount)}">
+                        <div><span>Invoice Amount</span><strong id="collectorPaymentInvoiceAmount">${escapeHtml(formatCurrency(invoiceAmount))}</strong></div>
+                        <div><span>Actual Received</span><strong id="collectorPaymentActual">${escapeHtml(formatCurrency(0))}</strong></div>
+                        <div><span>2307 Deducted</span><strong id="collectorPaymentTaxDisplay">${escapeHtml(formatCurrency(0))}</strong></div>
+                        <div><span>Balance</span><strong id="collectorPaymentBalanceDisplay">${escapeHtml(formatCurrency(invoiceAmount))}</strong></div>
+                    </div>
+                    <div class="collection-followup-form collection-payment-form">
+                        <div>
+                            <label>Amount Paid</label>
+                            <input id="collectorPaymentPaidAmount" type="number" step="0.01" min="0" value="">
+                        </div>
+                        <div>
+                            <label>Invoice Number</label>
+                            <input id="collectorPaymentInvoiceNo" type="text" value="${escapeHtml(invoiceNo)}">
+                            <input id="collectorPaymentInvoiceId" type="hidden" value="${escapeHtml(invoiceId)}">
+                        </div>
+                        <div>
+                            <label>OR Number</label>
+                            <input id="collectorPaymentOrNumber" type="text" value="">
+                        </div>
+                        <div>
+                            <label>Date of Payment</label>
+                            <input id="collectorPaymentDate" type="date" value="${escapeHtml(getTodayInputValue(0))}">
+                        </div>
+                        <label class="collection-check-row"><input id="collectorPaymentCash" type="checkbox" checked onchange="syncCollectorPaymentMethod('cash')"> Cash</label>
+                        <label class="collection-check-row"><input id="collectorPaymentCheck" type="checkbox" onchange="syncCollectorPaymentMethod('check')"> Check</label>
+                        <div>
+                            <label>Check Number</label>
+                            <input id="collectorPaymentCheckNumber" type="text" value="" disabled>
+                        </div>
+                        <div>
+                            <label>Check Bank</label>
+                            <input id="collectorPaymentCheckBank" type="text" value="" disabled>
+                        </div>
+                        <div>
+                            <label>Date of Check</label>
+                            <input id="collectorPaymentCheckDate" type="date" value="" disabled>
+                        </div>
+                        <div>
+                            <label>2307 Deducted</label>
+                            <input id="collectorPaymentTax2307" type="number" step="0.01" min="0" value="">
+                        </div>
+                        <div>
+                            <label>Balance</label>
+                            <input id="collectorPaymentBalance" type="number" step="0.01" readonly value="${escapeHtml(invoiceAmount.toFixed(2))}">
+                        </div>
+                        <div class="full">
+                            <label>Remarks</label>
+                            <textarea id="collectorPaymentRemarks" placeholder="Optional payment notes."></textarea>
+                        </div>
+                    </div>
+                    <div class="detail-form-actions">
+                        <button class="btn btn-primary" onclick="saveCollectorPayment()">Save Payment</button>
+                        <span class="detail-save-status" id="collectorPaymentSaveStatus">Ready.</span>
+                    </div>
+                </div>
+
+                <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Saved Payment Records</div>
+                    <div class="collection-payment-rollup">
+                        <div><span>Collected</span><strong>${escapeHtml(formatCurrency(paymentTotal))}</strong></div>
+                        <div><span>2307</span><strong>${escapeHtml(formatCurrency(taxTotal))}</strong></div>
+                        <div><span>Remaining</span><strong>${escapeHtml(formatCurrency(paymentBalance))}</strong></div>
+                    </div>
+                    ${renderPaymentHistoryRows(paymentRecords)}
+                </div>
+            </div>
+        </section>
+    `;
+}
+
 function renderCollectorFollowupWorkspace(workspace) {
     const {
         cell,
@@ -3824,6 +3984,10 @@ function renderCollectorFollowupWorkspace(workspace) {
     const scheduleTimeValue = normalizeTimeInput(activeSchedule?.schedule_time || activeSchedule?.collection_time || fromTime || followupTime || '');
     const scheduleIsActive = activeSchedule && String(activeSchedule.status || 'Active').toLowerCase() !== 'cancelled';
     const returnCallValue = activeSchedule?.return_call === true || String(activeSchedule?.return_call || '').toLowerCase() === 'true';
+    const paymentRecords = getPaymentsForSelectedInvoice(selectedInvoice);
+    const paymentTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const taxTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.tax2307 || 0), 0);
+    const paymentBalance = Math.max(0, Number(selectedInvoice?.amount || billedTarget || 0) - paymentTotal - taxTotal);
 
     return `
         <div class="collection-followup-shell">
@@ -3840,6 +4004,12 @@ function renderCollectorFollowupWorkspace(workspace) {
                 </div>
             </section>
 
+            <div class="collection-workspace-tabs" role="tablist" aria-label="Collection workspace sections">
+                <button type="button" class="collection-workspace-tab active" id="collectorFollowupTab" role="tab" aria-selected="true" aria-controls="collectorFollowupPanel" onclick="setCollectorWorkspaceTab('followup')">Follow-up</button>
+                <button type="button" class="collection-workspace-tab" id="collectorPaymentTab" role="tab" aria-selected="false" aria-controls="collectorPaymentPanel" onclick="setCollectorWorkspaceTab('payment')">Payment</button>
+            </div>
+
+            <section class="collection-followup-tab-panel" id="collectorFollowupPanel" role="tabpanel" aria-labelledby="collectorFollowupTab">
             <section class="collection-followup-grid">
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Contacts</div>
@@ -4016,6 +4186,9 @@ function renderCollectorFollowupWorkspace(workspace) {
                     ${renderServiceRows(serviceHistory)}
                 </div>
             </section>
+            </section>
+
+            ${renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxTotal, paymentBalance)}
         </div>
     `;
 }
@@ -4083,6 +4256,7 @@ async function openCollectorCell(cellId) {
             ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
             : `Follow-up workspace`;
         content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+        bindCollectorPaymentForm();
     } catch (error) {
         console.error('Failed to open collection follow-up workspace:', error);
         subtitle.textContent = 'Collection follow-up workspace could not load completely.';
@@ -4106,6 +4280,71 @@ function closeCollectorCellModal() {
 function openCollectorInvoiceFromCell(invoiceKey) {
     closeCollectorCellModal();
     viewInvoiceDetail(decodeURIComponent(String(invoiceKey || '')));
+}
+
+function setCollectorWorkspaceTab(tabName) {
+    const activeTab = tabName === 'payment' ? 'payment' : 'followup';
+    const followupPanel = document.getElementById('collectorFollowupPanel');
+    const paymentPanel = document.getElementById('collectorPaymentPanel');
+    const followupTab = document.getElementById('collectorFollowupTab');
+    const paymentTab = document.getElementById('collectorPaymentTab');
+
+    if (followupPanel) followupPanel.hidden = activeTab !== 'followup';
+    if (paymentPanel) paymentPanel.hidden = activeTab !== 'payment';
+
+    if (followupTab) {
+        followupTab.classList.toggle('active', activeTab === 'followup');
+        followupTab.setAttribute('aria-selected', activeTab === 'followup' ? 'true' : 'false');
+    }
+    if (paymentTab) {
+        paymentTab.classList.toggle('active', activeTab === 'payment');
+        paymentTab.setAttribute('aria-selected', activeTab === 'payment' ? 'true' : 'false');
+    }
+
+    if (activeTab === 'payment') updateCollectorPaymentBalance();
+}
+
+function updateCollectorPaymentBalance() {
+    const summary = document.getElementById('collectorPaymentSummary');
+    if (!summary) return;
+
+    const invoiceAmount = parseMoneyInput(summary.dataset.invoiceAmount || '0');
+    const paidAmount = parseMoneyInput(document.getElementById('collectorPaymentPaidAmount')?.value || '0');
+    const tax2307 = parseMoneyInput(document.getElementById('collectorPaymentTax2307')?.value || '0');
+    const balance = Math.max(0, invoiceAmount - paidAmount - tax2307);
+    const balanceInput = document.getElementById('collectorPaymentBalance');
+    const actualNode = document.getElementById('collectorPaymentActual');
+    const taxNode = document.getElementById('collectorPaymentTaxDisplay');
+    const balanceNode = document.getElementById('collectorPaymentBalanceDisplay');
+
+    if (balanceInput) balanceInput.value = balance.toFixed(2);
+    if (actualNode) actualNode.textContent = formatCurrency(paidAmount);
+    if (taxNode) taxNode.textContent = formatCurrency(tax2307);
+    if (balanceNode) balanceNode.textContent = formatCurrency(balance);
+}
+
+function bindCollectorPaymentForm() {
+    ['collectorPaymentPaidAmount', 'collectorPaymentTax2307'].forEach((id) => {
+        const input = document.getElementById(id);
+        input?.addEventListener('input', updateCollectorPaymentBalance);
+    });
+    syncCollectorPaymentMethod(document.getElementById('collectorPaymentCheck')?.checked ? 'check' : 'cash');
+    updateCollectorPaymentBalance();
+}
+
+function syncCollectorPaymentMethod(method) {
+    const isCheck = method === 'check';
+    const cashInput = document.getElementById('collectorPaymentCash');
+    const checkInput = document.getElementById('collectorPaymentCheck');
+    const checkNumber = document.getElementById('collectorPaymentCheckNumber');
+    const checkBank = document.getElementById('collectorPaymentCheckBank');
+    const checkDate = document.getElementById('collectorPaymentCheckDate');
+
+    if (cashInput) cashInput.checked = !isCheck;
+    if (checkInput) checkInput.checked = isCheck;
+    [checkNumber, checkBank, checkDate].forEach((input) => {
+        if (input) input.disabled = !isCheck;
+    });
 }
 
 function useCollectorContact(button) {
@@ -4168,6 +4407,128 @@ async function saveCollectorProfileOverride() {
         if (statusNode) statusNode.textContent = 'Override save failed. Follow-up history was not affected.';
     } finally {
         isSavingCollectorProfileOverride = false;
+    }
+}
+
+async function saveCollectorPayment() {
+    if (!currentCollectorWorkspace || isSavingCollectorPayment) return;
+
+    const statusNode = document.getElementById('collectorPaymentSaveStatus');
+    const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
+    const invoiceNo = String(document.getElementById('collectorPaymentInvoiceNo')?.value || selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
+    const invoiceId = String(document.getElementById('collectorPaymentInvoiceId')?.value || selectedInvoice?.invoiceId || selectedInvoice?.invoiceNo || invoiceNo || '').trim();
+    const amountPaid = parseMoneyInput(document.getElementById('collectorPaymentPaidAmount')?.value || '0');
+    const tax2307 = parseMoneyInput(document.getElementById('collectorPaymentTax2307')?.value || '0');
+    const balance = parseMoneyInput(document.getElementById('collectorPaymentBalance')?.value || '0');
+    const orNumber = String(document.getElementById('collectorPaymentOrNumber')?.value || '').trim();
+    const paymentDate = String(document.getElementById('collectorPaymentDate')?.value || '').trim();
+    const isCheck = Boolean(document.getElementById('collectorPaymentCheck')?.checked);
+    const checkNumber = String(document.getElementById('collectorPaymentCheckNumber')?.value || '').trim();
+    const checkBank = String(document.getElementById('collectorPaymentCheckBank')?.value || '').trim();
+    const checkDate = String(document.getElementById('collectorPaymentCheckDate')?.value || '').trim();
+    const remarks = String(document.getElementById('collectorPaymentRemarks')?.value || '').trim();
+    const now = toTimestampString(new Date());
+
+    if (!invoiceId && !invoiceNo) {
+        if (statusNode) statusNode.textContent = 'No invoice is linked to this payment.';
+        return;
+    }
+
+    if (!(amountPaid > 0) && !(tax2307 > 0)) {
+        if (statusNode) statusNode.textContent = 'Enter the actual amount received or 2307 deducted.';
+        return;
+    }
+
+    if (!paymentDate) {
+        if (statusNode) statusNode.textContent = 'Set the date of payment.';
+        return;
+    }
+
+    if (isCheck && (!checkNumber || !checkBank || !checkDate)) {
+        if (statusNode) statusNode.textContent = 'Complete check number, bank, and check date.';
+        return;
+    }
+
+    isSavingCollectorPayment = true;
+    if (statusNode) statusNode.textContent = 'Saving payment record...';
+
+    try {
+        const paymentDocId = createWebDocId('web_payment');
+        const checkDocId = isCheck ? createWebDocId('web_checkpayment') : '';
+        const paymentFields = {
+            id: toFirestoreWriteValue(paymentDocId),
+            invoice_id: toFirestoreWriteValue(invoiceId || invoiceNo),
+            invoice_num: toFirestoreWriteValue(invoiceNo || invoiceId),
+            payment_amt: toFirestoreWriteValue(amountPaid),
+            balance_amt: toFirestoreWriteValue(balance),
+            date_deposit: toFirestoreWriteValue(formatInputDateTime(paymentDate)),
+            date_paid: toFirestoreWriteValue(formatInputDateTime(paymentDate)),
+            ornum: toFirestoreWriteValue(orNumber),
+            payment_type: toFirestoreWriteValue(isCheck ? 1 : 0),
+            tax_2307: toFirestoreWriteValue(tax2307),
+            tax_date_paid: toFirestoreWriteValue(formatInputDateTime(tax2307 > 0 ? paymentDate : '')),
+            tax_status: toFirestoreWriteValue(tax2307 > 0 ? 1 : 0),
+            checkpayment_id: toFirestoreWriteValue(checkDocId || 0),
+            remarks: toFirestoreWriteValue(remarks),
+            timestamp: toFirestoreWriteValue(now),
+            source: toFirestoreWriteValue('collections_web_payment')
+        };
+
+        await firestoreSetDocument('tbl_paymentinfo', paymentDocId, paymentFields);
+
+        if (isCheck) {
+            await firestoreSetDocument('tbl_checkpayments', checkDocId, {
+                id: toFirestoreWriteValue(checkDocId),
+                payments_id: toFirestoreWriteValue(paymentDocId),
+                invoice_id: toFirestoreWriteValue(invoiceId || invoiceNo),
+                check_number: toFirestoreWriteValue(checkNumber),
+                bank: toFirestoreWriteValue(checkBank),
+                account_number: toFirestoreWriteValue(''),
+                check_amt: toFirestoreWriteValue(amountPaid),
+                check_date: toFirestoreWriteValue(formatInputDateTime(checkDate)),
+                remarks: toFirestoreWriteValue(remarks),
+                source: toFirestoreWriteValue('collections_web_payment'),
+                timestamp: toFirestoreWriteValue(now)
+            });
+        }
+
+        paymentEntries.push({
+            docId: paymentDocId,
+            id: paymentDocId,
+            invoiceId: invoiceId || invoiceNo,
+            invoiceNo: invoiceNo || invoiceId,
+            amount: amountPaid,
+            balanceAmount: balance,
+            paymentDate: normalizeDate(paymentDate),
+            datePaid: normalizeDate(paymentDate),
+            dateDeposit: normalizeDate(paymentDate),
+            taxDatePaid: tax2307 > 0 ? normalizeDate(paymentDate) : null,
+            orNumber,
+            paymentType: isCheck ? '1' : '0',
+            tax2307,
+            taxStatus: tax2307 > 0 ? '1' : '0',
+            checkpaymentId: checkDocId,
+            remarks
+        });
+        if (balance <= 0.01 && (invoiceId || invoiceNo)) paidInvoiceIds.add(invoiceId || invoiceNo);
+
+        const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
+        currentCollectorWorkspace = {
+            ...refreshed,
+            cellId: refreshed.cell.id
+        };
+
+        const content = document.getElementById('collectorCellContent');
+        if (content) content.innerHTML = renderCollectorFollowupWorkspace(refreshed);
+        bindCollectorPaymentForm();
+        setCollectorWorkspaceTab('payment');
+        const refreshedStatusNode = document.getElementById('collectorPaymentSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Payment record updated.';
+    } catch (error) {
+        console.error('Failed to save collection payment:', error);
+        if (statusNode) statusNode.textContent = 'Payment save failed. Please try again.';
+    } finally {
+        isSavingCollectorPayment = false;
     }
 }
 
@@ -4240,6 +4601,7 @@ async function saveCollectorFollowup() {
 
         const content = document.getElementById('collectorCellContent');
         if (content) content.innerHTML = renderCollectorFollowupWorkspace(refreshed);
+        bindCollectorPaymentForm();
         const refreshedStatusNode = document.getElementById('collectorFollowupSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Follow-up history updated.';
     } catch (error) {
@@ -4336,6 +4698,7 @@ async function saveCollectorSchedule() {
 
         const content = document.getElementById('collectorCellContent');
         if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+        bindCollectorPaymentForm();
 
         const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved to Master Schedule.';
@@ -4382,6 +4745,7 @@ async function cancelCollectorSchedule() {
 
         const content = document.getElementById('collectorCellContent');
         if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+        bindCollectorPaymentForm();
 
         const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Trial schedule cancelled.';

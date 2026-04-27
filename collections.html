@@ -2176,6 +2176,43 @@
             gap: 12px;
         }
 
+        .collection-workspace-tabs {
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+            padding: 0 4px;
+        }
+
+        .collection-workspace-tab {
+            appearance: none;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            border-bottom: 0;
+            border-radius: 8px 8px 0 0;
+            background: rgba(248, 250, 252, 0.9);
+            color: #315b83;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .collection-workspace-tab.active {
+            background: #fff;
+            color: #173d63;
+            box-shadow: 0 -2px 0 #2563eb inset;
+        }
+
+        .collection-followup-tab-panel,
+        .collection-payment-tab-panel {
+            display: grid;
+            gap: 12px;
+        }
+
+        .collection-payment-tab-panel[hidden],
+        .collection-followup-tab-panel[hidden] {
+            display: none;
+        }
+
         .collection-followup-bottom {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2237,6 +2274,57 @@
 
         .collection-followup-form {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .collection-payment-layout {
+            display: grid;
+            grid-template-columns: minmax(520px, 1.2fr) minmax(320px, 0.8fr);
+            gap: 12px;
+        }
+
+        .collection-payment-form {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .collection-payment-summary,
+        .collection-payment-rollup {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .collection-payment-rollup {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .collection-payment-summary div,
+        .collection-payment-rollup div {
+            border: 1px solid rgba(147, 197, 253, 0.34);
+            border-radius: 8px;
+            background: rgba(239, 246, 255, 0.72);
+            padding: 8px;
+            min-width: 0;
+        }
+
+        .collection-payment-summary span,
+        .collection-payment-rollup span {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #607895;
+            font-weight: 800;
+        }
+
+        .collection-payment-summary strong,
+        .collection-payment-rollup strong {
+            display: block;
+            color: #173d63;
+            font-size: 14px;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
         }
 
         .collection-followup-schedule-panel {
@@ -2400,7 +2488,8 @@
             }
 
             .collection-followup-grid,
-            .collection-followup-bottom {
+            .collection-followup-bottom,
+            .collection-payment-layout {
                 grid-template-columns: 1fr;
             }
 
@@ -2457,6 +2546,9 @@
             .duration-summary,
             .cell-invoice-grid,
             .collection-followup-facts,
+            .collection-payment-summary,
+            .collection-payment-rollup,
+            .collection-payment-form,
             .collection-followup-form,
             .collection-followup-two {
                 grid-template-columns: 1fr;
