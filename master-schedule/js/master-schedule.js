@@ -1144,7 +1144,8 @@ function buildWebScheduleRow(row) {
 function buildPlannerScheduleRow(row) {
     const serials = parseJsonArray(row.serial_numbers_json || row.serial_numbers).filter(Boolean);
     const branchNames = parseJsonArray(row.branch_names_json || row.branch_names).filter(Boolean);
-    const purpose = row.department === 'collection' ? 'Confirmed Collection' : 'Printed Billing';
+    const explicitPurpose = clean(row.schedule_purpose || row.purpose || row.schedule_type);
+    const purpose = explicitPurpose || (row.department === 'collection' ? 'Confirmed Collection' : 'Printed Billing');
     const area = clean(row.area || row.area_group) || 'N/A';
     const assignedTo = clean(row.assigned_staff_name || row.suggested_staff_name || row.suggested_messenger_name) || 'Suggested / Unassigned';
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
