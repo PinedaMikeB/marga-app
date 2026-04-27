@@ -54,6 +54,8 @@ let troubleLookupMap = new Map();
 let employeeLookupMap = new Map();
 let collectionPositionMap = new Map();
 let collectionAssignableStaff = [];
+let collectionActiveEmployeeEmails = new Set();
+let collectionActiveEmployeeRosterPromise = null;
 let serviceHistoryCache = new Map();
 let collectionActivityCache = new Map();
 let currentCollectorWorkspace = null;
@@ -130,6 +132,14 @@ function getValue(field) {
     if (field.booleanValue !== undefined) return Boolean(field.booleanValue);
     if (field.timestampValue !== undefined) return field.timestampValue;
     if (field.stringValue !== undefined) return field.stringValue;
+    if (field.arrayValue !== undefined) return (field.arrayValue.values || []).map(getValue);
+    if (field.mapValue !== undefined) {
+        const mapped = {};
+        Object.entries(field.mapValue.fields || {}).forEach(([key, value]) => {
+            mapped[key] = getValue(value);
+        });
+        return mapped;
+    }
     return null;
 }
 
@@ -374,7 +384,16 @@ function collectionEmployeeName(employee, fallbackId = '') {
 
 function collectionEmployeeRole(employee) {
     const position = collectionPositionMap.get(normalizeLookupId(employee?.position_id));
-    const label = String(position?.position || position?.position_name || position?.name || employee?.position || '').trim();
+    const label = [
+        position?.position,
+        position?.position_name,
+        position?.name,
+        employee?.position,
+        employee?.position_name,
+        employee?.position_label,
+        employee?.marga_role,
+        ...(Array.isArray(employee?.marga_roles) ? employee.marga_roles : [])
+    ].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
     const clue = label.toLowerCase();
     const positionId = Number(employee?.position_id || 0);
     if (positionId === 5 || clue.includes('technician') || clue.includes('tech')) return 'Technician';
@@ -387,11 +406,36 @@ function isCollectionAssignableRole(role) {
     return /technician|messenger|driver|production/i.test(String(role || ''));
 }
 
+function normalizeCollectionEmail(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+async function loadCollectionActiveEmployeeRoster() {
+    if (collectionActiveEmployeeRosterPromise) return collectionActiveEmployeeRosterPromise;
+    collectionActiveEmployeeRosterPromise = firestoreGetDocument('tbl_app_settings', 'active_employee_roster_v1')
+        .then((doc) => {
+            const row = doc ? documentFieldsToPlain(doc) : {};
+            return new Set((row.active_emails || []).map(normalizeCollectionEmail).filter(Boolean));
+        })
+        .catch((error) => {
+            console.warn('Unable to load collection active employee roster.', error);
+            return new Set();
+        });
+    return collectionActiveEmployeeRosterPromise;
+}
+
+function isActiveCollectionEmployee(employee) {
+    if (!employee) return false;
+    if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
+    const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
+    const email = normalizeCollectionEmail(employee.email || employee.marga_login_email || employee.username);
+    const inRoster = !collectionActiveEmployeeEmails.size || collectionActiveEmployeeEmails.has(email);
+    return inRoster && hasActiveFlag && Number(employee.estatus ?? 1) > 0 && Number(employee.mstatus ?? 1) !== 0;
+}
+
 function buildCollectionAssignableStaffOptions(selectedId = '') {
     const selected = normalizeLookupId(selectedId);
-    const rows = collectionAssignableStaff.length
-        ? collectionAssignableStaff
-        : Array.from(employeeLookupMap.entries()).map(([id, name]) => ({ id, name, role: 'Staff' }));
+    const rows = collectionAssignableStaff;
 
     return [`<option value="">Unassigned</option>`]
         .concat(rows.map((staff) => `
@@ -1456,9 +1500,30 @@ function mergeHistoryLists(...lists) {
 async function loadCollectionEmployeeLookup() {
     if (employeeLookupMap.size > 0) return;
 
-    const [employeeDocs, positionDocs] = await Promise.all([
+    const [activeRoster, employeeDocs, positionDocs] = await Promise.all([
+        loadCollectionActiveEmployeeRoster(),
         safeFirestoreGetAll('tbl_employee', null, {
-            fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id', 'position', 'mstatus', 'estatus'],
+            fieldMask: [
+                'id',
+                'email',
+                'marga_login_email',
+                'username',
+                'firstname',
+                'lastname',
+                'nickname',
+                'name',
+                'position_id',
+                'position',
+                'position_name',
+                'position_label',
+                'marga_role',
+                'marga_roles',
+                'active',
+                'marga_active',
+                'marga_account_active',
+                'mstatus',
+                'estatus'
+            ],
             maxPages: 40
         }),
         safeFirestoreGetAll('tbl_empos', null, {
@@ -1466,6 +1531,7 @@ async function loadCollectionEmployeeLookup() {
             maxPages: 10
         })
     ]);
+    collectionActiveEmployeeEmails = activeRoster;
 
     collectionPositionMap = new Map();
     positionDocs.forEach((doc) => {
@@ -1482,7 +1548,7 @@ async function loadCollectionEmployeeLookup() {
         const role = collectionEmployeeRole(row);
         if (id && name) {
             employeeLookupMap.set(id, name);
-            if (isCollectionAssignableRole(role) && Number(row.mstatus || 1) !== 0) {
+            if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(role)) {
                 collectionAssignableStaff.push({ id, name, role });
             }
         }
@@ -3760,7 +3826,7 @@ async function loadCollectionWorkspaceLookups() {
     if (collectionWorkspaceLookupsPromise) return collectionWorkspaceLookupsPromise;
 
     collectionWorkspaceLookupsPromise = (async () => {
-        const [profileDocs, statusDocs, overrideDocs, troubleDocs, employeeDocs, positionDocs] = await Promise.all([
+        const [profileDocs, statusDocs, overrideDocs, troubleDocs, activeRoster, employeeDocs, positionDocs] = await Promise.all([
             safeFirestoreGetAll('tbl_collectioninfo', null, {
                 fieldMask: [
                     'id',
@@ -3795,8 +3861,29 @@ async function loadCollectionWorkspaceLookups() {
                 fieldMask: ['id', 'trouble', 'description', 'trouble_name', 'name'],
                 maxPages: 20
             }),
+            loadCollectionActiveEmployeeRoster(),
             safeFirestoreGetAll('tbl_employee', null, {
-                fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id', 'position', 'mstatus', 'estatus'],
+                fieldMask: [
+                    'id',
+                    'email',
+                    'marga_login_email',
+                    'username',
+                    'firstname',
+                    'lastname',
+                    'nickname',
+                    'name',
+                    'position_id',
+                    'position',
+                    'position_name',
+                    'position_label',
+                    'marga_role',
+                    'marga_roles',
+                    'active',
+                    'marga_active',
+                    'marga_account_active',
+                    'mstatus',
+                    'estatus'
+                ],
                 maxPages: 40
             }),
             safeFirestoreGetAll('tbl_empos', null, {
@@ -3849,6 +3936,7 @@ async function loadCollectionWorkspaceLookups() {
 
         employeeLookupMap = new Map();
         collectionAssignableStaff = [];
+        collectionActiveEmployeeEmails = activeRoster;
         employeeDocs.forEach((doc) => {
             const row = documentFieldsToPlain(doc);
             const id = normalizeLookupId(row.id);
@@ -3856,7 +3944,7 @@ async function loadCollectionWorkspaceLookups() {
             const role = collectionEmployeeRole(row);
             if (id && name) {
                 employeeLookupMap.set(id, name);
-                if (isCollectionAssignableRole(role) && Number(row.mstatus || 1) !== 0) {
+                if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(role)) {
                     collectionAssignableStaff.push({ id, name, role });
                 }
             }
