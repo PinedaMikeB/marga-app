@@ -53,6 +53,7 @@ let collectionStatusOptions = [];
 let troubleLookupMap = new Map();
 let employeeLookupMap = new Map();
 let serviceHistoryCache = new Map();
+let collectionActivityCache = new Map();
 let currentCollectorWorkspace = null;
 let isSavingCollectorFollowup = false;
 let isSavingCollectorPayment = false;
@@ -335,6 +336,65 @@ function createWebDocId(prefix) {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function compactPersonName(value) {
+    const raw = String(value || '').trim();
+    if (!raw || raw === '-') return '';
+    const parts = raw.split(/\s+/).filter(Boolean);
+    return parts[0] || raw;
+}
+
+function getHistoryActor(entry) {
+    if (!entry) return '';
+    return compactPersonName(
+        entry.followedUpBy
+        || entry.collectorName
+        || entry.employeeName
+        || employeeLookupMap.get(normalizeLookupId(entry.employeeId))
+        || entry.createdBy
+        || entry.updatedBy
+        || entry.encodedBy
+    );
+}
+
+function renderFollowupBadge(history) {
+    const actor = getHistoryActor(history);
+    if (!actor) return '';
+    return `<span class="collector-followup-badge">Followed up by ${escapeHtml(actor)}</span>`;
+}
+
+function collectionAccountHistoryKeys(source = {}) {
+    const monthKey = scheduleSlug(source.monthKey || source.label || '', '');
+    const branchId = normalizeLookupId(source.branchId);
+    const companyId = normalizeLookupId(source.companyId);
+    const contractId = normalizeLookupId(source.contractmainId);
+    const machineId = normalizeLookupId(source.machineId);
+    const rowId = String(source.rowId || '').trim();
+    const keys = [];
+
+    if (branchId && !branchId.startsWith('unlinked:')) {
+        keys.push(`account:branch:${branchId}`);
+        if (monthKey) keys.push(`account:branch:${branchId}:${monthKey}`);
+    }
+    if (companyId) {
+        keys.push(`account:company:${companyId}`);
+        if (monthKey) keys.push(`account:company:${companyId}:${monthKey}`);
+    }
+    if (contractId) {
+        keys.push(`account:contract:${contractId}`);
+        if (monthKey) keys.push(`account:contract:${contractId}:${monthKey}`);
+    }
+    if (machineId) {
+        keys.push(`account:machine:${machineId}`);
+        if (monthKey) keys.push(`account:machine:${machineId}:${monthKey}`);
+    }
+    if (rowId) {
+        keys.push(`account:row:${rowId}`);
+        if (monthKey) keys.push(`account:row:${rowId}:${monthKey}`);
+    }
+
+    return Array.from(new Set(keys.filter(Boolean)));
+}
+
 function getCollectorSearchTerm() {
     return String(document.getElementById('collectorSearchInput')?.value || '').trim().toLowerCase();
 }
@@ -509,6 +569,7 @@ function finalizeCollectorCellRecords(cellMap) {
                 const rightTime = (right.lastPaymentDate || right.invoiceDate || right.dueDate || new Date(0)).getTime();
                 return rightTime - leftTime;
             });
+        cell.latestHistory = latestHistoryForCell(cell);
         delete cell.recordMap;
     });
 }
@@ -532,7 +593,7 @@ async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
     params.set('latest_limit', '100');
     params.set('max_billing_pages', '10');
     params.set('max_schedule_pages', '10');
-    params.set('cell_detail_scope', 'none');
+    params.set('cell_detail_scope', 'all');
     params.set('response_mode', 'collection');
 
     const request = fetch(`/.netlify/functions/openclaw-billing-cohort?${params.toString()}`)
@@ -1166,7 +1227,74 @@ function getHistoryForInvoice(...keys) {
     return merged;
 }
 
+function getHistoryForRecords(records = []) {
+    const keys = [];
+    records.forEach((record) => {
+        keys.push(record.invoiceNo, record.invoiceId, record.invoiceKey, record.id);
+    });
+    return getHistoryForInvoice(...keys);
+}
+
+function latestHistoryForRecords(records = []) {
+    return getHistoryForRecords(records)[0] || null;
+}
+
+function getHistoryForCell(cell = {}) {
+    return mergeHistoryLists(
+        getHistoryForRecords(cell.records || []),
+        getHistoryForInvoice(...collectionAccountHistoryKeys(cell))
+    );
+}
+
+function latestHistoryForCell(cell = {}) {
+    return getHistoryForCell(cell)[0] || null;
+}
+
+function getHistoryForCollectorRow(rowId) {
+    const histories = [];
+    collectorCellMap.forEach((cell) => {
+        if (String(cell.rowId || '') === String(rowId || '')) {
+            histories.push(getHistoryForCell(cell));
+        }
+    });
+    return mergeHistoryLists(...histories);
+}
+
+function mergeHistoryLists(...lists) {
+    const merged = [];
+    const seen = new Set();
+    lists.flat().filter(Boolean).forEach((entry) => {
+        const token = `${entry.docId}|${entry.callDateKey || ''}|${entry.followupDateKey || ''}|${entry.remarks || ''}`;
+        if (seen.has(token)) return;
+        seen.add(token);
+        merged.push(entry);
+    });
+    return merged.sort((a, b) => {
+        const aTime = a.callDate ? a.callDate.getTime() : 0;
+        const bTime = b.callDate ? b.callDate.getTime() : 0;
+        return bTime - aTime;
+    });
+}
+
+async function loadCollectionEmployeeLookup() {
+    if (employeeLookupMap.size > 0) return;
+
+    const employeeDocs = await safeFirestoreGetAll('tbl_employee', null, {
+        fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name'],
+        maxPages: 40
+    });
+
+    employeeDocs.forEach((doc) => {
+        const row = documentFieldsToPlain(doc);
+        const id = normalizeLookupId(row.id);
+        const name = buildAddressText([row.nickname, `${row.firstname || ''} ${row.lastname || ''}`.trim(), row.name]);
+        if (id && name) employeeLookupMap.set(id, name);
+    });
+}
+
 async function loadCollectionHistory() {
+    await loadCollectionEmployeeLookup();
+
     const historyDocs = await firestoreGetAll('tbl_collectionhistory', null, {
         fieldMask: [
             'invoice_num',
@@ -1188,6 +1316,19 @@ async function loadCollectionHistory() {
             'remarks',
             'contact_person',
             'contact_number',
+            'account_ref',
+            'account_group_ref',
+            'branch_id',
+            'company_id',
+            'contractmain_id',
+            'machine_id',
+            'month_key',
+            'followed_up_by',
+            'collector_name',
+            'employee_name',
+            'created_by',
+            'updated_by',
+            'encoded_by',
             'timestamp',
             'call_datetime',
             'created_at'
@@ -1203,10 +1344,10 @@ async function loadCollectionHistory() {
     historyDocs.forEach((doc) => {
         const f = doc.fields || {};
         const invoiceRef = getField(f, ['invoice_num', 'invoice_id', 'invoice_no', 'invoiceno']);
-        if (!invoiceRef) return;
-
-        const invoiceKey = String(invoiceRef).trim();
-        if (!invoiceKey) return;
+        const invoiceKey = String(invoiceRef || '').trim();
+        const accountRef = String(getField(f, ['account_ref']) || '').trim();
+        const accountGroupRef = String(getField(f, ['account_group_ref']) || '').trim();
+        if (!invoiceKey && !accountRef && !accountGroupRef) return;
 
         const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup']);
         const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at']) || followupDateRaw;
@@ -1217,6 +1358,13 @@ async function loadCollectionHistory() {
         const entry = {
             docId: doc.name || String(Math.random()),
             invoiceKey,
+            accountRef,
+            accountGroupRef,
+            branchId: getField(f, ['branch_id']),
+            companyId: getField(f, ['company_id']),
+            contractmainId: getField(f, ['contractmain_id']),
+            machineId: getField(f, ['machine_id']),
+            monthKey: getField(f, ['month_key']),
             remarks: getField(f, ['remarks']) || 'No remarks',
             contactPerson: getField(f, ['contact_person']) || '-',
             contactNumber: getField(f, ['contact_number']) || '',
@@ -1229,6 +1377,12 @@ async function loadCollectionHistory() {
             paymentAmount: Number(getField(f, ['payment_amount']) || 0),
             collectionId: getField(f, ['collection_id']),
             employeeId: getField(f, ['employee_id']),
+            followedUpBy: getField(f, ['followed_up_by']),
+            collectorName: getField(f, ['collector_name']),
+            employeeName: getField(f, ['employee_name']),
+            createdBy: getField(f, ['created_by']),
+            updatedBy: getField(f, ['updated_by']),
+            encodedBy: getField(f, ['encoded_by']),
             followupDate,
             followupDateRaw,
             followupDateKey: toDateKey(followupDate),
@@ -1237,12 +1391,21 @@ async function loadCollectionHistory() {
             callDateKey: toDateKey(callDate)
         };
 
-        if (!collectionHistory[invoiceKey]) collectionHistory[invoiceKey] = [];
-        collectionHistory[invoiceKey].push(entry);
+        const keys = [
+            invoiceKey,
+            accountRef,
+            accountGroupRef,
+            ...collectionAccountHistoryKeys(entry)
+        ].filter(Boolean);
+
+        Array.from(new Set(keys)).forEach((historyKey) => {
+            if (!collectionHistory[historyKey]) collectionHistory[historyKey] = [];
+            collectionHistory[historyKey].push(entry);
+        });
 
         if (entry.followupDateKey && entry.followupDateKey === todayKey) {
             todayFollowups.push({
-                invoiceKey,
+                invoiceKey: invoiceKey || accountRef || accountGroupRef,
                 followupDate: entry.followupDate,
                 remarks: entry.remarks,
                 contactPerson: entry.contactPerson,
@@ -2905,6 +3068,58 @@ async function computeCollectorDashboardData() {
             collectorCell.pendingBilling = Boolean(collectorCell.pendingBilling || billingCell.pending);
             collectorCell.readingPagesTotal = Math.max(Number(collectorCell.readingPagesTotal || 0), Number(billingCell.reading_pages_total || 0));
             collectorCell.readingTaskCount = Math.max(Number(collectorCell.readingTaskCount || 0), Number(billingCell.reading_task_count || 0));
+            const detailInvoiceDate = normalizeDate(billingCell.latest_invoice_date);
+            (billingCell.invoice_groups || []).forEach((group) => {
+                const invoiceNo = String(group.invoice_no || group.invoice_ref || group.invoice_id || '').trim();
+                const invoiceId = String(group.invoice_id || group.invoice_no || group.invoice_ref || '').trim();
+                if (!invoiceNo && !invoiceId) return;
+                upsertCollectorCellRecord(collectorCell, group.invoice_ref || invoiceNo || invoiceId, {
+                    invoiceId,
+                    invoiceNo: invoiceNo || invoiceId,
+                    invoiceKey: String(group.invoice_ref || invoiceNo || invoiceId).trim(),
+                    amount: Number(group.amount_total || displayBilledTotal || 0),
+                    billedAmount: Number(group.amount_total || displayBilledTotal || 0),
+                    collectedAmount: 0,
+                    totalCollectedAmount: 0,
+                    company: accountRow.customer,
+                    branch: accountRow.branchName,
+                    accountLabel: accountRow.accountLabel,
+                    companyId: accountRow.companyId,
+                    branchId: accountRow.branchId,
+                    machineId: String((group.machine_ids || [])[0] || accountRow.machineId || '').trim(),
+                    contractmainId: String((group.contractmain_ids || [])[0] || accountRow.contractmainId || '').trim(),
+                    serialNumber: accountRow.serialNumber,
+                    modelName: accountRow.modelName,
+                    machineLabel: accountRow.machineLabel,
+                    invoiceDate: detailInvoiceDate,
+                    rd: readingDay
+                });
+            });
+            (billingCell.reading_groups || []).forEach((group) => {
+                const invoiceNo = String(group.invoice_num || '').trim();
+                if (!invoiceNo) return;
+                upsertCollectorCellRecord(collectorCell, `reading:${invoiceNo}`, {
+                    invoiceId: invoiceNo,
+                    invoiceNo,
+                    invoiceKey: invoiceNo,
+                    amount: displayBilledTotal,
+                    billedAmount: displayBilledTotal,
+                    collectedAmount: 0,
+                    totalCollectedAmount: 0,
+                    company: accountRow.customer,
+                    branch: accountRow.branchName,
+                    accountLabel: accountRow.accountLabel,
+                    companyId: accountRow.companyId,
+                    branchId: accountRow.branchId,
+                    machineId: String(group.machine_id || accountRow.machineId || '').trim(),
+                    contractmainId: String(group.contractmain_id || accountRow.contractmainId || '').trim(),
+                    serialNumber: accountRow.serialNumber,
+                    modelName: accountRow.modelName,
+                    machineLabel: accountRow.machineLabel,
+                    invoiceDate: normalizeDate(group.task_date) || detailInvoiceDate,
+                    rd: readingDay
+                });
+            });
             accountRow.months[column.key] = collectorCell.id;
         });
     });
@@ -2914,6 +3129,7 @@ async function computeCollectorDashboardData() {
     const customerRows = Array.from(accountRowsMap.values())
         .map((row) => {
             let rd = null;
+            let rowLatestHistory = null;
             Array.from(row.rdCounts.entries())
                 .sort((a, b) => {
                     if (b[1] !== a[1]) return b[1] - a[1];
@@ -2929,6 +3145,9 @@ async function computeCollectorDashboardData() {
                 if (cell) {
                     row.totalCollected += cell.collectedTotal;
                     monthTotals[column.key] += cell.collectedTotal;
+                    if (cell.latestHistory && (!rowLatestHistory || ((cell.latestHistory.callDate || new Date(0)).getTime() > (rowLatestHistory.callDate || new Date(0)).getTime()))) {
+                        rowLatestHistory = cell.latestHistory;
+                    }
                     const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
                     if ((billedTarget > 0 || cell.missedReading || cell.pendingBilling) && cell.collectedTotal <= 0) {
                         pendingCountsByMonth[column.key] += 1;
@@ -2949,6 +3168,7 @@ async function computeCollectorDashboardData() {
                 machineId: row.machineId,
                 contractmainId: row.contractmainId,
                 rd,
+                latestHistory: rowLatestHistory,
                 months: row.months,
                 totalCollected: row.totalCollected
             };
@@ -3092,6 +3312,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                 const missedReading = Boolean(cell.missedReading);
                                 const catchUpBilling = Boolean(cell.catchUpBilling);
                                 const showBillingAmount = billedTarget > 0;
+                                const followupBadge = renderFollowupBadge(cell.latestHistory || row.latestHistory);
                                 let cellClass = 'month-cell pending';
                                 let cellText = '<span class="collector-empty-dot"></span>';
 
@@ -3100,12 +3321,14 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                     cellText = `
                                         <span class="collector-amount">${escapeHtml(formatPlainNumber(cell.collectedTotal))}</span>
                                         <span class="collector-state-label partial">Partial</span>
+                                        ${followupBadge}
                                     `;
                                 } else if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal >= billedTarget) {
                                     cellClass = 'month-cell collected';
                                     cellText = `
                                         <span class="collector-amount">${escapeHtml(formatPlainNumber(cell.collectedTotal))}</span>
                                         <span class="collector-state-label collected">Collected</span>
+                                        ${followupBadge}
                                     `;
                                 } else if (showBillingAmount) {
                                     cellClass = `month-cell pending${catchUpBilling ? ' catch-up' : ''}`;
@@ -3114,10 +3337,11 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                         ${catchUpBilling
                                             ? `<span class="collector-state-label catch-up">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))})` : ''}</span>`
                                             : '<span class="collector-state-label unpaid">No Payment</span>'}
+                                        ${followupBadge}
                                     `;
                                 } else if (missedReading || cell.pendingBilling) {
                                     cellClass = `month-cell missed-reading${cell.pendingBilling ? ' pending-billing' : ''}`;
-                                    cellText = `<span class="collector-state-label missed">${escapeHtml(missedReading ? 'Missed Reading' : 'Pending Billing')}</span>`;
+                                    cellText = `<span class="collector-state-label missed">${escapeHtml(missedReading ? 'Missed Reading' : 'Pending Billing')}</span>${followupBadge}`;
                                 }
 
                                 return `<td class="${cellClass}" onclick="openCollectorCellByToken('${encodeURIComponent(cell.id)}')">${cellText}</td>`;
@@ -3309,8 +3533,18 @@ async function loadCollectionScheduleForWorkspace(context, selectedInvoice) {
 }
 
 function getCurrentCollectorName() {
+    let storedUser = null;
+    try {
+        storedUser = JSON.parse(localStorage.getItem('marga_user') || sessionStorage.getItem('marga_user') || 'null');
+    } catch {
+        storedUser = null;
+    }
     return String(
-        document.getElementById('current-user')?.textContent
+        window.MargaAuth?.getUser?.()?.name
+        || window.MargaAuth?.getUser?.()?.username
+        || storedUser?.name
+        || storedUser?.username
+        || document.getElementById('current-user')?.textContent
         || localStorage.getItem('marga_current_user')
         || 'Collector'
     ).trim() || 'Collector';
@@ -3668,6 +3902,74 @@ async function loadServiceDeliveryHistory(context) {
     return rows;
 }
 
+async function loadCollectionActivityHistory(context) {
+    const cacheKey = `${context.branchId || 'branchless'}:${context.companyId || 'companyless'}`;
+    if (collectionActivityCache.has(cacheKey)) return collectionActivityCache.get(cacheKey);
+
+    const [branchDocs, companyDocs] = await Promise.all([
+        queryScheduleByField('branch_id', context.branchId).catch((error) => {
+            console.warn('Branch collection activity query failed:', error);
+            return [];
+        }),
+        queryScheduleByField('company_id', context.companyId).catch((error) => {
+            console.warn('Company collection activity query failed:', error);
+            return [];
+        })
+    ]);
+
+    const seen = new Set();
+    const rows = [...branchDocs, ...companyDocs]
+        .filter((doc) => {
+            const id = doc.name || '';
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        })
+        .map((doc) => {
+            const row = documentFieldsToPlain(doc);
+            const purposeId = Number(row.purpose_id || 0);
+            const remarks = buildAddressText([row.remarks, row.tl_remarks, row.csr_remarks, row.customer_request]);
+            const callDate = normalizeDate(row.date_finished || row.timestmp || row.task_datetime || row.original_sched);
+            const employeeId = normalizeLookupId(row.tech_id || row.user_id || row.closedby || row.userlog_id);
+            return {
+                docId: row._docName || row._docId || '',
+                purposeId,
+                invoiceKey: String(row.invoice_num || row.invoice_id || '').trim(),
+                remarks: remarks || 'Collection follow-up logged.',
+                contactPerson: row.caller || row.collocutor || '-',
+                contactNumber: row.phone_number || '',
+                scheduleStatus: row.status || '',
+                statusId: row.status || '',
+                locationId: '',
+                locationLabel: '',
+                isCheckSigned: false,
+                checkNumber: '',
+                paymentAmount: Number(row.amt_collected || 0) || 0,
+                collectionId: row.collectioninfo_id || '',
+                employeeId,
+                followedUpBy: employeeLookupMap.get(employeeId) || '',
+                followupDate: normalizeDate(row.commitment_date || row.task_datetime),
+                followupDateRaw: row.commitment_date || row.task_datetime || '',
+                followupDateKey: toDateKey(normalizeDate(row.commitment_date || row.task_datetime)),
+                callDate,
+                callDateRaw: row.date_finished || row.timestmp || row.task_datetime || '',
+                callDateKey: toDateKey(callDate),
+                source: 'collection_schedule'
+            };
+        })
+        .filter((row) => Number(row.purposeId || 0) === 1)
+        .filter((row) => row.callDate && row.remarks && row.remarks !== 'Collection follow-up logged.')
+        .sort((a, b) => {
+            const aTime = (a.callDate || new Date(0)).getTime();
+            const bTime = (b.callDate || new Date(0)).getTime();
+            return bTime - aTime;
+        })
+        .slice(0, 30);
+
+    collectionActivityCache.set(cacheKey, rows);
+    return rows;
+}
+
 async function buildCollectorFollowupWorkspace(cell) {
     await loadCollectionWorkspaceLookups();
 
@@ -3677,15 +3979,18 @@ async function buildCollectorFollowupWorkspace(cell) {
     const branchInvoices = getRelatedUnpaidInvoices(context, 'branch');
     const companyInvoices = getRelatedUnpaidInvoices(context, 'company');
     const selectedInvoice = getSelectedInvoiceForCell(cell, context, branchInvoices);
-    const invoiceHistory = mergeInvoiceHistories(
+    const directInvoiceHistory = mergeInvoiceHistories(
         selectedInvoice ? [selectedInvoice, ...branchInvoices] : branchInvoices,
         cell.records || []
     );
-    const lastHistory = invoiceHistory[0] || null;
-    const [serviceHistory, activeSchedule] = await Promise.all([
+    const accountHistory = getHistoryForCollectorRow(cell.rowId);
+    const [serviceHistory, activeSchedule, collectionActivityHistory] = await Promise.all([
         loadServiceDeliveryHistory(context),
-        loadCollectionScheduleForWorkspace(context, selectedInvoice)
+        loadCollectionScheduleForWorkspace(context, selectedInvoice),
+        loadCollectionActivityHistory(context)
     ]);
+    const invoiceHistory = mergeHistoryLists(directInvoiceHistory, accountHistory, collectionActivityHistory);
+    const lastHistory = invoiceHistory[0] || null;
 
     const branchBalance = branchInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
     const companyBalance = companyInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
@@ -4063,7 +4368,7 @@ function renderCollectorFollowupWorkspace(workspace) {
                             </div>
                         </div>
                         <label>Last Cntct</label>
-                        <input id="collectorProfileLastContact" type="text" value="${escapeHtml(getProfileField(profile, override, 'last_contact', ['last_contact'], lastHistory?.contactPerson || ''))}">
+                        <input id="collectorProfileLastContact" type="text" value="${escapeHtml(lastHistory?.remarks || getProfileField(profile, override, 'last_contact', ['last_contact'], lastHistory?.contactPerson || ''))}">
                         <button class="btn btn-secondary btn-sm" onclick="saveCollectorProfileOverride()">Save Address / Policy Override</button>
                         <span class="detail-save-status" id="collectorProfileSaveStatus">${override ? 'Web override active.' : 'Legacy profile loaded.'}</span>
                     </div>
@@ -4537,11 +4842,7 @@ async function saveCollectorFollowup() {
 
     const statusNode = document.getElementById('collectorFollowupSaveStatus');
     const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
-
-    if (!selectedInvoice?.invoiceNo && !selectedInvoice?.invoiceId) {
-        if (statusNode) statusNode.textContent = 'No invoice number is linked to this cell yet, so history cannot be saved.';
-        return;
-    }
+    const context = currentCollectorWorkspace.context || resolveCollectorCellContext(currentCollectorWorkspace.cell || {});
 
     const remarks = String(document.getElementById('collectorRemarks')?.value || '').trim();
     const followupDate = String(document.getElementById('collectorFollowupDate')?.value || '').trim();
@@ -4572,14 +4873,27 @@ async function saveCollectorFollowup() {
     if (statusNode) statusNode.textContent = 'Saving follow-up history...';
 
     try {
-        const invoiceNo = String(selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '').trim();
-        const invoiceId = String(selectedInvoice.invoiceId || selectedInvoice.invoiceNo || '').trim();
+        const invoiceNo = String(selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
+        const invoiceId = String(selectedInvoice?.invoiceId || selectedInvoice?.invoiceNo || '').trim();
+        const accountKeys = collectionAccountHistoryKeys(context);
+        const monthSlug = scheduleSlug(context.monthKey || context.label || '', '');
+        const accountRef = accountKeys.find((key) => monthSlug && key.endsWith(`:${monthSlug}`)) || accountKeys[0] || collectionScheduleDocId(context, selectedInvoice);
+        const accountGroupRef = accountKeys.find((key) => !monthSlug || !key.endsWith(`:${monthSlug}`)) || accountRef;
         await firestoreCreate('tbl_collectionhistory', {
             invoice_num: { stringValue: invoiceNo },
             invoice_id: { stringValue: invoiceId },
+            account_ref: { stringValue: accountRef },
+            account_group_ref: { stringValue: accountGroupRef },
+            branch_id: { stringValue: context.branchId || '' },
+            company_id: { stringValue: context.companyId || '' },
+            contractmain_id: { stringValue: context.contractmainId || '' },
+            machine_id: { stringValue: context.machineId || '' },
+            month_key: { stringValue: context.monthKey || context.label || '' },
             remarks: { stringValue: remarks },
             contact_person: { stringValue: contactPerson || '-' },
             contact_number: { stringValue: contactNumber || '' },
+            followed_up_by: { stringValue: getCurrentCollectorName() },
+            collector_name: { stringValue: getCurrentCollectorName() },
             followup_datetime: { stringValue: `${followupDate} ${normalizedTime}` },
             timestamp: { stringValue: toTimestampString(new Date()) },
             schedule_status: { integerValue: String(statusId || 0) },
@@ -4604,6 +4918,8 @@ async function saveCollectorFollowup() {
         bindCollectorPaymentForm();
         const refreshedStatusNode = document.getElementById('collectorFollowupSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Follow-up history updated.';
+        collectorDashboardData = null;
+        void renderCollectorDashboard({ recompute: true });
     } catch (error) {
         console.error('Failed to save collection follow-up:', error);
         if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
@@ -5345,6 +5661,8 @@ async function saveCollectionConversation() {
             remarks: { stringValue: remarks },
             contact_person: { stringValue: contactPerson || '-' },
             contact_number: { stringValue: contactNumber || '' },
+            followed_up_by: { stringValue: getCurrentCollectorName() },
+            collector_name: { stringValue: getCurrentCollectorName() },
             followup_datetime: { stringValue: `${followupDate} 00:00:00` },
             timestamp: { stringValue: toTimestampString(new Date()) },
             schedule_status: { integerValue: String(scheduleStatus) }
@@ -5366,6 +5684,8 @@ async function saveCollectionConversation() {
         currentDetailInvoice.contactNumber = contactNumber || currentDetailInvoice.contactNumber || '';
 
         recomputeFilteredInvoices();
+        collectorDashboardData = null;
+        void renderCollectorDashboard({ recompute: true });
         viewInvoiceDetail(currentDetailInvoice.invoiceKey);
         const refreshedStatusNode = document.getElementById('detailSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Call history updated.';
