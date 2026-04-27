@@ -605,14 +605,34 @@ function billingSnapshotFromValues({
     };
 }
 
+function getLegacyBillingConsumption(doc) {
+    return Math.max(
+        0,
+        Number(doc?.field_total_consumed || 0) || 0,
+        Number(doc?.consumption || 0) || 0,
+        Number(doc?.total_consumption || 0) || 0,
+        Number(doc?.billing_total_pages || 0) || 0,
+        Number(doc?.total_pages || 0) || 0,
+        Number(doc?.billed_pages || 0) || 0
+    );
+}
+
 function billingSnapshotFromDoc(doc, fallback = {}) {
     const spoilagePercent = doc?.spoilage_percent !== undefined && doc?.spoilage_percent !== null && doc?.spoilage_percent !== ''
         ? Number(doc.spoilage_percent || 0)
         : Number(doc?.spoilage_rate || 0) * 100;
+    const fallbackPrevious = Math.max(0, Number(fallback.previousMeter || 0) || 0);
+    const savedPrevious = Number(doc?.field_previous_meter ?? doc?.previous_meter ?? 0) || 0;
+    const previousMeter = savedPrevious > 0 ? savedPrevious : fallbackPrevious;
+    const savedPresent = Number(doc?.field_present_meter ?? doc?.present_meter ?? 0) || 0;
+    const legacyConsumption = getLegacyBillingConsumption(doc);
+    const presentMeter = savedPresent > 0
+        ? savedPresent
+        : (legacyConsumption > 0 ? previousMeter + legacyConsumption : fallback.presentMeter);
     return billingSnapshotFromValues({
         invoiceNo: getBillingDocInvoiceRef(doc) || fallback.invoiceNo,
-        previousMeter: doc?.field_previous_meter ?? fallback.previousMeter,
-        presentMeter: doc?.field_present_meter ?? fallback.presentMeter,
+        previousMeter,
+        presentMeter,
         spoilagePercent: Number.isFinite(spoilagePercent) ? spoilagePercent : fallback.spoilagePercent,
         billingMode: doc?.billing_mode || fallback.billingMode,
         linesSignature: doc?.billing_lines_signature || fallback.linesSignature
@@ -627,7 +647,7 @@ function billingSnapshotsEqual(left, right) {
         && a.presentMeter === b.presentMeter
         && Math.abs(a.spoilagePercent - b.spoilagePercent) < 0.001
         && a.billingMode === b.billingMode
-        && a.linesSignature === b.linesSignature;
+        && (!a.linesSignature || !b.linesSignature || a.linesSignature === b.linesSignature);
 }
 
 function toSqlDateTime(date = new Date()) {
@@ -4452,7 +4472,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (requestToken !== billingCalcRequestToken) return;
 
         rowPriorLookup = priorMachineReadingByRow.get(getBillingRowLookupKey(row)) || null;
-        if (!savedBillingDoc && rowPriorLookup && !context.targetReadingGroup) {
+        if (rowPriorLookup && !context.targetReadingGroup) {
             context.latestPriorGroup = context.latestPriorGroup || buildPriorGroupFromLookup(rowPriorLookup, row);
         }
         if (!savedBillingDoc && rowPriorLookup && !context.targetReadingGroup && Number(context.previousMeter || 0) <= 0) {
