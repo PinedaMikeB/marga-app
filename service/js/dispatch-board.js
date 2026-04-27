@@ -895,7 +895,16 @@ function getEmployeeName(employee, id) {
 function getRole(employee, position) {
     if (!employee) return 'Legacy / Unknown';
     const positionId = Number(employee.position_id || 0);
-    const positionName = String(position?.position || '').toLowerCase();
+    const positionName = [
+        position?.position,
+        position?.position_name,
+        position?.name,
+        employee?.position,
+        employee?.position_name,
+        employee?.position_label,
+        employee?.marga_role,
+        ...(Array.isArray(employee?.marga_roles) ? employee.marga_roles : [])
+    ].map((value) => String(value || '').trim()).filter(Boolean).join(' ').toLowerCase();
 
     if (positionId === 5 || positionName.includes('technician') || positionName.includes('tech')) {
         return 'Technician';

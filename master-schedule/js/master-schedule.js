@@ -724,7 +724,16 @@ function employeeName(employee, fallbackId = '') {
 
 function employeeRole(employee) {
     const position = masterState.lookups.positions.get(String(employee?.position_id || ''));
-    const label = clean(position?.position || position?.position_name || position?.name || employee?.position).toLowerCase();
+    const label = [
+        position?.position,
+        position?.position_name,
+        position?.name,
+        employee?.position,
+        employee?.position_name,
+        employee?.position_label,
+        employee?.marga_role,
+        ...(Array.isArray(employee?.marga_roles) ? employee.marga_roles : [])
+    ].map(clean).filter(Boolean).join(' ').toLowerCase();
     const positionId = Number(employee?.position_id || 0);
     if (positionId === 5 || label.includes('technician') || label.includes('tech')) return 'Technician';
     if (positionId === 9 || label.includes('messenger') || label.includes('driver')) return label.includes('driver') ? 'Driver' : 'Messenger';
@@ -2146,7 +2155,7 @@ async function ensureSettingsData() {
 
     const [employeeRows, branchRows, companyRows, positionRows] = await Promise.all([
         fetchCollection('tbl_employee', {
-            fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id'],
+            fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id', 'position', 'position_name', 'position_label', 'marga_role', 'marga_roles', 'estatus', 'active', 'marga_active'],
             maxPages: 40
         }).catch(() => []),
         fetchCollection('tbl_branchinfo', {
