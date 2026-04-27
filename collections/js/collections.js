@@ -1798,31 +1798,46 @@ async function loadLookups() {
 
     paidInvoiceIds = new Set();
     paymentEntries = [];
+    const seenPaymentTokens = new Set();
     paymentDocs.forEach((doc) => {
         const f = doc.fields || {};
         const invoiceId = getField(f, ['invoice_id']);
-        if (invoiceId !== null && invoiceId !== undefined && invoiceId !== '') {
-            paidInvoiceIds.add(String(invoiceId).trim());
-        }
+        const invoiceNo = String(getField(f, ['invoice_num']) || '').trim();
 
         const amount = Number(getField(f, ['payment_amt']) || 0);
         const tax2307 = Number(getField(f, ['tax_2307']) || 0);
         const balanceAmountRaw = getField(f, ['balance_amt']);
         const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
         const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
+        const invoiceIdKey = invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '';
+        if (balanceAmount !== null && Number(balanceAmount) <= 0.01 && (invoiceIdKey || invoiceNo)) {
+            paidInvoiceIds.add(invoiceIdKey || invoiceNo);
+        }
         if ((amount > 0 || tax2307 > 0) && paymentDate) {
+            const orNumber = String(getField(f, ['ornum', 'or_number']) || '').trim();
+            const token = [
+                invoiceIdKey,
+                invoiceNo,
+                amount.toFixed(2),
+                tax2307.toFixed(2),
+                balanceAmount !== null && Number.isFinite(Number(balanceAmount)) ? Number(balanceAmount).toFixed(2) : '',
+                toDateKey(paymentDate),
+                orNumber
+            ].join('|');
+            if (seenPaymentTokens.has(token)) return;
+            seenPaymentTokens.add(token);
             paymentEntries.push({
                 docId: getFirestoreDocumentId(doc),
                 id: String(getField(f, ['id']) || getFirestoreDocumentId(doc) || '').trim(),
-                invoiceId: invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '',
-                invoiceNo: String(getField(f, ['invoice_num']) || '').trim(),
+                invoiceId: invoiceIdKey,
+                invoiceNo,
                 amount,
                 balanceAmount,
                 paymentDate,
                 datePaid: normalizeDate(getField(f, ['date_paid'])),
                 dateDeposit: normalizeDate(getField(f, ['date_deposit'])),
                 taxDatePaid: normalizeDate(getField(f, ['tax_date_paid'])),
-                orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim(),
+                orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
                 tax2307,
                 taxStatus: String(getField(f, ['tax_status']) || '').trim(),
@@ -3034,21 +3049,25 @@ async function computeCollectorDashboardData() {
     const monthMetaMap = new Map(monthColumns.map((column) => [column.key, column]));
     const paymentMap = new Map();
     paymentEntries.forEach((entry) => {
-        const invoiceKey = String(entry.invoiceId || '').trim();
-        if (!invoiceKey) return;
+        const paymentKeys = Array.from(new Set([
+            entry.invoiceId,
+            entry.invoiceNo
+        ].map((value) => String(value || '').trim()).filter(Boolean)));
+        if (!paymentKeys.length) return;
 
-        if (!paymentMap.has(invoiceKey)) {
-            paymentMap.set(invoiceKey, {
+        let summary = paymentKeys.map((key) => paymentMap.get(key)).find(Boolean);
+        if (!summary) {
+            summary = {
                 amount: 0,
                 isSettled: false,
                 latestBalanceAmount: null,
                 firstPaymentDate: null,
                 lastPaymentDate: null,
                 months: new Map()
-            });
+            };
         }
+        paymentKeys.forEach((key) => paymentMap.set(key, summary));
 
-        const summary = paymentMap.get(invoiceKey);
         const paymentDate = normalizeDate(entry.paymentDate);
         summary.amount += Number(entry.amount || 0);
         if (entry.balanceAmount !== null && entry.balanceAmount !== undefined && Number.isFinite(Number(entry.balanceAmount))) {
@@ -3112,16 +3131,7 @@ async function computeCollectorDashboardData() {
         const rowId = buildCollectorRowKey(record.machineId, record.contractmainId);
         if (!rowId) return;
 
-        const paymentSummary =
-            paymentMap.get(String(record.invoiceId || '').trim()) ||
-            paymentMap.get(String(record.invoiceNo || '').trim()) || {
-                amount: 0,
-                isSettled: false,
-                latestBalanceAmount: null,
-                firstPaymentDate: null,
-                lastPaymentDate: null,
-                months: new Map()
-            };
+        const paymentSummary = getPaymentSummaryForInvoiceKeys(paymentMap, record.invoiceId, record.invoiceNo, record.invoiceKey);
 
         const invoiceDateInBalanceWindow = record.invoiceDate && record.invoiceDate >= previousMonthStart && record.invoiceDate <= today;
         const paymentMonthsInWindow = Array.from(paymentSummary.months.keys()).filter((key) => monthColumnKeys.has(key));
@@ -3281,18 +3291,25 @@ async function computeCollectorDashboardData() {
             collectorCell.readingPagesTotal = Math.max(Number(collectorCell.readingPagesTotal || 0), Number(billingCell.reading_pages_total || 0));
             collectorCell.readingTaskCount = Math.max(Number(collectorCell.readingTaskCount || 0), Number(billingCell.reading_task_count || 0));
             const detailInvoiceDate = normalizeDate(billingCell.latest_invoice_date);
+            let groupedPaidTotal = 0;
             (billingCell.invoice_groups || []).forEach((group) => {
                 const invoiceNo = String(group.invoice_no || group.invoice_ref || group.invoice_id || '').trim();
                 const invoiceId = String(group.invoice_id || group.invoice_no || group.invoice_ref || '').trim();
                 if (!invoiceNo && !invoiceId) return;
+                const groupAmount = Number(group.amount_total || invoiceBilledTotal || 0);
+                const paymentSummary = getPaymentSummaryForInvoiceKeys(paymentMap, invoiceId, invoiceNo, group.invoice_ref);
+                const paidAgainstInvoice = paymentSummary.isSettled
+                    ? groupAmount
+                    : Math.min(Number(paymentSummary.amount || 0), groupAmount);
+                groupedPaidTotal += paidAgainstInvoice;
                 upsertCollectorCellRecord(collectorCell, group.invoice_ref || invoiceNo || invoiceId, {
                     invoiceId,
                     invoiceNo: invoiceNo || invoiceId,
                     invoiceKey: String(group.invoice_ref || invoiceNo || invoiceId).trim(),
-                    amount: Number(group.amount_total || invoiceBilledTotal || 0),
-                    billedAmount: Number(group.amount_total || invoiceBilledTotal || 0),
-                    collectedAmount: 0,
-                    totalCollectedAmount: 0,
+                    amount: groupAmount,
+                    billedAmount: groupAmount,
+                    collectedAmount: paidAgainstInvoice,
+                    totalCollectedAmount: Number(paymentSummary.amount || 0),
                     company: accountRow.customer,
                     branch: accountRow.branchName,
                     accountLabel: accountRow.accountLabel,
@@ -3304,9 +3321,14 @@ async function computeCollectorDashboardData() {
                     modelName: accountRow.modelName,
                     machineLabel: accountRow.machineLabel,
                     invoiceDate: detailInvoiceDate,
+                    firstPaymentDate: paymentSummary.firstPaymentDate,
+                    lastPaymentDate: paymentSummary.lastPaymentDate,
                     rd: readingDay
                 });
             });
+            if (groupedPaidTotal > 0) {
+                collectorCell.collectedTotal = Math.max(Number(collectorCell.collectedTotal || 0), groupedPaidTotal);
+            }
             accountRow.months[column.key] = collectorCell.id;
         });
     });
@@ -4059,6 +4081,24 @@ function getSelectedInvoiceForCell(cell, context, branchInvoices) {
     return branchInvoices[0] || null;
 }
 
+function getOutstandingInvoiceAmount(invoice) {
+    const baseAmount = Number(invoice?.amount || invoice?.billedAmount || 0);
+    const payments = getPaymentsForSelectedInvoice(invoice);
+    if (!payments.length) return baseAmount;
+
+    const latestWithBalance = payments
+        .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
+        .sort((left, right) => {
+            const leftTime = (left.paymentDate || new Date(0)).getTime();
+            const rightTime = (right.paymentDate || new Date(0)).getTime();
+            return rightTime - leftTime;
+        })[0];
+    if (latestWithBalance) return Math.max(0, Number(latestWithBalance.balanceAmount || 0));
+
+    const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + Number(payment.tax2307 || 0), 0);
+    return Math.max(0, baseAmount - paidTotal);
+}
+
 function mergeInvoiceHistories(invoices, records = []) {
     const keys = [];
     invoices.forEach((invoice) => {
@@ -4231,8 +4271,8 @@ async function buildCollectorFollowupWorkspace(cell) {
     const invoiceHistory = mergeHistoryLists(directInvoiceHistory, accountHistory, collectionActivityHistory);
     const lastHistory = invoiceHistory[0] || null;
 
-    const branchBalance = branchInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
-    const companyBalance = companyInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
+    const branchBalance = branchInvoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
+    const companyBalance = companyInvoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
     const selectedContact = lastHistory && hasMeaningfulContact(lastHistory.contactPerson)
         ? lastHistory.contactPerson
         : getCollectionContactRows(profile, override)[0]?.name || '';
@@ -4380,6 +4420,21 @@ function getPaymentsForSelectedInvoice(invoice) {
             const rightTime = (right.paymentDate || new Date(0)).getTime();
             return rightTime - leftTime;
         });
+}
+
+function getPaymentSummaryForInvoiceKeys(paymentMap, ...keys) {
+    for (const key of keys) {
+        const safeKey = String(key || '').trim();
+        if (safeKey && paymentMap.has(safeKey)) return paymentMap.get(safeKey);
+    }
+    return {
+        amount: 0,
+        isSettled: false,
+        latestBalanceAmount: null,
+        firstPaymentDate: null,
+        lastPaymentDate: null,
+        months: new Map()
+    };
 }
 
 function renderPaymentHistoryRows(payments) {
