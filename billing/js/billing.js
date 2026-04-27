@@ -5572,7 +5572,7 @@ function renderMatrixTable(payload) {
         const monthCells = months.map((monthKey) => {
             const cell = row.months?.[monthKey] || {};
             const isSelected = String(rowId) === String(selectedRowId) && monthKey === selectedMonth;
-            const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
+            const shownAmount = Number(cell.display_amount_total || cell.amount_total || cell.reading_amount_total || 0);
             const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
             const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
             const canOpenCalculator = (!row.is_summary_row && Boolean(getRowBillingProfile(row)))
@@ -5585,9 +5585,9 @@ function renderMatrixTable(payload) {
                     : '';
                 const cellMeta = hasInvoiceAmount
                     ? `${invoiceMeta} • ${machineMeta}${pendingMeta}`
-                    : `${formatCount(cell.reading_task_count || 0)} meter form • ${formatCount(cell.reading_pages_total || 0)} pg${pendingMeta}`;
+                    : `No invoice yet • ${formatCount(cell.reading_task_count || 0)} meter form • ${formatCount(cell.reading_pages_total || 0)} pg${pendingMeta}`;
                 return `
-                    <td class="month-cell billed-cell ${!hasInvoiceAmount && hasReadingBreakdown ? 'meter-cell' : ''} ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter reading breakdown amount')}">
+                    <td class="month-cell billed-cell ${!hasInvoiceAmount && hasReadingBreakdown ? 'meter-cell' : ''} ${isSelected ? 'selected-cell' : ''}" title="${escapeHtml(hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter reading amount - no invoice yet')}">
                         <button
                             class="billed-link ${row.is_summary_row ? 'summary-billed-link' : ''}"
                             type="button"
@@ -5777,12 +5777,19 @@ function openSerialDetailModal(rowId) {
     els.serialDetailModal.classList.remove('hidden');
 }
 
+function getRenderedMatrixCell(rowId, monthKey) {
+    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
+        || (lastPayload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    return {
+        row,
+        cell: row?.months?.[monthKey] || null
+    };
+}
+
 async function openInvoiceDetailModal(rowId, monthKey) {
     if (!lastPayload) return;
 
-    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
-        || (lastPayload.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
-    const cell = row?.months?.[monthKey];
+    const { row, cell } = getRenderedMatrixCell(rowId, monthKey);
     if (!row || !cell || !(cell.billed || Number(cell.display_amount_total || cell.reading_amount_total || 0) > 0)) return;
 
     const title = row.display_name || row.account_name || row.company_name || 'Billing Detail';
@@ -5797,7 +5804,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
     const requestToken = ++invoiceDetailRequestToken;
 
     els.invoiceDetailTitle.textContent = title;
-    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter breakdown amount'}`;
+    els.invoiceDetailSubtitle.textContent = `${monthKey} • ${readingDay} • ${hasInvoiceAmount ? receiptLabel(cell.receipt_status) : 'Meter amount - no invoice yet'}`;
     els.invoiceDetailContent.innerHTML = '<div class="detail-empty">Loading invoice detail...</div>';
     setRtpPrintPayload(null);
     els.invoiceDetailModal.classList.remove('hidden');
@@ -5875,7 +5882,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
         </div>
         ${
             !hasInvoiceAmount && Number(cell.reading_amount_total || 0) > 0
-                ? `<div class="detail-empty">This row is showing the meter-reading amount for the branch or department. The official invoice may be consolidated under the mother account.</div>`
+                ? `<div class="detail-empty">This row has meter-reading data, but no saved invoice amount for this month yet.</div>`
                 : ''
         }
         <div class="detail-section-title">Invoice Breakdown</div>
@@ -6165,6 +6172,12 @@ function bindEvents() {
         }
         const trigger = event.target.closest('.billed-link');
         if (!trigger) return;
+        const { cell } = getRenderedMatrixCell(trigger.dataset.rowId, trigger.dataset.monthKey);
+        if (cell && Number(cell.amount_total || 0) <= 0 && Number(cell.reading_amount_total || 0) > 0) {
+            event.preventDefault();
+            openBillingCalcModal(trigger.dataset.rowId, trigger.dataset.monthKey);
+            return;
+        }
         openInvoiceDetailModal(trigger.dataset.rowId, trigger.dataset.monthKey);
     });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);

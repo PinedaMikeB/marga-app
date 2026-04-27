@@ -1620,7 +1620,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 companyCell.reading_pages_total += reading.pages;
                 companyCell.display_amount_total = companyCell.amount_total > 0 ? companyCell.amount_total : companyCell.reading_amount_total;
                 companyCell.reading_formula = companyCell.reading_formula || reading.formula;
-                companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice' : 'meter_reading';
+                companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice_and_meter' : 'meter_reading';
                 if (!companyCell.reading_groups.has(scheduleId)) companyCell.reading_groups.set(scheduleId, readingEntry);
 
                 machineCell.reading_task_count += 1;
@@ -1628,13 +1628,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 machineCell.reading_pages_total += reading.pages;
                 machineCell.display_amount_total = machineCell.amount_total > 0 ? machineCell.amount_total : machineCell.reading_amount_total;
                 machineCell.reading_formula = machineCell.reading_formula || reading.formula;
-                machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice' : 'meter_reading';
+                machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice_and_meter' : 'meter_reading';
                 if (machId) machineCell.machine_ids.add(machId);
                 machineCell.machine_count = machineCell.machine_ids.size || (machId ? 1 : machineCell.machine_count);
                 if (!machineCell.reading_groups.has(scheduleId)) machineCell.reading_groups.set(scheduleId, readingEntry);
-                machineBilledByMonth.get(monthKey)?.add(machineRowId);
-                if (!billedMonthsByMachine.has(machineRowId)) billedMonthsByMachine.set(machineRowId, new Set());
-                billedMonthsByMachine.get(machineRowId).add(monthKey);
             }
             return;
         }
@@ -1693,178 +1690,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 machineCell.received_by_names.add(receiver);
                 machineCell.received_branch_ids.add(branchId);
             }
-            if (!machineCell.billed && machineCell.reading_amount_total > 0) {
-                machineCell.billed = true;
-                machineCell.display_amount_total = machineCell.reading_amount_total;
-                machineCell.billed_basis = 'meter_reading';
-                machineBilledByMonth.get(monthKey)?.add(machineRowId);
-                if (!billedMonthsByMachine.has(machineRowId)) billedMonthsByMachine.set(machineRowId, new Set());
-                billedMonthsByMachine.get(machineRowId).add(monthKey);
-            }
         }
-    });
-
-    const readingSequenceByContract = new Map();
-    cache.machineReadingDocs.forEach((doc) => {
-        const f = doc.fields || {};
-        const contractId = String(getField(f, ['current_contract']) || '').trim();
-        const machineId = String(getField(f, ['machine_id']) || '').trim();
-        const readingStamp = normalizeDate(getField(f, ['timestmp']));
-        const meterReading = Number(getField(f, ['meter_reading']) || 0) || 0;
-        const meterReading2 = Number(getField(f, ['meter_reading2']) || 0) || 0;
-        if (!contractId || !machineId || !readingStamp || meterReading <= 0) return;
-        const monthKey = monthKeyFromYearMonth(readingStamp.getFullYear(), readingStamp.getMonth() + 1);
-        if (!monthKey) return;
-        const bucketKey = contractId;
-        if (!readingSequenceByContract.has(bucketKey)) readingSequenceByContract.set(bucketKey, []);
-        const nextEntry = {
-            schedule_id: `reading:${String(getField(f, ['id']) || '').trim() || `${bucketKey}:${monthKey}`}`,
-            invoice_num: String(getField(f, ['invoice_id']) || '').trim() || null,
-            task_date: toIso(readingStamp),
-            time: readingStamp.getTime(),
-            month_key: monthKey,
-            machine_id: machineId,
-            contractmain_id: contractId,
-            meter_reading: meterReading,
-            meter_reading2: meterReading2
-        };
-        readingSequenceByContract.get(bucketKey).push(nextEntry);
-    });
-
-    readingSequenceByContract.forEach((sequence, bucketKey) => {
-        const contractId = String(bucketKey || '').trim();
-        const entriesByUniqueReading = new Map();
-        sequence.forEach((entry) => {
-            const key = `${entry.time}:${entry.meter_reading}:${entry.meter_reading2}:${entry.invoice_num || ''}`;
-            if (!entriesByUniqueReading.has(key)) entriesByUniqueReading.set(key, entry);
-        });
-        const orderedReadings = Array.from(entriesByUniqueReading.values())
-            .sort((left, right) => left.time - right.time);
-        if (orderedReadings.length < 2) return;
-
-        const matchedContract = cache.contractMap?.[contractId];
-        if (!matchedContract) return;
-        const matchedBranch = resolveContractBranch(cache, matchedContract);
-        const matchedDisplay = matchedBranch ? resolveBranchDisplay(cache, matchedBranch) : null;
-        if (!matchedDisplay) return;
-        if (!rowMatchesSearch(searchTerm, [
-            matchedDisplay.companyName,
-            matchedDisplay.branchName,
-            matchedContract.machId,
-            matchedContract.id,
-            matchedContract.xserial
-        ])) return;
-
-        const serialNumber = resolveSerialLabel(cache, matchedContract);
-        const machineRowId = buildMachineRowKey(matchedContract.machId, matchedContract.id);
-        const row = ensureCompanyRow(
-            companyRows,
-            matchedDisplay.branchId,
-            matchedDisplay.companyId,
-            matchedDisplay.companyName,
-            matchedDisplay.branchId,
-            matchedDisplay.branchName,
-            months
-        );
-        const machineRow = ensureMachineRow(
-            machineRows,
-            machineRowId,
-            matchedDisplay.companyId,
-            matchedDisplay.companyName,
-            matchedDisplay.branchId,
-            matchedDisplay.branchName,
-            matchedContract.machId,
-            matchedContract.id,
-            serialNumber,
-            months,
-            cache
-        );
-        applyContractProfile(machineRow, matchedContract);
-        const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
-        if (!machineRow.expected_start_month || expectedStartMonth < machineRow.expected_start_month) {
-            machineRow.expected_start_month = expectedStartMonth;
-        }
-
-        const latestReadingByMonth = new Map();
-        orderedReadings.forEach((entry, index) => {
-            if (entry.month_key < startKey || entry.month_key > endKey) return;
-            const existing = latestReadingByMonth.get(entry.month_key);
-            if (!existing || existing.entry.time < entry.time) {
-                latestReadingByMonth.set(entry.month_key, { entry, index });
-            }
-        });
-
-        Array.from(latestReadingByMonth.entries())
-            .sort(([leftMonth], [rightMonth]) => leftMonth.localeCompare(rightMonth))
-            .forEach(([readingMonthKey, currentRef]) => {
-                const currentEntry = currentRef.entry;
-                const previousEntry = orderedReadings
-                    .slice(0, currentRef.index)
-                    .reverse()
-                    .find((entry) => entry.time < currentEntry.time);
-                if (!currentEntry || !previousEntry) return;
-                const previousPrimary = Number(previousEntry.meter_reading || 0) || 0;
-                const currentPrimary = Number(currentEntry.meter_reading || 0) || 0;
-                if (currentPrimary <= previousPrimary) return;
-
-                const reading = buildReadingFromMeters(matchedContract, currentEntry.meter_reading, previousEntry.meter_reading);
-                if (reading.amountDue > 0 || reading.pages > 0) {
-                    const companyCell = row.months[readingMonthKey];
-                    const machineCell = machineRow.months[readingMonthKey];
-                    const readingMachineId = String(currentEntry.machine_id || matchedContract.machId || '').trim();
-                    const readingEntry = {
-                        schedule_id: currentEntry.schedule_id,
-                        invoice_num: currentEntry.invoice_num,
-                        task_date: currentEntry.task_date,
-                        machine_id: readingMachineId,
-                        contractmain_id: contractId,
-                        previous_meter: Number(previousEntry.meter_reading || 0) || 0,
-                        present_meter: Number(currentEntry.meter_reading || 0) || 0,
-                        previous_meter2: Number(previousEntry.meter_reading2 || 0) || 0,
-                        present_meter2: Number(currentEntry.meter_reading2 || 0) || 0,
-                        meter_reading2: Number(currentEntry.meter_reading2 || 0) || 0,
-                        total_consumed: Math.max(0, Number(currentEntry.meter_reading || 0) - Number(previousEntry.meter_reading || 0)),
-                        pages: reading.pages,
-                        page_rate: reading.pageRate,
-                        succeeding_page_rate: reading.succeedingRate,
-                        quota_pages: reading.quotaPages,
-                        succeeding_pages: reading.succeedingPages,
-                        monthly_quota: reading.monthlyQuota,
-                        monthly_rate: reading.monthlyRate,
-                        amount_total: reading.amountDue,
-                        net_amount: reading.netAmount,
-                        vat_amount: reading.vatAmount,
-                        with_vat: reading.withVat,
-                        category_id: reading.categoryId,
-                        formula: `tbl_machinereading:${reading.formula}`
-                    };
-
-                    if (!companyCell.reading_groups.has(currentEntry.schedule_id)) {
-                        companyCell.reading_task_count += 1;
-                        companyCell.reading_amount_total += reading.amountDue;
-                        companyCell.reading_pages_total += reading.pages;
-                        companyCell.display_amount_total = companyCell.amount_total > 0 ? companyCell.amount_total : companyCell.reading_amount_total;
-                        companyCell.reading_formula = companyCell.reading_formula || readingEntry.formula;
-                        companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice' : 'meter_reading';
-                        companyCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
-                    }
-
-                    if (!machineCell.reading_groups.has(currentEntry.schedule_id)) {
-                        machineCell.reading_task_count += 1;
-                        machineCell.reading_amount_total += reading.amountDue;
-                        machineCell.reading_pages_total += reading.pages;
-                        machineCell.display_amount_total = machineCell.amount_total > 0 ? machineCell.amount_total : machineCell.reading_amount_total;
-                        machineCell.reading_formula = machineCell.reading_formula || readingEntry.formula;
-                        machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice' : 'meter_reading';
-                        if (readingMachineId) machineCell.machine_ids.add(readingMachineId);
-                        machineCell.machine_count = machineCell.machine_ids.size || 1;
-                        machineCell.reading_groups.set(currentEntry.schedule_id, readingEntry);
-                        machineBilledByMonth.get(readingMonthKey)?.add(machineRowId);
-                        if (!billedMonthsByMachine.has(machineRowId)) billedMonthsByMachine.set(machineRowId, new Set());
-                        billedMonthsByMachine.get(machineRowId).add(readingMonthKey);
-                    }
-                }
-            });
     });
 
     const summaryByMonth = new Map(months.map((monthKey) => [monthKey, {
@@ -1991,8 +1817,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 const expectedStartMonth = row.expected_start_month || startKey;
                 const isWithinExpectedWindow = monthKey >= expectedStartMonth;
                 const shouldTrackRow = activeNowMachineSet.has(rowId) || hasFutureBilling(billedMonthsByMachine, rowId, monthKey);
-                const hasReadingAmount = Number(cell.reading_amount_total || 0) > 0;
-                const isPending = !hasReadingAmount && isWithinExpectedWindow && shouldTrackRow && (wasSeenBefore || monthKey === expectedStartMonth);
+                const isPending = isWithinExpectedWindow && shouldTrackRow && (wasSeenBefore || monthKey === expectedStartMonth);
                 cell.pending = isPending;
                 cell.skipped = isPending;
             }

@@ -3053,14 +3053,14 @@ async function computeCollectorDashboardData() {
         monthColumns.forEach((column) => {
             const billingCell = billingRow.months?.[column.key];
             if (!billingCell) return;
-            const displayBilledTotal = Number(billingCell.display_amount_total || billingCell.amount_total || 0);
-            const hasBillingState = displayBilledTotal > 0 || billingCell.pending || billingCell.missed_reading || billingCell.catch_up_billing;
+            const invoiceBilledTotal = Number(billingCell.amount_total || 0);
+            const hasBillingState = invoiceBilledTotal > 0 || billingCell.pending || billingCell.missed_reading || billingCell.catch_up_billing;
             if (!hasBillingState) return;
 
             const collectorCell = ensureCollectorDisplayCell(collectorCellMap, accountRow, monthMetaMap.get(column.key));
             collectorCell.rdValues.push(readingDay);
-            collectorCell.displayBilledTotal = Math.max(Number(collectorCell.displayBilledTotal || 0), displayBilledTotal);
-            collectorCell.billedTotal = Math.max(Number(collectorCell.billedTotal || 0), displayBilledTotal);
+            collectorCell.displayBilledTotal = Math.max(Number(collectorCell.displayBilledTotal || 0), invoiceBilledTotal);
+            collectorCell.billedTotal = Math.max(Number(collectorCell.billedTotal || 0), invoiceBilledTotal);
             collectorCell.billedBasis = billingCell.billed_basis || collectorCell.billedBasis || 'none';
             collectorCell.missedReading = Boolean(collectorCell.missedReading || billingCell.missed_reading);
             collectorCell.catchUpBilling = Boolean(collectorCell.catchUpBilling || billingCell.catch_up_billing);
@@ -3077,8 +3077,8 @@ async function computeCollectorDashboardData() {
                     invoiceId,
                     invoiceNo: invoiceNo || invoiceId,
                     invoiceKey: String(group.invoice_ref || invoiceNo || invoiceId).trim(),
-                    amount: Number(group.amount_total || displayBilledTotal || 0),
-                    billedAmount: Number(group.amount_total || displayBilledTotal || 0),
+                    amount: Number(group.amount_total || invoiceBilledTotal || 0),
+                    billedAmount: Number(group.amount_total || invoiceBilledTotal || 0),
                     collectedAmount: 0,
                     totalCollectedAmount: 0,
                     company: accountRow.customer,
@@ -3092,31 +3092,6 @@ async function computeCollectorDashboardData() {
                     modelName: accountRow.modelName,
                     machineLabel: accountRow.machineLabel,
                     invoiceDate: detailInvoiceDate,
-                    rd: readingDay
-                });
-            });
-            (billingCell.reading_groups || []).forEach((group) => {
-                const invoiceNo = String(group.invoice_num || '').trim();
-                if (!invoiceNo) return;
-                upsertCollectorCellRecord(collectorCell, `reading:${invoiceNo}`, {
-                    invoiceId: invoiceNo,
-                    invoiceNo,
-                    invoiceKey: invoiceNo,
-                    amount: displayBilledTotal,
-                    billedAmount: displayBilledTotal,
-                    collectedAmount: 0,
-                    totalCollectedAmount: 0,
-                    company: accountRow.customer,
-                    branch: accountRow.branchName,
-                    accountLabel: accountRow.accountLabel,
-                    companyId: accountRow.companyId,
-                    branchId: accountRow.branchId,
-                    machineId: String(group.machine_id || accountRow.machineId || '').trim(),
-                    contractmainId: String(group.contractmain_id || accountRow.contractmainId || '').trim(),
-                    serialNumber: accountRow.serialNumber,
-                    modelName: accountRow.modelName,
-                    machineLabel: accountRow.machineLabel,
-                    invoiceDate: normalizeDate(group.task_date) || detailInvoiceDate,
                     rd: readingDay
                 });
             });
