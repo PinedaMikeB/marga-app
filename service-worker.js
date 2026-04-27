@@ -1,4 +1,8 @@
-const CACHE_NAME = 'marga-app-shell-v4';
+const CACHE_NAME = 'marga-app-shell-v5';
+const UPDATE_MESSAGE = {
+    type: 'MARGA_APP_UPDATED',
+    cacheName: CACHE_NAME
+};
 const SHELL_ASSETS = [
     '/',
     '/index.html',
@@ -82,13 +86,22 @@ self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'MARGA_SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-        )
+        (async () => {
+            const keys = await caches.keys();
+            await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+            await self.clients.claim();
+            const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+            clients.forEach((client) => client.postMessage(UPDATE_MESSAGE));
+        })()
     );
-    self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -97,15 +110,29 @@ self.addEventListener('fetch', (event) => {
     const requestUrl = new URL(event.request.url);
     const isSameOrigin = requestUrl.origin === self.location.origin;
     const isNavigate = event.request.mode === 'navigate';
+    const isFreshFirstAsset = isSameOrigin && (
+        requestUrl.pathname.endsWith('.html')
+        || requestUrl.pathname.endsWith('.js')
+        || requestUrl.pathname.endsWith('.css')
+        || requestUrl.pathname.endsWith('.json')
+        || requestUrl.pathname.endsWith('/manifest.json')
+        || requestUrl.pathname === '/'
+    );
+
+    async function fetchAndCache(request) {
+        const response = await fetch(request, { cache: 'no-store' });
+        if (response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, response.clone());
+        }
+        return response;
+    }
 
     event.respondWith(
         (async () => {
             if (isNavigate) {
                 try {
-                    const fresh = await fetch(event.request);
-                    const cache = await caches.open(CACHE_NAME);
-                    cache.put(event.request, fresh.clone());
-                    return fresh;
+                    return await fetchAndCache(event.request);
                 } catch (error) {
                     return caches.match(event.request)
                         || caches.match('/dashboard.html')
@@ -118,11 +145,22 @@ self.addEventListener('fetch', (event) => {
                 return fetch(event.request);
             }
 
+            if (isFreshFirstAsset) {
+                try {
+                    return await fetchAndCache(event.request);
+                } catch (error) {
+                    return caches.match(event.request)
+                        || new Response('Offline', { status: 503, statusText: 'Offline' });
+                }
+            }
+
             const cached = await caches.match(event.request);
-            const networkPromise = fetch(event.request)
+            const networkPromise = fetch(event.request, { cache: 'no-store' })
                 .then(async (response) => {
-                    const cache = await caches.open(CACHE_NAME);
-                    cache.put(event.request, response.clone());
+                    if (response.ok) {
+                        const cache = await caches.open(CACHE_NAME);
+                        cache.put(event.request, response.clone());
+                    }
                     return response;
                 });
 

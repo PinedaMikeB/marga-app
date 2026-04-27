@@ -1,10 +1,37 @@
 (function () {
     const INSTALL_QUERY = 'install';
     const WELCOME_KEY = 'marga_pwa_welcome_shown_v1';
+    const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+    let updateReloading = false;
 
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).then((registration) => {
+            registration.update().catch(() => null);
+            watchForServiceWorkerUpdates(registration);
+
+            window.setInterval(() => {
+                registration.update().catch(() => null);
+            }, UPDATE_CHECK_INTERVAL_MS);
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    registration.update().catch(() => null);
+                }
+            });
+        }).catch((error) => {
             console.warn('Service worker registration failed', error);
+        });
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (updateReloading) return;
+            updateReloading = true;
+            window.location.reload();
+        });
+
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data?.type === 'MARGA_APP_UPDATED') {
+                showUpdateNotice();
+            }
         });
     }
 
@@ -148,6 +175,41 @@
                 font-weight: 800;
                 cursor: pointer;
             }
+            #margaUpdateNotice {
+                position: fixed;
+                left: 16px;
+                right: 16px;
+                bottom: 16px;
+                z-index: 100000;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                max-width: 520px;
+                margin: 0 auto;
+                padding: 14px 14px 14px 16px;
+                border-radius: 18px;
+                background: #0f6df2;
+                color: #fff;
+                box-shadow: 0 18px 45px rgba(15, 109, 242, 0.3);
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            }
+            #margaUpdateNotice span {
+                line-height: 1.45;
+                font-weight: 700;
+            }
+            #margaUpdateRefresh {
+                min-height: 40px;
+                padding: 0 14px;
+                border: 0;
+                border-radius: 12px;
+                background: #fff;
+                color: #0759cf;
+                font: inherit;
+                font-weight: 800;
+                cursor: pointer;
+                white-space: nowrap;
+            }
             .marga-install-footer {
                 margin-top: 18px;
                 padding: 14px 16px;
@@ -159,6 +221,38 @@
             }
         `;
         document.head.appendChild(style);
+    }
+
+    function watchForServiceWorkerUpdates(registration) {
+        registration.addEventListener('updatefound', () => {
+            const worker = registration.installing;
+            if (!worker) return;
+
+            worker.addEventListener('statechange', () => {
+                if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                    worker.postMessage({ type: 'MARGA_SKIP_WAITING' });
+                    showUpdateNotice();
+                }
+            });
+        });
+    }
+
+    function showUpdateNotice() {
+        if (document.getElementById('margaUpdateNotice')) return;
+        ensureStyles();
+
+        const notice = document.createElement('div');
+        notice.id = 'margaUpdateNotice';
+        notice.setAttribute('role', 'status');
+        notice.innerHTML = `
+            <span>New MARGA update ready</span>
+            <button type="button" id="margaUpdateRefresh">Refresh</button>
+        `;
+
+        document.body.appendChild(notice);
+        notice.querySelector('#margaUpdateRefresh').addEventListener('click', () => {
+            window.location.reload();
+        });
     }
 
     function showInstallGuide() {
