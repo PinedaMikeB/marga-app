@@ -1227,6 +1227,115 @@ function getHistoryForInvoice(...keys) {
     return merged;
 }
 
+function collectionHistoryToken(entry) {
+    return `${entry.docId}|${entry.callDateKey || ''}|${entry.followupDateKey || ''}|${entry.remarks || ''}`;
+}
+
+function collectionHistoryDocToEntry(doc) {
+    const f = doc.fields || {};
+    const invoiceRef = getField(f, ['invoice_num', 'invoice_id', 'invoice_no', 'invoiceno']);
+    const invoiceKey = String(invoiceRef || '').trim();
+    const accountRef = String(getField(f, ['account_ref']) || '').trim();
+    const accountGroupRef = String(getField(f, ['account_group_ref']) || '').trim();
+    if (!invoiceKey && !accountRef && !accountGroupRef) return null;
+
+    const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup']);
+    const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at']) || followupDateRaw;
+    const followupDate = normalizeDate(followupDateRaw);
+    const callDate = normalizeDate(callDateRaw);
+
+    return {
+        docId: doc.name || getFirestoreDocumentId(doc) || String(Math.random()),
+        invoiceKey,
+        accountRef,
+        accountGroupRef,
+        branchId: getField(f, ['branch_id']),
+        companyId: getField(f, ['company_id']),
+        contractmainId: getField(f, ['contractmain_id']),
+        machineId: getField(f, ['machine_id']),
+        monthKey: getField(f, ['month_key']),
+        remarks: getField(f, ['remarks']) || 'No remarks',
+        contactPerson: getField(f, ['contact_person']) || '-',
+        contactNumber: getField(f, ['contact_number']) || '',
+        scheduleStatus: getField(f, ['schedule_status']),
+        statusId: getField(f, ['status_id']),
+        locationId: getField(f, ['location_id']),
+        locationLabel: getField(f, ['location_label']),
+        isCheckSigned: Boolean(getField(f, ['ischecksigned'])),
+        checkNumber: getField(f, ['check_number']) || '',
+        paymentAmount: Number(getField(f, ['payment_amount']) || 0),
+        collectionId: getField(f, ['collection_id']),
+        employeeId: getField(f, ['employee_id']),
+        followedUpBy: getField(f, ['followed_up_by']),
+        collectorName: getField(f, ['collector_name']),
+        employeeName: getField(f, ['employee_name']),
+        createdBy: getField(f, ['created_by']),
+        updatedBy: getField(f, ['updated_by']),
+        encodedBy: getField(f, ['encoded_by']),
+        followupDate,
+        followupDateRaw,
+        followupDateKey: toDateKey(followupDate),
+        callDate,
+        callDateRaw,
+        callDateKey: toDateKey(callDate)
+    };
+}
+
+function indexCollectionHistoryEntry(entry) {
+    if (!entry) return;
+
+    const keys = [
+        entry.invoiceKey,
+        entry.accountRef,
+        entry.accountGroupRef,
+        ...collectionAccountHistoryKeys(entry)
+    ].filter(Boolean);
+
+    Array.from(new Set(keys)).forEach((historyKey) => {
+        if (!collectionHistory[historyKey]) collectionHistory[historyKey] = [];
+        const token = collectionHistoryToken(entry);
+        if (!collectionHistory[historyKey].some((existing) => collectionHistoryToken(existing) === token)) {
+            collectionHistory[historyKey].push(entry);
+        }
+        collectionHistory[historyKey].sort((a, b) => {
+            const aTime = a.callDate ? a.callDate.getTime() : 0;
+            const bTime = b.callDate ? b.callDate.getTime() : 0;
+            return bTime - aTime;
+        });
+    });
+}
+
+async function loadCollectionHistoryForKeys(keys = []) {
+    const uniqueKeys = Array.from(new Set(keys.map((key) => String(key || '').trim()).filter(Boolean)));
+    if (!uniqueKeys.length) return;
+
+    const fields = ['invoice_num', 'invoice_id', 'account_ref', 'account_group_ref'];
+    const queries = [];
+    uniqueKeys.forEach((key) => {
+        fields.forEach((fieldPath) => {
+            queries.push(
+                firestoreRunQuery({
+                    from: [{ collectionId: 'tbl_collectionhistory' }],
+                    where: {
+                        fieldFilter: {
+                            field: { fieldPath },
+                            op: 'EQUAL',
+                            value: { stringValue: key }
+                        }
+                    },
+                    limit: 40
+                }).catch((error) => {
+                    console.warn(`Collection history lookup failed for ${fieldPath}=${key}:`, error);
+                    return [];
+                })
+            );
+        });
+    });
+
+    const docs = (await Promise.all(queries)).flat();
+    docs.forEach((doc) => indexCollectionHistoryEntry(collectionHistoryDocToEntry(doc)));
+}
+
 function getHistoryForRecords(records = []) {
     const keys = [];
     records.forEach((record) => {
@@ -1342,70 +1451,14 @@ async function loadCollectionHistory() {
     const todayKey = toDateKey(new Date());
 
     historyDocs.forEach((doc) => {
-        const f = doc.fields || {};
-        const invoiceRef = getField(f, ['invoice_num', 'invoice_id', 'invoice_no', 'invoiceno']);
-        const invoiceKey = String(invoiceRef || '').trim();
-        const accountRef = String(getField(f, ['account_ref']) || '').trim();
-        const accountGroupRef = String(getField(f, ['account_group_ref']) || '').trim();
-        if (!invoiceKey && !accountRef && !accountGroupRef) return;
+        const entry = collectionHistoryDocToEntry(doc);
+        if (!entry) return;
 
-        const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup']);
-        const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at']) || followupDateRaw;
-
-        const followupDate = normalizeDate(followupDateRaw);
-        const callDate = normalizeDate(callDateRaw);
-
-        const entry = {
-            docId: doc.name || String(Math.random()),
-            invoiceKey,
-            accountRef,
-            accountGroupRef,
-            branchId: getField(f, ['branch_id']),
-            companyId: getField(f, ['company_id']),
-            contractmainId: getField(f, ['contractmain_id']),
-            machineId: getField(f, ['machine_id']),
-            monthKey: getField(f, ['month_key']),
-            remarks: getField(f, ['remarks']) || 'No remarks',
-            contactPerson: getField(f, ['contact_person']) || '-',
-            contactNumber: getField(f, ['contact_number']) || '',
-            scheduleStatus: getField(f, ['schedule_status']),
-            statusId: getField(f, ['status_id']),
-            locationId: getField(f, ['location_id']),
-            locationLabel: getField(f, ['location_label']),
-            isCheckSigned: Boolean(getField(f, ['ischecksigned'])),
-            checkNumber: getField(f, ['check_number']) || '',
-            paymentAmount: Number(getField(f, ['payment_amount']) || 0),
-            collectionId: getField(f, ['collection_id']),
-            employeeId: getField(f, ['employee_id']),
-            followedUpBy: getField(f, ['followed_up_by']),
-            collectorName: getField(f, ['collector_name']),
-            employeeName: getField(f, ['employee_name']),
-            createdBy: getField(f, ['created_by']),
-            updatedBy: getField(f, ['updated_by']),
-            encodedBy: getField(f, ['encoded_by']),
-            followupDate,
-            followupDateRaw,
-            followupDateKey: toDateKey(followupDate),
-            callDate,
-            callDateRaw,
-            callDateKey: toDateKey(callDate)
-        };
-
-        const keys = [
-            invoiceKey,
-            accountRef,
-            accountGroupRef,
-            ...collectionAccountHistoryKeys(entry)
-        ].filter(Boolean);
-
-        Array.from(new Set(keys)).forEach((historyKey) => {
-            if (!collectionHistory[historyKey]) collectionHistory[historyKey] = [];
-            collectionHistory[historyKey].push(entry);
-        });
+        indexCollectionHistoryEntry(entry);
 
         if (entry.followupDateKey && entry.followupDateKey === todayKey) {
             todayFollowups.push({
-                invoiceKey: invoiceKey || accountRef || accountGroupRef,
+                invoiceKey: entry.invoiceKey || entry.accountRef || entry.accountGroupRef,
                 followupDate: entry.followupDate,
                 remarks: entry.remarks,
                 contactPerson: entry.contactPerson,
@@ -3954,6 +4007,14 @@ async function buildCollectorFollowupWorkspace(cell) {
     const branchInvoices = getRelatedUnpaidInvoices(context, 'branch');
     const companyInvoices = getRelatedUnpaidInvoices(context, 'company');
     const selectedInvoice = getSelectedInvoiceForCell(cell, context, branchInvoices);
+    await loadCollectionHistoryForKeys([
+        selectedInvoice?.invoiceNo,
+        selectedInvoice?.invoiceId,
+        selectedInvoice?.invoiceKey,
+        ...(cell.records || []).flatMap((record) => [record.invoiceNo, record.invoiceId, record.invoiceKey, record.id]),
+        ...collectionAccountHistoryKeys(context),
+        ...collectionAccountHistoryKeys(cell)
+    ]);
     const directInvoiceHistory = mergeInvoiceHistories(
         selectedInvoice ? [selectedInvoice, ...branchInvoices] : branchInvoices,
         cell.records || []
@@ -4035,7 +4096,7 @@ function renderMiniInvoiceRows(invoices, emptyText) {
 }
 
 function renderHistoryRows(history) {
-    if (!history.length) return '<div class="collection-followup-empty">No invoice follow-up history yet.</div>';
+    if (!history.length) return '<div class="collection-followup-empty">No payment progress remarks yet.</div>';
 
     return `
         <div class="collection-followup-table-wrap">
@@ -4044,6 +4105,7 @@ function renderHistoryRows(history) {
                     <tr>
                         <th>Invoice No.</th>
                         <th>Date / Time</th>
+                        <th>Followed Up By</th>
                         <th>Status</th>
                         <th>Location</th>
                         <th>Remarks</th>
@@ -4054,6 +4116,7 @@ function renderHistoryRows(history) {
                         <tr>
                             <td>${escapeHtml(item.invoiceKey || item.collectionId || '-')}</td>
                             <td>${escapeHtml(formatDate(item.callDate))}</td>
+                            <td>${escapeHtml(getHistoryActor(item) || '-')}</td>
                             <td>${escapeHtml(getCollectionStatusLabel(item.statusId) || item.scheduleStatus || '-')}</td>
                             <td>${escapeHtml(getCollectionLocationLabel(item.locationId, item.locationLabel))}</td>
                             <td>${escapeHtml(item.remarks || '-')}</td>
@@ -4458,7 +4521,7 @@ function renderCollectorFollowupWorkspace(workspace) {
                     ${renderMiniInvoiceRows(companyInvoices, 'No unpaid company invoices found in the current Collections data.')}
                 </div>
                 <div class="collection-followup-panel">
-                    <div class="collection-followup-panel-title">Invoice History</div>
+                    <div class="collection-followup-panel-title">Payment Progress Remarks</div>
                     ${renderHistoryRows(invoiceHistory)}
                 </div>
                 <div class="collection-followup-panel">
@@ -4854,7 +4917,7 @@ async function saveCollectorFollowup() {
         const monthSlug = scheduleSlug(context.monthKey || context.label || '', '');
         const accountRef = accountKeys.find((key) => monthSlug && key.endsWith(`:${monthSlug}`)) || accountKeys[0] || collectionScheduleDocId(context, selectedInvoice);
         const accountGroupRef = accountKeys.find((key) => !monthSlug || !key.endsWith(`:${monthSlug}`)) || accountRef;
-        await firestoreCreate('tbl_collectionhistory', {
+        const createdHistory = await firestoreCreate('tbl_collectionhistory', {
             invoice_num: { stringValue: invoiceNo },
             invoice_id: { stringValue: invoiceId },
             account_ref: { stringValue: accountRef },
@@ -4881,6 +4944,7 @@ async function saveCollectorFollowup() {
         });
 
         await loadCollectionHistory();
+        indexCollectionHistoryEntry(collectionHistoryDocToEntry(createdHistory));
 
         const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
         currentCollectorWorkspace = {
