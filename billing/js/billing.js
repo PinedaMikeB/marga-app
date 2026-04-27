@@ -6172,13 +6172,8 @@ function bindEvents() {
         }
         const trigger = event.target.closest('.billed-link');
         if (!trigger) return;
-        const { cell } = getRenderedMatrixCell(trigger.dataset.rowId, trigger.dataset.monthKey);
-        if (cell && Number(cell.amount_total || 0) <= 0 && Number(cell.reading_amount_total || 0) > 0) {
-            event.preventDefault();
-            openBillingCalcModal(trigger.dataset.rowId, trigger.dataset.monthKey);
-            return;
-        }
-        openInvoiceDetailModal(trigger.dataset.rowId, trigger.dataset.monthKey);
+        event.preventDefault();
+        openBillingCalcModal(trigger.dataset.rowId, trigger.dataset.monthKey);
     });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
     els.rtpInvoicePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
