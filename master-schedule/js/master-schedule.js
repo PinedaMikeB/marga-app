@@ -1,3 +1,7 @@
+if (window.MargaAuth && !MargaAuth.requireAccess('master-schedule')) {
+    throw new Error('Unauthorized access to master schedule module.');
+}
+
 const MASTER_API_KEY = FIREBASE_CONFIG.apiKey;
 const MASTER_BASE_URL = FIREBASE_CONFIG.baseUrl;
 const MASTER_LIMIT = 1200;

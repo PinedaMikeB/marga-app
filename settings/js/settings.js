@@ -56,7 +56,7 @@ const BASE_ROLE_DEFAULTS = {
     admin: ['customers', 'billing', 'schedule', 'master-schedule', 'apd', 'collections', 'service', 'general-production', 'releasing', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
     billing: ['customers', 'billing', 'schedule', 'apd', 'pettycash', 'reports'],
     collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
-    service: ['customers', 'service', 'schedule', 'general-production', 'releasing', 'inventory', 'field'],
+    service: ['customers', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'inventory', 'field'],
     hr: ['hr', 'settings'],
     technician: ['field'],
     messenger: ['field', 'schedule'],
