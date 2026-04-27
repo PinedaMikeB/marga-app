@@ -44,6 +44,7 @@ const MargaAuth = {
                 this.currentUser.allowed_modules = this.normalizeModules(this.currentUser.allowed_modules);
                 this.currentUser.role_modules = this.normalizeModules(this.currentUser.role_modules);
                 this.currentUser.allowed_modules_configured = this.currentUser.allowed_modules_configured === true;
+                this.reconcileStoredSessionModules();
                 return true;
             } catch (e) {
                 this.logout();
@@ -156,6 +157,7 @@ const MargaAuth = {
             this.currentUser.roles = [this.currentUser.role];
         }
         this.currentUser.role = this.currentUser.roles[0] || 'viewer';
+        this.reconcileStoredSessionModules();
         const storage = remember ? localStorage : sessionStorage;
         storage.setItem('marga_user', JSON.stringify(this.currentUser));
         return { success: true, user: this.currentUser };
@@ -310,6 +312,26 @@ const MargaAuth = {
         }
         return result;
     }
+};
+
+MargaAuth.reconcileStoredSessionModules = function reconcileStoredSessionModules() {
+    if (!this.currentUser) return;
+    const roleModules = this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role);
+    const userModules = this.normalizeModules(this.currentUser.allowed_modules);
+    const roleModuleSet = new Set(roleModules);
+    this.currentUser.role_modules = this.normalizeModules([
+        ...this.normalizeModules(this.currentUser.role_modules),
+        ...roleModules
+    ]);
+    if (
+        this.currentUser.allowed_modules_configured === true
+        && userModules.length
+        && userModules.every((module) => roleModuleSet.has(module))
+    ) {
+        this.currentUser.allowed_modules_configured = false;
+    }
+    if (this.currentUser.allowed_modules_configured === true) return;
+    this.currentUser.allowed_modules = [];
 };
 
 MargaAuth.normalizeModules = function normalizeModules(modules) {
