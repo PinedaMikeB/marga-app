@@ -1818,6 +1818,8 @@ async function saveForwardedRoute(row, targetDate) {
     if (!scheduleId) throw new Error('This row has no linked schedule ID.');
     const staffId = Number(row.techId || 0) || 0;
     if (!staffId) throw new Error('Assign a technician or messenger before forwarding.');
+    const scheduleDocId = clean(row.docId || scheduleId);
+    if (!scheduleDocId || scheduleDocId === '0') throw new Error(`Schedule ${scheduleId} has no valid Firestore document ID.`);
 
     const targetDateTime = routeDateTimeFor(row, targetDate);
     const routeDocId = routeDocIdFor(scheduleId, targetDate);
@@ -1852,7 +1854,7 @@ async function saveForwardedRoute(row, targetDate) {
         master_schedule_status_updated_by: actor
     };
     if (!row.originalDate) schedulePayload.original_sched = clean(getRouteTaskDateTime(row));
-    await updateDocFields('tbl_schedule', row.docId || scheduleId, schedulePayload);
+    await updateDocFields('tbl_schedule', scheduleDocId, schedulePayload);
 
     row.routeId = Number(routeDocId);
     row.routeSource = 'Saved';
@@ -1882,10 +1884,12 @@ async function forwardScheduleRows(rows, targetDate) {
     for (const row of validRows) {
         try {
             await saveForwardedRoute(row, targetDate);
-            await appendActivityLog(row, {
+            appendActivityLog(row, {
                 actionType: 'forward',
                 actionLabel: 'Forwarded To Schedule',
                 detail: `Forwarded open schedule to ${targetDate}.`
+            }).catch((error) => {
+                console.warn('Forward activity log failed:', error);
             });
         } catch (error) {
             failures.push({ row, error });
@@ -1910,9 +1914,17 @@ async function forwardScheduleRow(rowKey, button) {
         window.alert('Choose a target date first.');
         return;
     }
+    const staffName = row.assignedTo || 'this staff';
+    const staffRows = [...getVisibleRows(), ...getVisiblePendingRows()]
+        .filter(isOpenScheduleRow)
+        .filter((item) => item.assignedTo === row.assignedTo);
+    const moveAllStaff = staffRows.length > 1
+        ? window.confirm(`Move all the schedule of ${staffName} to ${targetDate}?\n\nOK = move all ${staffRows.length} open schedule(s).\nCancel = move only the selected row.`)
+        : false;
+    const targets = moveAllStaff ? staffRows : [row];
     button.disabled = true;
     try {
-        await forwardScheduleRows([row], targetDate);
+        await forwardScheduleRows(targets, targetDate);
     } finally {
         button.disabled = false;
     }
