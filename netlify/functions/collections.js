@@ -541,7 +541,7 @@ exports.handler = async (event) => {
 
             if ((fromDate || toDate) && !inRange(invoiceDate || dueDate, fromDate, toDate)) continue;
 
-            const amount = Number(getField(f, ['totalamount', 'amount']) || 0) + Number(getField(f, ['vatamount']) || 0);
+            const amount = Number(getField(f, ['totalamount', 'amount']) || 0);
             const age = calculateAge(dueDateRaw, monthValue, yearValue);
             const priority = getPriority(age);
 
