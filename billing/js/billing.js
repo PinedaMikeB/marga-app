@@ -998,10 +998,12 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
             source_doc_ids_json: JSON.stringify(group.billingDocIds),
             source_record_key: `${group.invoiceNo || ''}:${group.monthKey || ''}:${group.companyId || group.companyName || ''}`,
             department: 'billing',
+            purpose: 'Printed Billing',
+            schedule_purpose: 'Printed Billing',
             task_type: 'deliver_invoice',
             task_label: 'Deliver Invoice',
             required_role: 'messenger',
-            planner_status: estimate?.scheduleSaved ? (estimate?.scheduleType === 'Trial Schedule' ? 'trial' : 'confirmed') : 'suggested',
+            planner_status: estimate?.scheduleSaved ? 'scheduled' : 'suggested',
             task_status: estimate?.scheduleSaved ? 'scheduled' : 'pending_scheduler',
             route_status: estimate?.scheduleSaved ? 'scheduled' : 'unscheduled',
             priority: 'normal',
@@ -1009,7 +1011,7 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
             preferred_schedule_date: today,
             schedule_date: String(estimate?.scheduleDate || '').trim(),
             schedule_time: String(estimate?.scheduleTime || '').trim(),
-            schedule_type: String(estimate?.scheduleType || '').trim(),
+            schedule_type: 'Printed Billing',
             invoice_no: group.invoiceNo,
             billing_month_key: group.monthKey,
             billing_month_label: formatMonthLabel(group.monthKey, group.monthKey),
@@ -1326,7 +1328,7 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         schedule_doc_id: String(estimate?.scheduleDocId || '').trim(),
         schedule_date: String(estimate?.scheduleDate || '').trim(),
         schedule_time: String(estimate?.scheduleTime || '').trim(),
-        schedule_type: String(estimate?.scheduleType || '').trim(),
+        schedule_type: 'Printed Billing',
         schedule_assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
         schedule_assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
         actual_spoilage_reason: String(estimate?.actualSpoilageReason || '').trim(),
@@ -4878,7 +4880,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     context.scheduleDocId = String(savedBillingDoc?.schedule_doc_id || '').trim();
     context.scheduleDate = String(savedBillingDoc?.schedule_date || '').trim();
     context.scheduleTime = String(savedBillingDoc?.schedule_time || '').trim();
-    context.scheduleType = String(savedBillingDoc?.schedule_type || '').trim();
+    context.scheduleType = 'Printed Billing';
     context.scheduleAssignedStaffId = String(savedBillingDoc?.schedule_assigned_staff_id || '').trim();
     context.scheduleAssignedStaffName = String(savedBillingDoc?.schedule_assigned_staff_name || '').trim();
     let priorMachineReadingByRow = new Map();
@@ -5146,12 +5148,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                             <input type="time" id="calcScheduleTimeInput" value="${escapeHtml(context.scheduleTime || '')}">
                         </div>
                         <div class="calc-field">
-                            <label for="calcScheduleTypeInput">Schedule Type</label>
-                            <select id="calcScheduleTypeInput">
-                                <option value="Confirmed"${context.scheduleType === 'Confirmed' ? ' selected' : ''}>Confirmed</option>
-                                <option value="Trial Schedule"${context.scheduleType === 'Trial Schedule' ? ' selected' : ''}>Trial Schedule</option>
-                                <option value="For Confirmation"${context.scheduleType === 'For Confirmation' ? ' selected' : ''}>For Confirmation</option>
-                            </select>
+                            <label>Purpose</label>
+                            <input type="text" readonly value="Printed Billing">
                         </div>
                         <div class="calc-field">
                             <label for="calcScheduleStaffInput">Assigned Messenger / Tech</label>
@@ -5414,7 +5412,6 @@ async function openBillingCalcModal(rowId, monthKey) {
     const rejectSpoilageBtn = document.getElementById('calcRejectSpoilageBtn');
     const scheduleDateInput = document.getElementById('calcScheduleDateInput');
     const scheduleTimeInput = document.getElementById('calcScheduleTimeInput');
-    const scheduleTypeInput = document.getElementById('calcScheduleTypeInput');
     const scheduleStaffInput = document.getElementById('calcScheduleStaffInput');
     const saveScheduleBtn = document.getElementById('calcSaveScheduleBtn');
     const scheduleStatus = document.getElementById('calcScheduleStatus');
@@ -5898,7 +5895,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             MargaUtils.showToast(String(error?.message || 'Unable to upload proof image.'), 'error');
         }
     });
-    [scheduleDateInput, scheduleTimeInput, scheduleTypeInput, scheduleStaffInput].forEach((input) => {
+    [scheduleDateInput, scheduleTimeInput, scheduleStaffInput].forEach((input) => {
         input?.addEventListener('input', () => {
             if (scheduleSaved) {
                 scheduleSaved = false;
@@ -6110,7 +6107,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
         const scheduleDate = String(scheduleDateInput?.value || '').trim();
         const scheduleTime = String(scheduleTimeInput?.value || '').trim();
-        const scheduleType = String(scheduleTypeInput?.value || '').trim() || 'Confirmed';
+        const scheduleType = 'Printed Billing';
         const staffId = String(scheduleStaffInput?.value || '').trim();
         const staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || null;
         if (!scheduleDate) {
@@ -6142,9 +6139,13 @@ async function openBillingCalcModal(rowId, monthKey) {
             const nowIso = new Date().toISOString();
             const staffName = staffOption?.name || staffId;
             await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, scheduleDocId, {
-                planner_status: scheduleType === 'Trial Schedule' ? 'trial' : 'confirmed',
+                planner_status: 'scheduled',
                 task_status: 'scheduled',
                 route_status: 'scheduled',
+                purpose: 'Printed Billing',
+                schedule_purpose: 'Printed Billing',
+                task_type: 'deliver_invoice',
+                task_label: 'Deliver Invoice',
                 schedule_date: scheduleDate,
                 schedule_time: scheduleTime,
                 schedule_type: scheduleType,
