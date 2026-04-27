@@ -1166,6 +1166,25 @@ async function firestoreRunOrderedQuery(collectionId, limit = 1) {
     });
 }
 
+async function loadSupplementalCollectionPaymentDocs() {
+    try {
+        return await firestoreRunQuery({
+            from: [{ collectionId: 'tbl_paymentinfo' }],
+            where: {
+                fieldFilter: {
+                    field: { fieldPath: 'source' },
+                    op: 'EQUAL',
+                    value: { stringValue: 'collections_web_payment' }
+                }
+            },
+            limit: 1000
+        });
+    } catch (error) {
+        console.warn('Unable to load supplemental web payment records:', error);
+        return [];
+    }
+}
+
 async function allocateNextNumericId(collection) {
     const latestDocs = await firestoreRunOrderedQuery(collection, 1);
     const latestRow = latestDocs.map(documentFieldsToPlain).filter(Boolean)[0] || {};
@@ -1814,11 +1833,17 @@ async function loadLookups() {
         fieldMask: ['id', 'invoice_id', 'invoice_num', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'tax_2307', 'tax_status', 'checkpayment_id', 'remarks'],
         maxPages: 260
     });
+    const supplementalPaymentDocs = await loadSupplementalCollectionPaymentDocs();
+    const mergedPaymentDocs = new Map();
+    paymentDocs.concat(supplementalPaymentDocs).forEach((doc) => {
+        const docKey = getFirestoreDocumentId(doc) || doc.name || JSON.stringify(doc.fields || {});
+        mergedPaymentDocs.set(docKey, doc);
+    });
 
     paidInvoiceIds = new Set();
     paymentEntries = [];
     const seenPaymentTokens = new Set();
-    paymentDocs.forEach((doc) => {
+    Array.from(mergedPaymentDocs.values()).forEach((doc) => {
         const f = doc.fields || {};
         const invoiceId = getField(f, ['invoice_id']);
         const invoiceNo = String(getField(f, ['invoice_num']) || '').trim();
