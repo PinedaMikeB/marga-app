@@ -2181,7 +2181,7 @@ async function loadInvoices(mode) {
                     billingStatus: getField(f, ['status']),
                     billingLocation: getField(f, ['location']),
                     billingRemarks: getField(f, ['remarks']),
-                    amount: matrixAmount,
+                    amount,
                     rd: invoiceDate.getDate(),
                     monthKey: billingPeriodMonthKey
                 });
