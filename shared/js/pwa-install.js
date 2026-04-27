@@ -80,6 +80,8 @@
                 position: relative;
                 z-index: 1;
                 width: min(100%, 390px);
+                max-height: calc(100dvh - 32px);
+                overflow-y: auto;
                 padding: 26px 22px;
                 border-radius: 28px;
                 background: rgba(255, 255, 255, 0.98);
@@ -173,6 +175,21 @@
                 background: linear-gradient(135deg, #0f6df2, #0759cf);
                 font: inherit;
                 font-weight: 800;
+                cursor: pointer;
+            }
+            #margaInstallDismiss {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                width: 36px;
+                height: 36px;
+                border: 0;
+                border-radius: 999px;
+                background: rgba(15, 109, 242, 0.1);
+                color: #0759cf;
+                font: inherit;
+                font-size: 1.35rem;
+                line-height: 1;
                 cursor: pointer;
             }
             #margaUpdateNotice {
@@ -301,6 +318,7 @@
         overlay.innerHTML = `
             <div class="marga-install-overlay"></div>
             <section class="marga-install-panel" role="dialog" aria-modal="true" aria-label="Install Marga App">
+                <button type="button" id="margaInstallDismiss" aria-label="Continue to login">×</button>
                 <img class="marga-install-badge" src="/assets/icons/icon-192.png" alt="MARGA logo">
                 <h2>Install Marga App</h2>
                 <p class="marga-install-subtitle">Follow the steps. When installation finishes, go to your home screen and tap the <strong>MARGA</strong> icon to log in.</p>
@@ -325,21 +343,33 @@
                 <div class="marga-install-footer">
                     To log in later, leave this browser page, go to your home screen, and find the MARGA icon with your logo.
                 </div>
+                <button type="button" id="margaInstallClose">Continue to login</button>
             </section>
         `;
 
         ensureStyles();
         document.body.appendChild(overlay);
         document.body.style.overflow = 'hidden';
+        clearInstallQuery();
         const slides = Array.from(overlay.querySelectorAll('.marga-slide'));
         const dots = Array.from(overlay.querySelectorAll('.marga-slide-dot'));
         let activeIndex = 0;
 
-        window.setInterval(() => {
+        const slideTimer = window.setInterval(() => {
             activeIndex = (activeIndex + 1) % slides.length;
             slides.forEach((slide, index) => slide.classList.toggle('active', index === activeIndex));
             dots.forEach((dot, index) => dot.classList.toggle('active', index === activeIndex));
         }, 2400);
+
+        function closeGuide() {
+            window.clearInterval(slideTimer);
+            overlay.remove();
+            document.body.style.overflow = '';
+        }
+
+        overlay.querySelector('.marga-install-overlay').addEventListener('click', closeGuide);
+        overlay.querySelector('#margaInstallClose').addEventListener('click', closeGuide);
+        overlay.querySelector('#margaInstallDismiss').addEventListener('click', closeGuide);
     }
 
     function showInstalledWelcome() {
