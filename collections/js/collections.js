@@ -52,6 +52,8 @@ let collectionProfileOverrides = new Map();
 let collectionStatusOptions = [];
 let troubleLookupMap = new Map();
 let employeeLookupMap = new Map();
+let collectionPositionMap = new Map();
+let collectionAssignableStaff = [];
 let serviceHistoryCache = new Map();
 let collectionActivityCache = new Map();
 let currentCollectorWorkspace = null;
@@ -360,6 +362,54 @@ function renderFollowupBadge(history) {
     const actor = getHistoryActor(history);
     if (!actor) return '';
     return `<span class="collector-followup-badge">Followed up by ${escapeHtml(actor)}</span>`;
+}
+
+function collectionEmployeeName(employee, fallbackId = '') {
+    return buildAddressText([
+        employee?.nickname,
+        `${employee?.firstname || ''} ${employee?.lastname || ''}`.trim(),
+        employee?.name
+    ]) || (fallbackId ? `Staff #${fallbackId}` : '');
+}
+
+function collectionEmployeeRole(employee) {
+    const position = collectionPositionMap.get(normalizeLookupId(employee?.position_id));
+    const label = String(position?.position || position?.position_name || position?.name || employee?.position || '').trim();
+    const clue = label.toLowerCase();
+    const positionId = Number(employee?.position_id || 0);
+    if (positionId === 5 || clue.includes('technician') || clue.includes('tech')) return 'Technician';
+    if (positionId === 9 || clue.includes('messenger') || clue.includes('driver')) return clue.includes('driver') ? 'Driver' : 'Messenger';
+    if (clue.includes('production') || clue.includes('prod')) return 'Production';
+    return label || 'Staff';
+}
+
+function isCollectionAssignableRole(role) {
+    return /technician|messenger|driver|production/i.test(String(role || ''));
+}
+
+function buildCollectionAssignableStaffOptions(selectedId = '') {
+    const selected = normalizeLookupId(selectedId);
+    const rows = collectionAssignableStaff.length
+        ? collectionAssignableStaff
+        : Array.from(employeeLookupMap.entries()).map(([id, name]) => ({ id, name, role: 'Staff' }));
+
+    return [`<option value="">Unassigned</option>`]
+        .concat(rows.map((staff) => `
+            <option value="${escapeHtml(staff.id)}"${normalizeLookupId(staff.id) === selected ? ' selected' : ''}>
+                ${escapeHtml(staff.name)}${staff.role ? ` (${escapeHtml(staff.role)})` : ''}
+            </option>
+        `))
+        .join('');
+}
+
+function getCollectionAssignee() {
+    const id = normalizeLookupId(document.getElementById('collectorScheduleAssignee')?.value || '');
+    const staff = collectionAssignableStaff.find((item) => normalizeLookupId(item.id) === id);
+    return {
+        id,
+        name: staff?.name || employeeLookupMap.get(id) || '',
+        role: staff?.role || ''
+    };
 }
 
 function collectionAccountHistoryKeys(source = {}) {
@@ -1045,6 +1095,24 @@ async function firestoreRunQuery(structuredQuery) {
         .filter(Boolean);
 }
 
+async function firestoreRunOrderedQuery(collectionId, limit = 1) {
+    return firestoreRunQuery({
+        from: [{ collectionId }],
+        orderBy: [{ field: { fieldPath: 'id' }, direction: 'DESCENDING' }],
+        limit
+    });
+}
+
+async function allocateNextNumericId(collection) {
+    const latestDocs = await firestoreRunOrderedQuery(collection, 1);
+    const latestRow = latestDocs.map(documentFieldsToPlain).filter(Boolean)[0] || {};
+    const nextId = Number(latestRow.id || 0) + 1;
+    if (!Number.isFinite(nextId) || nextId <= 0) {
+        throw new Error(`Unable to allocate new ${collection} id.`);
+    }
+    return nextId;
+}
+
 async function safeFirestoreGetAll(collection, statusCallback = null, options = {}) {
     try {
         return await firestoreGetAll(collection, statusCallback, options);
@@ -1388,16 +1456,41 @@ function mergeHistoryLists(...lists) {
 async function loadCollectionEmployeeLookup() {
     if (employeeLookupMap.size > 0) return;
 
-    const employeeDocs = await safeFirestoreGetAll('tbl_employee', null, {
-        fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name'],
-        maxPages: 40
+    const [employeeDocs, positionDocs] = await Promise.all([
+        safeFirestoreGetAll('tbl_employee', null, {
+            fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id', 'position', 'mstatus', 'estatus'],
+            maxPages: 40
+        }),
+        safeFirestoreGetAll('tbl_empos', null, {
+            fieldMask: ['id', 'position', 'position_name', 'name'],
+            maxPages: 10
+        })
+    ]);
+
+    collectionPositionMap = new Map();
+    positionDocs.forEach((doc) => {
+        const row = documentFieldsToPlain(doc);
+        const id = normalizeLookupId(row.id);
+        if (id) collectionPositionMap.set(id, row);
     });
 
+    collectionAssignableStaff = [];
     employeeDocs.forEach((doc) => {
         const row = documentFieldsToPlain(doc);
         const id = normalizeLookupId(row.id);
-        const name = buildAddressText([row.nickname, `${row.firstname || ''} ${row.lastname || ''}`.trim(), row.name]);
-        if (id && name) employeeLookupMap.set(id, name);
+        const name = collectionEmployeeName(row, id);
+        const role = collectionEmployeeRole(row);
+        if (id && name) {
+            employeeLookupMap.set(id, name);
+            if (isCollectionAssignableRole(role) && Number(row.mstatus || 1) !== 0) {
+                collectionAssignableStaff.push({ id, name, role });
+            }
+        }
+    });
+
+    collectionAssignableStaff.sort((a, b) => {
+        if (a.role !== b.role) return a.role.localeCompare(b.role);
+        return a.name.localeCompare(b.name);
     });
 }
 
@@ -3667,7 +3760,7 @@ async function loadCollectionWorkspaceLookups() {
     if (collectionWorkspaceLookupsPromise) return collectionWorkspaceLookupsPromise;
 
     collectionWorkspaceLookupsPromise = (async () => {
-        const [profileDocs, statusDocs, overrideDocs, troubleDocs, employeeDocs] = await Promise.all([
+        const [profileDocs, statusDocs, overrideDocs, troubleDocs, employeeDocs, positionDocs] = await Promise.all([
             safeFirestoreGetAll('tbl_collectioninfo', null, {
                 fieldMask: [
                     'id',
@@ -3703,8 +3796,12 @@ async function loadCollectionWorkspaceLookups() {
                 maxPages: 20
             }),
             safeFirestoreGetAll('tbl_employee', null, {
-                fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name'],
+                fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id', 'position', 'mstatus', 'estatus'],
                 maxPages: 40
+            }),
+            safeFirestoreGetAll('tbl_empos', null, {
+                fieldMask: ['id', 'position', 'position_name', 'name'],
+                maxPages: 10
             })
         ]);
 
@@ -3743,12 +3840,30 @@ async function loadCollectionWorkspaceLookups() {
             if (id && label) troubleLookupMap.set(id, label);
         });
 
+        collectionPositionMap = new Map();
+        positionDocs.forEach((doc) => {
+            const row = documentFieldsToPlain(doc);
+            const id = normalizeLookupId(row.id);
+            if (id) collectionPositionMap.set(id, row);
+        });
+
         employeeLookupMap = new Map();
+        collectionAssignableStaff = [];
         employeeDocs.forEach((doc) => {
             const row = documentFieldsToPlain(doc);
             const id = normalizeLookupId(row.id);
-            const name = buildAddressText([row.nickname, `${row.firstname || ''} ${row.lastname || ''}`.trim(), row.name]);
-            if (id && name) employeeLookupMap.set(id, name);
+            const name = collectionEmployeeName(row, id);
+            const role = collectionEmployeeRole(row);
+            if (id && name) {
+                employeeLookupMap.set(id, name);
+                if (isCollectionAssignableRole(role) && Number(row.mstatus || 1) !== 0) {
+                    collectionAssignableStaff.push({ id, name, role });
+                }
+            }
+        });
+        collectionAssignableStaff.sort((a, b) => {
+            if (a.role !== b.role) return a.role.localeCompare(b.role);
+            return a.name.localeCompare(b.name);
         });
 
         collectionWorkspaceLookupsLoaded = true;
@@ -4327,6 +4442,7 @@ function renderCollectorFollowupWorkspace(workspace) {
     const scheduleTimeValue = normalizeTimeInput(activeSchedule?.schedule_time || activeSchedule?.collection_time || fromTime || followupTime || '');
     const scheduleIsActive = activeSchedule && String(activeSchedule.status || 'Active').toLowerCase() !== 'cancelled';
     const returnCallValue = activeSchedule?.return_call === true || String(activeSchedule?.return_call || '').toLowerCase() === 'true';
+    const scheduleAssigneeId = normalizeLookupId(activeSchedule?.assigned_to_id || activeSchedule?.tech_id || '');
     const paymentRecords = getPaymentsForSelectedInvoice(selectedInvoice);
     const paymentTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const taxTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.tax2307 || 0), 0);
@@ -4497,6 +4613,12 @@ function renderCollectorFollowupWorkspace(workspace) {
                         <label>Schedule Type</label>
                         <select id="collectorScheduleStatus">
                             ${COLLECTION_SCHEDULE_OPTIONS.map((option) => `<option value="${escapeHtml(option)}"${option.toLowerCase() === scheduleStatusValue.toLowerCase() ? ' selected' : ''}>${escapeHtml(option)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label>Assigned Messenger / Tech</label>
+                        <select id="collectorScheduleAssignee">
+                            ${buildCollectionAssignableStaffOptions(scheduleAssigneeId)}
                         </select>
                     </div>
                     <div class="collection-schedule-actions">
@@ -4973,6 +5095,7 @@ function buildCollectorScheduleRecord(workspace, options = {}) {
     const scheduleStatus = options.scheduleStatus || String(document.getElementById('collectorScheduleStatus')?.value || 'Confirmed').trim();
     const scheduleDate = options.scheduleDate || String(document.getElementById('collectorScheduleDate')?.value || '').trim();
     const scheduleTime = options.scheduleTime || String(document.getElementById('collectorScheduleTime')?.value || '').trim();
+    const assignee = options.assignee || getCollectionAssignee();
     const returnCallRadio = document.querySelector('input[name="collectorScheduleReturnChoice"]:checked')?.value;
     const returnCall = options.returnCall !== undefined
         ? options.returnCall
@@ -5008,7 +5131,15 @@ function buildCollectorScheduleRecord(workspace, options = {}) {
         branch: context.branchName || selectedInvoice.branch || branch.name || '',
         model: context.modelName || selectedInvoice.modelName || '',
         serial: displaySerialNumber(context.serialNumber || selectedInvoice.serialNumber || ''),
-        assigned_to: getCurrentCollectorName(),
+        assigned_to_id: assignee.id || '',
+        assigned_to: assignee.name || getCurrentCollectorName(),
+        assigned_role: assignee.role || '',
+        assigned_messenger_id: /messenger|driver/i.test(assignee.role || '') ? assignee.id : '',
+        assigned_messenger_name: /messenger|driver/i.test(assignee.role || '') ? assignee.name : '',
+        assigned_technician_id: /technician|production/i.test(assignee.role || '') ? assignee.id : '',
+        assigned_technician_name: /technician|production/i.test(assignee.role || '') ? assignee.name : '',
+        tech_id: assignee.id || '',
+        tbl_schedule_id: options.tblScheduleId || previous.tbl_schedule_id || '',
         collection_address: String(document.getElementById('collectorProfileAddress')?.value || workspace.address || branch.address || '').trim(),
         contact_person: String(document.getElementById('collectorLastContact')?.value || document.getElementById('collectorProfileContactPerson')?.value || '').trim(),
         contact_number: String(document.getElementById('collectorContactNumber')?.value || document.getElementById('collectorProfileContactNumber')?.value || '').trim(),
@@ -5019,6 +5150,92 @@ function buildCollectorScheduleRecord(workspace, options = {}) {
     };
 }
 
+function buildCollectorLegacyScheduleRecord(workspace, masterRecord, scheduleId) {
+    const context = workspace.context || {};
+    const branch = branchMap[normalizeLookupId(context.branchId)] || {};
+    const selectedInvoice = workspace.selectedInvoice || {};
+    const taskTime = normalizeTimeInput(masterRecord.schedule_time || masterRecord.collection_time || '') || '08:00';
+    const taskDateTime = `${masterRecord.schedule_date} ${taskTime.length === 5 ? `${taskTime}:00` : taskTime}`;
+    const assigneeId = Number(masterRecord.assigned_to_id || masterRecord.tech_id || 0) || 0;
+    const invoiceNo = String(masterRecord.invoice_no || selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '').trim();
+    const remarks = buildAddressText([
+        masterRecord.remarks,
+        invoiceNo ? `Collection for invoice ${invoiceNo}` : 'Collection schedule confirmed',
+        masterRecord.return_call ? 'Return call: yes' : ''
+    ]);
+
+    return {
+        id: Number(scheduleId),
+        company_id: Number(context.companyId || selectedInvoice.companyId || 0) || 0,
+        branch_id: Number(context.branchId || selectedInvoice.branchId || 0) || 0,
+        area_id: Number(branch.area_id || 0) || 0,
+        serial: Number(context.machineId || selectedInvoice.machineId || 0) || 0,
+        caller: masterRecord.contact_person || '-',
+        phone_number: masterRecord.contact_number || '',
+        purpose_id: 2,
+        task_datetime: taskDateTime,
+        original_sched: taskDateTime,
+        tech_id: assigneeId,
+        assigned_to_id: assigneeId,
+        assigned_to: masterRecord.assigned_to || '',
+        assigned_role: masterRecord.assigned_role || '',
+        assigned_messenger_id: Number(masterRecord.assigned_messenger_id || 0) || 0,
+        assigned_messenger_name: masterRecord.assigned_messenger_name || '',
+        assigned_technician_id: Number(masterRecord.assigned_technician_id || 0) || 0,
+        assigned_technician_name: masterRecord.assigned_technician_name || '',
+        trouble_id: 0,
+        remarks,
+        status: 1,
+        isongoing: 0,
+        date_finished: '0000-00-00 00:00:00',
+        iscancel: 0,
+        scheduled: 1,
+        withcomplain: 0,
+        withrequest: 0,
+        super_urgent: masterRecord.return_call ? 1 : 0,
+        request_origin: 'collections',
+        request_serial_number: context.serialNumber || selectedInvoice.serialNumber || '',
+        customer_request: remarks,
+        contractmain_id: Number(context.contractmainId || selectedInvoice.contractmainId || 0) || 0,
+        from_mobileapp: 1,
+        bridge_updated_at: new Date().toISOString(),
+        bridge_updated_by: 0,
+        collectioninfo_id: Number(masterRecord.collection_id || 0) || 0,
+        invoice_num: invoiceNo || 0,
+        invoice_count: invoiceNo ? 1 : 0,
+        amt_collected: 0,
+        commitment_date: masterRecord.followup_date ? `${masterRecord.followup_date} 00:00:00` : '0000-00-00 00:00:00',
+        committed_by: getCurrentCollectorName(),
+        collocutor: masterRecord.contact_person || '',
+        pcname: 'PWA',
+        ipadd: '',
+        automove: 0,
+        empty_cart: 0,
+        order_cart: 0,
+        priority: 0,
+        user_id: 0,
+        returning_cart: 0,
+        userlog_id: 0,
+        closedby: 0,
+        from_other_source: 0,
+        oldest_invoice_age: 0,
+        soa_status: 0,
+        willsettle: 0,
+        firebase_key: '',
+        iscancelleddate: '',
+        csr_status: 0,
+        csr_remarks: '',
+        meter_reading: 0,
+        tl_status: 0,
+        tl_remarks: '',
+        shutdown_date: '0000-00-00 00:00:00',
+        dev_remarks: '',
+        collection_schedule_source: 'collections_modal',
+        collection_schedule_doc_id: collectionScheduleDocId(context, selectedInvoice),
+        collection_schedule_status: masterRecord.schedule_status || 'Confirmed'
+    };
+}
+
 async function saveCollectorSchedule() {
     if (!currentCollectorWorkspace || isSavingCollectorSchedule) return;
 
@@ -5026,40 +5243,59 @@ async function saveCollectorSchedule() {
     const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
     const context = currentCollectorWorkspace.context;
     const scheduleDate = String(document.getElementById('collectorScheduleDate')?.value || '').trim();
-
-    if (!selectedInvoice?.invoiceNo && !selectedInvoice?.invoiceId) {
-        if (statusNode) statusNode.textContent = 'No invoice is linked to this cell yet, so a schedule cannot be saved.';
-        return;
-    }
+    const assignee = getCollectionAssignee();
 
     if (!scheduleDate) {
         if (statusNode) statusNode.textContent = 'Please choose a schedule date.';
         return;
     }
 
-    const docId = collectionScheduleDocId(context, selectedInvoice);
-    const record = buildCollectorScheduleRecord(currentCollectorWorkspace, { scheduleDate, status: 'Active' });
-    const fields = {};
-    Object.entries(record).forEach(([key, value]) => {
-        if (!key.startsWith('_')) fields[key] = toFirestoreWriteValue(value);
-    });
+    if (!assignee.id) {
+        if (statusNode) statusNode.textContent = 'Please assign a messenger or technician before saving.';
+        return;
+    }
 
     isSavingCollectorSchedule = true;
-    if (statusNode) statusNode.textContent = 'Saving schedule...';
+    if (statusNode) statusNode.textContent = 'Saving to Master Schedule...';
 
     try {
-        await firestoreSetDocument('marga_master_schedule', docId, fields);
-        currentCollectorWorkspace.activeSchedule = { ...record, _docId: docId };
+        const existingScheduleId = Number(currentCollectorWorkspace.activeSchedule?.tbl_schedule_id || currentCollectorWorkspace.activeSchedule?.schedule_id || 0) || 0;
+        const scheduleId = existingScheduleId || await allocateNextNumericId('tbl_schedule');
+        const docId = collectionScheduleDocId(context, selectedInvoice);
+        const record = buildCollectorScheduleRecord(currentCollectorWorkspace, {
+            scheduleDate,
+            status: 'Active',
+            assignee,
+            tblScheduleId: scheduleId
+        });
+        const legacySchedule = buildCollectorLegacyScheduleRecord(currentCollectorWorkspace, record, scheduleId);
+        const legacyFields = {};
+        Object.entries(legacySchedule).forEach(([key, value]) => {
+            if (!key.startsWith('_')) legacyFields[key] = toFirestoreWriteValue(value);
+        });
+        await firestoreSetDocument('tbl_schedule', scheduleId, legacyFields);
+
+        const fields = {};
+        Object.entries({ ...record, tbl_schedule_id: scheduleId, schedule_id: scheduleId }).forEach(([key, value]) => {
+            if (!key.startsWith('_')) fields[key] = toFirestoreWriteValue(value);
+        });
+        try {
+            await firestoreSetDocument('marga_master_schedule', docId, fields);
+        } catch (mirrorError) {
+            console.warn('Saved tbl_schedule but could not mirror marga_master_schedule:', mirrorError);
+        }
+
+        currentCollectorWorkspace.activeSchedule = { ...record, tbl_schedule_id: scheduleId, schedule_id: scheduleId, _docId: docId };
 
         const content = document.getElementById('collectorCellContent');
         if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
         bindCollectorPaymentForm();
 
         const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
-        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved to Master Schedule.';
+        if (refreshedStatusNode) refreshedStatusNode.textContent = `Saved to Master Schedule #${scheduleId}.`;
     } catch (error) {
         console.error('Failed to save collection schedule:', error);
-        if (statusNode) statusNode.textContent = 'Schedule save failed. Follow-up history was not changed.';
+        if (statusNode) statusNode.textContent = `Schedule save failed: ${error.message || 'Please try again.'}`;
     } finally {
         isSavingCollectorSchedule = false;
     }
@@ -5095,7 +5331,20 @@ async function cancelCollectorSchedule() {
     if (statusNode) statusNode.textContent = 'Cancelling schedule...';
 
     try {
-        await firestoreSetDocument('marga_master_schedule', docId, fields);
+        const scheduleId = Number(activeSchedule.tbl_schedule_id || activeSchedule.schedule_id || 0) || 0;
+        if (scheduleId) {
+            await firestoreSetDocument('tbl_schedule', scheduleId, {
+                iscancel: toFirestoreWriteValue(1),
+                status: toFirestoreWriteValue(0),
+                iscancelleddate: toFirestoreWriteValue(toTimestampString(new Date())),
+                collection_schedule_status: toFirestoreWriteValue('Cancelled')
+            });
+        }
+        try {
+            await firestoreSetDocument('marga_master_schedule', docId, fields);
+        } catch (mirrorError) {
+            console.warn('Cancelled tbl_schedule but could not mirror marga_master_schedule:', mirrorError);
+        }
         currentCollectorWorkspace.activeSchedule = { ...cancelled, _docId: docId };
 
         const content = document.getElementById('collectorCellContent');
@@ -5103,7 +5352,7 @@ async function cancelCollectorSchedule() {
         bindCollectorPaymentForm();
 
         const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
-        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Trial schedule cancelled.';
+        if (refreshedStatusNode) refreshedStatusNode.textContent = scheduleId ? `Master Schedule #${scheduleId} cancelled.` : 'Trial schedule cancelled.';
     } catch (error) {
         console.error('Failed to cancel collection schedule:', error);
         if (statusNode) statusNode.textContent = 'Cancel failed. Please try again.';
