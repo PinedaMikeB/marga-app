@@ -1220,8 +1220,12 @@ async function loadBillingScheduleStaffOptions() {
         console.warn('Unable to load schedule staff options.', error);
         return [];
     });
+    const activeRoster = await MargaUtils.fetchActiveEmployeeRoster();
     const options = employees
-        .filter(isActiveBillingScheduleStaff)
+        .filter((employee) => {
+            const email = MargaUtils.normalizeEmail(employee?.email || employee?.marga_login_email || employee?.username);
+            return isActiveBillingScheduleStaff(employee) && (!activeRoster.size || activeRoster.has(email));
+        })
         .map((employee) => ({
             id: String(employee.id || employee._docId || '').trim(),
             name: billingScheduleStaffName(employee),

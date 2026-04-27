@@ -44,6 +44,15 @@ const MargaUtils = {
                 result[key] = null;
             } else if (value.timestampValue !== undefined) {
                 result[key] = new Date(value.timestampValue);
+            } else if (value.arrayValue !== undefined) {
+                const values = value.arrayValue?.values || [];
+                result[key] = values.map((entry) => this.parseFirestoreScalar(entry)).filter((entry) => entry !== null && entry !== undefined);
+            } else if (value.mapValue !== undefined) {
+                const mapped = {};
+                Object.entries(value.mapValue?.fields || {}).forEach(([mapKey, mapValue]) => {
+                    mapped[mapKey] = this.parseFirestoreScalar(mapValue);
+                });
+                result[key] = mapped;
             } else {
                 result[key] = null;
             }
@@ -54,6 +63,50 @@ const MargaUtils = {
         }
         
         return result;
+    },
+
+    parseFirestoreScalar(value) {
+        if (!value || typeof value !== 'object') return null;
+        if (value.stringValue !== undefined) return value.stringValue;
+        if (value.integerValue !== undefined) return parseInt(value.integerValue, 10);
+        if (value.doubleValue !== undefined) return parseFloat(value.doubleValue);
+        if (value.booleanValue !== undefined) return value.booleanValue;
+        if (value.nullValue !== undefined) return null;
+        if (value.timestampValue !== undefined) return new Date(value.timestampValue);
+        if (value.arrayValue !== undefined) {
+            return (value.arrayValue?.values || []).map((entry) => this.parseFirestoreScalar(entry)).filter((entry) => entry !== null && entry !== undefined);
+        }
+        if (value.mapValue !== undefined) {
+            const mapped = {};
+            Object.entries(value.mapValue?.fields || {}).forEach(([key, child]) => {
+                mapped[key] = this.parseFirestoreScalar(child);
+            });
+            return mapped;
+        }
+        return null;
+    },
+
+    async fetchDoc(collection, docId) {
+        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(String(docId))}?key=${FIREBASE_CONFIG.apiKey}`);
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        return payload?.fields ? this.parseFirestoreDoc(payload) : null;
+    },
+
+    normalizeEmail(value) {
+        return String(value || '').trim().toLowerCase();
+    },
+
+    async fetchActiveEmployeeRoster() {
+        if (this.activeEmployeeRosterPromise) return this.activeEmployeeRosterPromise;
+        this.activeEmployeeRosterPromise = this.fetchDoc('tbl_app_settings', 'active_employee_roster_v1')
+            .then((doc) => new Set((doc?.active_emails || []).map((email) => this.normalizeEmail(email)).filter(Boolean)))
+            .catch((error) => {
+                console.warn('Unable to load active employee roster.', error);
+                return new Set();
+            });
+        return this.activeEmployeeRosterPromise;
     },
 
     /**

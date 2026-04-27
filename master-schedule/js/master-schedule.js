@@ -100,6 +100,7 @@ const masterState = {
     },
     activityLogs: new Map(),
     routeForwarding: false,
+    activeEmployeeEmails: new Set(),
     settings: {
         branches: [],
         employees: []
@@ -745,7 +746,9 @@ function isActiveScheduleEmployee(employee) {
     if (!employee) return false;
     if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
     const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
-    return hasActiveFlag && Number(employee.estatus ?? 1) > 0;
+    const email = clean(employee.email || employee.marga_login_email || employee.username).toLowerCase();
+    const inRoster = !masterState.activeEmployeeEmails.size || masterState.activeEmployeeEmails.has(email);
+    return inRoster && hasActiveFlag && Number(employee.estatus ?? 1) > 0;
 }
 
 function isScheduleStaff(employee) {
@@ -2161,9 +2164,9 @@ async function ensureSettingsData() {
     if (masterState.settingsLoaded) return;
     setSettingsStatus('Loading setup data...');
 
-    const [employeeRows, branchRows, companyRows, positionRows] = await Promise.all([
+    const [employeeRows, branchRows, companyRows, positionRows, rosterDoc] = await Promise.all([
         fetchCollection('tbl_employee', {
-            fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'position_id', 'position', 'position_name', 'position_label', 'marga_role', 'marga_roles', 'estatus', 'active', 'marga_active'],
+            fieldMask: ['id', 'firstname', 'lastname', 'nickname', 'name', 'email', 'marga_login_email', 'username', 'position_id', 'position', 'position_name', 'position_label', 'marga_role', 'marga_roles', 'estatus', 'active', 'marga_active', 'marga_account_active'],
             maxPages: 40
         }).catch(() => []),
         fetchCollection('tbl_branchinfo', {
@@ -2177,8 +2180,13 @@ async function ensureSettingsData() {
         fetchCollection('tbl_empos', {
             fieldMask: ['id', 'position', 'position_name', 'name'],
             maxPages: 10
-        }).catch(() => [])
+        }).catch(() => []),
+        fetchDoc('tbl_app_settings', 'active_employee_roster_v1').catch(() => null)
     ]);
+
+    masterState.activeEmployeeEmails = new Set(
+        (rosterDoc?.active_emails || []).map((email) => clean(email).toLowerCase()).filter(Boolean)
+    );
 
     employeeRows.forEach((employee) => {
         if (employee.id) masterState.lookups.employees.set(String(employee.id), employee);

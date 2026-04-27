@@ -573,7 +573,7 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
                         value: { stringValue: String(value ?? '') }
                     }
                 },
-                limit: 1
+                limit: 10
             }
         };
 
@@ -583,8 +583,9 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
         );
         const payload = await response.json();
         if (!response.ok || (Array.isArray(payload) && payload[0]?.error)) return null;
-        const doc = Array.isArray(payload) ? payload.map((row) => row.document).filter(Boolean)[0] : null;
-        return doc ? this.parseFirestoreDoc(doc) : null;
+        const docs = Array.isArray(payload) ? payload.map((row) => row.document).filter(Boolean) : [];
+        const users = docs.map((doc) => this.parseFirestoreDoc(doc)).filter(Boolean);
+        return users.find((user) => this.isEmployeeActive(user)) || users[0] || null;
     };
 
     const employeeByEmail = await run('tbl_employee', 'email', email);

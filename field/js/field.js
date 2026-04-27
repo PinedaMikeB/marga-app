@@ -917,6 +917,21 @@ function asOlderCarryoverRow(row) {
     };
 }
 
+function asDirectTodayScheduleRow(row) {
+    return {
+        ...row,
+        route_id: 0,
+        route_doc_id: '',
+        route_source: 'Schedule',
+        route_tech_id: Number(row.tech_id || 0) || 0,
+        route_task_datetime: String(row.task_datetime || ''),
+        route_status: '',
+        route_iscancelled: Number(row.iscancel || row.iscancelled || 0) || 0,
+        route_date_finished: String(row.date_finished || ''),
+        route_remarks: String(row.remarks || row.caller || '').trim()
+    };
+}
+
 async function loadOlderCarryoverRows(date, excludedScheduleIds) {
     const days = [];
     for (let index = 1; index <= FIELD_CARRYOVER_DAYS; index += 1) {
@@ -989,9 +1004,10 @@ async function loadMySchedule(options = {}) {
     try {
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const [printedDocs, savedDocs] = await Promise.all([
+        const [printedDocs, savedDocs, scheduleDocs] = await Promise.all([
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
-            queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => [])
+            queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
+            queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => [])
         ]);
 
         const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), date);
@@ -999,8 +1015,18 @@ async function loadMySchedule(options = {}) {
         const routeRows = mergeTodayRouteRows(printedRows, savedRows);
         const routeSourceLabel = printedRows.length && savedRows.length ? 'Printed + Saved' : (printedRows.length ? 'Printed' : 'Saved');
 
-        const todayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
+        const routeBoundTodayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
             .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+            .filter((row) => !isFinishedOrCancelled(row));
+        const routeScheduleIds = new Set(routeBoundTodayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
+        const directTodayRows = scheduleDocs
+            .map(parseFirestoreDoc)
+            .filter(Boolean)
+            .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
+            .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
+            .map(asDirectTodayScheduleRow)
+            .filter((row) => !isFinishedOrCancelled(row));
+        const todayRows = [...routeBoundTodayRows, ...directTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
 
         state.routeSourceLabel = routeSourceLabel;

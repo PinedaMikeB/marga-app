@@ -65,7 +65,8 @@ const opsCache = {
     activeGraphBySerial: new Map(),
     closedScheduleIds: new Set(),
     fullyLoaded: new Set(),
-    assignableLoaded: false
+    assignableLoaded: false,
+    activeEmployeeEmails: new Set()
 };
 
 const opsState = {
@@ -875,7 +876,11 @@ async function saveNewRequestReleaseItems({ scheduleId, branchId, items, nowIso,
 async function ensureAssignableEmployeesLoaded() {
     if (opsCache.assignableLoaded) return;
 
-    await ensureCollectionLoaded('tbl_employee', opsCache.employees);
+    const [activeRoster] = await Promise.all([
+        MargaUtils.fetchActiveEmployeeRoster(),
+        ensureCollectionLoaded('tbl_employee', opsCache.employees)
+    ]);
+    opsCache.activeEmployeeEmails = activeRoster;
     const employees = [...opsCache.employees.values()].filter(Boolean);
     const positionIds = [...new Set(employees.map((employee) => Number(employee.position_id || 0)).filter((id) => id > 0))];
     await fetchManyDocs('tbl_empos', positionIds, opsCache.positions);
@@ -922,7 +927,9 @@ function isActiveAssignableEmployee(employee) {
     if (!employee) return false;
     if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
     const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
-    return hasActiveFlag && Number(employee.estatus ?? 1) > 0;
+    const email = MargaUtils.normalizeEmail(employee.email || employee.marga_login_email || employee.username);
+    const inRoster = !opsCache.activeEmployeeEmails.size || opsCache.activeEmployeeEmails.has(email);
+    return inRoster && hasActiveFlag && Number(employee.estatus ?? 1) > 0;
 }
 
 function getRoleClass(role) {
