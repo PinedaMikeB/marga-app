@@ -1188,6 +1188,16 @@ async function restoreBillingExclusion(docId) {
     return { ...result, docId, fields };
 }
 
+function sanitizeBillingLineItem(line = {}) {
+    const { lineItems, row, profile, current, previous, ...rest } = line || {};
+    return Object.fromEntries(Object.entries(rest).filter(([, value]) => (
+        value === null
+        || ['string', 'number', 'boolean'].includes(typeof value)
+        || Array.isArray(value)
+        || (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype)
+    )));
+}
+
 function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     const period = buildBillingPeriod(context?.monthKey, row?.reading_day);
     const parsedMonth = parseMonthInput(context?.monthKey);
@@ -1197,7 +1207,8 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     const numericInvoice = /^\d+$/.test(snapshot.invoiceNo) ? Number(snapshot.invoiceNo) : null;
     const numericContractId = Number(row?.contractmain_id || 0);
     const numericDocId = Number(docId);
-    const lineItems = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
+    const lineItems = (Array.isArray(estimate?.lineItems) ? estimate.lineItems : [])
+        .map((line) => sanitizeBillingLineItem(line));
     const primaryLine = lineItems[0] || estimate || {};
     const secondaryLine = lineItems.find((line) => String(line?.label || '').toLowerCase().includes('color'))
         || (String(snapshot?.billingMode || '').trim() === 'multi_meter_rtp' ? lineItems[1] : null)
