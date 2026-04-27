@@ -72,6 +72,21 @@
     box-shadow: 0 4px 18px rgba(49, 130, 206, 0.07);
 }
 
+.field-kpi[data-status-filter] {
+    cursor: pointer;
+    user-select: none;
+}
+
+.field-kpi[data-status-filter]:hover {
+    border-color: rgba(37, 99, 235, 0.28);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.13);
+}
+
+.field-kpi.is-active-filter {
+    border-color: rgba(29, 78, 216, 0.48);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(219, 234, 254, 0.72));
+}
+
 .field-kpi .label {
     font-size: 0.7rem;
     text-transform: uppercase;
@@ -90,6 +105,23 @@
 
 .field-card {
     margin-top: 1rem;
+}
+
+.field-customer-search {
+    min-width: 220px;
+    max-width: 100%;
+    border: 1px solid rgba(187, 212, 237, 0.82);
+    border-radius: 12px;
+    padding: 0.55rem 0.72rem;
+    background: rgba(255, 255, 255, 0.86);
+    color: #1f3657;
+    font-size: 0.82rem;
+    font-weight: 750;
+}
+
+.field-customer-search:focus {
+    outline: 2px solid rgba(29, 78, 216, 0.18);
+    outline-offset: 1px;
 }
 
 .field-tabs {
@@ -517,6 +549,7 @@
     }
 
     .field-tabs,
+    .field-customer-search,
     .card-actions select {
         width: 100%;
     }

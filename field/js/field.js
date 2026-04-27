@@ -76,6 +76,7 @@ const state = {
     selectedDate: '',
     activeTab: 'today',
     statusFilter: 'all',
+    searchQuery: '',
     staffId: null,
     routeSourceLabel: 'Printed',
     todayRows: [],
@@ -116,6 +117,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('fieldStatusFilter').addEventListener('change', () => {
         state.statusFilter = document.getElementById('fieldStatusFilter').value;
+        renderActiveView();
+    });
+    document.getElementById('fieldCustomerSearch')?.addEventListener('input', (event) => {
+        state.searchQuery = String(event.target.value || '');
+        renderActiveView();
+    });
+    document.getElementById('fieldKpis')?.addEventListener('click', (event) => {
+        const card = event.target.closest('[data-status-filter]');
+        if (!card) return;
+        state.statusFilter = card.dataset.statusFilter || 'all';
+        const statusFilter = document.getElementById('fieldStatusFilter');
+        if (statusFilter) statusFilter.value = state.statusFilter;
         renderActiveView();
     });
     dateInput.addEventListener('change', () => loadMySchedule());
@@ -436,6 +449,10 @@ async function queryCollection(collectionId, limit = 1000) {
 
 function normalizeInlineText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSearchText(value) {
+    return normalizeInlineText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 function normalizeLegacyDateTime(value) {
@@ -766,20 +783,45 @@ function renderKpis(rows) {
     const primaryLabel = state.activeTab === 'carryover' ? 'Carry Over' : 'Printed Today';
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${rows.length}</div></div>
-        <div class="field-kpi"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
-        <div class="field-kpi"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
-        <div class="field-kpi"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
-        <div class="field-kpi"><div class="label">Cancelled</div><div class="value">${counts.cancelled || 0}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${rows.length}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'pending' ? 'is-active-filter' : ''}" data-status-filter="pending"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'closed' ? 'is-active-filter' : ''}" data-status-filter="closed"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'cancelled' ? 'is-active-filter' : ''}" data-status-filter="cancelled"><div class="label">Cancelled</div><div class="value">${counts.cancelled || 0}</div></div>
     `;
+}
+
+function rowMatchesCustomerSearch(row, query) {
+    const search = normalizeSearchText(query);
+    if (!search) return true;
+
+    const branch = caches.branch.get(String(row.branch_id || 0));
+    const company = caches.company.get(String(row.company_id || branch?.company_id || 0));
+    const machine = caches.machine.get(String(row.serial || 0));
+    const text = normalizeSearchText([
+        row.id,
+        company?.companyname,
+        row.company_name,
+        branch?.branchname,
+        row.branch_name,
+        machine?.serial,
+        row.field_serial_selected,
+        row.route_remarks,
+        row.remarks,
+        row.caller
+    ].filter(Boolean).join(' '));
+    return text.includes(search);
 }
 
 function renderList() {
     const list = document.getElementById('fieldList');
     const rows = activeRows();
-    const filtered = state.statusFilter === 'all'
-        ? rows
-        : rows.filter((r) => getStatusKey(r) === state.statusFilter);
+    const filtered = rows.filter((row) => {
+        const status = getStatusKey(row);
+        if (state.statusFilter === 'all' && (status === 'closed' || status === 'cancelled')) return false;
+        if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
+        return rowMatchesCustomerSearch(row, state.searchQuery);
+    });
 
     if (!filtered.length) {
         const emptyText = state.activeTab === 'carryover'
@@ -910,6 +952,7 @@ async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
 
     const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'carry over'))
         .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+        .filter((row) => !currentScheduleIds.has(Number(row.id || 0)))
         .filter((row) => !isFinishedOrCancelled(row));
 
     savedCarryoverRows.forEach((row) => {
@@ -1979,10 +2022,6 @@ function getCloseTaskIssues(row, form) {
 
     if (isPendingReplacementState(row, form)) {
         issues.push('Pending machine or parts replacement detected. Use Mark Pending (Parts Needed).');
-    }
-
-    if (!isCollectionPurpose && !form.emptyPickupDetails) {
-        issues.push('Fill out Empty Toner / Ink Picked Up before marking this task finished.');
     }
 
     if (isBillingTicket(row)) {

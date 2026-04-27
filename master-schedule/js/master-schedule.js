@@ -695,6 +695,21 @@ function lifecycleStatus(row) {
     return 'Active';
 }
 
+function rowStatusBucket(row) {
+    const lifecycle = clean(row.status || lifecycleStatus(row)).toLowerCase();
+    if (lifecycle === 'cancelled') return 'cancelled';
+    if (lifecycle === 'closed' || isClosedMasterStatus(row.masterStatusValue)) return 'closed';
+    if (lifecycle === 'ongoing') return 'ongoing';
+    return 'pending';
+}
+
+function rowMatchesStatusFilter(row, statusFilter) {
+    const bucket = rowStatusBucket(row);
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'active') return bucket === 'pending' || bucket === 'ongoing';
+    return bucket === statusFilter;
+}
+
 function employeeName(employee, fallbackId = '') {
     if (!employee) return fallbackId ? `ID ${fallbackId}` : 'Unassigned';
     const nickname = clean(employee.nickname);
@@ -1372,9 +1387,7 @@ function getVisibleRows() {
     const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
 
     return masterState.rows.filter((row) => {
-        const isCancelled = clean(row.status).toLowerCase() === 'cancelled';
-        if (statusFilter === 'active' && isCancelled) return false;
-        if (statusFilter === 'cancelled' && !isCancelled) return false;
+        if (!rowMatchesStatusFilter(row, statusFilter)) return false;
         if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
         return true;
     });
@@ -1385,9 +1398,7 @@ function getVisiblePendingRows() {
     const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
 
     return masterState.pendingRows.filter((row) => {
-        const isCancelled = clean(row.status).toLowerCase() === 'cancelled';
-        if (statusFilter === 'active' && isCancelled) return false;
-        if (statusFilter === 'cancelled' && !isCancelled) return false;
+        if (!rowMatchesStatusFilter(row, statusFilter)) return false;
         if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
         return true;
     });
