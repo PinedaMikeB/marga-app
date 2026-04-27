@@ -566,6 +566,7 @@ function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
             billedTotal: 0,
             displayBilledTotal: 0,
             collectedTotal: 0,
+            outstandingBalance: 0,
             billedBasis: 'none',
             missedReading: false,
             catchUpBilling: false,
@@ -591,6 +592,7 @@ function upsertCollectorCellRecord(cell, recordKey, payload) {
             billedAmount: Number(payload.billedAmount || payload.amount || 0),
             collectedAmount: Number(payload.collectedAmount || 0),
             totalCollectedAmount: Number(payload.totalCollectedAmount || payload.collectedAmount || 0),
+            latestBalanceAmount: payload.latestBalanceAmount !== undefined && payload.latestBalanceAmount !== null ? Number(payload.latestBalanceAmount) : null,
             company: payload.company || cell.customer,
             branch: payload.branch || cell.branchName,
             accountLabel: payload.accountLabel || cell.accountLabel,
@@ -621,6 +623,9 @@ function upsertCollectorCellRecord(cell, recordKey, payload) {
         current.billedAmount = Number(current.billedAmount || 0) + Number(payload.billedAmount || 0);
         current.collectedAmount = Number(current.collectedAmount || 0) + Number(payload.collectedAmount || 0);
         current.totalCollectedAmount = Math.max(Number(current.totalCollectedAmount || 0), Number(payload.totalCollectedAmount || 0));
+        if (payload.latestBalanceAmount !== undefined && payload.latestBalanceAmount !== null && Number.isFinite(Number(payload.latestBalanceAmount))) {
+            current.latestBalanceAmount = Number(payload.latestBalanceAmount);
+        }
         current.branch = current.branch || payload.branch || cell.branchName;
         current.accountLabel = current.accountLabel || payload.accountLabel || cell.accountLabel;
         current.companyId = current.companyId || payload.companyId || cell.companyId || '';
@@ -653,6 +658,10 @@ function finalizeCollectorCellRecords(cellMap) {
         cell.displayBilledTotal = Number(
             (Number(cell.displayBilledTotal || 0) > 0 ? cell.displayBilledTotal : cell.billedTotal) || 0
         );
+        const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+        if (Number(cell.outstandingBalance || 0) <= 0 && Number(cell.collectedTotal || 0) > 0 && billedTarget > 0) {
+            cell.outstandingBalance = Math.max(0, billedTarget - Number(cell.collectedTotal || 0));
+        }
         cell.records = Array.from(cell.recordMap.values())
             .map((record) => ({
                 ...record,
@@ -666,6 +675,16 @@ function finalizeCollectorCellRecords(cellMap) {
         cell.latestHistory = latestHistoryForCell(cell);
         delete cell.recordMap;
     });
+}
+
+function getCellOutstandingBalance(cell) {
+    if (!cell) return 0;
+    const explicit = Number(cell.outstandingBalance || 0);
+    if (explicit > 0) return explicit;
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+    const collected = Number(cell.collectedTotal || 0);
+    if (collected > 0 && billedTarget > 0) return Math.max(0, billedTarget - collected);
+    return billedTarget;
 }
 
 async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
@@ -3180,9 +3199,13 @@ async function computeCollectorDashboardData() {
             const paidAgainstInvoice = paymentSummary.isSettled
                 ? Number(record.amount || 0)
                 : Math.min(Number(paymentSummary.amount || 0), Number(record.amount || 0));
+            const invoiceOutstanding = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
+                ? Math.max(0, Number(paymentSummary.latestBalanceAmount || 0))
+                : Math.max(0, Number(record.amount || 0) - paidAgainstInvoice);
             invoiceCell.rdValues.push(record.rd);
             invoiceCell.billedTotal += Number(record.amount || 0);
             invoiceCell.collectedTotal += paidAgainstInvoice;
+            if (paidAgainstInvoice > 0 && invoiceOutstanding > 0) invoiceCell.outstandingBalance += invoiceOutstanding;
             invoiceCell.displayBilledTotal = Math.max(Number(invoiceCell.displayBilledTotal || 0), Number(invoiceCell.billedTotal || 0));
             upsertCollectorCellRecord(invoiceCell, record.invoiceKey, {
                 ...record,
@@ -3190,6 +3213,7 @@ async function computeCollectorDashboardData() {
                 billedAmount: Number(record.amount || 0),
                 collectedAmount: paidAgainstInvoice,
                 totalCollectedAmount: Number(paymentSummary.amount || 0),
+                latestBalanceAmount: invoiceOutstanding,
                 expectedCollectionDate: addDays(record.invoiceDate, 30),
                 firstPaymentDate: paymentSummary.firstPaymentDate,
                 lastPaymentDate: paymentSummary.lastPaymentDate,
@@ -3301,7 +3325,11 @@ async function computeCollectorDashboardData() {
                 const paidAgainstInvoice = paymentSummary.isSettled
                     ? groupAmount
                     : Math.min(Number(paymentSummary.amount || 0), groupAmount);
+                const invoiceOutstanding = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
+                    ? Math.max(0, Number(paymentSummary.latestBalanceAmount || 0))
+                    : Math.max(0, groupAmount - paidAgainstInvoice);
                 groupedPaidTotal += paidAgainstInvoice;
+                if (paidAgainstInvoice > 0 && invoiceOutstanding > 0) collectorCell.outstandingBalance += invoiceOutstanding;
                 upsertCollectorCellRecord(collectorCell, group.invoice_ref || invoiceNo || invoiceId, {
                     invoiceId,
                     invoiceNo: invoiceNo || invoiceId,
@@ -3310,6 +3338,7 @@ async function computeCollectorDashboardData() {
                     billedAmount: groupAmount,
                     collectedAmount: paidAgainstInvoice,
                     totalCollectedAmount: Number(paymentSummary.amount || 0),
+                    latestBalanceAmount: invoiceOutstanding,
                     company: accountRow.customer,
                     branch: accountRow.branchName,
                     accountLabel: accountRow.accountLabel,
@@ -3518,6 +3547,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                 }
 
                                 const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                                const outstandingBalance = getCellOutstandingBalance(cell);
                                 const missedReading = Boolean(cell.missedReading);
                                 const catchUpBilling = Boolean(cell.catchUpBilling);
                                 const showBillingAmount = billedTarget > 0;
@@ -3528,8 +3558,8 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                 if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal < billedTarget) {
                                     cellClass = 'month-cell partial';
                                     cellText = `
-                                        <span class="collector-amount">${escapeHtml(formatPlainNumber(cell.collectedTotal))}</span>
-                                        <span class="collector-state-label partial">Partial</span>
+                                        <span class="collector-amount">${escapeHtml(formatPlainNumber(outstandingBalance))}</span>
+                                        <span class="collector-state-label partial">Balance</span>
                                         ${followupBadge}
                                     `;
                                 } else if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal >= billedTarget) {
@@ -4473,17 +4503,18 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
     const invoiceNo = String(selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
     const invoiceId = String(selectedInvoice?.invoiceId || selectedInvoice?.invoiceNo || '').trim();
     const invoiceAmount = Number(selectedInvoice?.amount || cell?.displayBilledTotal || cell?.billedTotal || branchBalance || 0);
+    const currentBalance = Math.max(0, Number(paymentBalance || 0));
 
     return `
         <section class="collection-payment-tab-panel" id="collectorPaymentPanel" role="tabpanel" aria-labelledby="collectorPaymentTab" hidden>
             <div class="collection-payment-layout">
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Payment Details</div>
-                    <div class="collection-payment-summary" id="collectorPaymentSummary" data-invoice-amount="${escapeHtml(invoiceAmount)}">
+                    <div class="collection-payment-summary" id="collectorPaymentSummary" data-invoice-amount="${escapeHtml(currentBalance)}">
                         <div><span>Invoice Amount</span><strong id="collectorPaymentInvoiceAmount">${escapeHtml(formatCurrency(invoiceAmount))}</strong></div>
                         <div><span>Actual Received</span><strong id="collectorPaymentActual">${escapeHtml(formatCurrency(0))}</strong></div>
                         <div><span>2307 Deducted</span><strong id="collectorPaymentTaxDisplay">${escapeHtml(formatCurrency(0))}</strong></div>
-                        <div><span>Balance</span><strong id="collectorPaymentBalanceDisplay">${escapeHtml(formatCurrency(invoiceAmount))}</strong></div>
+                        <div><span>Balance</span><strong id="collectorPaymentBalanceDisplay">${escapeHtml(formatCurrency(currentBalance))}</strong></div>
                     </div>
                     <div class="collection-followup-form collection-payment-form">
                         <div>
@@ -4523,7 +4554,7 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                         </div>
                         <div>
                             <label>Balance</label>
-                            <input id="collectorPaymentBalance" type="number" step="0.01" readonly value="${escapeHtml(invoiceAmount.toFixed(2))}">
+                            <input id="collectorPaymentBalance" type="number" step="0.01" readonly value="${escapeHtml(currentBalance.toFixed(2))}">
                         </div>
                         <div class="full">
                             <label>Remarks</label>
@@ -4589,7 +4620,14 @@ function renderCollectorFollowupWorkspace(workspace) {
     const paymentRecords = getPaymentsForSelectedInvoice(selectedInvoice);
     const paymentTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const taxTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.tax2307 || 0), 0);
-    const paymentBalance = Math.max(0, Number(selectedInvoice?.amount || billedTarget || 0) - paymentTotal - taxTotal);
+    const selectedOutstanding = getOutstandingInvoiceAmount(selectedInvoice);
+    const cellOutstanding = getCellOutstandingBalance(cell);
+    const paymentBalance = paymentRecords.length
+        ? selectedOutstanding
+        : Math.max(0, Number(selectedInvoice?.amount || billedTarget || 0) - paymentTotal - taxTotal);
+    const displayBalance = paymentRecords.length
+        ? paymentBalance
+        : (Number(branchBalance || 0) > 0 ? Number(branchBalance || 0) : cellOutstanding);
 
     return `
         <div class="collection-followup-shell">
@@ -4601,7 +4639,7 @@ function renderCollectorFollowupWorkspace(workspace) {
                 </div>
                 <div class="collection-balance-card">
                     <span>Branch Balance</span>
-                    <strong>${escapeHtml(formatCurrency(pendingAmount))}</strong>
+                    <strong>${escapeHtml(formatCurrency(displayBalance))}</strong>
                     <em>Company open: ${escapeHtml(formatCurrency(companyBalance))}</em>
                 </div>
             </section>
@@ -4674,7 +4712,7 @@ function renderCollectorFollowupWorkspace(workspace) {
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Invoice State</div>
                     <div class="collection-followup-facts">
-                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(branchBalance || billedTarget))}</strong></div>
+                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(displayBalance))}</strong></div>
                         <div><span>Date Received</span><strong>${escapeHtml(formatDate(selectedInvoice?.dateReceived || selectedInvoice?.invoiceDate))}</strong></div>
                         <div><span>Received By</span><strong>${escapeHtml(selectedInvoice?.receivedBy || '-')}</strong></div>
                         <div><span>Invoice Month</span><strong>${escapeHtml(selectedInvoice?.monthYear || context.label || '-')}</strong></div>
@@ -4812,7 +4850,7 @@ async function openCollectorCell(cellId) {
     if (!modal || !title || !subtitle || !content) return;
 
     const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
-    const pendingAmount = Math.max(0, billedTarget - cell.collectedTotal);
+    const pendingAmount = getCellOutstandingBalance(cell);
     title.textContent = `${cell.customer} • ${cell.branchName || cell.accountLabel || 'Main'} • ${cell.label}`;
     subtitle.textContent = `Loading collection profile, unpaid invoices, history, and service records for this follow-up.`;
     content.innerHTML = `
