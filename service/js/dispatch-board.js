@@ -918,6 +918,13 @@ function getRole(employee, position) {
     return 'Staff';
 }
 
+function isActiveAssignableEmployee(employee) {
+    if (!employee) return false;
+    if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
+    const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
+    return hasActiveFlag && Number(employee.estatus ?? 1) > 0;
+}
+
 function getRoleClass(role) {
     if (role === 'Technician') return 'role-tech';
     if (role === 'Messenger') return 'role-messenger';
@@ -1297,6 +1304,7 @@ function getScheduleLookups(row) {
 function getAssignableStaffList() {
     return [...opsCache.employees.values()]
         .filter(Boolean)
+        .filter(isActiveAssignableEmployee)
         .map((employee) => {
             const position = opsCache.positions.get(String(employee.position_id || 0)) || null;
             const role = getRole(employee, position);
@@ -1309,7 +1317,6 @@ function getAssignableStaffList() {
         })
         .filter((staff) => staff.id > 0)
         .filter((staff) => staff.role === 'Technician' || staff.role === 'Production' || staff.role === 'Messenger')
-        .filter((staff) => staff.estatus > 0)
         .sort((a, b) => {
             if (a.role !== b.role) return a.role.localeCompare(b.role);
             return a.name.localeCompare(b.name);

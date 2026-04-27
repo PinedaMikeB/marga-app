@@ -1208,13 +1208,20 @@ function billingScheduleStaffRole(employee) {
     return label ? label.replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Staff';
 }
 
+function isActiveBillingScheduleStaff(employee) {
+    if (!employee) return false;
+    if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
+    const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
+    return hasActiveFlag && Number(employee.estatus ?? 1) > 0;
+}
+
 async function loadBillingScheduleStaffOptions() {
     const employees = await MargaUtils.fetchCollection('tbl_employee').catch((error) => {
         console.warn('Unable to load schedule staff options.', error);
         return [];
     });
     const options = employees
-        .filter((employee) => employee && employee.active !== false && employee.marga_active !== false)
+        .filter(isActiveBillingScheduleStaff)
         .map((employee) => ({
             id: String(employee.id || employee._docId || '').trim(),
             name: billingScheduleStaffName(employee),

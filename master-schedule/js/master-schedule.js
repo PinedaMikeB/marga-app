@@ -741,7 +741,15 @@ function employeeRole(employee) {
     return label ? clean(position?.position || position?.name || employee?.position) : 'Staff';
 }
 
+function isActiveScheduleEmployee(employee) {
+    if (!employee) return false;
+    if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
+    const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
+    return hasActiveFlag && Number(employee.estatus ?? 1) > 0;
+}
+
 function isScheduleStaff(employee) {
+    if (!isActiveScheduleEmployee(employee)) return false;
     const role = employeeRole(employee).toLowerCase();
     return role.includes('technician') || role.includes('messenger') || role.includes('driver');
 }
