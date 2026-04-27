@@ -1001,13 +1001,15 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
             task_type: 'deliver_invoice',
             task_label: 'Deliver Invoice',
             required_role: 'messenger',
-            planner_status: 'suggested',
-            task_status: 'pending_scheduler',
-            route_status: 'unscheduled',
+            planner_status: estimate?.scheduleSaved ? (estimate?.scheduleType === 'Trial Schedule' ? 'trial' : 'confirmed') : 'suggested',
+            task_status: estimate?.scheduleSaved ? 'scheduled' : 'pending_scheduler',
+            route_status: estimate?.scheduleSaved ? 'scheduled' : 'unscheduled',
             priority: 'normal',
             requested_date: today,
             preferred_schedule_date: today,
-            schedule_date: today,
+            schedule_date: String(estimate?.scheduleDate || '').trim(),
+            schedule_time: String(estimate?.scheduleTime || '').trim(),
+            schedule_type: String(estimate?.scheduleType || '').trim(),
             invoice_no: group.invoiceNo,
             billing_month_key: group.monthKey,
             billing_month_label: formatMonthLabel(group.monthKey, group.monthKey),
@@ -1034,8 +1036,8 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
             suggested_messenger_id: assignment.staffId,
             suggested_messenger_name: assignment.staffName,
             assignment_basis: assignment.basis,
-            assigned_staff_id: '',
-            assigned_staff_name: '',
+            assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
+            assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
             assigned_by: '',
             assigned_at: '',
             transfer_count: 0,
@@ -1062,6 +1064,48 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
         savedCount: savedDocs.length,
         docs: savedDocs
     };
+}
+
+function billingScheduleStaffName(employee) {
+    const nickname = String(employee?.nickname || '').trim();
+    const first = String(employee?.firstname || '').trim();
+    const last = String(employee?.lastname || '').trim();
+    return nickname || `${first} ${last}`.trim() || String(employee?.name || employee?.fullname || employee?.username || employee?.id || '').trim();
+}
+
+function billingScheduleStaffRole(employee) {
+    const label = String(employee?.position || employee?.position_name || employee?.position_label || employee?.role || '').toLowerCase();
+    const positionId = Number(employee?.position_id || 0);
+    if (positionId === 5 || label.includes('technician') || label.includes('tech')) return 'Technician';
+    if (positionId === 9 || label.includes('messenger') || label.includes('driver')) return label.includes('driver') ? 'Driver' : 'Messenger';
+    if (label.includes('driver')) return 'Driver';
+    return label ? label.replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Staff';
+}
+
+async function loadBillingScheduleStaffOptions() {
+    const employees = await MargaUtils.fetchCollection('tbl_employee').catch((error) => {
+        console.warn('Unable to load schedule staff options.', error);
+        return [];
+    });
+    const options = employees
+        .filter((employee) => employee && employee.active !== false && employee.marga_active !== false)
+        .map((employee) => ({
+            id: String(employee.id || employee._docId || '').trim(),
+            name: billingScheduleStaffName(employee),
+            role: billingScheduleStaffRole(employee)
+        }))
+        .filter((employee) => employee.id && employee.name);
+    const scheduleOptions = options.filter((employee) => /messenger|driver|technician/i.test(employee.role));
+    return (scheduleOptions.length ? scheduleOptions : options)
+        .sort((left, right) => `${left.role} ${left.name}`.localeCompare(`${right.role} ${right.name}`));
+}
+
+function renderBillingScheduleStaffOptions(options = [], selectedId = '') {
+    const selected = String(selectedId || '').trim();
+    return [
+        '<option value="">Select messenger / tech</option>',
+        ...options.map((staff) => `<option value="${escapeHtml(staff.id)}"${staff.id === selected ? ' selected' : ''}>${escapeHtml(staff.name)} (${escapeHtml(staff.role)})</option>`)
+    ].join('');
 }
 
 function isActiveBillingExclusion(exclusion) {
@@ -1277,6 +1321,14 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         billing_lines_count: lineItems.length,
         billing_lines_signature: linesSignature,
         billing_total_pages: Number(estimate?.billedPages || estimate?.pages || 0) || 0,
+        schedule_required: true,
+        schedule_saved: Boolean(estimate?.scheduleSaved),
+        schedule_doc_id: String(estimate?.scheduleDocId || '').trim(),
+        schedule_date: String(estimate?.scheduleDate || '').trim(),
+        schedule_time: String(estimate?.scheduleTime || '').trim(),
+        schedule_type: String(estimate?.scheduleType || '').trim(),
+        schedule_assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
+        schedule_assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
         actual_spoilage_reason: String(estimate?.actualSpoilageReason || '').trim(),
         actual_spoilage_proof_name: String(estimate?.actualSpoilageProofName || '').trim(),
         actual_spoilage_proof_type: String(estimate?.actualSpoilageProofType || '').trim(),
@@ -4821,6 +4873,14 @@ async function openBillingCalcModal(rowId, monthKey) {
     context.approvalNote = String(savedBillingDoc?.approval_note || '').trim();
     context.approvedBy = String(savedBillingDoc?.approved_by || '').trim();
     context.approvedAt = String(savedBillingDoc?.approved_at || '').trim();
+    context.scheduleRequired = savedBillingDoc ? savedBillingDoc.schedule_required === true : false;
+    context.scheduleSaved = savedBillingDoc?.schedule_saved === true;
+    context.scheduleDocId = String(savedBillingDoc?.schedule_doc_id || '').trim();
+    context.scheduleDate = String(savedBillingDoc?.schedule_date || '').trim();
+    context.scheduleTime = String(savedBillingDoc?.schedule_time || '').trim();
+    context.scheduleType = String(savedBillingDoc?.schedule_type || '').trim();
+    context.scheduleAssignedStaffId = String(savedBillingDoc?.schedule_assigned_staff_id || '').trim();
+    context.scheduleAssignedStaffName = String(savedBillingDoc?.schedule_assigned_staff_name || '').trim();
     let priorMachineReadingByRow = new Map();
     let rowPriorLookup = null;
     let linkedInvoiceReading = null;
@@ -4987,6 +5047,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const latestMonthUsed = latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading';
     const savedMonthLabel = context.targetCell?.month_label_short || context.monthLabel;
     const savedExclusionsForContext = getBillingExclusionsForContext(row, context);
+    const scheduleStaffOptions = await loadBillingScheduleStaffOptions();
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
@@ -5071,6 +5132,37 @@ async function openBillingCalcModal(rowId, monthKey) {
                             <label>Previous Reading Date</label>
                             <input type="text" readonly value="${escapeHtml(previousReadingDate)}">
                         </div>
+                    </div>
+                </section>
+                <section class="calc-panel calc-schedule-panel" id="calcSchedulePanel">
+                    <div class="calc-panel-title">Set Schedule</div>
+                    <div class="calc-panel-grid calc-cycle-grid">
+                        <div class="calc-field">
+                            <label for="calcScheduleDateInput">Schedule Date</label>
+                            <input type="date" id="calcScheduleDateInput" value="${escapeHtml(context.scheduleDate || formatIsoDate(new Date()))}">
+                        </div>
+                        <div class="calc-field">
+                            <label for="calcScheduleTimeInput">Time</label>
+                            <input type="time" id="calcScheduleTimeInput" value="${escapeHtml(context.scheduleTime || '')}">
+                        </div>
+                        <div class="calc-field">
+                            <label for="calcScheduleTypeInput">Schedule Type</label>
+                            <select id="calcScheduleTypeInput">
+                                <option value="Confirmed"${context.scheduleType === 'Confirmed' ? ' selected' : ''}>Confirmed</option>
+                                <option value="Trial Schedule"${context.scheduleType === 'Trial Schedule' ? ' selected' : ''}>Trial Schedule</option>
+                                <option value="For Confirmation"${context.scheduleType === 'For Confirmation' ? ' selected' : ''}>For Confirmation</option>
+                            </select>
+                        </div>
+                        <div class="calc-field">
+                            <label for="calcScheduleStaffInput">Assigned Messenger / Tech</label>
+                            <select id="calcScheduleStaffInput">
+                                ${renderBillingScheduleStaffOptions(scheduleStaffOptions, context.scheduleAssignedStaffId)}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="calc-schedule-actions">
+                        <button class="btn btn-primary" type="button" id="calcSaveScheduleBtn" ${savedBillingDoc ? '' : 'disabled'}>Save Schedule</button>
+                        <span class="calc-save-status" id="calcScheduleStatus">${context.scheduleSaved ? `Saved to Master Schedule${context.scheduleDate ? ` for ${escapeHtml(context.scheduleDate)}` : ''}.` : 'Save billing first, then set schedule to unlock printing.'}</span>
                     </div>
                 </section>
             </div>
@@ -5320,6 +5412,12 @@ async function openBillingCalcModal(rowId, monthKey) {
     const approvalCopy = document.getElementById('calcApprovalCopy');
     const approveSpoilageBtn = document.getElementById('calcApproveSpoilageBtn');
     const rejectSpoilageBtn = document.getElementById('calcRejectSpoilageBtn');
+    const scheduleDateInput = document.getElementById('calcScheduleDateInput');
+    const scheduleTimeInput = document.getElementById('calcScheduleTimeInput');
+    const scheduleTypeInput = document.getElementById('calcScheduleTypeInput');
+    const scheduleStaffInput = document.getElementById('calcScheduleStaffInput');
+    const saveScheduleBtn = document.getElementById('calcSaveScheduleBtn');
+    const scheduleStatus = document.getElementById('calcScheduleStatus');
     const previewMount = document.getElementById('calcRtpPreviewMount');
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
     const printBreakdownBtn = document.getElementById('calcPrintBreakdownBtn');
@@ -5367,6 +5465,9 @@ async function openBillingCalcModal(rowId, monthKey) {
     let approvalNote = context.approvalNote || '';
     let approvedBy = context.approvedBy || '';
     let approvedAt = context.approvedAt || '';
+    let scheduleRequired = Boolean(context.scheduleRequired);
+    let scheduleSaved = Boolean(context.scheduleSaved);
+    let scheduleDocId = context.scheduleDocId || '';
     const lineInputValues = new Map();
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
@@ -5549,8 +5650,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         const isDirty = savedDocExists && !matchesSaved;
         const needsApproval = Number(activeEstimate?.actualSpoilagePages || 0) > 0;
         const approvalReady = !needsApproval || approvalStatus === 'approved';
+        const scheduleReady = !scheduleRequired || scheduleSaved;
 
         if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
+        if (saveScheduleBtn) saveScheduleBtn.disabled = !savedDocExists;
         if (saveStatus) {
             saveStatus.classList.toggle('error', Boolean(workflowError));
             if (workflowError) {
@@ -5561,9 +5664,19 @@ async function openBillingCalcModal(rowId, monthKey) {
                 saveStatus.textContent = `You changed the billing values. Save again to update ${savedMonthLabel} and re-enable printing.`;
             } else if (needsApproval && !approvalReady) {
                 saveStatus.textContent = `Saved in ${savedMonthLabel}. Actual spoilage is ${approvalStatus === 'rejected' ? 'rejected' : 'pending admin approval'}, so printing is locked.`;
+            } else if (!scheduleReady) {
+                saveStatus.textContent = `Saved in ${savedMonthLabel}. Set the Master Schedule before printing.`;
             } else {
                 saveStatus.textContent = `Saved in ${savedMonthLabel}. The month cell now owns invoice ${currentSnapshot.invoiceNo || 'N/A'} and Print ${printContractCode || 'Invoice'} is ready.`;
             }
+        }
+        if (scheduleStatus) {
+            scheduleStatus.classList.toggle('error', scheduleRequired && !scheduleSaved);
+            scheduleStatus.textContent = scheduleSaved
+                ? `Saved to Master Schedule${scheduleDateInput?.value ? ` for ${scheduleDateInput.value}` : ''}.`
+                : savedDocExists
+                    ? 'Set schedule is mandatory before printing.'
+                    : 'Save billing first, then set schedule to unlock printing.';
         }
 
         if (approvalPanel) {
@@ -5587,7 +5700,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
 
         if (!canPrintInvoice) return;
-        const printEnabled = previewReady && matchesSaved && approvalReady;
+        const printEnabled = previewReady && matchesSaved && approvalReady && scheduleReady;
         let printHint = 'Preparing preview...';
         if (previewReady) {
             if (workflowError) {
@@ -5600,6 +5713,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 printHint = approvalStatus === 'rejected'
                     ? 'Actual spoilage was rejected. Printing is locked until the billing is updated and approved.'
                     : 'Actual spoilage is pending admin approval. Printing is locked.';
+            } else if (!scheduleReady) {
+                printHint = 'Set the Master Schedule before printing this invoice.';
             } else {
                 printHint = 'Ready to print. Turn off Headers and footers in More settings if the browser preview adds extra top space.';
             }
@@ -5782,6 +5897,20 @@ async function openBillingCalcModal(rowId, monthKey) {
             actualSpoilageProofInput.value = '';
             MargaUtils.showToast(String(error?.message || 'Unable to upload proof image.'), 'error');
         }
+    });
+    [scheduleDateInput, scheduleTimeInput, scheduleTypeInput, scheduleStaffInput].forEach((input) => {
+        input?.addEventListener('input', () => {
+            if (scheduleSaved) {
+                scheduleSaved = false;
+                syncCalcWorkflowState();
+            }
+        });
+        input?.addEventListener('change', () => {
+            if (scheduleSaved) {
+                scheduleSaved = false;
+                syncCalcWorkflowState();
+            }
+        });
     });
     modeTabs.forEach((tab) => tab.addEventListener('click', () => {
         activeBillingMode = tab.dataset.calcModeTab || activeBillingMode;
@@ -5974,6 +6103,95 @@ async function openBillingCalcModal(rowId, monthKey) {
     };
     approveSpoilageBtn?.addEventListener('click', () => updateActualSpoilageApproval('approved'));
     rejectSpoilageBtn?.addEventListener('click', () => updateActualSpoilageApproval('rejected'));
+    saveScheduleBtn?.addEventListener('click', async () => {
+        if (!savedDocExists || !savedBillingDocId) {
+            MargaUtils.showToast('Save the billing first before setting schedule.', 'error');
+            return;
+        }
+        const scheduleDate = String(scheduleDateInput?.value || '').trim();
+        const scheduleTime = String(scheduleTimeInput?.value || '').trim();
+        const scheduleType = String(scheduleTypeInput?.value || '').trim() || 'Confirmed';
+        const staffId = String(scheduleStaffInput?.value || '').trim();
+        const staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || null;
+        if (!scheduleDate) {
+            MargaUtils.showToast('Choose a schedule date before printing.', 'error');
+            return;
+        }
+        if (!staffId) {
+            MargaUtils.showToast('Choose an assigned messenger or tech before printing.', 'error');
+            return;
+        }
+        saveScheduleBtn.disabled = true;
+        try {
+            if (!scheduleDocId) {
+                const plannerResult = await saveBillingToSchedulePlanner({
+                    result: {
+                        docId: savedBillingDocId,
+                        invoiceNo: buildCurrentSnapshot().invoiceNo,
+                        fields: { _docId: savedBillingDocId }
+                    },
+                    row,
+                    context,
+                    estimate: activeEstimate,
+                    snapshot: buildCurrentSnapshot()
+                });
+                scheduleDocId = plannerResult.docs?.[0]?.docId || scheduleDocId;
+            }
+            if (!scheduleDocId) throw new Error('Unable to create Master Schedule planner row.');
+            const audit = getCurrentUserAudit();
+            const nowIso = new Date().toISOString();
+            const staffName = staffOption?.name || staffId;
+            await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, scheduleDocId, {
+                planner_status: scheduleType === 'Trial Schedule' ? 'trial' : 'confirmed',
+                task_status: 'scheduled',
+                route_status: 'scheduled',
+                schedule_date: scheduleDate,
+                schedule_time: scheduleTime,
+                schedule_type: scheduleType,
+                assigned_staff_id: staffId,
+                assigned_staff_name: staffName,
+                assigned_to_id: staffId,
+                assigned_to: staffName,
+                assigned_by: audit.name,
+                assigned_at: nowIso,
+                updated_at: nowIso
+            }, {
+                mode: 'patch',
+                label: `Billing schedule ${buildCurrentSnapshot().invoiceNo || scheduleDocId}`,
+                dedupeKey: `${SCHEDULE_PLANNER_COLLECTION}:${scheduleDocId}:schedule:${scheduleDate}:${staffId}`
+            });
+            await setFirestoreDocument('tbl_billing', savedBillingDocId, {
+                schedule_required: true,
+                schedule_saved: true,
+                schedule_doc_id: scheduleDocId,
+                schedule_date: scheduleDate,
+                schedule_time: scheduleTime,
+                schedule_type: scheduleType,
+                schedule_assigned_staff_id: staffId,
+                schedule_assigned_staff_name: staffName,
+                updated_at: nowIso
+            }, {
+                mode: 'patch',
+                label: `Billing schedule gate ${buildCurrentSnapshot().invoiceNo || savedBillingDocId}`,
+                dedupeKey: `tbl_billing:${savedBillingDocId}:schedule:${scheduleDate}:${staffId}`
+            });
+            scheduleRequired = true;
+            scheduleSaved = true;
+            activeEstimate.scheduleSaved = true;
+            activeEstimate.scheduleDocId = scheduleDocId;
+            activeEstimate.scheduleDate = scheduleDate;
+            activeEstimate.scheduleTime = scheduleTime;
+            activeEstimate.scheduleType = scheduleType;
+            activeEstimate.scheduleAssignedStaffId = staffId;
+            activeEstimate.scheduleAssignedStaffName = staffName;
+            MargaUtils.showToast(`Saved to Master Schedule for ${scheduleDate}.`, 'success');
+            syncCalcWorkflowState();
+        } catch (error) {
+            MargaUtils.showToast(String(error?.message || 'Unable to save schedule.'), 'error');
+        } finally {
+            saveScheduleBtn.disabled = false;
+        }
+    });
     saveBillingBtn?.addEventListener('click', async () => {
         activeEstimate = calculateActiveEstimate();
         const actualSpoilagePages = Number(activeEstimate?.actualSpoilagePages || 0) || 0;
@@ -6053,6 +6271,9 @@ async function openBillingCalcModal(rowId, monthKey) {
             }
             savedBillingDocId = result.docId || savedBillingDocId;
             approvalStatus = String(result.fields?.approval_status || approvalStatus || 'none');
+            scheduleRequired = true;
+            scheduleSaved = false;
+            scheduleDocId = plannerResult?.docs?.[0]?.docId || scheduleDocId || '';
             syncCalcWorkflowState();
             const plannerCount = Number(plannerResult?.savedCount || 0) || 0;
             const plannerQueued = Boolean(plannerResult?.queued);
