@@ -2019,7 +2019,6 @@ function processInvoice(doc) {
 
     const age = calculateAge(dueDate, month, year);
     const totalAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
-    const vatAmount = Number(getField(f, ['vatamount']) || 0);
 
     const history = getHistoryForInvoice(invoiceIdKey, invoiceNoKey);
     const lastHistory = history.length > 0 ? history[0] : null;
@@ -2032,7 +2031,7 @@ function processInvoice(doc) {
         invoiceId: invoiceIdKey || invoiceNoKey,
         invoiceNo: invoiceNoKey || invoiceIdKey,
         invoiceKey: invoiceNoKey || invoiceIdKey,
-        amount: totalAmount + vatAmount,
+        amount: totalAmount,
         month,
         year,
         monthYear: month && year ? `${month} ${year}` : '-',
@@ -2143,7 +2142,7 @@ async function loadInvoices(mode) {
             const dateReceived = normalizeDate(getField(f, ['date_received']));
             const receivedBy = String(getField(f, ['receivedby']) || '').trim();
             const matrixAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
-            const amount = matrixAmount + Number(getField(f, ['vatamount']) || 0);
+            const amount = matrixAmount;
             const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
             const location = getBillingLocation(contractmainId);
             const billingMeta = {
@@ -3199,9 +3198,10 @@ async function computeCollectorDashboardData() {
             const paidAgainstInvoice = paymentSummary.isSettled
                 ? Number(record.amount || 0)
                 : Math.min(Number(paymentSummary.amount || 0), Number(record.amount || 0));
+            const computedOutstanding = Math.max(0, Number(record.amount || 0) - paidAgainstInvoice);
             const invoiceOutstanding = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
-                ? Math.max(0, Number(paymentSummary.latestBalanceAmount || 0))
-                : Math.max(0, Number(record.amount || 0) - paidAgainstInvoice);
+                ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedOutstanding)
+                : computedOutstanding;
             invoiceCell.rdValues.push(record.rd);
             invoiceCell.billedTotal += Number(record.amount || 0);
             invoiceCell.collectedTotal += paidAgainstInvoice;
@@ -3325,9 +3325,10 @@ async function computeCollectorDashboardData() {
                 const paidAgainstInvoice = paymentSummary.isSettled
                     ? groupAmount
                     : Math.min(Number(paymentSummary.amount || 0), groupAmount);
+                const computedOutstanding = Math.max(0, groupAmount - paidAgainstInvoice);
                 const invoiceOutstanding = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
-                    ? Math.max(0, Number(paymentSummary.latestBalanceAmount || 0))
-                    : Math.max(0, groupAmount - paidAgainstInvoice);
+                    ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedOutstanding)
+                    : computedOutstanding;
                 groupedPaidTotal += paidAgainstInvoice;
                 if (paidAgainstInvoice > 0 && invoiceOutstanding > 0) collectorCell.outstandingBalance += invoiceOutstanding;
                 upsertCollectorCellRecord(collectorCell, group.invoice_ref || invoiceNo || invoiceId, {
@@ -4123,10 +4124,12 @@ function getOutstandingInvoiceAmount(invoice) {
             const rightTime = (right.paymentDate || new Date(0)).getTime();
             return rightTime - leftTime;
         })[0];
-    if (latestWithBalance) return Math.max(0, Number(latestWithBalance.balanceAmount || 0));
-
     const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + Number(payment.tax2307 || 0), 0);
-    return Math.max(0, baseAmount - paidTotal);
+    const computedBalance = Math.max(0, baseAmount - paidTotal);
+    if (latestWithBalance) {
+        return Math.min(Math.max(0, Number(latestWithBalance.balanceAmount || 0)), computedBalance);
+    }
+    return computedBalance;
 }
 
 function mergeInvoiceHistories(invoices, records = []) {
