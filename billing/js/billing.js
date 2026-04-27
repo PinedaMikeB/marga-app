@@ -3924,7 +3924,7 @@ function pickPriorBillingReading(row, docs = [], monthKey) {
         .filter((doc) => {
             if (String(doc?.contractmain_id || '').trim() !== contractId) return false;
             const presentMeter = Number(doc?.field_present_meter ?? doc?.present_meter ?? 0) || 0;
-            if (presentMeter <= 0) return false;
+            if (presentMeter <= 0 && !getBillingDocInvoiceRef(doc)) return false;
             const docMonthKey = getBillingDocMonthKey(doc);
             return docMonthKey && docMonthKey < monthKey;
         })
@@ -3937,17 +3937,19 @@ function pickPriorBillingReading(row, docs = [], monthKey) {
     return candidates[0] || null;
 }
 
-function buildPriorBillingLookup(doc) {
+function buildPriorBillingLookup(doc, linkedReading = null) {
     const docMonthKey = getBillingDocMonthKey(doc);
     const dateRef = asValidDate(doc?.dateprinted || doc?.date_printed || doc?.invdate || doc?.invoice_date || doc?.datex || doc?.due_date);
+    const linkedPresentMeter = Number(linkedReading?.presentMeter || 0) || 0;
+    const linkedPresentMeter2 = Number(linkedReading?.presentMeter2 || 0) || 0;
     return {
-        previousMeter: Number(doc?.field_present_meter ?? doc?.present_meter ?? 0) || 0,
-        previousMeter2: Number(doc?.field_present_meter2 ?? doc?.present_meter2 ?? 0) || 0,
-        taskDate: dateRef ? formatIsoDate(dateRef) : '',
+        previousMeter: Number(doc?.field_present_meter ?? doc?.present_meter ?? 0) || linkedPresentMeter || 0,
+        previousMeter2: Number(doc?.field_present_meter2 ?? doc?.present_meter2 ?? 0) || linkedPresentMeter2 || 0,
+        taskDate: linkedReading?.taskDate || (dateRef ? formatIsoDate(dateRef) : ''),
         sourceMonthKey: docMonthKey,
         sourceMonthLabel: docMonthKey ? formatMonthLabel(docMonthKey, docMonthKey) : 'Previous billing',
         invoiceRef: getBillingDocInvoiceRef(doc),
-        readingId: String(doc?.id || doc?._docId || '').trim()
+        readingId: String(linkedReading?.readingId || doc?.id || doc?._docId || '').trim()
     };
 }
 
@@ -3988,12 +3990,19 @@ async function loadPriorBillingReadingLookups(rows = [], monthKey) {
     });
 
     const lookups = new Map();
-    eligibleRows.forEach((row) => {
+    for (const row of eligibleRows) {
         const picked = pickPriorBillingReading(row, docs, monthKey);
-        if (!picked) return;
+        if (!picked) continue;
+        let linkedReading = null;
+        const savedPresentMeter = Number(picked?.field_present_meter ?? picked?.present_meter ?? 0) || 0;
+        if (savedPresentMeter <= 0 && getBillingDocInvoiceRef(picked)) {
+            linkedReading = await loadInvoiceMachineReadingPair(row, getBillingDocInvoiceRef(picked));
+        }
+        const lookup = buildPriorBillingLookup(picked, linkedReading);
+        if (Number(lookup.previousMeter || 0) <= 0) continue;
         const key = getBillingRowLookupKey(row);
-        if (key) lookups.set(key, buildPriorBillingLookup(picked));
-    });
+        if (key) lookups.set(key, lookup);
+    }
 
     priorBillingReadingCache.set(cacheKey, lookups);
     return lookups;
