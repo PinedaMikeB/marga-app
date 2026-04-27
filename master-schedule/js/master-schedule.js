@@ -52,6 +52,7 @@ const CLIENT_INFO_TYPES = [
 ];
 
 const MASTER_STATUS_OPTIONS = [
+    { value: 'open', label: 'Open' },
     { value: 'closed_fixed', label: 'Closed (Fixed)' },
     { value: 'closed_under_observation', label: 'Closed (Under Observation)' },
     { value: 'closed_over_the_phone', label: 'Closed (Over The Phone)' },
@@ -94,6 +95,7 @@ const masterState = {
         finalDeliveryReceipts: new Map()
     },
     activityLogs: new Map(),
+    routeForwarding: false,
     settings: {
         branches: [],
         employees: []
@@ -104,7 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateInput = document.getElementById('masterDateInput');
     const searchInput = document.getElementById('masterSearchInput');
     dateInput.value = formatDateYmd(new Date());
-    dateInput.addEventListener('change', loadMasterSchedule);
+    const forwardDateInput = document.getElementById('masterForwardDateInput');
+    if (forwardDateInput) forwardDateInput.value = addDays(dateInput.value, 1);
+    dateInput.addEventListener('change', () => {
+        if (forwardDateInput) forwardDateInput.value = addDays(dateInput.value, 1);
+        loadMasterSchedule();
+    });
 
     document.getElementById('masterStatusInput')?.addEventListener('change', renderMasterSchedule);
     searchInput?.addEventListener('input', renderMasterSchedule);
@@ -122,6 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('masterRefreshBtn')?.addEventListener('click', loadMasterSchedule);
     document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
+    document.getElementById('masterForwardOpenBtn')?.addEventListener('click', forwardVisibleOpenSchedules);
     document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
     document.getElementById('masterStatusOverlay')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
@@ -453,6 +461,10 @@ function statusClassName(value) {
     return String(value || '').replace(/_/g, '-');
 }
 
+function isClosedMasterStatus(value) {
+    return String(value || '').startsWith('closed_');
+}
+
 function normalizeStoredStatusValue(row = {}) {
     const raw = clean(
         row.master_schedule_status
@@ -465,10 +477,11 @@ function normalizeStoredStatusValue(row = {}) {
 
 function deriveMasterStatusValue(row) {
     const stored = normalizeStoredStatusValue(row);
+    if (isClosedMasterStatus(stored)) return stored;
+    if (isScheduleClosed(row) || clean(row.status).toLowerCase() === 'closed') return 'closed_fixed';
     if (stored) return stored;
     if (scheduleNeedsDeliveryReceipt(row)) return 'open_with_request';
-    if (clean(row.status).toLowerCase() === 'closed') return 'closed_fixed';
-    return '';
+    return 'open';
 }
 
 function buildActivityKey(source, docId, fallbackId = '') {
@@ -610,6 +623,31 @@ function addDays(dateText, days) {
     if (Number.isNaN(parsed.getTime())) return '';
     parsed.setDate(parsed.getDate() + days);
     return formatDateYmd(parsed);
+}
+
+function routeTimePart(row) {
+    const source = clean(getRouteTaskDateTime(row) || row?.originalDate);
+    const time = source.slice(11, 19);
+    if (!/^\d{2}:\d{2}/.test(time)) return '08:00:00';
+    return time.length >= 8 ? time.slice(0, 8) : `${time}:00`;
+}
+
+function routeDateTimeFor(row, targetDate) {
+    return `${targetDate} ${routeTimePart(row)}`;
+}
+
+function routeDocIdFor(scheduleId, targetDate) {
+    const datePart = String(targetDate || '').replace(/[^0-9]/g, '');
+    const schedulePart = String(Number(scheduleId || 0) || 0).padStart(6, '0').slice(-6);
+    return String(Number(`${datePart}${schedulePart}`));
+}
+
+function isOpenScheduleRow(row) {
+    if (!row) return false;
+    if (clean(row.status).toLowerCase() === 'cancelled') return false;
+    if (clean(row.status).toLowerCase() === 'closed') return false;
+    if (isClosedMasterStatus(row.masterStatusValue)) return false;
+    return Number(row.scheduleId || 0) > 0 && (row.source === 'legacy-route' || row.source === 'pending');
 }
 
 function daysBetween(startDate, endDate) {
@@ -969,7 +1007,7 @@ function machineSerial(machine, row = {}) {
 
 function buildLegacyScheduleRow(row) {
     const branch = masterState.lookups.branches.get(String(row.branch_id || ''));
-    const company = masterState.lookups.companies.get(String(row.company_id || branch?.company_id || ''));
+    const company = masterState.lookups.companies.get(String(branch?.company_id || row.company_id || ''));
     const machine = masterState.lookups.machines.get(String(row.serial || row.mach_id || ''));
     const trouble = masterState.lookups.troubles.get(String(row.trouble_id || ''));
     const employee = masterState.lookups.employees.get(String(row.tech_id || ''));
@@ -1005,7 +1043,7 @@ function buildLegacyScheduleRow(row) {
         docId: row._docId || row.id || '',
         techId: String(row.tech_id || ''),
         branchId: String(row.branch_id || ''),
-        companyId: String(row.company_id || branch?.company_id || ''),
+        companyId: String(branch?.company_id || row.company_id || ''),
         scheduleId,
         routeId: Number(row.route_id || 0) || 0,
         routeSource,
@@ -1286,7 +1324,18 @@ async function loadMasterSchedule() {
         const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
         const printedRows = printedDocs.map(parseFirestoreDoc).filter(Boolean);
         const savedRows = savedDocs.map(parseFirestoreDoc).filter(Boolean);
-        const { mergedRows: legacyRows, routeCoverage } = overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows, date);
+        const { mergedRows: sameDayLegacyRows, routeCoverage } = overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows, date);
+        const routeBoundRows = await buildRouteBoundSchedules(mergeRouteRows(savedRows, printedRows, date), 'Saved');
+        const sameDayScheduleIds = new Set(sameDayLegacyRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0));
+        const carriedRouteRows = routeBoundRows.filter((row) => {
+            const scheduleId = Number(row.id || row._docId || 0);
+            return scheduleId > 0 && !sameDayScheduleIds.has(scheduleId);
+        });
+        const legacyRows = [...sameDayLegacyRows, ...carriedRouteRows];
+        const routeCoverageWithCarry = {
+            routed: (routeCoverage.routed || 0) + carriedRouteRows.length,
+            unrouted: routeCoverage.unrouted || 0
+        };
         const pendingRawRows = await loadPendingNotRoutedRows(date, legacyRows);
         const lookupRows = [...legacyRows, ...pendingRawRows];
         const plannerRows = plannerDocs.map(parseFirestoreDoc);
@@ -1294,8 +1343,8 @@ async function loadMasterSchedule() {
         await hydrateLegacyLookups(lookupRows);
         await hydrateReadyLookups(lookupRows);
 
-        masterState.routeSourceLabel = routeCoverage.routed ? 'Schedule + Routes' : 'Schedule';
-        masterState.routeCoverage = routeCoverage;
+        masterState.routeSourceLabel = routeCoverageWithCarry.routed ? 'Schedule + Routes' : 'Schedule';
+        masterState.routeCoverage = routeCoverageWithCarry;
         masterState.rows = [
             ...webRows.map(buildWebScheduleRow),
             ...legacyRows.map(buildLegacyScheduleRow),
@@ -1482,6 +1531,8 @@ function renderMasterScheduleRow(row) {
     const canMove = row.sourceBucket !== 'pending-not-routed';
     const displayStatus = row.masterStatusLabel || 'Not Set';
     const displayStatusClass = row.masterStatusValue ? statusClassName(row.masterStatusValue) : '';
+    const canForward = isOpenScheduleRow(row);
+    const defaultForwardDate = clean(document.getElementById('masterForwardDateInput')?.value) || addDays(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()), 1);
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td data-label="TIN #">${escapeHtml(row.tin || '-')}</td>
@@ -1506,6 +1557,10 @@ function renderMasterScheduleRow(row) {
                 <div class="schedule-status-cell">
                     <span class="schedule-status-label ${escapeHtml(displayStatusClass)}">${escapeHtml(displayStatus)}</span>
                     <button type="button" class="schedule-status-view" onclick="openMasterStatusModal('${escapeHtml(row.rowKey)}')">View</button>
+                    <div class="schedule-forward-tools">
+                        <input class="schedule-forward-date" type="date" value="${escapeHtml(defaultForwardDate)}" aria-label="Forward date" ${canForward ? '' : 'disabled'}>
+                        <button type="button" class="schedule-forward-btn" onclick="forwardScheduleRow('${escapeHtml(row.rowKey)}', this)" ${canForward ? '' : 'disabled'}>Forward</button>
+                    </div>
                 </div>
             </td>
         </tr>
@@ -1743,11 +1798,131 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
     }
 }
 
+async function saveForwardedRoute(row, targetDate) {
+    const scheduleId = Number(row.scheduleId || 0) || 0;
+    if (!scheduleId) throw new Error('This row has no linked schedule ID.');
+    const staffId = Number(row.techId || 0) || 0;
+    if (!staffId) throw new Error('Assign a technician or messenger before forwarding.');
+
+    const targetDateTime = routeDateTimeFor(row, targetDate);
+    const routeDocId = routeDocIdFor(scheduleId, targetDate);
+    const nowIso = new Date().toISOString();
+    const actor = currentActorLabel();
+    const routePayload = {
+        id: Number(routeDocId),
+        schedule_id: scheduleId,
+        tech_id: staffId,
+        task_datetime: targetDateTime,
+        status: 1,
+        iscancelled: 0,
+        date_finished: ZERO_DATETIME,
+        remarks: clean(row.remarks || row.trouble || ''),
+        forwarded_from_date: row.routeDate || row.originalDate || '',
+        forwarded_from_schedule_id: scheduleId,
+        forwarded_by: actor,
+        forwarded_at: nowIso,
+        timestmp: nowIso,
+        bridge_pushed_at: nowIso
+    };
+    await setDoc(ROUTE_COLLECTION_FALLBACK, routeDocId, routePayload);
+
+    const schedulePayload = {
+        task_datetime: targetDateTime,
+        tech_id: staffId,
+        date_finished: ZERO_DATETIME,
+        closedby: 0,
+        master_schedule_status: 'open',
+        master_schedule_status_label: statusLabel('open'),
+        master_schedule_status_updated_at: nowIso,
+        master_schedule_status_updated_by: actor
+    };
+    if (!row.originalDate) schedulePayload.original_sched = clean(getRouteTaskDateTime(row));
+    await updateDocFields('tbl_schedule', row.docId || scheduleId, schedulePayload);
+
+    row.routeId = Number(routeDocId);
+    row.routeSource = 'Saved';
+    row.routeDate = targetDate;
+    row.status = 'Active';
+    row.masterStatusValue = 'open';
+    row.masterStatusLabel = statusLabel('open');
+    refreshMasterRowSearch(row);
+}
+
+async function forwardScheduleRows(rows, targetDate) {
+    const validRows = rows.filter(isOpenScheduleRow);
+    if (!validRows.length) {
+        window.alert('No open schedule rows are available to forward.');
+        return;
+    }
+    if (!targetDate) {
+        window.alert('Choose a target date first.');
+        return;
+    }
+
+    masterState.routeForwarding = true;
+    const count = document.getElementById('masterCount');
+    if (count) count.textContent = `Forwarding ${validRows.length} open schedule row(s)...`;
+    const failures = [];
+
+    for (const row of validRows) {
+        try {
+            await saveForwardedRoute(row, targetDate);
+            await appendActivityLog(row, {
+                actionType: 'forward',
+                actionLabel: 'Forwarded To Schedule',
+                detail: `Forwarded open schedule to ${targetDate}.`
+            });
+        } catch (error) {
+            failures.push({ row, error });
+        }
+    }
+
+    masterState.routeForwarding = false;
+    if (failures.length) {
+        console.warn('Schedule forward failures:', failures);
+        window.alert(`Forwarding completed with ${failures.length} failure(s). Check the console for details.`);
+    }
+    await loadMasterSchedule();
+}
+
+async function forwardScheduleRow(rowKey, button) {
+    if (masterState.routeForwarding) return;
+    const row = findScheduleRow(rowKey);
+    if (!row) return;
+    const input = button?.closest('.schedule-forward-tools')?.querySelector('.schedule-forward-date');
+    const targetDate = clean(input?.value || document.getElementById('masterForwardDateInput')?.value);
+    if (!targetDate) {
+        window.alert('Choose a target date first.');
+        return;
+    }
+    button.disabled = true;
+    try {
+        await forwardScheduleRows([row], targetDate);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function forwardVisibleOpenSchedules() {
+    if (masterState.routeForwarding) return;
+    const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+    const targetDate = clean(document.getElementById('masterForwardDateInput')?.value) || addDays(selectedDate, 1);
+    const rows = [...getVisibleRows(), ...getVisiblePendingRows()].filter(isOpenScheduleRow);
+    if (!rows.length) {
+        window.alert('No visible open schedules to forward.');
+        return;
+    }
+    const ok = window.confirm(`Forward ${rows.length} open schedule row(s) to ${targetDate}?`);
+    if (!ok) return;
+    await forwardScheduleRows(rows, targetDate);
+}
+
 function activeRows() {
     return masterState.rows.filter((row) => clean(row.status).toLowerCase() !== 'cancelled');
 }
 
 window.openMasterStatusModal = openMasterStatusModal;
+window.forwardScheduleRow = forwardScheduleRow;
 
 function uniqueAssignedStaff(rows = activeRows()) {
     return Array.from(new Set(rows.map((row) => row.assignedTo || 'Unassigned'))).filter(Boolean).sort();

@@ -599,6 +599,21 @@ function pickLatestRouteRows(rows, selectedDate) {
     return [...latestBySchedule.values()];
 }
 
+function mergeTodayRouteRows(printedRows, savedRows) {
+    const merged = new Map();
+    printedRows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId > 0) merged.set(scheduleId, { ...row, _routeSource: 'printed' });
+    });
+    savedRows.forEach((row) => {
+        const scheduleId = Number(row.schedule_id || 0);
+        if (scheduleId > 0 && !merged.has(scheduleId)) {
+            merged.set(scheduleId, { ...row, _routeSource: 'saved' });
+        }
+    });
+    return [...merged.values()];
+}
+
 async function fetchDocsByIdList(collection, ids) {
     const uniqueIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
     if (!uniqueIds.length) return new Map();
@@ -628,7 +643,7 @@ async function buildRouteBoundRows(routeRows, routeSourceLabel) {
                 tech_id: Number(routeRow.tech_id || schedule.tech_id || 0) || 0,
                 route_id: Number(routeRow.id || 0) || 0,
                 route_doc_id: routeRow._docId || String(routeRow.id || ''),
-                route_source: routeSourceLabel,
+                route_source: routeRow._routeSource || routeSourceLabel,
                 route_tech_id: Number(routeRow.tech_id || 0) || 0,
                 route_task_datetime: String(routeRow.task_datetime || ''),
                 route_status: routeRow.status ?? '',
@@ -938,8 +953,8 @@ async function loadMySchedule(options = {}) {
 
         const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), date);
         const savedRows = pickLatestRouteRows(savedDocs.map(parseFirestoreDoc).filter(Boolean), date);
-        const routeRows = printedRows.length ? printedRows : savedRows;
-        const routeSourceLabel = printedRows.length ? 'Printed' : 'Saved';
+        const routeRows = mergeTodayRouteRows(printedRows, savedRows);
+        const routeSourceLabel = printedRows.length && savedRows.length ? 'Printed + Saved' : (printedRows.length ? 'Printed' : 'Saved');
 
         const todayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
             .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))

@@ -419,6 +419,11 @@
             color: #991b1b;
         }
 
+        .schedule-status-label.open {
+            background: #ffedd5;
+            color: #9a3412;
+        }
+
         .schedule-status-view {
             width: 100%;
             border: 1px solid rgba(31, 94, 168, 0.24);
@@ -429,6 +434,39 @@
             font-size: 11px;
             font-weight: 850;
             cursor: pointer;
+        }
+
+        .schedule-forward-tools {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 6px;
+        }
+
+        .schedule-forward-date {
+            min-width: 0;
+            border: 1px solid rgba(148, 163, 184, 0.55);
+            border-radius: 6px;
+            padding: 6px 7px;
+            color: #0f2742;
+            font-size: 11px;
+            font-weight: 750;
+        }
+
+        .schedule-forward-btn {
+            border: 1px solid rgba(22, 101, 52, 0.24);
+            border-radius: 6px;
+            padding: 6px 9px;
+            background: linear-gradient(180deg, #f0fdf4, #dcfce7);
+            color: #166534;
+            font-size: 11px;
+            font-weight: 850;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .schedule-forward-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
         }
 
         .master-modal-overlay {
@@ -972,6 +1010,11 @@
                     <label for="masterPrintStaffInput">Staff</label>
                     <select id="masterPrintStaffInput"></select>
                 </div>
+                <div class="master-control compact">
+                    <label for="masterForwardDateInput">Forward To</label>
+                    <input type="date" id="masterForwardDateInput">
+                </div>
+                <button class="btn btn-secondary" id="masterForwardOpenBtn" type="button">Forward Open</button>
                 <button class="btn btn-primary" id="masterRefreshBtn" type="button">Refresh</button>
                 <button class="btn btn-secondary" id="masterPrintBtn" type="button">Print Schedule</button>
             </div>
