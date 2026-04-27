@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#123b67" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Marga Tech" />
+  <title>MARGA Technician Service Schedule</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="/public/tech/manifest.json" />
+  <link rel="apple-touch-icon" href="/public/assets/icons/tech-icon-192.png" />
+  <link rel="stylesheet" href="/src/styles/app.css" />
+  <link rel="stylesheet" href="/src/styles/tech.css" />
+</head>
+<body>
+  <div class="ambient-bg" aria-hidden="true"></div>
+
+  <section id="techAuthView" class="auth-view">
+    <div class="auth-card glass">
+      <header class="auth-brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <h1>MARGA <span>Technician Service Schedule</span></h1>
+          <p>View assigned service work, complete tickets onsite, and sync anytime.</p>
+        </div>
+      </header>
+      <form id="techLoginForm" class="auth-form">
+        <label>
+          Email
+          <input type="email" name="email" required autocomplete="email" placeholder="tech@marga.biz" />
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" required autocomplete="current-password" placeholder="Password" minlength="8" />
+        </label>
+        <button class="btn btn-primary" type="submit">Sign In</button>
+      </form>
+      <p class="auth-note" id="techAuthMessage">Technician accounts only. Offline drafts will sync automatically.</p>
+    </div>
+  </section>
+
+  <section id="techAppView" class="tech-shell hidden">
+    <header class="topbar glass">
+      <div>
+        <h2>Technician Service Schedule</h2>
+        <p id="techWelcome">Assigned service tickets</p>
+      </div>
+      <div class="top-actions">
+        <a class="btn btn-secondary" href="/install/?target=tech">Install Guide</a>
+        <button id="techInstallBtn" class="btn btn-secondary hidden">Install App</button>
+        <button id="techLogoutBtn" class="btn btn-secondary">Logout</button>
+      </div>
+    </header>
+
+    <main class="tech-main">
+      <section class="panel glass">
+        <div class="panel-head stack-on-mobile">
+          <h3>Ticket Queue</h3>
+          <div class="panel-actions">
+            <select id="techFilter" class="input">
+              <option value="assigned">Assigned to me</option>
+              <option value="unassigned">Unassigned</option>
+              <option value="all">All open</option>
+              <option value="completed">Completed</option>
+            </select>
+            <button id="techRefresh" class="btn btn-secondary">Refresh</button>
+          </div>
+        </div>
+        <div id="techTicketList" class="list-stack"></div>
+      </section>
+
+      <section class="panel glass" id="techDetailPanel">
+        <div class="panel-head">
+          <h3>Ticket Detail</h3>
+          <span id="techDetailTicketNo" class="muted">Select a ticket</span>
+        </div>
+        <div id="techDetailBody" class="detail-body empty-state">Choose a ticket to view details.</div>
+      </section>
+
+      <section class="panel glass" id="techCompletionPanel">
+        <div class="panel-head">
+          <h3>Complete Ticket</h3>
+          <span id="queueBadge" class="status-badge neutral">Pending Sync: 0</span>
+        </div>
+        <form id="ticketCompleteForm" class="form-grid">
+          <label>
+            Acknowledging Person
+            <select name="ackSignerId" id="ackSignerId" class="input" required></select>
+          </label>
+          <label>
+            PIN (4-6 digits)
+            <input type="password" name="ackPin" class="input" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" required />
+          </label>
+          <label>
+            Status
+            <select name="status" class="input" required>
+              <option value="Completed">Resolved</option>
+              <option value="Follow Up">Follow-up Required</option>
+            </select>
+          </label>
+          <label>
+            Resolution Notes
+            <textarea name="resolutionNotes" class="input" rows="3" required></textarea>
+          </label>
+          <label>
+            Follow-up Notes
+            <textarea name="followUpNotes" class="input" rows="2" placeholder="Required if follow-up needed"></textarea>
+          </label>
+          <label>
+            Signature (optional)
+            <canvas id="signaturePad" width="320" height="140" class="signature-pad"></canvas>
+            <button type="button" id="clearSignature" class="btn btn-secondary btn-sm">Clear Signature</button>
+          </label>
+          <label>
+            Completion Photo (optional)
+            <input type="file" name="ackPhoto" class="input" accept="image/*" capture="environment" />
+          </label>
+          <button type="submit" class="btn btn-primary">Submit Completion</button>
+        </form>
+        <p class="muted" id="completionMessage">Valid signer PIN is required before ticket can be completed.</p>
+      </section>
+    </main>
+  </section>
+
+  <script src="/public/config.js"></script>
+  <script type="module" src="/src/tech-main.js"></script>
+</body>
+</html>

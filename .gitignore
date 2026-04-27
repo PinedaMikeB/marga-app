@@ -1,8 +1,13 @@
 .DS_Store
 **/.DS_Store
+**/__pycache__/
+**/.firebase/
 exports/*.csv
 employees_export.csv
 local-sync/.env
 local-sync/state/
 local-sync/node_modules/
 local-sync/output/
+
+# Local Netlify folder
+.netlify

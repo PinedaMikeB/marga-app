@@ -2561,7 +2561,7 @@ function renderOpsTaskTable(rows, logsBySchedule, lookups) {
         const branchFromLog = scheduleLogs.find((log) => Number(log.branch_id || 0) > 0)?.branch_id || 0;
         const branchId = Number(row.branch_id || 0) > 0 ? Number(row.branch_id) : Number(branchFromLog || 0);
         const branch = branchMap.get(String(branchId || 0));
-        const company = companyMap.get(String(row.company_id || branch?.company_id || 0)) || null;
+        const company = companyMap.get(String(branch?.company_id || row.company_id || 0)) || null;
         const area = branch ? areaMap.get(String(branch.area_id || 0)) : null;
 
         const logInfo = scheduleLogs.length

@@ -179,14 +179,11 @@ const PETTY_CASH_STATE = {
 let pettyCashCloudSyncPromise = null;
 let pettyCashCloudSyncQueued = false;
 let pettyCashDeletePassRequested = false;
+let pettyCashHasSharedBaseline = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
     loadUserHeader();
     await hydrateState();
-    await loadEmployeeOptions();
-    await loadPayeeOptions();
-    await loadSupplierOptions();
-    await loadActualItemCatalog();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindControls();
     populateSelects();
@@ -195,6 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearEntryForm();
     clearRequestForm();
     renderAll();
+    void bootstrapReferenceDataInBackground();
 });
 
 window.addEventListener('storage', onExternalPettyCashStateChange);
@@ -217,6 +215,41 @@ function loadUserHeader() {
     document.getElementById('userAvatar').textContent = String(user.name || 'A').charAt(0).toUpperCase();
 }
 
+async function bootstrapReferenceDataInBackground() {
+    try {
+        await loadEmployeeOptions();
+        await loadPayeeOptions();
+        await loadSupplierOptions();
+        await loadActualItemCatalog();
+        refreshPettyCashBootstrapUi();
+    } catch (error) {
+        console.warn('Petty cash reference bootstrap failed after initial render:', error);
+    }
+}
+
+function refreshPettyCashBootstrapUi() {
+    const entryStatusFilter = String(document.getElementById('entryStatusFilter')?.value || 'all');
+    const entryStatus = String(document.getElementById('entryStatusInput')?.value || 'Pending Liquidation');
+    const entryRequestedBy = String(document.getElementById('entryRequestedByInput')?.value || '').trim();
+    const requestStatus = String(document.getElementById('requestStatusInput')?.value || 'Draft');
+    const requestRequestedBy = String(document.getElementById('requestRequestedByInput')?.value || '').trim();
+
+    populateSelects();
+    renderItemDatalists();
+
+    document.getElementById('entryStatusFilter').value = entryStatusFilter;
+    document.getElementById('entryStatusInput').value = entryStatus;
+
+    ensureEmployeeOption(entryRequestedBy);
+    document.getElementById('entryRequestedByInput').value = entryRequestedBy;
+
+    document.getElementById('requestStatusInput').value = requestStatus;
+    ensureEmployeeOption(requestRequestedBy);
+    document.getElementById('requestRequestedByInput').value = requestRequestedBy;
+
+    renderAll();
+}
+
 async function hydrateState() {
     PETTY_CASH_STATE.accounts = MargaFinanceAccounts.getStoredAccounts().map(normalizeAccount);
     const localSnapshot = readLocalPettyCashSnapshot();
@@ -224,6 +257,7 @@ async function hydrateState() {
     let requests = localSnapshot.requests.map(normalizeRequest);
     let settings = normalizeSettings(localSnapshot.settings);
     let migrateLocalToCloud = false;
+    pettyCashHasSharedBaseline = false;
 
     try {
         const cloudSnapshot = await loadPettyCashCloudSnapshot();
@@ -231,6 +265,7 @@ async function hydrateState() {
             entries = cloudSnapshot.entries.map(normalizeEntry);
             requests = cloudSnapshot.requests.map(normalizeRequest);
             settings = normalizeSettings(cloudSnapshot.settings);
+            pettyCashHasSharedBaseline = true;
         } else if (localSnapshot.hasSavedData) {
             migrateLocalToCloud = true;
         } else {
@@ -2871,9 +2906,22 @@ function persistState(options = {}) {
 }
 
 function writeLocalPettyCashSnapshot() {
-    localStorage.setItem(PETTY_CASH_STORAGE_KEYS.entries, JSON.stringify(PETTY_CASH_STATE.entries));
-    localStorage.setItem(PETTY_CASH_STORAGE_KEYS.requests, JSON.stringify(PETTY_CASH_STATE.requests));
-    localStorage.setItem(PETTY_CASH_STORAGE_KEYS.settings, JSON.stringify(PETTY_CASH_STATE.settings));
+    writeLocalSnapshotValue(PETTY_CASH_STORAGE_KEYS.entries, PETTY_CASH_STATE.entries, 'petty cash entries');
+    writeLocalSnapshotValue(PETTY_CASH_STORAGE_KEYS.requests, PETTY_CASH_STATE.requests, 'petty cash requests');
+    writeLocalSnapshotValue(PETTY_CASH_STORAGE_KEYS.settings, PETTY_CASH_STATE.settings, 'petty cash settings');
+}
+
+function writeLocalSnapshotValue(key, value, label) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+        console.warn(`Unable to save ${label} to browser storage. Continuing without local snapshot.`, error);
+        try {
+            localStorage.removeItem(key);
+        } catch (removeError) {
+            console.warn(`Unable to clear ${label} browser snapshot after save failure.`, removeError);
+        }
+    }
 }
 
 function readLocalPettyCashSnapshot() {
@@ -2917,8 +2965,38 @@ async function loadPettyCashCloudSnapshot() {
 }
 
 async function loadPettyCashCloudCollection(collection) {
-    const rows = await MargaUtils.fetchCollection(collection, 250);
-    return Array.isArray(rows) ? rows : [];
+    let listRows = [];
+    let listError = null;
+
+    try {
+        listRows = await MargaUtils.fetchCollection(collection, 500);
+        if (Array.isArray(listRows) && listRows.length) {
+            return listRows;
+        }
+    } catch (error) {
+        listError = error;
+    }
+
+    try {
+        const query = {
+            from: [{ collectionId: collection }],
+            limit: 5000
+        };
+
+        if (collection !== PETTY_CASH_FIRESTORE.settings) {
+            query.orderBy = [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }];
+        }
+
+        const docs = await runQuery(query);
+        const rows = docs.map((doc) => MargaAuth.parseFirestoreDoc(doc)).filter(Boolean);
+        return Array.isArray(rows) ? rows : [];
+    } catch (queryError) {
+        if (listError) {
+            console.warn(`Petty cash list read failed for ${collection}; runQuery fallback also failed.`, listError, queryError);
+            throw listError;
+        }
+        throw queryError;
+    }
 }
 
 function queuePettyCashCloudSync(options = {}) {
@@ -2973,7 +3051,7 @@ async function syncPettyCashStateToCloud({ deleteRemoved = true } = {}) {
         dedupeKey: `${PETTY_CASH_FIRESTORE.settings}:${PETTY_CASH_FIRESTORE.settingsDocId}`
     });
 
-    if (deleteRemoved && navigator.onLine !== false) {
+    if (deleteRemoved && pettyCashHasSharedBaseline && navigator.onLine !== false) {
         const [remoteEntries, remoteRequests] = await Promise.all([
             loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.entries),
             loadPettyCashCloudCollection(PETTY_CASH_FIRESTORE.requests)
@@ -2995,6 +3073,8 @@ async function syncPettyCashStateToCloud({ deleteRemoved = true } = {}) {
             }
         }
     }
+
+    pettyCashHasSharedBaseline = true;
 }
 
 function buildPettyCashEntryPayload(entry) {

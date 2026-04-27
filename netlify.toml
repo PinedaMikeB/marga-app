@@ -2,6 +2,18 @@
   functions = "netlify/functions"
 
 [[redirects]]
+  from = "/install"
+  to = "/install/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/install/"
+  to = "/install/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/collections"
   to = "/.netlify/functions/collections"
   status = 200

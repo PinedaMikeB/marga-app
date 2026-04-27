@@ -1,0 +1,62 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profilePath() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function hasProfile() {
+      return signedIn() && firestore.exists(profilePath());
+    }
+
+    function me() {
+      return firestore.get(profilePath()).data;
+    }
+
+    function isCorporateAdmin() {
+      return hasProfile() && me().role == 'corporate_admin';
+    }
+
+    function isBranchManager() {
+      return hasProfile() && me().role == 'branch_manager';
+    }
+
+    function isEndUser() {
+      return hasProfile() && me().role == 'end_user';
+    }
+
+    function isTech() {
+      return hasProfile() && me().role == 'tech';
+    }
+
+    function companyBranchAccess(companyId, branchId) {
+      if (!hasProfile()) return false;
+      if (isTech()) return true;
+      if (isCorporateAdmin()) return me().companyId == companyId;
+      if (isBranchManager() || isEndUser()) {
+        return me().companyId == companyId && me().branchId == branchId;
+      }
+      return false;
+    }
+
+    match /ticket_attachments/{companyId}/{branchId}/{ticketId}/{fileName=**} {
+      allow read, write: if companyBranchAccess(companyId, branchId);
+    }
+
+    match /ticket_completion_photos/{companyId}/{branchId}/{ticketId}/{fileName=**} {
+      allow read, write: if companyBranchAccess(companyId, branchId);
+    }
+
+    match /ticket_completion_signatures/{companyId}/{branchId}/{ticketId}/{fileName=**} {
+      allow read, write: if companyBranchAccess(companyId, branchId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

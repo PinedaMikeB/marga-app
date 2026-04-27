@@ -1,0 +1,435 @@
+:root {
+  --bg-950: #18090a;
+  --bg-900: #261111;
+  --bg-850: #321516;
+  --panel: rgba(55, 22, 23, 0.94);
+  --panel-soft: rgba(74, 28, 30, 0.88);
+  --panel-warm: rgba(96, 46, 28, 0.48);
+  --text-50: #fff4ed;
+  --text-200: #f7d8c8;
+  --text-400: #dba48b;
+  --line: rgba(255, 189, 128, 0.14);
+  --line-strong: rgba(255, 189, 128, 0.34);
+  --accent: #ff9f1c;
+  --accent-strong: #ffbf69;
+  --accent-shadow: rgba(255, 159, 28, 0.32);
+  --ok: #3fd27a;
+  --warn: #f5c057;
+  --radius-xl: 28px;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --shadow-xl: 0 32px 90px rgba(0, 0, 0, 0.42);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--text-50);
+  background:
+    radial-gradient(circle at top, rgba(255, 159, 28, 0.14), transparent 26%),
+    radial-gradient(circle at 80% 15%, rgba(255, 94, 58, 0.18), transparent 20%),
+    linear-gradient(180deg, #1c0909 0%, #0f0405 100%);
+}
+
+.install-backdrop {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(125deg, transparent 0 30%, rgba(255, 191, 105, 0.05) 30% 33%, transparent 33% 100%),
+    radial-gradient(circle at 18% 80%, rgba(255, 159, 28, 0.08), transparent 24%);
+}
+
+.installer-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 22px 14px 32px;
+}
+
+.installer-frame {
+  width: 100%;
+  max-width: 520px;
+  padding: 18px;
+  border-radius: 32px;
+  border: 1px solid rgba(255, 191, 105, 0.16);
+  background:
+    linear-gradient(180deg, rgba(50, 21, 22, 0.98), rgba(28, 9, 10, 0.98)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+  box-shadow: var(--shadow-xl);
+}
+
+.installer-header {
+  display: grid;
+  gap: 14px;
+}
+
+.brand-lockup {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.brand-mark {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #23110a;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  box-shadow: 0 16px 30px var(--accent-shadow);
+}
+
+.brand-kicker,
+.progress-step span,
+.card-kicker,
+.manual-kicker,
+.copy-kicker,
+.manual-label,
+.status-pill {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.brand-kicker,
+.card-kicker,
+.manual-kicker,
+.copy-kicker,
+.manual-label {
+  color: var(--accent-strong);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  line-height: 1.06;
+}
+
+h1 {
+  margin-top: 4px;
+  font-size: clamp(2rem, 5.2vw, 3.2rem);
+  max-width: 11ch;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: #ffe9cf;
+  background: rgba(255, 191, 105, 0.1);
+  border: 1px solid rgba(255, 191, 105, 0.18);
+}
+
+.progress-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.progress-step {
+  padding: 10px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+}
+
+.progress-step strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.88rem;
+  color: var(--text-200);
+}
+
+.progress-step.active {
+  border-color: var(--line-strong);
+  background: linear-gradient(180deg, rgba(255, 159, 28, 0.16), rgba(255, 159, 28, 0.05));
+}
+
+.progress-step.done {
+  border-color: rgba(63, 210, 122, 0.28);
+  background: linear-gradient(180deg, rgba(63, 210, 122, 0.14), rgba(63, 210, 122, 0.04));
+}
+
+.stage-mount {
+  margin-top: 18px;
+}
+
+.stage-card,
+.manual-panel {
+  padding: 22px 18px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(77, 28, 30, 0.9), rgba(49, 18, 19, 0.92)),
+    rgba(49, 18, 19, 0.92);
+}
+
+.stage-card p,
+.manual-copy,
+.target-description,
+.step-card p,
+.final-card p,
+.device-card p,
+.ready-tip,
+.back-link,
+.subtext {
+  color: var(--text-400);
+}
+
+.subtext,
+.manual-copy {
+  line-height: 1.65;
+}
+
+.target-grid,
+.device-grid,
+.step-stack,
+.action-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.target-grid,
+.device-grid {
+  margin-top: 18px;
+}
+
+.target-card,
+.device-card,
+.step-card,
+.final-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.target-card,
+.device-card {
+  width: 100%;
+  padding: 16px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.target-card strong,
+.device-card strong,
+.step-card h3,
+.final-card h3 {
+  display: block;
+  color: var(--text-50);
+}
+
+.target-card.active,
+.device-card.active {
+  border-color: rgba(255, 191, 105, 0.42);
+  background: linear-gradient(180deg, rgba(255, 159, 28, 0.14), rgba(255, 159, 28, 0.06));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+}
+
+.target-description,
+.device-card p,
+.step-card p,
+.final-card p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+}
+
+.stage-title {
+  margin-top: 10px;
+  font-size: clamp(1.8rem, 4.7vw, 2.6rem);
+}
+
+.primary-btn,
+.secondary-btn,
+.ghost-btn,
+.copy-btn {
+  min-height: 56px;
+  border: 0;
+  border-radius: 18px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-btn,
+.copy-btn {
+  color: #261111;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  box-shadow: 0 18px 38px var(--accent-shadow);
+}
+
+.secondary-btn {
+  color: var(--text-50);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+}
+
+.ghost-btn {
+  color: var(--text-200);
+  background: transparent;
+  border: 1px dashed rgba(255, 191, 105, 0.26);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hint-box,
+.ready-box,
+.final-card {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+}
+
+.hint-box {
+  background: rgba(255, 191, 105, 0.08);
+  border: 1px solid rgba(255, 191, 105, 0.14);
+}
+
+.ready-box {
+  background: rgba(255, 191, 105, 0.08);
+  border: 1px solid rgba(255, 191, 105, 0.16);
+  text-align: center;
+}
+
+.ready-tip {
+  margin: 10px 0 0;
+}
+
+.step-card {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 14px;
+  padding: 14px;
+}
+
+.step-number {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #261111;
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+}
+
+.step-card h3 {
+  font-size: 1rem;
+}
+
+.final-card {
+  border: 1px solid rgba(63, 210, 122, 0.34);
+  background: linear-gradient(180deg, rgba(63, 210, 122, 0.14), rgba(63, 210, 122, 0.06));
+  text-align: center;
+}
+
+.final-card h3 {
+  color: #b9ffd0;
+}
+
+.manual-panel {
+  margin-top: 16px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.manual-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.manual-card {
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.manual-card ol {
+  margin: 12px 0 0;
+  padding-left: 1.2rem;
+  color: var(--text-200);
+  line-height: 1.65;
+}
+
+.copy-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+}
+
+.copy-card code {
+  display: block;
+  margin-top: 8px;
+  color: #fff1dd;
+  word-break: break-word;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.copy-btn.copied {
+  background: linear-gradient(135deg, #95e9b4, #3fd27a);
+  box-shadow: 0 16px 32px rgba(63, 210, 122, 0.22);
+}
+
+@media (min-width: 620px) {
+  .target-grid,
+  .device-grid,
+  .manual-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .installer-frame {
+    padding: 16px;
+    border-radius: 24px;
+  }
+
+  .progress-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

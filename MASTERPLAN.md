@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-04-22
+Last Updated: 2026-04-27
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -32,6 +32,7 @@ This file exists to protect the project across new chats by recording:
 ## Non-Negotiable Constraints
 - Keep Marga App implementation in the `Marga-App` repo/thread. If the active thread or cwd is `marga-biz`, stop and redirect before editing app code.
 - User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
+- Default release behavior for new Codex threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
 - Do not rewrite history on `main` for rollback work. Use forward commits.
 - Do not revert unrelated dirty files in the repo.
 - Treat Billing, Collections, Service, Customers, APD, Petty Cash, and Sync as separate risk zones.
@@ -66,6 +67,13 @@ Current Customers target state:
 - Next user-requested focus is continuing the existing Customer module in `customers/`.
 - Customers must use the same customer/branch/machine/serial truth as Billing and Collections.
 - Do not rebuild Customers from scratch; improve the existing directory, profile panel, branch/machine tabs, and customer form carefully.
+
+Current Releasing target state:
+- Releasing is now a live operational module for DR creation and printing.
+- Quantity requests must expand into separate unit rows so partial delivery can be handled cleanly.
+- Create DR should keep selected rows until the user manually clears them.
+- Releasing should write DR state back into Firebase and then reflect only the true remaining quantity after Clear/reload.
+- Releasing print adjustment templates should persist both locally and in Firestore app settings.
 
 Current operations scheduling state:
 - Master Schedule is now a working planning/print surface for daily routes.
@@ -132,6 +140,7 @@ Billing print rules:
 - Templates live in `tbl_app_settings/billing_invoice_print_templates_v1`.
 - Save the full calibration object, not only partial browser state.
 - Keep the portrait-safe right-margin behavior.
+- When borrowing ideas from Releasing, preserve Billing's existing save-first and print-enable protections.
 
 Billing protection rule:
 - Do not break the live Billing dashboard presentation while fixing other modules.
@@ -153,6 +162,29 @@ Collections matrix usability rule:
 - Service should use the same Active Contract Customer Graph for customer, branch, machine, and serial identity.
 - Service must not use raw `tbl_machine.client_id` as the customer source of truth.
 - Model display should prefer the corrected contract/machine resolver and avoid old mismatched helper paths.
+
+## Releasing Rules
+- Releasing exists as `releasing/` and is live as of 2026-04-23.
+- This module is the delivery receipt workflow for service-driven supply and cartridge releases.
+- Keep it as its own module/page; do not fold it into Billing, Collections, or Service patches.
+- DR Item List rules:
+  - quantity requests should expand into separate unit rows
+  - rows already added to Create DR should be hidden from DR Item List
+  - if a request qty is 3 and the user adds 1 unit, the other 2 should remain available
+- Create DR rules:
+  - right-click ready row -> `Add to DR`
+  - right-click Create DR row -> `Send back to DR Item List`
+  - `Clear` is manual and should be the only action that wipes Create DR
+  - after `Print and Save`, rows should stay in Create DR until Clear
+- Firebase write path currently expected:
+  - `tbl_finaldr` for DR header
+  - `tbl_newfordr` for released item rows and source-row updates/splits
+  - `tbl_schedule` for `releasing_pending_qty` / `releasing_dr_done` on schedule-only rows
+- Releasing print rules:
+  - print window should open immediately on click to avoid popup blocking
+  - print adjustment templates should persist locally and sync to `tbl_app_settings/releasing_dr_print_templates_v1`
+  - if the same payload is printed again, avoid duplicating the save
+- Before declaring Releasing fully stable, verify partial-quantity references like `345898` against Firebase after Clear/reload.
 
 ## Master Schedule And Field App Rules
 - Master Schedule's actual daily route should use `tbl_savedscheds` / `tbl_printedscheds` joined to `tbl_schedule`, not raw `tbl_schedule` alone.

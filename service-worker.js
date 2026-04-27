@@ -1,8 +1,20 @@
-const CACHE_NAME = 'marga-app-shell-v3';
+const CACHE_NAME = 'marga-app-shell-v4';
 const SHELL_ASSETS = [
     '/',
     '/index.html',
     '/dashboard.html',
+    '/manifest.json',
+    '/favicon.ico',
+    '/install/',
+    '/install/index.html',
+    '/install/install.css',
+    '/install/install.js',
+    '/assets/icons/favicon-16.png',
+    '/assets/icons/favicon-32.png',
+    '/assets/icons/apple-touch-icon.png',
+    '/assets/icons/icon-192.png',
+    '/assets/icons/icon-384.png',
+    '/assets/icons/icon-512.png',
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
@@ -49,7 +61,8 @@ const SHELL_ASSETS = [
     '/shared/js/auth.js',
     '/shared/js/utils.js',
     '/shared/js/finance-accounts.js',
-    '/shared/js/offline-sync.js'
+    '/shared/js/offline-sync.js',
+    '/shared/js/pwa-install.js'
 ];
 
 self.addEventListener('install', (event) => {

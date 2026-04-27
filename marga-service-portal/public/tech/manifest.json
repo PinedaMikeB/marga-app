@@ -1,0 +1,25 @@
+{
+  "name": "MARGA Technician Service Schedule",
+  "short_name": "Marga Tech",
+  "id": "/tech/",
+  "start_url": "/tech/",
+  "scope": "/tech/",
+  "display": "standalone",
+  "background_color": "#d6e9f8",
+  "theme_color": "#123b67",
+  "description": "Technician web app for service schedules, ticket completion, and offline sync.",
+  "icons": [
+    {
+      "src": "/public/assets/icons/tech-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/public/assets/icons/tech-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

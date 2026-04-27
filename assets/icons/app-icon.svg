@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="marga-icon-grad" x1="42" y1="34" x2="470" y2="478" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#marga-icon-grad)"/>
+  <path d="M126 352V160h52l78 120 78-120h52v192h-39V224l-76 116h-30l-76-116v128h-39Z" fill="white"/>
+</svg>

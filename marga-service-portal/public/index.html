@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1e3a5f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="MSP Portal" />
+  <title>MSP - Marga Service Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="/public/manifest.json" />
+  <link rel="apple-touch-icon" href="/public/assets/icons/icon-192.png" />
+  <link rel="stylesheet" href="/src/styles/app.css" />
+  <link rel="stylesheet" href="/src/styles/portal.css" />
+</head>
+<body>
+  <div class="ambient-bg" aria-hidden="true"></div>
+
+  <section id="authView" class="auth-view">
+    <div class="auth-card glass">
+      <header class="auth-brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <h1>MARGA <span>Service Portal</span></h1>
+          <p>Corporate customer access for support, devices, and billing.</p>
+        </div>
+      </header>
+      <form id="loginForm" class="auth-form">
+        <label>
+          Email
+          <input type="email" name="email" required autocomplete="email" placeholder="name@company.com" />
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" required autocomplete="current-password" placeholder="Password" minlength="8" />
+        </label>
+        <button class="btn btn-primary" type="submit">Sign In</button>
+      </form>
+      <p class="auth-note" id="authMessage">Use your corporate account. Demo accounts are enabled when Firebase config is empty.</p>
+    </div>
+  </section>
+
+  <section id="portalView" class="app-shell hidden" aria-live="polite">
+    <aside class="sidebar glass-strong" id="portalSidebar">
+      <div class="sidebar-header">
+        <div class="logo-pill">
+          <div class="brand-mark">M</div>
+          <div>
+            <div class="logo-title">MARGA</div>
+            <div class="logo-subtitle">Service Portal</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" id="portalNav"></nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="avatar" id="userAvatar">U</div>
+          <div>
+            <p id="userName">User</p>
+            <span id="userRole">Role</span>
+          </div>
+        </div>
+        <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+      </div>
+    </aside>
+
+    <main class="main-wrap">
+      <header class="topbar glass">
+        <button id="menuToggle" class="icon-btn" aria-label="Toggle menu">☰</button>
+        <div>
+          <h2 id="viewTitle">Dashboard</h2>
+          <p id="viewSubtitle">Operational overview</p>
+        </div>
+        <div class="top-actions">
+          <a class="btn btn-secondary" href="/install/?target=portal">Install Guide</a>
+          <button id="installBtn" class="btn btn-secondary hidden">Install App</button>
+          <span id="syncBadge" class="status-badge">Online</span>
+        </div>
+      </header>
+
+      <section id="announcements" class="panel glass"></section>
+      <section id="viewContainer" class="view-grid"></section>
+    </main>
+
+    <nav class="bottom-nav glass-strong" id="bottomNav"></nav>
+  </section>
+
+  <template id="tableTemplate">
+    <div class="panel glass">
+      <div class="panel-head">
+        <h3></h3>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </template>
+
+  <script src="/public/config.js"></script>
+  <script type="module" src="/src/portal-main.js"></script>
+</body>
+</html>

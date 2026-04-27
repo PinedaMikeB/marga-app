@@ -1,0 +1,137 @@
+.tech-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.75rem;
+}
+
+.tech-main {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.tech-main > .panel:last-child {
+  grid-column: 1 / -1;
+}
+
+.topbar {
+  padding: 0.8rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.topbar h2 {
+  font-size: 1.2rem;
+  color: #123a67;
+}
+
+.topbar p {
+  font-size: 0.8rem;
+  color: #4f7092;
+}
+
+.list-stack {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 62vh;
+  overflow: auto;
+}
+
+.ticket-card {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(92, 133, 173, 0.3);
+  border-radius: 12px;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.ticket-card.active {
+  border-color: rgba(37, 99, 235, 0.56);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.ticket-card h4 {
+  font-size: 0.86rem;
+  color: #173b63;
+}
+
+.ticket-meta {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.ticket-card .muted {
+  font-size: 0.76rem;
+}
+
+.detail-body {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.detail-row {
+  display: grid;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(102, 142, 182, 0.28);
+  border-radius: 12px;
+  padding: 0.7rem;
+}
+
+.detail-row h4 {
+  font-size: 0.83rem;
+  color: #20466f;
+}
+
+.detail-row p {
+  font-size: 0.82rem;
+  color: #3c6289;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.form-grid label:nth-child(4),
+.form-grid label:nth-child(5),
+.form-grid label:nth-child(6),
+.form-grid label:nth-child(7),
+.form-grid button {
+  grid-column: 1 / -1;
+}
+
+.signature-pad {
+  width: 100%;
+  border: 1px dashed rgba(89, 130, 171, 0.45);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+@media (max-width: 960px) {
+  .tech-main {
+    grid-template-columns: 1fr;
+  }
+
+  .list-stack {
+    max-height: 45vh;
+  }
+}
+
+@media (max-width: 620px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -26,6 +26,7 @@ const BASE_MODULE_OPTIONS = [
     { id: 'collections', label: 'Collections Module', dashboardLabel: 'Collections', route: 'collections.html', note: 'Collections, ORs, check follow-up' },
     { id: 'service', label: 'Customer Service Module', dashboardLabel: 'Service Dispatch', route: 'service/index.html', note: 'Task queue, assignment, transfer' },
     { id: 'general-production', label: 'General Production Module', dashboardLabel: 'General Production', route: 'general-production/', note: 'Machine requests, production sources, and machine checker' },
+    { id: 'releasing', label: 'Releasing Module', dashboardLabel: 'Releasing', route: 'releasing/', note: 'Delivery receipt item queue, DR printing, and release saving' },
     { id: 'field', label: 'Service Field App (Tech/Messenger)', dashboardLabel: 'Field App', route: 'field/index.html', note: 'Tech and messenger daily tasks' },
     { id: 'inventory', label: 'Inventory Module', dashboardLabel: 'Inventory', route: 'inventory/', note: 'Parts, toner, stock movements' },
     { id: 'hr', label: 'Human Resource Module', dashboardLabel: 'Human Resource', route: 'hr/', note: 'Employees, position mapping' },
@@ -52,10 +53,10 @@ const BASE_ROLE_OPTIONS = [
 let ROLE_OPTIONS = BASE_ROLE_OPTIONS.map((role) => ({ ...role }));
 
 const BASE_ROLE_DEFAULTS = {
-    admin: ['customers', 'billing', 'schedule', 'master-schedule', 'apd', 'collections', 'service', 'general-production', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+    admin: ['customers', 'billing', 'schedule', 'master-schedule', 'apd', 'collections', 'service', 'general-production', 'releasing', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
     billing: ['customers', 'billing', 'schedule', 'apd', 'pettycash', 'reports'],
     collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
-    service: ['customers', 'service', 'schedule', 'general-production', 'inventory', 'field'],
+    service: ['customers', 'service', 'schedule', 'general-production', 'releasing', 'inventory', 'field'],
     hr: ['hr', 'settings'],
     technician: ['field'],
     messenger: ['field', 'schedule'],

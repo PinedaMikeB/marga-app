@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#261111" />
+  <title>Marga App Installer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/install/install.css" />
+</head>
+<body>
+  <div class="install-backdrop" aria-hidden="true"></div>
+
+  <main class="installer-shell">
+    <section class="installer-frame">
+      <header class="installer-header">
+        <div class="brand-lockup">
+          <div class="brand-mark">M</div>
+          <div>
+            <p class="brand-kicker">Marga PWA Installer</p>
+            <h1>Install Marga the right way.</h1>
+          </div>
+        </div>
+        <div class="status-pill" id="environmentPill">Checking browser...</div>
+      </header>
+
+      <div class="progress-strip" id="progressStrip"></div>
+
+      <section id="stageMount" class="stage-mount" aria-live="polite"></section>
+
+      <section id="manualPanel" class="manual-panel hidden">
+        <div class="manual-head">
+          <p class="manual-kicker">Manual fallback</p>
+          <h2>Use this if Chrome or Safari did not open automatically.</h2>
+          <p id="manualMessage" class="manual-copy">
+            This link is designed to move out of Messenger and other in-app browsers before installation starts.
+          </p>
+        </div>
+
+        <div class="manual-grid">
+          <article class="manual-card" id="iosManual">
+            <span class="manual-label">iPhone / iPad</span>
+            <ol>
+              <li>Tap the browser menu or share button in the in-app browser.</li>
+              <li>Choose <strong>Open in Safari</strong> or <strong>Open in Browser</strong>.</li>
+              <li>After Safari opens, continue the installer there.</li>
+            </ol>
+          </article>
+
+          <article class="manual-card" id="androidManual">
+            <span class="manual-label">Android</span>
+            <ol>
+              <li>Tap the menu in the in-app browser.</li>
+              <li>Choose <strong>Open in Chrome</strong> or <strong>Open in Browser</strong>.</li>
+              <li>After Chrome opens, continue the installer there.</li>
+            </ol>
+          </article>
+        </div>
+
+        <div class="copy-card">
+          <div>
+            <p class="copy-kicker">Installer link</p>
+            <code id="installerLinkLabel">https://support.marga.biz/install/?target=portal</code>
+          </div>
+          <button id="copyInstallerBtn" class="copy-btn" type="button">Copy Link</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="/install/install.js"></script>
+</body>
+</html>

@@ -524,7 +524,7 @@ function applyUserContext() {
 
         if (avatar) avatar.textContent = (user.name || user.username || 'U').charAt(0).toUpperCase();
         if (userName) userName.textContent = user.name || user.username || 'User';
-        if (userRole) userRole.textContent = user.role || 'user';
+        if (userRole) userRole.textContent = MargaAuth.getDisplayRoles(user);
     }
 
     return true;

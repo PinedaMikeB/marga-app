@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-04-22
+Last Updated: 2026-04-27
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,12 +8,9 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
-- Next chat focus: continue the **Customer module** in `customers/`.
-- Customer module already exists with `customers/index.html`, `customers/js/customers.js`, `customers/js/customer-form.js`, `customers/css/customers.css`, and `customers/css/customer-form.css`.
-- Customer module work must reuse the same Active Contract Customer Graph and serial identity used by Billing/Collections/General Production. Do not invent a separate customer or serial truth.
-- General Production is live on Netlify and pushed through commit `e64e5b6`; only remaining General Production work should be targeted verification/tuning, not a rebuild.
-- Machine Checker now uses Billing-backed real serials first, then machine master fallback, with custom searchable dropdown and model/status/customer context.
+- Next chat focus: continue **Billing** work.
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
+- Releasing is now live and materially implemented; only parity/tuning work should remain there, not a rebuild.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
@@ -41,6 +38,14 @@ Start every new Marga-App thread by reading:
   - `c96f4de` `Tune General Production legacy counts`
   - `c338d13` `Fix General Production machine checker serials`
   - `e64e5b6` `Use billing serials in machine checker`
+- Current live Releasing work already pushed on `main`:
+  - `dc2a50b` `Add Releasing delivery receipt module`
+  - `555af71` `Use context menu for releasing DR items`
+  - `b148610` `Add DR print adjustment controls`
+  - `71a2afc` `Add releasing return and DR print templates`
+  - `da0bad8` `Keep releasing print footer visible`
+  - `f8160ff` `Keep Create DR items after printing`
+  - `872700b` `Hide Create DR units from releasing list`
 
 ## Accepted Collections Matrix Format
 Reference the latest accepted live observation:
@@ -63,6 +68,7 @@ Future reuse note:
 - Use forward commits on `main`; do not rewrite history for rollback work.
 - Do not revert unrelated dirty files in the repo.
 - User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
+- Default release behavior for future threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
 
 ## Customer Identity And Serial Rule
 Canonical customer lookup is the Active Contract Customer Graph:
@@ -106,6 +112,27 @@ Important Collections SN rule:
 - Existing Customers form has branch/company/machine/contract editing code; treat save behavior carefully and do not casually alter running Billing/Collections code while improving Customers.
 - Good next starting point: compare Customer module customer/branch/machine rows against Billing matrix rows and the legacy customer expectations, then fix missing/misgrouped customer details.
 
+## Releasing Rules
+- Releasing lives in `releasing/` and is live on Netlify.
+- DR Item List should expand quantity requests into separate unit rows.
+  - Example: if reference `345898` has `3 pcs TONER / INK`, the list should show 3 separate rows/units.
+  - If the user adds 1 row to Create DR, that 1 row should disappear from DR Item List while it is in Create DR.
+  - The remaining 2 rows should stay in DR Item List.
+- Create DR behavior:
+  - Right-click a ready row to `Add to DR`.
+  - Right-click a row inside Create DR to `Send back to DR Item List`.
+  - `Clear` is manual and should be the only action that empties Create DR.
+  - After `Print and Save`, Create DR rows should stay there until the user clicks `Clear`.
+- Current Firebase write path in code:
+  - `tbl_finaldr`: DR header record
+  - `tbl_newfordr`: released item rows and source row updates/splits
+  - `tbl_schedule`: `releasing_pending_qty` / `releasing_dr_done` updates for schedule-only source rows
+- Current print/template behavior:
+  - Print window opens immediately on click to avoid browser popup blocking.
+  - DR print adjustment templates persist locally and sync to `tbl_app_settings/releasing_dr_print_templates_v1`.
+- Important remaining verification:
+  - For printed references like `345898`, confirm after Clear/reload that only the true remaining units come back from Firebase.
+
 ## Billing Rules That Must Stay Protected
 - Billing calculation modal should save the invoice first.
 - Print button should stay disabled until the saved billing snapshot matches the current modal values.
@@ -124,23 +151,51 @@ Important Collections SN rule:
 | Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs for follow-up/planning. | Keep today route fast; optimize carry-over via backend if the 45-day scan becomes slow. |
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
 | General Production | Live / In Progress | Isolated `general-production/` module is deployed. Dashboard counts tuned to VB.NET screenshot targets. Machine Checker uses Billing-backed real serials with searchable dropdown, model/status/customer context, and add-new-machine form. For Overhauling rows can be double-clicked to assign a tech and move to Under Repair; Under Repair rows can be double-clicked to mark Machine Ready. | Add mismatch warning for active billing contract vs machine master status; continue source-table tuning only when user asks. |
+| Releasing | Live / In Progress | Isolated `releasing/` module is deployed. DR Item List expands quantity into unit rows, supports right-click add/remove, print adjustment templates, immediate print-window opening, and Create DR stays populated until manual Clear. | Verify Firebase parity for partial-quantity cases like `345898` after Clear/reload; Billing is now the next chat focus. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
 
 ## Next Actions
-1. Start next chat on the Customer module under `customers/`.
-2. Read `customers/js/customers.js` and `customers/js/customer-form.js` before editing; preserve user/unrelated dirty changes.
-3. Compare Customer rows against Billing/Active Contract Customer Graph:
-   - active contracts
-   - branch/company grouping
-   - machine/model/serial display
-   - bill info/profile details
-4. Keep Billing, Collections, Master Schedule, Field App, and General Production stable while working on Customers.
-5. If revisiting General Production later, add an explicit warning for active billing contract + stale machine-master status, especially cases like `E80726L3H798535`.
+1. Start next chat on Billing.
+2. Read current Billing print/template workflow before editing; keep the protected Billing save/print behavior intact.
+3. Reuse only proven patterns from Releasing where they help Billing:
+   - template persistence
+   - safe print-window timing
+   - explicit partial-unit operational flow concepts
+4. If Releasing is revisited later, verify Firebase state for partial references like `345898` after Clear:
+   - confirm `tbl_finaldr` row exists
+   - confirm source quantity was reduced in `tbl_newfordr` or `tbl_schedule`
+   - confirm only remaining units reappear
+5. Keep Billing, Collections, Master Schedule, Field App, General Production, and Releasing stable while working on Billing.
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-23 - Releasing Module Live And Iterated
+- Added isolated `releasing/` module with DR Item List and Create DR workflow.
+- Releasing live URL: `https://margaapp.netlify.app/releasing/`.
+- Pushed and deployed:
+  - `dc2a50b` `Add Releasing delivery receipt module`
+  - `555af71` `Use context menu for releasing DR items`
+  - `b148610` `Add DR print adjustment controls`
+  - `71a2afc` `Add releasing return and DR print templates`
+  - `da0bad8` `Keep releasing print footer visible`
+  - `f8160ff` `Keep Create DR items after printing`
+  - `872700b` `Hide Create DR units from releasing list`
+- Implemented behaviors:
+  - quantity requests expand into separate rows/units
+  - right-click add to Create DR
+  - right-click send back from Create DR
+  - print adjustment with template save/load/delete
+  - template persistence to `tbl_app_settings/releasing_dr_print_templates_v1`
+  - print window opens immediately to reduce popup blocking
+  - Create DR stays populated after print until manual Clear
+  - rows already added to Create DR are hidden from DR Item List until removed or cleared
+- Current verification note:
+  - for references like `345898`, the intended rule is partial delivery:
+    - if request qty is 3 and user prints 1, then 2 should remain in DR Item List after Clear/reload
+  - if more than the true remaining quantity comes back, inspect Firebase rows before changing filters again
+
 ### 2026-04-23 - General Production Repair Workflow Added
 - Added double-click production workflow:
   - Double-click a `For Overhauling` machine row to open an assignment modal.
