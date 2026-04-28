@@ -2720,20 +2720,47 @@ function upsertLocalSupplierRecord(docId, payload) {
     PETTY_CASH_STATE.payees = [...payeeNames].sort((left, right) => left.localeCompare(right));
 }
 
+function restoreQuickSupplierSelectState(state = {}) {
+    document.getElementById('entryStatusInput').value = state.entryStatus || 'Pending Liquidation';
+    document.getElementById('entryRequestedByInput').value = state.requestedBy || '';
+    document.getElementById('requestStatusInput').value = state.requestStatus || 'Draft';
+    document.getElementById('requestRequestedByInput').value = state.requestRequestedBy || '';
+}
+
+function applyQuickSupplierToEntryRow(supplierName) {
+    ensureSupplierOption(supplierName);
+    populateSelects();
+    const targetSupplierInput = lastFocusedSupplierInput?.isConnected
+        ? lastFocusedSupplierInput
+        : document.querySelector('#entryItemsBody .entry-item-supplier');
+    if (targetSupplierInput) {
+        targetSupplierInput.value = supplierName;
+        targetSupplierInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+
 async function onQuickSupplierSave() {
     const supplierName = normalizeInlineText(document.getElementById('quickSupplierNameInput').value);
     const tin = normalizeInlineText(document.getElementById('quickSupplierTinInput').value);
     const address = normalizeInlineText(document.getElementById('quickSupplierAddressInput').value);
     const product = normalizeInlineText(document.getElementById('quickSupplierProductInput').value);
-    const currentEntryStatus = document.getElementById('entryStatusInput').value;
-    const currentRequestedBy = document.getElementById('entryRequestedByInput').value;
-    const currentRequestStatus = document.getElementById('requestStatusInput').value;
-    const currentRequestRequestedBy = document.getElementById('requestRequestedByInput').value;
+    const selectState = {
+        entryStatus: document.getElementById('entryStatusInput').value,
+        requestedBy: document.getElementById('entryRequestedByInput').value,
+        requestStatus: document.getElementById('requestStatusInput').value,
+        requestRequestedBy: document.getElementById('requestRequestedByInput').value
+    };
+    const saveButton = document.getElementById('quickSupplierSaveBtn');
 
     if (!supplierName) {
         MargaUtils.showToast('Supplier name is required.', 'error');
         return;
     }
+
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving...';
+    applyQuickSupplierToEntryRow(supplierName);
+    restoreQuickSupplierSelectState(selectState);
 
     const existing = findSupplierRecordByName(supplierName);
 
@@ -2786,21 +2813,16 @@ async function onQuickSupplierSave() {
             );
         }
 
-        populateSelects();
-        document.getElementById('entryStatusInput').value = currentEntryStatus || 'Pending Liquidation';
-        document.getElementById('entryRequestedByInput').value = currentRequestedBy || '';
-        document.getElementById('requestStatusInput').value = currentRequestStatus || 'Draft';
-        document.getElementById('requestRequestedByInput').value = currentRequestRequestedBy || '';
-        const targetSupplierInput = lastFocusedSupplierInput?.isConnected
-            ? lastFocusedSupplierInput
-            : document.querySelector('#entryItemsBody .entry-item-supplier');
-        if (targetSupplierInput && !String(targetSupplierInput.value || '').trim()) {
-            targetSupplierInput.value = supplierName;
-        }
+        applyQuickSupplierToEntryRow(supplierName);
+        restoreQuickSupplierSelectState(selectState);
         closeQuickSupplierPanel();
     } catch (error) {
         console.error('Failed to save quick supplier:', error);
-        MargaUtils.showToast('Supplier save failed. Please try again.', 'error');
+        MargaUtils.showToast('Supplier was added to this voucher. Master save will need retry if it does not sync.', 'info');
+        closeQuickSupplierPanel();
+    } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = 'Save Supplier';
     }
 }
 

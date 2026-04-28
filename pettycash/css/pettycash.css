@@ -562,6 +562,13 @@ body::before {
     flex-wrap: wrap;
 }
 
+.quick-supplier-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: flex-end;
+}
+
 .quick-supplier-head h4 {
     margin: 0.45rem 0 0.25rem;
     font-family: 'DM Serif Display', serif;
@@ -1174,7 +1181,9 @@ body::before {
     }
 
     .voucher-items-actions,
-    .voucher-items-actions .btn {
+    .quick-supplier-actions,
+    .voucher-items-actions .btn,
+    .quick-supplier-actions .btn {
         width: 100%;
     }
 }
