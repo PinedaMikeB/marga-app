@@ -897,6 +897,14 @@ function getEmployeeName(employee, id) {
     return `${first} ${last}`.trim() || `ID ${id}`;
 }
 
+function getEmployeeFullName(employee, id) {
+    if (!employee) return `ID ${id} (unmapped)`;
+    const first = String(employee.firstname || '').trim();
+    const last = String(employee.lastname || '').trim();
+    const fullName = `${first} ${last}`.trim();
+    return fullName || String(employee.name || employee.nickname || '').trim() || `ID ${id}`;
+}
+
 function getRole(employee, position) {
     if (!employee) return 'Legacy / Unknown';
     const positionId = Number(employee.position_id || 0);
@@ -1318,7 +1326,7 @@ function getAssignableStaffList() {
             return {
                 id: Number(employee.id || 0),
                 role,
-                name: getEmployeeName(employee, employee.id || 0),
+                name: getEmployeeFullName(employee, employee.id || 0),
                 email: MargaUtils.normalizeEmail(employee.email || employee.marga_login_email || ''),
                 username: MargaUtils.normalizeEmail(employee.username || ''),
                 estatus: Number(employee.estatus || 0)
@@ -1452,7 +1460,7 @@ async function openNewRequestModal() {
         return items.find((item) => String(getValue(item) || '').trim().toLowerCase() === normalized) || null;
     }
 
-    function renderComboPanel({ input, panel, items, getLabel, getMeta, onSelect, emptyText = 'No matches found.', limit = 80 }) {
+    function renderComboPanel({ input, panel, items, getLabel, getMeta, getSearchText, onSelect, emptyText = 'No matches found.', limit = 80 }) {
         if (!panel || !input) return;
         const source = Array.isArray(items) ? items.filter(Boolean) : [];
         const q = input.value.trim().toLowerCase();
@@ -1460,7 +1468,8 @@ async function openNewRequestModal() {
             ? source.filter((item) => {
                 const label = String(getLabel(item) || '').toLowerCase();
                 const meta = String(getMeta?.(item) || '').toLowerCase();
-                return label.includes(q) || meta.includes(q);
+                const searchText = String(getSearchText?.(item) || '').toLowerCase();
+                return label.includes(q) || meta.includes(q) || searchText.includes(q);
             })
             : source
         ).slice(0, limit);
@@ -1495,13 +1504,14 @@ async function openNewRequestModal() {
     }
 
     function installSearchCombo(config) {
-        const { input, panel, getItems, getLabel, getMeta, onSelect, onInput, emptyText, limit } = config;
+        const { input, panel, getItems, getLabel, getMeta, getSearchText, onSelect, onInput, emptyText, limit } = config;
         const open = () => renderComboPanel({
             input,
             panel,
             items: getItems(),
             getLabel,
             getMeta,
+            getSearchText,
             onSelect,
             emptyText,
             limit
@@ -1579,7 +1589,12 @@ async function openNewRequestModal() {
 
     function getStaffInputLabel(staff) {
         if (!staff) return '';
-        return `${staff.name} (${staff.role})`;
+        return `${staff.name} - ${staff.role}`;
+    }
+
+    function getStaffSearchText(staff) {
+        if (!staff) return '';
+        return [staff.email, staff.username, `${staff.name} (${staff.role})`].filter(Boolean).join(' ');
     }
 
     function findStaffByAssigneeInput(value) {
@@ -1984,8 +1999,9 @@ async function openNewRequestModal() {
         input: assigneeSearch,
         panel: assigneePanel,
         getItems: () => staff,
-        getLabel: (assignee) => assignee.name,
-        getMeta: (assignee) => [assignee.role, assignee.email].filter(Boolean).join(' - '),
+        getLabel: getStaffInputLabel,
+        getMeta: () => '',
+        getSearchText: getStaffSearchText,
         emptyText: 'No technicians, production, or messengers found.',
         onInput: () => {
             const match = findStaffByAssigneeInput(assigneeSearch.value);
@@ -2122,7 +2138,14 @@ async function saveNewServiceRequest() {
     }
     if (!assigneeId) {
         const typedAssignee = String(document.getElementById('newReqAssigneeSearch')?.value || '').trim().toLowerCase();
-        const assigneeMatch = getAssignableStaffList().find((staff) => `${staff.name} (${staff.role})`.toLowerCase() === typedAssignee) || null;
+        const assigneeMatch = getAssignableStaffList().find((staff) => {
+            const dashLabel = `${staff.name} - ${staff.role}`.toLowerCase();
+            const legacyLabel = `${staff.name} (${staff.role})`.toLowerCase();
+            return dashLabel === typedAssignee
+                || legacyLabel === typedAssignee
+                || String(staff.email || '').toLowerCase() === typedAssignee
+                || String(staff.username || '').toLowerCase() === typedAssignee;
+        }) || null;
         assigneeId = Number(assigneeMatch?.id || 0);
     }
     let graphRow = null;
