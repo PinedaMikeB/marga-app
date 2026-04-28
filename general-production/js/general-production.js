@@ -38,7 +38,6 @@ const GP_ZERO_DATES = new Set(['', '0000-00-00', '0000-00-00 00:00:00', 'null', 
 const GP_SERIAL_STOPWORDS = /\b(PAYMENT|SERIAL|DUPLICATE|BUYER|ARROW)\b/i;
 const GP_ROWS_PER_PANEL = 500;
 const GP_LEGACY_PANEL_LIMITS = {
-    requests: 99,
     termination: 34,
     purchase: 3,
     overhaulSource: 2
