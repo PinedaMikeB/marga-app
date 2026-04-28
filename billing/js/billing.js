@@ -5865,7 +5865,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         const scheduleReady = !scheduleRequired || scheduleSaved;
         const schedulePurpose = getSelectedSchedulePurpose();
         const isReadingSchedule = schedulePurpose.key === 'reading';
-        const quotaBypassed = activeEstimate?.quotaBypassed === true;
+        const quotaUnchecked = applyQuotaInput?.checked === false;
 
         if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
         if (saveBillingBtn) saveBillingBtn.disabled = isReadingSchedule;
@@ -5875,7 +5875,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         modeSummaryPanel?.classList.toggle('hidden', isReadingSchedule);
         saveBillingRow?.classList.toggle('hidden', isReadingSchedule);
         calculationSections?.classList.toggle('hidden', isReadingSchedule);
-        quotaBypassReasonField?.classList.toggle('hidden', !quotaBypassed);
+        quotaBypassReasonField?.classList.toggle('hidden', !quotaUnchecked);
         if (saveStatus) {
             saveStatus.classList.toggle('error', Boolean(workflowError));
             if (workflowError) {
@@ -6461,7 +6461,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         activeEstimate.schedulePurpose = schedulePurpose.label;
         activeEstimate.scheduleType = schedulePurpose.label;
         const actualSpoilagePages = Number(activeEstimate?.actualSpoilagePages || 0) || 0;
-        if (activeEstimate?.quotaBypassed === true && !String(activeEstimate.quotaBypassReason || '').trim()) {
+        if (applyQuotaInput?.checked === false && !String(quotaBypassReasonInput?.value || activeEstimate.quotaBypassReason || '').trim()) {
             workflowError = 'Enter the quota bypass reason before saving.';
             saveStatus?.classList.add('error');
             MargaUtils.showToast(workflowError, 'error');
