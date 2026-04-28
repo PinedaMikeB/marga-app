@@ -1399,6 +1399,7 @@ async function openNewRequestModal() {
     const branchSearch = document.getElementById('newReqBranchSearch');
     const branchSelect = document.getElementById('newReqBranch');
     const machineSelect = document.getElementById('newReqMachine');
+    const purposeMachineSelect = document.getElementById('newReqPurposeMachine');
     const machineMeta = document.getElementById('newReqMachineMeta');
     const modelInput = document.getElementById('newReqModel');
     const troubleSearch = document.getElementById('newReqTroubleSearch');
@@ -1440,7 +1441,7 @@ async function openNewRequestModal() {
     document.getElementById('newReqWithRequest').checked = false;
     document.getElementById('newReqWithComplain').checked = false;
     document.getElementById('newReqSaveContact').checked = false;
-    machineSelect.innerHTML = `<option value="">Select company and branch first...</option>`;
+    setMachineSelectsHtml(`<option value="">Select company and branch first...</option>`);
     machineMeta.textContent = 'Select a company and branch to load active machines.';
     opsState.newRequestMachine = null;
     opsState.newRequestGraphRow = null;
@@ -1744,6 +1745,16 @@ async function openNewRequestModal() {
         machineMeta.classList.toggle('is-error', tone === 'error');
     }
 
+    function setMachineSelectsHtml(html) {
+        machineSelect.innerHTML = html;
+        purposeMachineSelect.innerHTML = html;
+    }
+
+    function setMachineSelectsValue(value) {
+        machineSelect.value = String(value || '');
+        purposeMachineSelect.value = String(value || '');
+    }
+
     function clearMatchedMachineIfManualChange() {
         if (!opsState.newRequestMachine && !opsState.newRequestGraphRow) return;
         opsState.newRequestMachine = null;
@@ -1786,7 +1797,7 @@ async function openNewRequestModal() {
     function renderMachineOptionsForBranch(branchId, selectedContractId = '') {
         const rows = getGraphRowsForBranch(branchId);
         if (!rows.length) {
-            machineSelect.innerHTML = `<option value="">No active machines found for this branch...</option>`;
+            setMachineSelectsHtml(`<option value="">No active machines found for this branch...</option>`);
             modelInput.value = '';
             serialComboRows = [];
             setMachineMeta('No active machines are linked to this branch in the customer graph.', 'warning');
@@ -1795,18 +1806,18 @@ async function openNewRequestModal() {
 
         serialComboRows = rows.filter((row) => row?.serialNumber);
 
-        machineSelect.innerHTML = `<option value="">Select machine...</option>` + rows
+        setMachineSelectsHtml(`<option value="">Select machine...</option>` + rows
             .map((row) => {
                 const serial = row.serialNumber || `Machine #${row.machineId || '-'}`;
                 const model = row.machineDescription ? ` - ${row.machineDescription}` : '';
                 const selected = String(row.contractId) === String(selectedContractId) ? 'selected' : '';
                 return `<option value="${row.contractId}" ${selected}>${sanitize(serial)}${sanitize(model)}</option>`;
             })
-            .join('');
+            .join(''));
 
         const selectedRow = rows.find((row) => String(row.contractId) === String(selectedContractId)) || (rows.length === 1 ? rows[0] : rows[0]);
         if (selectedRow) {
-            machineSelect.value = String(selectedRow.contractId);
+            setMachineSelectsValue(selectedRow.contractId);
             applyMachineSelection(selectedRow, { updateStatus: Boolean(selectedContractId) });
         }
 
@@ -1911,7 +1922,7 @@ async function openNewRequestModal() {
         branchSearch.value = '';
         fillBranchesForCompany(companyId, '');
         branchSelect.value = '';
-        machineSelect.innerHTML = `<option value="">Select branch first...</option>`;
+        setMachineSelectsHtml(`<option value="">Select branch first...</option>`);
         modelInput.value = '';
         setMachineMeta('Select a branch to load active machines.');
         serialInput.value = '';
@@ -2030,6 +2041,15 @@ async function openNewRequestModal() {
         const contractId = Number(machineSelect.value || 0);
         if (!contractId) return;
         const row = opsCache.activeCustomerGraphRows.find((entry) => Number(entry.contractId || 0) === contractId) || null;
+        setMachineSelectsValue(contractId);
+        applyMachineSelection(row);
+    };
+
+    purposeMachineSelect.onchange = () => {
+        const contractId = Number(purposeMachineSelect.value || 0);
+        if (!contractId) return;
+        const row = opsCache.activeCustomerGraphRows.find((entry) => Number(entry.contractId || 0) === contractId) || null;
+        setMachineSelectsValue(contractId);
         applyMachineSelection(row);
     };
 
