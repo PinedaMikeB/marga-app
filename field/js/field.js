@@ -1029,7 +1029,7 @@ async function loadMySchedule(options = {}) {
         const todayRows = [...routeBoundTodayRows, ...directTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
 
-        state.routeSourceLabel = routeSourceLabel;
+        state.routeSourceLabel = routeRows.length ? routeSourceLabel : 'Schedule';
         state.todayRows = todayRows;
         state.carryoverRows = [];
         state.rows = todayRows;
@@ -1038,13 +1038,24 @@ async function loadMySchedule(options = {}) {
 
         const carryoverCount = document.getElementById('fieldCarryoverCount');
         if (carryoverCount) carryoverCount.textContent = '...';
-        const carryoverRows = await buildCarryoverRows({ date, printedRows, savedRows, todayRows });
-        state.carryoverRows = carryoverRows;
-        state.rows = [...todayRows, ...carryoverRows];
-        await hydrateLookups(carryoverRows);
+        try {
+            const carryoverRows = await buildCarryoverRows({ date, printedRows, savedRows, todayRows });
+            state.carryoverRows = carryoverRows;
+            state.rows = [...todayRows, ...carryoverRows];
+            await hydrateLookups(carryoverRows);
+        } catch (carryoverError) {
+            console.warn('Field carry-over load failed; keeping today route visible.', carryoverError);
+            state.carryoverRows = [];
+            state.rows = todayRows;
+        }
         renderActiveView();
     } catch (err) {
         console.error('Field load failed:', err);
+        if (state.todayRows.length) {
+            subtitle.textContent = `${state.todayRows.length} current task(s) loaded. Carry-over may need refresh.`;
+            renderActiveView();
+            return;
+        }
         subtitle.textContent = 'Failed to load tasks.';
         document.getElementById('fieldList').innerHTML = `<div class="loading-cell">Error: ${sanitize(err.message || err)}</div>`;
     }
