@@ -931,13 +931,22 @@ function getRole(employee, position) {
     return 'Staff';
 }
 
+function getEmployeeDesignation(employee, position) {
+    if (!employee) return 'Staff';
+    const label = [
+        position?.position,
+        position?.position_name,
+        position?.name,
+        employee?.position,
+        employee?.position_name,
+        employee?.position_label
+    ].map((value) => String(value || '').trim()).filter(Boolean)[0];
+    return label || getRole(employee, position) || 'Staff';
+}
+
 function isActiveAssignableEmployee(employee) {
     if (!employee) return false;
-    if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
-    const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
-    const email = MargaUtils.normalizeEmail(employee.email || employee.marga_login_email || employee.username);
-    const inRoster = !opsCache.activeEmployeeEmails.size || opsCache.activeEmployeeEmails.has(email);
-    return inRoster && hasActiveFlag && Number(employee.estatus ?? 1) > 0;
+    return employee.marga_active !== false;
 }
 
 function getRoleClass(role) {
@@ -1322,7 +1331,7 @@ function getAssignableStaffList() {
         .filter(isActiveAssignableEmployee)
         .map((employee) => {
             const position = opsCache.positions.get(String(employee.position_id || 0)) || null;
-            const role = getRole(employee, position);
+            const role = getEmployeeDesignation(employee, position);
             return {
                 id: Number(employee.id || 0),
                 role,
@@ -1333,10 +1342,9 @@ function getAssignableStaffList() {
             };
         })
         .filter((staff) => staff.id > 0)
-        .filter((staff) => staff.role === 'Technician' || staff.role === 'Production' || staff.role === 'Messenger')
         .sort((a, b) => {
-            if (a.role !== b.role) return a.role.localeCompare(b.role);
-            return a.name.localeCompare(b.name);
+            if (a.name !== b.name) return a.name.localeCompare(b.name);
+            return a.role.localeCompare(b.role);
         });
 }
 
@@ -1655,7 +1663,7 @@ async function openNewRequestModal() {
 
     const staff = getAssignableStaffList();
     assigneeSelect.innerHTML = `<option value="">Unassigned</option>` + staff
-        .map((s) => `<option value="${s.id}">${sanitize(s.name)} (${sanitize(s.role)})</option>`)
+        .map((s) => `<option value="${s.id}">${sanitize(s.name)} - ${sanitize(s.role)}</option>`)
         .join('');
 
     let serialComboRows = opsCache.activeCustomerGraphRows
@@ -2002,7 +2010,7 @@ async function openNewRequestModal() {
         getLabel: getStaffInputLabel,
         getMeta: () => '',
         getSearchText: getStaffSearchText,
-        emptyText: 'No technicians, production, or messengers found.',
+        emptyText: 'No active employees found.',
         onInput: () => {
             const match = findStaffByAssigneeInput(assigneeSearch.value);
             assigneeSelect.value = match ? String(match.id) : '';
