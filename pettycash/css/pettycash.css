@@ -1030,6 +1030,69 @@ body::before {
     }
 }
 
+@media (max-width: 900px) {
+    .voucher-items-panel {
+        padding: 0.75rem;
+    }
+
+    .voucher-items-panel .table-scroll {
+        overflow: visible;
+    }
+
+    .voucher-items-table {
+        min-width: 0;
+        border-collapse: separate;
+        border-spacing: 0 0.75rem;
+    }
+
+    .voucher-items-table thead {
+        display: none;
+    }
+
+    .voucher-items-table,
+    .voucher-items-table tbody,
+    .voucher-items-table tr,
+    .voucher-items-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .voucher-items-table tr {
+        display: grid;
+        gap: 0.55rem;
+        padding: 0.75rem;
+        border: 1px solid rgba(21, 57, 47, 0.13);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.58);
+    }
+
+    .voucher-items-table td,
+    .voucher-items-table td:last-child {
+        display: grid;
+        grid-template-columns: minmax(92px, 0.36fr) minmax(0, 1fr);
+        align-items: center;
+        gap: 0.6rem;
+        min-width: 0;
+        width: 100%;
+        border: 0;
+        padding: 0;
+    }
+
+    .voucher-items-table td::before {
+        content: attr(data-label);
+        color: #587069;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }
+
+    .voucher-items-table .entry-item-note-cell {
+        align-items: start;
+    }
+}
+
 @media (max-width: 720px) {
     .toolbar-card,
     .table-header,
@@ -1101,5 +1164,22 @@ body::before {
 
     .setup-summary {
         padding: 0.95rem;
+    }
+
+    .voucher-items-actions,
+    .voucher-items-actions .btn {
+        width: 100%;
+    }
+}
+
+@media (max-width: 560px) {
+    .voucher-items-table td,
+    .voucher-items-table td:last-child {
+        grid-template-columns: 1fr;
+        gap: 0.28rem;
+    }
+
+    .voucher-items-table .row-btn {
+        width: 100%;
     }
 }

@@ -537,15 +537,15 @@ function renderEntryItemsTable(items = []) {
 
     tbody.innerHTML = rows.map((item, index) => `
         <tr data-row-index="${index}">
-            <td>
+            <td data-label="Item Group">
                 <input type="hidden" class="entry-item-id" value="${escapeHtml(item.entryId)}">
                 <select class="entry-item-group">${getEntryItemGroupOptionsHtml(item.expenseGroup)}</select>
             </td>
-            <td><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId, item.expenseGroup)}</select></td>
-            <td class="entry-item-note-cell">${buildEntryItemPickerHtml(item.expenseGroup, item.itemNote)}</td>
-            <td><input type="text" class="entry-item-supplier" list="entrySupplierList" placeholder="Select supplier/store" value="${escapeHtml(item.supplier)}"></td>
-            <td><input type="number" class="entry-item-amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(Number(item.amount).toFixed(2)) : ''}"></td>
-            <td><button type="button" class="row-btn" data-action="remove-item-row">Remove</button></td>
+            <td data-label="Chart Of Account"><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId, item.expenseGroup)}</select></td>
+            <td data-label="Item / Part Note" class="entry-item-note-cell">${buildEntryItemPickerHtml(item.expenseGroup, item.itemNote)}</td>
+            <td data-label="Supplier / Store"><input type="text" class="entry-item-supplier" list="entrySupplierList" placeholder="Type or select supplier/store" value="${escapeHtml(item.supplier)}"></td>
+            <td data-label="Amount"><input type="number" class="entry-item-amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(Number(item.amount).toFixed(2)) : ''}"></td>
+            <td data-label="Action"><button type="button" class="row-btn" data-action="remove-item-row">Remove</button></td>
         </tr>
     `).join('');
 
@@ -664,7 +664,7 @@ function onEntrySubmit(event) {
     const idGenerator = createEntryIdGenerator();
     const items = readEntryItemsFromForm()
         .map((item) => createEntryItem(item))
-        .filter((item) => item.expenseGroup || item.accountId || item.itemNote || item.amount > 0);
+        .filter((item) => item.expenseGroup || item.accountId || item.itemNote || item.supplier || item.amount > 0);
     const voucherNumber = String(document.getElementById('entryVoucherInput').value || '').trim() || (existingBundleEntries[0]?.voucherNumber || idGenerator());
     const sharedFields = {
         voucherNumber,
