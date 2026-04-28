@@ -81,6 +81,9 @@ const GP_STATE = {
     technicianOptions: [],
     technicianActiveIndex: -1,
     selectedTechnician: null,
+    readyMachineOptions: [],
+    readyMachineActiveIndex: -1,
+    selectedReadyMachine: null,
     productionAction: null
 };
 
@@ -138,9 +141,13 @@ function bindControls() {
     document.getElementById('productionTechInput').addEventListener('input', handleTechnicianSearchInput);
     document.getElementById('productionTechInput').addEventListener('focus', handleTechnicianSearchInput);
     document.getElementById('productionTechInput').addEventListener('keydown', handleTechnicianSearchKeydown);
+    document.getElementById('allocationMachineInput').addEventListener('input', handleReadyMachineSearchInput);
+    document.getElementById('allocationMachineInput').addEventListener('focus', handleReadyMachineSearchInput);
+    document.getElementById('allocationMachineInput').addEventListener('keydown', handleReadyMachineSearchKeydown);
     document.addEventListener('click', (event) => {
         if (!event.target.closest('.gp-serial-field')) hideSerialResults();
         if (!event.target.closest('.gp-tech-field')) hideTechnicianResults();
+        if (!event.target.closest('.gp-machine-field')) hideReadyMachineResults();
     });
     document.getElementById('statusChangerForm').addEventListener('submit', saveMachineStatus);
     document.getElementById('newMachineBrandInput').addEventListener('change', () => populateModelOptions());
@@ -235,6 +242,7 @@ async function loadProductionData() {
         GP_STATE.statuses = normalizeStatuses(machineStatuses);
         buildLookupMaps();
         buildProductionRows();
+        populateReadyMachineOptions();
         populateMachineCheckerOptions();
         renderAllBoards();
 
@@ -393,6 +401,7 @@ function buildProductionRows() {
 
 function normalizeScheduleRow(row) {
     if (!row || Number(row.iscancel || row.iscancelled || 0) === 1) return null;
+    if (clean(row.production_allocation_status) === 'allocated_for_dr' || Number(row.production_allocated_newfordr_id || 0) > 0) return null;
     const purpose = GP_PURPOSE_LABELS[Number(row.purpose_id || 0)] || `Purpose ${row.purpose_id || '-'}`;
     const trouble = GP_STATE.maps.troubles.get(String(row.trouble_id || '')) || null;
     const machine = GP_STATE.maps.machines.get(String(row.serial || row.mach_id || '')) || null;
@@ -424,7 +433,13 @@ function normalizeScheduleRow(row) {
         remarks: remarks || '-',
         tech: staffName(row.tech_id),
         family: detectFamily([brand, model, machine?.description, remarks, trouble?.trouble].join(' ')),
-        searchText: [purpose, type.label, client, brand, model, machine?.serial, requests, remarks].join(' ').toLowerCase()
+        searchText: [purpose, type.label, client, brand, model, machine?.serial, requests, remarks].join(' ').toLowerCase(),
+        scheduleDocId: String(row._docId || row.id || '').trim(),
+        refNo: String(row.id || row._docId || '').trim(),
+        branchId: Number(row.branch_id || 0) || 0,
+        companyId: Number(row.company_id || branch?.company_id || 0) || 0,
+        existingMachineId: String(machine?._docId || machine?.id || row.serial || row.mach_id || '').trim(),
+        raw: row
     };
 }
 
@@ -439,14 +454,16 @@ function classifyScheduleType(row, purpose, trouble) {
         row.dev_remarks
     ].join(' ').toLowerCase();
     const purposeId = Number(row.purpose_id || 0);
+    const hasMachineRequestSignal = /additional|addtn|new\s*unit|add\s*unit|change\s*unit|changeunit|machine\s*request|request\s*machine|\b\d{1,2}\s*pc\s+machine\b|for\s*delivery\s+machine/.test(text);
+    const hasConsumableSignal = /\b(toner|drum|fuser|ink|cartridge|developer|kit|assy)\b/.test(text);
     if (/terminat|shutdown|pull\s*out|for\s*pull/.test(text)) return { label: 'FTR', short: 'FTR', bucket: 'termination' };
     if (/upgrade/.test(text)) return { label: 'UPGRADE', short: 'UPG', bucket: 'termination' };
     if (purposeId === 7 && /machine|printer|unit|pickup machine|pick up printer/.test(text)) return { label: 'TO PURCHASE', short: 'PR', bucket: 'purchase' };
     if (/purchase|to\s*purchase|buy.*machine|brand\s*new/.test(text)) return { label: 'TO PURCHASE', short: 'PR', bucket: 'purchase' };
     if (/overhaul|under\s*repair|repair\s*unit/.test(text)) return { label: 'FROM OVERHAUL', short: 'OH', bucket: 'overhaulSource' };
+    if (hasConsumableSignal && !hasMachineRequestSignal) return null;
     if (/additional|addtn|new\s*unit|add\s*unit/.test(text)) return { label: 'NEW / ADDTN', short: 'NEW', bucket: 'request' };
-    if (/change\s*unit|changeunit|replacement|replace|machine\s*request|request\s*machine|for\s*delivery/.test(text)) return { label: 'CHANGE UNIT', short: 'CU', bucket: 'request' };
-    if (purposeId === 5 && /machine|unit|serial|printer|copier|mfc|dcp/.test(text)) return { label: 'MACHINE REQUEST', short: 'REQ', bucket: 'request' };
+    if (/change\s*unit|changeunit|replacement\s+(unit|machine|printer)|replace\s+(unit|machine|printer)|machine\s*request|request\s*machine|for\s*delivery\s+machine|\b\d{1,2}\s*pc\s+machine\b/.test(text)) return { label: /change\s*unit|changeunit|replacement|replace/.test(text) ? 'CHANGE UNIT' : 'MACHINE REQUEST', short: 'REQ', bucket: 'request' };
     return null;
 }
 
@@ -659,7 +676,7 @@ function renderTableBody(bodyId, rows, columns, emptyText, boardKey = '') {
         tbody.innerHTML = `<tr class="gp-empty-row"><td colspan="${columns.length}">${escapeHtml(emptyText)}</td></tr>`;
         return;
     }
-    const actionable = boardKey === 'forOverhaul' || boardKey === 'underRepair';
+    const actionable = boardKey === 'forOverhaul' || boardKey === 'underRepair' || bodyId === 'requestsTableBody';
     tbody.innerHTML = rows.map((row, index) => {
         const cells = columns.map((column) => {
             const value = column === 'age' ? formatAge(row.age) : row[column];
@@ -668,7 +685,7 @@ function renderTableBody(bodyId, rows, columns, emptyText, boardKey = '') {
         }).join('');
         return `<tr class="${actionable ? 'gp-action-row' : ''}" data-row-index="${index}">${cells}</tr>`;
     }).join('');
-    if (actionable) bindProductionBoardRows(tbody, boardKey, rows);
+    if (actionable) bindProductionBoardRows(tbody, boardKey || (bodyId === 'requestsTableBody' ? 'requests' : ''), rows);
 }
 
 function bindProductionBoardRows(tbody, boardKey, rows) {
@@ -676,6 +693,10 @@ function bindProductionBoardRows(tbody, boardKey, rows) {
         rowEl.addEventListener('dblclick', () => {
             const row = rows[Number(rowEl.dataset.rowIndex || -1)];
             if (!row) return;
+            if (boardKey === 'requests') {
+                openProductionActionModal('allocateMachine', row);
+                return;
+            }
             openProductionActionModal(boardKey === 'forOverhaul' ? 'assignRepair' : 'markReady', row);
         });
     });
@@ -735,6 +756,12 @@ function populateTechnicianOptions() {
     GP_STATE.technicianOptions = buildTechnicianOptions();
     GP_STATE.selectedTechnician = null;
     hideTechnicianResults();
+}
+
+function populateReadyMachineOptions() {
+    GP_STATE.readyMachineOptions = buildReadyMachineOptions();
+    GP_STATE.selectedReadyMachine = null;
+    hideReadyMachineResults();
 }
 
 function buildTechnicianOptions() {
@@ -906,6 +933,117 @@ function selectTechnician(techId) {
     GP_STATE.selectedTechnician = option;
     document.getElementById('productionTechInput').value = option.label;
     hideTechnicianResults();
+}
+
+function buildReadyMachineOptions() {
+    return (GP_STATE.rows.ready || [])
+        .map((row) => {
+            const machine = row.raw || null;
+            const id = String(machine?._docId || machine?.id || '').trim();
+            const label = [row.serial, row.model].filter(Boolean).join(' - ');
+            const meta = [row.brand, row.machine, row.remarks].filter(Boolean).join(' - ');
+            return {
+                id,
+                label,
+                value: row.serial,
+                meta,
+                row,
+                machine,
+                searchText: [id, row.serial, row.brand, row.model, row.machine, row.remarks]
+                    .join(' ')
+                    .toLowerCase()
+            };
+        })
+        .filter((option) => option.id && option.value && option.machine)
+        .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }));
+}
+
+function getReadyMachineSearchMatches(value) {
+    const query = clean(value).toLowerCase();
+    const looseQuery = normalizeLoose(value);
+    const options = GP_STATE.readyMachineOptions || [];
+    if (!query && !looseQuery) return options.slice(0, 80);
+    return options
+        .filter((option) => String(option.searchText || '').includes(query)
+            || normalizeLoose(`${option.label} ${option.meta} ${option.id}`).includes(looseQuery))
+        .slice(0, 80);
+}
+
+function findReadyMachineOption(value) {
+    const text = clean(value);
+    const key = normalizeLoose(text);
+    if (!key) return null;
+    return (GP_STATE.readyMachineOptions || []).find((option) => (
+        normalizeLoose(option.value) === key
+        || normalizeLoose(option.label) === key
+        || String(option.id) === text
+    )) || null;
+}
+
+function renderReadyMachineResults(value) {
+    const results = document.getElementById('allocationMachineResults');
+    if (!results) return;
+    const matches = getReadyMachineSearchMatches(value);
+    GP_STATE.readyMachineActiveIndex = matches.length ? 0 : -1;
+    if (!matches.length) {
+        results.innerHTML = '<div class="gp-serial-empty">No ready machine found.</div>';
+        results.classList.remove('hidden');
+        return;
+    }
+    results.innerHTML = matches.map((option, index) => `
+        <button type="button" class="gp-serial-option ${index === 0 ? 'is-active' : ''}" data-machine-id="${escapeHtml(option.id)}" role="option">
+            <span class="gp-serial-main">${escapeHtml(option.label)}</span>
+            <span class="gp-serial-meta">${escapeHtml(option.meta || 'Machine Ready')}</span>
+        </button>
+    `).join('');
+    results.classList.remove('hidden');
+    results.querySelectorAll('.gp-serial-option').forEach((button) => {
+        button.addEventListener('click', () => selectReadyMachine(button.dataset.machineId));
+    });
+}
+
+function hideReadyMachineResults() {
+    document.getElementById('allocationMachineResults')?.classList.add('hidden');
+}
+
+function handleReadyMachineSearchInput(event) {
+    const value = event.target.value;
+    GP_STATE.selectedReadyMachine = findReadyMachineOption(value);
+    renderReadyMachineResults(value);
+}
+
+function handleReadyMachineSearchKeydown(event) {
+    const results = document.getElementById('allocationMachineResults');
+    if (!results || results.classList.contains('hidden')) return;
+    const options = [...results.querySelectorAll('.gp-serial-option')];
+    if (!options.length) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        GP_STATE.readyMachineActiveIndex = (GP_STATE.readyMachineActiveIndex + direction + options.length) % options.length;
+        options.forEach((option, index) => option.classList.toggle('is-active', index === GP_STATE.readyMachineActiveIndex));
+        options[GP_STATE.readyMachineActiveIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+
+    if (event.key === 'Enter') {
+        const active = options[GP_STATE.readyMachineActiveIndex] || options[0];
+        if (!active) return;
+        event.preventDefault();
+        selectReadyMachine(active.dataset.machineId);
+    }
+
+    if (event.key === 'Escape') {
+        hideReadyMachineResults();
+    }
+}
+
+function selectReadyMachine(machineId) {
+    const option = (GP_STATE.readyMachineOptions || []).find((item) => String(item.id) === String(machineId));
+    if (!option) return;
+    GP_STATE.selectedReadyMachine = option;
+    document.getElementById('allocationMachineInput').value = option.label;
+    hideReadyMachineResults();
 }
 
 function populateStatusModelOptions(machine, preferredModel = '') {
@@ -1246,40 +1384,52 @@ function syncMachineCheckerFromRecord(record, options = {}) {
 
 function openProductionActionModal(action, row) {
     const machine = row?.raw || null;
-    if (!machine || !machineKey(machine)) {
+    const isAllocation = action === 'allocateMachine';
+    if (!isAllocation && (!machine || !machineKey(machine))) {
         alert('This row is not linked to a machine record yet.');
         return;
     }
 
     GP_STATE.productionAction = { action, row, machine };
     const isAssign = action === 'assignRepair';
-    const title = isAssign ? 'Assign Technician' : 'Mark Machine Ready';
-    const summary = [row.brand, row.model, row.serial].filter(Boolean).join(' - ') || row.machine || 'Machine';
+    const title = isAllocation ? 'Allocate Machine' : (isAssign ? 'Assign Technician' : 'Mark Machine Ready');
+    const summary = isAllocation
+        ? row.client || 'Machine request'
+        : ([row.brand, row.model, row.serial].filter(Boolean).join(' - ') || row.machine || 'Machine');
 
     document.getElementById('productionActionTitle').textContent = title;
     document.getElementById('productionActionSummary').innerHTML = `
         <div>${escapeHtml(summary)}</div>
-        <span>${escapeHtml(isAssign ? 'For Overhauling -> Under Repair' : 'Under Repair -> Machine Ready')}</span>
+        <span>${escapeHtml(isAllocation ? `${row.type || 'Machine Request'} - Ref ${row.refNo || row.scheduleDocId || '-'}` : (isAssign ? 'For Overhauling -> Under Repair' : 'Under Repair -> Machine Ready'))}</span>
     `;
-    document.getElementById('productionActionNote').textContent = isAssign
-        ? 'Enter the technician assigned to overhaul this machine. Saving will move it to Under Repair.'
-        : 'Saving will mark this machine ready and move it to Machine Ready.';
+    document.getElementById('productionActionNote').textContent = isAllocation
+        ? 'Select a ready machine to allocate. Saving will send this machine request to Releasing as a pending DR item.'
+        : (isAssign
+            ? 'Enter the technician assigned to overhaul this machine. Saving will move it to Under Repair.'
+            : 'Saving will mark this machine ready and move it to Machine Ready.');
 
     const techField = document.getElementById('productionTechField');
     const techInput = document.getElementById('productionTechInput');
+    const machineField = document.getElementById('allocationMachineField');
+    const machineInput = document.getElementById('allocationMachineInput');
     techField.style.display = isAssign ? 'grid' : 'none';
     techInput.required = isAssign;
     techInput.value = isAssign ? clean(row.tech) : '';
     GP_STATE.selectedTechnician = isAssign ? findTechnicianOption(techInput.value) : null;
-    document.getElementById('productionActionSaveBtn').textContent = isAssign ? 'Assign' : 'Mark Ready';
+    machineField.style.display = isAllocation ? 'grid' : 'none';
+    machineInput.required = isAllocation;
+    machineInput.value = '';
+    GP_STATE.selectedReadyMachine = null;
+    document.getElementById('productionActionSaveBtn').textContent = isAllocation ? 'Allocate' : (isAssign ? 'Assign' : 'Mark Ready');
 
     document.getElementById('productionActionOverlay').classList.add('visible');
     document.getElementById('productionActionModal').classList.add('open');
     document.getElementById('productionActionModal').setAttribute('aria-hidden', 'false');
     setTimeout(() => {
-        const target = isAssign ? techInput : document.getElementById('productionActionSaveBtn');
+        const target = isAllocation ? machineInput : (isAssign ? techInput : document.getElementById('productionActionSaveBtn'));
         target.focus();
         if (isAssign) renderTechnicianResults(techInput.value);
+        if (isAllocation) renderReadyMachineResults(machineInput.value);
     }, 30);
 }
 
@@ -1289,12 +1439,139 @@ function closeProductionActionModal() {
     document.getElementById('productionActionModal').setAttribute('aria-hidden', 'true');
     GP_STATE.productionAction = null;
     GP_STATE.selectedTechnician = null;
+    GP_STATE.selectedReadyMachine = null;
     hideTechnicianResults();
+    hideReadyMachineResults();
+}
+
+async function saveMachineAllocation(actionState) {
+    const requestRow = actionState?.row || null;
+    const readyOption = GP_STATE.selectedReadyMachine || findReadyMachineOption(document.getElementById('allocationMachineInput').value);
+    if (!requestRow?.scheduleDocId) {
+        alert('This request is missing its service reference.');
+        return;
+    }
+    if (!readyOption?.machine) {
+        alert('Select a ready machine from the dropdown.');
+        return;
+    }
+
+    const allocatedMachine = readyOption.machine;
+    const machineDocId = String(allocatedMachine._docId || allocatedMachine.id || '').trim();
+    if (!machineDocId) {
+        alert('Selected machine document id is missing.');
+        return;
+    }
+
+    const button = document.getElementById('productionActionSaveBtn');
+    const now = new Date().toISOString();
+    button.disabled = true;
+    try {
+        const itemId = await allocateNextId('tbl_newfordr');
+        const brand = readyOption.row?.brand || getMachineBrand(allocatedMachine) || 'N/A';
+        const model = readyOption.row?.model || getMachineModel(allocatedMachine) || 'N/A';
+        const serial = clean(allocatedMachine.serial || readyOption.row?.serial);
+        const allocationNote = [
+            requestRow.type,
+            requestRow.remarks && requestRow.remarks !== '-' ? requestRow.remarks : '',
+            `Allocated machine ${serial}`
+        ].filter(Boolean).join(' - ');
+        const itemPayload = {
+            id: itemId,
+            reference_id: Number(requestRow.refNo || requestRow.scheduleDocId) || requestRow.refNo || requestRow.scheduleDocId,
+            original_reference_id: 0,
+            client_id: Number(requestRow.branchId || 0) || 0,
+            source_id: 2,
+            status_id: 1,
+            rdtype_id: 5,
+            category: 'MACHINE',
+            release_category: 'MACHINE',
+            qty: 1,
+            release_pending_qty: 1,
+            supplier_id: 0,
+            supplierX: 0,
+            iscancelled: 0,
+            close_date: '0000-00-00 00:00:00',
+            description: model,
+            remarks: allocationNote,
+            release_brand: brand,
+            release_model: model,
+            release_description: model,
+            release_serial: serial,
+            release_notes: allocationNote,
+            release_details_added: 1,
+            production_allocation_status: 'allocated_for_dr',
+            production_request_type: requestRow.type || '',
+            production_request_schedule_id: requestRow.scheduleDocId,
+            production_existing_machine_id: requestRow.existingMachineId || '',
+            production_allocated_machine_id: Number(allocatedMachine.id || machineDocId) || machineDocId,
+            production_allocated_machine_serial: serial,
+            production_allocated_at: now,
+            production_allocated_by: currentUserLabel(),
+            tmestmp: now
+        };
+
+        await setDocument('tbl_newfordr', String(itemId), itemPayload, {
+            label: `Allocate machine ${serial} to ${requestRow.refNo}`,
+            dedupeKey: `gp-machine-allocation:${requestRow.scheduleDocId}:${machineDocId}`
+        });
+        await patchDocument('tbl_schedule', requestRow.scheduleDocId, {
+            production_allocation_status: 'allocated_for_dr',
+            production_allocated_newfordr_id: itemId,
+            production_allocated_machine_id: Number(allocatedMachine.id || machineDocId) || machineDocId,
+            production_allocated_machine_serial: serial,
+            production_allocated_at: now,
+            production_allocated_by: currentUserLabel()
+        }, {
+            label: `Mark request allocated ${requestRow.refNo}`,
+            dedupeKey: `gp-request-allocated:${requestRow.scheduleDocId}:${itemId}`
+        });
+        await patchDocument('tbl_machine', machineDocId, {
+            status_id: 2,
+            production_allocation_status: 'allocated_for_dr',
+            production_allocated_reference_id: Number(requestRow.refNo || requestRow.scheduleDocId) || requestRow.refNo || requestRow.scheduleDocId,
+            production_allocated_newfordr_id: itemId,
+            production_allocated_client_id: Number(requestRow.branchId || 0) || 0,
+            production_allocated_at: now,
+            production_allocated_by: currentUserLabel(),
+            tmestamp: now
+        }, {
+            label: `Move allocated machine to FOR DELIVERY ${serial}`,
+            dedupeKey: `gp-machine-allocated:${machineDocId}:${itemId}`
+        });
+
+        Object.assign(requestRow.raw || {}, {
+            production_allocation_status: 'allocated_for_dr',
+            production_allocated_newfordr_id: itemId,
+            production_allocated_machine_id: Number(allocatedMachine.id || machineDocId) || machineDocId,
+            production_allocated_machine_serial: serial
+        });
+        Object.assign(allocatedMachine, {
+            status_id: 2,
+            production_allocation_status: 'allocated_for_dr',
+            production_allocated_reference_id: Number(requestRow.refNo || requestRow.scheduleDocId) || requestRow.refNo || requestRow.scheduleDocId
+        });
+        buildProductionRows();
+        populateReadyMachineOptions();
+        populateSerialOptions();
+        renderAllBoards();
+        closeProductionActionModal();
+        MargaUtils.showToast('Machine allocated. It is now available in Releasing.', 'success');
+    } catch (error) {
+        console.error('Machine allocation failed:', error);
+        alert(`Failed to allocate machine: ${error.message || error}`);
+    } finally {
+        button.disabled = false;
+    }
 }
 
 async function saveProductionAction(event) {
     event.preventDefault();
     const actionState = GP_STATE.productionAction;
+    if (actionState?.action === 'allocateMachine') {
+        await saveMachineAllocation(actionState);
+        return;
+    }
     if (!actionState?.machine) {
         alert('Select a machine row first.');
         return;
@@ -1359,6 +1636,7 @@ async function saveProductionAction(event) {
         });
         Object.assign(machine, fields);
         buildProductionRows();
+        populateReadyMachineOptions();
         populateSerialOptions();
         renderAllBoards();
         closeProductionActionModal();
@@ -1490,6 +1768,7 @@ async function saveNewMachine(event) {
         populateSerialOptions();
         populateStatusModelOptions(GP_STATE.selectedMachine);
         buildProductionRows();
+        populateReadyMachineOptions();
         renderAllBoards();
         document.getElementById('addMachineForm').reset();
         document.getElementById('newMachineDpInput').value = new Date().toISOString().slice(0, 10);
@@ -1504,13 +1783,18 @@ async function saveNewMachine(event) {
 }
 
 async function allocateNextMachineId() {
+    return allocateNextId('tbl_machine');
+}
+
+async function allocateNextId(collection) {
     try {
-        const rows = await fetchLatestRows('tbl_machine', 1);
+        const rows = await fetchLatestRows(collection, 1);
         const latest = Number(rows[0]?.id || 0);
         if (latest > 0) return latest + 1;
     } catch (error) {
-        console.warn('Latest machine id lookup failed; using loaded max id.', error);
+        console.warn(`Latest ${collection} id lookup failed; using loaded max id where available.`, error);
     }
+    if (collection !== 'tbl_machine') throw new Error(`Unable to allocate ${collection} id.`);
     return (GP_STATE.raw.machines || []).reduce((max, row) => Math.max(max, Number(row.id || 0)), 0) + 1;
 }
 

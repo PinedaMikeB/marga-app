@@ -469,7 +469,8 @@ body {
 }
 
 .gp-serial-field,
-.gp-tech-field {
+.gp-tech-field,
+.gp-machine-field {
     position: relative;
 }
 

@@ -391,6 +391,7 @@ function normalizeReleaseCategoryLabel(value) {
     const lowered = text.toLowerCase();
     if (lowered.includes('toner') || lowered.includes('ink')) return 'TONER / INK';
     if (lowered.includes('cartridge')) return 'CARTRIDGE';
+    if (lowered.includes('machine') || lowered.includes('printer') || lowered.includes('unit')) return 'MACHINE';
     if (lowered.includes('part')) return 'PARTS';
     if (lowered.includes('other')) return 'OTHERS';
     return text.toUpperCase();
@@ -534,6 +535,8 @@ function rowKey(refNo, item, schedule, unitIndex = 1) {
 function inferReleaseCategory(item, schedule, trouble) {
     const explicitCategory = normalizeReleaseCategoryLabel(schedule?.release_request_category || schedule?.release_category);
     if (explicitCategory) return explicitCategory;
+    const itemCategory = normalizeReleaseCategoryLabel(item?.category || item?.release_category);
+    if (itemCategory) return itemCategory;
     const text = [
         item?.category,
         item?.rdtype_id,
@@ -820,10 +823,10 @@ function openReleaseDetailModal(key) {
     const row = findRow(key);
     if (!row) return;
     releaseState.selectedDetailKey = key;
-    document.getElementById('releaseDetailTitle').textContent = row.isCartridge ? 'Assign Cartridge' : 'Item Details';
+    document.getElementById('releaseDetailTitle').textContent = row.isCartridge ? 'Assign Cartridge' : (row.category === 'MACHINE' ? 'Allocated Machine' : 'Item Details');
     document.getElementById('releaseDetailSummary').innerHTML = `
         <div>${escapeHtml(row.company)}</div>
-        <span>Reference ${escapeHtml(row.refNo)} - ${escapeHtml(row.category)}${row.isCartridge ? ' - model and serial required' : ''}</span>
+        <span>Reference ${escapeHtml(row.refNo)} - ${escapeHtml(row.category)}${row.isCartridge || row.category === 'MACHINE' ? ' - model and serial required' : ''}</span>
     `;
     document.getElementById('releaseDetailBrandInput').value = normalizeInputValue(row.brand);
     document.getElementById('releaseDetailModelInput').value = normalizeInputValue(row.model);
