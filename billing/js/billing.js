@@ -5009,6 +5009,25 @@ function closeBillingCalcModal() {
     els.billingCalcModal?.classList.add('hidden');
 }
 
+function showBillingCalcOpenError(error) {
+    console.error('Unable to open billing calculation modal.', error);
+    if (els.billingCalcTitle) els.billingCalcTitle.textContent = 'Billing Calculation';
+    if (els.billingCalcSubtitle) els.billingCalcSubtitle.textContent = 'Unable to open billing details';
+    if (els.billingCalcContent) {
+        els.billingCalcContent.innerHTML = `
+            <div class="detail-empty error">
+                ${escapeHtml(String(error?.message || error || 'The billing calculation could not be opened.'))}
+            </div>
+        `;
+    }
+    els.billingCalcModal?.classList.remove('hidden');
+    MargaUtils.showToast(String(error?.message || 'Unable to open billing calculation.'), 'error');
+}
+
+function openBillingCalcModalSafely(rowId, monthKey) {
+    openBillingCalcModal(rowId, monthKey).catch(showBillingCalcOpenError);
+}
+
 async function openBillingCalcModal(rowId, monthKey) {
     const requestedRow = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
         || (lastPayload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
@@ -5024,6 +5043,17 @@ async function openBillingCalcModal(rowId, monthKey) {
     const printContractCode = String(profile.category_code || '').trim().toUpperCase();
     const canPrintInvoice = isPrintableContractCode(printContractCode);
     const requestToken = ++billingCalcRequestToken;
+
+    if (els.billingCalcTitle) {
+        els.billingCalcTitle.textContent = `${row?.display_name || row?.account_name || row?.company_name || 'Billing Calculation'}`;
+    }
+    if (els.billingCalcSubtitle) {
+        els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • Loading billing details`;
+    }
+    if (els.billingCalcContent) {
+        els.billingCalcContent.innerHTML = '<div class="detail-empty">Loading billing calculation...</div>';
+    }
+    els.billingCalcModal?.classList.remove('hidden');
 
     if (canPrintInvoice) {
         try {
@@ -7124,7 +7154,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
 
     document.getElementById('invoiceEditBillingBtn')?.addEventListener('click', () => {
         closeInvoiceDetailModal();
-        openBillingCalcModal(rowId, monthKey);
+        openBillingCalcModalSafely(rowId, monthKey);
     });
     document.getElementById('invoiceDeleteBillingBtn')?.addEventListener('click', async () => {
         const confirmed = window.confirm(`Cancel invoice ${primaryInvoiceRef || 'for this billing month'} for replacement? This makes the invoice number available again after the saved billing record is removed.`);
@@ -7289,7 +7319,7 @@ function bindEvents() {
             }
             const rowId = actionButton.dataset.rowId;
             const monthKey = actionButton.dataset.monthKey;
-            if (rowId && monthKey) openBillingCalcModal(rowId, monthKey);
+            if (rowId && monthKey) openBillingCalcModalSafely(rowId, monthKey);
             return;
         }
         if (action !== 'delete') return;
@@ -7324,7 +7354,7 @@ function bindEvents() {
         const calcTrigger = event.target.closest('.calc-link');
         if (calcTrigger) {
             event.preventDefault();
-            openBillingCalcModal(calcTrigger.dataset.rowId, calcTrigger.dataset.monthKey);
+            openBillingCalcModalSafely(calcTrigger.dataset.rowId, calcTrigger.dataset.monthKey);
             return;
         }
         const serialTrigger = event.target.closest('.serial-link');
@@ -7335,7 +7365,7 @@ function bindEvents() {
         const trigger = event.target.closest('.billed-link');
         if (!trigger) return;
         event.preventDefault();
-        openBillingCalcModal(trigger.dataset.rowId, trigger.dataset.monthKey);
+        openBillingCalcModalSafely(trigger.dataset.rowId, trigger.dataset.monthKey);
     });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
     els.rtpInvoicePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
