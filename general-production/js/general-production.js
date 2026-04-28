@@ -37,6 +37,7 @@ const GP_PURPOSE_LABELS = {
 const GP_ZERO_DATES = new Set(['', '0000-00-00', '0000-00-00 00:00:00', 'null', 'undefined']);
 const GP_SERIAL_STOPWORDS = /\b(PAYMENT|SERIAL|DUPLICATE|BUYER|ARROW)\b/i;
 const GP_ROWS_PER_PANEL = 500;
+const GP_SCHEDULE_QUERY_LIMIT = 20000;
 const GP_LEGACY_PANEL_LIMITS = {
     termination: 34,
     purchase: 3,
@@ -203,7 +204,7 @@ async function loadProductionData() {
             fetchOptionalCollection('tbl_employee', 800),
             fetchOptionalCollection('tbl_trouble', 900),
             fetchOptionalCollection('tbl_newmachinestatus', 200),
-            fetchLatestRows('tbl_schedule', 3000).catch(() => fetchOptionalCollection('tbl_schedule', 1200)),
+            fetchLatestRows('tbl_schedule', GP_SCHEDULE_QUERY_LIMIT).catch(() => fetchOptionalCollection('tbl_schedule', 1200)),
             fetchOptionalCollection('tbl_contractmain', 1200),
             fetchOptionalCollection('tbl_contractdep', 1200),
             fetchOptionalCollection('marga_production_queue', 500),
