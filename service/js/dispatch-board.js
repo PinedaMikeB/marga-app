@@ -1319,6 +1319,8 @@ function getAssignableStaffList() {
                 id: Number(employee.id || 0),
                 role,
                 name: getEmployeeName(employee, employee.id || 0),
+                email: MargaUtils.normalizeEmail(employee.email || employee.marga_login_email || ''),
+                username: MargaUtils.normalizeEmail(employee.username || ''),
                 estatus: Number(employee.estatus || 0)
             };
         })
@@ -1578,6 +1580,17 @@ async function openNewRequestModal() {
     function getStaffInputLabel(staff) {
         if (!staff) return '';
         return `${staff.name} (${staff.role})`;
+    }
+
+    function findStaffByAssigneeInput(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (!normalized) return null;
+        return staff.find((candidate) => {
+            const label = getStaffInputLabel(candidate).toLowerCase();
+            return label === normalized
+                || String(candidate.email || '').toLowerCase() === normalized
+                || String(candidate.username || '').toLowerCase() === normalized;
+        }) || null;
     }
 
     function renderCompanyOptions(query, selectedId = '') {
@@ -1972,10 +1985,10 @@ async function openNewRequestModal() {
         panel: assigneePanel,
         getItems: () => staff,
         getLabel: (assignee) => assignee.name,
-        getMeta: (assignee) => assignee.role,
+        getMeta: (assignee) => [assignee.role, assignee.email].filter(Boolean).join(' - '),
         emptyText: 'No technicians, production, or messengers found.',
         onInput: () => {
-            const match = findByInputValue(staff, assigneeSearch.value, getStaffInputLabel);
+            const match = findStaffByAssigneeInput(assigneeSearch.value);
             assigneeSelect.value = match ? String(match.id) : '';
         },
         onSelect: (assignee) => {
