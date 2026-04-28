@@ -432,11 +432,6 @@ body::before {
     min-width: 0;
 }
 
-.supplier-entry-shell {
-    grid-column: span 2;
-    padding: 0.1rem 0;
-}
-
 .field-inline-head {
     display: flex;
     align-items: center;
@@ -592,8 +587,15 @@ body::before {
     color: var(--pc-forest);
 }
 
+.voucher-items-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: flex-end;
+}
+
 .compact-ledger-table {
-    min-width: 760px;
+    min-width: 960px;
 }
 
 .voucher-items-table select,
@@ -1011,9 +1013,6 @@ body::before {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .supplier-entry-shell {
-        grid-column: span 1;
-    }
 }
 
 @media (max-width: 980px) {

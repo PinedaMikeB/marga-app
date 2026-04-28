@@ -178,6 +178,7 @@ const PETTY_CASH_STATE = {
 
 let pettyCashCloudSyncPromise = null;
 let pettyCashCloudSyncQueued = false;
+let lastFocusedSupplierInput = null;
 let pettyCashDeletePassRequested = false;
 let pettyCashHasSharedBaseline = false;
 
@@ -300,6 +301,7 @@ function bindControls() {
     document.getElementById('entryFormClearBtn').addEventListener('click', clearEntryForm);
     document.getElementById('entryAddItemBtn').addEventListener('click', () => addEntryItemRow());
     document.getElementById('entryItemsBody').addEventListener('click', onEntryItemsTableClick);
+    document.getElementById('entryItemsBody').addEventListener('focusin', onEntryItemsTableFocusIn);
     document.getElementById('entryItemsBody').addEventListener('change', onEntryItemsTableChange);
     document.getElementById('entryItemsBody').addEventListener('input', onEntryItemsTableInput);
     document.getElementById('settingsForm').addEventListener('submit', onSettingsSubmit);
@@ -322,13 +324,18 @@ function bindControls() {
     document.getElementById('quickSupplierCancelBtn').addEventListener('click', closeQuickSupplierPanel);
     document.getElementById('quickSupplierClearBtn').addEventListener('click', resetQuickSupplierForm);
     document.getElementById('quickSupplierSaveBtn').addEventListener('click', onQuickSupplierSave);
-    document.getElementById('entrySupplierInput').addEventListener('input', syncQuickSupplierNameFromEntry);
 }
 
 function openQuickSupplierPanel() {
     syncQuickSupplierNameFromEntry(true);
     document.getElementById('quickSupplierPanel').classList.remove('hidden');
     document.getElementById('quickSupplierNameInput').focus();
+}
+
+function onEntryItemsTableFocusIn(event) {
+    if (event.target.classList.contains('entry-item-supplier')) {
+        lastFocusedSupplierInput = event.target;
+    }
 }
 
 function closeQuickSupplierPanel() {
@@ -344,7 +351,9 @@ function resetQuickSupplierForm() {
 }
 
 function syncQuickSupplierNameFromEntry(force = false) {
-    const sourceValue = String(document.getElementById('entrySupplierInput').value || '').trim();
+    const activeRowSupplier = lastFocusedSupplierInput?.isConnected ? lastFocusedSupplierInput.value : '';
+    const firstRowSupplier = document.querySelector('#entryItemsBody .entry-item-supplier')?.value;
+    const sourceValue = String(activeRowSupplier || firstRowSupplier || '').trim();
     const input = document.getElementById('quickSupplierNameInput');
     if (!input) return;
     if (force || !String(input.value || '').trim()) {
@@ -396,6 +405,7 @@ function createEntryItem(item = {}) {
         expenseGroup: String(item.expenseGroup || '').trim(),
         accountId: String(item.accountId || '').trim(),
         itemNote: String(item.itemNote || '').trim(),
+        supplier: String(item.supplier || '').trim(),
         amount: Number(item.amount || 0)
     };
 }
@@ -516,6 +526,7 @@ function readEntryItemsFromForm() {
         expenseGroup: row.querySelector('.entry-item-group')?.value,
         accountId: row.querySelector('.entry-item-account')?.value,
         itemNote: resolveEntryItemNoteFromRow(row),
+        supplier: row.querySelector('.entry-item-supplier')?.value,
         amount: row.querySelector('.entry-item-amount')?.value
     }));
 }
@@ -532,6 +543,7 @@ function renderEntryItemsTable(items = []) {
             </td>
             <td><select class="entry-item-account">${getEntryItemAccountOptionsHtml(item.accountId, item.expenseGroup)}</select></td>
             <td class="entry-item-note-cell">${buildEntryItemPickerHtml(item.expenseGroup, item.itemNote)}</td>
+            <td><input type="text" class="entry-item-supplier" list="entrySupplierList" placeholder="Select supplier/store" value="${escapeHtml(item.supplier)}"></td>
             <td><input type="number" class="entry-item-amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(Number(item.amount).toFixed(2)) : ''}"></td>
             <td><button type="button" class="row-btn" data-action="remove-item-row">Remove</button></td>
         </tr>
@@ -659,7 +671,6 @@ function onEntrySubmit(event) {
         bundleId,
         date: document.getElementById('entryDateInput').value,
         payee: document.getElementById('entryPayeeInput').value,
-        supplier: document.getElementById('entrySupplierInput').value,
         requestedBy: document.getElementById('entryRequestedByInput').value,
         receiptNumber: document.getElementById('entryReceiptInput').value,
         description: document.getElementById('entryDescriptionInput').value,
@@ -686,6 +697,10 @@ function onEntrySubmit(event) {
             MargaUtils.showToast('Every voucher item row needs an item group, account, and amount.', 'error');
             return;
         }
+        if (!item.supplier) {
+            MargaUtils.showToast('Every voucher item row needs its own supplier/store.', 'error');
+            return;
+        }
         if (!getAccountById(item.accountId)) {
             MargaUtils.showToast('Please select a valid chart of account in each voucher item row.', 'error');
             return;
@@ -706,7 +721,7 @@ function onEntrySubmit(event) {
         voucherNumber,
         date: sharedFields.date,
         payee: sharedFields.payee,
-        supplier: sharedFields.supplier,
+        supplier: item.supplier,
         requestedBy: sharedFields.requestedBy,
         expenseGroup: item.expenseGroup,
         accountId: item.accountId,
@@ -723,7 +738,7 @@ function onEntrySubmit(event) {
     PETTY_CASH_STATE.entries.push(...nextEntries);
 
     ensurePayeeOption(sharedFields.payee);
-    ensureSupplierOption(sharedFields.supplier);
+    items.forEach((item) => ensureSupplierOption(item.supplier));
     document.getElementById('reportDateInput').value = sharedFields.date;
     reconcileRequests();
     persistState();
@@ -1031,17 +1046,17 @@ function renderSupplierSummary() {
     const selectedMonth = String(selectedDate || '').slice(0, 7);
     const rows = new Map();
 
-    buildVoucherGroups(
-        PETTY_CASH_STATE.entries.filter((entry) => entry.status !== 'Cancelled' && String(entry.date || '').slice(0, 7) === selectedMonth)
-    ).forEach((group) => {
-            const supplier = String(group.supplier || '').trim();
+    PETTY_CASH_STATE.entries
+        .filter((entry) => entry.status !== 'Cancelled' && String(entry.date || '').slice(0, 7) === selectedMonth)
+        .forEach((entry) => {
+            const supplier = String(entry.supplier || '').trim();
             if (!supplier) return;
             if (!rows.has(supplier)) {
                 rows.set(supplier, { supplier, count: 0, total: 0 });
             }
             const bucket = rows.get(supplier);
             bucket.count += 1;
-            bucket.total += Number(group.amount || 0);
+            bucket.total += Number(entry.amount || 0);
         });
 
     const summaryRows = [...rows.values()].sort((left, right) => {
@@ -1261,8 +1276,7 @@ function fillEntryForm(entry) {
     document.getElementById('entryStatusInput').value = primary.status;
     ensurePayeeOption(primary.payee || '');
     document.getElementById('entryPayeeInput').value = primary.payee;
-    ensureSupplierOption(primary.supplier || '');
-    document.getElementById('entrySupplierInput').value = primary.supplier || '';
+    if (primary.supplier) ensureSupplierOption(primary.supplier);
     ensureEmployeeOption(primary.requestedBy || '');
     document.getElementById('entryRequestedByInput').value = primary.requestedBy || '';
     document.getElementById('entryReceiptInput').value = primary.receiptNumber || '';
@@ -1272,6 +1286,7 @@ function fillEntryForm(entry) {
         expenseGroup: item.expenseGroup || inferExpenseGroupFromAccount(item.accountId) || '',
         accountId: item.accountId,
         itemNote: item.itemNote,
+        supplier: item.supplier || primary.supplier || '',
         amount: item.amount
     })));
     document.getElementById('entryFormModeLabel').textContent = `Editing ${primary.voucherNumber || primary.id}`;
@@ -1299,11 +1314,11 @@ function clearEntryForm() {
     document.getElementById('entryDateInput').value = getSelectedDateValue();
     document.getElementById('entryStatusInput').innerHTML = getEntryStatusOptionsHtml('Pending Liquidation');
     document.getElementById('entryStatusInput').value = 'Pending Liquidation';
-    document.getElementById('entrySupplierInput').value = '';
     closeQuickSupplierPanel();
     ensureEmployeeOption(currentUser?.name || '');
     document.getElementById('entryRequestedByInput').value = currentUser?.name || '';
     document.getElementById('entryTotalInput').value = MargaUtils.formatCurrency(0);
+    lastFocusedSupplierInput = null;
     renderEntryItemsTable([createEntryItem()]);
     document.getElementById('entryFormModeLabel').textContent = 'New Entry';
 }
@@ -1644,6 +1659,7 @@ function printVoucherDocument(bundleEntries) {
                 <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
                 <td>${escapeHtml(account?.name || '-')}</td>
                 <td>${escapeHtml(entry.itemNote || '-')}</td>
+                <td>${escapeHtml(entry.supplier || '-')}</td>
                 <td class="amount">${MargaUtils.formatCurrency(entry.amount)}</td>
             </tr>
         `;
@@ -1665,7 +1681,6 @@ function printVoucherDocument(bundleEntries) {
             <div class="meta-grid">
                 <div class="meta-card"><span>Released To / Paid To</span><strong>${escapeHtml(primary.payee || '-')}</strong></div>
                 <div class="meta-card"><span>Requested By</span><strong>${escapeHtml(primary.requestedBy || '-')}</strong></div>
-                <div class="meta-card"><span>Supplier / Store</span><strong>${escapeHtml(primary.supplier || '-')}</strong></div>
                 <div class="meta-card"><span>Receipt / Ref No.</span><strong>${escapeHtml(primary.receiptNumber || '-')}</strong></div>
             </div>
 
@@ -1676,13 +1691,14 @@ function printVoucherDocument(bundleEntries) {
                         <th>Item Group</th>
                         <th>Account</th>
                         <th>Item / Part Note</th>
+                        <th>Supplier / Store</th>
                         <th class="amount">Amount</th>
                     </tr>
                 </thead>
                 <tbody>${itemRows}</tbody>
                 <tfoot>
                     <tr>
-                        <td colspan="4">Voucher Total</td>
+                        <td colspan="5">Voucher Total</td>
                         <td class="amount">${MargaUtils.formatCurrency(total)}</td>
                     </tr>
                 </tfoot>
@@ -2274,7 +2290,7 @@ function buildVoucherGroups(entries) {
             bundleId: getBundleKey(primary),
             voucherNumber: primary.voucherNumber || primary.id,
             payee: primary.payee,
-            supplier: primary.supplier,
+            supplier: summarizeUniqueValues(bundleEntries.map((entry) => entry.supplier), 2),
             requestedBy: primary.requestedBy,
             receiptNumber: primary.receiptNumber,
             description: primary.description,
@@ -2705,7 +2721,7 @@ function upsertLocalSupplierRecord(docId, payload) {
 }
 
 async function onQuickSupplierSave() {
-    const supplierName = normalizeInlineText(document.getElementById('quickSupplierNameInput').value || document.getElementById('entrySupplierInput').value);
+    const supplierName = normalizeInlineText(document.getElementById('quickSupplierNameInput').value);
     const tin = normalizeInlineText(document.getElementById('quickSupplierTinInput').value);
     const address = normalizeInlineText(document.getElementById('quickSupplierAddressInput').value);
     const product = normalizeInlineText(document.getElementById('quickSupplierProductInput').value);
@@ -2775,7 +2791,12 @@ async function onQuickSupplierSave() {
         document.getElementById('entryRequestedByInput').value = currentRequestedBy || '';
         document.getElementById('requestStatusInput').value = currentRequestStatus || 'Draft';
         document.getElementById('requestRequestedByInput').value = currentRequestRequestedBy || '';
-        document.getElementById('entrySupplierInput').value = supplierName;
+        const targetSupplierInput = lastFocusedSupplierInput?.isConnected
+            ? lastFocusedSupplierInput
+            : document.querySelector('#entryItemsBody .entry-item-supplier');
+        if (targetSupplierInput && !String(targetSupplierInput.value || '').trim()) {
+            targetSupplierInput.value = supplierName;
+        }
         closeQuickSupplierPanel();
     } catch (error) {
         console.error('Failed to save quick supplier:', error);
