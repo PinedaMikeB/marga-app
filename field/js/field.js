@@ -2054,29 +2054,7 @@ function applyRowPatch(scheduleId, patch) {
 }
 
 function getCloseTaskIssues(row, form) {
-    const issues = [];
-    const isCollectionPurpose = isCollectionTicket(row);
-
-    if (isPendingReplacementState(row, form)) {
-        issues.push('Pending machine or parts replacement detected. Use Mark Pending (Parts Needed).');
-    }
-
-    if (isBillingTicket(row)) {
-        if (!form.billingReceivedBy) issues.push('Fill out Billing Received By before marking this billing task finished.');
-        if (!form.billingDate) issues.push('Fill out Billing Date before marking this billing task finished.');
-        if (!form.billingTime) issues.push('Fill out Billing Time before marking this billing task finished.');
-    }
-
-    if (isCollectionPurpose) {
-        if (!form.collectionReceiptRefs) issues.push('Fill out Official Receipt / Invoice Number before marking this collection task finished.');
-        if (!form.collectionInvoiceRefs) issues.push('Fill out Payment For Invoice Number(s) before marking this collection task finished.');
-        if (!form.collectionCheckNumber) issues.push('Fill out Check Number before marking this collection task finished.');
-        if (!Number.isFinite(form.collectionAmountNumber) || form.collectionAmountNumber <= 0) {
-            issues.push('Fill out a valid Amount of Payment before marking this collection task finished.');
-        }
-    }
-
-    return issues;
+    return [];
 }
 
 function updateActionButtons() {
@@ -2245,6 +2223,13 @@ async function markPendingTask() {
     }
 }
 
+function routeCollectionForRow(row) {
+    const source = String(row?.route_source || '').toLowerCase();
+    if (source.includes('printed')) return ROUTE_COLLECTION_PRIMARY;
+    if (Number(row?.route_id || 0) > 0 || row?.route_doc_id) return ROUTE_COLLECTION_FALLBACK;
+    return '';
+}
+
 async function closeTask() {
     const row = getCurrentRow();
     if (!row) return;
@@ -2302,8 +2287,28 @@ async function closeTask() {
     button.disabled = true;
     try {
         await patchDocument('tbl_schedule', row.id, payload);
+        const routeCollection = routeCollectionForRow(row);
+        if (routeCollection && row.route_doc_id) {
+            try {
+                await patchDocument(routeCollection, row.route_doc_id, {
+                    status: 0,
+                    date_finished: form.timeOutDb,
+                    remarks: form.notes || form.finalSummary || row.route_remarks || row.remarks || '',
+                    timestmp: nowIso,
+                    bridge_pushed_at: nowIso
+                });
+            } catch (routeError) {
+                console.warn('Route row close update failed; schedule was closed.', routeError);
+            }
+        }
         await upsertSchedtimeLog(row, form, 'finish');
-        applyRowPatch(row.id, payload);
+        applyRowPatch(row.id, {
+            ...payload,
+            route_status: 0,
+            route_date_finished: form.timeOutDb,
+            route_timestmp: nowIso,
+            route_bridge_pushed_at: nowIso
+        });
         closeModal();
         await loadMySchedule();
         alert('Task marked as Finished.');
