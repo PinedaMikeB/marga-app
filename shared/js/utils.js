@@ -109,6 +109,97 @@ const MargaUtils = {
         return this.activeEmployeeRosterPromise;
     },
 
+    getEmployeeId(employee) {
+        return String(employee?.id || employee?._docId || '').trim();
+    },
+
+    getEmployeeFullName(employee, fallbackId = '') {
+        if (!employee) return fallbackId ? `ID ${fallbackId}` : '';
+        const first = String(employee.firstname || '').trim();
+        const last = String(employee.lastname || '').trim();
+        const fullName = `${first} ${last}`.trim();
+        return fullName
+            || String(employee.name || employee.marga_fullname || employee.fullname || employee.nickname || '').trim()
+            || (fallbackId ? `ID ${fallbackId}` : '');
+    },
+
+    getEmployeeDesignation(employee, positions = null) {
+        if (!employee) return 'Staff';
+        const position = positions?.get?.(String(employee.position_id || '')) || null;
+        const label = [
+            position?.position,
+            position?.position_name,
+            position?.name,
+            employee.position,
+            employee.position_name,
+            employee.position_label
+        ].map((value) => String(value || '').trim()).filter(Boolean)[0];
+        if (label) return label;
+        const roleLabel = [
+            employee.marga_role,
+            ...(Array.isArray(employee.marga_roles) ? employee.marga_roles : [])
+        ].map((value) => String(value || '').trim()).filter(Boolean)[0];
+        return roleLabel ? this.titleCase(roleLabel.replace(/[-_]+/g, ' ')) : 'Staff';
+    },
+
+    getEmployeeRoleKey(employee, positions = null) {
+        const designation = this.getEmployeeDesignation(employee, positions).toLowerCase();
+        const roleText = [
+            designation,
+            employee?.marga_role,
+            ...(Array.isArray(employee?.marga_roles) ? employee.marga_roles : [])
+        ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean).join(' ');
+        const positionId = Number(employee?.position_id || 0);
+        if (positionId === 5 || roleText.includes('technician') || roleText.includes('tech')) return 'technician';
+        if (positionId === 9 || roleText.includes('messenger')) return 'messenger';
+        if (roleText.includes('driver')) return 'driver';
+        if (roleText.includes('production') || roleText.includes('prod')) return 'production';
+        if (roleText.includes('billing')) return 'billing';
+        if (roleText.includes('collection')) return 'collection';
+        if (roleText.includes('service') || roleText.includes('csr')) return 'service';
+        if (roleText.includes('admin') || roleText.includes('manager') || roleText.includes('head')) return 'admin';
+        return 'staff';
+    },
+
+    isOfficialActiveEmployee(employee) {
+        return Boolean(employee) && employee.marga_active !== false && Number(employee.id || employee._docId || 0) > 0;
+    },
+
+    makeEmployeeAssignmentOption(employee, positions = null) {
+        const id = this.getEmployeeId(employee);
+        const designation = this.getEmployeeDesignation(employee, positions);
+        const name = this.getEmployeeFullName(employee, id);
+        return {
+            id,
+            name,
+            designation,
+            role: designation,
+            roleKey: this.getEmployeeRoleKey(employee, positions),
+            email: this.normalizeEmail(employee?.email || employee?.marga_login_email || ''),
+            username: this.normalizeEmail(employee?.username || ''),
+            label: `${name} - ${designation}`
+        };
+    },
+
+    filterEmployeeAssignmentOptions(employees = [], options = {}) {
+        const positions = options.positions || null;
+        const includeRoleKeys = new Set((options.includeRoleKeys || []).map((role) => String(role || '').toLowerCase()));
+        return employees
+            .filter((employee) => this.isOfficialActiveEmployee(employee))
+            .map((employee) => this.makeEmployeeAssignmentOption(employee, positions))
+            .filter((employee) => employee.id && employee.name)
+            .filter((employee) => !includeRoleKeys.size || includeRoleKeys.has(employee.roleKey))
+            .sort((left, right) => (
+                left.name.localeCompare(right.name) ||
+                left.designation.localeCompare(right.designation) ||
+                left.id.localeCompare(right.id)
+            ));
+    },
+
+    titleCase(value) {
+        return String(value || '').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    },
+
     /**
      * Fetch collection from Firestore with pagination
      */

@@ -716,6 +716,9 @@ function rowMatchesStatusFilter(row, statusFilter) {
 }
 
 function employeeName(employee, fallbackId = '') {
+    if (window.MargaUtils?.getEmployeeFullName) {
+        return MargaUtils.getEmployeeFullName(employee, fallbackId) || (fallbackId ? `ID ${fallbackId}` : 'Unassigned');
+    }
     if (!employee) return fallbackId ? `ID ${fallbackId}` : 'Unassigned';
     const nickname = clean(employee.nickname);
     const first = clean(employee.firstname);
@@ -724,6 +727,9 @@ function employeeName(employee, fallbackId = '') {
 }
 
 function employeeRole(employee) {
+    if (window.MargaUtils?.getEmployeeDesignation) {
+        return MargaUtils.getEmployeeDesignation(employee, masterState.lookups.positions);
+    }
     const position = masterState.lookups.positions.get(String(employee?.position_id || ''));
     const label = [
         position?.position,
@@ -743,6 +749,7 @@ function employeeRole(employee) {
 }
 
 function isActiveScheduleEmployee(employee) {
+    if (window.MargaUtils?.isOfficialActiveEmployee) return MargaUtils.isOfficialActiveEmployee(employee);
     if (!employee) return false;
     if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
     const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
@@ -753,6 +760,9 @@ function isActiveScheduleEmployee(employee) {
 
 function isScheduleStaff(employee) {
     if (!isActiveScheduleEmployee(employee)) return false;
+    if (window.MargaUtils?.getEmployeeRoleKey) {
+        return ['technician', 'messenger', 'driver', 'production'].includes(MargaUtils.getEmployeeRoleKey(employee, masterState.lookups.positions));
+    }
     const role = employeeRole(employee).toLowerCase();
     return role.includes('technician') || role.includes('messenger') || role.includes('driver');
 }
@@ -760,7 +770,7 @@ function isScheduleStaff(employee) {
 function scheduleStaffOptions() {
     const employees = masterState.settings.employees;
     const filtered = employees.filter(isScheduleStaff);
-    return filtered.length ? filtered : employees;
+    return filtered.length ? filtered : employees.filter(isActiveScheduleEmployee);
 }
 
 function purposeFromLegacy(row, trouble) {

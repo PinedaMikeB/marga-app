@@ -898,6 +898,7 @@ function getEmployeeName(employee, id) {
 }
 
 function getEmployeeFullName(employee, id) {
+    if (window.MargaUtils?.getEmployeeFullName) return MargaUtils.getEmployeeFullName(employee, id);
     if (!employee) return `ID ${id} (unmapped)`;
     const first = String(employee.firstname || '').trim();
     const last = String(employee.lastname || '').trim();
@@ -932,6 +933,7 @@ function getRole(employee, position) {
 }
 
 function getEmployeeDesignation(employee, position) {
+    if (window.MargaUtils?.getEmployeeDesignation) return MargaUtils.getEmployeeDesignation(employee, opsCache.positions);
     if (!employee) return 'Staff';
     const label = [
         position?.position,
@@ -945,8 +947,8 @@ function getEmployeeDesignation(employee, position) {
 }
 
 function isActiveAssignableEmployee(employee) {
-    if (!employee) return false;
-    return employee.marga_active !== false;
+    if (window.MargaUtils?.isOfficialActiveEmployee) return MargaUtils.isOfficialActiveEmployee(employee);
+    return Boolean(employee) && employee.marga_active !== false;
 }
 
 function getRoleClass(role) {
@@ -1332,12 +1334,15 @@ function getAssignableStaffList() {
         .map((employee) => {
             const position = opsCache.positions.get(String(employee.position_id || 0)) || null;
             const role = getEmployeeDesignation(employee, position);
+            const option = window.MargaUtils?.makeEmployeeAssignmentOption
+                ? MargaUtils.makeEmployeeAssignmentOption(employee, opsCache.positions)
+                : null;
             return {
                 id: Number(employee.id || 0),
-                role,
-                name: getEmployeeFullName(employee, employee.id || 0),
-                email: MargaUtils.normalizeEmail(employee.email || employee.marga_login_email || ''),
-                username: MargaUtils.normalizeEmail(employee.username || ''),
+                role: option?.designation || role,
+                name: option?.name || getEmployeeFullName(employee, employee.id || 0),
+                email: option?.email || MargaUtils.normalizeEmail(employee.email || employee.marga_login_email || ''),
+                username: option?.username || MargaUtils.normalizeEmail(employee.username || ''),
                 estatus: Number(employee.estatus || 0)
             };
         })

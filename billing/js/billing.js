@@ -1193,6 +1193,9 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
 }
 
 function billingScheduleStaffName(employee) {
+    if (window.MargaUtils?.getEmployeeFullName) {
+        return MargaUtils.getEmployeeFullName(employee, employee?.id || employee?._docId || '');
+    }
     const nickname = String(employee?.nickname || '').trim();
     const first = String(employee?.firstname || '').trim();
     const last = String(employee?.lastname || '').trim();
@@ -1200,6 +1203,7 @@ function billingScheduleStaffName(employee) {
 }
 
 function billingScheduleStaffRole(employee) {
+    if (window.MargaUtils?.getEmployeeDesignation) return MargaUtils.getEmployeeDesignation(employee);
     const label = String(employee?.position || employee?.position_name || employee?.position_label || employee?.role || '').toLowerCase();
     const positionId = Number(employee?.position_id || 0);
     if (positionId === 5 || label.includes('technician') || label.includes('tech')) return 'Technician';
@@ -1209,6 +1213,7 @@ function billingScheduleStaffRole(employee) {
 }
 
 function isActiveBillingScheduleStaff(employee) {
+    if (window.MargaUtils?.isOfficialActiveEmployee) return MargaUtils.isOfficialActiveEmployee(employee);
     if (!employee) return false;
     if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
     const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
@@ -1220,28 +1225,25 @@ async function loadBillingScheduleStaffOptions() {
         console.warn('Unable to load schedule staff options.', error);
         return [];
     });
-    const activeRoster = await MargaUtils.fetchActiveEmployeeRoster();
     const options = employees
-        .filter((employee) => {
-            const email = MargaUtils.normalizeEmail(employee?.email || employee?.marga_login_email || employee?.username);
-            return isActiveBillingScheduleStaff(employee) && (!activeRoster.size || activeRoster.has(email));
-        })
+        .filter(isActiveBillingScheduleStaff)
         .map((employee) => ({
             id: String(employee.id || employee._docId || '').trim(),
             name: billingScheduleStaffName(employee),
-            role: billingScheduleStaffRole(employee)
+            role: billingScheduleStaffRole(employee),
+            roleKey: window.MargaUtils?.getEmployeeRoleKey ? MargaUtils.getEmployeeRoleKey(employee) : ''
         }))
         .filter((employee) => employee.id && employee.name);
-    const scheduleOptions = options.filter((employee) => /messenger|driver|technician/i.test(employee.role));
+    const scheduleOptions = options.filter((employee) => ['billing', 'collection', 'technician', 'messenger', 'driver'].includes(employee.roleKey));
     return (scheduleOptions.length ? scheduleOptions : options)
-        .sort((left, right) => `${left.role} ${left.name}`.localeCompare(`${right.role} ${right.name}`));
+        .sort((left, right) => `${left.name} ${left.role}`.localeCompare(`${right.name} ${right.role}`));
 }
 
 function renderBillingScheduleStaffOptions(options = [], selectedId = '') {
     const selected = String(selectedId || '').trim();
     return [
-        '<option value="">Select messenger / tech</option>',
-        ...options.map((staff) => `<option value="${escapeHtml(staff.id)}"${staff.id === selected ? ' selected' : ''}>${escapeHtml(staff.name)} (${escapeHtml(staff.role)})</option>`)
+        '<option value="">Select employee</option>',
+        ...options.map((staff) => `<option value="${escapeHtml(staff.id)}"${staff.id === selected ? ' selected' : ''}>${escapeHtml(staff.name)} - ${escapeHtml(staff.role)}</option>`)
     ].join('');
 }
 

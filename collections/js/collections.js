@@ -375,14 +375,20 @@ function renderFollowupBadge(history) {
 }
 
 function collectionEmployeeName(employee, fallbackId = '') {
+    if (window.MargaUtils?.getEmployeeFullName) {
+        return MargaUtils.getEmployeeFullName(employee, fallbackId);
+    }
     return buildAddressText([
-        employee?.nickname,
         `${employee?.firstname || ''} ${employee?.lastname || ''}`.trim(),
-        employee?.name
+        employee?.name,
+        employee?.nickname
     ]) || (fallbackId ? `Staff #${fallbackId}` : '');
 }
 
 function collectionEmployeeRole(employee) {
+    if (window.MargaUtils?.getEmployeeDesignation) {
+        return MargaUtils.getEmployeeDesignation(employee, collectionPositionMap);
+    }
     const position = collectionPositionMap.get(normalizeLookupId(employee?.position_id));
     const label = [
         position?.position,
@@ -403,7 +409,8 @@ function collectionEmployeeRole(employee) {
 }
 
 function isCollectionAssignableRole(role) {
-    return /technician|messenger|driver|production/i.test(String(role || ''));
+    const roleKey = String(role || '').toLowerCase();
+    return /collection|technician|messenger|driver|service|csr/i.test(roleKey);
 }
 
 function normalizeCollectionEmail(value) {
@@ -425,12 +432,18 @@ async function loadCollectionActiveEmployeeRoster() {
 }
 
 function isActiveCollectionEmployee(employee) {
+    if (window.MargaUtils?.isOfficialActiveEmployee) return MargaUtils.isOfficialActiveEmployee(employee);
     if (!employee) return false;
     if (employee.active === false || employee.marga_active === false || employee.marga_account_active === false) return false;
     const hasActiveFlag = employee.active === true || employee.marga_active === true || employee.marga_account_active === true;
     const email = normalizeCollectionEmail(employee.email || employee.marga_login_email || employee.username);
     const inRoster = !collectionActiveEmployeeEmails.size || collectionActiveEmployeeEmails.has(email);
     return inRoster && hasActiveFlag && Number(employee.estatus ?? 1) > 0 && Number(employee.mstatus ?? 1) !== 0;
+}
+
+function collectionEmployeeRoleKey(employee) {
+    if (window.MargaUtils?.getEmployeeRoleKey) return MargaUtils.getEmployeeRoleKey(employee, collectionPositionMap);
+    return collectionEmployeeRole(employee).toLowerCase();
 }
 
 function buildCollectionAssignableStaffOptions(selectedId = '') {
@@ -440,7 +453,7 @@ function buildCollectionAssignableStaffOptions(selectedId = '') {
     return [`<option value="">Unassigned</option>`]
         .concat(rows.map((staff) => `
             <option value="${escapeHtml(staff.id)}"${normalizeLookupId(staff.id) === selected ? ' selected' : ''}>
-                ${escapeHtml(staff.name)}${staff.role ? ` (${escapeHtml(staff.role)})` : ''}
+                ${escapeHtml(staff.name)}${staff.role ? ` - ${escapeHtml(staff.role)}` : ''}
             </option>
         `))
         .join('');
@@ -1584,17 +1597,18 @@ async function loadCollectionEmployeeLookup() {
         const id = normalizeLookupId(row.id);
         const name = collectionEmployeeName(row, id);
         const role = collectionEmployeeRole(row);
+        const roleKey = collectionEmployeeRoleKey(row);
         if (id && name) {
             employeeLookupMap.set(id, name);
-            if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(role)) {
+            if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(roleKey)) {
                 collectionAssignableStaff.push({ id, name, role });
             }
         }
     });
 
     collectionAssignableStaff.sort((a, b) => {
-        if (a.role !== b.role) return a.role.localeCompare(b.role);
-        return a.name.localeCompare(b.name);
+        if (a.name !== b.name) return a.name.localeCompare(b.name);
+        return a.role.localeCompare(b.role);
     });
 }
 
@@ -4020,16 +4034,17 @@ async function loadCollectionWorkspaceLookups() {
             const id = normalizeLookupId(row.id);
             const name = collectionEmployeeName(row, id);
             const role = collectionEmployeeRole(row);
+            const roleKey = collectionEmployeeRoleKey(row);
             if (id && name) {
                 employeeLookupMap.set(id, name);
-                if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(role)) {
+                if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(roleKey)) {
                     collectionAssignableStaff.push({ id, name, role });
                 }
             }
         });
         collectionAssignableStaff.sort((a, b) => {
-            if (a.role !== b.role) return a.role.localeCompare(b.role);
-            return a.name.localeCompare(b.name);
+            if (a.name !== b.name) return a.name.localeCompare(b.name);
+            return a.role.localeCompare(b.role);
         });
 
         collectionWorkspaceLookupsLoaded = true;
