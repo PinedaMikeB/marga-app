@@ -635,8 +635,10 @@ function normalizeMachineRow(row) {
 
 function renderAllBoards() {
     const views = {};
+    const machinePanelKeys = new Set(['ready', 'forOverhaul', 'underRepair']);
     Object.keys(GP_STATE.rows).forEach((key) => {
-        views[key] = GP_STATE.rows[key].filter(passesFilters).slice(0, GP_ROWS_PER_PANEL);
+        const filter = machinePanelKeys.has(key) ? passesFamilyFilter : passesFilters;
+        views[key] = GP_STATE.rows[key].filter(filter).slice(0, GP_ROWS_PER_PANEL);
     });
     ['ready', 'forOverhaul', 'underRepair'].forEach((key) => {
         views[key] = views[key].filter((row) => passesPanelSerialFilter(row, key));
@@ -718,9 +720,14 @@ function setLoadingRows() {
 }
 
 function passesFilters(row) {
-    if (GP_STATE.family !== 'all' && row.family !== GP_STATE.family) return false;
+    if (!passesFamilyFilter(row)) return false;
     if (!GP_STATE.search) return true;
     return String(row.searchText || '').includes(GP_STATE.search);
+}
+
+function passesFamilyFilter(row) {
+    if (GP_STATE.family !== 'all' && row.family !== GP_STATE.family) return false;
+    return true;
 }
 
 function passesPanelSerialFilter(row, key) {
