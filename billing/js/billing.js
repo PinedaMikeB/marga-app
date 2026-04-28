@@ -666,6 +666,8 @@ function billingSnapshotFromValues({
     presentMeter,
     spoilagePercent,
     actualSpoilagePages = 0,
+    applyQuota = true,
+    quotaBypassReason = '',
     billingMode = 'single_meter_rtp',
     linesSignature = ''
 } = {}) {
@@ -675,6 +677,8 @@ function billingSnapshotFromValues({
         presentMeter: Math.max(0, Number(presentMeter || 0) || 0),
         spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2)),
         actualSpoilagePages: Math.max(0, Number(actualSpoilagePages || 0) || 0),
+        applyQuota: applyQuota !== false,
+        quotaBypassReason: String(quotaBypassReason || '').trim(),
         billingMode: String(billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
         linesSignature: String(linesSignature || '').trim()
     };
@@ -731,6 +735,8 @@ function billingSnapshotFromDoc(doc, fallback = {}) {
         presentMeter,
         spoilagePercent: Number.isFinite(spoilagePercent) ? spoilagePercent : fallback.spoilagePercent,
         actualSpoilagePages: Number(doc?.actual_spoilage_pages ?? fallback.actualSpoilagePages ?? 0) || 0,
+        applyQuota: doc?.apply_quota === undefined ? (fallback.applyQuota ?? true) : doc.apply_quota !== false,
+        quotaBypassReason: doc?.quota_bypass_reason ?? fallback.quotaBypassReason ?? '',
         billingMode: doc?.billing_mode || fallback.billingMode,
         linesSignature: doc?.billing_lines_signature || fallback.linesSignature
     });
@@ -744,6 +750,8 @@ function billingSnapshotsEqual(left, right) {
         && a.presentMeter === b.presentMeter
         && Math.abs(a.spoilagePercent - b.spoilagePercent) < 0.001
         && a.actualSpoilagePages === b.actualSpoilagePages
+        && a.applyQuota === b.applyQuota
+        && a.quotaBypassReason === b.quotaBypassReason
         && a.billingMode === b.billingMode
         && (!a.linesSignature || !b.linesSignature || a.linesSignature === b.linesSignature);
 }
@@ -1476,6 +1484,9 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         actual_spoilage_proof_image: String(estimate?.actualSpoilageProofImage || '').trim(),
         actual_spoilage_requested_by: String(estimate?.actualSpoilageRequestedBy || '').trim(),
         actual_spoilage_requested_at: String(estimate?.actualSpoilageRequestedAt || '').trim(),
+        apply_quota: estimate?.applyQuota !== false,
+        quota_bypassed: estimate?.quotaBypassed === true,
+        quota_bypass_reason: String(estimate?.quotaBypassReason || '').trim(),
         approval_status: Number(estimate?.actualSpoilagePages || 0) > 0
             ? String(estimate?.approvalStatus || 'pending').trim()
             : 'none',
@@ -4321,6 +4332,8 @@ function calculateMeterLineEstimate({
     approvedAt = '',
     actualSpoilageRequestedBy = '',
     actualSpoilageRequestedAt = '',
+    applyQuota = true,
+    quotaBypassReason = '',
     forceFixed = false,
     row = null,
     missingMeterMessage = '',
@@ -4347,6 +4360,8 @@ function calculateMeterLineEstimate({
     let amountDue = 0;
     let formula = 'not_available';
     let warning = '';
+    const shouldApplyQuota = applyQuota !== false;
+    const quotaBypassed = !shouldApplyQuota && monthlyQuota > 0;
 
     if (!isFixed) {
         if (missingMeterMessage && previous <= 0 && present <= 0) {
@@ -4369,15 +4384,18 @@ function calculateMeterLineEstimate({
             systemSpoilagePages = Math.round(rawPages * spoilageRate);
             spoilagePages = Math.min(rawPages, systemSpoilagePages + Math.max(0, Number(actualSpoilagePages || 0) || 0));
             netPages = Math.max(0, rawPages - spoilagePages);
-            billedPages = monthlyQuota > 0 ? Math.max(netPages, monthlyQuota) : netPages;
+            const bypassQuotaFloor = quotaBypassed && netPages < monthlyQuota;
+            billedPages = monthlyQuota > 0 && !bypassQuotaFloor ? Math.max(netPages, monthlyQuota) : netPages;
             if (billedPages > 0 && pageRate > 0) {
                 if (monthlyQuota > 0) {
-                    quotaPages = Math.min(billedPages, monthlyQuota);
-                    succeedingPages = Math.max(0, netPages - monthlyQuota);
+                    quotaPages = bypassQuotaFloor ? billedPages : Math.min(billedPages, monthlyQuota);
+                    succeedingPages = bypassQuotaFloor ? 0 : Math.max(0, netPages - monthlyQuota);
                     quotaAmount = quotaPages * pageRate;
                     succeedingAmount = succeedingPages * succeedingRate;
                     amountDue = quotaAmount + succeedingAmount;
-                    formula = succeedingPages > 0
+                    formula = bypassQuotaFloor
+                        ? 'quota_bypassed_actual_usage'
+                        : succeedingPages > 0
                         ? 'quota_pages_plus_succeeding_rate'
                         : 'quota_floor_after_spoilage';
                 } else {
@@ -4432,6 +4450,9 @@ function calculateMeterLineEstimate({
         pageRate,
         monthlyQuota,
         monthlyRate,
+        applyQuota: shouldApplyQuota,
+        quotaBypassed: formula === 'quota_bypassed_actual_usage',
+        quotaBypassReason: String(quotaBypassReason || '').trim(),
         pages: billedPages,
         amountDue,
         netAmount,
@@ -4546,6 +4567,8 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
     const quotaAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.quotaAmount || 0), 0));
     const succeedingAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.succeedingAmount || 0), 0));
     const warnings = lines.map((line) => line.warning).filter(Boolean);
+    const quotaBypassed = lines.some((line) => line.quotaBypassed === true);
+    const quotaBypassReason = lines.map((line) => String(line.quotaBypassReason || '').trim()).find(Boolean) || '';
     return {
         lineItems: lines,
         rawPages,
@@ -4565,6 +4588,9 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
         netAmount,
         vatAmount,
         quotaVariance: null,
+        applyQuota: !quotaBypassed,
+        quotaBypassed,
+        quotaBypassReason,
         approvalStatus: actualSpoilagePages > 0 ? (lines.find((line) => line.approvalStatus)?.approvalStatus || 'pending') : 'none',
         formula: lines.length > 1 ? 'sum_of_billing_lines' : (lines[0]?.formula || fallbackFormula),
         warning: warnings.join(' ')
@@ -4581,6 +4607,8 @@ function buildBillingLinesSignature(lineItems = []) {
         actualSpoilagePages: Number(line.actualSpoilagePages || 0) || 0,
         actualSpoilageReason: String(line.actualSpoilageReason || '').trim(),
         actualSpoilageProofName: String(line.actualSpoilageProofName || '').trim(),
+        applyQuota: line.applyQuota !== false,
+        quotaBypassReason: String(line.quotaBypassReason || '').trim(),
         pageRate: Number(line.pageRate || 0) || 0,
         succeedingRate: Number(line.succeedingRate || 0) || 0,
         monthlyQuota: Number(line.monthlyQuota || 0) || 0,
@@ -4698,6 +4726,8 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
         actualSpoilageProofType: extras.actualSpoilageProofType ?? context?.actualSpoilageProofType ?? '',
         actualSpoilageRequestedBy: extras.actualSpoilageRequestedBy ?? context?.actualSpoilageRequestedBy ?? '',
         actualSpoilageRequestedAt: extras.actualSpoilageRequestedAt ?? context?.actualSpoilageRequestedAt ?? '',
+        applyQuota: extras.applyQuota ?? context?.applyQuota ?? true,
+        quotaBypassReason: extras.quotaBypassReason ?? context?.quotaBypassReason ?? '',
         approvalStatus: extras.approvalStatus ?? context?.approvalStatus ?? '',
         approvalNote: extras.approvalNote ?? context?.approvalNote ?? '',
         approvedBy: extras.approvedBy ?? context?.approvedBy ?? '',
@@ -4947,17 +4977,22 @@ function formatBillingComputationFlow(estimate = {}) {
     const systemSpoilage = Number(estimate.systemSpoilagePages ?? estimate.spoilagePages ?? 0) || 0;
     const actualSpoilage = Number(estimate.actualSpoilagePages || 0) || 0;
     const totalSpoilage = Number(estimate.totalSpoilagePages ?? estimate.spoilagePages ?? 0) || 0;
+    const quotaBypassed = estimate.quotaBypassed === true;
     if (actualSpoilage > 0) {
         return [
             `Gross ${formatCount(estimate.rawPages || 0)}`,
             `System spoilage ${formatCount(systemSpoilage)}`,
             `Actual spoilage ${formatCount(actualSpoilage)}`,
             `Net billable ${formatCount(estimate.netPages || 0)}`,
+            quotaBypassed ? `Quota bypassed: ${String(estimate.quotaBypassReason || 'reason required').trim()}` : '',
             `${formatCount(estimate.quotaPages || 0)} quota x ${formatAmount(estimate.pageRate || 0)} = ${formatAmount(estimate.quotaAmount || 0)}`,
             `${formatCount(estimate.succeedingPages || 0)} succeeding pages x ${formatAmount(estimate.succeedingRate || 0)} = ${formatAmount(estimate.succeedingAmount || 0)}`,
             `Total = ${formatAmount(estimate.amountDue || 0)}`,
             String(estimate.approvalStatus || '') === 'approved' ? 'Approved for invoice printing.' : 'Pending admin approval.'
-        ].join('\n');
+        ].filter(Boolean).join('\n');
+    }
+    if (quotaBypassed) {
+        return `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(totalSpoilage)} spoilage = ${formatCount(estimate.netPages || 0)} net. Quota bypassed: ${String(estimate.quotaBypassReason || 'reason required').trim()}. ${formatCount(estimate.quotaPages || 0)} actual pages x ${formatAmount(estimate.pageRate || 0)} = ${formatAmount(estimate.amountDue || 0)}.`;
     }
     return `${formatCount(estimate.rawPages || 0)} raw - ${formatCount(totalSpoilage)} spoilage = ${formatCount(estimate.netPages || 0)} net. ${formatCount(estimate.quotaPages || 0)} quota pages x ${formatAmount(estimate.pageRate || 0)} plus ${formatCount(estimate.succeedingPages || 0)} succeeding pages x ${formatAmount(estimate.succeedingRate || 0)} = ${formatAmount(estimate.amountDue || 0)}.`;
 }
@@ -5010,6 +5045,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     context.actualSpoilageProofType = String(savedBillingDoc?.actual_spoilage_proof_type || '').trim();
     context.actualSpoilageRequestedBy = String(savedBillingDoc?.actual_spoilage_requested_by || '').trim();
     context.actualSpoilageRequestedAt = String(savedBillingDoc?.actual_spoilage_requested_at || '').trim();
+    context.applyQuota = savedBillingDoc?.apply_quota === undefined ? true : savedBillingDoc.apply_quota !== false;
+    context.quotaBypassReason = String(savedBillingDoc?.quota_bypass_reason || '').trim();
     context.approvalStatus = String(savedBillingDoc?.approval_status || (context.actualSpoilagePages > 0 ? 'pending' : 'none')).trim();
     context.approvalNote = String(savedBillingDoc?.approval_note || '').trim();
     context.approvedBy = String(savedBillingDoc?.approved_by || '').trim();
@@ -5083,14 +5120,18 @@ async function openBillingCalcModal(rowId, monthKey) {
             previousMeter: context.previousMeter,
             presentMeter: context.presentMeter,
             spoilagePercent: (context.spoilageRate || 0) * 100,
-            actualSpoilagePages: context.actualSpoilagePages || 0
+            actualSpoilagePages: context.actualSpoilagePages || 0,
+            applyQuota: context.applyQuota,
+            quotaBypassReason: context.quotaBypassReason
         })
         : billingSnapshotFromValues({
             invoiceNo: '',
             previousMeter: context.previousMeter,
             presentMeter: context.presentMeter,
             spoilagePercent: (context.spoilageRate || 0) * 100,
-            actualSpoilagePages: context.actualSpoilagePages || 0
+            actualSpoilagePages: context.actualSpoilagePages || 0,
+            applyQuota: context.applyQuota,
+            quotaBypassReason: context.quotaBypassReason
         });
     let estimate = calculateBillingEstimate(
         context,
@@ -5345,6 +5386,16 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 <input type="text" id="calcTotalSpoilageValue" readonly value="${escapeHtml(formatCount(estimate.totalSpoilagePages ?? estimate.spoilagePages ?? 0))}">
                             </div>
                             <div class="calc-field calc-field-span-2">
+                                <label class="calc-checkbox-label">
+                                    <input type="checkbox" id="calcApplyQuotaInput" ${initialSnapshot.applyQuota === false ? '' : 'checked'}>
+                                    <span>Apply Quota</span>
+                                </label>
+                            </div>
+                            <div class="calc-field calc-field-span-2" id="calcQuotaBypassReasonField">
+                                <label for="calcQuotaBypassReasonInput">Quota Bypass Reason</label>
+                                <textarea id="calcQuotaBypassReasonInput" rows="3" placeholder="Example: Delayed unit replacement; customer requested actual usage billing only">${escapeHtml(context.quotaBypassReason || '')}</textarea>
+                            </div>
+                            <div class="calc-field calc-field-span-2">
                                 <label for="calcActualSpoilageReasonInput">Actual Spoilage Reason</label>
                                 <textarea id="calcActualSpoilageReasonInput" rows="3" placeholder="Example: Additional spoilage discount due to frequent breakdown">${escapeHtml(context.actualSpoilageReason || '')}</textarea>
                             </div>
@@ -5539,6 +5590,9 @@ async function openBillingCalcModal(rowId, monthKey) {
     const actualSpoilageReasonInput = document.getElementById('calcActualSpoilageReasonInput');
     const actualSpoilageProofInput = document.getElementById('calcActualSpoilageProofInput');
     const actualSpoilageProofPreview = document.getElementById('calcActualSpoilageProofPreview');
+    const applyQuotaInput = document.getElementById('calcApplyQuotaInput');
+    const quotaBypassReasonInput = document.getElementById('calcQuotaBypassReasonInput');
+    const quotaBypassReasonField = document.getElementById('calcQuotaBypassReasonField');
     const amountValue = document.getElementById('calcAmountValue');
     const rawPagesValue = document.getElementById('calcRawPagesValue');
     const spoilagePagesValue = document.getElementById('calcSpoilagePagesValue');
@@ -5695,6 +5749,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             previousMeter: readLineInputValue(mode, index, 'previousMeter', seed.previousMeter),
             presentMeter: readLineInputValue(mode, index, 'presentMeter', seed.presentMeter),
             spoilagePercent: readLineInputValue(mode, index, 'spoilagePercent', seed.spoilagePercent),
+            applyQuota: applyQuotaInput?.checked !== false,
+            quotaBypassReason: quotaBypassReasonInput?.value || '',
             row: seed.row || null,
             missingMeterMessage: seed.missingMeterMessage,
             pendingPresentMessage: seed.pendingPresentMessage
@@ -5745,6 +5801,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 actualSpoilageProofType: actualSpoilageProof.type || '',
                 actualSpoilageRequestedBy: context.actualSpoilageRequestedBy || '',
                 actualSpoilageRequestedAt: context.actualSpoilageRequestedAt || '',
+                applyQuota: applyQuotaInput?.checked !== false,
+                quotaBypassReason: quotaBypassReasonInput?.value || '',
                 approvalStatus,
                 approvalNote,
                 approvedBy,
@@ -5789,6 +5847,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter: primaryLine ? primaryLine.presentMeter : (presentInput?.value || 0),
             spoilagePercent: primaryLine ? primaryLine.spoilagePercent : (spoilageInput?.value || 0),
             actualSpoilagePages: primaryLine ? primaryLine.actualSpoilagePages : (actualSpoilageInput?.value || 0),
+            applyQuota: primaryLine ? primaryLine.applyQuota !== false : applyQuotaInput?.checked !== false,
+            quotaBypassReason: primaryLine ? primaryLine.quotaBypassReason : (quotaBypassReasonInput?.value || ''),
             billingMode: activeBillingMode,
             schedulePurposeKey: getSelectedSchedulePurpose().key,
             schedulePurpose: getSelectedSchedulePurpose().label,
@@ -5805,6 +5865,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         const scheduleReady = !scheduleRequired || scheduleSaved;
         const schedulePurpose = getSelectedSchedulePurpose();
         const isReadingSchedule = schedulePurpose.key === 'reading';
+        const quotaBypassed = activeEstimate?.quotaBypassed === true;
 
         if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
         if (saveBillingBtn) saveBillingBtn.disabled = isReadingSchedule;
@@ -5814,6 +5875,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         modeSummaryPanel?.classList.toggle('hidden', isReadingSchedule);
         saveBillingRow?.classList.toggle('hidden', isReadingSchedule);
         calculationSections?.classList.toggle('hidden', isReadingSchedule);
+        quotaBypassReasonField?.classList.toggle('hidden', !quotaBypassed);
         if (saveStatus) {
             saveStatus.classList.toggle('error', Boolean(workflowError));
             if (workflowError) {
@@ -6044,6 +6106,16 @@ async function openBillingCalcModal(rowId, monthKey) {
     actualSpoilageReasonInput?.addEventListener('input', () => {
         calculationEdited = true;
         if (Number(actualSpoilageInput?.value || 0) > 0 && approvalStatus === 'approved') approvalStatus = 'pending';
+        recompute();
+    });
+    applyQuotaInput?.addEventListener('change', () => {
+        calculationEdited = true;
+        workflowError = '';
+        recompute();
+    });
+    quotaBypassReasonInput?.addEventListener('input', () => {
+        calculationEdited = true;
+        workflowError = '';
         recompute();
     });
     actualSpoilageProofInput?.addEventListener('change', async () => {
@@ -6389,6 +6461,13 @@ async function openBillingCalcModal(rowId, monthKey) {
         activeEstimate.schedulePurpose = schedulePurpose.label;
         activeEstimate.scheduleType = schedulePurpose.label;
         const actualSpoilagePages = Number(activeEstimate?.actualSpoilagePages || 0) || 0;
+        if (activeEstimate?.quotaBypassed === true && !String(activeEstimate.quotaBypassReason || '').trim()) {
+            workflowError = 'Enter the quota bypass reason before saving.';
+            saveStatus?.classList.add('error');
+            MargaUtils.showToast(workflowError, 'error');
+            syncCalcWorkflowState();
+            return;
+        }
         if (actualSpoilagePages > 0 && !actualSpoilageProof.dataUrl) {
             workflowError = 'Upload a spoilage proof image before requesting approval.';
             saveStatus?.classList.add('error');
