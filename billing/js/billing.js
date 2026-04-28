@@ -678,7 +678,9 @@ function billingSnapshotFromValues({
         spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2)),
         actualSpoilagePages: Math.max(0, Number(actualSpoilagePages || 0) || 0),
         applyQuota: applyQuota !== false,
-        quotaBypassReason: String(quotaBypassReason || '').trim(),
+        quotaBypassReason: String(!shouldApplyQuota && !String(quotaBypassReason || '').trim()
+            ? 'Quota unchecked - reason not entered'
+            : quotaBypassReason || '').trim(),
         billingMode: String(billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
         linesSignature: String(linesSignature || '').trim()
     };
@@ -1486,7 +1488,9 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         actual_spoilage_requested_at: String(estimate?.actualSpoilageRequestedAt || '').trim(),
         apply_quota: estimate?.applyQuota !== false,
         quota_bypassed: estimate?.quotaBypassed === true,
-        quota_bypass_reason: String(estimate?.quotaBypassReason || '').trim(),
+        quota_bypass_reason: String(estimate?.applyQuota === false && !String(estimate?.quotaBypassReason || '').trim()
+            ? 'Quota unchecked - reason not entered'
+            : estimate?.quotaBypassReason || '').trim(),
         approval_status: Number(estimate?.actualSpoilagePages || 0) > 0
             ? String(estimate?.approvalStatus || 'pending').trim()
             : 'none',
@@ -4452,7 +4456,9 @@ function calculateMeterLineEstimate({
         monthlyRate,
         applyQuota: shouldApplyQuota,
         quotaBypassed: formula === 'quota_bypassed_actual_usage',
-        quotaBypassReason: String(quotaBypassReason || '').trim(),
+        quotaBypassReason: String(!shouldApplyQuota && !String(quotaBypassReason || '').trim()
+            ? 'Quota unchecked - reason not entered'
+            : quotaBypassReason || '').trim(),
         pages: billedPages,
         amountDue,
         netAmount,
@@ -6461,13 +6467,6 @@ async function openBillingCalcModal(rowId, monthKey) {
         activeEstimate.schedulePurpose = schedulePurpose.label;
         activeEstimate.scheduleType = schedulePurpose.label;
         const actualSpoilagePages = Number(activeEstimate?.actualSpoilagePages || 0) || 0;
-        if (applyQuotaInput?.checked === false && !String(quotaBypassReasonInput?.value || activeEstimate.quotaBypassReason || '').trim()) {
-            workflowError = 'Enter the quota bypass reason before saving.';
-            saveStatus?.classList.add('error');
-            MargaUtils.showToast(workflowError, 'error');
-            syncCalcWorkflowState();
-            return;
-        }
         if (actualSpoilagePages > 0 && !actualSpoilageProof.dataUrl) {
             workflowError = 'Upload a spoilage proof image before requesting approval.';
             saveStatus?.classList.add('error');
