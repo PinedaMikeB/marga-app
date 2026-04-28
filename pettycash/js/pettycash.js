@@ -2606,6 +2606,10 @@ function normalizeInlineText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeSearch(value) {
+    return normalizeInlineText(value).toLowerCase();
+}
+
 function uniqueSortedLabels(labels) {
     return [...new Set(labels.map((label) => normalizeInlineText(label)).filter(Boolean))]
         .sort((left, right) => left.localeCompare(right));
@@ -2762,10 +2766,9 @@ async function onQuickSupplierSave() {
     applyQuickSupplierToEntryRow(supplierName);
     restoreQuickSupplierSelectState(selectState);
 
-    const existing = findSupplierRecordByName(supplierName);
-
     try {
         let result;
+        const existing = findSupplierRecordByName(supplierName);
         if (existing) {
             const patchFields = { supplier: supplierName };
             if (tin) patchFields.tin = tin;
