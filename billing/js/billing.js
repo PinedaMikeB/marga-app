@@ -1607,13 +1607,21 @@ async function saveMultiMachineBillingRecords({ row, context, estimate, snapshot
     const invoiceNo = normalizeInvoiceNumber(snapshot?.invoiceNo);
     if (!invoiceNo) throw new Error('Enter an invoice number before saving.');
 
-    const lines = (Array.isArray(estimate?.lineItems) ? estimate.lineItems : [])
+    const requestedLines = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
+    const lines = requestedLines
         .map((line) => ({
             ...line,
             row: getLineRowForBilling(line, row)
         }))
         .filter((line) => line?.row?.contractmain_id && !line.missingMeterSource && !isNonBillableMeterFormula(line.formula));
-    if (!lines.length) throw new Error('No machine contract lines are available to save for this grouped invoice.');
+    if (!lines.length) {
+        const hasContractRows = requestedLines.some((line) => getLineRowForBilling(line, row)?.contractmain_id);
+        const hasPendingReadings = requestedLines.some((line) => line?.missingMeterSource || isNonBillableMeterFormula(line?.formula));
+        if (hasContractRows && hasPendingReadings) {
+            throw new Error('No billable machine lines are ready for this grouped invoice. Enter the present reading for at least one grouped machine line, or use Single Meter RTP for a separate contract invoice.');
+        }
+        throw new Error('No machine contract lines are available to save for this grouped invoice. Use Single Meter RTP for separate contract billing.');
+    }
 
     const targetDocsByContract = new Map();
     for (const line of lines) {
@@ -4828,10 +4836,13 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
 
 function getBillingModeOptions(context) {
     const options = [];
+    const savedMode = String(context?.savedBillingMode || '').trim();
+    const groupedRows = context?.groupedMachineRows || [];
+    const canUseGroupedInvoiceMode = context?.forceGroupedMode || savedMode === 'multi_machine_rtp';
     if (context?.isReading) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
     if (context?.isReading && context?.hasSecondaryRtp) options.push({ key: 'multi_meter_rtp', label: 'Multiple Meter RTP' });
     if (context?.isFixed) options.push({ key: 'rtf', label: 'RTF Fixed Rate' });
-    if (context?.isReading && (context?.groupedMachineRows || []).length > 1) {
+    if (context?.isReading && canUseGroupedInvoiceMode && groupedRows.length > 1) {
         options.push({ key: 'multi_machine_rtp', label: 'One Invoice, Multiple Machines' });
     }
     if (!options.length) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
