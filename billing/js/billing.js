@@ -678,7 +678,7 @@ function billingSnapshotFromValues({
         spoilagePercent: Number((Number(spoilagePercent || 0) || 0).toFixed(2)),
         actualSpoilagePages: Math.max(0, Number(actualSpoilagePages || 0) || 0),
         applyQuota: applyQuota !== false,
-        quotaBypassReason: String(!shouldApplyQuota && !String(quotaBypassReason || '').trim()
+        quotaBypassReason: String(applyQuota === false && !String(quotaBypassReason || '').trim()
             ? 'Quota unchecked - reason not entered'
             : quotaBypassReason || '').trim(),
         billingMode: String(billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
