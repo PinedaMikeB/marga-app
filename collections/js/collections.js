@@ -59,10 +59,12 @@ let collectionActiveEmployeeRosterPromise = null;
 let serviceHistoryCache = new Map();
 let collectionActivityCache = new Map();
 let currentCollectorWorkspace = null;
+let currentBranchEditorContext = null;
 let isSavingCollectorFollowup = false;
 let isSavingCollectorPayment = false;
 let isSavingCollectorProfileOverride = false;
 let isSavingCollectorSchedule = false;
+let isSavingBranchStatus = false;
 
 const DEFAULT_COLLECTION_STATUSES = [
     { id: 1, label: 'Missing' },
@@ -405,6 +407,13 @@ function renderCellInvoicePaymentMeta(cell, options = {}) {
     }
 
     return rows.length ? `<span class="collector-cell-meta">${rows.join('')}</span>` : '';
+}
+
+function renderBranchStatusBadge(branch, options = {}) {
+    if (!branch || String(branch.id || '').startsWith('unlinked:')) return '';
+    const inactive = Number(branch.inactive || 0) === 1;
+    if (!inactive && options.showActive === false) return '';
+    return `<span class="collector-branch-status ${inactive ? 'inactive' : 'active'}">${inactive ? 'Inactive' : 'Active'}</span>`;
 }
 
 function collectionEmployeeName(employee, fallbackId = '') {
@@ -1171,6 +1180,26 @@ async function firestoreSetDocument(collection, docId, fields) {
     return response.json();
 }
 
+async function firestoreUpdateDocumentFields(collection, docId, fields) {
+    const safeDocId = encodeURIComponent(String(docId || '').trim());
+    if (!safeDocId) throw new Error(`Missing document id for ${collection}`);
+
+    const params = new URLSearchParams({ key: API_KEY });
+    Object.keys(fields || {}).forEach((fieldPath) => params.append('updateMask.fieldPaths', fieldPath));
+    const response = await fetch(`${BASE_URL}/${collection}/${safeDocId}?${params.toString()}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+    });
+
+    if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`Failed to update ${collection}/${docId}: ${response.status} ${message.slice(0, 140)}`);
+    }
+
+    return response.json();
+}
+
 async function firestoreGetDocument(collection, docId) {
     const safeDocId = encodeURIComponent(String(docId || '').trim());
     if (!safeDocId) return null;
@@ -1788,7 +1817,7 @@ async function loadLookups() {
             maxPages: 20
         }),
         firestoreGetAll('tbl_branchinfo', null, {
-            fieldMask: ['id', 'company_id', 'branchname', 'branch_address', 'bldg', 'floor', 'street', 'brgy', 'city', 'email'],
+            fieldMask: ['id', 'company_id', 'branchname', 'branch_address', 'bldg', 'floor', 'street', 'brgy', 'city', 'email', 'inactive'],
             maxPages: 30
         }),
         firestoreGetAll('tbl_contractmain', null, {
@@ -1830,7 +1859,8 @@ async function loadLookups() {
                 getField(f, ['brgy']),
                 getField(f, ['city'])
             ]),
-            email: String(getField(f, ['email']) || '').trim()
+            email: String(getField(f, ['email']) || '').trim(),
+            inactive: Number(getField(f, ['inactive']) || 0) || 0
         };
     });
 
@@ -3484,6 +3514,7 @@ async function computeCollectorDashboardData() {
             machineLabel: row.machineLabel,
                 machineId: row.machineId,
                 contractmainId: row.contractmainId,
+                branchInactive: Number(branchMap[normalizeLookupId(row.branchId)]?.inactive || 0) || 0,
                 rd,
                 latestHistory: rowLatestHistory,
                 months: row.months,
@@ -3682,8 +3713,11 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                     <div class="collector-sub">${escapeHtml(row.machineLabel || buildMachineLabel(row.machineId, row.contractmainId))}</div>
                                 </td>
                                 <td class="sticky-col branch text-left">
-                                    <div class="collector-primary">${escapeHtml(row.branchName || 'Main')}</div>
-                                    <div class="collector-sub">${escapeHtml(row.accountLabel || row.customer)}</div>
+                                    <button type="button" class="collector-branch-edit" onclick="event.stopPropagation(); openCollectorBranchEditor('${encodeURIComponent(row.branchId || '')}', '${encodeURIComponent(row.rowId || '')}')">
+                                        <span class="collector-primary">${escapeHtml(row.branchName || 'Main')}</span>
+                                        <span class="collector-sub">${escapeHtml(row.accountLabel || row.customer)}</span>
+                                        ${renderBranchStatusBadge({ id: row.branchId, inactive: row.branchInactive }, { showActive: false })}
+                                    </button>
                                 </td>
                                 ${cells}
                                 <td class="total-cell text-right">${escapeHtml(formatPlainNumber(row.totalCollected))}</td>
@@ -3738,6 +3772,141 @@ function renderCollectorDashboardFromData(data) {
     }
 
     return data;
+}
+
+function getBranchEditorContext(branchId, rowId = '') {
+    const normalizedBranchId = normalizeLookupId(branchId);
+    if (!normalizedBranchId || normalizedBranchId.startsWith('unlinked:')) return null;
+    const branch = branchMap[normalizedBranchId];
+    if (!branch) return null;
+    const row = (collectorDashboardData?.customerRows || []).find((item) => (
+        String(item.branchId || '') === normalizedBranchId
+        && (!rowId || String(item.rowId || '') === String(rowId))
+    )) || (collectorDashboardData?.customerRows || []).find((item) => String(item.branchId || '') === normalizedBranchId) || {};
+    const companyName = companyMap[String(branch.companyId || row.companyId || '').trim()] || row.customer || 'Unknown';
+
+    return {
+        branchId: normalizedBranchId,
+        rowId: String(rowId || row.rowId || '').trim(),
+        branch,
+        companyName,
+        row
+    };
+}
+
+function renderCollectorBranchEditor(context) {
+    const branch = context.branch || {};
+    const inactive = Number(branch.inactive || 0) === 1;
+    const address = branch.address || 'No branch address saved.';
+    const email = branch.email || '-';
+
+    return `
+        <div class="branch-editor-shell">
+            <section class="branch-editor-summary">
+                <div>
+                    <div class="eyebrow">Customer</div>
+                    <strong>${escapeHtml(context.companyName)}</strong>
+                </div>
+                <div>
+                    <div class="eyebrow">Branch ID</div>
+                    <strong>${escapeHtml(context.branchId)}</strong>
+                </div>
+                <div>
+                    <div class="eyebrow">Current Status</div>
+                    ${renderBranchStatusBadge(branch)}
+                </div>
+            </section>
+
+            <section class="branch-editor-panel">
+                <label>Branch / Dept Name</label>
+                <input id="collectorBranchNameView" type="text" value="${escapeHtml(branch.name || 'Main')}" readonly>
+
+                <label>Address</label>
+                <textarea id="collectorBranchAddressView" readonly>${escapeHtml(address)}</textarea>
+
+                <label>Email</label>
+                <input id="collectorBranchEmailView" type="text" value="${escapeHtml(email)}" readonly>
+
+                <label>Status</label>
+                <select id="collectorBranchInactive">
+                    <option value="0"${inactive ? '' : ' selected'}>Active</option>
+                    <option value="1"${inactive ? ' selected' : ''}>Inactive</option>
+                </select>
+
+                <div class="branch-editor-actions">
+                    <button type="button" class="btn btn-primary" onclick="saveCollectorBranchStatus()">Save Status</button>
+                    <span class="detail-save-status" id="collectorBranchSaveStatus">Ready.</span>
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function openCollectorBranchEditor(branchId, rowId = '') {
+    const context = getBranchEditorContext(decodeURIComponent(String(branchId || '')), decodeURIComponent(String(rowId || '')));
+    const modal = document.getElementById('collectorBranchModal');
+    const title = document.getElementById('collectorBranchTitle');
+    const subtitle = document.getElementById('collectorBranchSubtitle');
+    const content = document.getElementById('collectorBranchContent');
+    if (!modal || !title || !subtitle || !content) return;
+
+    if (!context) {
+        title.textContent = 'Branch Details';
+        subtitle.textContent = 'This row is not linked to an editable branch record.';
+        content.innerHTML = '<div class="collection-followup-empty">No editable branch ID found for this row.</div>';
+        currentBranchEditorContext = null;
+        modal.classList.remove('hidden');
+        return;
+    }
+
+    currentBranchEditorContext = context;
+    title.textContent = context.branch.name || 'Branch Details';
+    subtitle.textContent = `${context.companyName} • Branch ID ${context.branchId}`;
+    content.innerHTML = renderCollectorBranchEditor(context);
+    modal.classList.remove('hidden');
+}
+
+function closeCollectorBranchModal() {
+    document.getElementById('collectorBranchModal')?.classList.add('hidden');
+    currentBranchEditorContext = null;
+}
+
+async function saveCollectorBranchStatus() {
+    if (!currentBranchEditorContext || isSavingBranchStatus) return;
+
+    const statusNode = document.getElementById('collectorBranchSaveStatus');
+    const branchId = currentBranchEditorContext.branchId;
+    const inactive = Number(document.getElementById('collectorBranchInactive')?.value || 0) === 1 ? 1 : 0;
+
+    isSavingBranchStatus = true;
+    if (statusNode) statusNode.textContent = 'Saving branch status...';
+
+    try {
+        await firestoreUpdateDocumentFields('tbl_branchinfo', branchId, {
+            inactive: toFirestoreWriteValue(inactive),
+            updated_at: toFirestoreWriteValue(toTimestampString(new Date())),
+            status_updated_source: toFirestoreWriteValue('collections_branch_editor')
+        });
+
+        if (branchMap[branchId]) branchMap[branchId].inactive = inactive;
+        currentBranchEditorContext.branch = {
+            ...currentBranchEditorContext.branch,
+            inactive
+        };
+        collectorBillingMatrixCache = null;
+        collectorBillingMatrixPromise = null;
+        collectorDashboardData = null;
+        if (statusNode) statusNode.textContent = 'Saved. Refreshing Collections list...';
+        await renderCollectorDashboard({ recompute: true });
+        openCollectorBranchEditor(branchId, currentBranchEditorContext.rowId);
+        const refreshedStatusNode = document.getElementById('collectorBranchSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Branch status updated.';
+    } catch (error) {
+        console.error('Failed to save branch status:', error);
+        if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
+    } finally {
+        isSavingBranchStatus = false;
+    }
 }
 
 async function renderCollectorDashboard(options = {}) {
@@ -6307,6 +6476,7 @@ function setupModalEvents() {
     const followupModal = document.getElementById('followupModal');
     const detailModal = document.getElementById('detailModal');
     const collectorCellModal = document.getElementById('collectorCellModal');
+    const collectorBranchModal = document.getElementById('collectorBranchModal');
 
     followupModal?.addEventListener('click', (event) => {
         if (event.target === followupModal) closeFollowupModal();
@@ -6320,11 +6490,16 @@ function setupModalEvents() {
         if (event.target === collectorCellModal) closeCollectorCellModal();
     });
 
+    collectorBranchModal?.addEventListener('click', (event) => {
+        if (event.target === collectorBranchModal) closeCollectorBranchModal();
+    });
+
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             closeFollowupModal();
             closeDetailModal();
             closeCollectorCellModal();
+            closeCollectorBranchModal();
             closeWelcomeModal();
         }
     });
