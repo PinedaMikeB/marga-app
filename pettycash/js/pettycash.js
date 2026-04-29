@@ -179,6 +179,7 @@ const PETTY_CASH_STATE = {
 let pettyCashCloudSyncPromise = null;
 let pettyCashCloudSyncQueued = false;
 let lastFocusedSupplierInput = null;
+let selectedRequestBreakdownId = '';
 let pettyCashDeletePassRequested = false;
 let pettyCashHasSharedBaseline = false;
 
@@ -316,6 +317,7 @@ function bindControls() {
     document.getElementById('accountScopeFilter').addEventListener('change', renderAccountCards);
     document.getElementById('entriesTableBody').addEventListener('click', onEntriesTableAction);
     document.getElementById('requestsTableBody').addEventListener('click', onRequestsTableAction);
+    document.getElementById('requestBreakdownPanel').addEventListener('click', onRequestsTableAction);
     document.getElementById('printDailyReportBtn').addEventListener('click', printDailyReport);
     document.getElementById('printReplenishmentBtn').addEventListener('click', printReplenishmentRequest);
     document.getElementById('resetTrialEntriesBtn').addEventListener('click', resetTrialEntries);
@@ -807,6 +809,33 @@ function onRequestsTableAction(event) {
     const request = getRequestById(button.dataset.id);
     if (!request) return;
 
+    if (button.dataset.action === 'view-request') {
+        selectedRequestBreakdownId = selectedRequestBreakdownId === request.id ? '' : request.id;
+        renderRequestsTable();
+        renderRequestBreakdownPanel();
+        if (selectedRequestBreakdownId) {
+            document.getElementById('requestBreakdownPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        return;
+    }
+
+    if (button.dataset.action === 'edit-request-voucher') {
+        const bundleId = String(button.dataset.bundleId || '').trim();
+        const bundleEntries = getEntriesByBundleId(bundleId);
+        const primary = bundleEntries[0];
+        if (!primary) {
+            MargaUtils.showToast('That voucher is no longer available.', 'error');
+            return;
+        }
+        if (request.status === 'Received') {
+            const ok = confirm(`${request.id} is already Received. Edit this voucher anyway? The replenishment total will be recalculated after saving.`);
+            if (!ok) return;
+        }
+        fillEntryForm(primary);
+        MargaUtils.showToast(`Loaded ${primary.voucherNumber || primary.id} for correction.`, 'info');
+        return;
+    }
+
     if (button.dataset.action === 'edit-request') {
         fillRequestForm(request);
         revealRequestForm(request.id);
@@ -828,6 +857,7 @@ function onRequestsTableAction(event) {
             }
         });
         PETTY_CASH_STATE.requests = PETTY_CASH_STATE.requests.filter((item) => item.id !== request.id);
+        if (selectedRequestBreakdownId === request.id) selectedRequestBreakdownId = '';
         reconcileRequests();
         persistState();
         clearRequestForm();
@@ -843,6 +873,7 @@ function renderAll() {
     renderEntriesTable();
     renderSupplierSummary();
     renderRequestsTable();
+    renderRequestBreakdownPanel();
     renderAccountCards();
     renderRequestPreview();
 }
@@ -1096,17 +1127,17 @@ function renderRequestsTable() {
     }
 
     tbody.innerHTML = rows.map((request) => {
-        const linkedEntries = getEntriesByRequestId(request.id);
+        const linkedEntries = getEntriesForRequestBreakdown(request);
         const secondaryMeta = [];
         if (request.approvedBy) secondaryMeta.push(`Approver: ${request.approvedBy}`);
         else secondaryMeta.push('Approver not set');
         if (request.apdBillId) secondaryMeta.push(`APD: ${request.apdBillId}`);
         if (request.apdCheckNumber) secondaryMeta.push(`Check: ${request.apdCheckNumber}`);
         return `
-            <tr>
+            <tr class="${request.id === selectedRequestBreakdownId ? 'selected-request-row' : ''}">
                 <td>
                     <div class="ref-cell">
-                        <span class="ref-primary">${escapeHtml(request.id)}</span>
+                        <button type="button" class="link-btn ref-primary" data-action="view-request" data-id="${request.id}">${escapeHtml(request.id)}</button>
                         <span class="ref-secondary">${escapeHtml(formatLongDate(request.requestDate))}</span>
                     </div>
                 </td>
@@ -1122,6 +1153,7 @@ function renderRequestsTable() {
                 <td>${linkedEntries.length.toLocaleString()}</td>
                 <td>
                     <div class="row-actions">
+                        <button type="button" class="row-btn" data-action="view-request" data-id="${request.id}">${request.id === selectedRequestBreakdownId ? 'Hide Breakdown' : 'View Breakdown'}</button>
                         <button type="button" class="row-btn" data-action="edit-request" data-id="${request.id}">Edit Status</button>
                         <button type="button" class="row-btn" data-action="print-request" data-id="${request.id}">Print</button>
                         <button type="button" class="row-btn" data-action="delete-request" data-id="${request.id}">Delete</button>
@@ -1130,6 +1162,105 @@ function renderRequestsTable() {
             </tr>
         `;
     }).join('');
+}
+
+function renderRequestBreakdownPanel() {
+    const panel = document.getElementById('requestBreakdownPanel');
+    if (!panel) return;
+
+    const request = getRequestById(selectedRequestBreakdownId);
+    if (!request) {
+        selectedRequestBreakdownId = '';
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        return;
+    }
+
+    const entries = getEntriesForRequestBreakdown(request);
+    const vouchers = buildVoucherGroups(entries)
+        .sort((left, right) => String(left.voucherNumber || left.bundleId).localeCompare(String(right.voucherNumber || right.bundleId)));
+    const accountBreakdown = buildAccountBreakdown(entries);
+    const supplierBreakdown = buildSupplierBreakdown(entries);
+
+    const voucherRows = vouchers.length
+        ? vouchers.map((group) => {
+            const itemRows = group.entries.map((entry) => {
+                const account = getAccountById(entry.accountId);
+                return `
+                    <tr>
+                        <td>${escapeHtml(entry.supplier || '-')}</td>
+                        <td>${escapeHtml(getExpenseGroupLabel(entry.expenseGroup) || '-')}</td>
+                        <td>${escapeHtml(account?.name || '-')}</td>
+                        <td>${escapeHtml(entry.itemNote || entry.description || '-')}</td>
+                        <td class="amount">${MargaUtils.formatCurrency(entry.amount)}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            return `
+                <article class="request-voucher-card">
+                    <div class="request-voucher-head">
+                        <div class="ref-cell">
+                            <strong>${escapeHtml(group.voucherNumber || group.bundleId)}</strong>
+                            <span class="ref-secondary">${escapeHtml(group.payee || '-')} • ${escapeHtml(group.requestedBy || '-')} • ${escapeHtml(group.receiptNumber || 'No receipt')}</span>
+                        </div>
+                        <div class="request-voucher-actions">
+                            <strong>${MargaUtils.formatCurrency(group.amount)}</strong>
+                            <button type="button" class="row-btn" data-action="edit-request-voucher" data-id="${request.id}" data-bundle-id="${escapeHtml(group.bundleId)}">Edit Voucher</button>
+                        </div>
+                    </div>
+                    <div class="table-scroll request-voucher-items-scroll">
+                        <table class="ledger-table request-voucher-items-table">
+                            <thead>
+                                <tr>
+                                    <th>Supplier / Store</th>
+                                    <th>Item Group</th>
+                                    <th>Account</th>
+                                    <th>Item / Part Note</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>${itemRows}</tbody>
+                        </table>
+                    </div>
+                </article>
+            `;
+        }).join('')
+        : '<div class="empty-state">No voucher rows are linked to this replenishment request yet.</div>';
+
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+        <div class="request-breakdown-head">
+            <div>
+                <span class="setup-chip">Replenishment Breakdown</span>
+                <h4>${escapeHtml(request.id)}</h4>
+                <p class="card-subtext">${escapeHtml(formatLongDate(request.reportDate))} • Prepared by ${escapeHtml(request.requestedBy || '-')} • ${entries.length.toLocaleString()} item row(s)</p>
+            </div>
+            <div class="request-breakdown-actions">
+                <span class="status-badge ${slugify(request.status)}">${escapeHtml(request.status)}</span>
+                <strong>${MargaUtils.formatCurrency(sumAmounts(entries.map((entry) => entry.amount)))}</strong>
+                <button type="button" class="row-btn" data-action="print-request" data-id="${request.id}">Print</button>
+                <button type="button" class="row-btn" data-action="view-request" data-id="${request.id}">Close</button>
+            </div>
+        </div>
+        <div class="request-breakdown-summary">
+            ${accountBreakdown.map((item) => `
+                <article class="preview-breakdown-card">
+                    <span>${escapeHtml(item.accountName)}</span>
+                    <strong>${MargaUtils.formatCurrency(item.total)}</strong>
+                    <small>${item.count} item row(s)</small>
+                </article>
+            `).join('') || '<div class="empty-state">No account breakdown yet.</div>'}
+            ${supplierBreakdown.map((item) => `
+                <article class="preview-breakdown-card">
+                    <span>${escapeHtml(item.supplier)}</span>
+                    <strong>${MargaUtils.formatCurrency(item.total)}</strong>
+                    <small>${item.count} item row(s)</small>
+                </article>
+            `).join('')}
+        </div>
+        <div class="request-voucher-list">${voucherRows}</div>
+    `;
 }
 
 function renderAccountCards() {
@@ -2187,6 +2318,28 @@ function buildAccountBreakdown(entries) {
     return [...map.values()].sort((left, right) => left.accountName.localeCompare(right.accountName));
 }
 
+function buildSupplierBreakdown(entries) {
+    const map = new Map();
+    entries.forEach((entry) => {
+        const supplier = String(entry.supplier || '').trim();
+        if (!supplier) return;
+        if (!map.has(supplier)) {
+            map.set(supplier, {
+                supplier,
+                total: 0,
+                count: 0
+            });
+        }
+        const bucket = map.get(supplier);
+        bucket.total += Number(entry.amount || 0);
+        bucket.count += 1;
+    });
+    return [...map.values()].sort((left, right) => {
+        if (right.total !== left.total) return right.total - left.total;
+        return left.supplier.localeCompare(right.supplier);
+    });
+}
+
 function buildSuggestedRequestNotes(reportDate, entries) {
     const breakdown = buildAccountBreakdown(entries);
     const names = breakdown.slice(0, 3).map((item) => item.accountName).join(', ');
@@ -2213,6 +2366,17 @@ function getReceivedRequests() {
 
 function getEntriesByRequestId(requestId) {
     return PETTY_CASH_STATE.entries.filter((entry) => entry.replenishmentId === requestId);
+}
+
+function getEntriesForRequestBreakdown(request) {
+    if (!request) return [];
+    const linkedEntries = getEntriesByRequestId(request.id);
+    if (linkedEntries.length) return linkedEntries;
+    const entryIds = new Set((request.entryIds || []).map((id) => String(id || '').trim()).filter(Boolean));
+    if (entryIds.size) {
+        return PETTY_CASH_STATE.entries.filter((entry) => entryIds.has(entry.id));
+    }
+    return getEligibleEntriesForRequest(request.reportDate, request.id);
 }
 
 function getBundleKey(entry) {

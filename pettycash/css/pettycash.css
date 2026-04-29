@@ -809,6 +809,11 @@ body::before {
     background: rgba(47, 134, 95, 0.18);
 }
 
+.ledger-table tbody tr.selected-request-row,
+.ledger-table tbody tr.selected-request-row:nth-child(even) {
+    background: rgba(47, 98, 134, 0.12);
+}
+
 .ref-cell {
     display: grid;
     gap: 0.18rem;
@@ -817,6 +822,19 @@ body::before {
 .ref-primary {
     color: var(--pc-forest);
     font-weight: 800;
+}
+
+.link-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+}
+
+.link-btn:hover {
+    text-decoration: underline;
 }
 
 .ref-secondary {
@@ -843,6 +861,69 @@ body::before {
 
 .row-btn:hover {
     background: rgba(21, 57, 47, 0.08);
+}
+
+.request-breakdown-panel {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(47, 98, 134, 0.18);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.request-breakdown-panel.hidden {
+    display: none;
+}
+
+.request-breakdown-head,
+.request-voucher-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.request-breakdown-head h4 {
+    margin: 0.35rem 0 0;
+    color: var(--pc-forest);
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.35rem;
+}
+
+.request-breakdown-actions,
+.request-voucher-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.request-breakdown-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.7rem;
+}
+
+.request-voucher-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.request-voucher-card {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(21, 57, 47, 0.12);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.62);
+}
+
+.request-voucher-items-table {
+    min-width: 720px;
 }
 
 .status-badge,
