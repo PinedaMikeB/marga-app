@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-04-27
+Last Updated: 2026-04-29
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -62,6 +62,8 @@ Current Collections target state:
 - Include unpaid invoices/accounts that still need collection follow-up.
 - Show real serials in SN.
 - Make the month matrix usable on desktop and mobile.
+- Preserve the current working month-to-month comparison matrix as the rollback baseline before changing grouped-customer presentation.
+- Add collapsible grouped-customer presentation only for verified one-invoice / many-branch accounts such as `China Bank Savings - Branches`.
 
 Current Customers target state:
 - Next user-requested focus is continuing the existing Customer module in `customers/`.
@@ -152,6 +154,21 @@ Billing protection rule:
 - The SN column must display the actual serial whenever available through contract/machine resolution.
 - `Machine ####` is a machine label fallback, not a valid steady-state SN display.
 - If the true serial is missing, use an explicit missing-serial label such as `No serial on file`.
+
+Collections grouped-customer rules:
+- Some customers are billed with one mother invoice but have many branches/machines that must still be meter-read. These should appear as one clean parent row in the month-to-month matrix, with a `View Branches` expansion for the branch/machine reading breakdown.
+- `China Bank Savings - Branches` is the verified example and must be treated separately from similarly named individually billed China Bank Savings customers.
+- Verified Firebase identity for the grouped CBS account:
+  - `tbl_companylist/72`: `China Bank Savings - Branches`, TIN `000-504-532-000`
+  - `tbl_groupings/22`: `CHINABANK`, `company_id = 72`
+  - `tbl_branchinfo.company_id = 72`: 224 active branches as of 2026-04-29
+- Do not group by TIN alone. `China Bank Savings Inc.` and other CBS-like company records share the same TIN but are individually billed and must remain separate rows unless explicitly verified as grouped accounts.
+- For grouped accounts, the parent month cell should carry the invoice/payment truth: invoice number badge, OR number badge, payment/partial/no-payment color, and follow-up/payment popup details.
+- Expanded branch rows should show the branch/machine meter-reading amount and reading status for audit, but they should not imply separate invoices when the billing workflow creates one mother invoice.
+- Historical grouped invoices may have been issued using one random/selected branch as the invoice branch or display name because the old workflow needed an address. In Collections, those invoices still belong to the grouped parent row (`China Bank Savings - Branches`) when their contract/branch resolves under the grouped company.
+- Do not let a historical invoice branch name split a grouped account into separate invoice rows. Use branch details only for the expandable reading/audit rows.
+- If `tbl_billing.groupings_id` is missing or stale for newer bills, resolve the grouped account from the exact grouped `company_id` and its branch contracts. Treat `tbl_groupings` as a helper, not the only source of truth.
+- Current rollback anchor for Collections month-to-month matrix before grouped collapsible work: commit `1683fc9` on `main` plus the recent matrix/payment fixes below it (`d8564c3`, `a128dda`, `3fe81b0`, `99348f1`, `19efa43`, `72d2f10`). Roll back with a forward commit, never by rewriting `main`.
 
 Collections matrix usability rule:
 - The month matrix must be horizontally reachable on live desktop and mobile.

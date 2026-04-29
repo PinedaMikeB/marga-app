@@ -1064,6 +1064,44 @@
             text-underline-offset: 2px;
         }
 
+        .collector-group-toggle {
+            appearance: none;
+            width: 100%;
+            padding: 7px 9px;
+            border: 1px solid rgba(37, 99, 235, 0.24);
+            border-radius: 8px;
+            background: #eff6ff;
+            text-align: left;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        .collector-group-toggle:hover .collector-primary {
+            color: #1d4ed8;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .collector-group-parent-row td {
+            background: #f8fbff;
+            box-shadow: inset 0 -1px 0 rgba(37, 99, 235, 0.08);
+        }
+
+        .collector-group-parent-row td.month-cell {
+            box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.1);
+        }
+
+        .collector-group-child-row td.sticky-col.customer,
+        .collector-group-child-row td.sticky-col.branch,
+        .collector-group-child-row td.sticky-col.sn,
+        .collector-group-child-row td.sticky-col.rd {
+            background: #fbfdff;
+        }
+
+        .collector-group-child-row .collector-primary {
+            font-size: 12px;
+        }
+
         .collector-branch-status {
             display: inline-flex;
             align-items: center;

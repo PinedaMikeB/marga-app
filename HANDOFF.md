@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-04-27
+Last Updated: 2026-04-29
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -13,6 +13,8 @@ Start every new Marga-App thread by reading:
 - Releasing is now live and materially implemented; only parity/tuning work should remain there, not a rebuild.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.
+- Before implementing grouped/collapsible Collections rows, preserve the current working month-to-month matrix as the rollback baseline.
+- New Collections grouping focus: one-invoice / many-branch customers such as `China Bank Savings - Branches` should show one parent invoice row with expandable branch/machine meter-reading detail.
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
 
 ## Current Protected Baselines
@@ -23,6 +25,11 @@ Start every new Marga-App thread by reading:
   - `a277f95` `Prefill color meter prior readings`
   - `936c588` `Use mother company details for grouped prints`
 - Current live Collections work already pushed on `main`:
+  - `1683fc9` `Count closed field schedules in KPIs` is the latest observed `main` commit while the Collections matrix remains working
+  - `d8564c3` `Add branch status editor to collections`
+  - `a128dda` `Show invoice and OR numbers in collection cells`
+  - `3fe81b0` `Avoid legacy payment id collisions`
+  - `99348f1` `Refresh collections matrix after payment save`
   - `d186537` `Fix collection serials and coverage counts`
   - `ced7667` `Make collections matrix mobile scrollable`
   - `9feab79` `Add collection matrix drag scrollbar`
@@ -61,6 +68,24 @@ What now works and should be preserved:
 Future reuse note:
 - This Collections matrix format is a candidate for Billing's month-to-month comparison later.
 - Do not port it to Billing casually; Billing save/print behavior is protected and must be regression-checked if Billing adopts this layout.
+
+Rollback point:
+- Treat current `main` at commit `1683fc9` as the rollback anchor for the working month-to-month Collections comparison matrix before grouped/collapsible row work.
+- If grouped work breaks the matrix, restore behavior with a new forward commit based on this accepted matrix behavior. Do not rewrite `main`.
+
+Grouped-customer matrix representation:
+- Some customers have many meter-read branches/machines but only one mother invoice per month.
+- These accounts should display as one parent row in the Collections month-to-month matrix, with a `View Branches` control to expand the branch/machine meter-reading breakdown.
+- The parent row owns the invoice/payment truth: invoice number badge, OR number badge, collected/partial/no-payment color, follow-up badge, and the follow-up/payment popup details.
+- Expanded branch rows are for meter-reading audit only. They may show computed branch amount/status, but must not look like separate invoices when the office bills one mother invoice.
+- Legacy/historical CBS invoices may use one selected CBS branch as the invoice branch/name because the office previously chose a branch for billing address purposes. In the Collections matrix, these still need to map back to the grouped parent (`China Bank Savings - Branches`) when the contract/branch belongs under the grouped company.
+- Do not split grouped parent rows just because an old invoice header names a specific branch. Keep that branch visible only in the expanded branch/meter-reading detail.
+- Verified example:
+  - `tbl_companylist/72`: `China Bank Savings - Branches`
+  - `tbl_groupings/22`: `CHINABANK`
+  - `tbl_branchinfo.company_id = 72`: 224 active branches as of 2026-04-29
+- Critical separation rule: do not merge by TIN or broad name match. `China Bank Savings Inc.` (`tbl_companylist/73`) and other CBS-like records share TIN `000-504-532-000` but are individually billed and should remain individual rows unless separately verified as grouped.
+- Because newer CBS billing rows do not consistently populate `tbl_billing.groupings_id`, grouped row construction should use exact grouped `company_id` plus branch/contract resolution, with `tbl_groupings` as a helper.
 
 ## Non-Negotiable Rules
 - Do not break the Billing dashboard presentation while fixing Collections.

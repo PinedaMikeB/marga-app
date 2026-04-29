@@ -107,6 +107,14 @@ const COLLECTOR_DASHBOARD_START = new Date(2025, 9, 1);
 COLLECTOR_DASHBOARD_START.setHours(0, 0, 0, 0);
 const MONTHLY_TREND_START = new Date(2025, 10, 1);
 MONTHLY_TREND_START.setHours(0, 0, 0, 0);
+const GROUPED_COLLECTION_COMPANIES = [
+    {
+        companyId: '72',
+        parentName: 'China Bank Savings - Branches',
+        groupName: 'CHINABANK'
+    }
+];
+const collectorExpandedGroupRows = new Set();
 
 function buildMonthColumns(startValue, endValue) {
     const monthColumns = [];
@@ -575,6 +583,200 @@ function compareCollectorRows(left, right, sortValue) {
         || leftSerial.localeCompare(rightSerial);
 }
 
+function getGroupedCollectionCompanyConfig(row) {
+    const companyId = normalizeLookupId(row?.companyId);
+    return GROUPED_COLLECTION_COMPANIES.find((config) => (
+        companyId && companyId === normalizeLookupId(config.companyId)
+    )) || null;
+}
+
+function collectorGroupRowId(config) {
+    return `grouped-company:${normalizeLookupId(config.companyId)}`;
+}
+
+function isCollectorGroupExpanded(groupRowId) {
+    return collectorExpandedGroupRows.has(String(groupRowId || '').trim());
+}
+
+function cloneCollectorRecordForGroupedParent(record, parentRow, childCell) {
+    return {
+        ...record,
+        company: parentRow.customer,
+        branch: record.branch || childCell.branchName || parentRow.branchName,
+        accountLabel: parentRow.accountLabel,
+        companyId: parentRow.companyId,
+        branchId: record.branchId || childCell.branchId || '',
+        machineId: record.machineId || childCell.machineId || '',
+        contractmainId: record.contractmainId || childCell.contractmainId || '',
+        serialNumber: record.serialNumber || childCell.serialNumber || '',
+        modelName: record.modelName || childCell.modelName || '',
+        machineLabel: record.machineLabel || childCell.machineLabel || ''
+    };
+}
+
+function mergeCollectorChildCellIntoParent(parentCell, childCell, parentRow) {
+    if (!childCell) return;
+
+    parentCell.rdValues.push(...(childCell.rdValues || []));
+    parentCell.missedReading = Boolean(parentCell.missedReading || childCell.missedReading);
+    parentCell.catchUpBilling = Boolean(parentCell.catchUpBilling || childCell.catchUpBilling);
+    parentCell.catchUpGapMonths = Math.max(Number(parentCell.catchUpGapMonths || 0), Number(childCell.catchUpGapMonths || 0));
+    parentCell.pendingBilling = Boolean(parentCell.pendingBilling || childCell.pendingBilling);
+    parentCell.readingPagesTotal += Number(childCell.readingPagesTotal || 0);
+    parentCell.readingTaskCount += Number(childCell.readingTaskCount || 0);
+    if (parentCell.billedBasis === 'none' && childCell.billedBasis) parentCell.billedBasis = childCell.billedBasis;
+
+    (childCell.records || []).forEach((record, index) => {
+        const recordKey = String(record.invoiceKey || record.invoiceNo || record.invoiceId || `${childCell.id}:${index}`).trim();
+        if (parentCell.recordMap.has(recordKey)) {
+            const current = parentCell.recordMap.get(recordKey);
+            (record.paymentOrNumbers || []).forEach((orNumber) => {
+                if (orNumber) current.paymentOrNumbers.add(orNumber);
+            });
+            return;
+        }
+        upsertCollectorCellRecord(parentCell, recordKey, cloneCollectorRecordForGroupedParent(record, parentRow, childCell));
+    });
+}
+
+function buildCollectorGroupedParentCell(parentRow, childRows, column) {
+    const cell = ensureCollectorDisplayCell(collectorCellMap, parentRow, column);
+    cell.branchName = parentRow.branchName;
+    cell.accountLabel = parentRow.accountLabel;
+    cell.isGroupedParentCell = true;
+    cell.companyId = parentRow.companyId;
+    cell.branchId = '';
+    cell.machineId = '';
+    cell.contractmainId = '';
+    cell.serialNumber = '';
+    cell.modelName = '';
+    cell.machineLabel = parentRow.machineLabel;
+    cell.rdValues = [];
+    cell.billedTotal = 0;
+    cell.displayBilledTotal = 0;
+    cell.collectedTotal = 0;
+    cell.outstandingBalance = 0;
+    cell.billedBasis = 'none';
+    cell.missedReading = false;
+    cell.catchUpBilling = false;
+    cell.catchUpGapMonths = 0;
+    cell.pendingBilling = false;
+    cell.readingPagesTotal = 0;
+    cell.readingTaskCount = 0;
+    cell.records = [];
+    cell.recordMap = new Map();
+
+    childRows.forEach((childRow) => {
+        const childCell = collectorCellMap.get(childRow.months?.[column.key] || '');
+        mergeCollectorChildCellIntoParent(cell, childCell, parentRow);
+    });
+
+    Array.from(cell.recordMap.values()).forEach((record) => {
+        const billedAmount = Number(record.billedAmount || record.amount || 0);
+        const collectedAmount = Number(record.collectedAmount || 0);
+        const outstandingAmount = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
+            ? Number(record.latestBalanceAmount || 0)
+            : Math.max(0, billedAmount - collectedAmount);
+        cell.billedTotal += billedAmount;
+        cell.displayBilledTotal += billedAmount;
+        cell.collectedTotal += collectedAmount;
+        if (collectedAmount > 0 && outstandingAmount > 0) cell.outstandingBalance += outstandingAmount;
+    });
+
+    return cell;
+}
+
+function applyCollectorGroupedRows(rows, monthColumns) {
+    const groupedRowsById = new Map();
+    const passthroughRows = [];
+
+    rows.forEach((row) => {
+        const config = getGroupedCollectionCompanyConfig(row);
+        if (!config) {
+            passthroughRows.push(row);
+            return;
+        }
+
+        const groupRowId = collectorGroupRowId(config);
+        if (!groupedRowsById.has(groupRowId)) {
+            groupedRowsById.set(groupRowId, {
+                config,
+                rows: []
+            });
+        }
+        groupedRowsById.get(groupRowId).rows.push(row);
+    });
+
+    groupedRowsById.forEach((group) => {
+        group.rows.sort((left, right) => compareCollectorRows(left, right, 'customer'));
+        const firstRow = group.rows[0] || {};
+        const groupRowId = collectorGroupRowId(group.config);
+        const parentRow = {
+            rowId: groupRowId,
+            isGroupedParent: true,
+            groupedCompanyId: normalizeLookupId(group.config.companyId),
+            groupedCompanyName: group.config.parentName,
+            branchCount: group.rows.length,
+            customer: group.config.parentName,
+            branchName: `${group.rows.length.toLocaleString()} branches / machines`,
+            accountLabel: `${group.config.groupName || 'Grouped account'} one-invoice collection`,
+            companyId: normalizeLookupId(group.config.companyId),
+            branchId: '',
+            serialNumber: '',
+            modelName: '',
+            machineLabel: 'Grouped branch reading account',
+            machineId: '',
+            contractmainId: '',
+            branchInactive: 0,
+            rd: firstRow.rd ?? null,
+            latestHistory: null,
+            months: {},
+            totalCollected: 0
+        };
+
+        monthColumns.forEach((column) => {
+            const hasChildCell = group.rows.some((childRow) => childRow.months?.[column.key]);
+            if (!hasChildCell) return;
+            const parentCell = buildCollectorGroupedParentCell(parentRow, group.rows, column);
+            parentRow.months[column.key] = parentCell.id;
+        });
+
+        finalizeCollectorCellRecords(new Map(
+            Object.values(parentRow.months)
+                .map((cellId) => [cellId, collectorCellMap.get(cellId)])
+                .filter(([, cell]) => Boolean(cell))
+        ));
+
+        monthColumns.forEach((column) => {
+            const cell = collectorCellMap.get(parentRow.months[column.key] || '');
+            if (!cell) return;
+            parentRow.totalCollected += Number(cell.collectedTotal || 0);
+            if (cell.latestHistory && (!parentRow.latestHistory || ((cell.latestHistory.callDate || new Date(0)).getTime() > (parentRow.latestHistory.callDate || new Date(0)).getTime()))) {
+                parentRow.latestHistory = cell.latestHistory;
+            }
+        });
+
+        passthroughRows.push(parentRow);
+        group.rows.forEach((childRow) => {
+            passthroughRows.push({
+                ...childRow,
+                isGroupedChild: true,
+                groupedParentRowId: groupRowId,
+                groupedParentName: group.config.parentName
+            });
+        });
+    });
+
+    return passthroughRows.sort((left, right) => {
+        if (left.isGroupedParent && right.groupedParentRowId === left.rowId) return -1;
+        if (right.isGroupedParent && left.groupedParentRowId === right.rowId) return 1;
+        if (left.groupedParentRowId && left.groupedParentRowId === right.groupedParentRowId) {
+            return compareCollectorRows(left, right, 'customer');
+        }
+        return compareCollectorRows(left, right, getCollectorSortValue());
+    });
+}
+
 function prepareCollectorRows(rows) {
     const searchTerm = getCollectorSearchTerm();
     const filteredRows = searchTerm
@@ -587,7 +789,8 @@ function prepareCollectorRows(rows) {
                 row.machineLabel,
                 row.machineId,
                 row.contractmainId,
-                row.rd
+                row.rd,
+                row.groupedParentName
             ]
                 .filter(Boolean)
                 .join(' ')
@@ -596,7 +799,16 @@ function prepareCollectorRows(rows) {
         })
         : rows;
 
-    return [...filteredRows].sort((left, right) => compareCollectorRows(left, right, getCollectorSortValue()));
+    return [...filteredRows]
+        .filter((row) => !row.isGroupedChild || isCollectorGroupExpanded(row.groupedParentRowId))
+        .sort((left, right) => {
+            if (left.isGroupedParent && right.groupedParentRowId === left.rowId) return -1;
+            if (right.isGroupedParent && left.groupedParentRowId === right.rowId) return 1;
+            if (left.groupedParentRowId && left.groupedParentRowId === right.groupedParentRowId) {
+                return compareCollectorRows(left, right, 'customer');
+            }
+            return compareCollectorRows(left, right, getCollectorSortValue());
+        });
 }
 
 function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
@@ -3473,7 +3685,7 @@ async function computeCollectorDashboardData() {
 
     finalizeCollectorCellRecords(collectorCellMap);
 
-    const customerRows = Array.from(accountRowsMap.values())
+    let customerRows = Array.from(accountRowsMap.values())
         .map((row) => {
             let rd = null;
             let rowLatestHistory = null;
@@ -3528,6 +3740,10 @@ async function computeCollectorDashboardData() {
             return a.customer.localeCompare(b.customer);
         });
 
+    customerRows = applyCollectorGroupedRows(customerRows, monthColumns);
+
+    const summaryCustomerRows = customerRows.filter((row) => !row.isGroupedChild);
+
     const monthlySummaryRows = summaryMonthColumns
         .map((column) => {
             const previousCustomers = accountSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
@@ -3536,7 +3752,7 @@ async function computeCollectorDashboardData() {
             const additional = Array.from(currentCustomers).filter((customer) => !previousCustomers.has(customer)).length;
             const inactive = Array.from(previousCustomers).filter((customer) => !currentCustomers.has(customer)).length;
             const toCollect = currentCustomers.size;
-            const collected = customerRows.filter((row) => {
+            const collected = summaryCustomerRows.filter((row) => {
                 const cell = collectorCellMap.get(row.months[column.key] || '');
                 return cell && cell.collectedTotal > 0;
             }).length;
@@ -3554,7 +3770,9 @@ async function computeCollectorDashboardData() {
         })
         .reverse();
 
+    const groupedChildRowIds = new Set(customerRows.filter((row) => row.isGroupedChild).map((row) => row.rowId));
     const pendingCellCount = Array.from(collectorCellMap.values()).filter((cell) => {
+        if (groupedChildRowIds.has(cell.rowId)) return false;
         const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
         return (billedTarget > 0 || cell.missedReading || cell.pendingBilling) && cell.collectedTotal <= 0;
     }).length;
@@ -3703,21 +3921,26 @@ function renderCollectorMatrixTable(data, visibleRows) {
                             .join('');
 
                         return `
-                            <tr>
-                                <td class="sticky-col rd">${row.rd !== null && row.rd !== undefined ? escapeHtml(String(row.rd)) : '-'}</td>
+                            <tr class="${row.isGroupedParent ? 'collector-group-parent-row' : ''}${row.isGroupedChild ? ' collector-group-child-row' : ''}">
+                                <td class="sticky-col rd">${row.isGroupedParent ? 'Group' : (row.rd !== null && row.rd !== undefined ? escapeHtml(String(row.rd)) : '-')}</td>
                                 <td class="sticky-col sn">
-                                    <div class="collector-primary">${escapeHtml(displaySerialNumber(row.serialNumber))}</div>
+                                    <div class="collector-primary">${escapeHtml(row.isGroupedParent ? 'Multiple' : displaySerialNumber(row.serialNumber))}</div>
                                 </td>
                                 <td class="sticky-col customer text-left">
                                     <div class="collector-primary">${escapeHtml(row.customer)}</div>
                                     <div class="collector-sub">${escapeHtml(row.machineLabel || buildMachineLabel(row.machineId, row.contractmainId))}</div>
                                 </td>
                                 <td class="sticky-col branch text-left">
-                                    <button type="button" class="collector-branch-edit" onclick="event.stopPropagation(); openCollectorBranchEditor('${encodeURIComponent(row.branchId || '')}', '${encodeURIComponent(row.rowId || '')}')">
-                                        <span class="collector-primary">${escapeHtml(row.branchName || 'Main')}</span>
-                                        <span class="collector-sub">${escapeHtml(row.accountLabel || row.customer)}</span>
-                                        ${renderBranchStatusBadge({ id: row.branchId, inactive: row.branchInactive }, { showActive: false })}
-                                    </button>
+                                    ${row.isGroupedParent
+                                        ? `<button type="button" class="collector-group-toggle" onclick="event.stopPropagation(); toggleCollectorGroupedRows('${encodeURIComponent(row.rowId || '')}')">
+                                            <span class="collector-primary">${escapeHtml(isCollectorGroupExpanded(row.rowId) ? 'Hide Branches' : 'View Branches')}</span>
+                                            <span class="collector-sub">${escapeHtml(row.branchName || 'Grouped branches')}</span>
+                                        </button>`
+                                        : `<button type="button" class="collector-branch-edit" onclick="event.stopPropagation(); openCollectorBranchEditor('${encodeURIComponent(row.branchId || '')}', '${encodeURIComponent(row.rowId || '')}')">
+                                            <span class="collector-primary">${escapeHtml(row.branchName || 'Main')}</span>
+                                            <span class="collector-sub">${escapeHtml(row.accountLabel || row.customer)}</span>
+                                            ${renderBranchStatusBadge({ id: row.branchId, inactive: row.branchInactive }, { showActive: false })}
+                                        </button>`}
                                 </td>
                                 ${cells}
                                 <td class="total-cell text-right">${escapeHtml(formatPlainNumber(row.totalCollected))}</td>
@@ -3772,6 +3995,19 @@ function renderCollectorDashboardFromData(data) {
     }
 
     return data;
+}
+
+function toggleCollectorGroupedRows(groupRowId) {
+    const safeRowId = decodeURIComponent(String(groupRowId || '')).trim();
+    if (!safeRowId) return;
+    if (collectorExpandedGroupRows.has(safeRowId)) {
+        collectorExpandedGroupRows.delete(safeRowId);
+    } else {
+        collectorExpandedGroupRows.add(safeRowId);
+    }
+    if (collectorDashboardData) {
+        renderCollectorDashboardFromData(collectorDashboardData);
+    }
 }
 
 function getBranchEditorContext(branchId, rowId = '') {
