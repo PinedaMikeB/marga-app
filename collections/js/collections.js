@@ -5213,6 +5213,8 @@ async function saveCollectorPayment() {
         setCollectorWorkspaceTab('payment');
         const refreshedStatusNode = document.getElementById('collectorPaymentSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Payment record updated.';
+        collectorDashboardData = null;
+        void renderCollectorDashboard({ recompute: true });
     } catch (error) {
         console.error('Failed to save collection payment:', error);
         if (statusNode) statusNode.textContent = 'Payment save failed. Please try again.';
