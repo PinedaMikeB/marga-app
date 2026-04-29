@@ -374,6 +374,39 @@ function renderFollowupBadge(history) {
     return `<span class="collector-followup-badge">Followed up by ${escapeHtml(actor)}</span>`;
 }
 
+function renderCellInvoicePaymentMeta(cell, options = {}) {
+    const records = Array.isArray(cell?.records) ? cell.records : [];
+    const paidOnly = Boolean(options.paidOnly);
+    const relevantRecords = paidOnly
+        ? records.filter((record) => (
+            Number(record.collectedAmount || 0) > 0
+            || Number(record.totalCollectedAmount || 0) > 0
+            || (record.paymentOrNumbers || []).length
+        ))
+        : records;
+    const invoiceNumbers = Array.from(new Set(
+        relevantRecords
+            .map((record) => String(record.invoiceNo || record.invoiceId || record.invoiceKey || '').trim())
+            .filter(Boolean)
+    ));
+    const orNumbers = Array.from(new Set(
+        relevantRecords
+            .flatMap((record) => Array.isArray(record.paymentOrNumbers) ? record.paymentOrNumbers : [])
+            .map((orNumber) => String(orNumber || '').trim())
+            .filter(Boolean)
+    ));
+    const rows = [];
+
+    if (invoiceNumbers.length) {
+        rows.push(`<span>INV ${escapeHtml(invoiceNumbers[0])}${invoiceNumbers.length > 1 ? ` +${escapeHtml(String(invoiceNumbers.length - 1))}` : ''}</span>`);
+    }
+    if (orNumbers.length) {
+        rows.push(`<span>OR ${escapeHtml(orNumbers[0])}${orNumbers.length > 1 ? ` +${escapeHtml(String(orNumbers.length - 1))}` : ''}</span>`);
+    }
+
+    return rows.length ? `<span class="collector-cell-meta">${rows.join('')}</span>` : '';
+}
+
 function collectionEmployeeName(employee, fallbackId = '') {
     if (window.MargaUtils?.getEmployeeFullName) {
         return MargaUtils.getEmployeeFullName(employee, fallbackId);
@@ -3120,6 +3153,7 @@ async function computeCollectorDashboardData() {
                 latestBalanceAmount: null,
                 firstPaymentDate: null,
                 lastPaymentDate: null,
+                orNumbers: new Set(),
                 months: new Map()
             };
         }
@@ -3130,6 +3164,9 @@ async function computeCollectorDashboardData() {
         if (entry.balanceAmount !== null && entry.balanceAmount !== undefined && Number.isFinite(Number(entry.balanceAmount))) {
             summary.latestBalanceAmount = Number(entry.balanceAmount);
             if (Number(entry.balanceAmount) <= 0.01) summary.isSettled = true;
+        }
+        if (entry.orNumber) {
+            summary.orNumbers.add(String(entry.orNumber).trim());
         }
 
         if (paymentDate && (!summary.firstPaymentDate || paymentDate < summary.firstPaymentDate)) {
@@ -3256,6 +3293,7 @@ async function computeCollectorDashboardData() {
                 expectedCollectionDate: addDays(record.invoiceDate, 30),
                 firstPaymentDate: paymentSummary.firstPaymentDate,
                 lastPaymentDate: paymentSummary.lastPaymentDate,
+                paymentOrNumbers: Array.from(paymentSummary.orNumbers || []),
                 rd: record.rd
             });
             accountRow.months[record.monthKey] = invoiceCell.id;
@@ -3392,6 +3430,7 @@ async function computeCollectorDashboardData() {
                     invoiceDate: detailInvoiceDate,
                     firstPaymentDate: paymentSummary.firstPaymentDate,
                     lastPaymentDate: paymentSummary.lastPaymentDate,
+                    paymentOrNumbers: Array.from(paymentSummary.orNumbers || []),
                     rd: readingDay
                 });
             });
@@ -3592,6 +3631,8 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                 const catchUpBilling = Boolean(cell.catchUpBilling);
                                 const showBillingAmount = billedTarget > 0;
                                 const followupBadge = renderFollowupBadge(cell.latestHistory || row.latestHistory);
+                                const invoiceMeta = renderCellInvoicePaymentMeta(cell);
+                                const paidMeta = renderCellInvoicePaymentMeta(cell, { paidOnly: true });
                                 let cellClass = 'month-cell pending';
                                 let cellText = '<span class="collector-empty-dot"></span>';
 
@@ -3600,6 +3641,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                     cellText = `
                                         <span class="collector-amount">${escapeHtml(formatPlainNumber(outstandingBalance))}</span>
                                         <span class="collector-state-label partial">Balance</span>
+                                        ${paidMeta || invoiceMeta}
                                         ${followupBadge}
                                     `;
                                 } else if (cell.collectedTotal > 0 && billedTarget > 0 && cell.collectedTotal >= billedTarget) {
@@ -3607,6 +3649,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                     cellText = `
                                         <span class="collector-amount">${escapeHtml(formatPlainNumber(cell.collectedTotal))}</span>
                                         <span class="collector-state-label collected">Collected</span>
+                                        ${paidMeta || invoiceMeta}
                                         ${followupBadge}
                                     `;
                                 } else if (showBillingAmount) {
@@ -3616,6 +3659,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                         ${catchUpBilling
                                             ? `<span class="collector-state-label catch-up">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))})` : ''}</span>`
                                             : '<span class="collector-state-label unpaid">No Payment</span>'}
+                                        ${invoiceMeta}
                                         ${followupBadge}
                                     `;
                                 } else if (missedReading || cell.pendingBilling) {
