@@ -1048,7 +1048,7 @@ async function loadMySchedule(options = {}) {
     try {
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const [printedDocs, savedDocs, scheduleDocs] = await Promise.all([
+        const [printedDocs, savedDocs, scheduleDocs, plannerDocs] = await Promise.all([
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
