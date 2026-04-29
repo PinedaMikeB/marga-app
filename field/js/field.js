@@ -456,6 +456,12 @@ function normalizeSearchText(value) {
     return normalizeInlineText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function mergePendingOfflineRows(collection, rows) {
+    const merger = window.MargaOfflineSync?.mergePendingCollectionRows;
+    if (typeof merger !== 'function') return rows;
+    return merger(collection, rows);
+}
+
 function normalizeLegacyDateTime(value) {
     const text = String(value || '').trim();
     if (!text) return '';
@@ -636,9 +642,9 @@ async function fetchDocsByIdList(collection, ids) {
     if (!uniqueIds.length) return new Map();
 
     const docs = await Promise.all(uniqueIds.map((id) => fetchDoc(collection, String(id))));
+    const rows = mergePendingOfflineRows(collection, docs.filter(Boolean));
     return new Map(
-        docs
-            .filter(Boolean)
+        rows
             .map((doc) => [String(doc.id || doc._docId || ''), doc])
             .filter(([key]) => key)
     );
@@ -1068,24 +1074,25 @@ async function loadMySchedule(options = {}) {
             queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => [])
         ]);
 
-        const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), date);
-        const savedRows = pickLatestRouteRows(savedDocs.map(parseFirestoreDoc).filter(Boolean), date);
+        const printedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_PRIMARY, printedDocs.map(parseFirestoreDoc).filter(Boolean));
+        const savedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_FALLBACK, savedDocs.map(parseFirestoreDoc).filter(Boolean));
+        const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
+        const plannerSourceRows = mergePendingOfflineRows(SCHEDULE_PLANNER_COLLECTION, plannerDocs.map(parseFirestoreDoc).filter(Boolean));
+
+        const printedRows = pickLatestRouteRows(printedSourceRows, date);
+        const savedRows = pickLatestRouteRows(savedSourceRows, date);
         const routeRows = mergeTodayRouteRows(printedRows, savedRows);
         const routeSourceLabel = printedRows.length && savedRows.length ? 'Printed + Saved' : (printedRows.length ? 'Printed' : 'Saved');
 
         const routeBoundTodayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
             .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
         const routeScheduleIds = new Set(routeBoundTodayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
-        const directTodayRows = scheduleDocs
-            .map(parseFirestoreDoc)
-            .filter(Boolean)
+        const directTodayRows = scheduleSourceRows
             .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
             .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
             .map(asDirectTodayScheduleRow);
         const existingPlannerIds = new Set(directTodayRows.map((row) => String(row.field_billing_schedule_doc_id || row.source_planner_doc_id || '').trim()).filter(Boolean));
-        const plannerTodayRows = plannerDocs
-            .map(parseFirestoreDoc)
-            .filter(Boolean)
+        const plannerTodayRows = plannerSourceRows
             .filter((row) => String(row.department || '') === 'billing')
             .filter((row) => Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) === Number(state.staffId || 0))
             .filter((row) => !existingPlannerIds.has(String(row._docId || row.id || '').trim()))
