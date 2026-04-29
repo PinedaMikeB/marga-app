@@ -4860,6 +4860,230 @@ function renderMiniInvoiceRows(invoices, emptyText) {
     `;
 }
 
+function closeCollectorSoaPeriodModal() {
+    document.getElementById('collectorSoaPeriodModal')?.classList.add('hidden');
+}
+
+function openCollectorSoaPeriodModal() {
+    const modal = document.getElementById('collectorSoaPeriodModal');
+    if (!modal || !currentCollectorWorkspace) return;
+
+    const fromInput = document.getElementById('collectorSoaFromDate');
+    const toInput = document.getElementById('collectorSoaToDate');
+    const subtitle = document.getElementById('collectorSoaSubtitle');
+    const note = document.getElementById('collectorSoaPeriodNote');
+    const status = document.getElementById('collectorSoaStatus');
+    const context = currentCollectorWorkspace.context || {};
+    const accountLabel = context.accountLabel || context.customer || 'this account';
+
+    if (fromInput && !fromInput.value) fromInput.value = '2026-01-01';
+    if (toInput) toInput.value = getTodayInputValue(0);
+    if (subtitle) subtitle.textContent = `Choose the SOA period for ${accountLabel}.`;
+    if (note) note.textContent = 'Default starts January 1, 2026 so 2025 invoices are excluded unless you change the date.';
+    if (status) status.textContent = 'Ready.';
+
+    modal.classList.remove('hidden');
+}
+
+function isCollectorSoaRecordMatch(record, context) {
+    const companyId = normalizeLookupId(context?.companyId);
+    const branchId = normalizeLookupId(context?.branchId);
+    const recordCompanyId = normalizeLookupId(record?.companyId);
+    const recordBranchId = normalizeLookupId(record?.branchId);
+
+    if (companyId && recordCompanyId && companyId !== recordCompanyId) return false;
+    if (branchId && recordBranchId) return branchId === recordBranchId;
+    if (companyId && recordCompanyId) return companyId === recordCompanyId;
+
+    return normalizeText(record?.company) === normalizeText(context?.customer);
+}
+
+function getPaymentsForInvoiceKeys(invoice) {
+    const keys = new Set([
+        invoice?.invoiceId,
+        invoice?.invoiceNo,
+        invoice?.invoiceKey
+    ].map((value) => String(value || '').trim()).filter(Boolean));
+    if (!keys.size) return [];
+    return paymentEntries.filter((entry) => (
+        keys.has(String(entry.invoiceId || '').trim())
+        || keys.has(String(entry.invoiceNo || '').trim())
+    ));
+}
+
+function buildCollectorSoaRows(workspace, fromDate, toDate) {
+    const context = workspace?.context || {};
+    const seen = new Set();
+    const matchedInvoices = collectorBillingRecords
+        .filter((record) => record.invoiceDate && isDateWithinRange(record.invoiceDate, fromDate, toDate))
+        .filter((record) => isCollectorSoaRecordMatch(record, context))
+        .filter((record) => {
+            const key = String(record.invoiceKey || record.invoiceNo || record.invoiceId || '').trim();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .sort((left, right) => {
+            const leftTime = (left.invoiceDate || new Date(0)).getTime();
+            const rightTime = (right.invoiceDate || new Date(0)).getTime();
+            if (leftTime !== rightTime) return leftTime - rightTime;
+            return String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''));
+        });
+
+    let finalBalance = 0;
+    const rows = matchedInvoices.map((invoice) => {
+        const payments = getPaymentsForInvoiceKeys(invoice).filter((payment) => isDateWithinRange(payment.paymentDate, fromDate, toDate));
+        const paymentAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + Number(payment.tax2307 || 0), 0);
+        const latestBalance = payments
+            .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
+            .sort((left, right) => {
+                const leftTime = (left.paymentDate || new Date(0)).getTime();
+                const rightTime = (right.paymentDate || new Date(0)).getTime();
+                return rightTime - leftTime;
+            })[0]?.balanceAmount;
+        const computedBalance = Math.max(0, Number(invoice.amount || 0) - paymentAmount);
+        const balance = latestBalance !== undefined
+            ? Math.min(Math.max(0, Number(latestBalance || 0)), computedBalance)
+            : computedBalance;
+        finalBalance += balance;
+
+        return {
+            date: invoice.invoiceDate,
+            invoiceNo: invoice.invoiceNo || invoice.invoiceId || invoice.invoiceKey || '-',
+            amountBilled: Number(invoice.amount || 0),
+            payment: paymentAmount,
+            balance
+        };
+    });
+
+    return {
+        rows,
+        totals: {
+            amountBilled: rows.reduce((sum, row) => sum + row.amountBilled, 0),
+            payment: rows.reduce((sum, row) => sum + row.payment, 0),
+            finalBalance
+        }
+    };
+}
+
+function renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa) {
+    const context = workspace.context || {};
+    const rows = soa.rows.length
+        ? soa.rows.map((row) => `
+            <tr>
+                <td>${escapeHtml(formatDate(row.date))}</td>
+                <td>${escapeHtml(row.invoiceNo)}</td>
+                <td class="num">${escapeHtml(formatCurrency(row.amountBilled))}</td>
+                <td class="num">${escapeHtml(formatCurrency(row.payment))}</td>
+                <td class="num">${escapeHtml(formatCurrency(row.balance))}</td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="5" class="empty">No SOA rows found for the selected period.</td></tr>';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SOA - ${escapeHtml(context.customer || 'Collection Account')}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 28px; color: #112f4e; font-family: Arial, sans-serif; }
+        .head { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #1e4976; padding-bottom: 14px; margin-bottom: 18px; }
+        h1 { margin: 0; font-size: 24px; letter-spacing: 0.02em; }
+        .meta { color: #4b6580; font-size: 12px; line-height: 1.45; margin-top: 6px; }
+        .printed { text-align: right; color: #4b6580; font-size: 12px; line-height: 1.45; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #cbd5e1; padding: 8px 9px; }
+        th { background: #eaf2ff; color: #294e73; text-align: left; text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+        .num { text-align: right; white-space: nowrap; }
+        tfoot td { font-weight: 700; background: #f8fafc; }
+        .final { margin-top: 18px; display: flex; justify-content: flex-end; }
+        .final-box { min-width: 260px; border: 2px solid #1e4976; padding: 12px 14px; text-align: right; }
+        .final-box span { display: block; color: #4b6580; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+        .final-box strong { display: block; margin-top: 5px; font-size: 24px; color: #12395f; }
+        .empty { text-align: center; color: #64748b; font-weight: 700; padding: 22px; }
+        @media print { body { padding: 18mm; } }
+    </style>
+</head>
+<body>
+    <section class="head">
+        <div>
+            <h1>Statement of Account</h1>
+            <div class="meta">
+                <strong>${escapeHtml(context.customer || '-')}</strong><br>
+                ${escapeHtml(context.branchName || context.accountLabel || '')}<br>
+                Period: ${escapeHtml(formatRangeLabel(fromDate, toDate))}
+            </div>
+        </div>
+        <div class="printed">
+            MARGA Collections<br>
+            Printed: ${escapeHtml(new Date().toLocaleString('en-PH'))}
+        </div>
+    </section>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Inv No.</th>
+                <th class="num">Amount Billed</th>
+                <th class="num">Payment</th>
+                <th class="num">Balance</th>
+            </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2">Totals</td>
+                <td class="num">${escapeHtml(formatCurrency(soa.totals.amountBilled))}</td>
+                <td class="num">${escapeHtml(formatCurrency(soa.totals.payment))}</td>
+                <td class="num">${escapeHtml(formatCurrency(soa.totals.finalBalance))}</td>
+            </tr>
+        </tfoot>
+    </table>
+    <div class="final">
+        <div class="final-box">
+            <span>Final Balance</span>
+            <strong>${escapeHtml(formatCurrency(soa.totals.finalBalance))}</strong>
+        </div>
+    </div>
+    <script>
+        window.addEventListener('load', () => {
+            window.focus();
+            window.print();
+        });
+    <\/script>
+</body>
+</html>`;
+}
+
+function printCollectorSoaFromModal() {
+    const status = document.getElementById('collectorSoaStatus');
+    if (!currentCollectorWorkspace) {
+        if (status) status.textContent = 'Open a collection follow-up first.';
+        return;
+    }
+
+    const fromDate = normalizeDate(document.getElementById('collectorSoaFromDate')?.value || '2026-01-01');
+    const toDate = normalizeDate(document.getElementById('collectorSoaToDate')?.value || getTodayInputValue(0));
+    if (!fromDate || !toDate || fromDate > toDate) {
+        if (status) status.textContent = 'Please choose a valid from/to period.';
+        return;
+    }
+
+    const soa = buildCollectorSoaRows(currentCollectorWorkspace, fromDate, toDate);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        if (status) status.textContent = 'Print popup was blocked. Allow popups and try again.';
+        return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(renderCollectorSoaPrintHtml(currentCollectorWorkspace, fromDate, toDate, soa));
+    printWindow.document.close();
+    if (status) status.textContent = `Prepared ${soa.rows.length.toLocaleString()} SOA row(s).`;
+    closeCollectorSoaPeriodModal();
+}
+
 function renderHistoryRows(history) {
     if (!history.length) return '<div class="collection-followup-empty">No payment progress remarks yet.</div>';
 
@@ -5151,6 +5375,9 @@ function renderCollectorFollowupWorkspace(workspace) {
             </div>
 
             <section class="collection-followup-tab-panel" id="collectorFollowupPanel" role="tabpanel" aria-labelledby="collectorFollowupTab">
+            <div class="collection-soa-actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorSoaPeriodModal()">Print SOA</button>
+            </div>
             <section class="collection-followup-grid">
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Contacts</div>
@@ -6713,6 +6940,7 @@ function setupModalEvents() {
     const detailModal = document.getElementById('detailModal');
     const collectorCellModal = document.getElementById('collectorCellModal');
     const collectorBranchModal = document.getElementById('collectorBranchModal');
+    const collectorSoaPeriodModal = document.getElementById('collectorSoaPeriodModal');
 
     followupModal?.addEventListener('click', (event) => {
         if (event.target === followupModal) closeFollowupModal();
@@ -6730,12 +6958,17 @@ function setupModalEvents() {
         if (event.target === collectorBranchModal) closeCollectorBranchModal();
     });
 
+    collectorSoaPeriodModal?.addEventListener('click', (event) => {
+        if (event.target === collectorSoaPeriodModal) closeCollectorSoaPeriodModal();
+    });
+
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             closeFollowupModal();
             closeDetailModal();
             closeCollectorCellModal();
             closeCollectorBranchModal();
+            closeCollectorSoaPeriodModal();
             closeWelcomeModal();
         }
     });
