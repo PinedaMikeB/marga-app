@@ -500,8 +500,8 @@ function getStatusKey(row) {
 
     const preferScheduleState = shouldPreferScheduleState(row);
     const finished = normalizeLegacyDateTime(row.date_finished);
+    if (finished || Number(row.closedby || 0) > 0) return 'closed';
     if (preferScheduleState) {
-        if (finished) return 'closed';
         if (Number(row.isongoing || 0) === 1) return 'ongoing';
     }
 
@@ -518,7 +518,6 @@ function getStatusKey(row) {
         if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
         return 'pending';
     }
-    if (finished) return 'closed';
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
     const taskDate = getRouteTaskDateTime(row).slice(0, 10);
     if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
@@ -1075,16 +1074,14 @@ async function loadMySchedule(options = {}) {
         const routeSourceLabel = printedRows.length && savedRows.length ? 'Printed + Saved' : (printedRows.length ? 'Printed' : 'Saved');
 
         const routeBoundTodayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
-            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
-            .filter((row) => !isFinishedOrCancelled(row));
+            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
         const routeScheduleIds = new Set(routeBoundTodayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
         const directTodayRows = scheduleDocs
             .map(parseFirestoreDoc)
             .filter(Boolean)
             .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
             .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
-            .map(asDirectTodayScheduleRow)
-            .filter((row) => !isFinishedOrCancelled(row));
+            .map(asDirectTodayScheduleRow);
         const existingPlannerIds = new Set(directTodayRows.map((row) => String(row.field_billing_schedule_doc_id || row.source_planner_doc_id || '').trim()).filter(Boolean));
         const plannerTodayRows = plannerDocs
             .map(parseFirestoreDoc)
@@ -1092,8 +1089,7 @@ async function loadMySchedule(options = {}) {
             .filter((row) => String(row.department || '') === 'billing')
             .filter((row) => Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) === Number(state.staffId || 0))
             .filter((row) => !existingPlannerIds.has(String(row._docId || row.id || '').trim()))
-            .map(plannerRowToFieldSchedule)
-            .filter((row) => !isFinishedOrCancelled(row));
+            .map(plannerRowToFieldSchedule);
         const todayRows = [...routeBoundTodayRows, ...directTodayRows, ...plannerTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
 
