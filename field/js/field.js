@@ -19,6 +19,7 @@ const LEGACY_EMPTY_DATETIME_VALUES = new Set([
 ]);
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
+const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
@@ -932,6 +933,49 @@ function asDirectTodayScheduleRow(row) {
     };
 }
 
+function plannerRowToFieldSchedule(row) {
+    const scheduleDate = String(row.schedule_date || row.preferred_schedule_date || '').trim();
+    const scheduleTime = String(row.schedule_time || '').trim() || '08:00';
+    const taskDatetime = scheduleDate
+        ? `${scheduleDate} ${scheduleTime.length === 5 ? `${scheduleTime}:00` : scheduleTime}`
+        : String(row.created_at || '');
+    const plannerId = String(row._docId || row.id || '').trim();
+    const numericId = Number(row.schedule_task_id || String(plannerId).replace(/\D/g, '').slice(-12) || Date.now()) || Date.now();
+    const purpose = String(row.schedule_purpose || row.purpose || '').trim().toLowerCase();
+    const purposeId = purpose.includes('reading') ? 8 : purpose.includes('collection') ? 2 : 1;
+    return {
+        id: numericId,
+        _docId: plannerId,
+        source_module: 'billing',
+        source_planner_doc_id: plannerId,
+        task_datetime: taskDatetime,
+        tech_id: Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) || 0,
+        purpose_id: purposeId,
+        purpose: row.schedule_purpose || row.purpose || 'Printed Billing',
+        trouble: row.task_label || row.schedule_purpose || row.purpose || 'Billing Schedule',
+        trouble_id: 0,
+        branch_id: Number(row.primary_branch_id || 0) || 0,
+        company_id: Number(row.company_id || 0) || 0,
+        serial: Number(parseJsonArray(row.machine_ids_json || row.machine_ids)[0] || row.machine_id || 0) || 0,
+        mach_id: Number(parseJsonArray(row.machine_ids_json || row.machine_ids)[0] || row.machine_id || 0) || 0,
+        machine_id: Number(parseJsonArray(row.machine_ids_json || row.machine_ids)[0] || row.machine_id || 0) || 0,
+        field_serial_selected: parseJsonArray(row.serial_numbers_json || row.serial_numbers)[0] || row.serial || '',
+        branch_name: row.primary_branch_name || parseJsonArray(row.branch_names_json || row.branch_names)[0] || '',
+        company_name: row.company_name || row.account_name || '',
+        caller: row.task_label || row.schedule_purpose || row.purpose || 'Billing Schedule',
+        remarks: row.notes || row.completion_notes || '',
+        route_id: 0,
+        route_doc_id: '',
+        route_source: 'Billing Planner',
+        route_tech_id: Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) || 0,
+        route_task_datetime: taskDatetime,
+        route_status: row.route_status || row.task_status || row.planner_status || '',
+        route_iscancelled: 0,
+        route_date_finished: '',
+        route_remarks: row.notes || ''
+    };
+}
+
 async function loadOlderCarryoverRows(date, excludedScheduleIds) {
     const days = [];
     for (let index = 1; index <= FIELD_CARRYOVER_DAYS; index += 1) {
@@ -1007,7 +1051,8 @@ async function loadMySchedule(options = {}) {
         const [printedDocs, savedDocs, scheduleDocs] = await Promise.all([
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
-            queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => [])
+            queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
+            queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => [])
         ]);
 
         const printedRows = pickLatestRouteRows(printedDocs.map(parseFirestoreDoc).filter(Boolean), date);
@@ -1026,7 +1071,16 @@ async function loadMySchedule(options = {}) {
             .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
             .map(asDirectTodayScheduleRow)
             .filter((row) => !isFinishedOrCancelled(row));
-        const todayRows = [...routeBoundTodayRows, ...directTodayRows]
+        const existingPlannerIds = new Set(directTodayRows.map((row) => String(row.field_billing_schedule_doc_id || row.source_planner_doc_id || '').trim()).filter(Boolean));
+        const plannerTodayRows = plannerDocs
+            .map(parseFirestoreDoc)
+            .filter(Boolean)
+            .filter((row) => String(row.department || '') === 'billing')
+            .filter((row) => Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) === Number(state.staffId || 0))
+            .filter((row) => !existingPlannerIds.has(String(row._docId || row.id || '').trim()))
+            .map(plannerRowToFieldSchedule)
+            .filter((row) => !isFinishedOrCancelled(row));
+        const todayRows = [...routeBoundTodayRows, ...directTodayRows, ...plannerTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
 
         state.routeSourceLabel = routeRows.length ? routeSourceLabel : 'Schedule';

@@ -1009,6 +1009,24 @@ function buildSchedulePlannerDocId(group) {
     ].join('_'))}`;
 }
 
+function buildBillingScheduleTaskDocId(plannerDocId) {
+    return `billing_task_${slugFirestoreId(plannerDocId || Date.now())}`;
+}
+
+function buildScheduleTaskDateTime(date, time) {
+    const safeDate = String(date || '').trim() || formatIsoDate(new Date());
+    const safeTime = String(time || '').trim() || '08:00';
+    return `${safeDate} ${safeTime.length === 5 ? `${safeTime}:00` : safeTime}`;
+}
+
+function firstNumericValue(...values) {
+    for (const value of values) {
+        const numeric = Number(value || 0);
+        if (Number.isFinite(numeric) && numeric > 0) return Math.trunc(numeric);
+    }
+    return 0;
+}
+
 function getBillingSchedulePurpose(keyOrLabel = '') {
     const normalized = String(keyOrLabel || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     if (normalized === 'reading' || normalized === 'meter_reading') return BILLING_SCHEDULE_PURPOSES.reading;
@@ -1200,6 +1218,71 @@ async function saveBillingToSchedulePlanner({ result, row, context, estimate, sn
         savedCount: savedDocs.length,
         docs: savedDocs
     };
+}
+
+async function saveBillingScheduleToFieldTask({ plannerDocId, row, context, estimate, purpose, staffId, staffName, auditName = '' }) {
+    const taskDocId = buildBillingScheduleTaskDocId(plannerDocId);
+    const nowIso = new Date().toISOString();
+    const scheduleDate = String(estimate?.scheduleDate || '').trim();
+    const scheduleTime = String(estimate?.scheduleTime || '').trim();
+    const taskDateTime = buildScheduleTaskDateTime(scheduleDate, scheduleTime);
+    const taskId = firstNumericValue(
+        estimate?.scheduleTaskId,
+        String(taskDocId).replace(/\D/g, '').slice(-12),
+        Date.now()
+    );
+    const branchId = firstNumericValue(row?.branch_id, row?.primaryBranchId);
+    const companyId = firstNumericValue(row?.company_id);
+    const machineId = firstNumericValue(row?.machine_id);
+    const contractId = firstNumericValue(row?.contractmain_id);
+    const purposeId = purpose?.key === 'reading' ? 8 : 1;
+    const troubleLabel = purpose?.key === 'reading' ? 'Get Meter Reading' : 'Deliver Invoice';
+    const fields = {
+        id: taskId,
+        source_module: 'billing',
+        source_planner_doc_id: plannerDocId,
+        task_datetime: taskDateTime,
+        original_sched: taskDateTime,
+        tech_id: Number(staffId || 0) || staffId,
+        purpose_id: purposeId,
+        purpose: purpose?.label || 'Printed Billing',
+        schedule_purpose: purpose?.label || 'Printed Billing',
+        trouble: troubleLabel,
+        trouble_id: 0,
+        caller: `${purpose?.label || 'Printed Billing'} - ${row?.company_name || row?.account_name || row?.display_name || ''}`.trim(),
+        remarks: `${troubleLabel}${row?.branch_name ? ` for ${row.branch_name}` : ''}${row?.serial_number ? ` (${row.serial_number})` : ''}.`,
+        branch_id: branchId,
+        company_id: companyId,
+        contractmain_id: contractId,
+        serial: machineId,
+        mach_id: machineId,
+        machine_id: machineId,
+        field_serial_selected: String(row?.serial_number || '').trim(),
+        machine_model: String(row?.machine_label || '').trim(),
+        branch_name: String(row?.branch_name || '').trim(),
+        company_name: String(row?.company_name || row?.account_name || row?.display_name || '').trim(),
+        area_id: firstNumericValue(row?.area_id),
+        date_finished: '0000-00-00 00:00:00',
+        iscancel: 0,
+        iscancelled: 0,
+        isongoing: 0,
+        pending_parts: 0,
+        master_schedule_status: 'open',
+        master_schedule_status_label: 'Open',
+        field_billing_schedule_doc_id: plannerDocId,
+        field_billing_assigned_staff_id: String(staffId || '').trim(),
+        field_billing_assigned_staff_name: String(staffName || '').trim(),
+        inserted_by: auditName,
+        created_at: nowIso,
+        updated_at: nowIso,
+        bridge_updated_at: nowIso
+    };
+    const result = await setFirestoreDocument('tbl_schedule', taskDocId, fields, {
+        mode: 'set',
+        label: `Field schedule ${purpose?.label || 'Billing'} ${row?.serial_number || taskDocId}`,
+        dedupeKey: `tbl_schedule:${taskDocId}`
+    });
+    return { ...result, docId: taskDocId, taskId, fields };
 }
 
 function billingScheduleStaffName(employee) {
@@ -6431,10 +6514,22 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (!scheduleDocId) throw new Error('Unable to create Master Schedule planner row.');
             const audit = getCurrentUserAudit();
             const nowIso = new Date().toISOString();
+            const scheduleTask = await saveBillingScheduleToFieldTask({
+                plannerDocId: scheduleDocId,
+                row,
+                context,
+                estimate: activeEstimate,
+                purpose: schedulePurpose,
+                staffId,
+                staffName,
+                auditName: audit.name
+            });
             await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, scheduleDocId, {
                 planner_status: 'scheduled',
                 task_status: 'scheduled',
                 route_status: 'scheduled',
+                schedule_task_doc_id: scheduleTask.docId,
+                schedule_task_id: scheduleTask.taskId,
                 purpose: schedulePurpose.label,
                 schedule_purpose: schedulePurpose.label,
                 schedule_purpose_key: schedulePurpose.key,
@@ -6465,6 +6560,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                     schedule_type: scheduleType,
                     schedule_purpose: schedulePurpose.label,
                     schedule_purpose_key: schedulePurpose.key,
+                    schedule_task_doc_id: scheduleTask.docId,
+                    schedule_task_id: scheduleTask.taskId,
                     schedule_assigned_staff_id: staffId,
                     schedule_assigned_staff_name: staffName,
                     updated_at: nowIso
@@ -6478,6 +6575,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             scheduleSaved = true;
             activeEstimate.scheduleSaved = true;
             activeEstimate.scheduleDocId = scheduleDocId;
+            activeEstimate.scheduleTaskDocId = scheduleTask.docId;
+            activeEstimate.scheduleTaskId = scheduleTask.taskId;
             MargaUtils.showToast(`Saved to Master Schedule for ${scheduleDate}.`, 'success');
             syncCalcWorkflowState();
         } catch (error) {
