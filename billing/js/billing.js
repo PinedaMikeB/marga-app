@@ -3816,13 +3816,16 @@ function buildCompanySummaryRows(rows, months) {
         const key = String(row.company_id || row.company_name || row.account_name || row.row_id || '').trim();
         if (!key) return;
         if (!groups.has(key)) {
+            const billingGroup = row.billing_group || null;
             groups.set(key, {
                 key,
                 company_id: row.company_id || null,
                 company_name: row.company_name || row.account_name || 'Unknown',
+                billing_group: billingGroup,
                 rows: []
             });
         }
+        if (!groups.get(key).billing_group && row.billing_group) groups.get(key).billing_group = row.billing_group;
         groups.get(key).rows.push(row);
     });
 
@@ -3899,6 +3902,8 @@ function buildCompanySummaryRows(rows, months) {
             displayRows.push({
                 row_id: `summary:${key}`,
                 is_summary_row: true,
+                is_grouped_billing_row: Boolean(group.billing_group),
+                billing_group: group.billing_group || null,
                 company_id: group.company_id,
                 company_name: group.company_name,
                 account_name: group.company_name,
@@ -3914,7 +3919,7 @@ function buildCompanySummaryRows(rows, months) {
         }
 
         if (qualifies) {
-            displayRows.push({ ...row, is_detail_row: true });
+            displayRows.push({ ...row, is_detail_row: true, grouped_parent_name: group.billing_group?.display_name || group.company_name });
             return;
         }
         displayRows.push(row);
@@ -3924,7 +3929,17 @@ function buildCompanySummaryRows(rows, months) {
 }
 
 function renderBranchMain(row) {
-    if (row.is_summary_row) return escapeHtml(row.branch_name || 'Main');
+    if (row.is_summary_row) {
+        const groupBadge = row.billing_group
+            ? `<span class="grouped-invoice-badge" title="Verified from tbl_groupings">${escapeHtml(row.billing_group.display_name || row.billing_group.group_name || 'Grouped Invoice')}</span>`
+            : '';
+        return `
+            <span class="branch-head">
+                <span>${escapeHtml(row.branch_name || 'Main')}</span>
+                ${groupBadge}
+            </span>
+        `;
+    }
     const profile = getRowBillingProfile(row);
     const badge = profile?.category_code
         ? `<span class="billing-code-badge" title="${escapeHtml(profile.category_label || profile.category_code)}">${escapeHtml(profile.category_code)}</span>`
@@ -3938,7 +3953,15 @@ function renderBranchMain(row) {
 }
 
 function renderBranchSub(row) {
-    if (row.is_summary_row) return 'Search subtotal across loaded machine rows';
+    if (row.is_summary_row) {
+        if (row.billing_group) {
+            return `${row.billing_group.label || 'One Invoice, Multiple Machines'} • verified billing group`;
+        }
+        return 'Search subtotal across loaded machine rows';
+    }
+    if (row.billing_group) {
+        return `Part of group: ${row.billing_group.display_name || row.billing_group.group_name || row.company_name || 'Grouped Invoice'}`;
+    }
     const profile = getRowBillingProfile(row);
     if (profile?.category_label) {
         return `${profile.category_label} • ${row.account_name || row.company_name || ''}`;
@@ -6959,6 +6982,7 @@ function renderMatrixTable(payload) {
                 </td>
                 <td class="customer-col">
                     <div class="customer-main">${escapeHtml(row.company_name || row.account_name)}</div>
+                    ${row.is_summary_row && row.billing_group ? '<div class="customer-badge-line"><span class="grouped-invoice-badge">Grouped Invoice</span></div>' : ''}
                     <div class="customer-sub">${escapeHtml(row.is_summary_row ? (row.machine_label || '') : (row.machine_label || row.machine_id || ''))}</div>
                 </td>
                 <td class="branch-col">

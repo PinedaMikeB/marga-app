@@ -266,6 +266,7 @@ function getCacheState() {
             billingPages: 0,
             schedulePages: 0,
             companyMap: {},
+            billingGroupByCompanyId: {},
             branchMap: {},
             contractMap: {},
             contractDepMap: {},
@@ -303,7 +304,8 @@ async function loadCache(
     const sameWindow = Number(cache.billingPages || 0) === nextBillingPages
         && Number(cache.schedulePages || 0) === nextSchedulePages
         && Boolean(cache.machineHistoryLoaded) === Boolean(includeMachineHistory)
-        && String(cache.billingWindowKey || '') === nextBillingWindowKey;
+        && String(cache.billingWindowKey || '') === nextBillingWindowKey
+        && cache.billingGroupByCompanyId;
 
     if (!forceRefresh && sameWindow && cache.stamp && (now - cache.stamp) < CACHE_TTL_MS) {
         return cache;
@@ -345,7 +347,7 @@ async function loadCache(
     const machineReadingWindowStart = machineReadingStartKey ? monthWindowStart(machineReadingStartKey) : '';
     const machineReadingWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs, machineDocs, modelDocs, machineHistoryDocs, billingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, machineHistoryDocs, billingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
@@ -353,6 +355,7 @@ async function loadCache(
             maxPages: 80
         }),
         firestoreGetAll('tbl_contractdep', { fieldMask: ['id', 'branch_id', 'departmentname'], maxPages: 60 }),
+        firestoreGetAll('tbl_groupings', { fieldMask: ['id', 'company_id', 'groupname', 'isinactive', 'category_id', 'monthly_quota', 'page_rate', 'page_rate_xtra', 'withvat'], maxPages: 20 }),
         firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial', 'model_id', 'description', 'status_id'], maxPages: 80 }),
         firestoreGetAll('tbl_model', { fieldMask: ['id', 'modelname', 'description'], maxPages: 20 }),
         includeMachineHistory
@@ -447,6 +450,30 @@ async function loadCache(
         const id = String(getField(doc.fields || {}, ['id']) || '').trim();
         if (!id) return;
         cache.companyMap[id] = String(getField(doc.fields || {}, ['companyname']) || 'Unknown').trim() || 'Unknown';
+    });
+
+    cache.billingGroupByCompanyId = {};
+    groupDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const companyId = String(getField(f, ['company_id']) || '').trim();
+        const id = String(getField(f, ['id']) || doc.name?.split('/').pop() || '').trim();
+        if (!companyId || !id) return;
+        if (Number(getField(f, ['isinactive']) || 0) === 1) return;
+        const rawName = String(getField(f, ['groupname']) || '').trim();
+        const companyName = cache.companyMap[companyId] || '';
+        const displayName = rawName && !/^group$/i.test(rawName) ? rawName : (companyName || rawName || `Group ${id}`);
+        cache.billingGroupByCompanyId[companyId] = {
+            id,
+            company_id: companyId,
+            group_name: rawName || displayName,
+            display_name: displayName,
+            billing_mode: 'multi_machine_rtp',
+            label: 'One Invoice, Multiple Machines',
+            category_id: Number(getField(f, ['category_id']) || 0) || 0,
+            monthly_quota: Number(getField(f, ['monthly_quota']) || 0) || 0,
+            page_rate: Number(getField(f, ['page_rate']) || 0) || 0,
+            page_rate_xtra: Number(getField(f, ['page_rate_xtra']) || 0) || 0
+        };
     });
 
     cache.branchMap = {};
@@ -1045,6 +1072,11 @@ function resolveSerialLabel(cache, contract) {
     return machId ? `Machine ${machId}` : 'N/A';
 }
 
+function getCompanyBillingGroup(cache, companyId) {
+    const key = String(companyId || '').trim();
+    return key ? (cache?.billingGroupByCompanyId?.[key] || null) : null;
+}
+
 function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, serialNumber, months, cache = null) {
     let row = machineRows.get(rowId);
     if (!row) {
@@ -1074,9 +1106,12 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
             reading_day: null,
             reading_day_source: null,
             expected_start_month: null,
+            billing_group: getCompanyBillingGroup(cache, companyId),
             billing_profile: null
         };
         machineRows.set(rowId, row);
+    } else if (!row.billing_group) {
+        row.billing_group = getCompanyBillingGroup(cache, companyId);
     }
     return row;
 }
@@ -1953,6 +1988,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             confirmed_received_months_count: row.confirmed_received_months_count,
             unconfirmed_billed_months_count: row.unconfirmed_billed_months_count,
             latest_billed_month: row.latest_billed_month,
+            billing_group: row.billing_group || getCompanyBillingGroup(cache, row.company_id),
             billing_profile: row.billing_profile || null,
             months: serializedMonths
         });

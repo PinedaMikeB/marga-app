@@ -680,6 +680,28 @@
     letter-spacing: 0.04em;
 }
 
+.grouped-invoice-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: max-content;
+    max-width: 100%;
+    padding: 0.28rem 0.5rem;
+    border-radius: 999px;
+    background: #dffcf1;
+    color: #0f766e;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.customer-badge-line {
+    display: flex;
+    justify-content: center;
+    margin: 0.25rem 0;
+}
+
 .total-cell,
 .billing-sheet tfoot th {
     background: var(--bill-total);
