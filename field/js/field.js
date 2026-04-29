@@ -933,6 +933,20 @@ function asDirectTodayScheduleRow(row) {
     };
 }
 
+function parseJsonArray(value) {
+    if (Array.isArray(value)) return value;
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed === null || parsed === undefined || parsed === '') return [];
+        return [parsed];
+    } catch (_) {
+        return raw.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+}
+
 function plannerRowToFieldSchedule(row) {
     const scheduleDate = String(row.schedule_date || row.preferred_schedule_date || '').trim();
     const scheduleTime = String(row.schedule_time || '').trim() || '08:00';
