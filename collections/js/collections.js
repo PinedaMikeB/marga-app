@@ -4477,14 +4477,23 @@ function renderServiceRows(rows) {
     `;
 }
 
-function getPaymentsForSelectedInvoice(invoice) {
-    if (!invoice) return [];
+function getInvoicePaymentMatchKeys(invoice) {
+    if (!invoice) return new Set();
     const keys = new Set([
         invoice.invoiceId,
         invoice.invoiceNo,
-        invoice.invoiceKey,
-        invoice.id
+        invoice.invoiceKey
     ].map((value) => String(value || '').trim()).filter(Boolean));
+    const documentId = String(invoice.id || '').trim();
+    if (documentId && (!keys.size || keys.has(documentId))) {
+        keys.add(documentId);
+    }
+    return keys;
+}
+
+function getPaymentsForSelectedInvoice(invoice) {
+    const keys = getInvoicePaymentMatchKeys(invoice);
+    if (!keys.size) return [];
 
     return paymentEntries
         .filter((entry) => keys.has(String(entry.invoiceId || '').trim()) || keys.has(String(entry.invoiceNo || '').trim()))
