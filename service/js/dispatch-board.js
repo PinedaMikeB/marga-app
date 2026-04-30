@@ -7,6 +7,13 @@ const OPS_QUERY_LIMIT = 5000;
 const OPS_CARRYOVER_DAYS = 14;
 const SERVICE_PROGRESS_EVENT_COLLECTION = 'marga_field_visit_events';
 const SERVICE_PROGRESS_STALE_MINUTES = 120;
+const SERVICE_PROGRESS_OFFICE = {
+    name: 'MARGA Office - Havila, Antipolo',
+    latitude: 14.5631,
+    longitude: 121.1814
+};
+const SERVICE_PROGRESS_RADIUS_MILES = 25;
+const SERVICE_PROGRESS_RADIUS_METERS = SERVICE_PROGRESS_RADIUS_MILES * 1609.344;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -81,6 +88,7 @@ const opsState = {
     logsByStaff: new Map(),
     serviceProgressMap: null,
     serviceProgressMarkers: [],
+    serviceProgressCircle: null,
     panelStaffId: null,
     purposeFilter: 'all',
     statusFilter: 'all',
@@ -2725,6 +2733,20 @@ function getEventCoordinates(event) {
     return { latitude, longitude };
 }
 
+function distanceMetersBetween(left, right) {
+    if (!left || !right) return null;
+    const earthRadiusMeters = 6371000;
+    const toRadians = (degrees) => degrees * Math.PI / 180;
+    const lat1 = toRadians(left.latitude);
+    const lat2 = toRadians(right.latitude);
+    const deltaLat = toRadians(right.latitude - left.latitude);
+    const deltaLng = toRadians(right.longitude - left.longitude);
+    const a = Math.sin(deltaLat / 2) ** 2
+        + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusMeters * c;
+}
+
 function getProgressTimestamp(event) {
     if (!event) return '';
     return String(
@@ -2837,6 +2859,10 @@ function buildServiceProgressItems() {
             const actionKey = String(event?.action || event?.status || '').trim().toLowerCase();
             const actionLabel = getProgressActionLabel(event?.status_label || event?.action || event?.status);
             const hasGpsEvent = Boolean(eventCoords);
+            const distanceFromOfficeMeters = coords ? distanceMetersBetween(
+                { latitude: SERVICE_PROGRESS_OFFICE.latitude, longitude: SERVICE_PROGRESS_OFFICE.longitude },
+                coords
+            ) : null;
 
             return {
                 staffId,
@@ -2853,6 +2879,8 @@ function buildServiceProgressItems() {
                 hasCoordinates: Boolean(coords),
                 latitude: coords?.latitude || null,
                 longitude: coords?.longitude || null,
+                distanceFromOfficeMeters,
+                isInsideOfficeRadius: distanceFromOfficeMeters === null ? false : distanceFromOfficeMeters <= SERVICE_PROGRESS_RADIUS_METERS,
                 coordinateSource: eventCoords ? 'Staff GPS' : (branchCoords ? 'Scheduled Client' : 'No Map Pin'),
                 companyName: company?.companyname || event?.company_name || '-',
                 branchName: branch?.branchname || event?.branch_name || '-',
@@ -2864,6 +2892,13 @@ function buildServiceProgressItems() {
             if (a.isStale !== b.isStale) return a.isStale ? 1 : -1;
             return a.staffName.localeCompare(b.staffName);
         });
+}
+
+function getVisibleServiceProgressItems() {
+    return buildServiceProgressItems().filter((item) => {
+        if (!item.hasCoordinates) return false;
+        return item.isInsideOfficeRadius;
+    });
 }
 
 function openServiceProgressMap() {
@@ -2891,12 +2926,37 @@ function ensureServiceProgressMap() {
     opsState.serviceProgressMap = L.map(mapEl, {
         zoomControl: true,
         attributionControl: true
-    }).setView([14.5995, 120.9842], 11);
+    }).setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], 11);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(opsState.serviceProgressMap);
+
+    opsState.serviceProgressCircle = L.circle(
+        [SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude],
+        {
+            radius: SERVICE_PROGRESS_RADIUS_METERS,
+            color: '#2563eb',
+            weight: 1,
+            opacity: 0.55,
+            fillColor: '#60a5fa',
+            fillOpacity: 0.08
+        }
+    ).addTo(opsState.serviceProgressMap);
+
+    L.circleMarker(
+        [SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude],
+        {
+            radius: 8,
+            color: '#ffffff',
+            weight: 3,
+            fillColor: '#111827',
+            fillOpacity: 1
+        }
+    )
+        .addTo(opsState.serviceProgressMap)
+        .bindPopup(`<strong>${sanitize(SERVICE_PROGRESS_OFFICE.name)}</strong><br><small>${SERVICE_PROGRESS_RADIUS_MILES}-mile service radius</small>`);
 
     return opsState.serviceProgressMap;
 }
@@ -2957,8 +3017,11 @@ function renderServiceProgressRoster(items) {
 }
 
 function renderServiceProgressMap() {
-    const items = buildServiceProgressItems();
+    const allItems = buildServiceProgressItems();
+    const items = getVisibleServiceProgressItems();
     const mappedItems = items.filter((item) => item.hasCoordinates);
+    const hiddenOutsideRadius = allItems.filter((item) => item.hasCoordinates && !item.isInsideOfficeRadius).length;
+    const hiddenUnmapped = allItems.filter((item) => !item.hasCoordinates).length;
     const subtitle = document.getElementById('serviceProgressSubtitle');
     const empty = document.getElementById('serviceProgressEmpty');
 
@@ -2966,7 +3029,7 @@ function renderServiceProgressMap() {
 
     if (subtitle) {
         const gpsCount = items.filter((item) => item.hasGpsEvent).length;
-        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${items.length} staff shown, ${gpsCount} with live GPS, ${mappedItems.length} with map pins.`;
+        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${items.length} staff inside ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius, ${gpsCount} with live GPS. ${hiddenOutsideRadius} outside radius, ${hiddenUnmapped} no pin.`;
     }
 
     if (!window.L) {
@@ -2982,10 +3045,10 @@ function renderServiceProgressMap() {
     clearServiceProgressMarkers();
 
     if (!mappedItems.length) {
-        map.setView([14.5995, 120.9842], 11);
+        map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], 11);
         if (empty) {
             empty.hidden = false;
-            empty.textContent = 'No mapped staff yet. Add GPS events or branch coordinates to show pins.';
+            empty.textContent = `No staff pins inside the ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius yet.`;
         }
         setTimeout(() => map.invalidateSize(), 80);
         return;
@@ -3021,6 +3084,10 @@ function renderServiceProgressMap() {
             map.setView(bounds[0], 14);
         } else {
             map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
+        }
+        const officeBounds = L.latLng(SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude).toBounds(SERVICE_PROGRESS_RADIUS_METERS * 2);
+        if (!officeBounds.contains(map.getCenter())) {
+            map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], 11);
         }
     }, 80);
 }
