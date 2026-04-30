@@ -22,6 +22,7 @@ const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
+const FIELD_VISIT_EVENT_COLLECTION = 'marga_field_visit_events';
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
     modelBrand: true,
@@ -91,7 +92,8 @@ const state = {
     modalSchedtimeDocId: null,
     modalSchedtimeId: null,
     modalPartsNeeded: [],
-    modalReadOnly: false
+    modalReadOnly: false,
+    modalBranchLocationPinned: false
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -167,6 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
+    document.getElementById('fieldPinLocationBtn').addEventListener('click', pinCustomerLocation);
 
     applyTemporaryFieldMode();
     resetModalSectionState();
@@ -1490,6 +1493,73 @@ function getFileMeta(inputId) {
     };
 }
 
+function parseCoordinate(value) {
+    const numeric = Number(String(value ?? '').trim());
+    if (!Number.isFinite(numeric) || numeric === 0) return null;
+    return numeric;
+}
+
+function branchHasSavedLocation(branch) {
+    if (!branch) return false;
+    const latitude = parseCoordinate(branch.latitude ?? branch.lat);
+    const longitude = parseCoordinate(branch.longitude ?? branch.lng ?? branch.lon);
+    if (latitude === null || longitude === null) return false;
+    return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+}
+
+function getBranchLocationStatus(row = getCurrentRow()) {
+    const branch = caches.branch.get(String(row?.branch_id || state.modalBranchId || 0));
+    return {
+        branch,
+        hasLocation: branchHasSavedLocation(branch) || state.modalBranchLocationPinned
+    };
+}
+
+function setLocationPinUi(row = getCurrentRow()) {
+    const status = document.getElementById('fieldLocationPinStatus');
+    const button = document.getElementById('fieldPinLocationBtn');
+    const card = document.getElementById('fieldLocationCard');
+    if (!status || !button || !card) return;
+
+    const { branch, hasLocation } = getBranchLocationStatus(row);
+    const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
+    const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
+
+    card.classList.toggle('is-complete', hasLocation);
+    card.classList.toggle('is-required', !hasLocation);
+    button.hidden = hasLocation;
+    button.disabled = state.modalReadOnly || hasLocation;
+
+    if (hasLocation) {
+        const coordText = latitude !== null && longitude !== null
+            ? `Saved: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+            : 'Location saved for this customer.';
+        status.textContent = `${coordText} No need to pin again.`;
+        return;
+    }
+
+    status.textContent = 'Required before finishing. Tap Pin Customer Location while you are at the customer site.';
+}
+
+function getCurrentPosition(options = {}) {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('GPS location is not available on this device/browser.'));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 20000,
+            maximumAge: 0,
+            ...options
+        });
+    });
+}
+
+function localDateYmd(date = new Date()) {
+    return formatDateYmd(date);
+}
+
 function normalizeTicketPurpose(row) {
     return Number(row?.purpose_id || 0) || 0;
 }
@@ -1530,6 +1600,7 @@ function resetModalFields() {
     state.modalSchedtimeId = null;
     state.modalPartsNeeded = [];
     state.modalReadOnly = false;
+    state.modalBranchLocationPinned = false;
 
     document.getElementById('fieldCloseNotes').value = '';
     document.getElementById('fieldClosePin').value = '';
@@ -1559,6 +1630,10 @@ function resetModalFields() {
     document.getElementById('fieldTotalConsumed').value = '0';
     document.getElementById('fieldTimeIn').value = '';
     document.getElementById('fieldTimeOut').value = '';
+    document.getElementById('fieldLocationPinStatus').textContent = 'Checking customer location...';
+    document.getElementById('fieldPinLocationBtn').hidden = false;
+    document.getElementById('fieldPinLocationBtn').disabled = false;
+    document.getElementById('fieldLocationCard').classList.remove('is-complete', 'is-required');
 
     const before = document.getElementById('fieldBeforePhoto');
     const after = document.getElementById('fieldAfterPhoto');
@@ -1612,6 +1687,7 @@ function setFormDisabled(isReadOnly) {
         'fieldTimeIn',
         'fieldTimeInNowBtn',
         'fieldTimeOutNowBtn',
+        'fieldPinLocationBtn',
         'fieldDeliveryDetails',
         'fieldEmptyPickupDetails',
         'fieldCustomerSigner',
@@ -1644,6 +1720,7 @@ function setFormDisabled(isReadOnly) {
     applyModalWorkflowState();
     updateModalFooterState();
     updateActionButtons();
+    setLocationPinUi();
 }
 
 function updateModalFooterState() {
@@ -1824,6 +1901,7 @@ async function openModal(scheduleId) {
     state.modalPartsNeeded = parseSavedPartsList(row.field_parts_needed_json);
     state.modalSchedtimeDocId = null;
     state.modalSchedtimeId = null;
+    state.modalBranchLocationPinned = false;
 
     const branch = caches.branch.get(String(row.branch_id || 0));
     const company = caches.company.get(String(row.company_id || branch?.company_id || 0));
@@ -1833,6 +1911,7 @@ async function openModal(scheduleId) {
 
     document.getElementById('fieldModalTitle').textContent = `#${row.id} ${purposeLabel} / ${troubleLabel}`;
     document.getElementById('fieldModalSubtitle').textContent = `${company?.companyname || '-'} · ${branch?.branchname || '-'} · ${formatTaskDateTime(row.task_datetime)}`;
+    setLocationPinUi(row);
 
     await Promise.all([
         loadMachineStatusOptions(),
@@ -1947,6 +2026,7 @@ async function openModal(scheduleId) {
 
     const isReadOnly = state.modalStatusKey === 'closed' || state.modalStatusKey === 'cancelled';
     setFormDisabled(isReadOnly);
+    setLocationPinUi(row);
     updateActionButtons();
 
     setModalOpen(true);
@@ -2125,6 +2205,10 @@ function applyRowPatch(scheduleId, patch) {
 }
 
 function getCloseTaskIssues(row, form) {
+    const { hasLocation } = getBranchLocationStatus(row);
+    if (!hasLocation) {
+        return ['Pin this customer location before marking the schedule as Finished.'];
+    }
     return [];
 }
 
@@ -2519,6 +2603,108 @@ async function saveSerialMapping() {
         console.error('Save serial mapping failed:', err);
         serialHint.textContent = `Error: ${err?.message || err}`;
         alert(`Failed to save serial mapping: ${err?.message || err}`);
+    }
+}
+
+async function pinCustomerLocation() {
+    if (state.modalReadOnly) return;
+    const row = getCurrentRow();
+    if (!row) return;
+
+    const branchId = Number(row.branch_id || state.modalBranchId || 0);
+    if (!branchId) {
+        alert('This schedule has no branch ID to pin.');
+        return;
+    }
+
+    const { hasLocation } = getBranchLocationStatus(row);
+    if (hasLocation) {
+        alert('This customer already has a saved location.');
+        setLocationPinUi(row);
+        return;
+    }
+
+    const button = document.getElementById('fieldPinLocationBtn');
+    const status = document.getElementById('fieldLocationPinStatus');
+    const staffId = Number(state.staffId || 0) || 0;
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    button.disabled = true;
+    if (status) status.textContent = 'Getting GPS location... Please allow location access.';
+
+    try {
+        const position = await getCurrentPosition();
+        const latitude = Number(position.coords.latitude);
+        const longitude = Number(position.coords.longitude);
+        const accuracy = Number(position.coords.accuracy || 0);
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            throw new Error('GPS returned an invalid location.');
+        }
+
+        const latitudeText = latitude.toFixed(7);
+        const longitudeText = longitude.toFixed(7);
+        const branchPatch = {
+            latitude: latitudeText,
+            longitude: longitudeText,
+            location_pin_updated_at: nowIso,
+            location_pin_updated_by: staffId,
+            location_pin_accuracy_meters: Math.round(accuracy),
+            location_pin_source: 'field_app'
+        };
+        const schedulePatch = {
+            field_customer_location_pinned: 1,
+            field_customer_location_pinned_at: nowIso,
+            field_customer_location_pinned_by: staffId,
+            field_customer_location_latitude: latitudeText,
+            field_customer_location_longitude: longitudeText,
+            field_customer_location_accuracy_meters: Math.round(accuracy),
+            field_tracking_status: 'customer_location_pinned',
+            field_last_action: 'customer_location_pinned',
+            field_last_update_at: nowIso,
+            field_last_latitude: latitudeText,
+            field_last_longitude: longitudeText,
+            field_updated_at: nowIso,
+            field_updated_by: staffId,
+            bridge_updated_at: nowIso,
+            bridge_updated_by: staffId
+        };
+        const eventId = `${row.id}_pin_${Date.now()}`;
+
+        await patchDocument('tbl_branchinfo', branchId, branchPatch);
+        await patchDocument('tbl_schedule', row.id, schedulePatch);
+        await setDocument(FIELD_VISIT_EVENT_COLLECTION, eventId, {
+            id: eventId,
+            schedule_id: Number(row.id || 0) || 0,
+            staff_id: staffId,
+            branch_id: branchId,
+            company_id: Number(row.company_id || 0) || 0,
+            action: 'customer_location_pinned',
+            status_label: 'Customer Location Pinned',
+            occurred_at: nowIso,
+            local_date: localDateYmd(now),
+            local_time: now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+            latitude: latitudeText,
+            longitude: longitudeText,
+            accuracy_meters: Math.round(accuracy),
+            source: 'field_app'
+        });
+
+        const branch = caches.branch.get(String(branchId)) || {};
+        Object.assign(branch, branchPatch);
+        caches.branch.set(String(branchId), branch);
+        state.modalBranchLocationPinned = true;
+        applyRowPatch(row.id, schedulePatch);
+        setLocationPinUi(row);
+        updateActionButtons();
+        renderList();
+        alert('Customer location pinned. This customer will not need pinning again.');
+    } catch (err) {
+        console.error('Customer location pin failed:', err);
+        if (status) status.textContent = 'Unable to pin location. Check GPS permission and try again.';
+        alert(`Failed to pin customer location: ${err?.message || err}`);
+        button.disabled = false;
     }
 }
 
