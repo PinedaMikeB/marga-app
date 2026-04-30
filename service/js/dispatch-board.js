@@ -12,8 +12,10 @@ const SERVICE_PROGRESS_OFFICE = {
     latitude: 14.5631,
     longitude: 121.1814
 };
-const SERVICE_PROGRESS_RADIUS_MILES = 25;
+const SERVICE_PROGRESS_RADIUS_MILES = 15;
 const SERVICE_PROGRESS_RADIUS_METERS = SERVICE_PROGRESS_RADIUS_MILES * 1609.344;
+const SERVICE_PROGRESS_START_ZOOM = 12;
+const SERVICE_PROGRESS_SHOW_SCHEDULED_PINS = false;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -2907,7 +2909,7 @@ function openServiceProgressMap() {
     panel?.classList.add('open');
     overlay?.classList.add('open');
     panel?.setAttribute('aria-hidden', 'false');
-    renderServiceProgressMap();
+    requestAnimationFrame(() => renderServiceProgressMap());
 }
 
 function closeServiceProgressMap() {
@@ -2925,11 +2927,15 @@ function ensureServiceProgressMap() {
 
     opsState.serviceProgressMap = L.map(mapEl, {
         zoomControl: true,
-        attributionControl: true
-    }).setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], 11);
+        attributionControl: true,
+        preferCanvas: true
+    }).setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 1,
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(opsState.serviceProgressMap);
 
@@ -3019,7 +3025,9 @@ function renderServiceProgressRoster(items) {
 function renderServiceProgressMap() {
     const allItems = buildServiceProgressItems();
     const items = getVisibleServiceProgressItems();
-    const mappedItems = items.filter((item) => item.hasCoordinates);
+    const mappedItems = items.filter((item) => (
+        item.hasCoordinates && (item.hasGpsEvent || SERVICE_PROGRESS_SHOW_SCHEDULED_PINS)
+    ));
     const hiddenOutsideRadius = allItems.filter((item) => item.hasCoordinates && !item.isInsideOfficeRadius).length;
     const hiddenUnmapped = allItems.filter((item) => !item.hasCoordinates).length;
     const subtitle = document.getElementById('serviceProgressSubtitle');
@@ -3045,18 +3053,20 @@ function renderServiceProgressMap() {
     clearServiceProgressMarkers();
 
     if (!mappedItems.length) {
-        map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], 11);
+        map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
         if (empty) {
             empty.hidden = false;
-            empty.textContent = `No staff pins inside the ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius yet.`;
+            empty.textContent = `No live staff GPS inside the ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius yet.`;
         }
-        setTimeout(() => map.invalidateSize(), 80);
+        requestAnimationFrame(() => {
+            map.invalidateSize(true);
+            map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
+        });
         return;
     }
 
     if (empty) empty.hidden = true;
 
-    const bounds = [];
     mappedItems.forEach((item) => {
         const icon = L.divIcon({
             className: 'service-progress-leaflet-icon',
@@ -3075,21 +3085,12 @@ function renderServiceProgressMap() {
             </div>
         `);
         opsState.serviceProgressMarkers.push(marker);
-        bounds.push([item.latitude, item.longitude]);
     });
 
-    setTimeout(() => {
-        map.invalidateSize();
-        if (bounds.length === 1) {
-            map.setView(bounds[0], 14);
-        } else {
-            map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
-        }
-        const officeBounds = L.latLng(SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude).toBounds(SERVICE_PROGRESS_RADIUS_METERS * 2);
-        if (!officeBounds.contains(map.getCenter())) {
-            map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], 11);
-        }
-    }, 80);
+    requestAnimationFrame(() => {
+        map.invalidateSize(true);
+        map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
+    });
 }
 
 function filterRowsByPurpose(rows, purposeFilter) {
