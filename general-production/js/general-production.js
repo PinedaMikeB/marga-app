@@ -1127,10 +1127,10 @@ function buildMachineCheckerRecords() {
             machineId: String(row.machine_id || '').trim(),
             contractmainId: String(row.contractmain_id || '').trim(),
             model: clean(row.machine_label),
-            customer: buildClientName(
+            customer: isMachineInField(machine) ? buildClientName(
                 { companyname: row.company_name },
                 { branchname: row.branch_name }
-            )
+            ) : ''
         });
         mergeMachineCheckerRecord(recordsBySerial, normalizeSerial(serial), record);
     });
@@ -1679,27 +1679,27 @@ async function saveMachineStatus(event) {
         alert('Select a model.');
         return;
     }
-
     const button = document.getElementById('statusSaveBtn');
     button.disabled = true;
     try {
         const docId = String(machine._docId || machine.id || '').trim();
         if (!docId) throw new Error('Machine document id is missing.');
-        await patchDocument('tbl_machine', docId, {
+        const machineFields = {
             status_id: statusId,
             description: selectedModel,
             tmestamp: new Date().toISOString(),
             production_status_updated_at: new Date().toISOString(),
             production_status_updated_by: currentUserLabel()
-        }, {
+        };
+        await patchDocument('tbl_machine', docId, machineFields, {
             label: `Update machine ${clean(machine.serial)}`,
             dedupeKey: `gp-status:${docId}:${statusId}:${selectedModel}`
         });
-        machine.status_id = statusId;
-        machine.description = selectedModel;
+        Object.assign(machine, machineFields);
         populateSerialOptions();
         renderStatusMachineContext(findMachineCheckerRecord(document.getElementById('statusSerialInput').value));
         buildProductionRows();
+        populateReadyMachineOptions();
         renderAllBoards();
         alert('Machine status saved.');
     } catch (error) {
@@ -1903,6 +1903,7 @@ function resolveMachineCustomer(machine) {
     const directCompany = GP_STATE.maps.companies.get(String(machine.company_id || directBranch?.company_id || '')) || null;
     const directName = buildClientName(directCompany, directBranch);
     if (directName) return directName;
+    if (!isMachineInField(machine)) return '';
 
     const contracts = GP_STATE.maps.contractsByMachine.get(machineKey(machine)) || [];
     for (const contract of contracts) {

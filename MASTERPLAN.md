@@ -239,6 +239,31 @@ General Production dashboard panels:
 - `For Overhauling`: returned field machines no longer tied to a customer; future General Inventory should feed this when returned machines are received.
 - `Under Repair`: machines assigned to a technician and currently being overhauled.
 
+## Receiving Rules
+- Receiving is a standalone inbound module and should not be folded into Machine Checker.
+- First pass exists as `receiving/`.
+- Receiving is the office control point for:
+  - customer machine pullouts
+  - returned machine receipt
+  - return cartridges
+  - purchased machines
+  - supplies and materials received
+  - parts/materials returned by technicians
+- Old customer-machine pullout:
+  - mark the old machine as `return_status = pending_return`
+  - store pulled-out-by, pullout date/time, pickup receipt, customer representative, previous customer/branch, and remarks
+  - clear the active customer link from the machine master so it no longer appears actively assigned to that customer
+  - do not set `status_id = 7` yet; it is in transit, not office-received
+- Office receipt of returned machine:
+  - Receiving confirms serial and receipt details
+  - then set `status_id = 7` / `FOR OVERHAULING`
+  - write app audit fields and `tbl_newmachinehistory` where possible
+- Replacement machine flow:
+  - General Production allocation sends the replacement machine to Releasing
+  - Releasing print/save prepares pending customer-machine link fields only
+  - driver/logistics closure later confirms the replacement machine as the active customer machine
+  - paper DR alone must not be treated as final customer-machine confirmation
+
 Machine Checker behavior:
 - Button on General Production near refresh controls.
 - Status Changer section:

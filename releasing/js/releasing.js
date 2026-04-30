@@ -504,6 +504,7 @@ function normalizeReleaseItem(item, schedule, unitIndex = 1, totalQty = 1) {
         readyForDr,
         itemDocId: String(item?._docId || item?.id || '').trim(),
         scheduleDocId: String(schedule?._docId || schedule?.id || refNo).trim(),
+        allocatedMachineId: clean(item?.production_allocated_machine_id || item?.allocated_machine_id || ''),
         item,
         schedule,
         searchText: [
@@ -1544,6 +1545,7 @@ async function saveReleaseDr(payload) {
             nextItemId = await createReleasedItemRow(row, finalId, payload, now, nextItemId);
         }
     }
+    await markReleasedMachinesPendingDelivery(payload, now);
 }
 
 function groupCreateRowsBySource() {
@@ -1590,6 +1592,8 @@ function buildReleasedItemFields(row, finalId, payload, now) {
         releasing_source_qty: Number(row.totalQty || 1),
         releasing_finaldr_id: finalId,
         releasing_dr_number: payload.drNumber,
+        production_allocated_machine_id: row.allocatedMachineId || '',
+        customer_link_status: row.category === 'MACHINE' ? 'pending_delivery' : '',
         releasing_updated_at: now,
         releasing_updated_by: currentUserLabel()
     };
@@ -1602,6 +1606,26 @@ async function createReleasedItemRow(row, finalId, payload, now, nextItemId) {
         dedupeKey: `releasing-item-create:${row.refNo}:${row.key}:${payload.drNumber}`
     });
     return nextItemId + 1;
+}
+
+async function markReleasedMachinesPendingDelivery(payload, now) {
+    const machineRows = releaseState.createRows.filter((row) => row.category === 'MACHINE' && row.allocatedMachineId);
+    for (const row of machineRows) {
+        await patchDocument('tbl_machine', row.allocatedMachineId, {
+            status_id: 2,
+            customer_link_status: 'pending_delivery',
+            pending_client_id: Number(row.branchId || 0) || 0,
+            pending_customer_name: row.company,
+            pending_dr_number: payload.drNumber,
+            pending_finaldr_reference: payload.referenceNo,
+            pending_delivery_saved_at: now,
+            pending_delivery_saved_by: currentUserLabel(),
+            tmestamp: now
+        }, {
+            label: `Pending delivery machine ${row.serial}`,
+            dedupeKey: `releasing-machine-pending:${row.allocatedMachineId}:${payload.drNumber}`
+        });
+    }
 }
 
 async function allocateNextId(collection) {

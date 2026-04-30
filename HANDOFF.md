@@ -158,6 +158,33 @@ Important Collections SN rule:
 - Important remaining verification:
   - For printed references like `345898`, confirm after Clear/reload that only the true remaining units come back from Firebase.
 
+## Receiving Rules
+- Receiving is the inbound counterpart to Releasing and should be implemented as its own `receiving/` module.
+- Receiving is responsible for inbound operational accountability:
+  - customer machine pullouts
+  - office receipt of returned machines
+  - return cartridges
+  - purchased machines
+  - purchased supplies / materials
+  - parts or materials returned by technicians
+- Machine pullout flow:
+  - when a customer machine is pulled out, create a pending-return record and mark the machine with `return_status = pending_return`
+  - store pulled-out-by, pullout date/time, pickup receipt, customer representative, previous branch/customer, and remarks
+  - clear the active customer link on the old machine (`client_id`, `branch_id`, `company_id`, `isclient`) so it no longer appears as actively linked to the customer
+  - do not move it to `FOR OVERHAULING` yet; it is only pending return while in transit
+- Office receive flow:
+  - office staff confirms the returned machine serial and receiving details
+  - only after office receipt should the old machine move to `status_id = 7` / `FOR OVERHAULING`
+  - receiving should create/patch app-side audit fields and a `tbl_newmachinehistory` row where possible
+- Releasing / replacement-machine flow:
+  - General Production allocation creates the machine item for Releasing
+  - Releasing print/save prepares a pending customer-machine link for the replacement machine
+  - the replacement machine remains `customer_link_status = pending_delivery` until driver/logistics closure confirms delivery
+  - paper DR printed/received is not enough by itself to finalize the machine as actively linked
+- Driver/logistics confirmation is the future finalizer:
+  - once delivery is closed by logistics/field report, the replacement machine can become the confirmed customer-linked machine
+  - this future flow should record receiver/customer representative, date/time, and delivery proof fields
+
 ## Billing Rules That Must Stay Protected
 - Billing calculation modal should save the invoice first.
 - Print button should stay disabled until the saved billing snapshot matches the current modal values.
@@ -177,6 +204,7 @@ Important Collections SN rule:
 | Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
 | General Production | Live / In Progress | Isolated `general-production/` module is deployed. Dashboard counts tuned to VB.NET screenshot targets. Machine Checker uses Billing-backed real serials with searchable dropdown, model/status/customer context, and add-new-machine form. For Overhauling rows can be double-clicked to assign a tech and move to Under Repair; Under Repair rows can be double-clicked to mark Machine Ready. | Add mismatch warning for active billing contract vs machine master status; continue source-table tuning only when user asks. |
 | Releasing | Live / In Progress | Isolated `releasing/` module is deployed. DR Item List expands quantity into unit rows, supports right-click add/remove, print adjustment templates, immediate print-window opening, and Create DR stays populated until manual Clear. | Verify Firebase parity for partial-quantity cases like `345898` after Clear/reload; Billing is now the next chat focus. |
+| Receiving | Live First Pass / In Progress | New inbound `receiving/` module is approved and first pass is implemented. It handles machine pending-return logging, returned-machine office receipt to For Overhauling, and generic receiving logs for cartridges, purchased machines, supplies/materials, parts, and tech returns. | Verify with real office pullout/receipt examples; later add driver/logistics delivery confirmation finalizer. |
 | APD | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Petty Cash | In Progress | Prototype exists. | Keep separate from Billing/Collections risk. |
 | Sync Updater | In Progress | Dual-lane supervisor and recovery work already documented historically. | Keep stable; do not mix sync refactors with UI fixes. |
@@ -196,6 +224,19 @@ Important Collections SN rule:
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-30 - Receiving Workflow Approved
+- User approved a dedicated Receiving module instead of overloading Machine Checker.
+- First pass implemented as `receiving/`.
+- Final intended flow:
+  - General Production allocates replacement machines.
+  - Releasing prints/saves DR and prepares a pending customer-machine link.
+  - Driver/logistics closure later confirms the replacement machine as actively linked to the customer.
+  - Pulled-out old customer machines become `pending_return` with pulled-out-by, date/time, pickup receipt, customer representative, previous customer/branch, and remarks.
+  - Office Receiving confirms returned machines and moves them to `FOR OVERHAULING`.
+- Important design rule:
+  - the old machine must not remain actively linked to the customer after pullout
+  - the new machine should not become confirmed active customer machine until delivery confirmation supersedes it
+
 ### 2026-04-23 - Releasing Module Live And Iterated
 - Added isolated `releasing/` module with DR Item List and Create DR workflow.
 - Releasing live URL: `https://margaapp.netlify.app/releasing/`.
