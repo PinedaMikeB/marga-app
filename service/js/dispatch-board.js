@@ -2909,7 +2909,8 @@ function openServiceProgressMap() {
     panel?.classList.add('open');
     overlay?.classList.add('open');
     panel?.setAttribute('aria-hidden', 'false');
-    requestAnimationFrame(() => renderServiceProgressMap());
+    resetServiceProgressMap();
+    window.setTimeout(() => renderServiceProgressMap(), 180);
 }
 
 function closeServiceProgressMap() {
@@ -2920,10 +2921,19 @@ function closeServiceProgressMap() {
     panel?.setAttribute('aria-hidden', 'true');
 }
 
+function resetServiceProgressMap() {
+    if (!opsState.serviceProgressMap) return;
+    opsState.serviceProgressMap.remove();
+    opsState.serviceProgressMap = null;
+    opsState.serviceProgressMarkers = [];
+    opsState.serviceProgressCircle = null;
+}
+
 function ensureServiceProgressMap() {
     const mapEl = document.getElementById('serviceProgressMap');
     if (!mapEl || !window.L) return null;
     if (opsState.serviceProgressMap) return opsState.serviceProgressMap;
+    if (mapEl.clientWidth < 100 || mapEl.clientHeight < 100) return null;
 
     opsState.serviceProgressMap = L.map(mapEl, {
         zoomControl: true,
@@ -3049,7 +3059,10 @@ function renderServiceProgressMap() {
     }
 
     const map = ensureServiceProgressMap();
-    if (!map) return;
+    if (!map) {
+        window.setTimeout(() => renderServiceProgressMap(), 180);
+        return;
+    }
     clearServiceProgressMarkers();
 
     if (!mappedItems.length) {
