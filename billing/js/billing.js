@@ -4460,6 +4460,11 @@ function findSavedMeterLine(savedLineItems = [], { section = '', type = '', lega
     return fallbackIndex >= 0 ? savedLineItems[fallbackIndex] || null : null;
 }
 
+function hasSplitMultiMeterLines(savedLineItems = []) {
+    const sections = new Set(savedLineItems.map((line) => getMeterLineIdentity(line).section).filter(Boolean));
+    return sections.has('print') && sections.has('copy');
+}
+
 function buildMultiMeterSeedLine({
     label,
     section,
@@ -5146,12 +5151,13 @@ function renderMeterLineCard(line, mode, index) {
     `;
 }
 
-function renderBillingLinePanel(mode, title, copy, lines) {
+function renderBillingLinePanel(mode, title, copy, lines, warningNote = '') {
     let previousSection = '';
     return `
         <section class="calc-panel calc-line-panel hidden" data-calc-mode-panel="${escapeHtml(mode)}">
             <div class="calc-panel-title">${escapeHtml(title)}</div>
             <div class="calc-note calc-note-tight">${escapeHtml(copy)}</div>
+            ${mode === 'multi_meter_rtp' && warningNote ? `<div class="calc-note calc-note-warning">${escapeHtml(warningNote)}</div>` : ''}
             <div class="calc-meter-lines">
                 ${lines.map((line, index) => {
                     const section = String(line?.meterSection || '').trim();
@@ -5388,6 +5394,10 @@ async function openBillingCalcModal(rowId, monthKey) {
     let activeBillingMode = getDefaultBillingMode(context);
     const secondaryProfile = getRtpSecondaryProfile(profile);
     const savedLineItems = savedBillingDoc ? parseBillingDocLineItems(savedBillingDoc) : [];
+    const hasSavedSplitMultiMeter = hasSplitMultiMeterLines(savedLineItems);
+    const canUseLegacyMultiMeterSeeds = !hasSavedSplitMultiMeter
+        && String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp'
+        && savedLineItems.length > 0;
     const savedLegacyEstimate = savedBillingDoc && !savedLineItems.length
         ? buildSavedLegacyBillingEstimate({ doc: savedBillingDoc, context, profile, row, seedEstimate: estimate })
         : null;
@@ -5419,13 +5429,13 @@ async function openBillingCalcModal(rowId, monthKey) {
         section: 'Print',
         type: 'black_white',
         legacyLabel: 'black',
-        fallbackIndex: String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp' ? 0 : -1
+        fallbackIndex: canUseLegacyMultiMeterSeeds ? 0 : -1
     });
     const savedPrintColorLine = findSavedMeterLine(savedLineItems, {
         section: 'Print',
         type: 'color',
         legacyLabel: 'color',
-        fallbackIndex: String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp' ? 1 : -1
+        fallbackIndex: canUseLegacyMultiMeterSeeds ? 1 : -1
     });
     const savedCopyBwLine = findSavedMeterLine(savedLineItems, {
         section: 'Copy',
@@ -5441,8 +5451,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             section: 'Print',
             type: 'black_white',
             profile,
-            previousMeter: initialSnapshot.previousMeter,
-            presentMeter: initialSnapshot.presentMeter,
+            previousMeter: 0,
+            presentMeter: 0,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row,
             savedLine: savedPrintBwLine
@@ -5452,8 +5462,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             section: 'Print',
             type: 'color',
             profile: secondaryProfile,
-            previousMeter: secondaryPreviousMeter,
-            presentMeter: secondaryPresentMeter,
+            previousMeter: 0,
+            presentMeter: 0,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row,
             savedLine: savedPrintColorLine
@@ -5481,6 +5491,9 @@ async function openBillingCalcModal(rowId, monthKey) {
             savedLine: savedCopyColorLine
         })
     ];
+    const legacyMultiMeterNote = !hasSavedSplitMultiMeter && (initialSnapshot.previousMeter > 0 || secondaryPreviousMeter > 0)
+        ? `Legacy two-meter history is available but not split by Print/Copy: B/W ${formatCount(initialSnapshot.previousMeter || 0)}, Color ${formatCount(secondaryPreviousMeter || 0)}. Enter the actual prior Print and Copy counters from the copier meter report.`
+        : '';
     const groupedRowsForBilling = context.groupedMachineRows || [];
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
         const machineProfile = getRowBillingProfile(machineRow) || profile;
@@ -5800,7 +5813,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                     </div>
                 </section>
             </div>
-            ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate Print and Copy counters for black/white and colored pages.', multiMeterSeedLines)}
+            ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate Print and Copy counters for black/white and colored pages.', multiMeterSeedLines, legacyMultiMeterNote)}
             ${renderBillingLinePanel('multi_machine_rtp', 'One Invoice, Multiple Machines', 'Use one invoice number, compute each machine line, then sum the invoice total.', multiMachineSeedLines)}
             ${renderBillingExclusionEditor()}
             ${renderSavedBillingExclusions(savedExclusionsForContext)}

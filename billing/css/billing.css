@@ -1182,6 +1182,12 @@
     margin-top: 0;
 }
 
+.calc-note-warning {
+    border-color: #f7c56d;
+    background: #fff8e6;
+    color: #7c4a03;
+}
+
 .calc-meter-lines {
     display: grid;
     gap: 0.9rem;
