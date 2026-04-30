@@ -177,6 +177,11 @@ Important Collections SN rule:
 - Current print/template behavior:
   - Print window opens immediately on click to avoid browser popup blocking.
   - DR print adjustment templates persist locally and sync to `tbl_app_settings/releasing_dr_print_templates_v1`.
+- Pull-out form behavior:
+  - Releasing has a `Print Pull Out Form` button for machines, cartridges, and parts already staged in Create DR.
+  - For machine `Change unit` rows, the Pull Out Form must be printed before the delivery receipt can be previewed/printed.
+  - Change-unit Pull Out Form printing records the old customer machine as `return_status = pending_return`, clears its active customer link, and writes a `marga_receiving_records` customer-machine-pullout audit record so Receiving can confirm office return later.
+  - The form captures pulled-out-by, customer representative/released-by, pullout date/time, pickup receipt, and remarks.
 - Important remaining verification:
   - For printed references like `345898`, confirm after Clear/reload that only the true remaining units come back from Firebase.
 

@@ -96,6 +96,8 @@ const releaseState = {
         backJobOnly: false
     },
     pendingPreview: null,
+    pendingPulloutPayload: null,
+    lastPrintedPulloutSignature: '',
     lastSavedDrSignature: ''
 };
 
@@ -123,6 +125,7 @@ function hydrateUserChrome() {
 function bindReleaseControls() {
     document.getElementById('releaseRefreshBtn').addEventListener('click', () => loadReleasingData());
     document.getElementById('releasePrintBtn').addEventListener('click', openReleasePreview);
+    document.getElementById('releasePulloutPrintBtn').addEventListener('click', openPulloutForm);
     document.getElementById('releaseClearCreateBtn').addEventListener('click', clearCreateDrSection);
     document.getElementById('releaseSearchBtn').addEventListener('click', () => {
         const value = clean(document.getElementById('releaseSearchInput').value);
@@ -194,6 +197,11 @@ function bindReleaseControls() {
     document.getElementById('releasePreviewModal').addEventListener('input', handleDrPrintControlInput);
     document.getElementById('releasePreviewModal').addEventListener('change', handleDrPrintControlInput);
     document.getElementById('releasePreviewModal').addEventListener('click', handleDrPrintToolClick);
+
+    document.getElementById('releasePulloutOverlay').addEventListener('click', closePulloutForm);
+    document.getElementById('releasePulloutCloseBtn').addEventListener('click', closePulloutForm);
+    document.getElementById('releasePulloutCancelBtn').addEventListener('click', closePulloutForm);
+    document.getElementById('releasePulloutForm').addEventListener('submit', printAndSavePulloutForm);
 }
 
 async function loadReleasingData() {
@@ -768,6 +776,7 @@ function sendCreateRowBack(key) {
     if (!key) return;
     releaseState.createRows = releaseState.createRows.filter((row) => row.key !== key);
     releaseState.lastSavedDrSignature = '';
+    releaseState.lastPrintedPulloutSignature = '';
     renderReleaseTables();
 }
 
@@ -777,13 +786,17 @@ async function clearCreateDrSection() {
         document.getElementById('releaseDrNumberInput').value = '';
         releaseState.pendingPreview = null;
         releaseState.lastSavedDrSignature = '';
+        releaseState.pendingPulloutPayload = null;
+        releaseState.lastPrintedPulloutSignature = '';
         return;
     }
     if (!window.confirm('Clear all items from Create DR?')) return;
     const shouldRefreshFromFirebase = Boolean(releaseState.lastSavedDrSignature);
     releaseState.createRows = [];
     releaseState.pendingPreview = null;
+    releaseState.pendingPulloutPayload = null;
     releaseState.lastSavedDrSignature = '';
+    releaseState.lastPrintedPulloutSignature = '';
     document.getElementById('releaseBeginningMeterInput').value = '';
     document.getElementById('releaseDrNumberInput').value = '';
     closeReleasePreview();
@@ -816,6 +829,7 @@ function addRowToCreate(key) {
     if (!releaseState.createRows.some((entry) => entry.key === row.key)) {
         releaseState.createRows.push(row);
         releaseState.lastSavedDrSignature = '';
+        releaseState.lastPrintedPulloutSignature = '';
     }
     renderReleaseTables();
 }
@@ -874,12 +888,283 @@ function saveReleaseDetail(event, options = {}) {
     Object.assign(row, draft, { detailsAdded: true, readyForDr: true });
     releaseState.createRows = releaseState.createRows.map((entry) => entry.key === row.key ? row : entry);
     releaseState.lastSavedDrSignature = '';
+    releaseState.lastPrintedPulloutSignature = '';
     closeReleaseDetailModal();
     if (addToCreate) {
         addRowToCreate(row.key);
         return;
     }
     renderReleaseTables();
+}
+
+function requiresChangeUnitPullout() {
+    return releaseState.createRows.some(isChangeUnitMachineRow);
+}
+
+function isChangeUnitMachineRow(row) {
+    if (!row || row.category !== 'MACHINE') return false;
+    const text = [
+        row.notes,
+        row.description,
+        row.schedule?.remarks,
+        row.schedule?.customer_request,
+        row.schedule?.release_request_summary,
+        row.schedule?.release_request_type,
+        row.item?.remarks,
+        row.item?.release_notes
+    ].join(' ').toLowerCase();
+    return /change\s*unit|changeunit|replacement|replace/.test(text);
+}
+
+function buildCurrentPulloutSignature() {
+    return releaseState.createRows
+        .filter(isChangeUnitMachineRow)
+        .map((row) => [
+            row.refNo,
+            row.key,
+            row.branchId,
+            row.serial,
+            row.allocatedMachineId,
+            machineDocId(getPulledOutMachine(row))
+        ].join(':'))
+        .join('|');
+}
+
+async function openPulloutForm() {
+    if (!releaseState.createRows.length) {
+        alert('Add at least one item to Create DR before printing a Pull Out Form.');
+        return;
+    }
+    await ensurePulloutMachinesLoaded();
+    const payload = buildPulloutPayload();
+    if (!payload.items.length) {
+        alert('No pull-out item is available in Create DR.');
+        return;
+    }
+    if (payload.requiresReturnSave && payload.items.some((item) => !item.pulledMachine)) {
+        alert('Change Unit pull-out needs the old customer machine serial from the schedule before printing.');
+        return;
+    }
+    releaseState.pendingPulloutPayload = payload;
+    document.getElementById('releasePulloutSummary').innerHTML = `
+        <div>${escapeHtml(payload.client)}</div>
+        <span>Reference ${escapeHtml(payload.referenceNo)} - ${escapeHtml(payload.items.length)} pull-out item(s)</span>
+    `;
+    document.getElementById('releasePulloutByInput').value = currentUserLabel();
+    document.getElementById('releasePulloutRepInput').value = '';
+    document.getElementById('releasePulloutReceiptInput').value = payload.defaultReceipt;
+    document.getElementById('releasePulloutRemarksInput').value = payload.defaultRemarks;
+    const now = new Date();
+    document.getElementById('releasePulloutDateInput').value = localDateInputValue(now);
+    document.getElementById('releasePulloutTimeInput').value = now.toTimeString().slice(0, 5);
+    setPulloutFormOpen(true);
+    setTimeout(() => document.getElementById('releasePulloutRepInput').focus(), 30);
+}
+
+function closePulloutForm() {
+    setPulloutFormOpen(false);
+}
+
+function setPulloutFormOpen(open) {
+    document.getElementById('releasePulloutOverlay').classList.toggle('visible', open);
+    document.getElementById('releasePulloutModal').classList.toggle('open', open);
+    document.getElementById('releasePulloutModal').setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+function buildPulloutPayload() {
+    const first = releaseState.createRows[0];
+    const schedule = first.schedule || {};
+    const branch = releaseState.maps.branches.get(String(first.branchId || schedule.branch_id || '')) || null;
+    const address = compactAddress(branch?.branch_address || [branch?.bldg, branch?.floor, branch?.street, branch?.brgy, branch?.city].filter(Boolean).join(', '));
+    const requiredRows = releaseState.createRows.filter(isChangeUnitMachineRow);
+    const rows = requiredRows.length ? requiredRows : releaseState.createRows;
+    return {
+        referenceNo: first.refNo,
+        client: first.company,
+        address,
+        date: new Date().toLocaleDateString('en-PH'),
+        defaultReceipt: `PO-${first.refNo}`,
+        defaultRemarks: requiredRows.length ? 'Change unit pull-out before DR release.' : 'Pull-out form.',
+        requiresReturnSave: requiredRows.length > 0,
+        signature: buildCurrentPulloutSignature(),
+        items: rows.map((row) => {
+            const pulledMachine = getPulledOutMachine(row);
+            return {
+                category: row.category,
+                brand: row.brand,
+                model: clean(pulledMachine?.description) || row.model,
+                serial: clean(pulledMachine?.serial) || row.serial,
+                replacementSerial: row.category === 'MACHINE' ? row.serial : '',
+                description: row.description,
+                notes: row.notes,
+                row,
+                pulledMachine
+            };
+        })
+    };
+}
+
+async function ensurePulloutMachinesLoaded() {
+    const ids = new Set();
+    releaseState.createRows.forEach((row) => {
+        getPulledOutMachineIds(row).forEach((id) => {
+            if (id && !releaseState.maps.machines.has(id)) ids.add(id);
+        });
+    });
+    if (!ids.size) return;
+    const machines = await Promise.all(Array.from(ids).map((id) => fetchDoc('tbl_machine', id).catch(() => null)));
+    machines.filter(Boolean).forEach((machine) => {
+        const id = String(machine._docId || machine.id || '').trim();
+        if (id) releaseState.maps.machines.set(id, machine);
+    });
+}
+
+function getPulledOutMachineIds(row) {
+    const schedule = row?.schedule || {};
+    return [
+        schedule.mach_id,
+        schedule.serial,
+        schedule.machine_id,
+        row?.item?.old_machine_id,
+        row?.item?.pullout_machine_id
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+}
+
+function getPulledOutMachine(row) {
+    const ids = getPulledOutMachineIds(row);
+    for (const id of ids) {
+        const machine = releaseState.maps.machines.get(id);
+        if (machine) return machine;
+    }
+    const rowSerial = normalizeSerial(row?.schedule?.serial_no || row?.schedule?.xserial || row?.schedule?.serial || '');
+    if (rowSerial) {
+        for (const machine of releaseState.maps.machines.values()) {
+            if (normalizeSerial(machine.serial) === rowSerial) return machine;
+        }
+    }
+    return null;
+}
+
+async function printAndSavePulloutForm(event) {
+    event.preventDefault();
+    const payload = releaseState.pendingPulloutPayload || buildPulloutPayload();
+    const pulledBy = clean(document.getElementById('releasePulloutByInput').value);
+    const rep = clean(document.getElementById('releasePulloutRepInput').value);
+    const date = clean(document.getElementById('releasePulloutDateInput').value);
+    const time = clean(document.getElementById('releasePulloutTimeInput').value);
+    const receipt = clean(document.getElementById('releasePulloutReceiptInput').value);
+    const remarks = clean(document.getElementById('releasePulloutRemarksInput').value);
+    if (!pulledBy || !rep || !date || !time || !receipt) {
+        alert('Pulled out by, customer representative, date/time, and pickup receipt are required.');
+        return;
+    }
+    const printWindow = openPrintWindow(`marga_pullout_${receipt || payload.referenceNo}`);
+    if (!printWindow) return;
+    const button = event.submitter;
+    if (button) button.disabled = true;
+    try {
+        const completed = { ...payload, pulledBy, customerRep: rep, eventDate: date, eventTime: time, pickupReceipt: receipt, remarks };
+        if (payload.requiresReturnSave) await savePulloutPendingReturns(completed);
+        releaseState.lastPrintedPulloutSignature = payload.signature;
+        writePrintHtmlDocument(printWindow, buildPulloutPrintDocument(completed));
+        closePulloutForm();
+        MargaUtils.showToast('Pull Out Form printed. DR print is now available for this Change Unit.', 'success');
+    } catch (error) {
+        printWindow.close();
+        console.error('Pull Out Form failed:', error);
+        alert(`Failed to print Pull Out Form: ${error.message || error}`);
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function savePulloutPendingReturns(payload) {
+    const now = new Date().toISOString();
+    for (const item of payload.items.filter((entry) => isChangeUnitMachineRow(entry.row))) {
+        const machine = item.pulledMachine;
+        if (!machine) continue;
+        const docId = machineDocId(machine);
+        const previousCustomer = resolveMachineCustomer(machine, item.row);
+        const previousClientId = Number(machine.client_id || machine.branch_id || item.row.branchId || 0) || 0;
+        const previousCompanyId = Number(machine.company_id || item.row.schedule?.company_id || 0) || 0;
+        const fields = {
+            client_id: 0,
+            branch_id: 0,
+            company_id: 0,
+            isclient: 0,
+            return_status: 'pending_return',
+            return_pullout_at: `${payload.eventDate} ${payload.eventTime}:00`,
+            return_pullout_date: payload.eventDate,
+            return_pullout_time: payload.eventTime,
+            return_pulled_out_by: payload.pulledBy,
+            return_customer_representative: payload.customerRep,
+            return_pickup_receipt: payload.pickupReceipt,
+            return_remarks: payload.remarks,
+            return_previous_customer: previousCustomer,
+            return_previous_client_id: previousClientId,
+            return_previous_company_id: previousCompanyId,
+            return_logged_at: now,
+            return_logged_by: currentUserLabel(),
+            production_customer_unlinked_at: now,
+            production_customer_unlinked_by: currentUserLabel(),
+            tmestamp: now
+        };
+        await patchDocument('tbl_machine', docId, fields, {
+            label: `Pending return ${clean(machine.serial)}`,
+            dedupeKey: `releasing-pullout-pending-return:${docId}:${payload.pickupReceipt}`
+        });
+        await createReceivingRecordFromRelease({
+            record_type: 'customer_machine_pullout',
+            source_module: 'releasing',
+            source_reference_no: payload.referenceNo,
+            machine_id: Number(machine.id || machine._docId || 0) || machine.id || machine._docId || '',
+            serial: clean(machine.serial),
+            model: clean(machine.description),
+            previous_customer: previousCustomer,
+            pulled_out_by: payload.pulledBy,
+            customer_representative: payload.customerRep,
+            pickup_receipt: payload.pickupReceipt,
+            event_at: `${payload.eventDate} ${payload.eventTime}:00`,
+            remarks: payload.remarks
+        });
+        Object.assign(machine, fields);
+    }
+}
+
+async function createReceivingRecordFromRelease(fields) {
+    const id = await allocateNextId('marga_receiving_records');
+    const now = new Date().toISOString();
+    await setDocument('marga_receiving_records', String(id), {
+        id,
+        status: 'active',
+        created_at: now,
+        created_by: currentUserLabel(),
+        ...fields
+    }, {
+        label: `Receiving ${fields.record_type || id}`,
+        dedupeKey: `releasing-receiving-record:${fields.record_type}:${fields.serial || fields.reference_no || id}:${fields.event_at || now}`
+    });
+}
+
+function resolveMachineCustomer(machine, row) {
+    const branch = releaseState.maps.branches.get(String(machine?.branch_id || machine?.client_id || row?.branchId || '')) || null;
+    const company = releaseState.maps.companies.get(String(machine?.company_id || branch?.company_id || row?.schedule?.company_id || '')) || null;
+    return buildClientName(company, branch) || row?.company || '';
+}
+
+function machineDocId(machine) {
+    return String(machine?._docId || machine?.id || '').trim();
+}
+
+function normalizeSerial(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+}
+
+function localDateInputValue(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 async function openReleasePreview() {
@@ -896,6 +1181,11 @@ async function openReleasePreview() {
     if (invalidCartridge) {
         alert(`Cartridge item for reference ${invalidCartridge.refNo} needs model and serial.`);
         openReleaseDetailModal(invalidCartridge.key);
+        return;
+    }
+    if (requiresChangeUnitPullout() && releaseState.lastPrintedPulloutSignature !== buildCurrentPulloutSignature()) {
+        alert('Print the Pull Out Form first before printing the DR for this Change Unit machine.');
+        openPulloutForm();
         return;
     }
     const payload = buildPrintPayload();
@@ -1667,6 +1957,164 @@ function printHtmlDocument(html, windowName) {
     const printWindow = openPrintWindow(windowName);
     if (!printWindow) return;
     writePrintHtmlDocument(printWindow, html);
+}
+
+function buildPulloutPrintDocument(payload) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Pull Out ${escapeHtml(payload.pickupReceipt || payload.referenceNo)}</title>
+            <style>
+                @page { size: letter; margin: 12mm; }
+                * { box-sizing: border-box; }
+                body {
+                    margin: 0;
+                    color: #111;
+                    font-family: Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.35;
+                }
+                .form-head {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 16px;
+                    border-bottom: 2px solid #111;
+                    padding-bottom: 10px;
+                    margin-bottom: 14px;
+                }
+                h1 {
+                    margin: 0;
+                    font-size: 20px;
+                    letter-spacing: 0;
+                    text-transform: uppercase;
+                }
+                .meta {
+                    display: grid;
+                    gap: 4px;
+                    min-width: 210px;
+                    text-align: right;
+                    font-weight: 700;
+                }
+                .section {
+                    margin-top: 12px;
+                    border: 1px solid #111;
+                }
+                .section-title {
+                    border-bottom: 1px solid #111;
+                    padding: 5px 7px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    background: #f2f2f2;
+                }
+                .grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 0;
+                }
+                .field {
+                    min-height: 34px;
+                    border-right: 1px solid #111;
+                    border-bottom: 1px solid #111;
+                    padding: 5px 7px;
+                }
+                .field:nth-child(2n) { border-right: 0; }
+                .label {
+                    display: block;
+                    margin-bottom: 2px;
+                    font-size: 9px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                }
+                th,
+                td {
+                    border: 1px solid #111;
+                    padding: 6px;
+                    text-align: left;
+                    vertical-align: top;
+                }
+                th {
+                    background: #f2f2f2;
+                    font-size: 10px;
+                    text-transform: uppercase;
+                }
+                .signatures {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 18px;
+                    margin-top: 34px;
+                }
+                .sig-line {
+                    border-top: 1px solid #111;
+                    padding-top: 5px;
+                    text-align: center;
+                    font-weight: 700;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="form-head">
+                <div>
+                    <h1>Machine / Item Pull Out Form</h1>
+                    <div>MARGA Enterprises</div>
+                </div>
+                <div class="meta">
+                    <div>Receipt: ${escapeHtml(payload.pickupReceipt)}</div>
+                    <div>Reference: ${escapeHtml(payload.referenceNo)}</div>
+                    <div>Date: ${escapeHtml(payload.eventDate)} ${escapeHtml(payload.eventTime)}</div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Customer</div>
+                <div class="grid">
+                    <div class="field"><span class="label">Client</span>${escapeHtml(payload.client)}</div>
+                    <div class="field"><span class="label">Address</span>${escapeHtml(payload.address || '')}</div>
+                    <div class="field"><span class="label">Pulled Out By</span>${escapeHtml(payload.pulledBy)}</div>
+                    <div class="field"><span class="label">Released By / Customer Rep</span>${escapeHtml(payload.customerRep)}</div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Items Pulled Out</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:18%">Category</th>
+                            <th style="width:20%">Model</th>
+                            <th style="width:18%">Serial</th>
+                            <th style="width:18%">Replacement Serial</th>
+                            <th>Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${payload.items.map((item) => `
+                            <tr>
+                                <td>${escapeHtml(item.category)}</td>
+                                <td>${escapeHtml(item.model)}</td>
+                                <td>${escapeHtml(item.serial)}</td>
+                                <td>${escapeHtml(item.replacementSerial)}</td>
+                                <td>${escapeHtml(item.notes || payload.remarks || '')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div class="section">
+                <div class="section-title">Pull Out Remarks</div>
+                <div style="min-height:42px;padding:7px;">${escapeHtml(payload.remarks || '')}</div>
+            </div>
+            <div class="signatures">
+                <div class="sig-line">Pulled Out By</div>
+                <div class="sig-line">Customer Representative</div>
+                <div class="sig-line">Office Receiving</div>
+            </div>
+        </body>
+        </html>
+    `;
 }
 
 function buildPrintDocument(payload) {

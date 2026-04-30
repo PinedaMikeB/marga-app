@@ -154,6 +154,7 @@
             <div class="header-actions release-actions">
                 <div class="release-status" id="releaseStatusPill">Loading...</div>
                 <button type="button" class="btn btn-secondary btn-sm" id="releaseRefreshBtn">Refresh</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="releasePulloutPrintBtn">Print Pull Out Form</button>
                 <button type="button" class="btn btn-primary btn-sm" id="releasePrintBtn">Print and Save</button>
             </div>
         </header>
@@ -302,7 +303,52 @@
         </form>
     </div>
 
+    <div class="release-overlay" id="releasePulloutOverlay"></div>
     <div class="release-overlay" id="releasePreviewOverlay"></div>
+    <div class="release-modal release-pullout-modal" id="releasePulloutModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="release-modal-head">
+            <h2>Pull Out Form</h2>
+            <button type="button" class="release-close-btn" id="releasePulloutCloseBtn" aria-label="Close pull out form">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <form class="release-modal-body" id="releasePulloutForm">
+            <div class="release-detail-summary" id="releasePulloutSummary"></div>
+            <div class="release-form-grid">
+                <label class="release-field">
+                    <span>Pulled Out By</span>
+                    <input type="text" id="releasePulloutByInput" required>
+                </label>
+                <label class="release-field">
+                    <span>Customer Rep</span>
+                    <input type="text" id="releasePulloutRepInput" required>
+                </label>
+                <label class="release-field">
+                    <span>Pullout Date</span>
+                    <input type="date" id="releasePulloutDateInput" required>
+                </label>
+                <label class="release-field">
+                    <span>Pullout Time</span>
+                    <input type="time" id="releasePulloutTimeInput" required>
+                </label>
+                <label class="release-field release-field-full">
+                    <span>Pickup Receipt</span>
+                    <input type="text" id="releasePulloutReceiptInput" required>
+                </label>
+                <label class="release-field release-field-full">
+                    <span>Remarks</span>
+                    <textarea id="releasePulloutRemarksInput" rows="3"></textarea>
+                </label>
+            </div>
+            <div class="release-action-row">
+                <button type="button" class="btn btn-secondary btn-sm" id="releasePulloutCancelBtn">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Print Pull Out Form</button>
+            </div>
+        </form>
+    </div>
+
     <div class="release-modal release-preview-modal" id="releasePreviewModal" role="dialog" aria-modal="true" aria-hidden="true">
         <div class="release-modal-head">
             <h2>Print Preview</h2>

@@ -532,6 +532,10 @@ body {
     max-height: calc(100vh - 2rem);
 }
 
+.release-pullout-modal {
+    width: min(42rem, calc(100vw - 2rem));
+}
+
 .release-preview-modal.open {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;

@@ -222,6 +222,10 @@ Collections payment and 2307 rules:
   - print window should open immediately on click to avoid popup blocking
   - print adjustment templates should persist locally and sync to `tbl_app_settings/releasing_dr_print_templates_v1`
   - if the same payload is printed again, avoid duplicating the save
+- Releasing pull-out rules:
+  - the Pull Out Form is available for machines, cartridges, and parts staged in Create DR
+  - machine `Change unit` delivery receipts must be blocked until the Pull Out Form is printed first
+  - printing a Change Unit pull-out records the old customer machine as pending return and preserves pulled-out-by, customer representative/released-by, pickup receipt, event date/time, previous customer/branch, and remarks for Receiving follow-up
 - Before declaring Releasing fully stable, verify partial-quantity references like `345898` against Firebase after Clear/reload.
 
 ## Master Schedule And Field App Rules
