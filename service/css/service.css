@@ -579,6 +579,260 @@
     background: rgba(239, 68, 68, 0.16);
 }
 
+.service-progress-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 420;
+    display: none;
+    background: rgba(8, 17, 31, 0.48);
+    backdrop-filter: blur(4px);
+}
+
+.service-progress-overlay.open {
+    display: block;
+}
+
+.service-progress-map-panel {
+    position: fixed;
+    inset: 1.2rem;
+    z-index: 430;
+    display: none;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.42);
+    border-radius: 18px;
+    background: #f8fafc;
+    box-shadow: 0 30px 80px rgba(15, 23, 42, 0.34);
+}
+
+.service-progress-map-panel.open {
+    display: grid;
+}
+
+.service-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.95rem 1.05rem;
+    background: #111827;
+    color: #f8fafc;
+}
+
+.service-progress-header h2 {
+    margin: 0;
+    font-size: 1.08rem;
+    font-weight: 900;
+}
+
+.service-progress-header p {
+    margin: 0.15rem 0 0;
+    color: #cbd5e1;
+    font-size: 0.82rem;
+}
+
+.service-progress-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.service-progress-header .panel-close {
+    color: #f8fafc;
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.service-progress-body {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    min-height: 0;
+}
+
+.service-progress-roster {
+    min-height: 0;
+    overflow: auto;
+    padding: 0.85rem;
+    border-right: 1px solid rgba(203, 213, 225, 0.86);
+    background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+}
+
+.service-progress-person {
+    width: 100%;
+    border: 1px solid rgba(203, 213, 225, 0.78);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    display: grid;
+    grid-template-columns: 0.8rem minmax(0, 1fr);
+    gap: 0.62rem;
+    padding: 0.72rem;
+    margin-bottom: 0.62rem;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.service-progress-person:hover {
+    border-color: rgba(59, 130, 246, 0.58);
+    transform: translateY(-1px);
+}
+
+.service-progress-person-pin {
+    width: 0.72rem;
+    height: 0.72rem;
+    margin-top: 0.23rem;
+    border-radius: 999px;
+    background: #64748b;
+    box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.16);
+}
+
+.service-progress-person-main {
+    min-width: 0;
+    display: grid;
+    gap: 0.12rem;
+}
+
+.service-progress-person-main strong {
+    color: #12213a;
+    font-size: 0.92rem;
+    overflow-wrap: anywhere;
+}
+
+.service-progress-person-main small,
+.service-progress-person-main em,
+.service-progress-person-side small {
+    color: #64748b;
+    font-size: 0.74rem;
+    line-height: 1.25;
+    font-style: normal;
+    overflow-wrap: anywhere;
+}
+
+.service-progress-person-side {
+    grid-column: 2;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    align-items: center;
+    min-width: 0;
+}
+
+.service-progress-person-side b {
+    color: #334155;
+    font-size: 0.74rem;
+    font-weight: 900;
+}
+
+.service-progress-person.is-moving .service-progress-person-pin,
+.service-progress-pin.is-moving {
+    background: #2563eb;
+}
+
+.service-progress-person.is-arrived .service-progress-person-pin,
+.service-progress-person.is-active .service-progress-person-pin,
+.service-progress-pin.is-arrived,
+.service-progress-pin.is-active {
+    background: #059669;
+}
+
+.service-progress-person.is-completed .service-progress-person-pin,
+.service-progress-pin.is-completed {
+    background: #16a34a;
+}
+
+.service-progress-person.is-stale .service-progress-person-pin,
+.service-progress-pin.is-stale {
+    background: #f97316;
+}
+
+.service-progress-person.is-scheduled .service-progress-person-pin,
+.service-progress-pin.is-scheduled {
+    background: #64748b;
+}
+
+.service-progress-person.is-unmapped .service-progress-person-pin,
+.service-progress-pin.is-unmapped {
+    background: #94a3b8;
+}
+
+.service-progress-map-wrap {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+}
+
+.service-progress-map {
+    width: 100%;
+    height: 100%;
+    min-height: 520px;
+    background: #dbeafe;
+}
+
+.service-progress-empty {
+    position: absolute;
+    inset: 1rem auto auto 50%;
+    transform: translateX(-50%);
+    z-index: 500;
+    max-width: min(440px, calc(100% - 2rem));
+    padding: 0.75rem 0.95rem;
+    border: 1px solid rgba(148, 163, 184, 0.56);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #334155;
+    font-size: 0.84rem;
+    font-weight: 800;
+    text-align: center;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+}
+
+.service-progress-leaflet-icon {
+    background: transparent;
+    border: 0;
+}
+
+.service-progress-pin {
+    position: relative;
+    width: 2.45rem;
+    height: 2.45rem;
+    display: grid;
+    place-items: center;
+    border: 3px solid #ffffff;
+    border-radius: 50% 50% 50% 0;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 900;
+    transform: rotate(-45deg);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.28);
+}
+
+.service-progress-pin span {
+    transform: rotate(45deg);
+}
+
+.service-progress-popup {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 190px;
+}
+
+.service-progress-popup strong {
+    color: #12213a;
+    font-size: 0.92rem;
+}
+
+.service-progress-popup span,
+.service-progress-popup small {
+    color: #475569;
+    font-size: 0.78rem;
+}
+
+.service-progress-no-data {
+    padding: 1rem;
+    color: #64748b;
+    font-size: 0.88rem;
+    text-align: center;
+}
+
 @media (max-width: 980px) {
     .dashboard-content {
         padding: 1rem;
@@ -626,6 +880,29 @@
 
     .marga-vb-form {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .service-progress-map-panel {
+        inset: 0.55rem;
+    }
+
+    .service-progress-body {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(170px, 34vh) minmax(0, 1fr);
+    }
+
+    .service-progress-roster {
+        order: 2;
+        border-right: 0;
+        border-top: 1px solid rgba(203, 213, 225, 0.86);
+    }
+
+    .service-progress-map-wrap {
+        order: 1;
+    }
+
+    .service-progress-map {
+        min-height: 260px;
     }
 }
 
@@ -762,6 +1039,24 @@
     .marga-modal-footer {
         position: sticky;
         bottom: 0;
+    }
+
+    .service-progress-map-panel {
+        inset: 0;
+        border-radius: 0;
+    }
+
+    .service-progress-header {
+        align-items: flex-start;
+    }
+
+    .service-progress-header-actions {
+        flex-shrink: 0;
+    }
+
+    .service-progress-person-side {
+        display: grid;
+        justify-content: start;
     }
 }
 

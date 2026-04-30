@@ -5,6 +5,8 @@ if (!MargaAuth.requireAccess('service')) {
 const OPS_MAX_TASK_ROWS = 300;
 const OPS_QUERY_LIMIT = 5000;
 const OPS_CARRYOVER_DAYS = 14;
+const SERVICE_PROGRESS_EVENT_COLLECTION = 'marga_field_visit_events';
+const SERVICE_PROGRESS_STALE_MINUTES = 120;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -74,8 +76,11 @@ const opsState = {
     allRows: [],
     selectedRows: [],
     schedtimeRows: [],
+    visitEventRows: [],
     logsBySchedule: new Map(),
     logsByStaff: new Map(),
+    serviceProgressMap: null,
+    serviceProgressMarkers: [],
     panelStaffId: null,
     purposeFilter: 'all',
     statusFilter: 'all',
@@ -142,6 +147,13 @@ document.addEventListener('DOMContentLoaded', () => {
     carryoverToggle.closest('.ops-toggle')?.setAttribute('title', 'Printed route view only');
 
     document.getElementById('opsRefreshBtn').addEventListener('click', () => loadOperationsBoard());
+    document.getElementById('opsServiceProgressBtn').addEventListener('click', () => openServiceProgressMap());
+    document.getElementById('serviceProgressCloseBtn').addEventListener('click', () => closeServiceProgressMap());
+    document.getElementById('serviceProgressOverlay').addEventListener('click', () => closeServiceProgressMap());
+    document.getElementById('serviceProgressRefreshBtn').addEventListener('click', async () => {
+        await loadOperationsBoard();
+        renderServiceProgressMap();
+    });
     document.getElementById('opsPanelCloseBtn').addEventListener('click', closeOpsStaffPanel);
     document.getElementById('opsPanelOverlay').addEventListener('click', closeOpsStaffPanel);
     document.getElementById('opsPanelPrintAllBtn').addEventListener('click', () => {
@@ -2688,6 +2700,331 @@ function renderOpsTaskTable(rows, logsBySchedule, lookups) {
     }).join('');
 }
 
+function parseCoordinate(value) {
+    const numeric = Number(String(value ?? '').trim());
+    if (!Number.isFinite(numeric)) return null;
+    if (numeric === 0) return null;
+    return numeric;
+}
+
+function getBranchCoordinates(branch) {
+    if (!branch) return null;
+    const latitude = parseCoordinate(branch.latitude ?? branch.lat);
+    const longitude = parseCoordinate(branch.longitude ?? branch.lng ?? branch.lon);
+    if (latitude === null || longitude === null) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+}
+
+function getEventCoordinates(event) {
+    if (!event) return null;
+    const latitude = parseCoordinate(event.latitude ?? event.lat ?? event.gps_latitude);
+    const longitude = parseCoordinate(event.longitude ?? event.lng ?? event.lon ?? event.gps_longitude);
+    if (latitude === null || longitude === null) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+}
+
+function getProgressTimestamp(event) {
+    if (!event) return '';
+    return String(
+        event.occurred_at
+        || event.created_at
+        || event.updated_at
+        || event.timestamp
+        || event.local_datetime
+        || ''
+    ).trim();
+}
+
+function parseProgressDate(value) {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    const parsed = new Date(text.includes('T') ? text : text.replace(' ', 'T'));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatProgressTime(value) {
+    const parsed = parseProgressDate(value);
+    if (!parsed) return value ? String(value) : 'No update';
+    return parsed.toLocaleString('en-PH', {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function minutesSince(value) {
+    const parsed = parseProgressDate(value);
+    if (!parsed) return null;
+    const diff = Math.floor((Date.now() - parsed.getTime()) / 60000);
+    return Number.isFinite(diff) ? Math.max(0, diff) : null;
+}
+
+function getProgressActionLabel(action) {
+    const normalized = String(action || '').trim().toLowerCase();
+    if (normalized === 'on_the_way') return 'On the Way';
+    if (normalized === 'arrived') return 'Arrived';
+    if (normalized === 'check_out') return 'Checked Out';
+    if (normalized === 'completed' || normalized === 'finish') return 'Completed';
+    if (normalized === 'late') return 'Late';
+    return action ? String(action).replace(/_/g, ' ') : 'No GPS Update';
+}
+
+function getProgressStatusClass(item) {
+    if (!item.hasCoordinates) return 'is-unmapped';
+    if (item.isStale) return 'is-stale';
+    if (item.actionKey === 'completed' || item.actionKey === 'finish') return 'is-completed';
+    if (item.actionKey === 'arrived') return 'is-arrived';
+    if (item.actionKey === 'on_the_way') return 'is-moving';
+    return item.hasGpsEvent ? 'is-active' : 'is-scheduled';
+}
+
+function getLatestVisitEventByStaff() {
+    const latest = new Map();
+
+    opsState.visitEventRows.forEach((event) => {
+        const staffId = Number(event.staff_id || event.tech_id || event.employee_id || 0);
+        if (staffId <= 0) return;
+        const current = latest.get(staffId);
+        const eventTime = getProgressTimestamp(event);
+        const currentTime = getProgressTimestamp(current);
+        if (!current || eventTime.localeCompare(currentTime) >= 0) {
+            latest.set(staffId, event);
+        }
+    });
+
+    return latest;
+}
+
+function getPrimaryStaffRow(rows) {
+    const withBranchCoordinates = rows.find((row) => {
+        const branch = opsCache.branches.get(String(row.branch_id || 0));
+        return Boolean(getBranchCoordinates(branch));
+    });
+    return withBranchCoordinates || rows[0] || null;
+}
+
+function buildServiceProgressItems() {
+    const grouped = new Map();
+    const latestEventByStaff = getLatestVisitEventByStaff();
+
+    opsState.selectedRows.forEach((row) => {
+        const staffId = getAssignedStaffId(row);
+        if (staffId <= 0) return;
+        if (!grouped.has(staffId)) grouped.set(staffId, []);
+        grouped.get(staffId).push(row);
+    });
+
+    latestEventByStaff.forEach((event, staffId) => {
+        if (!grouped.has(staffId)) grouped.set(staffId, []);
+    });
+
+    return [...grouped.entries()]
+        .map(([staffId, rows]) => {
+            const employee = opsCache.employees.get(String(staffId)) || null;
+            const position = employee ? opsCache.positions.get(String(employee.position_id || 0)) : null;
+            const event = latestEventByStaff.get(staffId) || null;
+            const primaryRow = getPrimaryStaffRow(rows);
+            const eventCoords = getEventCoordinates(event);
+            const branch = primaryRow ? opsCache.branches.get(String(primaryRow.branch_id || 0)) : null;
+            const branchCoords = getBranchCoordinates(branch);
+            const coords = eventCoords || branchCoords;
+            const company = branch ? opsCache.companies.get(String(branch.company_id || primaryRow?.company_id || 0)) : null;
+            const timestamp = getProgressTimestamp(event);
+            const staleMinutes = minutesSince(timestamp);
+            const actionKey = String(event?.action || event?.status || '').trim().toLowerCase();
+            const actionLabel = getProgressActionLabel(event?.status_label || event?.action || event?.status);
+            const hasGpsEvent = Boolean(eventCoords);
+
+            return {
+                staffId,
+                staffName: getEmployeeName(employee, staffId),
+                role: getRole(employee, position),
+                taskCount: rows.length,
+                actionKey,
+                actionLabel,
+                timestamp,
+                lastUpdateLabel: formatProgressTime(timestamp),
+                staleMinutes,
+                isStale: staleMinutes !== null && staleMinutes >= SERVICE_PROGRESS_STALE_MINUTES,
+                hasGpsEvent,
+                hasCoordinates: Boolean(coords),
+                latitude: coords?.latitude || null,
+                longitude: coords?.longitude || null,
+                coordinateSource: eventCoords ? 'Staff GPS' : (branchCoords ? 'Scheduled Client' : 'No Map Pin'),
+                companyName: company?.companyname || event?.company_name || '-',
+                branchName: branch?.branchname || event?.branch_name || '-',
+                scheduleId: Number(event?.schedule_id || primaryRow?.id || 0) || 0
+            };
+        })
+        .sort((a, b) => {
+            if (a.hasCoordinates !== b.hasCoordinates) return a.hasCoordinates ? -1 : 1;
+            if (a.isStale !== b.isStale) return a.isStale ? 1 : -1;
+            return a.staffName.localeCompare(b.staffName);
+        });
+}
+
+function openServiceProgressMap() {
+    const panel = document.getElementById('serviceProgressPanel');
+    const overlay = document.getElementById('serviceProgressOverlay');
+    panel?.classList.add('open');
+    overlay?.classList.add('open');
+    panel?.setAttribute('aria-hidden', 'false');
+    renderServiceProgressMap();
+}
+
+function closeServiceProgressMap() {
+    const panel = document.getElementById('serviceProgressPanel');
+    const overlay = document.getElementById('serviceProgressOverlay');
+    panel?.classList.remove('open');
+    overlay?.classList.remove('open');
+    panel?.setAttribute('aria-hidden', 'true');
+}
+
+function ensureServiceProgressMap() {
+    const mapEl = document.getElementById('serviceProgressMap');
+    if (!mapEl || !window.L) return null;
+    if (opsState.serviceProgressMap) return opsState.serviceProgressMap;
+
+    opsState.serviceProgressMap = L.map(mapEl, {
+        zoomControl: true,
+        attributionControl: true
+    }).setView([14.5995, 120.9842], 11);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(opsState.serviceProgressMap);
+
+    return opsState.serviceProgressMap;
+}
+
+function clearServiceProgressMarkers() {
+    const map = opsState.serviceProgressMap;
+    if (!map) return;
+    opsState.serviceProgressMarkers.forEach((marker) => marker.remove());
+    opsState.serviceProgressMarkers = [];
+}
+
+function markerHtmlForProgressItem(item) {
+    const initials = item.staffName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join('') || 'S';
+    return `<div class="service-progress-pin ${getProgressStatusClass(item)}"><span>${sanitize(initials)}</span></div>`;
+}
+
+function renderServiceProgressRoster(items) {
+    const roster = document.getElementById('serviceProgressRoster');
+    if (!roster) return;
+
+    if (!items.length) {
+        roster.innerHTML = '<div class="service-progress-no-data">No assigned staff for the selected filters.</div>';
+        return;
+    }
+
+    roster.innerHTML = items.map((item) => {
+        const statusClass = getProgressStatusClass(item);
+        const staleText = item.isStale ? `No update for ${Math.floor((item.staleMinutes || 0) / 60)} hr ${String((item.staleMinutes || 0) % 60).padStart(2, '0')} min` : item.lastUpdateLabel;
+        return `
+            <button type="button" class="service-progress-person ${statusClass}" data-staff-id="${item.staffId}">
+                <span class="service-progress-person-pin"></span>
+                <span class="service-progress-person-main">
+                    <strong>${sanitize(item.staffName)}</strong>
+                    <small>${sanitize(item.role)} · ${sanitize(item.actionLabel)}</small>
+                    <em>${sanitize(item.companyName)} / ${sanitize(item.branchName)}</em>
+                </span>
+                <span class="service-progress-person-side">
+                    <b>${sanitize(staleText)}</b>
+                    <small>${sanitize(item.coordinateSource)}</small>
+                </span>
+            </button>
+        `;
+    }).join('');
+
+    roster.querySelectorAll('[data-staff-id]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const staffId = Number(button.dataset.staffId || 0);
+            const item = items.find((candidate) => candidate.staffId === staffId);
+            if (!item?.hasCoordinates || !opsState.serviceProgressMap) return;
+            opsState.serviceProgressMap.setView([item.latitude, item.longitude], 15);
+        });
+    });
+}
+
+function renderServiceProgressMap() {
+    const items = buildServiceProgressItems();
+    const mappedItems = items.filter((item) => item.hasCoordinates);
+    const subtitle = document.getElementById('serviceProgressSubtitle');
+    const empty = document.getElementById('serviceProgressEmpty');
+
+    renderServiceProgressRoster(items);
+
+    if (subtitle) {
+        const gpsCount = items.filter((item) => item.hasGpsEvent).length;
+        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${items.length} staff shown, ${gpsCount} with live GPS, ${mappedItems.length} with map pins.`;
+    }
+
+    if (!window.L) {
+        if (empty) {
+            empty.hidden = false;
+            empty.textContent = 'Map library did not load. Staff progress list is still available.';
+        }
+        return;
+    }
+
+    const map = ensureServiceProgressMap();
+    if (!map) return;
+    clearServiceProgressMarkers();
+
+    if (!mappedItems.length) {
+        map.setView([14.5995, 120.9842], 11);
+        if (empty) {
+            empty.hidden = false;
+            empty.textContent = 'No mapped staff yet. Add GPS events or branch coordinates to show pins.';
+        }
+        setTimeout(() => map.invalidateSize(), 80);
+        return;
+    }
+
+    if (empty) empty.hidden = true;
+
+    const bounds = [];
+    mappedItems.forEach((item) => {
+        const icon = L.divIcon({
+            className: 'service-progress-leaflet-icon',
+            html: markerHtmlForProgressItem(item),
+            iconSize: [42, 52],
+            iconAnchor: [21, 50],
+            popupAnchor: [0, -44]
+        });
+        const marker = L.marker([item.latitude, item.longitude], { icon }).addTo(map);
+        marker.bindPopup(`
+            <div class="service-progress-popup">
+                <strong>${sanitize(item.staffName)}</strong>
+                <span>${sanitize(item.actionLabel)} · ${sanitize(item.lastUpdateLabel)}</span>
+                <small>${sanitize(item.companyName)} / ${sanitize(item.branchName)}</small>
+                <small>${sanitize(item.coordinateSource)}${item.scheduleId ? ` · Task #${sanitize(item.scheduleId)}` : ''}</small>
+            </div>
+        `);
+        opsState.serviceProgressMarkers.push(marker);
+        bounds.push([item.latitude, item.longitude]);
+    });
+
+    setTimeout(() => {
+        map.invalidateSize();
+        if (bounds.length === 1) {
+            map.setView(bounds[0], 14);
+        } else {
+            map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
+        }
+    }, 80);
+}
+
 function filterRowsByPurpose(rows, purposeFilter) {
     if (purposeFilter === 'all') return rows;
     const purposeId = Number(purposeFilter);
@@ -2783,11 +3120,15 @@ async function loadOperationsBoard() {
         const start = `${selectedDate} 00:00:00`;
         const end = `${selectedDate} 23:59:59`;
 
-        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs] = await Promise.all([
+        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs, visitEventDocs] = await Promise.all([
             queryByDateRange('tbl_schedule', 'task_datetime', { start, end }),
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', { start, end }).catch(() => []),
-            queryByDateRange('tbl_schedtime', 'schedule_date', { start, end })
+            queryByDateRange('tbl_schedtime', 'schedule_date', { start, end }),
+            queryByDateRange(SERVICE_PROGRESS_EVENT_COLLECTION, 'local_date', {
+                start: selectedDate,
+                end: selectedDate
+            }).catch(() => [])
         ]);
 
         await ensureClosedScheduleIdsLoaded();
@@ -2805,10 +3146,12 @@ async function loadOperationsBoard() {
             });
 
         const schedtimeRows = schedtimeDocs.map(parseFirestoreDoc).filter(Boolean);
+        const visitEventRows = visitEventDocs.map(parseFirestoreDoc).filter(Boolean);
 
         opsState.selectedDate = selectedDate;
         opsState.allRows = sortedRows;
         opsState.schedtimeRows = schedtimeRows;
+        opsState.visitEventRows = visitEventRows;
         opsState.purposeFilter = purposeFilter;
         opsState.assigneeRoleFilter = assigneeRoleFilter;
         opsState.includeCarryover = includeCarryover;
@@ -2849,7 +3192,7 @@ async function loadOperationsBoard() {
         ]);
 
         const visibleRows = filterRowsByAssigneeRole(filterRowsByPurpose(sortedRows, purposeFilter), assigneeRoleFilter);
-        subtitle.textContent = `Operations for ${selectedDate} (${purposeLabel}, ${getAssigneeRoleFilterLabel(assigneeRoleFilter)}): ${visibleRows.length} schedule(s), ${schedtimeRows.length} execution log(s).`;
+        subtitle.textContent = `Operations for ${selectedDate} (${purposeLabel}, ${getAssigneeRoleFilterLabel(assigneeRoleFilter)}): ${visibleRows.length} schedule(s), ${schedtimeRows.length} execution log(s), ${visitEventRows.length} GPS event(s).`;
         meta.textContent = `Schedule-first view is active. Route coverage: ${routeCoverage.boundCount}/${sortedRows.length} schedules have printed/saved rows (${routeCoverage.printedCount} printed, ${routeCoverage.savedCount} saved, ${routeCoverage.orphanCount} orphan route row(s)).`;
 
         if (panelVisible && opsState.panelStaffId) {
@@ -2857,6 +3200,9 @@ async function loadOperationsBoard() {
         }
 
         renderOperationsBoard();
+        if (document.getElementById('serviceProgressPanel')?.classList.contains('open')) {
+            renderServiceProgressMap();
+        }
     } catch (error) {
         console.error('Operations board load failed:', error);
         subtitle.textContent = `Failed to load operations data for ${selectedDate}.`;
