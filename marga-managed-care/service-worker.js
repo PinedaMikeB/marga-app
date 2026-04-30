@@ -1,4 +1,4 @@
-const CACHE_NAME = "marga-managed-care-v1";
+const CACHE_NAME = "marga-managed-care-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -24,4 +24,3 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then((cached) => cached || caches.match("./index.html"))));
 });
-

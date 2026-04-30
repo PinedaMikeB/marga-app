@@ -3,8 +3,8 @@
   "short_name": "Marga Care",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#f5f8f8",
-  "theme_color": "#0b4f71",
+  "background_color": "#f6f3fb",
+  "theme_color": "#cfc7f3",
   "description": "Customer portal for Marga service, billing, payments, printer usage, and supplies.",
   "icons": [
     {
