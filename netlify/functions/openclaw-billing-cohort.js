@@ -1123,6 +1123,7 @@ function buildContractProfile(contract) {
         ? 'reading'
         : ((Number(contract?.monthlyRate || 0) || 0) > 0 ? 'fixed' : 'other');
     return {
+        contract_status: Number(contract?.status || 0) || 0,
         category_id: categoryId,
         category_code: categoryMeta.code,
         category_label: categoryMeta.label,
@@ -1979,6 +1980,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             serial_number: row.serial_number,
             machine_id: row.machine_id,
             contractmain_id: row.contractmain_id,
+            contract_status: Number(row.billing_profile?.contract_status || 0) || 0,
             machine_label: row.machine_label,
             display_name: row.display_name,
             reading_day: row.reading_day,

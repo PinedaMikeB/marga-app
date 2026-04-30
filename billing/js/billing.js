@@ -3403,8 +3403,9 @@ function printHtmlDocument(printMarkup, windowName = 'marga_print') {
     window.setTimeout(triggerPrint, 700);
 }
 
-function getPrintableBillingLines(estimate) {
+function getPrintableBillingLines(estimate, options = {}) {
     const lines = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
+    if (options.includePending) return lines.length ? lines : [];
     const available = lines.filter((line) => !line.missingMeterSource && !isNonBillableMeterFormula(line.formula));
     const printable = available.filter((line) => (
         !line.missingMeterSource
@@ -3414,8 +3415,8 @@ function getPrintableBillingLines(estimate) {
 }
 
 function buildBillingAttachmentPrintDocument(preview, estimate, type = 'breakdown') {
-    const lines = getPrintableBillingLines(estimate);
     const isMeterForm = type === 'meter_form';
+    const lines = getPrintableBillingLines(estimate, { includePending: isMeterForm });
     const title = isMeterForm ? 'Meter Reading Form' : 'Billing Breakdown Attachment';
     const period = [preview?.billingFrom, preview?.billingTo].filter(Boolean).join(' to ');
     const totals = preview?.totals || {};
@@ -4740,6 +4741,7 @@ function buildBillingLinesSignature(lineItems = []) {
 function getGroupedMachineRows(row, monthKey) {
     const companyId = String(row?.company_id || '').trim();
     if (!companyId || !lastPayload?.month_matrix?.rows) return [];
+    const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
     const rows = lastPayload.month_matrix.rows
         .filter((entry) => (
             entry
@@ -4758,7 +4760,11 @@ function getGroupedMachineRows(row, monthKey) {
         const key = String(entry.row_id || entry.company_id || entry.contractmain_id || entry.machine_id || '').trim();
         if (!key || byRowId.has(key)) return;
         const cell = entry.months?.[monthKey] || {};
-        if (!cell.pending && !Number(cell.reading_amount_total || 0) && !Number(cell.display_amount_total || 0)) return;
+        const entryGroupId = String(entry?.billing_group?.id || entry?.billing_group?.group_id || '').trim();
+        const isVerifiedGroupMember = groupId && entryGroupId === groupId;
+        const contractStatus = Number(entry.contract_status || entry.billing_profile?.contract_status || 0) || 0;
+        const isActiveGroupMember = isVerifiedGroupMember && [1, 2, 3, 4, 8, 9, 10, 13].includes(contractStatus);
+        if (!isActiveGroupMember && !cell.pending && !Number(cell.reading_amount_total || 0) && !Number(cell.display_amount_total || 0)) return;
         byRowId.set(key, entry);
     });
     return Array.from(byRowId.values());
