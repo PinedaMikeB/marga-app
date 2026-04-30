@@ -96,6 +96,19 @@ Grouped-customer matrix representation:
 - Critical separation rule: do not merge by TIN or broad name match. `China Bank Savings Inc.` (`tbl_companylist/73`) and other CBS-like records share TIN `000-504-532-000` but are individually billed and should remain individual rows unless separately verified as grouped.
 - Because newer CBS billing rows do not consistently populate `tbl_billing.groupings_id`, grouped row construction should use exact grouped `company_id` plus branch/contract resolution, with `tbl_groupings` as a helper.
 
+Collections 2307 / deduction tracking:
+- Do not infer 2307 from `balance_amt`. Balance is only the remaining invoice amount after actual payment and explicit deductions.
+- Payment form should keep these separate:
+  - `payment_amt`: actual money received
+  - `deduction_type`: blank / `2307` / `other`
+  - `deduction_amount`: amount deducted from the invoice balance
+  - `tax_2307`: only populated when `deduction_type = 2307`
+  - `balance_amt`: invoice amount minus actual received minus explicit deduction
+- If `deduction_type = 2307` and amount is greater than zero, default the 2307 form status to pending so collectors can follow up the certificate later.
+- If the customer already gave the form, user can mark the 2307 form as submitted; then it should disappear from the pending 2307 list but remain visible in payment history.
+- A normal payment deficit must not create a pending 2307 item.
+- Photo attachment for submitted 2307 forms is a future follow-up; first implementation tracks status only.
+
 ## Non-Negotiable Rules
 - Do not break the Billing dashboard presentation while fixing Collections.
 - Do not reintroduce old Billing rollback commits blindly.

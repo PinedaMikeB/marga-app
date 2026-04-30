@@ -62,6 +62,7 @@ let currentCollectorWorkspace = null;
 let currentBranchEditorContext = null;
 let isSavingCollectorFollowup = false;
 let isSavingCollectorPayment = false;
+let isSavingCollector2307Status = false;
 let isSavingCollectorProfileOverride = false;
 let isSavingCollectorSchedule = false;
 let isSavingBranchStatus = false;
@@ -2119,7 +2120,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['id', 'invoice_id', 'invoice_num', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'tax_2307', 'tax_status', 'checkpayment_id', 'remarks'],
+        fieldMask: ['id', 'invoice_id', 'invoice_num', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'tax_2307', 'tax_status', 'deduction_type', 'deduction_amount', 'other_deduction_amount', 'tax_form_status', 'tax_form_received_at', 'tax_form_remarks', 'checkpayment_id', 'remarks'],
         maxPages: 260
     });
     const supplementalPaymentDocs = await loadSupplementalCollectionPaymentDocs();
@@ -2139,6 +2140,11 @@ async function loadLookups() {
 
         const amount = Number(getField(f, ['payment_amt']) || 0);
         const tax2307 = Number(getField(f, ['tax_2307']) || 0);
+        const deductionType = String(getField(f, ['deduction_type']) || (tax2307 > 0 ? '2307' : '')).trim().toLowerCase();
+        const deductionAmount = Number(getField(f, ['deduction_amount']) || tax2307 || 0);
+        const otherDeductionAmount = Number(getField(f, ['other_deduction_amount']) || (deductionType && deductionType !== '2307' ? deductionAmount : 0) || 0);
+        const taxStatus = String(getField(f, ['tax_status']) || '').trim();
+        const taxFormStatus = String(getField(f, ['tax_form_status']) || '').trim().toLowerCase();
         const balanceAmountRaw = getField(f, ['balance_amt']);
         const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
         const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
@@ -2146,13 +2152,14 @@ async function loadLookups() {
         if (balanceAmount !== null && Number(balanceAmount) <= 0.01 && (invoiceIdKey || invoiceNo)) {
             paidInvoiceIds.add(invoiceIdKey || invoiceNo);
         }
-        if ((amount > 0 || tax2307 > 0) && paymentDate) {
+        if ((amount > 0 || tax2307 > 0 || deductionAmount > 0) && paymentDate) {
             const orNumber = String(getField(f, ['ornum', 'or_number']) || '').trim();
             const token = [
                 invoiceIdKey,
                 invoiceNo,
                 amount.toFixed(2),
                 tax2307.toFixed(2),
+                deductionAmount.toFixed(2),
                 balanceAmount !== null && Number.isFinite(Number(balanceAmount)) ? Number(balanceAmount).toFixed(2) : '',
                 toDateKey(paymentDate),
                 orNumber
@@ -2166,6 +2173,9 @@ async function loadLookups() {
                 invoiceNo,
                 amount,
                 balanceAmount,
+                deductionType,
+                deductionAmount,
+                otherDeductionAmount,
                 paymentDate,
                 datePaid: normalizeDate(getField(f, ['date_paid'])),
                 dateDeposit: normalizeDate(getField(f, ['date_deposit'])),
@@ -2173,7 +2183,10 @@ async function loadLookups() {
                 orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
                 tax2307,
-                taxStatus: String(getField(f, ['tax_status']) || '').trim(),
+                taxStatus,
+                taxFormStatus,
+                taxFormReceivedAt: normalizeDate(getField(f, ['tax_form_received_at'])),
+                taxFormRemarks: String(getField(f, ['tax_form_remarks']) || '').trim(),
                 checkpaymentId: String(getField(f, ['checkpayment_id']) || '').trim(),
                 remarks: String(getField(f, ['remarks']) || '').trim()
             });
@@ -4613,7 +4626,7 @@ function getOutstandingInvoiceAmount(invoice) {
             const rightTime = (right.paymentDate || new Date(0)).getTime();
             return rightTime - leftTime;
         })[0];
-    const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + Number(payment.tax2307 || 0), 0);
+    const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + getPaymentDeductionAmount(payment), 0);
     const computedBalance = Math.max(0, baseAmount - paidTotal);
     if (latestWithBalance) {
         return Math.min(Math.max(0, Number(latestWithBalance.balanceAmount || 0)), computedBalance);
@@ -4933,7 +4946,7 @@ function buildCollectorSoaRows(workspace, fromDate, toDate) {
     let finalBalance = 0;
     const rows = matchedInvoices.map((invoice) => {
         const payments = getPaymentsForInvoiceKeys(invoice).filter((payment) => isDateWithinRange(payment.paymentDate, fromDate, toDate));
-        const paymentAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + Number(payment.tax2307 || 0), 0);
+        const paymentAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + getPaymentDeductionAmount(payment), 0);
         const latestBalance = payments
             .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
             .sort((left, right) => {
@@ -5177,6 +5190,118 @@ function getPaymentsForSelectedInvoice(invoice) {
         });
 }
 
+function getPaymentDeductionAmount(payment) {
+    const explicit = Number(payment?.deductionAmount || 0);
+    if (explicit > 0) return explicit;
+    return Number(payment?.tax2307 || 0) + Number(payment?.otherDeductionAmount || 0);
+}
+
+function is2307DeductionPayment(payment) {
+    return String(payment?.deductionType || '').toLowerCase() === '2307' || Number(payment?.tax2307 || 0) > 0;
+}
+
+function is2307FormSubmitted(payment) {
+    const formStatus = String(payment?.taxFormStatus || '').toLowerCase();
+    const taxStatus = String(payment?.taxStatus || '').trim().toLowerCase();
+    return formStatus === 'submitted' || taxStatus === '2' || taxStatus === 'submitted';
+}
+
+function is2307FormPending(payment) {
+    return is2307DeductionPayment(payment) && !is2307FormSubmitted(payment);
+}
+
+function get2307FormStatusLabel(payment) {
+    if (!is2307DeductionPayment(payment)) return '-';
+    return is2307FormSubmitted(payment) ? 'Submitted' : 'Pending Form';
+}
+
+function get2307PendingPayments(payments = []) {
+    return payments.filter(is2307FormPending);
+}
+
+function render2307PendingPanel(payments = []) {
+    const pending = get2307PendingPayments(payments);
+    if (!pending.length) {
+        return '<div class="collection-followup-empty">No pending 2307 form for this invoice.</div>';
+    }
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table">
+                <thead>
+                    <tr>
+                        <th>Invoice No.</th>
+                        <th>Payment Date</th>
+                        <th>2307 Amount</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${pending.map((payment) => `
+                        <tr>
+                            <td>${escapeHtml(payment.invoiceNo || payment.invoiceId || '-')}</td>
+                            <td>${escapeHtml(formatDate(payment.datePaid || payment.paymentDate))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(payment.tax2307 || getPaymentDeductionAmount(payment)))}</td>
+                            <td><span class="collector-tax-status pending">Pending Form</span></td>
+                            <td><button type="button" class="btn btn-secondary btn-sm" onclick="markCollector2307Submitted('${encodeURIComponent(payment.docId || payment.id || '')}')">Mark Submitted</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+async function markCollector2307Submitted(paymentDocId) {
+    const docId = decodeURIComponent(String(paymentDocId || '')).trim();
+    const statusNode = document.getElementById('collectorPaymentSaveStatus') || document.getElementById('collectorFollowupSaveStatus');
+    if (!docId || isSavingCollector2307Status) return;
+
+    isSavingCollector2307Status = true;
+    if (statusNode) statusNode.textContent = 'Marking 2307 form as submitted...';
+
+    try {
+        const now = toTimestampString(new Date());
+        await firestoreUpdateDocumentFields('tbl_paymentinfo', docId, {
+            tax_status: toFirestoreWriteValue(2),
+            tax_form_status: toFirestoreWriteValue('submitted'),
+            tax_form_received_at: toFirestoreWriteValue(now),
+            tax_form_updated_at: toFirestoreWriteValue(now)
+        });
+
+        paymentEntries = paymentEntries.map((entry) => {
+            if (String(entry.docId || entry.id || '') !== docId) return entry;
+            return {
+                ...entry,
+                taxStatus: '2',
+                taxFormStatus: 'submitted',
+                taxFormReceivedAt: normalizeDate(now)
+            };
+        });
+
+        if (currentCollectorWorkspace?.cell) {
+            const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
+            currentCollectorWorkspace = {
+                ...refreshed,
+                cellId: refreshed.cell.id
+            };
+            const content = document.getElementById('collectorCellContent');
+            if (content) content.innerHTML = renderCollectorFollowupWorkspace(refreshed);
+            bindCollectorPaymentForm();
+            setCollectorWorkspaceTab('payment');
+        }
+
+        const refreshedStatusNode = document.getElementById('collectorPaymentSaveStatus');
+        if (refreshedStatusNode) refreshedStatusNode.textContent = '2307 form marked submitted.';
+    } catch (error) {
+        console.error('Failed to update 2307 form status:', error);
+        if (statusNode) statusNode.textContent = '2307 form status update failed.';
+    } finally {
+        isSavingCollector2307Status = false;
+    }
+}
+
 function getPaymentSummaryForInvoiceKeys(paymentMap, ...keys) {
     for (const key of keys) {
         const safeKey = String(key || '').trim();
@@ -5203,7 +5328,8 @@ function renderPaymentHistoryRows(payments) {
                         <th>Paid Date</th>
                         <th>OR No.</th>
                         <th>Received</th>
-                        <th>2307</th>
+                        <th>Deduction</th>
+                        <th>2307 Form</th>
                         <th>Balance</th>
                     </tr>
                 </thead>
@@ -5213,7 +5339,8 @@ function renderPaymentHistoryRows(payments) {
                             <td>${escapeHtml(formatDate(payment.datePaid || payment.paymentDate))}</td>
                             <td>${escapeHtml(payment.orNumber || '-')}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(payment.amount || 0))}</td>
-                            <td class="text-right">${escapeHtml(formatCurrency(payment.tax2307 || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(getPaymentDeductionAmount(payment)))}</td>
+                            <td>${is2307DeductionPayment(payment) ? `<span class="collector-tax-status ${is2307FormSubmitted(payment) ? 'submitted' : 'pending'}">${escapeHtml(get2307FormStatusLabel(payment))}</span>` : '-'}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(payment.balanceAmount || 0))}</td>
                         </tr>
                     `).join('')}
@@ -5238,7 +5365,7 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                     <div class="collection-payment-summary" id="collectorPaymentSummary" data-invoice-amount="${escapeHtml(currentBalance)}">
                         <div><span>Invoice Amount</span><strong id="collectorPaymentInvoiceAmount">${escapeHtml(formatCurrency(invoiceAmount))}</strong></div>
                         <div><span>Actual Received</span><strong id="collectorPaymentActual">${escapeHtml(formatCurrency(0))}</strong></div>
-                        <div><span>2307 Deducted</span><strong id="collectorPaymentTaxDisplay">${escapeHtml(formatCurrency(0))}</strong></div>
+                        <div><span>Deducted</span><strong id="collectorPaymentTaxDisplay">${escapeHtml(formatCurrency(0))}</strong></div>
                         <div><span>Balance</span><strong id="collectorPaymentBalanceDisplay">${escapeHtml(formatCurrency(currentBalance))}</strong></div>
                     </div>
                     <div class="collection-followup-form collection-payment-form">
@@ -5274,13 +5401,25 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                             <input id="collectorPaymentCheckDate" type="date" value="" disabled>
                         </div>
                         <div>
-                            <label>2307 Deducted</label>
-                            <input id="collectorPaymentTax2307" type="number" step="0.01" min="0" value="">
+                            <label>Deduction Type</label>
+                            <select id="collectorPaymentDeductionType">
+                                <option value="">None</option>
+                                <option value="2307">2307 withholding tax</option>
+                                <option value="other">Other deduction</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Deducted Amount</label>
+                            <input id="collectorPaymentDeductionAmount" type="number" step="0.01" min="0" value="">
                         </div>
                         <div>
                             <label>Balance</label>
                             <input id="collectorPaymentBalance" type="number" step="0.01" readonly value="${escapeHtml(currentBalance.toFixed(2))}">
                         </div>
+                        <label class="collection-check-row full collector-2307-form-row" id="collector2307PendingRow" hidden>
+                            <input id="collectorPayment2307Pending" type="checkbox" checked>
+                            Pending 2307 Form
+                        </label>
                         <div class="full">
                             <label>Remarks</label>
                             <textarea id="collectorPaymentRemarks" placeholder="Optional payment notes."></textarea>
@@ -5299,6 +5438,8 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                         <div><span>2307</span><strong>${escapeHtml(formatCurrency(taxTotal))}</strong></div>
                         <div><span>Remaining</span><strong>${escapeHtml(formatCurrency(paymentBalance))}</strong></div>
                     </div>
+                    <div class="collection-followup-panel-title collector-subsection-title">Pending 2307 Forms</div>
+                    ${render2307PendingPanel(paymentRecords)}
                     ${renderPaymentHistoryRows(paymentRecords)}
                 </div>
             </div>
@@ -5556,6 +5697,10 @@ function renderCollectorFollowupWorkspace(workspace) {
                     ${renderHistoryRows(invoiceHistory)}
                 </div>
                 <div class="collection-followup-panel">
+                    <div class="collection-followup-panel-title">Pending 2307 Forms</div>
+                    ${render2307PendingPanel(paymentRecords)}
+                </div>
+                <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Service / Delivery History</div>
                     ${renderServiceRows(serviceHistory)}
                 </div>
@@ -5684,23 +5829,35 @@ function updateCollectorPaymentBalance() {
 
     const invoiceAmount = parseMoneyInput(summary.dataset.invoiceAmount || '0');
     const paidAmount = parseMoneyInput(document.getElementById('collectorPaymentPaidAmount')?.value || '0');
-    const tax2307 = parseMoneyInput(document.getElementById('collectorPaymentTax2307')?.value || '0');
-    const balance = Math.max(0, invoiceAmount - paidAmount - tax2307);
+    const deductionType = String(document.getElementById('collectorPaymentDeductionType')?.value || '').trim();
+    const deductionAmount = deductionType ? parseMoneyInput(document.getElementById('collectorPaymentDeductionAmount')?.value || '0') : 0;
+    const pending2307Row = document.getElementById('collector2307PendingRow');
+    const pending2307Input = document.getElementById('collectorPayment2307Pending');
+    const balance = Math.max(0, invoiceAmount - paidAmount - deductionAmount);
     const balanceInput = document.getElementById('collectorPaymentBalance');
     const actualNode = document.getElementById('collectorPaymentActual');
     const taxNode = document.getElementById('collectorPaymentTaxDisplay');
     const balanceNode = document.getElementById('collectorPaymentBalanceDisplay');
 
+    if (pending2307Row) pending2307Row.hidden = deductionType !== '2307' || deductionAmount <= 0;
+    if (pending2307Input && (deductionType !== '2307' || deductionAmount <= 0)) pending2307Input.checked = false;
+    if (pending2307Input && deductionType === '2307' && deductionAmount > 0 && !pending2307Input.dataset.touched) {
+        pending2307Input.checked = true;
+    }
     if (balanceInput) balanceInput.value = balance.toFixed(2);
     if (actualNode) actualNode.textContent = formatCurrency(paidAmount);
-    if (taxNode) taxNode.textContent = formatCurrency(tax2307);
+    if (taxNode) taxNode.textContent = formatCurrency(deductionAmount);
     if (balanceNode) balanceNode.textContent = formatCurrency(balance);
 }
 
 function bindCollectorPaymentForm() {
-    ['collectorPaymentPaidAmount', 'collectorPaymentTax2307'].forEach((id) => {
+    ['collectorPaymentPaidAmount', 'collectorPaymentDeductionAmount', 'collectorPaymentDeductionType'].forEach((id) => {
         const input = document.getElementById(id);
         input?.addEventListener('input', updateCollectorPaymentBalance);
+        input?.addEventListener('change', updateCollectorPaymentBalance);
+    });
+    document.getElementById('collectorPayment2307Pending')?.addEventListener('change', (event) => {
+        event.currentTarget.dataset.touched = '1';
     });
     syncCollectorPaymentMethod(document.getElementById('collectorPaymentCheck')?.checked ? 'check' : 'cash');
     updateCollectorPaymentBalance();
@@ -5792,7 +5949,13 @@ async function saveCollectorPayment() {
     const invoiceNo = String(document.getElementById('collectorPaymentInvoiceNo')?.value || selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
     const invoiceId = String(document.getElementById('collectorPaymentInvoiceId')?.value || selectedInvoice?.invoiceId || selectedInvoice?.invoiceNo || invoiceNo || '').trim();
     const amountPaid = parseMoneyInput(document.getElementById('collectorPaymentPaidAmount')?.value || '0');
-    const tax2307 = parseMoneyInput(document.getElementById('collectorPaymentTax2307')?.value || '0');
+    const deductionType = String(document.getElementById('collectorPaymentDeductionType')?.value || '').trim().toLowerCase();
+    const deductionAmount = deductionType ? parseMoneyInput(document.getElementById('collectorPaymentDeductionAmount')?.value || '0') : 0;
+    const tax2307 = deductionType === '2307' ? deductionAmount : 0;
+    const otherDeductionAmount = deductionType && deductionType !== '2307' ? deductionAmount : 0;
+    const taxFormPending = tax2307 > 0 && Boolean(document.getElementById('collectorPayment2307Pending')?.checked);
+    const taxFormStatus = tax2307 > 0 ? (taxFormPending ? 'pending' : 'submitted') : '';
+    const taxStatus = tax2307 > 0 ? (taxFormPending ? 1 : 2) : 0;
     const balance = parseMoneyInput(document.getElementById('collectorPaymentBalance')?.value || '0');
     const orNumber = String(document.getElementById('collectorPaymentOrNumber')?.value || '').trim();
     const paymentDate = String(document.getElementById('collectorPaymentDate')?.value || '').trim();
@@ -5808,8 +5971,13 @@ async function saveCollectorPayment() {
         return;
     }
 
-    if (!(amountPaid > 0) && !(tax2307 > 0)) {
-        if (statusNode) statusNode.textContent = 'Enter the actual amount received or 2307 deducted.';
+    if (!(amountPaid > 0) && !(deductionAmount > 0)) {
+        if (statusNode) statusNode.textContent = 'Enter the actual amount received or a deduction amount.';
+        return;
+    }
+
+    if (deductionAmount > 0 && !deductionType) {
+        if (statusNode) statusNode.textContent = 'Choose the deduction type.';
         return;
     }
 
@@ -5841,7 +6009,12 @@ async function saveCollectorPayment() {
             payment_type: toFirestoreWriteValue(isCheck ? 1 : 0),
             tax_2307: toFirestoreWriteValue(tax2307),
             tax_date_paid: toFirestoreWriteValue(formatInputDateTime(tax2307 > 0 ? paymentDate : '')),
-            tax_status: toFirestoreWriteValue(tax2307 > 0 ? 1 : 0),
+            tax_status: toFirestoreWriteValue(taxStatus),
+            deduction_type: toFirestoreWriteValue(deductionType),
+            deduction_amount: toFirestoreWriteValue(deductionAmount),
+            other_deduction_amount: toFirestoreWriteValue(otherDeductionAmount),
+            tax_form_status: toFirestoreWriteValue(taxFormStatus),
+            tax_form_received_at: toFirestoreWriteValue(tax2307 > 0 && !taxFormPending ? now : ''),
             checkpayment_id: toFirestoreWriteValue(checkDocId || 0),
             remarks: toFirestoreWriteValue(remarks),
             timestamp: toFirestoreWriteValue(now),
@@ -5873,6 +6046,9 @@ async function saveCollectorPayment() {
             invoiceNo: invoiceNo || invoiceId,
             amount: amountPaid,
             balanceAmount: balance,
+            deductionType,
+            deductionAmount,
+            otherDeductionAmount,
             paymentDate: normalizeDate(paymentDate),
             datePaid: normalizeDate(paymentDate),
             dateDeposit: normalizeDate(paymentDate),
@@ -5880,7 +6056,9 @@ async function saveCollectorPayment() {
             orNumber,
             paymentType: isCheck ? '1' : '0',
             tax2307,
-            taxStatus: tax2307 > 0 ? '1' : '0',
+            taxStatus: String(taxStatus),
+            taxFormStatus,
+            taxFormReceivedAt: tax2307 > 0 && !taxFormPending ? normalizeDate(now) : null,
             checkpaymentId: checkDocId,
             remarks
         });

@@ -2521,6 +2521,34 @@
             overflow-wrap: anywhere;
         }
 
+        .collector-subsection-title {
+            margin-top: 12px;
+        }
+
+        .collector-tax-status {
+            display: inline-flex;
+            align-items: center;
+            width: fit-content;
+            padding: 3px 7px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 900;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .collector-tax-status.pending {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid rgba(245, 158, 11, 0.28);
+        }
+
+        .collector-tax-status.submitted {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid rgba(22, 163, 74, 0.24);
+        }
+
         .collection-soa-actions {
             display: flex;
             justify-content: flex-end;

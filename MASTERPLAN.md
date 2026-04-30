@@ -175,6 +175,20 @@ Collections matrix usability rule:
 - Native scrollbar, custom drag bar, arrow buttons, mouse drag, trackpad movement, or touch swipe are all acceptable only if they work clearly on the live page.
 - A local mock is not enough; verify against the deployed page behavior.
 
+Collections payment and 2307 rules:
+- Never infer 2307 from a remaining balance. A balance can be a real payment deficit, so 2307 must come from an explicit deduction type/amount.
+- Payment tracking should separate:
+  - actual money received
+  - deduction type
+  - deduction amount
+  - 2307 form status
+  - computed remaining balance
+- For `deduction_type = 2307`, save the deducted amount into `tax_2307` for legacy compatibility and track form status separately.
+- 2307 deducted can close the invoice balance even when the form is still pending.
+- Pending 2307 form is a document follow-up item, not an unpaid-balance state.
+- When the 2307 form is marked submitted, remove it from pending 2307 follow-up lists while keeping the submitted status in payment history.
+- Photo attachment for 2307 forms is useful but should be added after status tracking is stable.
+
 ## Service Rules
 - Service should use the same Active Contract Customer Graph for customer, branch, machine, and serial identity.
 - Service must not use raw `tbl_machine.client_id` as the customer source of truth.
