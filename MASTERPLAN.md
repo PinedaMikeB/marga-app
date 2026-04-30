@@ -179,6 +179,13 @@ Collections matrix usability rule:
 - Service should use the same Active Contract Customer Graph for customer, branch, machine, and serial identity.
 - Service must not use raw `tbl_machine.client_id` as the customer source of truth.
 - Model display should prefer the corrected contract/machine resolver and avoid old mismatched helper paths.
+- Service Dispatch has a `Service Progress` map for field staff visibility.
+- Service Progress map rules:
+  - center first on MARGA Office near Havila/Mission Hills, Antipolo
+  - display the MARGA Office marker and 15-mile service radius
+  - keep initial load light; do not render scheduled-client fallback pins as map markers by default
+  - use `marga_field_visit_events` for live staff GPS updates
+  - stale/no-update display should remain obvious for dispatchers
 
 ## Releasing Rules
 - Releasing exists as `releasing/` and is live as of 2026-04-23.
@@ -211,6 +218,21 @@ Collections matrix usability rule:
   - saved/unprinted route jobs assigned to that staff
   - older open assigned service/delivery jobs that still need follow-up
   - pending parts or machine replacement planning
+- Field App customer location rules:
+  - if a scheduled branch has saved `tbl_branchinfo.latitude` and `tbl_branchinfo.longitude`, staff do not need to pin it again
+  - if coordinates are missing, staff must pin the customer location before the schedule can be marked `Finished`
+  - pinning must happen from the customer site using device GPS
+  - pinning saves coordinates and audit fields to `tbl_branchinfo`
+  - pinning patches summary fields on `tbl_schedule`
+  - pinning writes an event to `marga_field_visit_events`
+  - pinning must include a frontage/building photo so the office can recognize the customer location
+  - frontage photos should be compressed before saving and should not remain in the phone gallery when a direct-camera flow is later added
+- Planned Field App action-based tracking:
+  - `On the Way` saves staff GPS and time
+  - `Arrived` saves GPS/time and should enforce morning arrival proof
+  - `Check Out` saves GPS/time when leaving the customer
+  - `Completed` saves GPS/time and proof photo
+  - first-arrival lateness rule: Metro Manila clients by 8:00 AM, province clients by 9:00 AM
 - Keep Today fast. If Carry Over scanning becomes slow, move the historical lookup into a backend endpoint instead of blocking initial render.
 - Daily printed schedule format should remain close to VB.NET:
   - grouped/page-broken by staff
@@ -343,6 +365,12 @@ From the latest confirmed module checks:
   - Field App showed 15 printed tasks.
   - The same 15 schedule IDs existed in Master Schedule printed-route data.
   - Field App also has a secondary Carry Over tab for planning follow-up work.
+- Service Progress map is live in Service Dispatch:
+  - centered on Havila/Antipolo office
+  - 15-mile radius
+  - visible `MARGA Office` marker
+  - awaits live staff GPS events from Field App action buttons
+- Field App now blocks Finish for branches with no saved coordinates until staff pin the customer location and add a frontage/building photo.
 - General Production is live and deployed; Machine Checker serial search now uses Billing serial truth first.
 - Correct site is `https://margaapp.netlify.app` with two `p`s.
 
@@ -365,6 +393,7 @@ From the latest confirmed module checks:
 8. Preserve the accepted Collections month-matrix format.
 9. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
 10. Re-verify Billing presentation after any Billing matrix changes.
+11. If continuing field tracking, add the action-based GPS buttons and keep Service Progress map load light.
 
 ## Rollback Reference
 - `8df832d`: current protected Billing baseline

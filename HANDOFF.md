@@ -40,6 +40,15 @@ Start every new Marga-App thread by reading:
   - `3f3ab9c` `Use route data for master schedule readiness`
   - `caafb64` `Match master schedule print columns to VBNet`
   - `dec0127` `Add carryover tab to field app`
+  - `4156a67` `Require field customer location pin`
+  - `461e7b3` `Require frontage photo for location pins`
+- Current live Service Progress map work already pushed on `main`:
+  - `f78805d` `Center service progress map on Antipolo office`
+  - `0933866` `Reduce service progress map load`
+  - `4417e5d` `Fix service progress map sizing`
+  - `90acdfd` `Stabilize service progress map layout`
+  - `4d3b361` `Protect service progress map tile layout`
+  - `795cd9f` `Mark office on service progress map`
 - Current live General Production work already pushed on `main`:
   - `e835737` `Add General Production module`
   - `c96f4de` `Tune General Production legacy counts`
@@ -200,8 +209,8 @@ Important Collections SN rule:
 | Customers | Next Focus / In Progress | Existing customer directory and edit form module under `customers/`; loads companies, branches, contracts, contract deps, machines, models, brands, areas, cities, bill info, and recent billed contract ids. | Continue here in next chat; align rows/details with the Active Contract Customer Graph and Billing customer truth. |
 | Collections | Accepted / In Progress | Uses Billing-based coverage plus unpaid invoices. Matrix scroll format is accepted live: whole-sheet horizontal movement, visible arrows/Latest, Total at far right. | Preserve this format while continuing Collections parity work. |
 | Master Schedule | Accepted / In Progress | Uses `tbl_savedscheds`/`tbl_printedscheds` joined to `tbl_schedule`; print layout is grouped by staff and now matches VBNet columns closely. | Keep daily printed route and carry-over logic aligned with Field App. |
-| Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs for follow-up/planning. | Keep today route fast; optimize carry-over via backend if the 45-day scan becomes slow. |
-| Service | In Progress | Must follow the same customer/serial identity rules as Billing. | Reuse Active Contract Customer Graph carefully. |
+| Field App | In Progress | Default `Today` tab shows printed route; `Carry Over` tab shows saved/unprinted and older open assigned jobs. New customer location pins are required before Finish when the branch has no saved coordinates; staff must add a frontage/building photo when pinning. | Keep today route fast; next step is action-based GPS events (`On the Way`, `Arrived`, `Check Out`, `Completed`) and photo upload hardening. |
+| Service | In Progress | Must follow the same customer/serial identity rules as Billing. Service Dispatch has a `Service Progress` map centered on MARGA Office in Havila/Antipolo with a 15-mile radius and office marker. | Reuse Active Contract Customer Graph carefully; wire live GPS action events from Field App into the map. |
 | General Production | Live / In Progress | Isolated `general-production/` module is deployed. Dashboard counts tuned to VB.NET screenshot targets. Machine Checker uses Billing-backed real serials with searchable dropdown, model/status/customer context, and add-new-machine form. For Overhauling rows can be double-clicked to assign a tech and move to Under Repair; Under Repair rows can be double-clicked to mark Machine Ready. | Add mismatch warning for active billing contract vs machine master status; continue source-table tuning only when user asks. |
 | Releasing | Live / In Progress | Isolated `releasing/` module is deployed. DR Item List expands quantity into unit rows, supports right-click add/remove, print adjustment templates, immediate print-window opening, and Create DR stays populated until manual Clear. | Verify Firebase parity for partial-quantity cases like `345898` after Clear/reload; Billing is now the next chat focus. |
 | Receiving | Live First Pass / In Progress | New inbound `receiving/` module is approved and first pass is implemented. It handles machine pending-return logging, returned-machine office receipt to For Overhauling, and generic receiving logs for cartridges, purchased machines, supplies/materials, parts, and tech returns. | Verify with real office pullout/receipt examples; later add driver/logistics delivery confirmation finalizer. |
@@ -224,6 +233,34 @@ Important Collections SN rule:
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-04-30 - Service Progress Map And Field Location Pinning
+- Added Service Dispatch `Service Progress` map button/panel.
+- Map behavior:
+  - uses Leaflet/OpenStreetMap
+  - starts centered on MARGA Office near Havila/Mission Hills, Antipolo
+  - shows a 15-mile service radius and visible `MARGA Office` marker
+  - intentionally keeps initial load light and does not render scheduled-client fallback pins by default
+  - live staff GPS pins are expected from `marga_field_visit_events`
+  - protected Leaflet tile CSS in `service/css/service.css` after map tiles initially rendered cropped under app styles
+- Field App location enforcement:
+  - every task modal has `Customer Location Pin`
+  - if `tbl_branchinfo.latitude` and `tbl_branchinfo.longitude` already exist, no pin is required
+  - if branch coordinates are missing, staff cannot mark the schedule `Finished`
+  - staff must tap `Pin Customer Location` while at the client site
+  - pinning writes coordinates and audit fields to `tbl_branchinfo`
+  - pinning patches summary fields on `tbl_schedule`
+  - pinning writes a `marga_field_visit_events` event with action `customer_location_pinned`
+  - pinning now requires a frontage/building photo so the office knows what the customer site looks like
+- Frontage photo behavior:
+  - Field App compresses the selected camera image before saving
+  - attempts Firebase Storage upload under `field-location-photos/...`
+  - if Storage rules reject upload, falls back to one compressed data-url document in `marga_location_frontage_photos` and stores only the doc id on branch/schedule/event rows
+  - branch fields include `location_frontage_photo_url`, `location_frontage_photo_path`, `location_frontage_photo_doc_id`, and storage metadata
+- Important next step:
+  - implement action-based GPS buttons in Field App: `On the Way`, `Arrived`, `Check Out`, `Completed`
+  - first-arrival lateness rule: Metro Manila by 8:00 AM, province by 9:00 AM
+  - completion proof photo should upload directly and should not save into the phone gallery when possible
+
 ### 2026-04-30 - Receiving Workflow Approved
 - User approved a dedicated Receiving module instead of overloading Machine Checker.
 - First pass implemented as `receiving/`.
