@@ -1187,6 +1187,14 @@
     gap: 0.9rem;
 }
 
+.calc-meter-section-title {
+    color: var(--bill-ink);
+    font-size: 0.84rem;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
 .calc-meter-line {
     border: 1px solid var(--bill-line);
     border-radius: 8px;

@@ -4429,6 +4429,78 @@ function getRtpSecondaryProfile(profile = {}) {
     };
 }
 
+function getMeterLineIdentity(line = {}) {
+    const label = String(line?.label || '').toLowerCase();
+    const section = String(line?.meterSection || line?.section || '').toLowerCase();
+    const type = String(line?.meterType || '').toLowerCase();
+    return { label, section, type };
+}
+
+function findSavedMeterLine(savedLineItems = [], { section = '', type = '', legacyLabel = '', fallbackIndex = -1 } = {}) {
+    const normalizedSection = String(section || '').toLowerCase();
+    const normalizedType = String(type || '').toLowerCase();
+    const normalizedLegacyLabel = String(legacyLabel || '').toLowerCase();
+    const exactLine = savedLineItems.find((line) => {
+        const identity = getMeterLineIdentity(line);
+        return identity.section === normalizedSection && identity.type === normalizedType;
+    });
+    if (exactLine) return exactLine;
+
+    const labelLine = savedLineItems.find((line) => {
+        const identity = getMeterLineIdentity(line);
+        return identity.label.includes(normalizedSection) && identity.label.includes(normalizedType);
+    });
+    if (labelLine) return labelLine;
+
+    if (normalizedLegacyLabel) {
+        const legacyLine = savedLineItems.find((line) => getMeterLineIdentity(line).label.includes(normalizedLegacyLabel));
+        if (legacyLine) return legacyLine;
+    }
+
+    return fallbackIndex >= 0 ? savedLineItems[fallbackIndex] || null : null;
+}
+
+function buildMultiMeterSeedLine({
+    label,
+    section,
+    type,
+    profile = {},
+    previousMeter = 0,
+    presentMeter = 0,
+    spoilagePercent = DEFAULT_SPOILAGE_RATE * 100,
+    row = null,
+    savedLine = null
+} = {}) {
+    const mergedProfile = {
+        ...profile,
+        page_rate: Number(savedLine?.pageRate ?? profile.page_rate ?? 0) || 0,
+        succeeding_page_rate: Number(savedLine?.succeedingRate ?? profile.succeeding_page_rate ?? profile.page_rate_xtra ?? profile.page_rate ?? 0) || 0,
+        monthly_quota: Number(savedLine?.monthlyQuota ?? profile.monthly_quota ?? 0) || 0,
+        monthly_rate: Number(savedLine?.monthlyRate ?? profile.monthly_rate ?? 0) || 0
+    };
+    const line = calculateMeterLineEstimate({
+        label,
+        subtitle: String(row?.serial_number || row?.machine_id || '').trim(),
+        meterSection: section,
+        meterType: type,
+        profile: mergedProfile,
+        previousMeter: Number(savedLine?.previousMeter ?? previousMeter ?? 0) || 0,
+        presentMeter: Number(savedLine?.presentMeter ?? presentMeter ?? 0) || 0,
+        spoilagePercent: Number(savedLine?.spoilagePercent ?? spoilagePercent ?? 0) || 0,
+        actualSpoilagePages: Number(savedLine?.actualSpoilagePages || 0) || 0,
+        actualSpoilageReason: String(savedLine?.actualSpoilageReason || '').trim(),
+        actualSpoilageProofImage: String(savedLine?.actualSpoilageProofImage || '').trim(),
+        actualSpoilageProofName: String(savedLine?.actualSpoilageProofName || '').trim(),
+        actualSpoilageProofType: String(savedLine?.actualSpoilageProofType || '').trim(),
+        approvalStatus: String(savedLine?.approvalStatus || '').trim(),
+        approvalNote: String(savedLine?.approvalNote || '').trim(),
+        approvedBy: String(savedLine?.approvedBy || '').trim(),
+        approvedAt: String(savedLine?.approvedAt || '').trim(),
+        row
+    });
+    return { ...line, profile: mergedProfile };
+}
+
 function roundBillingAmount(value) {
     return Number((Number(value || 0) || 0).toFixed(2));
 }
@@ -4456,7 +4528,9 @@ function calculateMeterLineEstimate({
     forceFixed = false,
     row = null,
     missingMeterMessage = '',
-    pendingPresentMessage = ''
+    pendingPresentMessage = '',
+    meterSection = '',
+    meterType = ''
 } = {}) {
     const previous = Math.max(0, Number(previousMeter || 0) || 0);
     const present = Math.max(0, Number(presentMeter || 0) || 0);
@@ -4544,6 +4618,8 @@ function calculateMeterLineEstimate({
     return {
         label,
         subtitle,
+        meterSection: String(meterSection || '').trim(),
+        meterType: String(meterType || '').trim(),
         rowId: row ? String(row.row_id || row.company_id || '').trim() : '',
         companyName: row ? String(row.company_name || row.account_name || '').trim() : '',
         branchName: row ? String(row.branch_name || '').trim() : '',
@@ -5071,12 +5147,20 @@ function renderMeterLineCard(line, mode, index) {
 }
 
 function renderBillingLinePanel(mode, title, copy, lines) {
+    let previousSection = '';
     return `
         <section class="calc-panel calc-line-panel hidden" data-calc-mode-panel="${escapeHtml(mode)}">
             <div class="calc-panel-title">${escapeHtml(title)}</div>
             <div class="calc-note calc-note-tight">${escapeHtml(copy)}</div>
             <div class="calc-meter-lines">
-                ${lines.map((line, index) => renderMeterLineCard(line, mode, index)).join('')}
+                ${lines.map((line, index) => {
+                    const section = String(line?.meterSection || '').trim();
+                    const sectionHeader = mode === 'multi_meter_rtp' && section && section !== previousSection
+                        ? `<div class="calc-meter-section-title">${escapeHtml(section)}</div>`
+                        : '';
+                    previousSection = section;
+                    return `${sectionHeader}${renderMeterLineCard(line, mode, index)}`;
+                }).join('')}
             </div>
         </section>
     `;
@@ -5331,22 +5415,70 @@ async function openBillingCalcModal(rowId, monthKey) {
         context.targetReadingGroup?.present_meter_color,
         secondaryPreviousMeter
     );
+    const savedPrintBwLine = findSavedMeterLine(savedLineItems, {
+        section: 'Print',
+        type: 'black_white',
+        legacyLabel: 'black',
+        fallbackIndex: String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp' ? 0 : -1
+    });
+    const savedPrintColorLine = findSavedMeterLine(savedLineItems, {
+        section: 'Print',
+        type: 'color',
+        legacyLabel: 'color',
+        fallbackIndex: String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp' ? 1 : -1
+    });
+    const savedCopyBwLine = findSavedMeterLine(savedLineItems, {
+        section: 'Copy',
+        type: 'black_white'
+    });
+    const savedCopyColorLine = findSavedMeterLine(savedLineItems, {
+        section: 'Copy',
+        type: 'color'
+    });
     const multiMeterSeedLines = [
-        calculateMeterLineEstimate({
-            label: 'Black / White',
+        buildMultiMeterSeedLine({
+            label: 'Print - Black / White',
+            section: 'Print',
+            type: 'black_white',
             profile,
             previousMeter: initialSnapshot.previousMeter,
             presentMeter: initialSnapshot.presentMeter,
             spoilagePercent: initialSnapshot.spoilagePercent,
-            row
+            row,
+            savedLine: savedPrintBwLine
         }),
-        calculateMeterLineEstimate({
-            label: 'Colored',
+        buildMultiMeterSeedLine({
+            label: 'Print - Colored',
+            section: 'Print',
+            type: 'color',
             profile: secondaryProfile,
             previousMeter: secondaryPreviousMeter,
             presentMeter: secondaryPresentMeter,
             spoilagePercent: initialSnapshot.spoilagePercent,
-            row
+            row,
+            savedLine: savedPrintColorLine
+        }),
+        buildMultiMeterSeedLine({
+            label: 'Copy - Black / White',
+            section: 'Copy',
+            type: 'black_white',
+            profile,
+            previousMeter: 0,
+            presentMeter: 0,
+            spoilagePercent: initialSnapshot.spoilagePercent,
+            row,
+            savedLine: savedCopyBwLine
+        }),
+        buildMultiMeterSeedLine({
+            label: 'Copy - Colored',
+            section: 'Copy',
+            type: 'color',
+            profile: secondaryProfile,
+            previousMeter: 0,
+            presentMeter: 0,
+            spoilagePercent: initialSnapshot.spoilagePercent,
+            row,
+            savedLine: savedCopyColorLine
         })
     ];
     const groupedRowsForBilling = context.groupedMachineRows || [];
@@ -5668,7 +5800,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                     </div>
                 </section>
             </div>
-            ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate black/white and colored readings, quotas, and rates.', multiMeterSeedLines)}
+            ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate Print and Copy counters for black/white and colored pages.', multiMeterSeedLines)}
             ${renderBillingLinePanel('multi_machine_rtp', 'One Invoice, Multiple Machines', 'Use one invoice number, compute each machine line, then sum the invoice total.', multiMachineSeedLines)}
             ${renderBillingExclusionEditor()}
             ${renderSavedBillingExclusions(savedExclusionsForContext)}
@@ -5904,6 +6036,8 @@ async function openBillingCalcModal(rowId, monthKey) {
         return calculateMeterLineEstimate({
             label: seed.label,
             subtitle: seed.subtitle,
+            meterSection: seed.meterSection,
+            meterType: seed.meterType,
             profile: lineProfile,
             previousMeter: readLineInputValue(mode, index, 'previousMeter', seed.previousMeter),
             presentMeter: readLineInputValue(mode, index, 'presentMeter', seed.presentMeter),
@@ -5930,7 +6064,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             return savedLegacyEstimate;
         }
         if (activeBillingMode === 'multi_meter_rtp') {
-            const lines = multiMeterSeedLines.map((seed, index) => estimateLineFromSeed({ ...seed, profile: index === 0 ? profile : secondaryProfile, row }, activeBillingMode, index));
+            const lines = multiMeterSeedLines.map((seed, index) => estimateLineFromSeed({ ...seed, profile: seed.profile || profile, row }, activeBillingMode, index));
             lines.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
             const summary = summarizeBillingLines(lines);
             summary.billingMode = activeBillingMode;
@@ -5987,7 +6121,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (modeSummaryTitle) modeSummaryTitle.textContent = activeOption?.label || 'Billing Computation';
         if (modeSummaryCopy) {
             if (activeBillingMode === 'multi_meter_rtp') {
-                modeSummaryCopy.textContent = 'Black/white and colored meters are computed separately, then summed into one invoice.';
+                modeSummaryCopy.textContent = 'Print and Copy counters are computed separately for black/white and colored pages, then summed into one invoice.';
             } else if (activeBillingMode === 'multi_machine_rtp') {
                 modeSummaryCopy.textContent = 'Each machine line is computed separately under the same invoice number.';
             } else if (activeBillingMode === 'rtf') {
