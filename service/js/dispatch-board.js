@@ -91,6 +91,7 @@ const opsState = {
     serviceProgressMap: null,
     serviceProgressMarkers: [],
     serviceProgressCircle: null,
+    serviceProgressResizeObserver: null,
     panelStaffId: null,
     purposeFilter: 'all',
     statusFilter: 'all',
@@ -2922,6 +2923,10 @@ function closeServiceProgressMap() {
 }
 
 function resetServiceProgressMap() {
+    if (opsState.serviceProgressResizeObserver) {
+        opsState.serviceProgressResizeObserver.disconnect();
+        opsState.serviceProgressResizeObserver = null;
+    }
     if (!opsState.serviceProgressMap) return;
     opsState.serviceProgressMap.remove();
     opsState.serviceProgressMap = null;
@@ -2933,7 +2938,12 @@ function ensureServiceProgressMap() {
     const mapEl = document.getElementById('serviceProgressMap');
     if (!mapEl || !window.L) return null;
     if (opsState.serviceProgressMap) return opsState.serviceProgressMap;
-    if (mapEl.clientWidth < 100 || mapEl.clientHeight < 100) return null;
+    const wrap = mapEl.closest('.service-progress-map-wrap');
+    const wrapRect = wrap?.getBoundingClientRect();
+    if (!wrapRect || wrapRect.width < 100 || wrapRect.height < 100) return null;
+
+    mapEl.style.width = `${Math.floor(wrapRect.width)}px`;
+    mapEl.style.height = `${Math.floor(wrapRect.height)}px`;
 
     opsState.serviceProgressMap = L.map(mapEl, {
         zoomControl: true,
@@ -2973,6 +2983,24 @@ function ensureServiceProgressMap() {
     )
         .addTo(opsState.serviceProgressMap)
         .bindPopup(`<strong>${sanitize(SERVICE_PROGRESS_OFFICE.name)}</strong><br><small>${SERVICE_PROGRESS_RADIUS_MILES}-mile service radius</small>`);
+
+    if (window.ResizeObserver && wrap) {
+        opsState.serviceProgressResizeObserver = new ResizeObserver(() => {
+            const nextRect = wrap.getBoundingClientRect();
+            if (nextRect.width < 100 || nextRect.height < 100) return;
+            mapEl.style.width = `${Math.floor(nextRect.width)}px`;
+            mapEl.style.height = `${Math.floor(nextRect.height)}px`;
+            window.requestAnimationFrame(() => {
+                opsState.serviceProgressMap?.invalidateSize(true);
+                opsState.serviceProgressMap?.setView(
+                    [SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude],
+                    SERVICE_PROGRESS_START_ZOOM,
+                    { animate: false }
+                );
+            });
+        });
+        opsState.serviceProgressResizeObserver.observe(wrap);
+    }
 
     return opsState.serviceProgressMap;
 }

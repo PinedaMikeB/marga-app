@@ -772,6 +772,7 @@
     height: 100%;
     min-height: 520px;
     background: #dbeafe;
+    contain: size layout paint;
 }
 
 .service-progress-map .leaflet-container,
