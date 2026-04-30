@@ -663,7 +663,7 @@ function passesReleaseFilters(row) {
 function renderQueueRows(rows) {
     const tbody = document.getElementById('releaseQueueBody');
     if (!rows.length) {
-        tbody.innerHTML = '<tr class="release-empty-row"><td colspan="9">No DR items found.</td></tr>';
+        tbody.innerHTML = '<tr class="release-empty-row"><td colspan="10">No DR items found.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map((row) => {
@@ -679,6 +679,9 @@ function renderQueueRows(rows) {
             : `Double-click to add serial and notes. Unit ${row.unitIndex} of ${row.totalQty}.`;
         return `
             <tr class="${classes}" data-row-key="${escapeAttr(row.key)}" title="${escapeAttr(title)}">
+                <td class="release-action-cell">
+                    <button type="button" class="release-row-action release-row-delete" data-delete-row-key="${escapeAttr(row.key)}" title="Delete this pending DR item">Delete</button>
+                </td>
                 <td>${escapeHtml(row.refNo)}</td>
                 <td>${escapeHtml(row.company)}</td>
                 <td>${escapeHtml(row.category)}</td>
@@ -691,6 +694,13 @@ function renderQueueRows(rows) {
             </tr>
         `;
     }).join('');
+    tbody.querySelectorAll('[data-delete-row-key]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            deleteReleaseQueueRow(button.dataset.deleteRowKey);
+        });
+    });
     tbody.querySelectorAll('tr[data-row-key]').forEach((tr) => {
         tr.addEventListener('dblclick', () => openReleaseDetailModal(tr.dataset.rowKey));
         tr.addEventListener('contextmenu', (event) => {
@@ -698,6 +708,79 @@ function renderQueueRows(rows) {
             openReleaseContextMenu(tr.dataset.rowKey, event.clientX, event.clientY);
         });
     });
+}
+
+async function deleteReleaseQueueRow(key) {
+    const row = findRow(key);
+    if (!row) return;
+    if (isCreateRow(row.key)) {
+        alert('Send this item back from Create DR before deleting it.');
+        return;
+    }
+    if (!window.confirm(`Delete pending DR item ${row.refNo} - ${row.description}?`)) return;
+    try {
+        await softDeleteReleaseRow(row);
+        releaseState.detailDrafts.delete(row.key);
+        releaseState.rows = releaseState.rows.filter((entry) => entry.key !== row.key);
+        releaseState.viewRows = releaseState.viewRows.filter((entry) => entry.key !== row.key);
+        renderReleaseTables();
+        setReleaseStatus(`Deleted pending DR item ${row.refNo}.`);
+    } catch (error) {
+        console.error('Delete pending DR item failed:', error);
+        alert(`Failed to delete pending DR item: ${error.message || error}`);
+    }
+}
+
+async function softDeleteReleaseRow(row) {
+    const now = new Date().toISOString();
+    if (row.itemDocId) {
+        const sourceQty = requestQuantity(row.item, row.schedule);
+        if (sourceQty > 1) {
+            await patchDocument('tbl_newfordr', row.itemDocId, {
+                qty: sourceQty - 1,
+                release_pending_qty: sourceQty - 1,
+                release_deleted_unit_count: Number(row.item?.release_deleted_unit_count || 0) + 1,
+                release_deleted_at: now,
+                release_deleted_by: currentUserLabel()
+            }, {
+                label: `Delete DR unit ${row.refNo}`,
+                dedupeKey: `releasing-delete-unit:${row.itemDocId}:${row.key}`
+            });
+            row.item.qty = sourceQty - 1;
+            row.item.release_pending_qty = sourceQty - 1;
+            return;
+        }
+        await patchDocument('tbl_newfordr', row.itemDocId, {
+            iscancelled: 1,
+            release_deleted_at: now,
+            release_deleted_by: currentUserLabel(),
+            release_deleted_reason: 'Deleted from Releasing DR Item List'
+        }, {
+            label: `Delete DR item ${row.refNo}`,
+            dedupeKey: `releasing-delete-item:${row.itemDocId}:${row.key}`
+        });
+        return;
+    }
+
+    if (!row.scheduleDocId) return;
+    const sourceQty = requestQuantity(null, row.schedule);
+    const remainingQty = Math.max(0, sourceQty - 1);
+    const fields = {
+        releasing_pending_qty: remainingQty,
+        releasing_deleted_unit_count: Number(row.schedule?.releasing_deleted_unit_count || 0) + 1,
+        releasing_deleted_at: now,
+        releasing_deleted_by: currentUserLabel()
+    };
+    if (remainingQty <= 0) {
+        fields.releasing_dr_done = 1;
+        fields.release_request_deleted = 1;
+        fields.release_request_deleted_reason = 'Deleted from Releasing DR Item List';
+    }
+    await patchDocument('tbl_schedule', row.scheduleDocId, fields, {
+        label: `Delete schedule DR unit ${row.refNo}`,
+        dedupeKey: `releasing-delete-schedule:${row.scheduleDocId}:${row.key}`
+    });
+    Object.assign(row.schedule, fields);
 }
 
 function renderCreateRows() {

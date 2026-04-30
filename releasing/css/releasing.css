@@ -252,6 +252,11 @@ body {
     background: #ffffff;
 }
 
+.release-queue-table {
+    min-width: 1080px;
+    table-layout: auto;
+}
+
 .release-table th,
 .release-table td {
     border-right: 1px solid #edf0eb;
@@ -264,6 +269,71 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.release-queue-table th:nth-child(1),
+.release-queue-table td:nth-child(1) {
+    width: 4.8rem;
+    min-width: 4.8rem;
+}
+
+.release-queue-table th:nth-child(2),
+.release-queue-table td:nth-child(2) {
+    width: 9.5rem;
+}
+
+.release-queue-table th:nth-child(4),
+.release-queue-table td:nth-child(4) {
+    width: 8rem;
+}
+
+.release-queue-table th:nth-child(5),
+.release-queue-table td:nth-child(5) {
+    width: 5.5rem;
+}
+
+.release-queue-table th:nth-child(10),
+.release-queue-table td:nth-child(10) {
+    width: 3.5rem;
+}
+
+.release-queue-table th:nth-child(6),
+.release-queue-table td:nth-child(6),
+.release-queue-table th:nth-child(8),
+.release-queue-table td:nth-child(8) {
+    width: 10rem;
+}
+
+.release-queue-table th:nth-child(7),
+.release-queue-table td:nth-child(7),
+.release-queue-table th:nth-child(9),
+.release-queue-table td:nth-child(9) {
+    width: 12rem;
+}
+
+.release-queue-table th:nth-child(10),
+.release-queue-table td:nth-child(10) {
+    text-align: center;
+}
+
+.release-action-cell {
+    text-align: center;
+}
+
+.release-row-action {
+    min-width: 3.7rem;
+    height: 1.7rem;
+    border: 1px solid rgba(169, 55, 48, 0.26);
+    border-radius: 5px;
+    background: #fff8f5;
+    color: var(--rel-danger);
+    font: 800 0.68rem 'Archivo', sans-serif;
+    cursor: pointer;
+}
+
+.release-row-action:hover {
+    border-color: rgba(169, 55, 48, 0.5);
+    background: #ffece5;
 }
 
 .release-table th {
