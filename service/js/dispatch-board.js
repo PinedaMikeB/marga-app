@@ -91,6 +91,7 @@ const opsState = {
     serviceProgressMap: null,
     serviceProgressMarkers: [],
     serviceProgressCircle: null,
+    serviceProgressOfficeMarker: null,
     serviceProgressResizeObserver: null,
     panelStaffId: null,
     purposeFilter: 'all',
@@ -2932,6 +2933,7 @@ function resetServiceProgressMap() {
     opsState.serviceProgressMap = null;
     opsState.serviceProgressMarkers = [];
     opsState.serviceProgressCircle = null;
+    opsState.serviceProgressOfficeMarker = null;
 }
 
 function ensureServiceProgressMap() {
@@ -2971,14 +2973,17 @@ function ensureServiceProgressMap() {
         }
     ).addTo(opsState.serviceProgressMap);
 
-    L.circleMarker(
+    opsState.serviceProgressOfficeMarker = L.marker(
         [SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude],
         {
-            radius: 8,
-            color: '#ffffff',
-            weight: 3,
-            fillColor: '#111827',
-            fillOpacity: 1
+            icon: L.divIcon({
+                className: 'service-progress-office-icon',
+                html: '<div class="service-progress-office-pin"><span>M</span></div><div class="service-progress-office-label">MARGA Office</div>',
+                iconSize: [118, 56],
+                iconAnchor: [20, 46],
+                popupAnchor: [0, -42]
+            }),
+            zIndexOffset: 1000
         }
     )
         .addTo(opsState.serviceProgressMap)
