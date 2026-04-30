@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b4f71">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Marga Care">
+  <title>Marga Managed Care</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+  <div class="app-bg" aria-hidden="true"></div>
+
+  <section id="loginView" class="login-view">
+    <div class="login-panel">
+      <div class="brand-lockup">
+        <div class="brand-mark">M</div>
+        <div>
+          <p class="eyebrow">Customer Portal</p>
+          <h1>Marga Managed Care</h1>
+        </div>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <label>
+          Company email
+          <input id="emailInput" type="email" autocomplete="email" placeholder="name@company.com" required>
+        </label>
+        <label>
+          Password
+          <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Password" required>
+        </label>
+        <button class="primary-action" type="submit">Sign in</button>
+      </form>
+
+      <button id="demoButton" class="ghost-action" type="button">Preview customer dashboard</button>
+      <p id="loginMessage" class="small-note">Use preview mode while customer accounts and rules are being prepared.</p>
+    </div>
+  </section>
+
+  <section id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand-stack">
+        <div class="brand-mark">M</div>
+        <div>
+          <strong>Marga</strong>
+          <span>Managed Care</span>
+        </div>
+      </div>
+      <nav id="sideNav" class="side-nav" aria-label="Portal sections"></nav>
+      <div class="account-card">
+        <span id="accountName">Preview Account</span>
+        <button id="logoutButton" type="button">Logout</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="menuButton" class="icon-button" type="button" aria-label="Open menu">☰</button>
+        <div>
+          <p class="eyebrow" id="sectionEyebrow">Overview</p>
+          <h2 id="sectionTitle">Dashboard</h2>
+        </div>
+        <div class="status-strip">
+          <span id="firebaseStatus">Demo data</span>
+          <button id="refreshButton" class="small-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section id="content" class="content-grid"></section>
+    </main>
+
+    <nav id="bottomNav" class="bottom-nav" aria-label="Mobile portal sections"></nav>
+  </section>
+
+  <script src="./assets/js/config.js"></script>
+  <script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>
+
