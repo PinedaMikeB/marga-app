@@ -23,6 +23,7 @@ const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'marga_field_visit_events';
+const LOCATION_PHOTO_COLLECTION = 'marga_location_frontage_photos';
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
     modelBrand: true,
@@ -170,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
     document.getElementById('fieldPinLocationBtn').addEventListener('click', pinCustomerLocation);
+    document.getElementById('fieldLocationPhoto').addEventListener('change', updateLocationPhotoHint);
 
     applyTemporaryFieldMode();
     resetModalSectionState();
@@ -1524,11 +1526,13 @@ function setLocationPinUi(row = getCurrentRow()) {
     const { branch, hasLocation } = getBranchLocationStatus(row);
     const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
     const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
+    const photoInput = document.getElementById('fieldLocationPhoto');
 
     card.classList.toggle('is-complete', hasLocation);
     card.classList.toggle('is-required', !hasLocation);
     button.hidden = hasLocation;
     button.disabled = state.modalReadOnly || hasLocation;
+    if (photoInput) photoInput.disabled = state.modalReadOnly || hasLocation;
 
     if (hasLocation) {
         const coordText = latitude !== null && longitude !== null
@@ -1558,6 +1562,157 @@ function getCurrentPosition(options = {}) {
 
 function localDateYmd(date = new Date()) {
     return formatDateYmd(date);
+}
+
+function updateLocationPhotoHint() {
+    const input = document.getElementById('fieldLocationPhoto');
+    const hint = document.getElementById('fieldLocationPhotoHint');
+    const file = input?.files?.[0] || null;
+    if (!hint) return;
+    if (!file) {
+        hint.textContent = 'Required when pinning a new customer location.';
+        return;
+    }
+    const sizeKb = Math.round(Number(file.size || 0) / 1024);
+    hint.textContent = `${file.name || 'Selected photo'} (${sizeKb} KB)`;
+}
+
+function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Unable to read image.'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(img);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Unable to load selected image.'));
+        };
+        img.src = url;
+    });
+}
+
+async function compressImageFile(file, { maxDimension = 960, quality = 0.72 } = {}) {
+    if (!file || !String(file.type || '').startsWith('image/')) {
+        throw new Error('Select a frontage/building image first.');
+    }
+
+    const image = await loadImageFromFile(file);
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+    const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0, width, height);
+
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('Unable to compress selected image.'));
+                return;
+            }
+            resolve(blob);
+        }, 'image/jpeg', quality);
+    });
+}
+
+function safeStorageSegment(value) {
+    return String(value || '')
+        .trim()
+        .replace(/[^a-z0-9_-]+/gi, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 80) || 'photo';
+}
+
+function randomToken() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function uploadLocationPhotoToStorage(blob, { branchId, scheduleId, now }) {
+    const bucket = String(FIREBASE_CONFIG.storageBucket || '').trim();
+    if (!bucket) throw new Error('Firebase Storage bucket is not configured.');
+
+    const token = randomToken();
+    const path = [
+        'field-location-photos',
+        localDateYmd(now),
+        `branch-${safeStorageSegment(branchId)}`,
+        `schedule-${safeStorageSegment(scheduleId)}-${Date.now()}.jpg`
+    ].join('/');
+    const boundary = `marga-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const metadata = {
+        name: path,
+        contentType: 'image/jpeg',
+        metadata: {
+            firebaseStorageDownloadTokens: token
+        }
+    };
+    const body = new Blob([
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+        JSON.stringify(metadata),
+        `\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
+        blob,
+        `\r\n--${boundary}--`
+    ], { type: `multipart/related; boundary=${boundary}` });
+
+    const response = await fetch(
+        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=multipart&key=${encodeURIComponent(FIREBASE_CONFIG.apiKey)}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+            body
+        }
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || 'Firebase Storage upload failed.');
+    }
+
+    return {
+        path,
+        url: `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(path)}?alt=media&token=${encodeURIComponent(token)}`,
+        size: Number(blob.size || 0) || 0,
+        type: 'image/jpeg'
+    };
+}
+
+async function prepareLocationPhotoUpload(file, context) {
+    const blob = await compressImageFile(file);
+    try {
+        return {
+            ...(await uploadLocationPhotoToStorage(blob, context)),
+            storageMode: 'storage'
+        };
+    } catch (storageError) {
+        console.warn('Location photo Storage upload failed; falling back to Firestore data URL.', storageError);
+        const dataUrl = await blobToDataUrl(blob);
+        if (dataUrl.length > 900000) {
+            throw new Error('Photo is still too large after compression. Please retake a clearer, smaller frontage photo.');
+        }
+        return {
+            path: '',
+            url: '',
+            dataUrl,
+            size: Number(blob.size || 0) || 0,
+            type: 'image/jpeg',
+            storageMode: 'firestore_data_url'
+        };
+    }
 }
 
 function normalizeTicketPurpose(row) {
@@ -1633,6 +1788,9 @@ function resetModalFields() {
     document.getElementById('fieldLocationPinStatus').textContent = 'Checking customer location...';
     document.getElementById('fieldPinLocationBtn').hidden = false;
     document.getElementById('fieldPinLocationBtn').disabled = false;
+    document.getElementById('fieldLocationPhoto').value = '';
+    document.getElementById('fieldLocationPhoto').disabled = false;
+    document.getElementById('fieldLocationPhotoHint').textContent = 'Required when pinning a new customer location.';
     document.getElementById('fieldLocationCard').classList.remove('is-complete', 'is-required');
 
     const before = document.getElementById('fieldBeforePhoto');
@@ -1688,6 +1846,7 @@ function setFormDisabled(isReadOnly) {
         'fieldTimeInNowBtn',
         'fieldTimeOutNowBtn',
         'fieldPinLocationBtn',
+        'fieldLocationPhoto',
         'fieldDeliveryDetails',
         'fieldEmptyPickupDetails',
         'fieldCustomerSigner',
@@ -2626,15 +2785,24 @@ async function pinCustomerLocation() {
 
     const button = document.getElementById('fieldPinLocationBtn');
     const status = document.getElementById('fieldLocationPinStatus');
+    const locationPhoto = document.getElementById('fieldLocationPhoto')?.files?.[0] || null;
     const staffId = Number(state.staffId || 0) || 0;
     const now = new Date();
     const nowIso = now.toISOString();
 
+    if (!locationPhoto) {
+        alert('Take or select a frontage/building photo before pinning this customer location.');
+        return;
+    }
+
     button.disabled = true;
-    if (status) status.textContent = 'Getting GPS location... Please allow location access.';
+    if (status) status.textContent = 'Preparing frontage photo and getting GPS location...';
 
     try {
-        const position = await getCurrentPosition();
+        const [position, photoUpload] = await Promise.all([
+            getCurrentPosition(),
+            prepareLocationPhotoUpload(locationPhoto, { branchId, scheduleId: row.id, now })
+        ]);
         const latitude = Number(position.coords.latitude);
         const longitude = Number(position.coords.longitude);
         const accuracy = Number(position.coords.accuracy || 0);
@@ -2645,13 +2813,22 @@ async function pinCustomerLocation() {
 
         const latitudeText = latitude.toFixed(7);
         const longitudeText = longitude.toFixed(7);
+        const eventId = `${row.id}_pin_${Date.now()}`;
         const branchPatch = {
             latitude: latitudeText,
             longitude: longitudeText,
             location_pin_updated_at: nowIso,
             location_pin_updated_by: staffId,
             location_pin_accuracy_meters: Math.round(accuracy),
-            location_pin_source: 'field_app'
+            location_pin_source: 'field_app',
+            location_frontage_photo_url: photoUpload.url || '',
+            location_frontage_photo_path: photoUpload.path || '',
+            location_frontage_photo_doc_id: photoUpload.dataUrl ? eventId : '',
+            location_frontage_photo_size: photoUpload.size,
+            location_frontage_photo_type: photoUpload.type,
+            location_frontage_photo_storage_mode: photoUpload.storageMode,
+            location_frontage_photo_updated_at: nowIso,
+            location_frontage_photo_updated_by: staffId
         };
         const schedulePatch = {
             field_customer_location_pinned: 1,
@@ -2660,6 +2837,10 @@ async function pinCustomerLocation() {
             field_customer_location_latitude: latitudeText,
             field_customer_location_longitude: longitudeText,
             field_customer_location_accuracy_meters: Math.round(accuracy),
+            field_customer_location_photo_url: photoUpload.url || '',
+            field_customer_location_photo_path: photoUpload.path || '',
+            field_customer_location_photo_doc_id: photoUpload.dataUrl ? eventId : '',
+            field_customer_location_photo_storage_mode: photoUpload.storageMode,
             field_tracking_status: 'customer_location_pinned',
             field_last_action: 'customer_location_pinned',
             field_last_update_at: nowIso,
@@ -2670,11 +2851,7 @@ async function pinCustomerLocation() {
             bridge_updated_at: nowIso,
             bridge_updated_by: staffId
         };
-        const eventId = `${row.id}_pin_${Date.now()}`;
-
-        await patchDocument('tbl_branchinfo', branchId, branchPatch);
-        await patchDocument('tbl_schedule', row.id, schedulePatch);
-        await setDocument(FIELD_VISIT_EVENT_COLLECTION, eventId, {
+        const eventPayload = {
             id: eventId,
             schedule_id: Number(row.id || 0) || 0,
             staff_id: staffId,
@@ -2688,8 +2865,31 @@ async function pinCustomerLocation() {
             latitude: latitudeText,
             longitude: longitudeText,
             accuracy_meters: Math.round(accuracy),
+            frontage_photo_url: photoUpload.url || '',
+            frontage_photo_path: photoUpload.path || '',
+            frontage_photo_doc_id: photoUpload.dataUrl ? eventId : '',
+            frontage_photo_storage_mode: photoUpload.storageMode,
             source: 'field_app'
-        });
+        };
+
+        if (photoUpload.dataUrl) {
+            await setDocument(LOCATION_PHOTO_COLLECTION, eventId, {
+                id: eventId,
+                schedule_id: Number(row.id || 0) || 0,
+                staff_id: staffId,
+                branch_id: branchId,
+                company_id: Number(row.company_id || 0) || 0,
+                created_at: nowIso,
+                image_data_url: photoUpload.dataUrl,
+                image_size: photoUpload.size,
+                image_type: photoUpload.type,
+                source: 'field_app'
+            });
+        }
+
+        await patchDocument('tbl_branchinfo', branchId, branchPatch);
+        await patchDocument('tbl_schedule', row.id, schedulePatch);
+        await setDocument(FIELD_VISIT_EVENT_COLLECTION, eventId, eventPayload);
 
         const branch = caches.branch.get(String(branchId)) || {};
         Object.assign(branch, branchPatch);

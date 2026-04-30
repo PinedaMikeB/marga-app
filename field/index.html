@@ -132,6 +132,11 @@
                     <div>
                         <h3>Customer Location Pin</h3>
                         <p id="fieldLocationPinStatus">Checking customer location...</p>
+                        <label class="field-location-photo">
+                            <span>Frontage / Building Photo</span>
+                            <input type="file" id="fieldLocationPhoto" accept="image/*" capture="environment">
+                            <small id="fieldLocationPhotoHint">Required when pinning a new customer location.</small>
+                        </label>
                     </div>
                     <button type="button" class="btn btn-primary btn-sm" id="fieldPinLocationBtn">Pin Customer Location</button>
                 </div>
@@ -323,6 +328,6 @@
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/field.js?v=20260430-location-pin-1"></script>
+    <script src="js/field.js?v=20260430-location-pin-photo-1"></script>
 </body>
 </html>
