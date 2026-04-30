@@ -16,6 +16,7 @@ const SERVICE_PROGRESS_RADIUS_MILES = 15;
 const SERVICE_PROGRESS_RADIUS_METERS = SERVICE_PROGRESS_RADIUS_MILES * 1609.344;
 const SERVICE_PROGRESS_START_ZOOM = 12;
 const SERVICE_PROGRESS_SHOW_SCHEDULED_PINS = false;
+const NEW_REQUEST_HISTORY_LIMIT = 24;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -44,6 +45,18 @@ const PURPOSE_LABELS = {
 const RELEASE_CATEGORY_DEFAULTS = {
     3: 'Toner / Ink',
     4: 'Cartridge'
+};
+const SCHEDULE_STATUS_LABELS = {
+    0: 'Closed',
+    1: 'Open',
+    2: 'Under Observation',
+    3: 'Over The Phone'
+};
+const MACHINE_HISTORY_STATUS_LABELS = {
+    1: 'Machine Ready',
+    2: 'Delivered / Installed',
+    7: 'For Overhauling / Pullout',
+    8: 'Under Repair'
 };
 const LOOKUP_COLLECTION_LIMITS = {
     tbl_employee: 2000,
@@ -102,6 +115,7 @@ const opsState = {
     newRequestMachine: null,
     newRequestGraphRow: null,
     newRequestLookupSeq: 0,
+    newRequestHistorySeq: 0,
     newRequestReleaseItems: []
 };
 
@@ -345,6 +359,17 @@ async function queryByDateRange(collectionId, fieldPath, { start, end, endOp = '
         from: [{ collectionId }],
         where: { compositeFilter: { op: 'AND', filters: allFilters } },
         orderBy: [{ field: { fieldPath }, direction: 'ASCENDING' }],
+        limit
+    };
+
+    return runFirestoreStructuredQuery(structuredQuery);
+}
+
+async function queryLatestByField(collectionId, fieldPath, value, { orderField = 'id', limit = 40 } = {}) {
+    const structuredQuery = {
+        from: [{ collectionId }],
+        where: makeFieldFilter(fieldPath, 'EQUAL', value),
+        orderBy: [{ field: { fieldPath: orderField }, direction: 'DESCENDING' }],
         limit
     };
 
@@ -1203,6 +1228,244 @@ function sanitize(text) {
     return MargaUtils.escapeHtml(String(text ?? ''));
 }
 
+function getScheduleStatusLabel(row) {
+    if (normalizeLegacyDateTime(row?.date_finished)) return 'Closed';
+    const value = Number(row?.status);
+    return SCHEDULE_STATUS_LABELS[value] || (Number(row?.isongoing || 0) === 1 ? 'Ongoing' : 'Open');
+}
+
+function getHistoryMachineLabel(machine, fallbackId = 0) {
+    if (!machine) return fallbackId ? `Machine #${fallbackId}` : '';
+    const serial = String(machine.serial || '').trim();
+    const model = getMachineDisplayName(machine);
+    return [serial, model && model !== serial ? model : ''].filter(Boolean).join(' - ') || `Machine #${machine.id || fallbackId}`;
+}
+
+function getHistoryContextFromForm() {
+    const graphRow = opsState.newRequestGraphRow || null;
+    const machine = opsState.newRequestMachine || graphRow?.machine || null;
+    const machineId = Number(graphRow?.machineId || machine?.id || 0) || 0;
+    const companyId = Number(document.getElementById('newReqCompany')?.value || graphRow?.companyId || 0) || 0;
+    const branchId = Number(document.getElementById('newReqBranch')?.value || graphRow?.branchId || 0) || 0;
+    const companyText = String(document.getElementById('newReqCompanySearch')?.value || graphRow?.companyName || '').trim();
+    const branchText = String(document.getElementById('newReqBranchSearch')?.value || graphRow?.branchName || '').trim();
+    const serialText = String(document.getElementById('newReqSerialNumber')?.value || graphRow?.serialNumber || machine?.serial || '').trim();
+    const machineLabel = getHistoryMachineLabel(machine, machineId) || serialText;
+    const accountName = buildAccountName(companyText, branchText) || graphRow?.accountName || '';
+
+    return { companyId, branchId, machineId, companyText, branchText, serialText, machineLabel, accountName };
+}
+
+function renderNewReqHistoryLoading(context) {
+    const subtitle = document.getElementById('newReqHistorySubtitle');
+    const summary = document.getElementById('newReqHistorySummary');
+    const list = document.getElementById('newReqHistoryList');
+    if (!subtitle || !summary || !list) return;
+    subtitle.textContent = context.accountName || context.machineLabel || 'Loading account context...';
+    summary.textContent = 'Loading recent service, delivery, and machine movement history...';
+    list.innerHTML = '<div class="new-req-history-loading">Loading maintenance history...</div>';
+}
+
+function renderNewReqHistoryEmpty(message, summaryText = 'No customer selected.') {
+    const subtitle = document.getElementById('newReqHistorySubtitle');
+    const summary = document.getElementById('newReqHistorySummary');
+    const list = document.getElementById('newReqHistoryList');
+    if (!subtitle || !summary || !list) return;
+    subtitle.textContent = 'Select a customer or machine to review account context.';
+    summary.textContent = summaryText;
+    list.innerHTML = `<div class="new-req-history-empty">${sanitize(message)}</div>`;
+}
+
+function getScheduleHistoryKind(row) {
+    const purposeId = Number(row?.purpose_id || 0);
+    if (purposeId === 3 || purposeId === 4 || String(row?.release_request_summary || row?.customer_request || '').trim()) return 'delivery';
+    if (purposeId === 5) return 'service';
+    return 'other';
+}
+
+function getMachineHistoryKind(row) {
+    const statusId = Number(row?.status_id || 0);
+    if (statusId === 2) return 'delivery';
+    if (statusId === 7 || statusId === 8) return 'repair';
+    return 'other';
+}
+
+function buildScheduleHistoryCard(row) {
+    const purposeId = Number(row?.purpose_id || 0);
+    const trouble = opsCache.troubles.get(String(row?.trouble_id || 0));
+    const troubleText = String(trouble?.trouble || row?.trouble || '').trim();
+    const machineId = Number(row?.serial || 0) || 0;
+    const machine = machineId ? opsCache.machines.get(String(machineId)) || null : null;
+    const techId = getAssignedStaffId(row);
+    const tech = techId ? opsCache.employees.get(String(techId)) || null : null;
+    const title = [getPurposeLabel(purposeId), troubleText].filter(Boolean).join(' / ');
+    const notes = [
+        row?.remarks,
+        row?.customer_request,
+        row?.release_request_summary,
+        row?.csr_remarks,
+        row?.tl_remarks,
+        row?.dev_remarks
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+    const tags = [
+        `#${row?.id || row?._docId || '-'}`,
+        getScheduleStatusLabel(row),
+        techId ? getEmployeeName(tech, techId) : '',
+        machineId ? getHistoryMachineLabel(machine, machineId) : ''
+    ].filter(Boolean);
+
+    return {
+        source: 'schedule',
+        kind: getScheduleHistoryKind(row),
+        sortKey: String(row?.task_datetime || row?.original_sched || '').trim() || String(row?.id || ''),
+        dateLabel: formatTaskDateTime(row?.task_datetime || row?.original_sched || ''),
+        sourceLabel: 'Schedule',
+        title: title || 'Service activity',
+        meta: tags,
+        note: notes[0] || ''
+    };
+}
+
+function buildMachineHistoryCard(row) {
+    const machineId = Number(row?.mach_id || row?.machine_id || 0) || 0;
+    const machine = machineId ? opsCache.machines.get(String(machineId)) || null : null;
+    const statusId = Number(row?.status_id || 0);
+    const techId = Number(row?.tech_id || row?.technician_id || 0) || 0;
+    const tech = techId ? opsCache.employees.get(String(techId)) || null : null;
+    const dateValue = row?.datex || row?.date || row?.created_at || row?.updated_at || '';
+    const remarks = String(row?.remarks || row?.note || '').trim();
+    const tags = [
+        `#${row?.id || row?._docId || '-'}`,
+        techId ? getEmployeeName(tech, techId) : '',
+        getHistoryMachineLabel(machine, machineId)
+    ].filter(Boolean);
+
+    return {
+        source: 'machine-history',
+        kind: getMachineHistoryKind(row),
+        sortKey: String(dateValue || row?.id || '').trim(),
+        dateLabel: formatTaskDateTime(dateValue),
+        sourceLabel: 'Machine',
+        title: MACHINE_HISTORY_STATUS_LABELS[statusId] || `Machine status ${statusId || '-'}`,
+        meta: tags,
+        note: remarks
+    };
+}
+
+async function fetchScheduleHistoryForContext(context) {
+    const docsByKey = new Map();
+    const addDocs = (docs) => {
+        docs.map(parseFirestoreDoc).filter(Boolean).forEach((row) => {
+            const key = String(row.id || row._docId || `${row.task_datetime || ''}-${row.branch_id || ''}-${row.serial || ''}`);
+            docsByKey.set(key, row);
+        });
+    };
+
+    const queries = [];
+    if (context.branchId) {
+        queries.push(queryLatestByField('tbl_schedule', 'branch_id', context.branchId, { orderField: 'task_datetime', limit: 40 }));
+    }
+    if (context.machineId) {
+        queries.push(queryLatestByField('tbl_schedule', 'serial', context.machineId, { orderField: 'task_datetime', limit: 30 }));
+    }
+
+    if (queries.length) {
+        const results = await Promise.allSettled(queries);
+        results.forEach((result) => {
+            if (result.status === 'fulfilled') addDocs(result.value);
+        });
+        if (docsByKey.size) return [...docsByKey.values()];
+    }
+
+    const fallbackDocs = await runFirestoreQuery('tbl_schedule', 5000).catch(() => []);
+    fallbackDocs
+        .map(parseFirestoreDoc)
+        .filter(Boolean)
+        .filter((row) => (
+            (context.branchId && Number(row.branch_id || 0) === context.branchId)
+            || (context.machineId && Number(row.serial || 0) === context.machineId)
+        ))
+        .forEach((row) => {
+            const key = String(row.id || row._docId || `${row.task_datetime || ''}-${row.branch_id || ''}-${row.serial || ''}`);
+            docsByKey.set(key, row);
+        });
+
+    return [...docsByKey.values()];
+}
+
+async function fetchMachineHistoryForContext(context) {
+    if (!context.machineId) return [];
+    const docs = await queryLatestByField('tbl_newmachinehistory', 'mach_id', context.machineId, { orderField: 'id', limit: 30 })
+        .catch(() => []);
+    if (docs.length) return docs.map(parseFirestoreDoc).filter(Boolean);
+
+    const fallbackDocs = await runFirestoreQuery('tbl_newmachinehistory', 5000).catch(() => []);
+    return fallbackDocs
+        .map(parseFirestoreDoc)
+        .filter(Boolean)
+        .filter((row) => Number(row.mach_id || row.machine_id || 0) === context.machineId)
+        .slice(0, 30);
+}
+
+function renderNewReqHistory(context, scheduleRows, machineHistoryRows) {
+    const subtitle = document.getElementById('newReqHistorySubtitle');
+    const summary = document.getElementById('newReqHistorySummary');
+    const list = document.getElementById('newReqHistoryList');
+    if (!subtitle || !summary || !list) return;
+
+    const cards = [
+        ...scheduleRows.map(buildScheduleHistoryCard),
+        ...machineHistoryRows.map(buildMachineHistoryCard)
+    ]
+        .sort((left, right) => String(right.sortKey || '').localeCompare(String(left.sortKey || '')))
+        .slice(0, NEW_REQUEST_HISTORY_LIMIT);
+
+    subtitle.textContent = context.accountName || context.machineLabel || 'Maintenance context';
+    summary.textContent = `${scheduleRows.length} account schedule record(s), ${machineHistoryRows.length} machine movement record(s). Showing latest ${cards.length}.`;
+
+    if (!cards.length) {
+        list.innerHTML = '<div class="new-req-history-empty">No prior service, delivery, or machine history found for the selected context.</div>';
+        return;
+    }
+
+    list.innerHTML = cards.map((card) => `
+        <article class="new-req-history-item is-${sanitize(card.kind || 'other')}">
+            <div class="new-req-history-topline">
+                <span>${sanitize(card.sourceLabel)}</span>
+                <span class="new-req-history-date">${sanitize(card.dateLabel)}</span>
+            </div>
+            <div class="new-req-history-title">${sanitize(card.title)}</div>
+            ${card.note ? `<div class="new-req-history-note">${sanitize(card.note)}</div>` : ''}
+            ${card.meta.length ? `<div class="new-req-history-tags">${card.meta.map((tag) => `<span class="new-req-history-tag">${sanitize(tag)}</span>`).join('')}</div>` : ''}
+        </article>
+    `).join('');
+}
+
+async function refreshNewRequestHistory() {
+    const context = getHistoryContextFromForm();
+    const token = ++opsState.newRequestHistorySeq;
+
+    if (!context.branchId && !context.machineId && !context.serialText) {
+        renderNewReqHistoryEmpty('Choose a company, branch, or serial to load prior service, delivery, and repair notes.');
+        return;
+    }
+
+    renderNewReqHistoryLoading(context);
+
+    try {
+        const [scheduleRows, machineHistoryRows] = await Promise.all([
+            fetchScheduleHistoryForContext(context),
+            fetchMachineHistoryForContext(context)
+        ]);
+        if (token !== opsState.newRequestHistorySeq) return;
+        renderNewReqHistory(context, scheduleRows, machineHistoryRows);
+    } catch (error) {
+        console.error('New request history load failed:', error);
+        if (token !== opsState.newRequestHistorySeq) return;
+        renderNewReqHistoryEmpty('Unable to load history right now. You can still save the request.', context.accountName || 'History unavailable.');
+    }
+}
+
 function renderOpsStatusKpis(rows, selectedDate) {
     const grid = document.getElementById('opsSummaryGrid');
     const counts = rows.reduce((acc, row) => {
@@ -1438,6 +1701,7 @@ async function openNewRequestModal() {
     const releaseItemRstdInput = document.getElementById('newReqReleaseItemRstd');
     const releaseQtyInput = document.getElementById('newReqReleaseQty');
     const releaseUnitInputs = Array.from(document.querySelectorAll('input[name="newReqReleaseUnit"]'));
+    const historyRefreshBtn = document.getElementById('newReqHistoryRefreshBtn');
     const companyPanel = document.getElementById('newReqCompanyPanel');
     const branchPanel = document.getElementById('newReqBranchPanel');
     const serialPanel = document.getElementById('newReqSerialPanel');
@@ -1470,7 +1734,9 @@ async function openNewRequestModal() {
     opsState.newRequestMachine = null;
     opsState.newRequestGraphRow = null;
     opsState.newRequestLookupSeq += 1;
+    opsState.newRequestHistorySeq += 1;
     setNewReqSerialStatus(`Using Active Contract Customer Graph: ${opsCache.activeCustomerGraphRows.length} active machine/account rows.`);
+    renderNewReqHistoryEmpty('Choose a company, branch, or serial to load prior service, delivery, and repair notes.');
 
     const companies = opsCache.activeGraphCompanies;
 
@@ -1883,6 +2149,7 @@ async function openNewRequestModal() {
             const graphRow = findGraphRowBySerial(serialText);
             if (graphRow) {
                 applyGraphRowToForm(graphRow);
+                debouncedHistoryRefresh();
                 const machineLabel = graphRow.machineDescription || graphRow.serialNumber || `Machine #${graphRow.machineId}`;
                 setNewReqSerialStatus(
                     `Matched active contract ${graphRow.contractId}: ${machineLabel} - ${graphRow.accountName}.`,
@@ -1914,6 +2181,7 @@ async function openNewRequestModal() {
                 branchSearch.value = branchName;
                 fillBranchesForCompany(companyId, branchName, branchId);
                 prefillContactForBranch(branchId);
+                debouncedHistoryRefresh();
                 const machineName = getMachineDisplayName(machine);
                 setNewReqSerialStatus(
                     `Machine found outside active contract graph: ${machineName || 'machine'} - ${companyName || `Company #${companyId}`} - ${branchName || `Branch #${branchId}`}.`,
@@ -1938,6 +2206,9 @@ async function openNewRequestModal() {
     }
 
     const debouncedSerialLookup = MargaUtils.debounce(applySerialLookup, 350);
+    const debouncedHistoryRefresh = MargaUtils.debounce(refreshNewRequestHistory, 250);
+
+    historyRefreshBtn.onclick = () => refreshNewRequestHistory();
 
     serialInput.onblur = applySerialLookup;
 
@@ -1950,6 +2221,7 @@ async function openNewRequestModal() {
         modelInput.value = '';
         setMachineMeta('Select a branch to load active machines.');
         serialInput.value = '';
+        renderNewReqHistoryEmpty('Choose a branch or serial to load prior service, delivery, and repair notes.', 'Company selected.');
     }
 
     function handleBranchSelection(branchId) {
@@ -1957,6 +2229,7 @@ async function openNewRequestModal() {
         clearMatchedMachineIfManualChange();
         prefillContactForBranch(branchId);
         renderMachineOptionsForBranch(branchId);
+        debouncedHistoryRefresh();
     }
 
     installSearchCombo({
@@ -2023,6 +2296,7 @@ async function openNewRequestModal() {
         onSelect: (row) => {
             serialInput.value = row.serialNumber || '';
             applyGraphRowToForm(row);
+            debouncedHistoryRefresh();
         }
     });
 
@@ -2067,6 +2341,7 @@ async function openNewRequestModal() {
         const row = opsCache.activeCustomerGraphRows.find((entry) => Number(entry.contractId || 0) === contractId) || null;
         setMachineSelectsValue(contractId);
         applyMachineSelection(row);
+        debouncedHistoryRefresh();
     };
 
     purposeMachineSelect.onchange = () => {
@@ -2075,6 +2350,7 @@ async function openNewRequestModal() {
         const row = opsCache.activeCustomerGraphRows.find((entry) => Number(entry.contractId || 0) === contractId) || null;
         setMachineSelectsValue(contractId);
         applyMachineSelection(row);
+        debouncedHistoryRefresh();
     };
 
     purposeSelect.onchange = () => syncReleaseCategoryFromPurpose(false);

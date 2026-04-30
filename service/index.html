@@ -364,6 +364,7 @@
             </button>
         </div>
         <div class="marga-modal-body">
+            <div class="marga-new-request-layout">
             <div class="marga-form-grid marga-vb-form">
                 <div class="marga-form-section marga-field-full">Customer / Machine</div>
 
@@ -555,6 +556,22 @@
                 <div class="marga-inline-note marga-field-full">
                     Add each requested toner, ink, cartridge, or parts row here. All saved rows will appear automatically in Releasing.
                 </div>
+            </div>
+            <aside class="new-req-history" aria-labelledby="newReqHistoryTitle">
+                <div class="new-req-history-header">
+                    <div>
+                        <h3 id="newReqHistoryTitle">Maintenance History</h3>
+                        <p id="newReqHistorySubtitle">Select a customer or machine to review account context.</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="newReqHistoryRefreshBtn">Refresh</button>
+                </div>
+                <div class="new-req-history-summary" id="newReqHistorySummary">
+                    No customer selected.
+                </div>
+                <div class="new-req-history-list" id="newReqHistoryList">
+                    <div class="new-req-history-empty">Choose a company, branch, or serial to load prior service, delivery, and repair notes.</div>
+                </div>
+            </aside>
             </div>
         </div>
         <div class="marga-modal-footer">
