@@ -1626,6 +1626,15 @@
     background: #f8fbff;
 }
 
+.calc-field small {
+    display: block;
+    margin-top: 0.35rem;
+    color: #7c4a03;
+    font-size: 0.74rem;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
 .calc-inline-grid {
     display: grid;
     gap: 0.8rem;

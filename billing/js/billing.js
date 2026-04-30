@@ -4258,7 +4258,8 @@ function pickPriorBillingReading(row, docs = [], monthKey) {
         .filter((doc) => {
             if (String(doc?.contractmain_id || '').trim() !== contractId) return false;
             const presentMeter = Number(doc?.field_present_meter ?? doc?.present_meter ?? 0) || 0;
-            if (presentMeter <= 0 && !getBillingDocInvoiceRef(doc)) return false;
+            const hasLinePresent = parseBillingDocLineItems(doc).some((line) => Number(line?.presentMeter || 0) > 0);
+            if (presentMeter <= 0 && !hasLinePresent && !getBillingDocInvoiceRef(doc)) return false;
             const docMonthKey = getBillingDocMonthKey(doc);
             return docMonthKey && docMonthKey < monthKey;
         })
@@ -4279,6 +4280,7 @@ function buildPriorBillingLookup(doc, linkedReading = null) {
     return {
         previousMeter: Number(doc?.field_present_meter ?? doc?.present_meter ?? 0) || linkedPresentMeter || 0,
         previousMeter2: Number(doc?.field_present_meter2 ?? doc?.present_meter2 ?? 0) || linkedPresentMeter2 || 0,
+        lineItems: parseBillingDocLineItems(doc),
         taskDate: linkedReading?.taskDate || (dateRef ? formatIsoDate(dateRef) : ''),
         sourceMonthKey: docMonthKey,
         sourceMonthLabel: docMonthKey ? formatMonthLabel(docMonthKey, docMonthKey) : 'Previous billing',
@@ -4315,7 +4317,9 @@ async function loadPriorBillingReadingLookups(rows = [], monthKey) {
         'field_previous_meter',
         'field_present_meter',
         'field_previous_meter2',
-        'field_present_meter2'
+        'field_present_meter2',
+        'billing_mode',
+        'billing_lines_json'
     ];
     const contractIds = normalizeNumericIds(eligibleRows.map((row) => row.contractmain_id));
     const docs = await queryFirestoreIn('tbl_billing', 'contractmain_id', contractIds, { select: fieldMask, limit: 1000 }).catch((error) => {
@@ -4333,7 +4337,7 @@ async function loadPriorBillingReadingLookups(rows = [], monthKey) {
             linkedReading = await loadInvoiceMachineReadingPair(row, getBillingDocInvoiceRef(picked));
         }
         const lookup = buildPriorBillingLookup(picked, linkedReading);
-        if (Number(lookup.previousMeter || 0) <= 0) continue;
+        if (Number(lookup.previousMeter || 0) <= 0 && !hasSplitMultiMeterLines(lookup.lineItems || [])) continue;
         const key = getBillingRowLookupKey(row);
         if (key) lookups.set(key, lookup);
     }
@@ -4465,6 +4469,16 @@ function hasSplitMultiMeterLines(savedLineItems = []) {
     return sections.has('print') && sections.has('copy');
 }
 
+function useLinePresentAsNextPrevious(line = null) {
+    if (!line) return null;
+    const previous = Number(line.presentMeter || 0) || Number(line.previousMeter || 0) || 0;
+    return {
+        ...line,
+        previousMeter: previous,
+        presentMeter: previous
+    };
+}
+
 function buildMultiMeterSeedLine({
     label,
     section,
@@ -4474,7 +4488,8 @@ function buildMultiMeterSeedLine({
     presentMeter = 0,
     spoilagePercent = DEFAULT_SPOILAGE_RATE * 100,
     row = null,
-    savedLine = null
+    savedLine = null,
+    previousMeterReference = ''
 } = {}) {
     const mergedProfile = {
         ...profile,
@@ -4503,7 +4518,7 @@ function buildMultiMeterSeedLine({
         approvedAt: String(savedLine?.approvedAt || '').trim(),
         row
     });
-    return { ...line, profile: mergedProfile };
+    return { ...line, profile: mergedProfile, previousMeterReference: String(previousMeterReference || '').trim() };
 }
 
 function roundBillingAmount(value) {
@@ -5128,6 +5143,7 @@ function renderMeterLineCard(line, mode, index) {
                 <div class="calc-field">
                     <label>Previous Reading</label>
                     <input type="number" min="0" step="1" value="${escapeHtml(String(line.previousMeter || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="previousMeter">
+                    ${line.previousMeterReference ? `<small>${escapeHtml(line.previousMeterReference)}</small>` : ''}
                 </div>
                 <div class="calc-field">
                     <label>Spoilage %</label>
@@ -5395,6 +5411,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const secondaryProfile = getRtpSecondaryProfile(profile);
     const savedLineItems = savedBillingDoc ? parseBillingDocLineItems(savedBillingDoc) : [];
     const hasSavedSplitMultiMeter = hasSplitMultiMeterLines(savedLineItems);
+    const priorSplitLineItems = !savedBillingDoc && hasSplitMultiMeterLines(rowPriorLookup?.lineItems || [])
+        ? (rowPriorLookup.lineItems || []).map(useLinePresentAsNextPrevious)
+        : [];
+    const activeMultiMeterLineItems = hasSavedSplitMultiMeter ? savedLineItems : (priorSplitLineItems.length ? priorSplitLineItems : savedLineItems);
+    const hasPriorSplitMultiMeter = priorSplitLineItems.length > 0;
     const canUseLegacyMultiMeterSeeds = !hasSavedSplitMultiMeter
         && String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp'
         && savedLineItems.length > 0;
@@ -5425,26 +5446,35 @@ async function openBillingCalcModal(rowId, monthKey) {
         context.targetReadingGroup?.present_meter_color,
         secondaryPreviousMeter
     );
-    const savedPrintBwLine = findSavedMeterLine(savedLineItems, {
+    const savedPrintBwLine = findSavedMeterLine(activeMultiMeterLineItems, {
         section: 'Print',
         type: 'black_white',
         legacyLabel: 'black',
         fallbackIndex: canUseLegacyMultiMeterSeeds ? 0 : -1
     });
-    const savedPrintColorLine = findSavedMeterLine(savedLineItems, {
+    const savedPrintColorLine = findSavedMeterLine(activeMultiMeterLineItems, {
         section: 'Print',
         type: 'color',
         legacyLabel: 'color',
         fallbackIndex: canUseLegacyMultiMeterSeeds ? 1 : -1
     });
-    const savedCopyBwLine = findSavedMeterLine(savedLineItems, {
+    const savedCopyBwLine = findSavedMeterLine(activeMultiMeterLineItems, {
         section: 'Copy',
         type: 'black_white'
     });
-    const savedCopyColorLine = findSavedMeterLine(savedLineItems, {
+    const savedCopyColorLine = findSavedMeterLine(activeMultiMeterLineItems, {
         section: 'Copy',
         type: 'color'
     });
+    const legacyMultiMeterNote = !hasSavedSplitMultiMeter && !hasPriorSplitMultiMeter && (initialSnapshot.previousMeter > 0 || secondaryPreviousMeter > 0)
+        ? `Legacy two-meter history is available but not split by Print/Copy: B/W ${formatCount(initialSnapshot.previousMeter || 0)}, Color ${formatCount(secondaryPreviousMeter || 0)}. Enter the actual prior Print and Copy counters from the copier meter report.`
+        : '';
+    const legacyBwReference = legacyMultiMeterNote && initialSnapshot.previousMeter > 0
+        ? `Legacy B/W previous reference: ${formatCount(initialSnapshot.previousMeter)}. Enter the actual split previous counter for this Print/Copy line.`
+        : '';
+    const legacyColorReference = legacyMultiMeterNote && secondaryPreviousMeter > 0
+        ? `Legacy Color previous reference: ${formatCount(secondaryPreviousMeter)}. Enter the actual split previous counter for this Print/Copy line.`
+        : '';
     const multiMeterSeedLines = [
         buildMultiMeterSeedLine({
             label: 'Print - Black / White',
@@ -5455,7 +5485,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter: 0,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row,
-            savedLine: savedPrintBwLine
+            savedLine: savedPrintBwLine,
+            previousMeterReference: savedPrintBwLine ? '' : legacyBwReference
         }),
         buildMultiMeterSeedLine({
             label: 'Print - Colored',
@@ -5466,7 +5497,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter: 0,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row,
-            savedLine: savedPrintColorLine
+            savedLine: savedPrintColorLine,
+            previousMeterReference: savedPrintColorLine ? '' : legacyColorReference
         }),
         buildMultiMeterSeedLine({
             label: 'Copy - Black / White',
@@ -5477,7 +5509,8 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter: 0,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row,
-            savedLine: savedCopyBwLine
+            savedLine: savedCopyBwLine,
+            previousMeterReference: savedCopyBwLine ? '' : legacyBwReference
         }),
         buildMultiMeterSeedLine({
             label: 'Copy - Colored',
@@ -5488,12 +5521,10 @@ async function openBillingCalcModal(rowId, monthKey) {
             presentMeter: 0,
             spoilagePercent: initialSnapshot.spoilagePercent,
             row,
-            savedLine: savedCopyColorLine
+            savedLine: savedCopyColorLine,
+            previousMeterReference: savedCopyColorLine ? '' : legacyColorReference
         })
     ];
-    const legacyMultiMeterNote = !hasSavedSplitMultiMeter && (initialSnapshot.previousMeter > 0 || secondaryPreviousMeter > 0)
-        ? `Legacy two-meter history is available but not split by Print/Copy: B/W ${formatCount(initialSnapshot.previousMeter || 0)}, Color ${formatCount(secondaryPreviousMeter || 0)}. Enter the actual prior Print and Copy counters from the copier meter report.`
-        : '';
     const groupedRowsForBilling = context.groupedMachineRows || [];
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
         const machineProfile = getRowBillingProfile(machineRow) || profile;
@@ -5656,7 +5687,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                     </div>
                 </section>
             </div>
-            <div class="calc-ledger-grid calc-ledger-grid-bottom" id="calcCalculationSections" data-calc-mode-panel="single_meter_rtp rtf">
+            <div class="calc-ledger-grid calc-ledger-grid-bottom ${['single_meter_rtp', 'rtf'].includes(activeBillingMode) ? '' : 'hidden'}" id="calcCalculationSections" data-calc-mode-panel="single_meter_rtp rtf">
                 <section class="calc-panel calc-panel-wide">
                     <div class="calc-panel-title">Reading Information</div>
                     <div class="calc-reading-grid">
