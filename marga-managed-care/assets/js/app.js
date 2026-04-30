@@ -1,13 +1,13 @@
 const config = window.MARGA_CARE_CONFIG || {};
 
 const views = [
-  { key: "dashboard", label: "Dashboard", title: "Managed Care Dashboard", eyebrow: "Overview" },
-  { key: "service", label: "Service Requests", title: "Service Requests", eyebrow: "Support" },
-  { key: "billing", label: "Billing History", title: "Billing History", eyebrow: "Account" },
-  { key: "payments", label: "Payment Records", title: "Payment Records", eyebrow: "Account" },
-  { key: "usage", label: "Printer Usage", title: "Printer Usage", eyebrow: "Monitoring" },
-  { key: "toner", label: "Toner / Ink", title: "Toner / Ink Monitoring", eyebrow: "Supplies" },
-  { key: "updates", label: "Support Updates", title: "Support Updates", eyebrow: "Timeline" }
+  { key: "dashboard", label: "Dashboard", title: "Managed Care Dashboard", eyebrow: "Overview", icon: "grid" },
+  { key: "service", label: "Service Requests", title: "Service Requests", eyebrow: "Support", icon: "support" },
+  { key: "billing", label: "Billing History", title: "Billing History", eyebrow: "Account", icon: "invoice" },
+  { key: "payments", label: "Payment Records", title: "Payment Records", eyebrow: "Account", icon: "payment" },
+  { key: "usage", label: "Printer Usage", title: "Printer Usage", eyebrow: "Monitoring", icon: "chart" },
+  { key: "toner", label: "Toner / Ink", title: "Toner / Ink Monitoring", eyebrow: "Supplies", icon: "drop" },
+  { key: "updates", label: "Support Updates", title: "Support Updates", eyebrow: "Timeline", icon: "bell" }
 ];
 
 const demoData = {
@@ -43,6 +43,19 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+function icon(name) {
+  const icons = {
+    grid: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>',
+    support: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0v4a3 3 0 0 1-3 3h-2"/><path d="M6 13H4v-2h2zM20 13h-2v-2h2zM9 18h6"/></svg>',
+    invoice: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
+    payment: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v10H4z"/><path d="M4 10h16M7 15h4"/></svg>',
+    chart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V5M5 19h14"/><path d="M9 16v-5M13 16V8M17 16v-8"/></svg>',
+    drop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 6.2 6 11a6 6 0 0 1-12 0c0-4.8 6-11 6-11z"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4z"/><path d="M10 20h4"/></svg>'
+  };
+  return icons[name] || icons.grid;
+}
+
 function money(value) {
   return Number(value || 0).toLocaleString("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 }
@@ -62,7 +75,8 @@ function card(title, body, accent = "") {
 function renderNav() {
   const nav = views.map((view) => `
     <button class="${state.currentView === view.key ? "active" : ""}" type="button" data-view="${view.key}">
-      ${view.label}
+      <span class="nav-icon">${icon(view.icon)}</span>
+      <span>${view.label}</span>
     </button>
   `).join("");
   $("#sideNav").innerHTML = nav;
