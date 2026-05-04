@@ -1,5 +1,5 @@
 (function () {
-    const COLLECTION = 'website_inquiries';
+    const WEBSITE_INQUIRIES_API = 'https://marga.biz/.netlify/functions/website-inquiries';
     const state = {
         leads: [],
         selectedId: '',
@@ -55,69 +55,27 @@
         return `${Math.round(hours / 24)}d ago`;
     }
 
-    function toFirestoreValue(value) {
-        if (value === null || value === undefined) return { nullValue: null };
-        if (value instanceof Date) return { timestampValue: value.toISOString() };
-        if (typeof value === 'boolean') return { booleanValue: value };
-        if (typeof value === 'number') {
-            return Number.isInteger(value) ? { integerValue: value } : { doubleValue: value };
-        }
-        if (Array.isArray(value)) {
-            return { arrayValue: { values: value.map((entry) => toFirestoreValue(entry)) } };
-        }
-        if (typeof value === 'object') {
-            const fields = {};
-            Object.entries(value).forEach(([key, child]) => {
-                fields[key] = toFirestoreValue(child);
-            });
-            return { mapValue: { fields } };
-        }
-        return { stringValue: clean(value) };
-    }
-
-    function toFirestoreFields(data) {
-        const fields = {};
-        Object.entries(data).forEach(([key, value]) => {
-            fields[key] = toFirestoreValue(value);
-        });
-        return fields;
-    }
-
-    async function runQuery(structuredQuery) {
-        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ structuredQuery })
-        });
-        if (!response.ok) throw new Error(`Firestore query failed: HTTP ${response.status}`);
+    async function fetchWebsiteInquiries() {
+        const response = await fetch(`${WEBSITE_INQUIRIES_API}?limit=160`);
+        if (!response.ok) throw new Error(`Website inquiries API failed: HTTP ${response.status}`);
         const payload = await response.json();
-        return payload
-            .map((entry) => entry.document)
-            .filter(Boolean)
-            .map((doc) => MargaUtils.parseFirestoreDoc(doc));
+        if (!payload.success) throw new Error(payload.error || 'Unable to load website inquiries');
+        return Array.isArray(payload.leads) ? payload.leads : [];
     }
 
     async function updateLead(docId, updates) {
-        const fields = {
-            ...updates,
-            updatedAt: new Date().toISOString()
-        };
-        const mask = Object.keys(fields).map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join('&');
-        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${COLLECTION}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}&${mask}`, {
+        const response = await fetch(WEBSITE_INQUIRIES_API, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: toFirestoreFields(fields) })
+            body: JSON.stringify({ leadId: docId, updates })
         });
-        if (!response.ok) throw new Error(`Lead update failed: HTTP ${response.status}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) throw new Error(payload.error || `Lead update failed: HTTP ${response.status}`);
     }
 
     async function loadLeads() {
         els.status.textContent = 'Loading';
-        const rows = await runQuery({
-            from: [{ collectionId: COLLECTION }],
-            orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }],
-            limit: 120
-        });
+        const rows = await fetchWebsiteInquiries();
         const previousIds = state.knownLeadIds;
         const nextIds = new Set(rows.map((lead) => lead._docId).filter(Boolean));
         const freshLeads = state.initialized
@@ -153,7 +111,7 @@
         const callStatus = clean(lead.aiCallStatus);
         if (callStatus === 'pending_call') return 'red';
         if (callStatus === 'waiting_for_call_consent') return 'amber';
-        if (['called', 'qualified', 'completed'].includes(callStatus)) return 'green';
+        if (['called', 'qualified', 'completed', 'browser_voice_connected'].includes(callStatus)) return 'green';
         return 'blue';
     }
 
@@ -182,7 +140,7 @@
 
     function updateStats() {
         const all = state.leads.length;
-        const pendingCall = state.leads.filter((lead) => lead.aiCallStatus === 'pending_call').length;
+        const pendingCall = state.leads.filter((lead) => ['pending_call', 'browser_voice_requested', 'browser_voice_connected'].includes(lead.aiCallStatus)).length;
         const newCount = state.leads.filter((lead) => lead.aiConsultantStatus === 'new_inquiry').length;
         const human = state.leads.filter((lead) => lead.leadStatus === 'needs_human' || lead.aiConsultantStatus === 'needs_human').length;
         const noConsent = state.leads.filter((lead) => lead.aiCallStatus === 'waiting_for_call_consent').length;
@@ -272,7 +230,8 @@
             </div>
 
             <div class="action-grid">
-                <button class="btn btn-primary" data-action="queue-call">Queue AI Call</button>
+                <button class="btn btn-primary" data-action="request-sales-call">Request Sales Call</button>
+                <button class="btn btn-secondary" data-action="queue-call">Queue Mobile AI Call</button>
                 <button class="btn btn-secondary" data-action="needs-human">Needs Human</button>
                 <button class="btn btn-secondary" data-action="quote-ready">Quote Ready</button>
                 <button class="btn btn-secondary" data-action="mark-contacted">Mark Contacted</button>
@@ -286,6 +245,13 @@
 
     async function handleAction(action, lead) {
         const actions = {
+            'request-sales-call': {
+                aiConsultantStatus: 'needs_human',
+                leadStatus: 'needs_human',
+                salesCallRequested: true,
+                salesCallRequestedAt: new Date().toISOString(),
+                nextAction: 'Sales team should call this prospect'
+            },
             'queue-call': {
                 aiCallStatus: lead.callConsent ? 'pending_call' : 'waiting_for_call_consent',
                 aiConsultantStatus: 'call_queued',
