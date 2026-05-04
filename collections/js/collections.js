@@ -557,6 +557,14 @@ function getCollectorSearchTerm() {
     return String(document.getElementById('collectorSearchInput')?.value || '').trim().toLowerCase();
 }
 
+function getCollectorInvoiceSearchTerm() {
+    return String(document.getElementById('collectorInvoiceSearchInput')?.value || '').trim().toLowerCase();
+}
+
+function normalizeCollectorInvoiceSearchValue(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function getCollectorSortValue() {
     return String(document.getElementById('collectorSortInput')?.value || 'rd').trim().toLowerCase();
 }
@@ -780,8 +788,11 @@ function applyCollectorGroupedRows(rows, monthColumns) {
 
 function prepareCollectorRows(rows) {
     const searchTerm = getCollectorSearchTerm();
-    const filteredRows = searchTerm
-        ? rows.filter((row) => {
+    const invoiceSearchTerm = getCollectorInvoiceSearchTerm();
+    const normalizedInvoiceSearch = normalizeCollectorInvoiceSearchValue(invoiceSearchTerm);
+    const filteredRows = rows
+        .filter((row) => {
+            if (!searchTerm) return true;
             const haystack = [
                 row.customer,
                 row.branchName,
@@ -798,7 +809,10 @@ function prepareCollectorRows(rows) {
                 .toLowerCase();
             return haystack.includes(searchTerm);
         })
-        : rows;
+        .filter((row) => {
+            if (!invoiceSearchTerm) return true;
+            return collectorRowMatchesInvoiceSearch(row, invoiceSearchTerm, normalizedInvoiceSearch);
+        });
 
     return [...filteredRows]
         .filter((row) => !row.isGroupedChild || isCollectorGroupExpanded(row.groupedParentRowId))
@@ -810,6 +824,25 @@ function prepareCollectorRows(rows) {
             }
             return compareCollectorRows(left, right, getCollectorSortValue());
         });
+}
+
+function collectorRowMatchesInvoiceSearch(row, rawTerm, normalizedTerm) {
+    const monthCellIds = Object.values(row?.months || {});
+    return monthCellIds.some((cellId) => {
+        const cell = collectorCellMap.get(cellId || '');
+        return (cell?.records || []).some((record) => {
+            const values = [
+                record.invoiceNo,
+                record.invoiceId,
+                record.invoiceKey
+            ];
+            return values.some((value) => {
+                const rawValue = String(value || '').toLowerCase();
+                const normalizedValue = normalizeCollectorInvoiceSearchValue(value);
+                return rawValue.includes(rawTerm) || (normalizedTerm && normalizedValue.includes(normalizedTerm));
+            });
+        });
+    });
 }
 
 function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
@@ -3854,8 +3887,13 @@ function renderCollectorMatrixTable(data, visibleRows) {
 
     if (!visibleRows.length) {
         const searchTerm = getCollectorSearchTerm();
-        container.innerHTML = searchTerm
-            ? `<div class="empty-followup">No collection rows matched "${escapeHtml(searchTerm)}".</div>`
+        const invoiceSearchTerm = getCollectorInvoiceSearchTerm();
+        const filterLabel = [
+            searchTerm ? `account "${searchTerm}"` : '',
+            invoiceSearchTerm ? `invoice "${invoiceSearchTerm}"` : ''
+        ].filter(Boolean).join(' and ');
+        container.innerHTML = filterLabel
+            ? `<div class="empty-followup">No collection rows matched ${escapeHtml(filterLabel)}.</div>`
             : '<div class="empty-followup">No collection rows available.</div>';
         return;
     }
@@ -3991,8 +4029,15 @@ function renderCollectorDashboardFromData(data) {
     const noteNode = document.getElementById('collector-dashboard-note');
     if (noteNode) {
         const searchTerm = getCollectorSearchTerm();
+        const invoiceSearchTerm = getCollectorInvoiceSearchTerm();
+        const filterParts = [
+            searchTerm ? `account "${searchTerm}"` : '',
+            invoiceSearchTerm ? `invoice "${invoiceSearchTerm}"` : ''
+        ].filter(Boolean);
         const filterText = searchTerm
-            ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for "${searchTerm}".`
+            ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
+            : invoiceSearchTerm
+                ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
         noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Footer payment totals use actual payment dates from Collection payment records.`;
     }
@@ -7170,6 +7215,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     toggleAnalyticsDashboard(false);
 
     document.getElementById('collectorSearchInput')?.addEventListener('input', () => {
+        if (lastLoadSucceeded) void renderCollectorDashboard();
+    });
+    document.getElementById('collectorInvoiceSearchInput')?.addEventListener('input', () => {
         if (lastLoadSucceeded) void renderCollectorDashboard();
     });
     document.getElementById('collectorSortInput')?.addEventListener('change', () => {
