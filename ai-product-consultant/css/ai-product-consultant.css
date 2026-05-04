@@ -322,7 +322,8 @@ body {
 }
 
 .message-box,
-.next-action-box {
+.next-action-box,
+.transcript-box {
     margin-top: 12px;
     padding: 13px;
     border-radius: 8px;
@@ -331,7 +332,8 @@ body {
 }
 
 .message-box span,
-.next-action-box span {
+.next-action-box span,
+.transcript-box span {
     display: block;
     margin-bottom: 7px;
     color: var(--muted);
@@ -346,6 +348,94 @@ body {
     color: var(--ink);
     font-size: 13px;
     line-height: 1.55;
+}
+
+.usage-box {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0 0 12px;
+}
+
+.usage-box div {
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.usage-box span,
+.transcript-head small {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.usage-box strong {
+    display: block;
+    margin-top: 5px;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.transcript-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.transcript-head span {
+    margin: 0;
+}
+
+.transcript-list {
+    display: grid;
+    gap: 8px;
+    max-height: 280px;
+    overflow: auto;
+}
+
+.transcript-turn {
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.transcript-turn.assistant {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+}
+
+.transcript-speaker {
+    margin-bottom: 5px;
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.transcript-turn.customer .transcript-speaker {
+    color: var(--green);
+}
+
+.transcript-turn p,
+.transcript-empty {
+    margin: 0;
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.transcript-empty {
+    color: var(--muted);
+    font-weight: 700;
 }
 
 .action-grid {
@@ -390,6 +480,7 @@ body {
 
     .detail-grid,
     .action-grid,
+    .usage-box,
     .stats-grid {
         grid-template-columns: 1fr;
     }

@@ -35,10 +35,11 @@ XML_NS = {
 }
 
 BASE_ROLE_DEFAULTS = {
-    "admin": ["customers", "billing", "apd", "collections", "service", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
+    "admin": ["customers", "ai-product-consultant", "billing", "apd", "collections", "service", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
+    "ai-consultant-admin": ["ai-product-consultant"],
     "billing": ["customers", "billing", "apd", "pettycash", "reports"],
     "collection": ["customers", "collections", "reports"],
-    "service": ["customers", "service", "inventory", "field"],
+    "service": ["customers", "ai-product-consultant", "service", "inventory", "field"],
     "hr": ["hr", "settings"],
     "technician": ["field"],
     "messenger": ["field"],

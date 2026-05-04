@@ -7,6 +7,7 @@ const MargaAuth = {
     // User roles
     ROLES: {
         ADMIN: 'admin',
+        AI_CONSULTANT_ADMIN: 'ai-consultant-admin',
         BILLING: 'billing',
         COLLECTION: 'collection',
         SERVICE: 'service',
@@ -19,6 +20,7 @@ const MargaAuth = {
     // Module permissions per role
     PERMISSIONS: {
         admin: ['customers', 'ai-product-consultant', 'billing', 'schedule', 'master-schedule', 'apd', 'collections', 'service', 'general-production', 'releasing', 'receiving', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+        'ai-consultant-admin': ['ai-product-consultant'],
         billing: ['customers', 'billing', 'schedule', 'apd', 'pettycash', 'reports'],
         collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
         service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'receiving', 'inventory', 'field'],

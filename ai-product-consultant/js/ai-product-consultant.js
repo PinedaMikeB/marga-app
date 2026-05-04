@@ -43,6 +43,27 @@
         });
     }
 
+    function formatDuration(seconds) {
+        const total = Math.max(0, Math.round(Number(seconds || 0)));
+        if (!total) return 'N/A';
+        const mins = Math.floor(total / 60);
+        const secs = total % 60;
+        if (!mins) return `${secs}s`;
+        return `${mins}m ${String(secs).padStart(2, '0')}s`;
+    }
+
+    function formatUsd(value) {
+        const amount = Number(value || 0);
+        if (!amount) return '$0.0000';
+        return `$${amount.toFixed(amount < 0.01 ? 4 : 2)}`;
+    }
+
+    function formatPhp(value) {
+        const amount = Number(value || 0);
+        if (!amount) return 'PHP 0.00';
+        return `PHP ${amount.toFixed(2)}`;
+    }
+
     function relativeTime(value) {
         if (!value) return 'N/A';
         const date = value instanceof Date ? value : new Date(value);
@@ -201,6 +222,12 @@
         }
 
         const phoneHref = clean(lead.phone).startsWith('+') ? lead.phone : lead.rawPhone || lead.phone;
+        const transcript = Array.isArray(lead.transcript) ? lead.transcript : [];
+        const usage = lead.usage && typeof lead.usage === 'object' ? lead.usage : {};
+        const realtimeModel = clean(lead.realtimeModel || usage.realtimeModel || 'gpt-realtime');
+        const transcriptionModel = clean(lead.transcriptionModel || usage.transcriptionModel || 'gpt-4o-mini-transcribe');
+        const estimatedUsd = Number(lead.estimatedCostUsd || usage.estimatedCostUsd || 0);
+        const estimatedPhp = Number(lead.estimatedCostPhp || usage.estimatedCostPhp || 0);
         els.detail.innerHTML = `
             <div class="detail-head">
                 <div>
@@ -217,11 +244,38 @@
                 <div class="detail-field"><span>Received</span><strong>${escapeHtml(formatDateTime(lead.createdAt))}</strong></div>
                 <div class="detail-field"><span>Lead Status</span><strong>${escapeHtml(formatLabel(lead.leadStatus))}</strong></div>
                 <div class="detail-field"><span>Call Consent</span><strong>${lead.callConsent ? 'Yes' : 'No'}</strong></div>
+                <div class="detail-field"><span>Duration</span><strong>${escapeHtml(formatDuration(lead.conversationDurationSeconds))}</strong></div>
+                <div class="detail-field"><span>Estimated AI Cost</span><strong>${escapeHtml(`${formatUsd(estimatedUsd)} / ${formatPhp(estimatedPhp)}`)}</strong></div>
+            </div>
+
+            <div class="usage-box">
+                <div>
+                    <span>Realtime Model</span>
+                    <strong>${escapeHtml(realtimeModel)}</strong>
+                </div>
+                <div>
+                    <span>Transcript Model</span>
+                    <strong>${escapeHtml(transcriptionModel)}</strong>
+                </div>
+                <div>
+                    <span>Responses</span>
+                    <strong>${escapeHtml(String(usage.responseCount || 0))}</strong>
+                </div>
             </div>
 
             <div class="message-box">
                 <span>Inquiry Message</span>
                 <p>${escapeHtml(lead.message || 'No message provided.')}</p>
+            </div>
+
+            <div class="transcript-box">
+                <div class="transcript-head">
+                    <span>Conversation Transcript</span>
+                    <small>${escapeHtml(transcript.length ? `${transcript.length} turn(s)` : 'No transcript captured yet')}</small>
+                </div>
+                <div class="transcript-list">
+                    ${renderTranscript(transcript)}
+                </div>
             </div>
 
             <div class="next-action-box">
@@ -241,6 +295,22 @@
         els.detail.querySelectorAll('[data-action]').forEach((button) => {
             button.addEventListener('click', () => handleAction(button.dataset.action, lead));
         });
+    }
+
+    function renderTranscript(transcript) {
+        if (!Array.isArray(transcript) || !transcript.length) {
+            return '<div class="transcript-empty">Transcript will appear here after the browser voice call captures speech.</div>';
+        }
+        return transcript.map((entry) => {
+            const role = clean(entry.role) === 'assistant' ? 'assistant' : 'customer';
+            const label = role === 'assistant' ? 'AI Product Consultant' : 'Customer';
+            return `
+                <div class="transcript-turn ${role}">
+                    <div class="transcript-speaker">${escapeHtml(entry.label || label)}</div>
+                    <p>${escapeHtml(entry.text || '')}</p>
+                </div>
+            `;
+        }).join('');
     }
 
     async function handleAction(action, lead) {
@@ -331,7 +401,7 @@
     }
 
     function init() {
-        if (!MargaAuth.requireAuth()) return;
+        if (!MargaAuth.requireAccess('ai-product-consultant')) return;
         const user = MargaAuth.getUser();
         if (user) {
             const userName = byId('userName');
