@@ -19,6 +19,7 @@
 .billing-dashboard {
     display: grid;
     gap: 1rem;
+    min-width: 0;
 }
 
 .status-pill {
@@ -95,6 +96,7 @@
 
 .sheet-card {
     background: linear-gradient(180deg, #f7fbff, var(--bill-panel));
+    min-width: 0;
 }
 
 .sheet-header {
@@ -366,8 +368,14 @@
 }
 
 .matrix-scroll {
-    max-height: min(70vh, 820px);
+    width: 100%;
+    max-width: 100%;
+    min-height: 220px;
+    max-height: clamp(240px, calc(100vh - 360px), 820px);
     overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
+    -webkit-overflow-scrolling: touch;
 }
 
 .billing-sheet {
@@ -398,6 +406,27 @@
     top: 0;
     z-index: 12;
     box-shadow: 0 1px 0 rgba(214, 225, 238, 0.95);
+}
+
+.matrix-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: calc(100vh - 96px);
+}
+
+.matrix-card .matrix-header {
+    flex: 0 0 auto;
+    padding-right: 0.25rem;
+}
+
+.matrix-card .matrix-scroll {
+    flex: 1 1 auto;
+}
+
+.matrix-card .matrix-sheet {
+    width: max-content;
+    min-width: 100%;
 }
 
 .matrix-search-block select {
