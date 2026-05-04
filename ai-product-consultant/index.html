@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f6df2">
+    <title>MARGA - AI Product Consultant</title>
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css">
+    <link rel="stylesheet" href="css/ai-product-consultant.css">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                <a href="../dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../customers.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    </svg>
+                    <span>Customers</span>
+                </a>
+                <a href="../collections.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+                <a href="./" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z"/>
+                        <path d="M8 9h8M8 13h5"/>
+                    </svg>
+                    <span>AI Product Consultant</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content consultant-main">
+        <header class="main-header consultant-header">
+            <button class="menu-toggle" onclick="toggleSidebar()" title="Menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <h1>AI Product Consultant</h1>
+                <p>Website inquiries from marga.biz, ready for qualification and call follow-up.</p>
+            </div>
+            <div class="header-actions">
+                <span class="status-pill" id="consultantStatus">Loading</span>
+                <button class="btn btn-secondary btn-sm" id="refreshLeadsBtn">Refresh</button>
+            </div>
+        </header>
+
+        <section class="consultant-hero">
+            <div>
+                <span class="eyebrow">Shared lead inbox</span>
+                <h2>New website inquiries land here first.</h2>
+                <p>The AI Product Consultant queue uses the contact number, language mode, service interest, and call consent from marga.biz.</p>
+            </div>
+            <div class="consultant-health">
+                <span>Language default</span>
+                <strong id="languageDefault">Taglish</strong>
+                <small>Per-lead override is captured from the website form.</small>
+            </div>
+        </section>
+
+        <section class="stats-grid" aria-label="Inquiry summary">
+            <button class="stat-card active" data-filter="all">
+                <span>All Leads</span>
+                <strong id="statAll">0</strong>
+            </button>
+            <button class="stat-card urgent" data-filter="pending_call">
+                <span>Pending AI Call</span>
+                <strong id="statPendingCall">0</strong>
+            </button>
+            <button class="stat-card" data-filter="new_inquiry">
+                <span>New Inquiries</span>
+                <strong id="statNew">0</strong>
+            </button>
+            <button class="stat-card" data-filter="needs_human">
+                <span>Needs Human</span>
+                <strong id="statHuman">0</strong>
+            </button>
+            <button class="stat-card" data-filter="waiting_for_call_consent">
+                <span>No Call Consent</span>
+                <strong id="statConsent">0</strong>
+            </button>
+        </section>
+
+        <section class="toolbar">
+            <div class="search-box wide">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="search" id="leadSearch" placeholder="Search name, company, phone, service">
+            </div>
+            <select id="languageFilter">
+                <option value="all">All languages</option>
+                <option value="taglish">Taglish</option>
+                <option value="english">Pure English</option>
+            </select>
+            <select id="serviceFilter">
+                <option value="all">All services</option>
+            </select>
+        </section>
+
+        <section class="consultant-layout">
+            <div class="lead-list" id="leadList">
+                <div class="empty-state">Loading website inquiries...</div>
+            </div>
+
+            <aside class="lead-detail" id="leadDetail">
+                <div class="empty-detail">
+                    <strong>Select a lead</strong>
+                    <span>View inquiry details, call readiness, and next action.</span>
+                </div>
+            </aside>
+        </section>
+    </main>
+
+    <script src="../shared/js/firebase-config.js"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="../shared/js/auth.js"></script>
+    <script src="js/ai-product-consultant.js"></script>
+</body>
+</html>
