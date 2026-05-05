@@ -459,6 +459,7 @@
 	                document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
 	            }
 
+	            await refreshDashboardRoleModules();
 	            await loadModuleRegistry();
 	            applyModulePermissions();
 	            renderDepartmentTiles();
@@ -470,10 +471,30 @@
             document.getElementById('sidebar').classList.toggle('open');
         }
 
+        async function refreshDashboardRoleModules() {
+            const user = MargaAuth.getUser();
+            if (!user || MargaAuth.isAdmin()) return;
+            try {
+                const modules = await MargaAuth.fetchRoleModulesForRoles(user.roles || user.role || []);
+                user.role_modules = MargaAuth.normalizeModules([
+                    ...(user.role_modules || []),
+                    ...(modules || [])
+                ]);
+                MargaAuth.persistCurrentUser();
+            } catch (error) {
+                console.warn('Dashboard role permission refresh failed:', error);
+            }
+        }
+
         function applyModulePermissions() {
             document.querySelectorAll('[data-module]').forEach((el) => {
                 const module = el.dataset.module;
                 if (!module) return;
+                if (MargaAuth.hasAccess(module)) {
+                    el.classList.remove('disabled');
+                    el.style.removeProperty('display');
+                    return;
+                }
                 if (!MargaAuth.hasAccess(module)) {
                     if (el.classList.contains('action-card') || el.classList.contains('department-tile')) {
                         el.style.display = 'none';
@@ -481,6 +502,7 @@
                     }
                     el.classList.add('disabled');
                     el.addEventListener('click', (e) => {
+                        if (MargaAuth.hasAccess(module)) return;
                         e.preventDefault();
                         alert('You do not have permission to access this module.');
                     });
