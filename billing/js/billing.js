@@ -3199,7 +3199,7 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 58 }, mode)}"><strong>Business Style :</strong></div>
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 60, yMm: 0, widthMm: 118 }, mode)}">${escapeHtml(preview?.businessStyle || 'N/A')}</div>
 
-            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 10, widthMm: 58 }, mode)}"><strong>Printer Model</strong></div>
+            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 10, widthMm: 58 }, mode)}"><strong>Printer Model/Serial</strong></div>
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 60, yMm: 10, widthMm: 118 }, mode)}">${escapeHtml(preview?.printerModel || 'N/A')}</div>
 
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 21, widthMm: 88 }, mode)}"><strong>Printer Rental Billing for :</strong></div>
