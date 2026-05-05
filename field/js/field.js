@@ -170,6 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('fieldPresentMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
+    document.getElementById('fieldMaintenancePresentMeter').addEventListener('input', recomputeMaintenanceTotalConsumed);
+    document.getElementById('fieldMaintenancePreviousMeter').addEventListener('input', recomputeMaintenanceTotalConsumed);
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
     document.getElementById('fieldPinLocationBtn').addEventListener('click', pinCustomerLocation);
@@ -1445,6 +1447,15 @@ function recomputeTotalConsumed() {
     document.getElementById('fieldTotalConsumed').value = String(total);
 }
 
+function recomputeMaintenanceTotalConsumed() {
+    const previous = parseIntegerInput(document.getElementById('fieldMaintenancePreviousMeter').value);
+    const present = parseIntegerInput(document.getElementById('fieldMaintenancePresentMeter').value);
+    const total = Number.isFinite(previous) && Number.isFinite(present)
+        ? Math.max(0, present - previous)
+        : 0;
+    document.getElementById('fieldMaintenanceTotalConsumed').value = String(total);
+}
+
 function parseSavedPartsList(raw) {
     const text = String(raw || '').trim();
     if (!text) return [];
@@ -1866,6 +1877,9 @@ function resetModalFields() {
     document.getElementById('fieldPreviousMeter').value = '';
     document.getElementById('fieldPresentMeter').value = '';
     document.getElementById('fieldTotalConsumed').value = '0';
+    document.getElementById('fieldMaintenancePreviousMeter').value = '';
+    document.getElementById('fieldMaintenancePresentMeter').value = '';
+    document.getElementById('fieldMaintenanceTotalConsumed').value = '0';
     document.getElementById('fieldTimeIn').value = '';
     document.getElementById('fieldTimeOut').value = '';
     document.getElementById('fieldLocationPinStatus').textContent = 'Checking customer location...';
@@ -1923,6 +1937,8 @@ function setFormDisabled(isReadOnly) {
         'fieldAddPartBtn',
         'fieldBeforePhoto',
         'fieldAfterPhoto',
+        'fieldMaintenancePreviousMeter',
+        'fieldMaintenancePresentMeter',
         'fieldPreviousMeter',
         'fieldPresentMeter',
         'fieldTimeIn',
@@ -2243,6 +2259,12 @@ async function openModal(scheduleId) {
     document.getElementById('fieldPresentMeter').value = presentMeter !== null ? String(presentMeter) : '';
     recomputeTotalConsumed();
 
+    const maintenancePreviousMeter = parseIntegerInput(row.field_maintenance_previous_meter);
+    const maintenancePresentMeter = parseIntegerInput(row.field_maintenance_present_meter);
+    document.getElementById('fieldMaintenancePreviousMeter').value = maintenancePreviousMeter !== null ? String(maintenancePreviousMeter) : '';
+    document.getElementById('fieldMaintenancePresentMeter').value = maintenancePresentMeter !== null ? String(maintenancePresentMeter) : '';
+    recomputeMaintenanceTotalConsumed();
+
     const log = await fetchLatestSchedtimeLog(scheduleId);
     if (log) {
         state.modalSchedtimeId = Number(log.id || 0) || null;
@@ -2322,6 +2344,11 @@ function collectModalFormData() {
     const totalConsumed = Number.isFinite(previousMeter) && Number.isFinite(presentMeter)
         ? Math.max(0, presentMeter - previousMeter)
         : 0;
+    const maintenancePreviousMeter = parseIntegerInput(document.getElementById('fieldMaintenancePreviousMeter').value);
+    const maintenancePresentMeter = parseIntegerInput(document.getElementById('fieldMaintenancePresentMeter').value);
+    const maintenanceTotalConsumed = Number.isFinite(maintenancePreviousMeter) && Number.isFinite(maintenancePresentMeter)
+        ? Math.max(0, maintenancePresentMeter - maintenancePreviousMeter)
+        : 0;
 
     const timeInLocal = String(document.getElementById('fieldTimeIn').value || '').trim();
     const timeOutLocal = String(document.getElementById('fieldTimeOut').value || '').trim();
@@ -2355,6 +2382,9 @@ function collectModalFormData() {
         previousMeter,
         presentMeter,
         totalConsumed,
+        maintenancePreviousMeter,
+        maintenancePresentMeter,
+        maintenanceTotalConsumed,
         timeInLocal,
         timeOutLocal,
         timeInDb: toDbDateTimeFromLocal(timeInLocal),
@@ -2392,6 +2422,9 @@ function buildSchedulePayload(row, form, tag) {
         field_previous_meter: form.previousMeter ?? 0,
         field_present_meter: form.presentMeter ?? 0,
         field_total_consumed: form.totalConsumed ?? 0,
+        field_maintenance_previous_meter: form.maintenancePreviousMeter ?? 0,
+        field_maintenance_present_meter: form.maintenancePresentMeter ?? 0,
+        field_maintenance_total_consumed: form.maintenanceTotalConsumed ?? 0,
         field_time_in: form.timeInDb || ZERO_DATETIME,
         field_time_out: form.timeOutDb || ZERO_DATETIME,
         field_parts_needed_json: jsonString(form.partsNeeded, '[]'),

@@ -347,6 +347,14 @@
     padding: 0;
 }
 
+.field-subsection-title {
+    padding: 0.35rem 0 0;
+}
+
+.field-subsection-title > span {
+    color: #1a365d;
+}
+
 .field-time-row {
     display: flex;
     gap: 0.45rem;
