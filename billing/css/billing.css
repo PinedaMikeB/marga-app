@@ -464,8 +464,28 @@
 }
 
 .branch-col {
-    min-width: 220px;
+    width: 190px;
+    min-width: 190px;
+    max-width: 190px;
     text-align: left;
+}
+
+.matrix-sheet .branch-col {
+    position: sticky;
+    left: 0;
+    z-index: 11;
+    background: var(--bill-paper);
+    box-shadow: 1px 0 0 rgba(214, 225, 238, 0.95);
+}
+
+.matrix-sheet thead .branch-col {
+    z-index: 24;
+    background: var(--bill-header);
+}
+
+.matrix-sheet tfoot .branch-col {
+    z-index: 13;
+    background: var(--bill-total);
 }
 
 .customer-main {
@@ -545,9 +565,18 @@
 
 .month-cell {
     position: relative;
-    min-width: 98px;
+    width: 75px;
+    min-width: 75px;
+    max-width: 75px;
     height: 58px;
     padding: 0;
+}
+
+.matrix-sheet thead th:not(.rd-col):not(.sn-col):not(.customer-col):not(.branch-col),
+.matrix-sheet tfoot .total-cell {
+    width: 75px;
+    min-width: 75px;
+    max-width: 75px;
 }
 
 .empty-cell {
