@@ -437,7 +437,11 @@ const CustomersApp = (() => {
     function getCompanyBranches(companyId) {
         return state.raw.branches
             .filter((branch) => clean(branch.company_id) === clean(companyId))
-            .sort((a, b) => clean(a.branchname || '').localeCompare(clean(b.branchname || '')));
+            .sort((a, b) => {
+                const contractDelta = getBranchContracts(b.id).length - getBranchContracts(a.id).length;
+                if (contractDelta) return contractDelta;
+                return clean(a.branchname || '').localeCompare(clean(b.branchname || ''), undefined, { numeric: true });
+            });
     }
 
     function selectBranch(branchId) {
@@ -1175,11 +1179,26 @@ const CustomersApp = (() => {
         const branchId = clean(branch.id);
         const label = `${branch.branchname || 'Main'}${branch.code ? ` - ${branch.code}` : ''}`;
         const contracts = getBranchContracts(branchId);
-        const machineIds = new Set(contracts.map((contract) => clean(contract.mach_id)).filter(Boolean));
-        const contractText = contracts.length
-            ? ` - ${contracts.length} contract${contracts.length === 1 ? '' : 's'} / ${machineIds.size} machine${machineIds.size === 1 ? '' : 's'}`
-            : ' - no contracts';
-        return `${label}${contractText} - #${branchId}`;
+        const machineSummary = branchMachineSummary(contracts);
+        return `${label} - ${machineSummary || 'no machines/contracts'} - #${branchId}`;
+    }
+
+    function branchMachineSummary(contracts) {
+        if (!contracts.length) return '';
+        const rows = contracts
+            .slice()
+            .sort((a, b) => clean(a.id).localeCompare(clean(b.id), undefined, { numeric: true }))
+            .map((contract) => {
+                const machine = state.maps.machines.get(clean(contract.mach_id)) || {};
+                const model = state.maps.models.get(clean(machine.model_id)) || {};
+                const modelLabel = modelName(model) || clean(machine.description) || 'No model';
+                const serial = resolveSerial(contract, machine);
+                const status = CONTRACT_STATUS[Number(contract.status || 0)] || `Status ${contract.status || '-'}`;
+                return `${modelLabel}${serial ? ` ${serial}` : ''} ${particularCode(contract.category_id)} ${status}`;
+            });
+        const visibleRows = rows.slice(0, 3);
+        const extraCount = rows.length - visibleRows.length;
+        return `${visibleRows.join('; ')}${extraCount > 0 ? `; +${extraCount} more` : ''}`;
     }
 
     function resolveContractBranch(contract) {
