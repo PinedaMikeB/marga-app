@@ -350,7 +350,24 @@ const CustomersApp = (() => {
     function findCompanyFromPickerValue(value) {
         const normalizedValue = clean(value);
         if (!normalizedValue) return null;
-        return state.raw.companies.find((company) => companyPickerValue(company) === normalizedValue) || null;
+        const idMatch = normalizedValue.match(/\[(\d+)\]\s*$/);
+        if (idMatch) return state.maps.companies.get(idMatch[1]) || null;
+
+        const exactPickerMatch = state.raw.companies.find((company) => companyPickerValue(company) === normalizedValue);
+        if (exactPickerMatch) return exactPickerMatch;
+
+        const typedName = normalizedValue.replace(/\s*\[\d+\]\s*$/, '');
+        const typedKey = normalize(typedName);
+        if (!typedKey) return null;
+
+        const exactNameMatch = state.raw.companies.find((company) => normalize(companyName(company)) === typedKey);
+        if (exactNameMatch) return exactNameMatch;
+
+        const startsWithMatches = state.raw.companies.filter((company) => normalize(companyName(company)).startsWith(typedKey));
+        if (startsWithMatches.length === 1) return startsWithMatches[0];
+
+        const containsMatches = state.raw.companies.filter((company) => normalize(companyName(company)).includes(typedKey));
+        return containsMatches.length === 1 ? containsMatches[0] : null;
     }
 
     function beginNewCompanyDraft(value) {
@@ -401,6 +418,11 @@ const CustomersApp = (() => {
         const branches = getCompanyBranches(state.selectedCompanyId);
         const picker = byId('branchPicker');
         if (!picker) return;
+        if (!branches.length) {
+            picker.innerHTML = '<option value="">No branches found for selected company</option>';
+            selectBranch('');
+            return;
+        }
         picker.innerHTML = branches.map((branch) => {
             const label = `${branch.branchname || 'Main'}${branch.code ? ` - ${branch.code}` : ''}`;
             return `<option value="${escapeAttr(branch.id)}">${escapeHtml(label)}</option>`;
