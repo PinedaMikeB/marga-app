@@ -4599,13 +4599,64 @@ function buildPriorBillingLookup(doc, linkedReading = null) {
     };
 }
 
+function billingLineMatchesRow(line = {}, row = {}) {
+    const lineContractId = String(line?.contractmainId || line?.contractmain_id || '').trim();
+    const rowContractId = String(row?.contractmain_id || '').trim();
+    if (lineContractId && rowContractId && lineContractId === rowContractId) return true;
+
+    const lineMachineId = String(line?.machineId || line?.machine_id || '').trim();
+    const rowMachineId = String(row?.machine_id || '').trim();
+    if (lineMachineId && rowMachineId && lineMachineId === rowMachineId) return true;
+
+    const lineRowId = String(line?.rowId || line?.row_id || '').trim();
+    const rowId = getBillingRowLookupKey(row);
+    return Boolean(lineRowId && rowId && lineRowId === rowId);
+}
+
+function pickPriorBillingLineReading(row, docs = [], monthKey) {
+    const candidates = [];
+    docs.forEach((doc) => {
+        const docMonthKey = getBillingDocMonthKey(doc);
+        if (!docMonthKey || docMonthKey >= monthKey) return;
+        parseBillingDocLineItems(doc).forEach((line) => {
+            if (!billingLineMatchesRow(line, row)) return;
+            const presentMeter = Number(line?.presentMeter || 0) || 0;
+            if (presentMeter <= 0) return;
+            candidates.push({ doc, line, docMonthKey });
+        });
+    });
+    return candidates
+        .sort((left, right) => {
+            if (left.docMonthKey !== right.docMonthKey) return String(right.docMonthKey).localeCompare(String(left.docMonthKey));
+            return getBillingDocSortValue(right.doc) - getBillingDocSortValue(left.doc);
+        })[0] || null;
+}
+
+function buildPriorBillingLineLookup(match) {
+    const doc = match?.doc || {};
+    const line = match?.line || {};
+    const docMonthKey = match?.docMonthKey || getBillingDocMonthKey(doc);
+    const dateRef = asValidDate(doc?.dateprinted || doc?.date_printed || doc?.invdate || doc?.invoice_date || doc?.datex || doc?.due_date);
+    return {
+        previousMeter: Number(line?.presentMeter || 0) || Number(line?.previousMeter || 0) || 0,
+        previousMeter2: 0,
+        lineItems: parseBillingDocLineItems(doc),
+        taskDate: dateRef ? formatIsoDate(dateRef) : '',
+        sourceMonthKey: docMonthKey,
+        sourceMonthLabel: docMonthKey ? formatMonthLabel(docMonthKey, docMonthKey) : 'Previous grouped billing',
+        invoiceRef: getBillingDocInvoiceRef(doc),
+        readingId: String(doc?.id || doc?._docId || '').trim()
+    };
+}
+
 async function loadPriorBillingReadingLookups(rows = [], monthKey) {
     const eligibleRows = rows.filter((row) => row?.contractmain_id);
     if (!eligibleRows.length) return new Map();
 
     const cacheKey = JSON.stringify({
         monthKey,
-        contracts: eligibleRows.map((row) => String(row?.contractmain_id || '').trim())
+        contracts: eligibleRows.map((row) => String(row?.contractmain_id || '').trim()),
+        companies: eligibleRows.map((row) => String(row?.company_id || '').trim())
     });
     if (priorBillingReadingCache.has(cacheKey)) return priorBillingReadingCache.get(cacheKey);
 
@@ -4628,17 +4679,44 @@ async function loadPriorBillingReadingLookups(rows = [], monthKey) {
         'field_present_meter',
         'field_previous_meter2',
         'field_present_meter2',
+        'company_id',
+        'machine_id',
         'billing_mode',
         'billing_lines_json'
     ];
     const contractIds = normalizeNumericIds(eligibleRows.map((row) => row.contractmain_id));
-    const docs = await queryFirestoreIn('tbl_billing', 'contractmain_id', contractIds, { select: fieldMask, limit: 1000 }).catch((error) => {
-        console.warn('Unable to load prior billing readings by contract.', error);
-        return [];
+    const companyIds = uniqueNonBlankValues(eligibleRows.flatMap((row) => {
+        const raw = String(row?.company_id || '').trim();
+        const numeric = Number(raw);
+        return Number.isFinite(numeric) && numeric > 0 ? [Math.trunc(numeric), raw] : [raw];
+    }));
+    const [contractDocs, companyDocs] = await Promise.all([
+        queryFirestoreIn('tbl_billing', 'contractmain_id', contractIds, { select: fieldMask, limit: 5000 }).catch((error) => {
+            console.warn('Unable to load prior billing readings by contract.', error);
+            return [];
+        }),
+        queryFirestoreIn('tbl_billing', 'company_id', companyIds, { select: fieldMask, limit: 5000 }).catch((error) => {
+            console.warn('Unable to load prior grouped billing readings by company.', error);
+            return [];
+        })
+    ]);
+    const docsById = new Map();
+    [...contractDocs, ...companyDocs].forEach((doc) => {
+        const key = String(doc?._docId || `${doc?.id || ''}:${doc?.invoice_id || ''}:${doc?.contractmain_id || ''}`).trim();
+        if (key && !docsById.has(key)) docsById.set(key, doc);
     });
+    const docs = Array.from(docsById.values());
 
     const lookups = new Map();
     for (const row of eligibleRows) {
+        const pickedLine = pickPriorBillingLineReading(row, docs, monthKey);
+        if (pickedLine) {
+            const lookup = buildPriorBillingLineLookup(pickedLine);
+            const key = getBillingRowLookupKey(row);
+            if (key) lookups.set(key, lookup);
+            continue;
+        }
+
         const picked = pickPriorBillingReading(row, docs, monthKey);
         if (!picked) continue;
         let linkedReading = null;
@@ -5080,6 +5158,19 @@ function buildSavedLegacyBillingEstimate({ doc, context = {}, profile = {}, row 
     };
 }
 
+function summarizeLineWarnings(lines = []) {
+    const warnings = (Array.isArray(lines) ? lines : [])
+        .map((line) => String(line?.warning || '').trim())
+        .filter(Boolean);
+    if (warnings.length <= 1) return warnings[0] || '';
+
+    const counts = new Map();
+    warnings.forEach((warning) => counts.set(warning, (counts.get(warning) || 0) + 1));
+    return Array.from(counts.entries())
+        .map(([warning, count]) => count > 1 ? `${warning} (${formatCount(count)} lines)` : warning)
+        .join(' ');
+}
+
 function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available') {
     const lines = Array.isArray(lineItems) ? lineItems : [];
     const amountDue = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.amountDue || 0), 0));
@@ -5095,7 +5186,6 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
     const succeedingPages = lines.reduce((sum, line) => sum + Number(line.succeedingPages || 0), 0);
     const quotaAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.quotaAmount || 0), 0));
     const succeedingAmount = roundBillingAmount(lines.reduce((sum, line) => sum + Number(line.succeedingAmount || 0), 0));
-    const warnings = lines.map((line) => line.warning).filter(Boolean);
     const quotaBypassed = lines.some((line) => line.quotaBypassed === true);
     const quotaBypassReason = lines.map((line) => String(line.quotaBypassReason || '').trim()).find(Boolean) || '';
     return {
@@ -5122,7 +5212,7 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
         quotaBypassReason,
         approvalStatus: actualSpoilagePages > 0 ? (lines.find((line) => line.approvalStatus)?.approvalStatus || 'pending') : 'none',
         formula: lines.length > 1 ? 'sum_of_billing_lines' : (lines[0]?.formula || fallbackFormula),
-        warning: warnings.join(' ')
+        warning: summarizeLineWarnings(lines)
     };
 }
 
@@ -6529,7 +6619,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         modeTabsWrap?.classList.toggle('hidden', isReadingSchedule);
         modeSummaryPanel?.classList.toggle('hidden', isReadingSchedule);
         saveBillingRow?.classList.toggle('hidden', isReadingSchedule);
-        calculationSections?.classList.toggle('hidden', isReadingSchedule);
+        calculationSections?.classList.toggle('hidden', isReadingSchedule || !['single_meter_rtp', 'rtf'].includes(activeBillingMode));
         quotaBypassReasonField?.classList.toggle('hidden', !quotaUnchecked);
         if (saveStatus) {
             saveStatus.classList.toggle('error', Boolean(workflowError));
