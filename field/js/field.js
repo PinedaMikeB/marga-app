@@ -457,6 +457,68 @@ async function queryCollection(collectionId, limit = 1000) {
     return runQuery(structuredQuery);
 }
 
+function uniqueNonBlankValues(values = []) {
+    const seen = new Set();
+    const unique = [];
+    values.forEach((value) => {
+        const key = String(value ?? '').trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        unique.push(value);
+    });
+    return unique;
+}
+
+function chunkValues(values = [], size = 10) {
+    const chunks = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
+async function queryIn(collectionId, fieldPath, values = [], options = {}) {
+    const uniqueValues = uniqueNonBlankValues(values);
+    if (!uniqueValues.length) return [];
+
+    const byDocId = new Map();
+    const chunks = chunkValues(uniqueValues, options.chunkSize || 10);
+    const queries = chunks.map((chunk) => {
+        const structuredQuery = {
+            from: [{ collectionId }],
+            where: {
+                fieldFilter: {
+                    field: { fieldPath },
+                    op: 'IN',
+                    value: {
+                        arrayValue: {
+                            values: chunk.map((value) => toFirestoreFieldValue(value))
+                        }
+                    }
+                }
+            }
+        };
+        if (Array.isArray(options.select) && options.select.length) {
+            structuredQuery.select = {
+                fields: options.select.map((selectedFieldPath) => ({ fieldPath: selectedFieldPath }))
+            };
+        }
+        if (Number(options.limit || 0) > 0) {
+            structuredQuery.limit = Number(options.limit || 0);
+        }
+        return structuredQuery;
+    });
+
+    const results = await Promise.all(queries.map((query) => runQuery(query)));
+    results.flat().forEach((doc) => {
+        const parsed = parseFirestoreDoc(doc);
+        if (!parsed) return;
+        const key = String(parsed._docId || `${parsed.id || ''}:${parsed.current_contract || ''}:${parsed.machine_id || ''}:${parsed.timestmp || ''}`).trim();
+        if (key && !byDocId.has(key)) byDocId.set(key, parsed);
+    });
+    return [...byDocId.values()];
+}
+
 function normalizeInlineText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -1028,6 +1090,7 @@ function plannerRowToFieldSchedule(row) {
     const numericId = Number(row.schedule_task_id || String(plannerId).replace(/\D/g, '').slice(-12) || Date.now()) || Date.now();
     const purpose = String(row.schedule_purpose || row.purpose || '').trim().toLowerCase();
     const purposeId = purpose.includes('reading') ? 8 : purpose.includes('collection') ? 2 : 1;
+    const contractMainId = Number(parseJsonArray(row.contractmain_ids_json || row.contractmain_ids)[0] || row.contractmain_id || 0) || 0;
     return {
         id: numericId,
         _docId: plannerId,
@@ -1041,6 +1104,7 @@ function plannerRowToFieldSchedule(row) {
         trouble_id: 0,
         branch_id: Number(row.primary_branch_id || 0) || 0,
         company_id: Number(row.company_id || 0) || 0,
+        contractmain_id: contractMainId,
         serial: Number(parseJsonArray(row.machine_ids_json || row.machine_ids)[0] || row.machine_id || 0) || 0,
         mach_id: Number(parseJsonArray(row.machine_ids_json || row.machine_ids)[0] || row.machine_id || 0) || 0,
         machine_id: Number(parseJsonArray(row.machine_ids_json || row.machine_ids)[0] || row.machine_id || 0) || 0,
@@ -1875,6 +1939,7 @@ function resetModalFields() {
     document.getElementById('fieldCollectionCheckNumber').value = '';
     document.getElementById('fieldCollectionAmount').value = '';
     document.getElementById('fieldPreviousMeter').value = '';
+    document.getElementById('fieldPreviousMeterHint').textContent = 'Loaded from billing meter history when available.';
     document.getElementById('fieldPresentMeter').value = '';
     document.getElementById('fieldTotalConsumed').value = '0';
     document.getElementById('fieldMaintenancePreviousMeter').value = '';
@@ -2073,8 +2138,161 @@ async function resolveBranchContact(branchId, row) {
     }
 }
 
-async function resolvePreviousMeter(machineId, scheduleId, taskDateTime, fallbackBm = 0) {
-    if (!machineId) return Number(fallbackBm || 0) || 0;
+function parseMachineReadingDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw || LEGACY_EMPTY_DATETIME_VALUES.has(raw.toLowerCase())) return null;
+
+    const legacy = raw.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/);
+    if (legacy) {
+        const parsed = new Date(`${legacy[1]}T${legacy[2] || '00:00:00'}+08:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function monthStartFromTaskDate(taskDateTime) {
+    const taskDate = parseMachineReadingDate(taskDateTime) || new Date();
+    return new Date(taskDate.getFullYear(), taskDate.getMonth(), 1);
+}
+
+function sortReadingsNewestFirst(readings = []) {
+    return [...readings].sort((left, right) => {
+        const leftTime = parseMachineReadingDate(left?.timestmp)?.getTime() || 0;
+        const rightTime = parseMachineReadingDate(right?.timestmp)?.getTime() || 0;
+        return rightTime - leftTime;
+    });
+}
+
+function scheduleRowForBillingMeterLookup(row, machine = null) {
+    return {
+        machine_id: Number(machine?.id || row?.machine_id || row?.mach_id || row?.serial || 0) || 0,
+        contractmain_id: Number(row?.contractmain_id || row?.current_contract || 0) || 0,
+        company_id: Number(row?.company_id || 0) || 0,
+        branch_id: Number(row?.branch_id || 0) || 0
+    };
+}
+
+function sameBillingMachineReading(row, reading) {
+    const machineId = String(row?.machine_id || '').trim();
+    const contractId = String(row?.contractmain_id || '').trim();
+    const companyId = String(row?.company_id || '').trim();
+    const branchId = String(row?.branch_id || '').trim();
+    if (machineId && String(reading?.machine_id || '').trim() === machineId) return true;
+    if (contractId && String(reading?.current_contract || '').trim() !== contractId) return false;
+    if (companyId && String(reading?.current_companyid || '').trim() !== companyId) return false;
+    if (branchId && String(reading?.current_branchid || '').trim() !== branchId) return false;
+    return Boolean(contractId || companyId || branchId);
+}
+
+function pickBillingPriorMachineReading(row, readings = [], taskDateTime) {
+    const lookupRow = scheduleRowForBillingMeterLookup(row);
+    const machineId = String(lookupRow.machine_id || '').trim();
+    const contractId = String(lookupRow.contractmain_id || '').trim();
+    if (!machineId && !contractId) return null;
+
+    const companyId = String(lookupRow.company_id || '').trim();
+    const branchId = String(lookupRow.branch_id || '').trim();
+    const cutoffTime = monthStartFromTaskDate(taskDateTime).getTime();
+    const candidates = readings.filter((reading) => {
+        const readingMachineId = String(reading?.machine_id || '').trim();
+        const readingContractId = String(reading?.current_contract || '').trim();
+        const matchesMachine = machineId && readingMachineId === machineId;
+        const matchesContract = contractId && readingContractId === contractId;
+        if (!matchesMachine && !matchesContract) return false;
+        if (!sameBillingMachineReading(lookupRow, reading)) return false;
+        if (Number(reading?.meter_reading || 0) <= 0) return false;
+        const readingDate = parseMachineReadingDate(reading?.timestmp);
+        if (!readingDate) return false;
+        return readingDate.getTime() < cutoffTime;
+    });
+    if (!candidates.length) return null;
+
+    const newestFor = (items) => sortReadingsNewestFirst(items)[0] || null;
+    const sameContract = contractId
+        ? candidates.filter((reading) => String(reading?.current_contract || '').trim() === contractId)
+        : [];
+    if (sameContract.length) return newestFor(sameContract);
+
+    const sameCompany = companyId
+        ? candidates.filter((reading) => String(reading?.current_companyid || '').trim() === companyId)
+        : [];
+    if (sameCompany.length) {
+        const sameBranch = branchId
+            ? sameCompany.filter((reading) => String(reading?.current_branchid || '').trim() === branchId)
+            : [];
+        return newestFor(sameBranch.length ? sameBranch : sameCompany);
+    }
+
+    return newestFor(candidates);
+}
+
+async function resolveBillingPreviousMeter(row, machine = null) {
+    const lookupRow = scheduleRowForBillingMeterLookup(row, machine);
+    const fieldMask = [
+        'id',
+        'current_contract',
+        'current_companyid',
+        'current_branchid',
+        'machine_id',
+        'meter_reading',
+        'meter_reading2',
+        'timestmp',
+        'invoice_id'
+    ];
+    const machineIds = [lookupRow.machine_id].filter((id) => Number(id || 0) > 0);
+    const contractIds = [lookupRow.contractmain_id].filter((id) => Number(id || 0) > 0);
+    if (!machineIds.length && !contractIds.length) return null;
+
+    try {
+        const [machineDocs, contractDocs] = await Promise.all([
+            queryIn('tbl_machinereading', 'machine_id', machineIds, { select: fieldMask, limit: 1000 }).catch((error) => {
+                console.warn('Billing previous meter machine lookup failed:', error);
+                return [];
+            }),
+            queryIn('tbl_machinereading', 'current_contract', contractIds, { select: fieldMask, limit: 1000 }).catch((error) => {
+                console.warn('Billing previous meter contract lookup failed:', error);
+                return [];
+            })
+        ]);
+        const byDocId = new Map();
+        [...machineDocs, ...contractDocs].forEach((doc) => {
+            const key = String(doc?._docId || `${doc?.id || ''}:${doc?.machine_id || ''}:${doc?.timestmp || ''}`).trim();
+            if (key && !byDocId.has(key)) byDocId.set(key, doc);
+        });
+        const picked = pickBillingPriorMachineReading(lookupRow, [...byDocId.values()], row?.task_datetime);
+        if (!picked) return null;
+        return {
+            meter: Number(picked.meter_reading || 0) || 0,
+            readingDate: String(picked.timestmp || '').trim(),
+            invoiceRef: String(picked.invoice_id || '').trim(),
+            readingId: String(picked.id || picked._docId || '').trim()
+        };
+    } catch (err) {
+        console.warn('Billing previous meter lookup failed:', err);
+        return null;
+    }
+}
+
+async function resolvePreviousMeter(rowOrMachineId, scheduleId, taskDateTime, fallbackBm = 0, machine = null) {
+    const row = typeof rowOrMachineId === 'object'
+        ? rowOrMachineId
+        : {
+            id: scheduleId,
+            serial: Number(rowOrMachineId || 0) || 0,
+            machine_id: Number(rowOrMachineId || 0) || 0,
+            task_datetime: taskDateTime
+        };
+    const billingLookup = await resolveBillingPreviousMeter(row, machine);
+    if (Number(billingLookup?.meter || 0) > 0) return billingLookup;
+
+    const machineId = Number(machine?.id || row?.machine_id || row?.mach_id || row?.serial || rowOrMachineId || 0) || 0;
+    if (!machineId) {
+        return Number(fallbackBm || 0) > 0
+            ? { meter: Number(fallbackBm || 0) || 0, source: 'machine_beginning_meter' }
+            : null;
+    }
     try {
         const docs = await queryEquals('tbl_schedule', 'serial', Number(machineId), 'integer', 1200);
         const rows = docs
@@ -2101,11 +2319,19 @@ async function resolvePreviousMeter(machineId, scheduleId, taskDateTime, fallbac
         });
 
         const found = candidates.find((row) => Number(row.meter_reading || 0) > 0);
-        if (found) return Number(found.meter_reading || 0) || 0;
+        if (found) {
+            return {
+                meter: Number(found.meter_reading || 0) || 0,
+                readingDate: String(normalizeLegacyDateTime(found.date_finished) || found.task_datetime || '').trim(),
+                source: 'field_schedule'
+            };
+        }
     } catch (err) {
         console.warn('Previous meter lookup failed:', err);
     }
-    return Number(fallbackBm || 0) || 0;
+    return Number(fallbackBm || 0) > 0
+        ? { meter: Number(fallbackBm || 0) || 0, source: 'machine_beginning_meter' }
+        : null;
 }
 
 async function fetchLatestSchedtimeLog(scheduleId) {
@@ -2247,14 +2473,25 @@ async function openModal(scheduleId) {
     updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name');
     updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
 
+    const billingPreviousMeter = await resolvePreviousMeter(row, Number(row.id || 0), row.task_datetime, Number(machine?.bmeter || 0), machine || null);
     const previousMeter = parseIntegerInput(row.field_previous_meter);
     const presentMeter = parseIntegerInput(row.field_present_meter) ?? parseIntegerInput(row.meter_reading);
-    if (previousMeter !== null) {
+    const previousMeterHint = document.getElementById('fieldPreviousMeterHint');
+    if (Number(billingPreviousMeter?.meter || 0) > 0) {
+        document.getElementById('fieldPreviousMeter').value = String(billingPreviousMeter.meter);
+        const dateLabel = billingPreviousMeter.readingDate ? ` (${billingPreviousMeter.readingDate.slice(0, 10)})` : '';
+        const sourceLabel = billingPreviousMeter.source === 'field_schedule'
+            ? 'Loaded from prior field schedule'
+            : billingPreviousMeter.source === 'machine_beginning_meter'
+                ? 'Loaded from machine beginning meter'
+                : 'Loaded from billing meter history';
+        previousMeterHint.textContent = `${sourceLabel}${dateLabel}.`;
+    } else if (previousMeter !== null) {
         document.getElementById('fieldPreviousMeter').value = String(previousMeter);
+        previousMeterHint.textContent = 'Loaded from saved field draft.';
     } else {
-        const fallbackBm = Number(machine?.bmeter || 0);
-        const prev = await resolvePreviousMeter(Number(row.serial || 0), Number(row.id || 0), row.task_datetime, fallbackBm);
-        document.getElementById('fieldPreviousMeter').value = prev > 0 ? String(prev) : '';
+        document.getElementById('fieldPreviousMeter').value = '';
+        previousMeterHint.textContent = 'No billing meter history found for this serial/contract yet.';
     }
     document.getElementById('fieldPresentMeter').value = presentMeter !== null ? String(presentMeter) : '';
     recomputeTotalConsumed();
@@ -2976,8 +3213,22 @@ async function saveSerialMapping() {
         applyRowPatch(row.id, patch);
         await setModalMachineDetails(selectedMachine);
 
-        const prev = await resolvePreviousMeter(Number(selectedMachine.id || 0), Number(row.id || 0), row.task_datetime, Number(selectedMachine.bmeter || 0));
-        document.getElementById('fieldPreviousMeter').value = prev > 0 ? String(prev) : '';
+        const prev = await resolvePreviousMeter(
+            {
+                ...row,
+                serial: Number(selectedMachine.id || 0),
+                mach_id: Number(selectedMachine.id || 0),
+                machine_id: Number(selectedMachine.id || 0)
+            },
+            Number(row.id || 0),
+            row.task_datetime,
+            Number(selectedMachine.bmeter || 0),
+            selectedMachine
+        );
+        document.getElementById('fieldPreviousMeter').value = Number(prev?.meter || 0) > 0 ? String(prev.meter) : '';
+        document.getElementById('fieldPreviousMeterHint').textContent = Number(prev?.meter || 0) > 0
+            ? 'Loaded from billing meter history for selected serial.'
+            : 'No billing meter history found for selected serial yet.';
         recomputeTotalConsumed();
         renderList();
         serialHint.textContent = 'Serial mapping saved.';
