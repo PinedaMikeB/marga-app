@@ -491,7 +491,7 @@ function renderRoleEditor() {
     if (meta) {
         meta.textContent = isNew
             ? 'Create a new role and choose the modules it can access.'
-            : `${modules.length} module(s) allowed for ${role.label}. Users with custom module overrides are not changed automatically.`;
+            : `${modules.length} module(s) allowed for ${role.label}. Custom user module overrides add access, but checked role modules always stay allowed.`;
     }
 }
 

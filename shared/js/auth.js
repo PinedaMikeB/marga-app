@@ -82,7 +82,7 @@ const MargaAuth = {
                 ? this.normalizeModules(user.marga_allowed_modules || user.allowed_modules)
                 : [];
             let roleModules = null;
-            if (!userModulesConfigured && !roles.includes('admin')) {
+            if (!roles.includes('admin')) {
                 roleModules = await this.fetchRoleModulesForRoles(roles);
             }
             const resolvedRoleModules = Array.isArray(roleModules)
@@ -243,17 +243,20 @@ const MargaAuth = {
     getAccessibleModules() {
         if (!this.currentUser) return [];
         if (this.isAdmin()) return [...new Set(this.PERMISSIONS.admin || [])];
-        const hasUserOverride = this.currentUser.allowed_modules_configured === true;
         const userModules = this.normalizeModules(this.currentUser.allowed_modules);
-        if (hasUserOverride) return userModules;
         const roleModules = this.normalizeModules(this.currentUser.role_modules);
+        const permissionModules = this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role);
         if (roleModules.length) {
             return [...new Set([
                 ...roleModules,
-                ...this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role)
+                ...permissionModules,
+                ...userModules
             ])];
         }
-        return this.getRoleModulesFromPermissions(this.currentUser.roles || this.currentUser.role);
+        return [...new Set([
+            ...permissionModules,
+            ...userModules
+        ])];
     },
 
     /**
