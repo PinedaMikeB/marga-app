@@ -62,6 +62,7 @@ let billingExclusionCache = [];
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
+const BILLING_DRAFTS_COLLECTION = 'tbl_billing_drafts';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SCHEDULE_AREA_RULES_COLLECTION = 'tbl_schedule_area_rules';
 const BILLING_SCHEDULE_PURPOSES = {
@@ -832,6 +833,106 @@ function slugFirestoreId(value) {
         .replace(/[^a-zA-Z0-9_-]+/g, '_')
         .replace(/^_+|_+$/g, '')
         .slice(0, 140) || 'row';
+}
+
+function getBillingDraftGroupId(row, monthKey, billingMode = 'multi_machine_rtp') {
+    return slugFirestoreId([
+        billingMode,
+        monthKey,
+        row?.company_id || row?.row_id || row?.company_name || row?.account_name || 'customer'
+    ].join('__'));
+}
+
+function getBillingDraftLineKey(row) {
+    return String(row?.contractmain_id || row?.machine_id || row?.row_id || row?.branch_id || '').trim();
+}
+
+function getBillingDraftDocId(draftGroupId, row) {
+    return `billing_draft_${slugFirestoreId(`${draftGroupId}__${getBillingDraftLineKey(row) || 'line'}`)}`;
+}
+
+async function loadBillingDraftLines(row, monthKey, billingMode = 'multi_machine_rtp') {
+    const draftGroupId = getBillingDraftGroupId(row, monthKey, billingMode);
+    if (!draftGroupId) return new Map();
+    const docs = await queryFirestoreEquals(BILLING_DRAFTS_COLLECTION, 'draft_group_id', draftGroupId).catch((error) => {
+        console.warn('Unable to load billing draft lines.', error);
+        return [];
+    });
+    const byLineKey = new Map();
+    docs.forEach((doc) => {
+        const key = String(doc?.line_key || doc?.contractmain_id || doc?.machine_id || '').trim();
+        if (key) byLineKey.set(key, doc);
+    });
+    return byLineKey;
+}
+
+async function saveBillingDraftLine({ rootRow, lineRow, context, mode, index, line, invoiceNo = '' }) {
+    if (!rootRow || !lineRow || !context || !line) return null;
+    const draftGroupId = getBillingDraftGroupId(rootRow, context.monthKey, mode);
+    const lineKey = getBillingDraftLineKey(lineRow);
+    if (!draftGroupId || !lineKey) return null;
+    const audit = getCurrentUserAudit();
+    const nowIso = new Date().toISOString();
+    const docId = getBillingDraftDocId(draftGroupId, lineRow);
+    const fields = {
+        draft_group_id: draftGroupId,
+        line_key: lineKey,
+        billing_mode: mode,
+        month_key: context.monthKey,
+        month_label: context.monthLabel,
+        invoice_no: normalizeInvoiceNumber(invoiceNo),
+        company_id: String(lineRow.company_id || rootRow.company_id || '').trim(),
+        company_name: String(lineRow.company_name || rootRow.company_name || rootRow.account_name || '').trim(),
+        branch_id: String(lineRow.branch_id || '').trim(),
+        branch_name: String(lineRow.branch_name || '').trim(),
+        contractmain_id: String(lineRow.contractmain_id || '').trim(),
+        machine_id: String(lineRow.machine_id || '').trim(),
+        serial_number: String(lineRow.serial_number || '').trim(),
+        machine_label: String(lineRow.machine_label || '').trim(),
+        line_index: Number(index || 0),
+        previous_meter: Number(line.previousMeter || 0) || 0,
+        present_meter: Number(line.presentMeter || 0) || 0,
+        spoilage_percent: Number(line.spoilagePercent || 0) || 0,
+        monthly_quota: Number(line.monthlyQuota || 0) || 0,
+        page_rate: Number(line.pageRate || 0) || 0,
+        succeeding_rate: Number(line.succeedingRate || line.pageRate || 0) || 0,
+        raw_pages: Number(line.rawPages || 0) || 0,
+        net_pages: Number(line.netPages || 0) || 0,
+        amount_due_preview: Number(line.amountDue || 0) || 0,
+        status: 'draft',
+        source_module: 'billing_dashboard',
+        updated_at: nowIso,
+        updated_by: audit.name,
+        updated_by_id: audit.id
+    };
+    return setFirestoreDocument(BILLING_DRAFTS_COLLECTION, docId, fields, {
+        mode: 'set',
+        label: `Billing draft ${fields.branch_name || lineKey}`,
+        dedupeKey: `${BILLING_DRAFTS_COLLECTION}:${docId}:${nowIso}`
+    });
+}
+
+async function markBillingDraftGroupSaved(row, monthKey, billingMode, invoiceNo) {
+    const draftGroupId = getBillingDraftGroupId(row, monthKey, billingMode);
+    if (!draftGroupId) return;
+    const docs = await queryFirestoreEquals(BILLING_DRAFTS_COLLECTION, 'draft_group_id', draftGroupId).catch(() => []);
+    const audit = getCurrentUserAudit();
+    const nowIso = new Date().toISOString();
+    await Promise.allSettled(docs.map((doc) => {
+        if (!doc?._docId) return null;
+        return setFirestoreDocument(BILLING_DRAFTS_COLLECTION, doc._docId, {
+            status: 'saved_to_billing',
+            invoice_no: normalizeInvoiceNumber(invoiceNo),
+            saved_at: nowIso,
+            saved_by: audit.name,
+            updated_at: nowIso,
+            updated_by: audit.name
+        }, {
+            mode: 'patch',
+            label: `Close billing draft ${doc._docId}`,
+            dedupeKey: `${BILLING_DRAFTS_COLLECTION}:${doc._docId}:saved:${nowIso}`
+        });
+    }));
 }
 
 function getBillingRowExclusionKeys(row) {
@@ -5857,16 +5958,19 @@ async function openBillingCalcModal(rowId, monthKey) {
     context.scheduleAssignedStaffId = String(savedBillingDoc?.schedule_assigned_staff_id || '').trim();
     context.scheduleAssignedStaffName = String(savedBillingDoc?.schedule_assigned_staff_name || '').trim();
     let priorMachineReadingByRow = new Map();
+    let billingDraftsByLine = new Map();
     let rowPriorLookup = null;
     let linkedInvoiceReading = null;
     if (context.isReading) {
         const prefillRows = (context.groupedMachineRows || []).length ? context.groupedMachineRows : [row];
         try {
-            const [machineReadingLookups, billingReadingLookups] = await Promise.all([
+            const [machineReadingLookups, billingReadingLookups, draftLines] = await Promise.all([
                 loadPriorMachineReadingLookups(prefillRows, monthKey),
-                loadPriorBillingReadingLookups(prefillRows, monthKey)
+                loadPriorBillingReadingLookups(prefillRows, monthKey),
+                loadBillingDraftLines(row, monthKey, 'multi_machine_rtp')
             ]);
             priorMachineReadingByRow = mergePriorReadingLookups(machineReadingLookups, billingReadingLookups);
+            billingDraftsByLine = draftLines;
         } catch (error) {
             console.warn('Unable to load prior machine readings for the calculator modal.', error);
         }
@@ -6057,12 +6161,21 @@ async function openBillingCalcModal(rowId, monthKey) {
     ];
     const groupedRowsForBilling = context.groupedMachineRows || [];
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
-        const machineProfile = getRowBillingProfile(machineRow) || profile;
+        const draft = billingDraftsByLine.get(getBillingDraftLineKey(machineRow)) || null;
+        const baseProfile = getRowBillingProfile(machineRow) || profile;
+        const machineProfile = draft
+            ? {
+                ...baseProfile,
+                monthly_quota: Number(draft.monthly_quota ?? baseProfile.monthly_quota ?? 0) || 0,
+                page_rate: Number(draft.page_rate ?? baseProfile.page_rate ?? 0) || 0,
+                succeeding_page_rate: Number(draft.succeeding_rate ?? baseProfile.succeeding_page_rate ?? baseProfile.page_rate_xtra ?? baseProfile.page_rate ?? 0) || 0
+            }
+            : baseProfile;
         const group = getPrimaryTargetReadingGroup(machineRow, monthKey);
         const prior = collectPriorReadingGroups(machineRow, monthKey)[0] || null;
         const lookup = priorMachineReadingByRow.get(getBillingRowLookupKey(machineRow));
-        const previousMeter = Number(group?.previous_meter || prior?.present_meter || prior?.previous_meter || lookup?.previousMeter || 0) || 0;
-        const presentMeter = Number(group?.present_meter || group?.meter_reading || previousMeter || 0) || 0;
+        const previousMeter = Number(draft?.previous_meter ?? group?.previous_meter ?? prior?.present_meter ?? prior?.previous_meter ?? lookup?.previousMeter ?? 0) || 0;
+        const presentMeter = Number(draft?.present_meter ?? group?.present_meter ?? group?.meter_reading ?? previousMeter ?? 0) || 0;
         const meterSourceLabel = lookup?.sourceMonthLabel || prior?.month_label || group?.month_label || '';
         const hasMeterSource = Boolean(group || prior || lookup || previousMeter > 0 || presentMeter > 0);
         const missingMeterMessage = hasMeterSource
@@ -6077,7 +6190,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             profile: machineProfile,
             previousMeter,
             presentMeter,
-            spoilagePercent: initialSnapshot.spoilagePercent,
+            spoilagePercent: Number(draft?.spoilage_percent ?? initialSnapshot.spoilagePercent ?? 0) || 0,
             row: machineRow,
             missingMeterMessage,
             pendingPresentMessage
@@ -6543,6 +6656,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     let scheduleDocId = context.scheduleDocId || '';
     const getSelectedSchedulePurpose = () => getBillingSchedulePurpose(schedulePurposeInput?.value || context.schedulePurposeKey || context.schedulePurpose || 'Printed Billing');
     const lineInputValues = new Map();
+    const draftSaveTimers = new Map();
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     printBreakdownBtn?.addEventListener('click', () => {
@@ -6638,6 +6752,42 @@ async function openBillingCalcModal(rowId, monthKey) {
             math.classList.toggle('error', Boolean(line.warning));
         }
     };
+
+    const saveDraftLineNow = async (index) => {
+        if (activeBillingMode !== 'multi_machine_rtp') return;
+        const lineRow = groupedRowsForBilling[index];
+        const line = activeEstimate?.lineItems?.[index];
+        if (!lineRow || !line) return;
+        try {
+            await saveBillingDraftLine({
+                rootRow: row,
+                lineRow,
+                context,
+                mode: activeBillingMode,
+                index,
+                line,
+                invoiceNo: invoiceInput?.value || ''
+            });
+        } catch (error) {
+            console.warn('Unable to autosave billing draft line.', error);
+            MargaUtils.showToast('Draft reading did not save yet. Please keep the page open while it retries on the next edit.', 'error');
+        }
+    };
+
+    const queueDraftLineSave = (index, waitMs = 700) => {
+        if (activeBillingMode !== 'multi_machine_rtp') return;
+        if (draftSaveTimers.has(index)) clearTimeout(draftSaveTimers.get(index));
+        draftSaveTimers.set(index, setTimeout(() => {
+            draftSaveTimers.delete(index);
+            saveDraftLineNow(index);
+        }, waitMs));
+    };
+
+    const flushDraftSaves = () => Promise.allSettled(Array.from(draftSaveTimers.keys()).map((index) => {
+        clearTimeout(draftSaveTimers.get(index));
+        draftSaveTimers.delete(index);
+        return saveDraftLineNow(index);
+    }));
 
     const calculateActiveEstimate = () => {
         if (!calculationEdited && savedLegacyEstimate && activeBillingMode === (savedLegacyEstimate.billingMode || activeBillingMode)) {
@@ -6965,6 +7115,9 @@ async function openBillingCalcModal(rowId, monthKey) {
         workflowError = '';
         invoiceInput.classList.remove('input-error');
         syncCalcWorkflowState();
+        if (activeBillingMode === 'multi_machine_rtp') {
+            (activeEstimate?.lineItems || []).forEach((_, index) => queueDraftLineSave(index, 1200));
+        }
     });
     const markCalculationEditedAndRecompute = () => {
         calculationEdited = true;
@@ -7058,11 +7211,17 @@ async function openBillingCalcModal(rowId, monthKey) {
             cacheLineInputValue(input);
             calculationEdited = true;
             recompute();
+            if (input.dataset.calcLineMode === 'multi_machine_rtp') {
+                queueDraftLineSave(Number(input.dataset.calcLineIndex || 0), 700);
+            }
         });
         input.addEventListener('change', () => {
             cacheLineInputValue(input);
             calculationEdited = true;
             recompute();
+            if (input.dataset.calcLineMode === 'multi_machine_rtp') {
+                queueDraftLineSave(Number(input.dataset.calcLineIndex || 0), 0);
+            }
         });
     });
     document.querySelectorAll('[data-calc-exclusion-action="open"]').forEach((button) => {
@@ -7401,6 +7560,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         saveBillingBtn.disabled = true;
         if (deleteBillingBtn) deleteBillingBtn.disabled = true;
         try {
+            await flushDraftSaves();
             const result = await saveBillingRecord({
                 row,
                 context,
@@ -7436,6 +7596,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                 }];
             }
             savedBillingDocId = result.docId || savedBillingDocId;
+            if (activeBillingMode === 'multi_machine_rtp') {
+                markBillingDraftGroupSaved(row, context.monthKey, activeBillingMode, currentSnapshot.invoiceNo).catch((error) => {
+                    console.warn('Unable to mark billing draft lines as saved.', error);
+                });
+            }
             approvalStatus = String(result.fields?.approval_status || approvalStatus || 'none');
             scheduleRequired = true;
             scheduleSaved = false;
