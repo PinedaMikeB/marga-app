@@ -491,6 +491,8 @@ MargaAuth.applyModulePermissions = function applyModulePermissions({ selector = 
         el.classList.add('disabled');
         if (!el.dataset.noAccessBound) {
             el.addEventListener('click', (event) => {
+                const latestModule = String(el.dataset.module || '').trim().toLowerCase();
+                if (latestModule && this.hasAccess(latestModule)) return;
                 event.preventDefault();
                 alert('You do not have permission to access this module.');
             });
