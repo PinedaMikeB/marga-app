@@ -1284,6 +1284,54 @@ function getScheduleHistoryKind(row) {
     return 'other';
 }
 
+function isDeliveryHistoryRow(row) {
+    return getScheduleHistoryKind(row) === 'delivery';
+}
+
+function getDeliveryHistoryRefClass(row) {
+    if (!isDeliveryHistoryRow(row)) return '';
+    return row?._deliveryDrPrinted && getAssignedStaffId(row) > 0
+        ? 'is-delivery-released'
+        : 'is-delivery-pending';
+}
+
+async function enrichScheduleHistoryDeliveryStatus(scheduleRows) {
+    const deliveryRows = scheduleRows.filter((row) => {
+        const scheduleId = Number(row?.id || row?._docId || 0);
+        return scheduleId > 0 && isDeliveryHistoryRow(row);
+    });
+
+    if (!deliveryRows.length) return scheduleRows;
+
+    const uniqueIds = [...new Set(deliveryRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0))];
+    const lookups = await Promise.allSettled(
+        uniqueIds.map(async (scheduleId) => {
+            const docs = await queryLatestByField('tbl_finaldr', 'reference_id', scheduleId, { orderField: 'id', limit: 5 });
+            const activeDrs = docs
+                .map(parseFirestoreDoc)
+                .filter((row) => row && Number(row.iscancelled || 0) !== 1);
+            return [scheduleId, activeDrs[0] || null];
+        })
+    );
+
+    const drBySchedule = new Map();
+    lookups.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        const [scheduleId, drRow] = result.value;
+        drBySchedule.set(Number(scheduleId), drRow);
+    });
+
+    return scheduleRows.map((row) => {
+        const scheduleId = Number(row?.id || row?._docId || 0);
+        if (!scheduleId || !isDeliveryHistoryRow(row)) return row;
+        const drRow = drBySchedule.get(scheduleId) || null;
+        return {
+            ...row,
+            _deliveryDrPrinted: Boolean(drRow)
+        };
+    });
+}
+
 function getMachineHistoryKind(row) {
     const statusId = Number(row?.status_id || 0);
     if (statusId === 2) return 'delivery';
@@ -1308,12 +1356,14 @@ function buildScheduleHistoryCard(row) {
         row?.tl_remarks,
         row?.dev_remarks
     ].map((value) => String(value || '').trim()).filter(Boolean);
+    const refNo = `#${row?.id || row?._docId || '-'}`;
+    const refClass = getDeliveryHistoryRefClass(row);
     const tags = [
-        `#${row?.id || row?._docId || '-'}`,
-        getScheduleStatusLabel(row),
-        techId ? getEmployeeName(tech, techId) : '',
-        machineId ? getHistoryMachineLabel(machine, machineId) : ''
-    ].filter(Boolean);
+        { label: refNo, className: refClass },
+        { label: getScheduleStatusLabel(row) },
+        { label: techId ? getEmployeeName(tech, techId) : '' },
+        { label: machineId ? getHistoryMachineLabel(machine, machineId) : '' }
+    ].filter((tag) => tag.label);
 
     return {
         source: 'schedule',
@@ -1336,10 +1386,10 @@ function buildMachineHistoryCard(row) {
     const dateValue = row?.datex || row?.date || row?.created_at || row?.updated_at || '';
     const remarks = String(row?.remarks || row?.note || '').trim();
     const tags = [
-        `#${row?.id || row?._docId || '-'}`,
-        techId ? getEmployeeName(tech, techId) : '',
-        getHistoryMachineLabel(machine, machineId)
-    ].filter(Boolean);
+        { label: `#${row?.id || row?._docId || '-'}` },
+        { label: techId ? getEmployeeName(tech, techId) : '' },
+        { label: getHistoryMachineLabel(machine, machineId) }
+    ].filter((tag) => tag.label);
 
     return {
         source: 'machine-history',
@@ -1437,7 +1487,7 @@ function renderNewReqHistory(context, scheduleRows, machineHistoryRows) {
             </div>
             <div class="new-req-history-title">${sanitize(card.title)}</div>
             ${card.note ? `<div class="new-req-history-note">${sanitize(card.note)}</div>` : ''}
-            ${card.meta.length ? `<div class="new-req-history-tags">${card.meta.map((tag) => `<span class="new-req-history-tag">${sanitize(tag)}</span>`).join('')}</div>` : ''}
+            ${card.meta.length ? `<div class="new-req-history-tags">${card.meta.map((tag) => `<span class="new-req-history-tag ${sanitize(tag.className || '')}">${sanitize(tag.label)}</span>`).join('')}</div>` : ''}
         </article>
     `).join('');
 }
@@ -1454,10 +1504,12 @@ async function refreshNewRequestHistory() {
     renderNewReqHistoryLoading(context);
 
     try {
-        const [scheduleRows, machineHistoryRows] = await Promise.all([
+        const [rawScheduleRows, machineHistoryRows] = await Promise.all([
             fetchScheduleHistoryForContext(context),
             fetchMachineHistoryForContext(context)
         ]);
+        if (token !== opsState.newRequestHistorySeq) return;
+        const scheduleRows = await enrichScheduleHistoryDeliveryStatus(rawScheduleRows);
         if (token !== opsState.newRequestHistorySeq) return;
         renderNewReqHistory(context, scheduleRows, machineHistoryRows);
     } catch (error) {

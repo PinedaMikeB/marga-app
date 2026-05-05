@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v21';
+const CACHE_NAME = 'marga-app-shell-v22';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -52,8 +52,8 @@ const SHELL_ASSETS = [
     '/apd/js/apd.js',
     '/service/',
     '/service/index.html',
-    '/service/css/service.css',
-    '/service/js/dispatch-board.js',
+    '/service/css/service.css?v=20260505-delivery-history-status-1',
+    '/service/js/dispatch-board.js?v=20260505-delivery-history-status-1',
     '/service/js/service.js',
     '/settings/',
     '/settings/index.html',

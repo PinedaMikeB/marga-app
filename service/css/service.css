@@ -651,6 +651,16 @@
     font-weight: 800;
 }
 
+.new-req-history-tag.is-delivery-released {
+    background: rgba(220, 252, 231, 0.92);
+    color: #047857;
+}
+
+.new-req-history-tag.is-delivery-pending {
+    background: rgba(254, 226, 226, 0.92);
+    color: #b91c1c;
+}
+
 .marga-release-add-field .btn {
     width: 100%;
     min-height: 2.6rem;
