@@ -424,13 +424,13 @@ const CustomersApp = (() => {
             return;
         }
         picker.innerHTML = branches.map((branch) => {
-            const label = `${branch.branchname || 'Main'}${branch.code ? ` - ${branch.code}` : ''}`;
+            const label = branchOptionLabel(branch);
             return `<option value="${escapeAttr(branch.id)}">${escapeHtml(label)}</option>`;
         }).join('');
 
         const branchId = preferredBranchId && branches.some((branch) => clean(branch.id) === clean(preferredBranchId))
             ? clean(preferredBranchId)
-            : clean(branches[0]?.id);
+            : clean(branches.find((branch) => getBranchContracts(branch.id).length)?.id || branches[0]?.id);
         selectBranch(branchId);
     }
 
@@ -1162,9 +1162,24 @@ const CustomersApp = (() => {
 
     function getSelectedBranchContracts() {
         if (!state.selectedBranchId) return [];
-        return (state.maps.contractsByBranch.get(clean(state.selectedBranchId)) || [])
+        return getBranchContracts(state.selectedBranchId)
             .slice()
             .sort((a, b) => clean(a.id).localeCompare(clean(b.id), undefined, { numeric: true }));
+    }
+
+    function getBranchContracts(branchId) {
+        return state.maps.contractsByBranch.get(clean(branchId)) || [];
+    }
+
+    function branchOptionLabel(branch) {
+        const branchId = clean(branch.id);
+        const label = `${branch.branchname || 'Main'}${branch.code ? ` - ${branch.code}` : ''}`;
+        const contracts = getBranchContracts(branchId);
+        const machineIds = new Set(contracts.map((contract) => clean(contract.mach_id)).filter(Boolean));
+        const contractText = contracts.length
+            ? ` - ${contracts.length} contract${contracts.length === 1 ? '' : 's'} / ${machineIds.size} machine${machineIds.size === 1 ? '' : 's'}`
+            : ' - no contracts';
+        return `${label}${contractText} - #${branchId}`;
     }
 
     function resolveContractBranch(contract) {
