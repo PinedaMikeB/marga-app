@@ -49,36 +49,12 @@ const COLLECTION_COLUMNS = [
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const allowed = await ensureAccountingAccess();
-    if (!allowed) return;
+    if (!MargaAuth.requireAuth()) return;
     loadUserHeader();
     bindControls();
     setDefaultDates();
-    MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     await loadAccountingData();
 });
-
-async function ensureAccountingAccess() {
-    if (!MargaAuth.requireAuth()) return false;
-    if (MargaAuth.hasAccess('accounting')) return true;
-
-    try {
-        const user = MargaAuth.getUser();
-        const modules = await MargaAuth.fetchRoleModulesForRoles(user?.roles || user?.role || []);
-        user.role_modules = MargaAuth.normalizeModules([
-            ...(user.role_modules || []),
-            ...(modules || [])
-        ]);
-        MargaAuth.persistCurrentUser();
-    } catch (error) {
-        console.warn('Unable to refresh accounting role access before module gate.', error);
-    }
-
-    if (MargaAuth.hasAccess('accounting')) return true;
-    alert('You do not have permission to access this module.');
-    window.location.href = MargaAuth.buildAppUrl('dashboard.html');
-    return false;
-}
 
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
