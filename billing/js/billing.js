@@ -5216,6 +5216,130 @@ function summarizeBillingLines(lineItems = [], fallbackFormula = 'not_available'
     };
 }
 
+function getSharedMeterGroupKey(line = {}) {
+    const type = String(line?.meterType || '').toLowerCase();
+    const label = String(line?.label || '').toLowerCase();
+    if (type.includes('color') || label.includes('colored') || label.includes('color')) return 'color';
+    return 'black_white';
+}
+
+function getSharedMeterGroupLabel(groupKey) {
+    return groupKey === 'color' ? 'Colored' : 'Black / White';
+}
+
+function allocateSharedAmount(total, weights = []) {
+    const totalAmount = roundBillingAmount(total);
+    const totalWeight = weights.reduce((sum, value) => sum + Math.max(0, Number(value || 0) || 0), 0);
+    if (totalWeight <= 0 || totalAmount <= 0) return weights.map(() => 0);
+    let remaining = totalAmount;
+    return weights.map((weight, index) => {
+        if (index === weights.length - 1) return roundBillingAmount(remaining);
+        const share = roundBillingAmount(totalAmount * (Math.max(0, Number(weight || 0) || 0) / totalWeight));
+        remaining = roundBillingAmount(remaining - share);
+        return share;
+    });
+}
+
+function applySharedMultiMeterQuota(lineItems = []) {
+    const sourceLines = Array.isArray(lineItems) ? lineItems : [];
+    const resultLines = [...sourceLines];
+    const groupKeys = ['black_white', 'color'];
+
+    groupKeys.forEach((groupKey) => {
+        const indexes = resultLines
+            .map((line, index) => ({ line, index }))
+            .filter(({ line }) => getSharedMeterGroupKey(line) === groupKey);
+        if (!indexes.length) return;
+
+        const usableLines = indexes.filter(({ line }) => !isNonBillableMeterFormula(line?.formula));
+        const totalNetPages = usableLines.reduce((sum, { line }) => sum + Number(line.netPages || 0), 0);
+        const totalRawPages = usableLines.reduce((sum, { line }) => sum + Number(line.rawPages || 0), 0);
+        const totalSpoilagePages = usableLines.reduce((sum, { line }) => sum + Number(line.spoilagePages || 0), 0);
+        const totalSystemSpoilagePages = usableLines.reduce((sum, { line }) => sum + Number(line.systemSpoilagePages ?? line.spoilagePages ?? 0), 0);
+        const totalActualSpoilagePages = usableLines.reduce((sum, { line }) => sum + Number(line.actualSpoilagePages || 0), 0);
+        const rateLine = usableLines.find(({ line }) => Number(line.monthlyQuota || 0) > 0 || Number(line.pageRate || 0) > 0)?.line
+            || indexes[0].line;
+        const monthlyQuota = Number(rateLine?.monthlyQuota || 0) || 0;
+        const pageRate = Number(rateLine?.pageRate || 0) || 0;
+        const succeedingRate = Number(rateLine?.succeedingRate || pageRate || 0) || pageRate;
+        const withVat = Boolean(rateLine?.profile?.with_vat);
+        const applyQuota = usableLines.every(({ line }) => line.applyQuota !== false);
+        const quotaBypassed = !applyQuota && monthlyQuota > 0 && totalNetPages < monthlyQuota;
+        const billedPages = monthlyQuota > 0 && !quotaBypassed ? Math.max(totalNetPages, monthlyQuota) : totalNetPages;
+        const quotaPages = monthlyQuota > 0 && !quotaBypassed ? Math.min(billedPages, monthlyQuota) : billedPages;
+        const succeedingPages = quotaBypassed ? 0 : Math.max(0, totalNetPages - monthlyQuota);
+        const quotaAmount = roundBillingAmount(quotaPages * pageRate);
+        const succeedingAmount = roundBillingAmount(succeedingPages * succeedingRate);
+        const amountDue = roundBillingAmount(quotaAmount + succeedingAmount);
+        const netAmount = withVat ? roundBillingAmount(amountDue / 1.12) : amountDue;
+        const vatAmount = withVat ? roundBillingAmount(amountDue - netAmount) : roundBillingAmount(amountDue * 0.12);
+        const weights = usableLines.map(({ line }) => Number(line.netPages || line.rawPages || 0) || 0);
+        const amountShares = allocateSharedAmount(amountDue, weights);
+        const netShares = allocateSharedAmount(netAmount, weights);
+        const vatShares = allocateSharedAmount(vatAmount, weights);
+        const quotaPageShares = allocateSharedAmount(quotaPages, weights);
+        const succeedingPageShares = allocateSharedAmount(succeedingPages, weights);
+        const quotaAmountShares = allocateSharedAmount(quotaAmount, weights);
+        const succeedingAmountShares = allocateSharedAmount(succeedingAmount, weights);
+        const groupLabel = getSharedMeterGroupLabel(groupKey);
+        const groupFormula = quotaBypassed
+            ? 'shared_quota_bypassed_actual_usage'
+            : succeedingPages > 0
+                ? 'shared_quota_pages_plus_succeeding_rate'
+                : 'shared_quota_floor_after_spoilage';
+        const sharedComputation = `${groupLabel}: ${formatCount(totalRawPages)} raw - ${formatCount(totalSpoilagePages)} spoilage = ${formatCount(totalNetPages)} net. ${formatCount(quotaPages)} shared quota pages x ${formatAmount(pageRate)} plus ${formatCount(succeedingPages)} succeeding pages x ${formatAmount(succeedingRate)} = ${formatAmount(amountDue)}.`;
+
+        usableLines.forEach(({ line, index }, shareIndex) => {
+            resultLines[index] = {
+                ...line,
+                amountDue: amountShares[shareIndex] || 0,
+                netAmount: netShares[shareIndex] || 0,
+                vatAmount: vatShares[shareIndex] || 0,
+                billedPages: quotaPageShares[shareIndex] + succeedingPageShares[shareIndex],
+                quotaPages: quotaPageShares[shareIndex] || 0,
+                succeedingPages: succeedingPageShares[shareIndex] || 0,
+                quotaAmount: quotaAmountShares[shareIndex] || 0,
+                succeedingAmount: succeedingAmountShares[shareIndex] || 0,
+                formula: groupFormula,
+                sharedMeterGroup: groupKey,
+                sharedMeterGroupLabel: groupLabel,
+                sharedGroupRawPages: totalRawPages,
+                sharedGroupSystemSpoilagePages: totalSystemSpoilagePages,
+                sharedGroupActualSpoilagePages: totalActualSpoilagePages,
+                sharedGroupSpoilagePages: totalSpoilagePages,
+                sharedGroupNetPages: totalNetPages,
+                sharedGroupQuotaPages: quotaPages,
+                sharedGroupSucceedingPages: succeedingPages,
+                sharedGroupAmountDue: amountDue,
+                sharedGroupComputation: sharedComputation,
+                quotaVariance: monthlyQuota > 0 ? totalNetPages - monthlyQuota : null,
+                quotaBypassed
+            };
+        });
+    });
+
+    const summary = summarizeBillingLines(resultLines, 'shared_multi_meter_quota');
+    summary.formula = 'shared_multi_meter_quota';
+    const sharedGroups = new Map();
+    resultLines.forEach((line) => {
+        const key = String(line.sharedMeterGroup || '').trim();
+        if (!key || sharedGroups.has(key)) return;
+        sharedGroups.set(key, {
+            key,
+            label: line.sharedMeterGroupLabel || getSharedMeterGroupLabel(key),
+            rawPages: Number(line.sharedGroupRawPages || 0) || 0,
+            spoilagePages: Number(line.sharedGroupSpoilagePages || 0) || 0,
+            netPages: Number(line.sharedGroupNetPages || 0) || 0,
+            quotaPages: Number(line.sharedGroupQuotaPages || 0) || 0,
+            succeedingPages: Number(line.sharedGroupSucceedingPages || 0) || 0,
+            amountDue: Number(line.sharedGroupAmountDue || 0) || 0,
+            computation: line.sharedGroupComputation || ''
+        });
+    });
+    summary.sharedMeterGroups = Array.from(sharedGroups.values());
+    return summary;
+}
+
 function buildBillingLinesSignature(lineItems = []) {
     return JSON.stringify((Array.isArray(lineItems) ? lineItems : []).map((line) => ({
         label: String(line.label || '').trim(),
@@ -5606,6 +5730,9 @@ function formatLineComputation(line) {
     }
     if (line.formula === 'present_lower_than_previous') {
         return line.warning || 'Present reading is lower than previous reading. Please check the present meter before billing this line.';
+    }
+    if (String(line.formula || '').startsWith('shared_quota_')) {
+        return line.sharedGroupComputation || formatBillingComputationFlow(line);
     }
     return formatBillingComputationFlow(line);
 }
@@ -6485,7 +6612,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             monthly_quota: readLineInputValue(mode, index, 'monthlyQuota', seed.monthlyQuota),
             monthly_rate: Number(seed.monthlyRate || 0) || 0
         };
-        return calculateMeterLineEstimate({
+        const line = calculateMeterLineEstimate({
             label: seed.label,
             subtitle: seed.subtitle,
             meterSection: seed.meterSection,
@@ -6500,6 +6627,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             missingMeterMessage: seed.missingMeterMessage,
             pendingPresentMessage: seed.pendingPresentMessage
         });
+        return { ...line, profile: lineProfile };
     };
 
     const updateLineCardDisplay = (mode, index, line) => {
@@ -6517,8 +6645,8 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
         if (activeBillingMode === 'multi_meter_rtp') {
             const lines = multiMeterSeedLines.map((seed, index) => estimateLineFromSeed({ ...seed, profile: seed.profile || profile, row }, activeBillingMode, index));
-            lines.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
-            const summary = summarizeBillingLines(lines);
+            const summary = applySharedMultiMeterQuota(lines);
+            summary.lineItems.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
             summary.billingMode = activeBillingMode;
             return summary;
         }
@@ -6807,11 +6935,15 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
             quotaValue.textContent = next.quotaVariance === null
-                ? (next.lineItems?.length > 1 ? `${formatCount(next.lineItems.length)} billing lines summed.` : 'No quota saved on this contract.')
+                ? (next.sharedMeterGroups?.length
+                    ? next.sharedMeterGroups.map((group) => `${group.label}: ${formatCount(group.quotaPages)} quota / ${formatCount(group.netPages)} net`).join(' • ')
+                    : (next.lineItems?.length > 1 ? `${formatCount(next.lineItems.length)} billing lines summed.` : 'No quota saved on this contract.'))
                 : `${formatCount(profile.monthly_quota || 0)} quota floor • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs net pages`;
         }
         if (flowValue) {
-            flowValue.textContent = next.lineItems?.length > 1
+            flowValue.textContent = next.sharedMeterGroups?.length
+                ? next.sharedMeterGroups.map((group) => group.computation).filter(Boolean).join('\n')
+                : next.lineItems?.length > 1
                 ? next.lineItems.map((line) => `${line.label}: ${formatAmount(line.amountDue || 0)}`).join(' • ')
                 : next.savedComputation
                 ? next.savedComputation
