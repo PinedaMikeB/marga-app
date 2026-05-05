@@ -40,6 +40,7 @@ const els = {
     billingCalcSubtitle: null,
     billingCalcContent: null,
     billingCalcPrintBtn: null,
+    billingCalcMeterFormBtn: null,
     billingCalcCloseBtn: null
 };
 
@@ -53,6 +54,7 @@ let dashboardAbortController = null;
 let invoicePreviewReferenceData = null;
 let invoicePreviewReferencePromise = null;
 let currentRtpPrintPayload = null;
+let currentRtpMeterFormEstimate = null;
 let invoiceSearchGroupCache = new Map();
 const priorMachineReadingCache = new Map();
 const priorBillingReadingCache = new Map();
@@ -2088,6 +2090,29 @@ function resolveBillingMachineIdentity({ row = {}, doc = {}, machine = null, mod
     };
 }
 
+function collectInvoiceSerialNumbers(rows = []) {
+    const seen = new Set();
+    return (Array.isArray(rows) ? rows : [])
+        .map((row) => cleanMachineIdentityValue(row?.serial_number || row?.xserial || row?.machine_serial || '', { skipNA: true }))
+        .filter(Boolean)
+        .filter((serial) => {
+            const key = serial.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+function formatInvoicePrinterModelValue({ modelName = '', serialNumber = '', serialNumbers = [] } = {}) {
+    const serial = cleanMachineIdentityValue(serialNumber, { skipNA: true });
+    if (serial) return serial;
+    const groupedSerial = collectInvoiceSerialNumbers(serialNumbers.map((value) => ({ serial_number: value }))).join(', ');
+    if (groupedSerial) return groupedSerial;
+    const fallbackModel = cleanMachineIdentityValue(modelName, { skipNoMachine: true, skipNA: true });
+    if (/^multiple\s+machine/i.test(fallbackModel)) return 'N/A';
+    return fallbackModel || 'N/A';
+}
+
 function getInvoiceSearchEntryModel(entry, references = null) {
     const row = entry?.row || {};
     const doc = entry?.doc || {};
@@ -2096,7 +2121,7 @@ function getInvoiceSearchEntryModel(entry, references = null) {
         || Boolean(doc.machine_label || doc.machine_model || doc.model_name || doc.model || doc.printer_model || doc.serial_number);
     const machine = hasTrustedIdentity && machineId && references?.machines ? references.machines.get(machineId) : null;
     const model = machine?.model_id && references?.models ? references.models.get(String(machine.model_id).trim()) : null;
-    return resolveBillingMachineIdentity({ row, doc, machine, model }).modelName || 'N/A';
+    return formatInvoicePrinterModelValue(resolveBillingMachineIdentity({ row, doc, machine, model }));
 }
 
 function getInvoiceSearchCustomerLabel(group) {
@@ -2353,8 +2378,10 @@ function setRtpPrintPayload(payload) {
     const printCode = String(payload?.contractCode || 'Invoice').trim().toUpperCase() || 'Invoice';
     els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
     els.billingCalcPrintBtn?.classList.toggle('hidden', !payload);
+    els.billingCalcMeterFormBtn?.classList.toggle('hidden', !payload);
     if (els.rtpInvoicePrintBtn) els.rtpInvoicePrintBtn.textContent = `Print ${printCode}`;
     if (els.billingCalcPrintBtn) els.billingCalcPrintBtn.textContent = `Print ${printCode}`;
+    if (els.billingCalcMeterFormBtn) els.billingCalcMeterFormBtn.textContent = 'Print Meter Reading Form';
 }
 
 function isPrintableContractCode(code) {
@@ -2513,6 +2540,8 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         || row?.company_name
         || ''
     );
+    const groupedRows = row?.is_summary_billing_row || row?.is_summary_row ? getGroupedMachineRows(row, monthKey) : [];
+    const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
     const isGroupedPrint = Boolean(row?.is_summary_billing_row || row?.is_summary_row);
     const address = isGroupedPrint
         ? (getCompanyAddress(company) || 'N/A')
@@ -2527,7 +2556,12 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         monthLabel: formatMonthLongLabel(monthKey, monthKey),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: isGroupedPrint ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
+        printerModel: formatInvoicePrinterModelValue({ modelName, serialNumber, serialNumbers: groupedSerialNumbers }),
+        machineModel: modelName || row?.machine_label || 'N/A',
+        machineSerial: serialNumber || groupedSerialNumbers.join(', ') || row?.serial_number || 'N/A',
+        contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
+        presentReadingDate: cell?.task_date ? formatIsoDate(asValidDate(cell.task_date)) : '',
+        previousReadingDate: readingGroup?.previous_reading_date ? formatIsoDate(asValidDate(readingGroup.previous_reading_date)) : '',
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
@@ -2568,6 +2602,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     );
     const groupedRows = Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
     const isGroupedPrint = Boolean(row?.is_summary_billing_row || row?.is_summary_row || groupedRows.length > 1);
+    const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
     const address = isGroupedPrint
         ? (getGroupedBillingAddress(references, groupedRows, company) || 'N/A')
         : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
@@ -2581,7 +2616,12 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: isGroupedPrint ? 'Multiple Machine' : (modelName ? `${modelName}${serialNumber ? ` --- ${serialNumber}` : ''}` : (serialNumber || 'N/A')),
+        printerModel: formatInvoicePrinterModelValue({ modelName, serialNumber, serialNumbers: groupedSerialNumbers }),
+        machineModel: modelName || row?.machine_label || 'N/A',
+        machineSerial: serialNumber || groupedSerialNumbers.join(', ') || row?.serial_number || 'N/A',
+        contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
+        presentReadingDate: context?.targetCell?.task_date ? formatIsoDate(asValidDate(context.targetCell.task_date)) : '',
+        previousReadingDate: context?.latestPriorGroup?.task_date ? formatIsoDate(asValidDate(context.latestPriorGroup.task_date)) : '',
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
@@ -3379,6 +3419,15 @@ function printCurrentRtpInvoice() {
     printHtmlDocument(buildRtpPrintDocument(currentRtpPrintPayload), 'marga_invoice_print');
 }
 
+function printCurrentMeterReadingForm() {
+    if (!currentRtpPrintPayload || !currentRtpMeterFormEstimate) {
+        MargaUtils.showToast('Open a saved printable billing first.', 'error');
+        return;
+    }
+
+    printBillingAttachment(currentRtpPrintPayload, currentRtpMeterFormEstimate, 'meter_form');
+}
+
 function printHtmlDocument(printMarkup, windowName = 'marga_print') {
     const printWindow = window.open('', windowName, 'width=1180,height=860');
     if (!printWindow) {
@@ -3414,7 +3463,247 @@ function getPrintableBillingLines(estimate, options = {}) {
     return printable.length ? printable : available;
 }
 
+const METER_FORM_COMPANY_BLOCK = [
+    'MARGA ENTERPRISES',
+    'Blk 30-32 Lot 1 Cabrera Road Cornel Magnolia Street',
+    'Glenrose Subdivision Brgy. Dolores Taytay, Rizal',
+    '(02)88201750, (02)82908264, (02)82939228,',
+    '(02)82939224, (02)82939628, (02)82941638,'
+].join('\n');
+
+function buildMeterFormLineRows(estimate) {
+    const lines = getPrintableBillingLines(estimate, { includePending: true });
+    return lines.length ? lines : [estimate].filter(Boolean);
+}
+
+function buildMeterFormPrintDocument(preview, estimate) {
+    const lines = buildMeterFormLineRows(estimate);
+    const isMultiple = lines.length > 1 || String(estimate?.billingMode || '').trim() === 'multi_machine_rtp';
+    return isMultiple
+        ? buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines)
+        : buildSingleMachineMeterFormPrintDocument(preview, estimate, lines[0] || estimate || {});
+}
+
+function buildSingleMachineMeterFormPrintDocument(preview, estimate, line = {}) {
+    const presentDate = preview?.presentReadingDate || '';
+    const previousDate = preview?.previousReadingDate || '';
+    const difference = Number(line.rawPages || 0) || Math.max(0, Number(line.presentMeter || 0) - Number(line.previousMeter || 0));
+    const spoilage = Number(line.spoilagePages || line.totalSpoilagePages || 0) || 0;
+    const otherDiscount = Number(line.actualSpoilagePages || 0) || 0;
+    const netPages = Number(line.netPages || 0) || Math.max(0, difference - spoilage);
+    const monthlyMinimum = Number(line.monthlyQuota || estimate?.monthlyQuota || preview?.quota || 0) || 0;
+    const serial = line.serialNumber || preview?.machineSerial || 'N/A';
+    const model = line.machineModel || preview?.machineModel || preview?.printerModel || 'N/A';
+    const contractId = line.contractmainId || preview?.contractId || 'N/A';
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Meter Reading Form</title>
+    <style>
+        @page { size: A4 portrait; margin: 18mm 16mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.22; }
+        .page { min-height: 260mm; padding: 16mm 8mm 8mm; }
+        .top { display: grid; grid-template-columns: 1fr 1fr; gap: 28mm; align-items: start; }
+        .company { white-space: pre-line; }
+        h1 { margin: 0 0 9px; text-align: center; font-size: 21px; }
+        .subtitle { text-align: center; font-size: 14px; }
+        .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24mm; margin-top: 22mm; }
+        .label { margin-bottom: 10px; }
+        .client-name { margin-bottom: 24px; }
+        .address { white-space: pre-line; }
+        .info-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; margin-bottom: 12px; }
+        .calc { margin-top: 19mm; display: grid; grid-template-columns: 1fr 1fr; gap: 24mm; }
+        .calc .info-row { grid-template-columns: 170px 1fr; }
+        .value { text-align: left; }
+        .signatures { margin-top: 30mm; display: grid; grid-template-columns: 1fr 1fr; gap: 23mm; }
+        .sig-row { min-height: 18mm; }
+        .sig-row strong { font-weight: 400; }
+        .prepared-name, .officer-name { display: block; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <section class="top">
+            <div class="company">${escapeHtml(METER_FORM_COMPANY_BLOCK)}</div>
+            <div>
+                <h1>Meter Reading Form</h1>
+                <div class="subtitle">( Single Machine )</div>
+            </div>
+        </section>
+        <section class="section-grid">
+            <div>
+                <div class="label">Client Information :</div>
+                <div class="client-name">${escapeHtml(cleanPrintCustomerName(preview?.customerName) || 'Unknown Customer')}</div>
+                <div class="address">${escapeHtml(preview?.address || '')}</div>
+            </div>
+            <div>
+                <div class="label">Machine Information :</div>
+                <div class="info-row"><span>Serial No. :</span><span>${escapeHtml(serial)}</span></div>
+                <div class="info-row"><span>Contract ID :</span><span>${escapeHtml(contractId)}</span></div>
+                <div class="info-row"><span>Model :</span><span>${escapeHtml(model)}</span></div>
+            </div>
+        </section>
+        <section class="calc">
+            <div>
+                <div class="info-row"><span>Present Reading Date :</span><span>${escapeHtml(presentDate)}</span></div>
+                <div class="info-row"><span>Previous Reading Date :</span><span>${escapeHtml(previousDate)}</span></div>
+                <div class="info-row"><span>Difference :</span><span></span></div>
+                <div class="info-row"><span>Spoilage Discount :</span><span></span></div>
+                <div class="info-row"><span>Other Discount :</span><span></span></div>
+                <div class="info-row"><span>Net Page Consumed :</span><span></span></div>
+                <div class="info-row"><span>Monthly Minimum :</span><span></span></div>
+            </div>
+            <div>
+                <div class="info-row"><span>Present Reading :</span><span>${escapeHtml(formatCount(line.presentMeter || 0))}</span></div>
+                <div class="info-row"><span>Previous Reading :</span><span>${escapeHtml(formatCount(line.previousMeter || 0))}</span></div>
+                <div class="info-row"><span></span><span>${escapeHtml(formatCount(difference))}</span></div>
+                <div class="info-row"><span></span><span>${escapeHtml(formatCount(spoilage))}</span></div>
+                <div class="info-row"><span></span><span>${otherDiscount ? escapeHtml(formatCount(otherDiscount)) : ''}</span></div>
+                <div class="info-row"><span></span><span>${escapeHtml(formatCount(netPages))}</span></div>
+                <div class="info-row"><span></span><span>${escapeHtml(formatCount(monthlyMinimum))}</span></div>
+            </div>
+        </section>
+        <section class="signatures">
+            <div>
+                <div class="sig-row">Prepared by :<span class="prepared-name">Dang Lozano</span></div>
+                <div class="sig-row">Billing and Collection :</div>
+                <div class="sig-row">Certified Correct :</div>
+                <div class="sig-row">Collector Print :</div>
+            </div>
+            <div>
+                <div class="sig-row">Approved by :</div>
+                <div class="sig-row">Account Officer :</div>
+                <div class="sig-row">Certified Correct :</div>
+                <div class="sig-row">Authorized Customer Representative :</div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>`;
+}
+
+function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = []) {
+    const presentDate = preview?.presentReadingDate || '';
+    const previousDate = preview?.previousReadingDate || '';
+    const totalNet = lines.reduce((sum, line) => sum + Number(line.netPages || 0), 0);
+    const representativeRate = Number(lines.find((line) => Number(line.pageRate || 0) > 0)?.pageRate || estimate?.pageRate || preview?.rate || 0) || 0;
+    const rows = lines.map((line) => {
+        const difference = Number(line.rawPages || 0) || Math.max(0, Number(line.presentMeter || 0) - Number(line.previousMeter || 0));
+        return `
+            <tr>
+                <td>${escapeHtml(line.serialNumber || line.machineId || line.label || '')}</td>
+                <td>${escapeHtml(line.machineModel || line.subtitle || '')}</td>
+                <td class="num">${escapeHtml(formatCount(line.presentMeter || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(line.previousMeter || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(difference))}</td>
+                <td class="num">${escapeHtml(formatCount(line.spoilagePages || line.totalSpoilagePages || 0))}</td>
+                <td class="num">${escapeHtml(formatCount(line.netPages || 0))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(line.pageRate || representativeRate || 0).replace(/\.00$/, ''))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(line.amountDue || 0))}</td>
+            </tr>
+        `;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Meter Reading Form</title>
+    <style>
+        @page { size: A4 portrait; margin: 9mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.18; }
+        .page { min-height: 278mm; position: relative; }
+        .header-grid { display: grid; grid-template-columns: 46% 54%; border: 1px solid #222; }
+        .company { min-height: 30mm; padding: 6mm 5mm; border-right: 1px solid #222; white-space: pre-line; }
+        .title-box { padding-top: 8mm; text-align: center; }
+        h1 { margin: 0 0 5mm; font-size: 18px; }
+        .client-grid { display: grid; grid-template-columns: 56% 44%; min-height: 32mm; border-left: 1px solid #222; border-right: 1px solid #222; border-bottom: 1px solid #222; }
+        .client { padding: 4mm 5mm; }
+        .client-name { margin: 4mm 0; font-weight: 700; text-transform: uppercase; }
+        .dates { padding: 7mm 5mm; }
+        .date-row { display: grid; grid-template-columns: 44mm 1fr; gap: 8mm; margin-bottom: 7mm; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #222; padding: 2mm 2mm; vertical-align: top; }
+        th { font-weight: 400; text-align: left; }
+        .num { text-align: right; white-space: nowrap; }
+        .summary { position: absolute; right: 0; bottom: 61mm; width: 75mm; }
+        .summary td { height: 8mm; }
+        .signatures { position: absolute; left: 2mm; right: 0; bottom: 0; border: 1px solid #222; display: grid; grid-template-columns: 46% 54%; }
+        .sig-col:first-child { border-right: 1px solid #222; }
+        .sig-row { min-height: 14mm; padding: 3mm 4mm; border-bottom: 1px solid #222; }
+        .sig-row:last-child { border-bottom: 0; }
+        .prepared-name, .officer-name { display: block; margin-top: 3mm; }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <section class="header-grid">
+            <div class="company">${escapeHtml(METER_FORM_COMPANY_BLOCK)}</div>
+            <div class="title-box">
+                <h1>Meter Reading Form</h1>
+                <div>( Multiple Machines )</div>
+            </div>
+        </section>
+        <section class="client-grid">
+            <div class="client">
+                <div>Client Information :</div>
+                <div class="client-name">${escapeHtml(cleanPrintCustomerName(preview?.customerName) || 'Unknown Customer')}</div>
+                <div>${escapeHtml(preview?.address || '')}</div>
+            </div>
+            <div class="dates">
+                <div class="date-row"><span>Present Reading Date :</span><span>${escapeHtml(presentDate)}</span></div>
+                <div class="date-row"><span>Previous Reading Date :</span><span>${escapeHtml(previousDate)}</span></div>
+            </div>
+        </section>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:26%;">Serial</th>
+                    <th style="width:9%;">Model</th>
+                    <th>Present<br>Reading</th>
+                    <th>Previous<br>Reading</th>
+                    <th>Difference</th>
+                    <th>Spoilage</th>
+                    <th>Net Page<br>Consumed</th>
+                    <th>Rate</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="9">No meter lines available.</td></tr>'}</tbody>
+        </table>
+        <table class="summary">
+            <tr>
+                <td class="num">${escapeHtml(formatCount(totalNet))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(representativeRate).replace(/\.00$/, ''))}</td>
+                <td class="num">${escapeHtml(formatFixedAmount(estimate?.amountDue || preview?.totals?.amountDue || 0))}</td>
+            </tr>
+        </table>
+        <section class="signatures">
+            <div class="sig-col">
+                <div class="sig-row">Prepared by :<span class="prepared-name">Dang Lozano</span></div>
+                <div class="sig-row">Billing and Collection :<br>Print Name / Signature / Date</div>
+                <div class="sig-row">Certified Correct :</div>
+                <div class="sig-row">Collector :<br>Print Name / Signature / Date</div>
+            </div>
+            <div class="sig-col">
+                <div class="sig-row">Approved by :</div>
+                <div class="sig-row">Account Officer :<br>Print Name / Signature / Date<br><span class="officer-name">Arlene E. Agustin</span></div>
+                <div class="sig-row">Certified Correct :</div>
+                <div class="sig-row">Authorized Customer Representative :<br>Print Name / Signature / Date</div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>`;
+}
+
 function buildBillingAttachmentPrintDocument(preview, estimate, type = 'breakdown') {
+    if (type === 'meter_form') return buildMeterFormPrintDocument(preview, estimate);
+
     const isMeterForm = type === 'meter_form';
     const lines = getPrintableBillingLines(estimate, { includePending: isMeterForm });
     const title = isMeterForm ? 'Meter Reading Form' : 'Billing Breakdown Attachment';
@@ -4646,6 +4935,7 @@ function calculateMeterLineEstimate({
         machineId: row ? String(row.machine_id || '').trim() : '',
         contractmainId: row ? String(row.contractmain_id || '').trim() : '',
         serialNumber: row ? String(row.serial_number || '').trim() : '',
+        machineModel: row ? String(row.machine_label || '').trim() : '',
         previousMeter: previous,
         presentMeter: present,
         rawPages,
@@ -4724,6 +5014,7 @@ function buildSavedLegacyBillingEstimate({ doc, context = {}, profile = {}, row 
         machineId: row ? String(row.machine_id || '').trim() : '',
         contractmainId: row ? String(row.contractmain_id || '').trim() : '',
         serialNumber: row ? String(row.serial_number || '').trim() : '',
+        machineModel: row ? String(row.machine_label || '').trim() : '',
         previousMeter,
         presentMeter,
         rawPages,
@@ -5235,6 +5526,7 @@ function formatBillingComputationFlow(estimate = {}) {
 function closeBillingCalcModal() {
     billingCalcRequestToken += 1;
     setRtpPrintPayload(null);
+    currentRtpMeterFormEstimate = null;
     els.billingCalcModal?.classList.add('hidden');
 }
 
@@ -5571,10 +5863,15 @@ async function openBillingCalcModal(rowId, monthKey) {
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
     setRtpPrintPayload(null);
+    currentRtpMeterFormEstimate = null;
     if (els.billingCalcPrintBtn) {
         els.billingCalcPrintBtn.textContent = `Print ${printContractCode || 'Invoice'}`;
         els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice);
         els.billingCalcPrintBtn.disabled = true;
+    }
+    if (els.billingCalcMeterFormBtn) {
+        els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice);
+        els.billingCalcMeterFormBtn.disabled = true;
     }
 
     els.billingCalcContent.innerHTML = `
@@ -6291,6 +6588,10 @@ async function openBillingCalcModal(rowId, monthKey) {
             els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
             els.billingCalcPrintBtn.disabled = !printEnabled;
         }
+        if (els.billingCalcMeterFormBtn) {
+            els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
+            els.billingCalcMeterFormBtn.disabled = !printEnabled;
+        }
         if (printBreakdownBtn) printBreakdownBtn.disabled = !printEnabled;
         if (printMeterFormBtn) printMeterFormBtn.disabled = !printEnabled;
     };
@@ -6305,6 +6606,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (!preview) {
                 previewMount.innerHTML = '<div class="detail-empty">This contract does not have a printable invoice preview.</div>';
                 setRtpPrintPayload(null);
+                currentRtpMeterFormEstimate = null;
                 previewReady = false;
                 if (saveStatus) saveStatus.textContent = 'The print preview is unavailable for this row right now.';
                 syncCalcWorkflowState();
@@ -6312,6 +6614,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             }
             previewMount.innerHTML = buildRtpCalibratedPreviewHtml(preview);
             setRtpPrintPayload(preview);
+            currentRtpMeterFormEstimate = nextEstimate;
             previewReady = true;
             syncCalcWorkflowState();
         } catch (error) {
@@ -6319,6 +6622,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (requestToken !== billingCalcRequestToken) return;
             previewMount.innerHTML = '<div class="detail-empty">The printable invoice preview could not load the extra customer data right now.</div>';
             setRtpPrintPayload(null);
+            currentRtpMeterFormEstimate = null;
             previewReady = false;
             if (saveStatus) saveStatus.textContent = 'The print preview failed to load. Save is still available.';
             syncCalcWorkflowState();
@@ -7692,6 +7996,7 @@ function bindEvents() {
     });
     els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
     els.billingCalcPrintBtn?.addEventListener('click', printCurrentRtpInvoice);
+    els.billingCalcMeterFormBtn?.addEventListener('click', printCurrentMeterReadingForm);
     els.billingCalcModal?.addEventListener('click', (event) => {
         if (event.target === els.billingCalcModal) closeBillingCalcModal();
     });
