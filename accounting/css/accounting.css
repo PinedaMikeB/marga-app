@@ -1,0 +1,200 @@
+.accounting-main {
+    background: #f4f7fb;
+    min-height: 100vh;
+}
+
+.accounting-header {
+    align-items: center;
+}
+
+.accounting-content {
+    display: grid;
+    gap: 16px;
+}
+
+.accounting-toolbar,
+.summary-strip,
+.grid-panel {
+    background: #ffffff;
+    border: 1px solid #d9e3ee;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(20, 47, 76, 0.08);
+}
+
+.accounting-toolbar {
+    display: grid;
+    grid-template-columns: auto 150px 150px minmax(240px, 1fr);
+    align-items: end;
+    gap: 12px;
+    padding: 14px;
+}
+
+.accounting-toolbar label {
+    display: grid;
+    gap: 5px;
+    color: #52687f;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.accounting-toolbar input {
+    width: 100%;
+    border: 1px solid #cbd8e5;
+    border-radius: 6px;
+    padding: 10px 11px;
+    color: #17395e;
+    font: inherit;
+    background: #fff;
+}
+
+.segmented-control {
+    display: inline-flex;
+    border: 1px solid #cbd8e5;
+    border-radius: 7px;
+    overflow: hidden;
+    background: #f8fafc;
+}
+
+.segmented-control button {
+    border: 0;
+    border-right: 1px solid #cbd8e5;
+    background: transparent;
+    color: #47627d;
+    cursor: pointer;
+    font-weight: 800;
+    padding: 10px 14px;
+}
+
+.segmented-control button:last-child {
+    border-right: 0;
+}
+
+.segmented-control button.active {
+    background: #1f5f9f;
+    color: #fff;
+}
+
+.summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.summary-strip article {
+    padding: 14px 16px;
+    border-right: 1px solid #e2e8f0;
+}
+
+.summary-strip article:last-child {
+    border-right: 0;
+}
+
+.summary-strip span,
+.grid-status {
+    display: block;
+    color: #60758c;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.summary-strip strong {
+    display: block;
+    margin-top: 5px;
+    color: #15385e;
+    font-size: 21px;
+}
+
+.grid-panel {
+    min-width: 0;
+}
+
+.grid-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.grid-panel h2 {
+    margin: 0;
+    color: #15385e;
+    font-size: 20px;
+}
+
+.grid-panel p {
+    margin: 5px 0 0;
+    color: #60758c;
+    font-size: 13px;
+}
+
+.accounting-grid-wrap {
+    overflow: auto;
+    max-height: calc(100vh - 330px);
+}
+
+.accounting-grid {
+    width: 100%;
+    min-width: 920px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+}
+
+.accounting-grid th,
+.accounting-grid td {
+    border-right: 1px solid #dce6f0;
+    border-bottom: 1px solid #dce6f0;
+    padding: 8px 9px;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.accounting-grid th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #eaf2fb;
+    color: #214b76;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.accounting-grid td.numeric,
+.accounting-grid th.numeric {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.accounting-grid tbody tr:nth-child(even) td {
+    background: #fbfdff;
+}
+
+.accounting-grid tbody tr:hover td {
+    background: #eff6ff;
+}
+
+.empty-row {
+    padding: 28px;
+    color: #60758c;
+    text-align: center;
+    font-weight: 800;
+}
+
+@media (max-width: 900px) {
+    .accounting-toolbar,
+    .summary-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .grid-panel-head {
+        flex-direction: column;
+    }
+}
