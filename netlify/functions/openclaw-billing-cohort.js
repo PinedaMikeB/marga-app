@@ -32,8 +32,13 @@ const BRANCH_METADATA_OVERRIDES = {
     '152': { company: 'China Bank Savings - Branches', branch: 'San Fernando - Bayan (CBS)' },
     '169': { company: 'China Bank Savings - Branches', branch: 'Subic (CBS)' },
     '227': { company: 'China Bank Savings - Branches', branch: 'Dagupan (CBS)' },
-    '231': { company: 'China Bank Savings - Branches', branch: 'La Union (CBS)' }
+    '231': { company: 'China Bank Savings - Branches', branch: 'La Union (CBS)' },
+    '2378': { company: 'China Bank Savings - Branches', branch: 'Cash Center Bulacan (CBS)' },
+    '3396': { company: 'China Bank Savings - Branches', branch: 'Cash Center Laguna (CBS)' },
+    '3822': { company: 'China Bank Savings - Branches', branch: 'Cash Center Imus (CBS)' }
 };
+const CHINABANK_GROUP_COMPANY_ID = '72';
+const CHINABANK_GROUP_BRANCH_IDS = new Set(['2378', '3396', '3822', '3462']);
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -800,7 +805,9 @@ function isBillingMachineEligible(cache, contract) {
     const categoryId = Number(contract?.categoryId || 0);
     if (!FOR_READING_CATEGORY_IDS.has(categoryId)) return false;
     if (!isRealMachineId(contract?.machId) && categoryId !== 8) return false;
-    if (Number(contract?.noDrYet || 0) === 1) return false;
+    const branch = resolveContractBranch(cache, contract);
+    const branchId = String(branch?.id || '').trim();
+    if (Number(contract?.noDrYet || 0) === 1 && !CHINABANK_GROUP_BRANCH_IDS.has(branchId)) return false;
     const machine = cache?.machineMap?.[String(contract.machId).trim()] || null;
     if (Number(machine?.statusId || 0) === 9 && categoryId !== 1) return false;
     return isUsableSerialLabel(resolveSerialLabel(cache, contract));
@@ -1077,6 +1084,15 @@ function getCompanyBillingGroup(cache, companyId) {
     return key ? (cache?.billingGroupByCompanyId?.[key] || null) : null;
 }
 
+function getRowBillingGroup(cache, companyId, branchId) {
+    const normalizedBranchId = String(branchId || '').trim();
+    if (CHINABANK_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
+        return getCompanyBillingGroup(cache, CHINABANK_GROUP_COMPANY_ID)
+            || getCompanyBillingGroup(cache, companyId);
+    }
+    return getCompanyBillingGroup(cache, companyId);
+}
+
 function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, serialNumber, months, cache = null) {
     let row = machineRows.get(rowId);
     if (!row) {
@@ -1106,12 +1122,12 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
             reading_day: null,
             reading_day_source: null,
             expected_start_month: null,
-            billing_group: getCompanyBillingGroup(cache, companyId),
+            billing_group: getRowBillingGroup(cache, companyId, branchId),
             billing_profile: null
         };
         machineRows.set(rowId, row);
     } else if (!row.billing_group) {
-        row.billing_group = getCompanyBillingGroup(cache, companyId);
+        row.billing_group = getRowBillingGroup(cache, companyId, branchId);
     }
     return row;
 }

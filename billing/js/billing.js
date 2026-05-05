@@ -4225,14 +4225,14 @@ function mergeReadingGroups(groups) {
 function buildCompanySummaryRows(rows, months) {
     const groups = new Map();
     rows.forEach((row) => {
-        const key = String(row.company_id || row.company_name || row.account_name || row.row_id || '').trim();
+        const key = getCompanySummaryGroupKey(row);
         if (!key) return;
         if (!groups.has(key)) {
             const billingGroup = row.billing_group || null;
             groups.set(key, {
                 key,
-                company_id: row.company_id || null,
-                company_name: row.company_name || row.account_name || 'Unknown',
+                company_id: billingGroup?.company_id || row.company_id || null,
+                company_name: billingGroup?.display_name || row.company_name || row.account_name || 'Unknown',
                 billing_group: billingGroup,
                 rows: []
             });
@@ -4244,7 +4244,7 @@ function buildCompanySummaryRows(rows, months) {
     const inserted = new Set();
     const displayRows = [];
     rows.forEach((row) => {
-        const key = String(row.company_id || row.company_name || row.account_name || row.row_id || '').trim();
+        const key = getCompanySummaryGroupKey(row);
         const group = groups.get(key);
         const qualifies = group && group.rows.length > 1;
 
@@ -4338,6 +4338,12 @@ function buildCompanySummaryRows(rows, months) {
     });
 
     return displayRows;
+}
+
+function getCompanySummaryGroupKey(row) {
+    const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
+    if (groupId) return `billing-group:${groupId}`;
+    return String(row?.company_id || row?.company_name || row?.account_name || row?.row_id || '').trim();
 }
 
 function renderBranchMain(row) {
@@ -5469,7 +5475,11 @@ function getGroupedMachineRows(row, monthKey) {
         .filter((entry) => (
             entry
             && !entry.is_summary_row
-            && String(entry.company_id || '').trim() === companyId
+            && (
+                groupId
+                    ? String(entry?.billing_group?.id || entry?.billing_group?.group_id || '').trim() === groupId
+                    : String(entry.company_id || '').trim() === companyId
+            )
             && getRowBillingProfile(entry)
         ))
         .sort((left, right) => {
