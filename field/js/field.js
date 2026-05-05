@@ -24,7 +24,7 @@ const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
-const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04']);
+const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
     modelBrand: true,
@@ -1696,7 +1696,7 @@ function setLocationPinUi(row = getCurrentRow()) {
     }
 
     if (closeBypass) {
-        status.textContent = 'May 4 outage exception: this schedule can be finished without pinning. Pin is still recommended if staff are on site.';
+        status.textContent = 'May 4-5 app error exception: this schedule can be finished without pinning. Pin is still recommended if staff are on site.';
         return;
     }
 
