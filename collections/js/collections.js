@@ -5529,7 +5529,7 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                             <label>Balance</label>
                             <input id="collectorPaymentBalance" type="number" step="0.01" readonly value="${escapeHtml(currentBalance.toFixed(2))}">
                         </div>
-                        <label class="collection-check-row full collector-2307-form-row" id="collector2307PendingRow" hidden>
+                        <label class="collection-check-row full collector-2307-form-row" id="collector2307PendingRow">
                             <input id="collectorPayment2307Pending" type="checkbox" checked>
                             Pending 2307 Form
                         </label>
@@ -5952,9 +5952,8 @@ function updateCollectorPaymentBalance() {
     const taxNode = document.getElementById('collectorPaymentTaxDisplay');
     const balanceNode = document.getElementById('collectorPaymentBalanceDisplay');
 
-    if (pending2307Row) pending2307Row.hidden = deductionType !== '2307' || deductionAmount <= 0;
-    if (pending2307Input && (deductionType !== '2307' || deductionAmount <= 0)) pending2307Input.checked = false;
-    if (pending2307Input && deductionType === '2307' && deductionAmount > 0 && !pending2307Input.dataset.touched) {
+    if (pending2307Row) pending2307Row.hidden = false;
+    if (pending2307Input && !pending2307Input.dataset.touched) {
         pending2307Input.checked = true;
     }
     if (balanceInput) balanceInput.value = balance.toFixed(2);
