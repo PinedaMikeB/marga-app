@@ -4162,7 +4162,7 @@ function buildCompanySummaryRows(rows, months) {
                 );
                 const amountTotal = billedCells.reduce((sum, cell) => sum + Number(cell.amount_total || 0), 0);
                 const readingAmountTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_amount_total || 0), 0);
-                const displayAmountTotal = amountTotal > 0 ? amountTotal : readingAmountTotal;
+                const displayAmountTotal = amountTotal;
                 const readingPagesTotal = childCells.reduce((sum, cell) => sum + Number(cell.reading_pages_total || 0), 0);
                 const readingTaskCount = childCells.reduce((sum, cell) => sum + Number(cell.reading_task_count || 0), 0);
                 const billingLineCount = billedCells.reduce((sum, cell) => sum + Number(cell.billing_line_count || 0), 0);
@@ -4173,7 +4173,7 @@ function buildCompanySummaryRows(rows, months) {
                 });
                 childCells.forEach((cell, index) => {
                     const machineId = String(group.rows[index]?.machine_id || '').trim();
-                    if ((cell.billed || Number(cell.display_amount_total || cell.reading_amount_total || 0) > 0) && machineId) {
+                    if ((cell.billed || Number(cell.display_amount_total || 0) > 0) && machineId) {
                         machineIds.add(machineId);
                     }
                 });
@@ -7496,7 +7496,7 @@ function renderMatrixTable(payload) {
         const monthCells = months.map((monthKey) => {
             const cell = row.months?.[monthKey] || {};
             const isSelected = String(rowId) === String(selectedRowId) && monthKey === selectedMonth;
-            const shownAmount = Number(cell.display_amount_total || cell.amount_total || cell.reading_amount_total || 0);
+            const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
             const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
             const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
             const canOpenCalculator = (!row.is_summary_row && Boolean(getRowBillingProfile(row)))
@@ -7715,13 +7715,13 @@ async function openInvoiceDetailModal(rowId, monthKey) {
     if (!lastPayload) return;
 
     const { row, cell } = getRenderedMatrixCell(rowId, monthKey);
-    if (!row || !cell || !(cell.billed || Number(cell.display_amount_total || cell.reading_amount_total || 0) > 0)) return;
+    if (!row || !cell || !(cell.billed || Number(cell.display_amount_total || 0) > 0)) return;
 
     const title = row.display_name || row.account_name || row.company_name || 'Billing Detail';
     const readingDay = row.is_summary_row ? 'Company subtotal' : (row.reading_day ? `RD ${row.reading_day}` : 'RD -');
     const invoiceGroups = Array.isArray(cell.invoice_groups) ? cell.invoice_groups : [];
     const readingGroups = Array.isArray(cell.reading_groups) ? cell.reading_groups : [];
-    const shownAmount = Number(cell.display_amount_total || cell.amount_total || cell.reading_amount_total || 0);
+    const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
     const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
     const primaryInvoice = invoiceGroups[0] || null;
     const primaryInvoiceRef = String(primaryInvoice?.invoice_no || primaryInvoice?.invoice_ref || primaryInvoice?.invoice_id || '').trim();

@@ -1654,7 +1654,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 companyCell.reading_task_count += 1;
                 companyCell.reading_amount_total += reading.amountDue;
                 companyCell.reading_pages_total += reading.pages;
-                companyCell.display_amount_total = companyCell.amount_total > 0 ? companyCell.amount_total : companyCell.reading_amount_total;
+                companyCell.display_amount_total = companyCell.amount_total;
                 companyCell.reading_formula = companyCell.reading_formula || reading.formula;
                 companyCell.billed_basis = companyCell.amount_total > 0 ? 'invoice_and_meter' : 'meter_reading';
                 if (!companyCell.reading_groups.has(scheduleId)) companyCell.reading_groups.set(scheduleId, readingEntry);
@@ -1662,7 +1662,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 machineCell.reading_task_count += 1;
                 machineCell.reading_amount_total += reading.amountDue;
                 machineCell.reading_pages_total += reading.pages;
-                machineCell.display_amount_total = machineCell.amount_total > 0 ? machineCell.amount_total : machineCell.reading_amount_total;
+                machineCell.display_amount_total = machineCell.amount_total;
                 machineCell.reading_formula = machineCell.reading_formula || reading.formula;
                 machineCell.billed_basis = machineCell.amount_total > 0 ? 'invoice_and_meter' : 'meter_reading';
                 if (machId) machineCell.machine_ids.add(machId);
@@ -1858,9 +1858,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 cell.skipped = isPending;
             }
 
-            cell.display_amount_total = Number(cell.amount_total || 0) > 0
-                ? Number(cell.amount_total || 0)
-                : Number(cell.reading_amount_total || 0);
+            cell.display_amount_total = Number(cell.amount_total || 0);
             if (!cell.billed_basis || cell.billed_basis === 'none') {
                 if (Number(cell.amount_total || 0) > 0 && Number(cell.reading_amount_total || 0) > 0) cell.billed_basis = 'invoice_and_meter';
                 else if (Number(cell.amount_total || 0) > 0) cell.billed_basis = 'invoice';
