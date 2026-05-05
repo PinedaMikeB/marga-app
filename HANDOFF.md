@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-04-29
+Last Updated: 2026-05-05
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -251,6 +251,25 @@ Important Collections SN rule:
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-05-05 - Field Customer Location Pin Permission Hotfix
+- Urgent production issue: Field App could not pin customer location and therefore could not close a ticket. Mobile alert showed `Failed to pin customer location: Missing or insufficient permissions.`
+- Root cause: the new helper collections `marga_field_visit_events` / `marga_location_frontage_photos` were not allowed by the current Firestore legacy `tbl_.*` rules.
+- Local commit `e6b5c0d` fixes the close flow:
+  - writes Field GPS events/photos to `tbl_field_visit_events` and `tbl_location_frontage_photos`
+  - saves the schedule proof first so ticket closure is not blocked by optional branch/event helper writes
+  - keeps branch coordinate update best-effort and marks `field_customer_location_branch_update_status = pending_admin_sync` if branch master update fails
+  - falls back to storing compressed frontage photo data on the schedule if the helper photo collection write fails
+  - Service Progress reads both `tbl_field_visit_events` and legacy `marga_field_visit_events`
+- Cache-busted live scripts:
+  - Field: `field/js/field.js?v=20260505-location-pin-permission-fix-1`
+  - Service: `service/js/dispatch-board.js?v=20260505-field-events-tbl-1`
+- Validation passed:
+  - `node --check field/js/field.js`
+  - `node --check service/js/dispatch-board.js`
+  - `git diff --check -- field/index.html field/js/field.js service/index.html service/js/dispatch-board.js`
+- Netlify production hot deploy completed for site `48f0afdd-0bb5-4b04-b935-7251b49c0c54`; live URL `https://margaapp.netlify.app` was serving the new cache-busted files.
+- Normal `git push origin main` was blocked by GitHub credentials; local commit `e6b5c0d` exists and should be pushed when credentials are restored so future Git-based deploys do not overwrite the hotfix.
+
 ### 2026-04-30 - Service Progress Map And Field Location Pinning
 - Added Service Dispatch `Service Progress` map button/panel.
 - Map behavior:

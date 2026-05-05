@@ -198,8 +198,13 @@ Collections payment and 2307 rules:
   - center first on MARGA Office near Havila/Mission Hills, Antipolo
   - display the MARGA Office marker and 15-mile service radius
   - keep initial load light; do not render scheduled-client fallback pins as map markers by default
-  - use `marga_field_visit_events` for live staff GPS updates
+  - use `tbl_field_visit_events` for live staff GPS updates; Service Progress still reads old `marga_field_visit_events` rows as fallback
   - stale/no-update display should remain obvious for dispatchers
+- Field customer location pinning must not block ticket closure because of optional helper writes:
+  - schedule proof should save first
+  - branch coordinate update should be best-effort and mark `pending_admin_sync` when rules reject the branch master write
+  - frontage/building photo should fall back to compressed schedule data if the helper photo document write is rejected
+  - 2026-05-05 production hotfix is local commit `e6b5c0d`; Netlify live deploy is complete, but GitHub push was blocked by credentials and must be pushed later
 
 ## Releasing Rules
 - Releasing exists as `releasing/` and is live as of 2026-04-23.
