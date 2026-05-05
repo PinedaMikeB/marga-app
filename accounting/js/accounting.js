@@ -116,7 +116,7 @@ async function loadAccountingData() {
             fetchCollectionRows('tbl_contractmain', 1000, 80, ['id', 'contract_id', 'category_id']),
             fetchCollectionRows('tbl_contractdep', 1000, 80, ['id', 'branch_id']),
             fetchCollectionRows('tbl_billing', 1000, 330, ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'totalamount', 'amount', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date', 'assigned', 'assigned_to', 'category', 'ctgry']),
-            fetchCollectionRows('tbl_paymentinfo', 1000, 270, ['id', 'invoice_id', 'invoice_num', 'invoice_no', 'payment_amt', 'payment_amount', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'tax_2307', 'deduction_amount', 'tax_form_status', 'checkpayment_id', 'check_number', 'check_date', 'bank']),
+            fetchCollectionRows('tbl_paymentinfo', 1000, 270, ['id', 'invoice_id', 'invoice_num', 'invoice_no', 'client', 'category', 'invoice_amt', 'invoice_date', 'printed_or', 'assigned', 'payment_amt', 'payment_amount', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'payment_status', 'tax_2307', 'deduction_amount', 'tax_form_status', 'checkpayment_id', 'check_number', 'check_amt', 'check_date', 'account_bank', 'bank']),
             fetchCollectionRows('tbl_checkpayments', 1000, 80, ['id', 'payments_id', 'payment_id', 'invoice_id', 'check_number', 'bank', 'account_bank', 'bank_name', 'check_amt', 'check_amount', 'check_date'])
         ]);
 
@@ -232,28 +232,28 @@ function buildCollectionAccountingRow(payment) {
         || ACCOUNTING_STATE.checksByInvoiceId.get(invoiceKey)
         || {};
     const paymentType = normalizePaymentType(payment.payment_type, check);
-    const invoiceAmount = Number(invoice.invoiceAmount || payment.invoice_amt || payment.amount || 0);
+    const invoiceAmount = Number(payment.invoice_amt || invoice.invoiceAmount || payment.amount || 0);
 
     return {
         id: firstValue(payment.id, payment._docId),
         invoiceNo: firstValue(payment.invoice_num, payment.invoice_no, payment.invoice_id, invoice.invoiceNo),
-        client: firstValue(invoice.client, payment.client, payment.company),
-        category: firstValue(invoice.category, payment.category),
+        client: firstValue(payment.client, payment.company, invoice.client),
+        category: firstValue(payment.category, invoice.category),
         invoiceAmount,
-        invoiceDate: toDateKey(normalizeDate(invoice.invoiceDate)) || '',
-        printedOr: firstValue(payment.ornum, payment.or_number, payment.printed_or),
+        invoiceDate: toDateKey(normalizeDate(firstValue(payment.invoice_date, invoice.invoiceDate))) || '',
+        printedOr: firstValue(payment.printed_or, payment.ornum, payment.or_number),
         assigned: firstValue(payment.assigned, payment.assigned_to, invoice.assigned),
         datePaid: toDateKey(normalizeDate(firstValue(payment.date_paid, payment.tax_date_paid, payment.date_deposit))) || '',
         dateDeposit: toDateKey(normalizeDate(firstValue(payment.date_deposit, payment.date_paid))) || '',
         paidAmount,
         paymentType,
-        status: buildPaymentStatus(payment),
+        status: firstValue(payment.payment_status, buildPaymentStatus(payment)),
         balance: Number(payment.balance_amt || 0),
         ewt,
         checkNumber: firstValue(check.check_number, payment.check_number),
-        checkAmount: Number(check.check_amt || check.check_amount || (paymentType === 'CHECK' ? paidAmount : 0) || 0),
+        checkAmount: Number(check.check_amt || check.check_amount || payment.check_amt || (paymentType === 'CHECK' ? paidAmount : 0) || 0),
         checkDate: toDateKey(normalizeDate(firstValue(check.check_date, payment.check_date))) || '',
-        accountBank: firstValue(check.bank, check.account_bank, check.bank_name, payment.bank),
+        accountBank: firstValue(payment.account_bank, check.account_bank, check.bank, check.bank_name, payment.bank),
         sortDate: normalizeDate(firstValue(payment.date_deposit, payment.date_paid, payment.tax_date_paid))
     };
 }
