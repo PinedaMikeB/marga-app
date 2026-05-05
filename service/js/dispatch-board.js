@@ -5,7 +5,8 @@ if (!MargaAuth.requireAccess('service')) {
 const OPS_MAX_TASK_ROWS = 300;
 const OPS_QUERY_LIMIT = 5000;
 const OPS_CARRYOVER_DAYS = 14;
-const SERVICE_PROGRESS_EVENT_COLLECTION = 'marga_field_visit_events';
+const SERVICE_PROGRESS_EVENT_COLLECTION = 'tbl_field_visit_events';
+const SERVICE_PROGRESS_EVENT_FALLBACK_COLLECTION = 'marga_field_visit_events';
 const SERVICE_PROGRESS_STALE_MINUTES = 120;
 const SERVICE_PROGRESS_OFFICE = {
     name: 'MARGA Office - Havila, Antipolo',
@@ -3510,12 +3511,16 @@ async function loadOperationsBoard() {
         const start = `${selectedDate} 00:00:00`;
         const end = `${selectedDate} 23:59:59`;
 
-        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs, visitEventDocs] = await Promise.all([
+        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs, visitEventDocs, fallbackVisitEventDocs] = await Promise.all([
             queryByDateRange('tbl_schedule', 'task_datetime', { start, end }),
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange('tbl_schedtime', 'schedule_date', { start, end }),
             queryByDateRange(SERVICE_PROGRESS_EVENT_COLLECTION, 'local_date', {
+                start: selectedDate,
+                end: selectedDate
+            }).catch(() => []),
+            queryByDateRange(SERVICE_PROGRESS_EVENT_FALLBACK_COLLECTION, 'local_date', {
                 start: selectedDate,
                 end: selectedDate
             }).catch(() => [])
@@ -3536,7 +3541,10 @@ async function loadOperationsBoard() {
             });
 
         const schedtimeRows = schedtimeDocs.map(parseFirestoreDoc).filter(Boolean);
-        const visitEventRows = visitEventDocs.map(parseFirestoreDoc).filter(Boolean);
+        const visitEventRows = [
+            ...visitEventDocs.map(parseFirestoreDoc).filter(Boolean),
+            ...fallbackVisitEventDocs.map(parseFirestoreDoc).filter(Boolean)
+        ];
 
         opsState.selectedDate = selectedDate;
         opsState.allRows = sortedRows;

@@ -22,8 +22,8 @@ const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
-const FIELD_VISIT_EVENT_COLLECTION = 'marga_field_visit_events';
-const LOCATION_PHOTO_COLLECTION = 'marga_location_frontage_photos';
+const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
+const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
     modelBrand: true,
@@ -2873,23 +2873,45 @@ async function pinCustomerLocation() {
         };
 
         if (photoUpload.dataUrl) {
-            await setDocument(LOCATION_PHOTO_COLLECTION, eventId, {
-                id: eventId,
-                schedule_id: Number(row.id || 0) || 0,
-                staff_id: staffId,
-                branch_id: branchId,
-                company_id: Number(row.company_id || 0) || 0,
-                created_at: nowIso,
-                image_data_url: photoUpload.dataUrl,
-                image_size: photoUpload.size,
-                image_type: photoUpload.type,
-                source: 'field_app'
-            });
+            try {
+                await setDocument(LOCATION_PHOTO_COLLECTION, eventId, {
+                    id: eventId,
+                    schedule_id: Number(row.id || 0) || 0,
+                    staff_id: staffId,
+                    branch_id: branchId,
+                    company_id: Number(row.company_id || 0) || 0,
+                    created_at: nowIso,
+                    image_data_url: photoUpload.dataUrl,
+                    image_size: photoUpload.size,
+                    image_type: photoUpload.type,
+                    source: 'field_app'
+                });
+            } catch (photoDocError) {
+                console.warn('Location frontage fallback photo document failed; continuing with schedule proof.', photoDocError);
+                schedulePatch.field_customer_location_photo_data_url = photoUpload.dataUrl;
+                branchPatch.location_frontage_photo_doc_id = '';
+                schedulePatch.field_customer_location_photo_doc_id = '';
+                eventPayload.frontage_photo_doc_id = '';
+            }
         }
 
-        await patchDocument('tbl_branchinfo', branchId, branchPatch);
         await patchDocument('tbl_schedule', row.id, schedulePatch);
-        await setDocument(FIELD_VISIT_EVENT_COLLECTION, eventId, eventPayload);
+        try {
+            await patchDocument('tbl_branchinfo', branchId, branchPatch);
+        } catch (branchError) {
+            console.warn('Branch master location update failed; schedule proof was saved.', branchError);
+            schedulePatch.field_customer_location_branch_update_status = 'pending_admin_sync';
+            schedulePatch.field_customer_location_branch_update_error = clampText(branchError?.message || branchError, 180);
+            await patchDocument('tbl_schedule', row.id, {
+                field_customer_location_branch_update_status: schedulePatch.field_customer_location_branch_update_status,
+                field_customer_location_branch_update_error: schedulePatch.field_customer_location_branch_update_error
+            });
+        }
+        try {
+            await setDocument(FIELD_VISIT_EVENT_COLLECTION, eventId, eventPayload);
+        } catch (eventError) {
+            console.warn('Field visit event write failed; schedule proof was saved.', eventError);
+        }
 
         const branch = caches.branch.get(String(branchId)) || {};
         Object.assign(branch, branchPatch);
