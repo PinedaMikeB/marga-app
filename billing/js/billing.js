@@ -306,6 +306,15 @@ function formatIsoDate(date) {
     return `${year}-${month}-${day}`;
 }
 
+function firstIsoDate(...values) {
+    for (const value of values) {
+        const date = asValidDate(value);
+        const formatted = formatIsoDate(date);
+        if (formatted) return formatted;
+    }
+    return '';
+}
+
 function formatUsDate(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -2560,7 +2569,13 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         machineModel: modelName || row?.machine_label || 'N/A',
         machineSerial: serialNumber || groupedSerialNumbers.join(', ') || row?.serial_number || 'N/A',
         contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
-        presentReadingDate: cell?.task_date ? formatIsoDate(asValidDate(cell.task_date)) : '',
+        presentReadingDate: firstIsoDate(
+            cell?.task_date,
+            readingGroup?.task_date,
+            readingGroup?.present_reading_date,
+            readingGroup?.reading_date,
+            period.endDate
+        ),
         previousReadingDate: readingGroup?.previous_reading_date ? formatIsoDate(asValidDate(readingGroup.previous_reading_date)) : '',
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
@@ -2620,7 +2635,13 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         machineModel: modelName || row?.machine_label || 'N/A',
         machineSerial: serialNumber || groupedSerialNumbers.join(', ') || row?.serial_number || 'N/A',
         contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
-        presentReadingDate: context?.targetCell?.task_date ? formatIsoDate(asValidDate(context.targetCell.task_date)) : '',
+        presentReadingDate: firstIsoDate(
+            context?.targetCell?.task_date,
+            context?.targetReadingGroup?.task_date,
+            estimate?.taskDate,
+            estimate?.readingDate,
+            period.endDate
+        ),
         previousReadingDate: context?.latestPriorGroup?.task_date ? formatIsoDate(asValidDate(context.latestPriorGroup.task_date)) : '',
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
