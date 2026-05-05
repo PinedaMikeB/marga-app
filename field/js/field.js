@@ -1036,6 +1036,59 @@ function isFinishedOrCancelled(row) {
     return routeStatus === 0;
 }
 
+function isClosedPlannerRow(row) {
+    const statusValues = [
+        row?.planner_status,
+        row?.task_status,
+        row?.route_status,
+        row?.status
+    ].map((value) => String(value || '').trim().toLowerCase());
+    if (statusValues.some((value) => ['closed', 'finished', 'completed', 'done'].includes(value))) return true;
+    return Boolean(normalizeLegacyDateTime(row?.date_finished || row?.closed_at || row?.completed_at));
+}
+
+function getPlannerLinkedScheduleDocIds(row) {
+    const plannerId = String(row?._docId || row?.id || '').trim();
+    const derivedNumericId = plannerId ? String(Number(String(plannerId).replace(/\D/g, '').slice(-12) || 0) || '') : '';
+    const ids = [
+        row?.schedule_task_doc_id,
+        row?.schedule_doc_id,
+        row?.field_schedule_doc_id,
+        row?.schedule_task_id,
+        derivedNumericId
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+    return [...new Set(ids)];
+}
+
+async function getClosedPlannerSourceIds(plannerRows = []) {
+    const sourceIds = new Set();
+    const checks = [];
+
+    plannerRows.forEach((row) => {
+        const plannerId = String(row?._docId || row?.id || '').trim();
+        if (!plannerId) return;
+        if (isClosedPlannerRow(row)) {
+            sourceIds.add(plannerId);
+            return;
+        }
+        getPlannerLinkedScheduleDocIds(row).forEach((docId) => {
+            checks.push({ plannerId, docId });
+        });
+    });
+
+    if (!checks.length) return sourceIds;
+
+    const results = await Promise.all(checks.map(({ plannerId, docId }) => (
+        fetchDoc('tbl_schedule', docId)
+            .then((schedule) => ({ plannerId, schedule }))
+            .catch(() => ({ plannerId, schedule: null }))
+    )));
+    results.forEach(({ plannerId, schedule }) => {
+        if (schedule && isFinishedOrCancelled(schedule)) sourceIds.add(plannerId);
+    });
+    return sourceIds;
+}
+
 function asOlderCarryoverRow(row) {
     return {
         ...row,
@@ -1222,10 +1275,12 @@ async function loadMySchedule(options = {}) {
             .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
             .map(asDirectTodayScheduleRow);
         const existingPlannerIds = new Set(directTodayRows.map((row) => String(row.field_billing_schedule_doc_id || row.source_planner_doc_id || '').trim()).filter(Boolean));
+        const closedPlannerIds = await getClosedPlannerSourceIds(plannerSourceRows);
         const plannerTodayRows = plannerSourceRows
             .filter((row) => String(row.department || '') === 'billing')
             .filter((row) => Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) === Number(state.staffId || 0))
             .filter((row) => !existingPlannerIds.has(String(row._docId || row.id || '').trim()))
+            .filter((row) => !closedPlannerIds.has(String(row._docId || row.id || '').trim()))
             .map(plannerRowToFieldSchedule);
         const todayRows = [...routeBoundTodayRows, ...directTodayRows, ...plannerTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
@@ -3062,6 +3117,22 @@ async function closeTask() {
     button.disabled = true;
     try {
         await patchDocument('tbl_schedule', row.id, payload);
+        if (row.source_planner_doc_id) {
+            try {
+                await patchDocument(SCHEDULE_PLANNER_COLLECTION, row.source_planner_doc_id, {
+                    planner_status: 'closed',
+                    task_status: 'closed',
+                    route_status: 'closed',
+                    date_finished: form.timeOutDb,
+                    closed_at: nowIso,
+                    closed_by: staffId,
+                    field_closed_schedule_id: Number(row.id || 0) || 0,
+                    field_closed_at: nowIso
+                });
+            } catch (plannerError) {
+                console.warn('Planner row close update failed; schedule was closed.', plannerError);
+            }
+        }
         const routeCollection = routeCollectionForRow(row);
         if (routeCollection && row.route_doc_id) {
             try {
