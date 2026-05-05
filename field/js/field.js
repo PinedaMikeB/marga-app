@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dateInput.value = formatDateYmd(new Date());
 
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
+    document.getElementById('fieldForwardTodayBtn')?.addEventListener('click', forwardPendingSchedulesToToday);
     document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
     });
@@ -583,6 +584,7 @@ function updateSubtitle() {
 
 function renderActiveView() {
     updateTabControls();
+    updateForwardTodayButton();
     renderKpis(activeRows());
     renderList();
     updateSubtitle();
@@ -608,8 +610,64 @@ function getRouteTaskDateTime(row) {
     return String(row?.task_datetime || '').trim();
 }
 
+function getRouteTaskDateYmd(row) {
+    const taskDate = getRouteTaskDateTime(row).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(taskDate) ? taskDate : '';
+}
+
+function routeTimePart(row) {
+    const source = String(getRouteTaskDateTime(row) || row?.original_sched || '').trim();
+    const time = source.slice(11, 19);
+    if (!/^\d{2}:\d{2}/.test(time)) return '08:00:00';
+    return time.length >= 8 ? time.slice(0, 8) : `${time}:00`;
+}
+
+function routeDateTimeFor(row, targetDate) {
+    return `${targetDate} ${routeTimePart(row)}`;
+}
+
+function routeDocIdFor(scheduleId, targetDate) {
+    const datePart = String(targetDate || '').replace(/[^0-9]/g, '');
+    const schedulePart = String(Number(scheduleId || 0) || 0).padStart(6, '0').slice(-6);
+    return String(Number(`${datePart}${schedulePart}`));
+}
+
 function getAssignedStaffId(row) {
     return Number(row?.route_tech_id || row?.tech_id || 0);
+}
+
+function isForwardablePastPendingRow(row, targetDate = localDateYmd()) {
+    if (!row) return false;
+    const scheduleId = Number(row.id || row._docId || 0);
+    if (!scheduleId) return false;
+    if (getAssignedStaffId(row) !== Number(state.staffId || 0)) return false;
+    if (isFinishedOrCancelled(row)) return false;
+    const status = getStatusKey(row);
+    if (status !== 'pending' && status !== 'carryover') return false;
+    const taskDate = getRouteTaskDateYmd(row);
+    return Boolean(taskDate && taskDate < targetDate);
+}
+
+function getForwardablePastPendingRows(targetDate = localDateYmd()) {
+    const unique = new Map();
+    state.rows.forEach((row) => {
+        if (!isForwardablePastPendingRow(row, targetDate)) return;
+        const scheduleId = Number(row.id || row._docId || 0);
+        if (!unique.has(scheduleId)) unique.set(scheduleId, row);
+    });
+    return [...unique.values()];
+}
+
+function updateForwardTodayButton() {
+    const button = document.getElementById('fieldForwardTodayBtn');
+    if (!button) return;
+    const targetDate = localDateYmd();
+    const count = getForwardablePastPendingRows(targetDate).length;
+    button.hidden = count === 0;
+    button.disabled = false;
+    button.textContent = count > 0
+        ? `Forward ${count} Pending to Today`
+        : 'Forward Pending to Today';
 }
 
 function pickLatestRouteRows(rows, selectedDate) {
@@ -2567,6 +2625,114 @@ function routeCollectionForRow(row) {
     if (source.includes('printed')) return ROUTE_COLLECTION_PRIMARY;
     if (Number(row?.route_id || 0) > 0 || row?.route_doc_id) return ROUTE_COLLECTION_FALLBACK;
     return '';
+}
+
+async function saveForwardedFieldRoute(row, targetDate) {
+    const scheduleId = Number(row.id || row._docId || 0) || 0;
+    if (!scheduleId) throw new Error('This task has no linked schedule ID.');
+    const staffId = Number(getAssignedStaffId(row) || state.staffId || 0) || 0;
+    if (!staffId) throw new Error(`Schedule ${scheduleId} has no assigned staff ID.`);
+
+    const scheduleDocId = String(row._docId || row.id || '').trim();
+    if (!scheduleDocId || scheduleDocId === '0') throw new Error(`Schedule ${scheduleId} has no valid Firestore document ID.`);
+
+    const targetDateTime = routeDateTimeFor(row, targetDate);
+    const routeDocId = routeDocIdFor(scheduleId, targetDate);
+    const nowIso = new Date().toISOString();
+    const previousDateTime = getRouteTaskDateTime(row);
+    const user = MargaAuth.getUser();
+    const actor = String(user?.name || user?.username || user?.email || `Staff ${staffId}`).trim();
+
+    await setDocument(ROUTE_COLLECTION_FALLBACK, routeDocId, {
+        id: Number(routeDocId),
+        schedule_id: scheduleId,
+        tech_id: staffId,
+        task_datetime: targetDateTime,
+        status: 1,
+        iscancelled: 0,
+        date_finished: ZERO_DATETIME,
+        remarks: String(row.route_remarks || row.remarks || row.caller || '').trim(),
+        forwarded_from_date: previousDateTime.slice(0, 10),
+        forwarded_from_schedule_id: scheduleId,
+        forwarded_by: actor,
+        forwarded_at: nowIso,
+        forwarded_source: 'field_app',
+        timestmp: nowIso,
+        bridge_pushed_at: nowIso
+    });
+
+    const schedulePatch = {
+        task_datetime: targetDateTime,
+        tech_id: staffId,
+        date_finished: ZERO_DATETIME,
+        closedby: 0,
+        field_forwarded_to_today: 1,
+        field_forwarded_from_datetime: previousDateTime,
+        field_forwarded_at: nowIso,
+        field_forwarded_by: staffId,
+        field_updated_at: nowIso,
+        field_updated_by: staffId,
+        bridge_updated_at: nowIso,
+        bridge_updated_by: staffId
+    };
+    if (!String(row.original_sched || '').trim() && previousDateTime) {
+        schedulePatch.original_sched = previousDateTime;
+    }
+    await patchDocument('tbl_schedule', scheduleDocId, schedulePatch);
+
+    applyRowPatch(scheduleId, {
+        ...schedulePatch,
+        route_id: Number(routeDocId),
+        route_doc_id: routeDocId,
+        route_source: 'Saved Carry Over',
+        route_tech_id: staffId,
+        route_task_datetime: targetDateTime,
+        route_status: 1,
+        route_iscancelled: 0,
+        route_date_finished: ZERO_DATETIME,
+        route_timestmp: nowIso,
+        route_bridge_pushed_at: nowIso
+    });
+}
+
+async function forwardPendingSchedulesToToday() {
+    const button = document.getElementById('fieldForwardTodayBtn');
+    const targetDate = localDateYmd();
+    const rows = getForwardablePastPendingRows(targetDate);
+    if (!rows.length) {
+        alert('No pending past schedules are available to forward.');
+        updateForwardTodayButton();
+        return;
+    }
+
+    const ok = confirm(`Forward ${rows.length} pending past schedule(s) to ${targetDate}?`);
+    if (!ok) return;
+
+    if (button) {
+        button.disabled = true;
+        button.textContent = `Forwarding ${rows.length}...`;
+    }
+
+    const failures = [];
+    try {
+        for (const row of rows) {
+            try {
+                await saveForwardedFieldRoute(row, targetDate);
+            } catch (error) {
+                failures.push({ row, error });
+            }
+        }
+        await loadMySchedule({ keepTab: true });
+        if (failures.length) {
+            console.warn('Field forward-to-today failures:', failures);
+            alert(`Forwarded ${rows.length - failures.length} schedule(s). ${failures.length} failed; please refresh and try again.`);
+            return;
+        }
+        alert(`Forwarded ${rows.length} pending schedule(s) to today.`);
+    } finally {
+        if (button) button.disabled = false;
+        updateForwardTodayButton();
+    }
 }
 
 async function closeTask() {
