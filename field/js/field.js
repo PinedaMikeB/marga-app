@@ -1724,6 +1724,12 @@ function canBypassLocationPinForClose(row = getCurrentRow()) {
     return LOCATION_PIN_CLOSE_BYPASS_DATES.has(getScheduleDateYmd(row));
 }
 
+function isFutureScheduleForClose(row = getCurrentRow()) {
+    const scheduleDate = getScheduleDateYmd(row);
+    const today = localDateYmd();
+    return Boolean(scheduleDate && today && scheduleDate > today);
+}
+
 function setLocationPinUi(row = getCurrentRow()) {
     const status = document.getElementById('fieldLocationPinStatus');
     const button = document.getElementById('fieldPinLocationBtn');
@@ -2772,6 +2778,9 @@ function applyRowPatch(scheduleId, patch) {
 }
 
 function getCloseTaskIssues(row, form) {
+    if (isFutureScheduleForClose(row)) {
+        return ['This schedule is for a future date. It can only be marked Finished on the scheduled day.'];
+    }
     const { hasLocation } = getBranchLocationStatus(row);
     if (!hasLocation && !canBypassLocationPinForClose(row)) {
         return ['Pin this customer location before marking the schedule as Finished.'];
