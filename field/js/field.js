@@ -24,6 +24,7 @@ const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
+const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
     modelBrand: true,
@@ -1517,6 +1518,24 @@ function getBranchLocationStatus(row = getCurrentRow()) {
     };
 }
 
+function getScheduleDateYmd(row = getCurrentRow()) {
+    const candidates = [
+        row?.task_datetime,
+        row?.route_task_datetime,
+        row?.schedule_date,
+        row?.preferred_schedule_date
+    ];
+    for (const value of candidates) {
+        const ymd = String(value || '').trim().slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+    }
+    return '';
+}
+
+function canBypassLocationPinForClose(row = getCurrentRow()) {
+    return LOCATION_PIN_CLOSE_BYPASS_DATES.has(getScheduleDateYmd(row));
+}
+
 function setLocationPinUi(row = getCurrentRow()) {
     const status = document.getElementById('fieldLocationPinStatus');
     const button = document.getElementById('fieldPinLocationBtn');
@@ -1524,12 +1543,13 @@ function setLocationPinUi(row = getCurrentRow()) {
     if (!status || !button || !card) return;
 
     const { branch, hasLocation } = getBranchLocationStatus(row);
+    const closeBypass = canBypassLocationPinForClose(row);
     const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
     const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
     const photoInput = document.getElementById('fieldLocationPhoto');
 
-    card.classList.toggle('is-complete', hasLocation);
-    card.classList.toggle('is-required', !hasLocation);
+    card.classList.toggle('is-complete', hasLocation || closeBypass);
+    card.classList.toggle('is-required', !hasLocation && !closeBypass);
     button.hidden = hasLocation;
     button.disabled = state.modalReadOnly || hasLocation;
     if (photoInput) photoInput.disabled = state.modalReadOnly || hasLocation;
@@ -1539,6 +1559,11 @@ function setLocationPinUi(row = getCurrentRow()) {
             ? `Saved: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
             : 'Location saved for this customer.';
         status.textContent = `${coordText} No need to pin again.`;
+        return;
+    }
+
+    if (closeBypass) {
+        status.textContent = 'May 4 outage exception: this schedule can be finished without pinning. Pin is still recommended if staff are on site.';
         return;
     }
 
@@ -2365,7 +2390,7 @@ function applyRowPatch(scheduleId, patch) {
 
 function getCloseTaskIssues(row, form) {
     const { hasLocation } = getBranchLocationStatus(row);
-    if (!hasLocation) {
+    if (!hasLocation && !canBypassLocationPinForClose(row)) {
         return ['Pin this customer location before marking the schedule as Finished.'];
     }
     return [];
