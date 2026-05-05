@@ -8072,7 +8072,7 @@ function bindEvents() {
                 message: `Invoice ${invoiceNo || docId} removed ${formatCount(result.deletedCount || 0)} saved billing record${result.deletedCount === 1 ? '' : 's'} and can be replaced.`
             });
             await searchInvoiceNumber();
-            if (lastPayload) await loadDashboard();
+            if (lastPayload) await loadDashboard({ forceRefresh: true });
         } catch (error) {
             console.error('Unable to delete invoice from lookup.', error);
             showBillingSaveResult({
