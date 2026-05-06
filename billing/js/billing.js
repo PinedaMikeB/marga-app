@@ -3630,9 +3630,22 @@ function buildMeterFormPrintDocument(preview, estimate) {
         : buildSingleMachineMeterFormPrintDocument(preview, estimate, lines[0] || estimate || {});
 }
 
+function resolveMeterFormPreviousReadingDate(preview, estimate, lines = []) {
+    return firstIsoDate(
+        preview?.previousReadingDate,
+        estimate?.previousReadingDate,
+        ...(Array.isArray(lines) ? lines.flatMap((line) => [
+            line?.previousReadingDate,
+            line?.previous_reading_date,
+            line?.priorReadingDate,
+            line?.prior_reading_date
+        ]) : [])
+    );
+}
+
 function buildSingleMachineMeterFormPrintDocument(preview, estimate, line = {}) {
     const presentDate = preview?.presentReadingDate || '';
-    const previousDate = preview?.previousReadingDate || '';
+    const previousDate = resolveMeterFormPreviousReadingDate(preview, estimate, [line]);
     const difference = Number(line.rawPages || 0) || Math.max(0, Number(line.presentMeter || 0) - Number(line.previousMeter || 0));
     const spoilage = Number(line.spoilagePages || line.totalSpoilagePages || 0) || 0;
     const otherDiscount = Number(line.actualSpoilagePages || 0) || 0;
@@ -3733,7 +3746,7 @@ function buildSingleMachineMeterFormPrintDocument(preview, estimate, line = {}) 
 
 function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = []) {
     const presentDate = preview?.presentReadingDate || '';
-    const previousDate = preview?.previousReadingDate || '';
+    const previousDate = resolveMeterFormPreviousReadingDate(preview, estimate, lines);
     const totalNet = lines.reduce((sum, line) => sum + Number(line.netPages || 0), 0);
     const representativeRate = Number(lines.find((line) => Number(line.pageRate || 0) > 0)?.pageRate || estimate?.pageRate || preview?.rate || 0) || 0;
     const rows = lines.map((line) => {
@@ -6210,6 +6223,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         const lookup = priorMachineReadingByRow.get(getBillingRowLookupKey(machineRow));
         const previousMeter = Number(draft?.previous_meter ?? group?.previous_meter ?? prior?.present_meter ?? prior?.previous_meter ?? lookup?.previousMeter ?? 0) || 0;
         const presentMeter = Number(draft?.present_meter ?? group?.present_meter ?? group?.meter_reading ?? previousMeter ?? 0) || 0;
+        const previousReadingDate = firstIsoDate(group?.previous_reading_date, prior?.task_date, lookup?.taskDate);
         const meterSourceLabel = lookup?.sourceMonthLabel || prior?.month_label || group?.month_label || '';
         const hasMeterSource = Boolean(group || prior || lookup || previousMeter > 0 || presentMeter > 0);
         const missingMeterMessage = hasMeterSource
@@ -6218,7 +6232,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         const pendingPresentMessage = hasMeterSource && !group
             ? 'Enter present reading to include this machine in the invoice total.'
             : '';
-        return calculateMeterLineEstimate({
+        const line = calculateMeterLineEstimate({
             label: machineRow.branch_name || machineRow.serial_number || machineRow.machine_label || 'Machine',
             subtitle: `${machineRow.machine_label || machineRow.serial_number || 'No machine serial'}${meterSourceLabel ? ` • last meter ${meterSourceLabel}` : ''}`,
             profile: machineProfile,
@@ -6229,6 +6243,10 @@ async function openBillingCalcModal(rowId, monthKey) {
             missingMeterMessage,
             pendingPresentMessage
         });
+        return {
+            ...line,
+            previousReadingDate
+        };
     });
     const companyName = row.display_name || row.account_name || row.company_name || 'Unknown Customer';
     const branchName = row.branch_name || 'Main';
@@ -6779,7 +6797,11 @@ async function openBillingCalcModal(rowId, monthKey) {
             missingMeterMessage: seed.missingMeterMessage,
             pendingPresentMessage: seed.pendingPresentMessage
         });
-        return { ...line, profile: lineProfile };
+        return {
+            ...line,
+            profile: lineProfile,
+            previousReadingDate: seed.previousReadingDate || line.previousReadingDate || ''
+        };
     };
 
     const updateLineCardDisplay = (mode, index, line) => {
