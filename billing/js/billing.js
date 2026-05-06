@@ -3813,7 +3813,7 @@ function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = [
         @page { size: A4 portrait; margin: 9mm; }
         * { box-sizing: border-box; }
         body { margin: 0; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.18; }
-        .page { min-height: 278mm; position: relative; }
+        .page { min-height: 278mm; }
         .header-grid { display: grid; grid-template-columns: 46% 54%; border: 1px solid #222; }
         .company { min-height: 30mm; padding: 6mm 5mm; border-right: 1px solid #222; white-space: pre-line; }
         .title-box { padding-top: 8mm; text-align: center; }
@@ -3824,12 +3824,15 @@ function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = [
         .dates { padding: 7mm 5mm; }
         .date-row { display: grid; grid-template-columns: 44mm 1fr; gap: 8mm; margin-bottom: 7mm; }
         table { width: 100%; border-collapse: collapse; }
+        thead { display: table-header-group; }
+        tfoot { display: table-row-group; }
+        tr { break-inside: avoid; page-break-inside: avoid; }
         th, td { border: 1px solid #222; padding: 2mm 2mm; vertical-align: top; }
         th { font-weight: 400; text-align: left; }
         .num { text-align: right; white-space: nowrap; }
-        .summary { position: absolute; right: 0; bottom: 61mm; width: 75mm; }
+        .summary { width: 75mm; margin: 4mm 0 5mm auto; break-inside: avoid; page-break-inside: avoid; }
         .summary td { height: 8mm; }
-        .signatures { position: absolute; left: 2mm; right: 0; bottom: 0; border: 1px solid #222; display: grid; grid-template-columns: 46% 54%; }
+        .signatures { margin-top: 4mm; border: 1px solid #222; display: grid; grid-template-columns: 46% 54%; break-inside: avoid; page-break-inside: avoid; }
         .sig-col:first-child { border-right: 1px solid #222; }
         .sig-row { min-height: 14mm; padding: 3mm 4mm; border-bottom: 1px solid #222; }
         .sig-row:last-child { border-bottom: 0; }
