@@ -5119,21 +5119,34 @@ function renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa) {
 </html>`;
 }
 
-function printCollectorSoaFromModal() {
+function getCollectorSoaPayloadFromModal() {
     const status = document.getElementById('collectorSoaStatus');
     if (!currentCollectorWorkspace) {
         if (status) status.textContent = 'Open a collection follow-up first.';
-        return;
+        return null;
     }
 
     const fromDate = normalizeDate(document.getElementById('collectorSoaFromDate')?.value || '2026-01-01');
     const toDate = normalizeDate(document.getElementById('collectorSoaToDate')?.value || getTodayInputValue(0));
     if (!fromDate || !toDate || fromDate > toDate) {
         if (status) status.textContent = 'Please choose a valid from/to period.';
-        return;
+        return null;
     }
 
     const soa = buildCollectorSoaRows(currentCollectorWorkspace, fromDate, toDate);
+    return {
+        status,
+        workspace: currentCollectorWorkspace,
+        fromDate,
+        toDate,
+        soa
+    };
+}
+
+function printCollectorSoaFromModal() {
+    const payload = getCollectorSoaPayloadFromModal();
+    if (!payload) return;
+    const { status, workspace, fromDate, toDate, soa } = payload;
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
         if (status) status.textContent = 'Print popup was blocked. Allow popups and try again.';
@@ -5141,9 +5154,154 @@ function printCollectorSoaFromModal() {
     }
 
     printWindow.document.open();
-    printWindow.document.write(renderCollectorSoaPrintHtml(currentCollectorWorkspace, fromDate, toDate, soa));
+    printWindow.document.write(renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa));
     printWindow.document.close();
     if (status) status.textContent = `Prepared ${soa.rows.length.toLocaleString()} SOA row(s).`;
+    closeCollectorSoaPeriodModal();
+}
+
+function safePdfFilePart(value) {
+    return String(value || 'collection-account')
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80)
+        || 'collection-account';
+}
+
+function buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa) {
+    const context = workspace.context || {};
+    const tableBody = [
+        [
+            { text: 'Date', style: 'tableHeader' },
+            { text: 'Inv No.', style: 'tableHeader' },
+            { text: 'Amount Billed', style: 'tableHeader', alignment: 'right' },
+            { text: 'Payment', style: 'tableHeader', alignment: 'right' },
+            { text: 'Balance', style: 'tableHeader', alignment: 'right' }
+        ],
+        ...(soa.rows.length
+            ? soa.rows.map((row) => [
+                formatDate(row.date),
+                String(row.invoiceNo || '-'),
+                { text: formatCurrency(row.amountBilled), alignment: 'right' },
+                { text: formatCurrency(row.payment), alignment: 'right' },
+                { text: formatCurrency(row.balance), alignment: 'right' }
+            ])
+            : [[
+                { text: 'No SOA rows found for the selected period.', colSpan: 5, alignment: 'center', color: '#64748b', bold: true },
+                {}, {}, {}, {}
+            ]]),
+        [
+            { text: 'Totals', colSpan: 2, bold: true, fillColor: '#f8fafc' },
+            {},
+            { text: formatCurrency(soa.totals.amountBilled), alignment: 'right', bold: true, fillColor: '#f8fafc' },
+            { text: formatCurrency(soa.totals.payment), alignment: 'right', bold: true, fillColor: '#f8fafc' },
+            { text: formatCurrency(soa.totals.finalBalance), alignment: 'right', bold: true, fillColor: '#f8fafc' }
+        ]
+    ];
+
+    return {
+        pageSize: 'LETTER',
+        pageMargins: [36, 32, 36, 36],
+        defaultStyle: {
+            fontSize: 9,
+            color: '#112f4e'
+        },
+        content: [
+            {
+                columns: [
+                    {
+                        width: '*',
+                        stack: [
+                            { text: 'Statement of Account', style: 'title' },
+                            { text: context.customer || '-', style: 'accountName' },
+                            { text: context.branchName || context.accountLabel || '', style: 'meta' },
+                            { text: `Period: ${formatRangeLabel(fromDate, toDate)}`, style: 'meta' }
+                        ]
+                    },
+                    {
+                        width: 170,
+                        stack: [
+                            { text: 'MARGA Collections', alignment: 'right', style: 'metaStrong' },
+                            { text: `Generated: ${new Date().toLocaleString('en-PH')}`, alignment: 'right', style: 'meta' }
+                        ]
+                    }
+                ],
+                margin: [0, 0, 0, 12]
+            },
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 540, y2: 0, lineWidth: 1.4, lineColor: '#1e4976' }], margin: [0, 0, 0, 12] },
+            {
+                table: {
+                    headerRows: 1,
+                    widths: [78, 78, '*', '*', '*'],
+                    body: tableBody
+                },
+                layout: {
+                    hLineColor: () => '#cbd5e1',
+                    vLineColor: () => '#cbd5e1',
+                    hLineWidth: () => 0.7,
+                    vLineWidth: () => 0.7,
+                    paddingTop: () => 5,
+                    paddingBottom: () => 5,
+                    paddingLeft: () => 6,
+                    paddingRight: () => 6
+                }
+            },
+            {
+                columns: [
+                    { width: '*', text: '' },
+                    {
+                        width: 190,
+                        margin: [0, 18, 0, 0],
+                        table: {
+                            widths: ['*'],
+                            body: [[
+                                {
+                                    stack: [
+                                        { text: 'FINAL BALANCE', alignment: 'right', style: 'finalLabel' },
+                                        { text: formatCurrency(soa.totals.finalBalance), alignment: 'right', style: 'finalValue' }
+                                    ],
+                                    margin: [8, 8, 8, 8]
+                                }
+                            ]]
+                        },
+                        layout: {
+                            hLineColor: () => '#1e4976',
+                            vLineColor: () => '#1e4976',
+                            hLineWidth: () => 1.2,
+                            vLineWidth: () => 1.2
+                        }
+                    }
+                ]
+            }
+        ],
+        styles: {
+            title: { fontSize: 18, bold: true, color: '#12395f', margin: [0, 0, 0, 4] },
+            accountName: { fontSize: 10, bold: true, color: '#12395f', margin: [0, 0, 0, 2] },
+            meta: { fontSize: 8, color: '#4b6580', lineHeight: 1.2 },
+            metaStrong: { fontSize: 8, bold: true, color: '#4b6580' },
+            tableHeader: { bold: true, color: '#294e73', fillColor: '#eaf2ff', fontSize: 8 },
+            finalLabel: { fontSize: 8, bold: true, color: '#4b6580' },
+            finalValue: { fontSize: 17, bold: true, color: '#12395f', margin: [0, 3, 0, 0] }
+        }
+    };
+}
+
+function downloadCollectorSoaPdfFromModal() {
+    const payload = getCollectorSoaPayloadFromModal();
+    if (!payload) return;
+    const { status, workspace, fromDate, toDate, soa } = payload;
+
+    if (!window.pdfMake?.createPdf) {
+        if (status) status.textContent = 'PDF download library is still loading. Opening print view instead.';
+        printCollectorSoaFromModal();
+        return;
+    }
+
+    const context = workspace.context || {};
+    const fileName = `SOA-${safePdfFilePart(context.customer)}-${toDateKey(fromDate) || 'from'}-to-${toDateKey(toDate) || 'today'}.pdf`;
+    const definition = buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa);
+    window.pdfMake.createPdf(definition).download(fileName);
+    if (status) status.textContent = `Downloading PDF with ${soa.rows.length.toLocaleString()} SOA row(s).`;
     closeCollectorSoaPeriodModal();
 }
 
