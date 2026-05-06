@@ -189,6 +189,50 @@ label {
   line-height: 1.42;
 }
 
+.attachment-guide {
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.attachment-guide > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #6f64aa;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.attachment-guide p {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.42;
+}
+
+.attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attachment-grid label {
+  padding: 11px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #fff;
+  text-transform: none;
+}
+
+.attachment-grid input {
+  padding: 9px 0 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.75rem;
+}
+
 input,
 select,
 textarea {
@@ -815,6 +859,7 @@ td {
   .metric-row,
   .split-grid,
   .form-pair,
+  .attachment-grid,
   .work-detail-grid {
     grid-template-columns: 1fr;
   }

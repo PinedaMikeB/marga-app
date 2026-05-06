@@ -246,7 +246,9 @@ function selectedErrorGuide(device, troubleId, code) {
 }
 
 function errorOptionsMarkup(device, troubleId) {
-  return `<option value="">Select error status...</option>${modelTroubleErrorOptions(device, troubleId)
+  const hasMatches = matchingModelErrorGuides(device, troubleId).length > 0;
+  const placeholder = hasMatches ? '<option value="">Select error status...</option>' : "";
+  return `${placeholder}${modelTroubleErrorOptions(device, troubleId)
     .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
     .join("")}`;
 }
@@ -258,7 +260,10 @@ function refreshErrorOptions(form) {
   const errorSelect = form?.querySelector('[name="errorCode"]');
   const manualField = form?.querySelector("[data-manual-error-field]");
   if (!errorSelect) return;
+  const hasMatches = matchingModelErrorGuides(device, troubleId).length > 0;
   errorSelect.innerHTML = errorOptionsMarkup(device, troubleId);
+  errorSelect.disabled = Boolean(troubleId && !hasMatches);
+  if (troubleId && !hasMatches) errorSelect.value = "None";
   renderErrorGuide(form);
   if (manualField) {
     manualField.classList.add("hidden");
@@ -280,13 +285,13 @@ function renderErrorGuide(form) {
   const guideEl = form?.querySelector("[data-error-guide]");
   if (!guideEl) return;
   if (!guide) {
-    if (troubleId && !hasGuides && !code) {
+    if (troubleId && !hasGuides) {
       const trouble = customerTroubles.find((item) => item.id === troubleId);
       guideEl.classList.remove("hidden");
       guideEl.innerHTML = `
-        <span>No LCD guide listed</span>
+        <span>No LCD error required</span>
         <strong>${escapeHtml(trouble?.label || "Selected trouble")}</strong>
-        <p>No model-specific LCD message is listed for this trouble. Choose None if the machine shows no error message, or Other / not listed if the display shows a message not in our guide.</p>
+        <p>No model-specific LCD message is listed for this trouble, so the error field is set to None. Please upload a control panel photo or sample print if it helps show the issue.</p>
       `;
       return;
     }
@@ -430,6 +435,15 @@ function renderService() {
         <label class="manual-error-field hidden" data-manual-error-field>Manual error code / message <input name="manualErrorCode" type="text" placeholder="Type the exact error shown on the machine"></label>
         <div class="error-guide hidden" data-error-guide></div>
         <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
+        <div class="attachment-guide">
+          <span>Attachments</span>
+          <p>Please upload one clear image if available. This helps Marga check the issue before dispatch.</p>
+          <div class="attachment-grid">
+            <label>Control Panel <input name="controlPanelImage" type="file" accept="image/*" capture="environment"></label>
+            <label>Sample Print <input name="samplePrintImage" type="file" accept="image/*" capture="environment"></label>
+            <label>Others <input name="otherAttachment" type="file" accept="image/*,.pdf"></label>
+          </div>
+        </div>
         <button class="primary-action" type="submit">Submit request</button>
       </form>
     `, "wide")}
@@ -655,6 +669,9 @@ function bindEvents() {
     const manualError = String(formData.get("manualErrorCode") || "").trim();
     const errorCode = selectedError === MANUAL_ERROR_VALUE ? manualError : selectedError;
     const guide = selectedErrorGuide(device, troubleId, errorCode);
+    const attachmentSummary = ["controlPanelImage", "samplePrintImage", "otherAttachment"]
+      .map((name) => form.querySelector(`[name="${name}"]`)?.files?.[0]?.name)
+      .filter(Boolean);
     const request = createPortalRequest({
       type: form.dataset.requestForm === "toner" ? "Toner / Ink" : "Service",
       category: form.dataset.requestForm === "toner" ? formData.get("category") : "Customer Reported Trouble",
@@ -670,7 +687,8 @@ function bindEvents() {
       branch: device?.branch || "Assigned machine",
       machine: device ? `${device.serial} - ${device.model}` : serial,
       concern: formData.get("concern"),
-      notes: formData.get("concern")
+      notes: formData.get("concern"),
+      attachments: attachmentSummary
     });
     form.reset();
     setView("service");
