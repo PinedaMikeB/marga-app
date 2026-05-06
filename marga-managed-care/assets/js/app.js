@@ -101,6 +101,24 @@ const pilotAccess = [
   }
 ];
 
+const customerTroubles = [
+  "Paper jam",
+  "Blurred print or copy",
+  "Light print or faded output",
+  "Dark print or dirty output",
+  "Lines, streaks, or spots on output",
+  "Error code / warning message",
+  "No power",
+  "Cannot print",
+  "Slow printing or copying",
+  "Noisy machine",
+  "Scanner or feeder problem",
+  "Toner / ink leak",
+  "Low toner or ink alert",
+  "Network or connection problem",
+  "Other concern"
+];
+
 const state = {
   authed: false,
   currentView: "dashboard",
@@ -187,7 +205,7 @@ function serviceTickets() {
     id: request.id,
     serial: request.serial,
     branch: request.branch,
-    issue: request.concern || request.notes || request.type,
+    issue: request.errorCode ? `${request.trouble}: ${request.errorCode}` : (request.trouble || request.concern || request.notes || request.type),
     status: request.status,
     updated: request.updated || "Just now",
     source: request.source
@@ -296,8 +314,12 @@ function renderService() {
     ${card("Create Request", `
       <form class="request-form" data-request-form="service">
         <label>Machine <select name="serial" required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
-        <label>Request type <select name="category" required><option>Service / Repair</option><option>Preventive Maintenance</option><option>Cleaning</option><option>Unit Replacement</option><option>General Request</option></select></label>
-        <label>Concern <textarea name="concern" placeholder="Describe the issue or request" required></textarea></label>
+        <label>Trouble <select name="trouble" data-trouble-select required>
+          <option value="">Select observed problem...</option>
+          ${customerTroubles.map((trouble) => `<option>${escapeHtml(trouble)}</option>`).join("")}
+        </select></label>
+        <label class="conditional-field hidden" data-error-code-field>Error code or message <input name="errorCode" type="text" placeholder="Example: E50, Replace Drum, Paper Jam Tray 1"></label>
+        <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
         <button class="primary-action" type="submit">Submit request</button>
       </form>
     `, "wide")}
@@ -519,7 +541,9 @@ function bindEvents() {
     const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
     const request = createPortalRequest({
       type: form.dataset.requestForm === "toner" ? "Toner / Ink" : "Service",
-      category: formData.get("category"),
+      category: form.dataset.requestForm === "toner" ? formData.get("category") : "Customer Reported Trouble",
+      trouble: formData.get("trouble") || formData.get("category"),
+      errorCode: formData.get("errorCode"),
       serial,
       branch: device?.branch || "Assigned machine",
       machine: device ? `${device.serial} - ${device.model}` : serial,
@@ -534,6 +558,20 @@ function bindEvents() {
     notice.className = "portal-notice";
     notice.textContent = `${request.id} was saved and queued for Marga Service.`;
     $("#content").prepend(notice);
+  });
+  document.body.addEventListener("change", (event) => {
+    const troubleSelect = event.target.closest("[data-trouble-select]");
+    if (!troubleSelect) return;
+    const form = troubleSelect.closest("[data-request-form]");
+    const errorField = form?.querySelector("[data-error-code-field]");
+    if (!errorField) return;
+    const shouldShow = troubleSelect.value === "Error code / warning message";
+    errorField.classList.toggle("hidden", !shouldShow);
+    const input = errorField.querySelector("input");
+    if (input) {
+      input.required = shouldShow;
+      if (!shouldShow) input.value = "";
+    }
   });
   document.body.addEventListener("click", (event) => {
     const acknowledgeButton = event.target.closest("[data-ack-id]");

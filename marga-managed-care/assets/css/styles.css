@@ -149,6 +149,10 @@ label {
   text-transform: uppercase;
 }
 
+.conditional-field {
+  margin-top: -4px;
+}
+
 input,
 select,
 textarea {
