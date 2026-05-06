@@ -1,0 +1,7 @@
+model,trouble_id,trouble_label,lcd_error_message,meaning,customer_remedy,service_note,source_url,research_status
+DCP-L2540DW,49,Jamming,Jam Tray,Paper jam is detected at the paper tray.,Remove the tray and carefully remove jammed paper.,Verify paper path and rollers if repeated.,,seeded_from_user_notes
+DCP-L2540DW,49,Jamming,Jam Inside,Paper jam is detected inside the machine.,Open the cover and remove jammed paper from inside the machine.,Inspect paper path if repeated.,,seeded_from_user_notes
+DCP-L2540DW,49,Jamming,Jam Rear,Paper jam is detected at the rear cover.,Open the rear cover and remove jammed paper.,Inspect rear paper path if repeated.,,seeded_from_user_notes
+DCP-L2540DW,49,Jamming,Jam 2-sided,Paper jam is detected in the duplex path.,Remove the duplex tray or check the back area then remove jammed paper.,Inspect duplex path if repeated.,,seeded_from_user_notes
+DCP-L2540DW,177,Unable to Print,Print Unable 0A,Mechanical or internal printer fault.,Turn the printer off wait a few minutes then turn it on again. If it returns service is needed.,Dispatch technician if recurring.,,seeded_from_user_notes
+DCP-L2540DW,177,Unable to Print,Print Unable 0B,Mechanical or internal printer fault.,Turn the printer off wait a few minutes then turn it on again. If it returns service is needed.,Dispatch technician if recurring.,,seeded_from_user_notes

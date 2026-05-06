@@ -127,22 +127,220 @@ const MANUAL_ERROR_VALUE = "__manual_error__";
 
 const modelErrorCodes = [
   {
-    model: "Brother DCP-L2540DW",
-    troubleId: 177,
-    code: "0A",
-    message: "Print Unable 0A"
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 469,
+    code: "Toner Low",
+    message: "Toner Low",
+    meaning: "Toner is nearly empty.",
+    remedy: "Prepare a new toner cartridge. The machine can usually still print for a while."
   },
   {
-    model: "Brother DCP-L2540DW",
-    troubleId: 177,
-    code: "0B",
-    message: "Print Unable 0B"
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 469,
+    code: "Replace Toner",
+    message: "Replace Toner",
+    meaning: "Toner cartridge is empty or at end of life.",
+    remedy: "Replace the toner cartridge. Printing stops until toner is replaced."
   },
   {
-    model: "Brother DCP-L2540DW",
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 469,
+    code: "Toner Ended",
+    message: "Toner Ended",
+    meaning: "Toner is fully used.",
+    remedy: "Replace the toner cartridge."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 469,
+    code: "No Toner",
+    message: "No Toner",
+    meaning: "Toner and drum assembly is not detected properly.",
+    remedy: "Remove the toner and drum assembly, reinstall the toner into the drum, then reinstall the assembly."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 37,
+    code: "Drum !",
+    message: "Drum !",
+    meaning: "Corona wire needs cleaning or the drum/toner is not seated properly.",
+    remedy: "Clean the corona wire and reinstall the toner into the drum."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 38,
+    code: "Drum End Soon",
+    message: "Drum End Soon",
+    meaning: "Drum is near end of life.",
+    remedy: "Prepare a replacement drum unit."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 38,
+    code: "Replace Drum",
+    message: "Replace Drum",
+    meaning: "Drum unit needs replacement.",
+    remedy: "Replace the drum unit and reset the drum counter."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 38,
+    code: "Drum Stop",
+    message: "Drum Stop",
+    meaning: "Drum can no longer print reliably.",
+    remedy: "Replace the drum unit."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 102,
+    code: "Cover is Open",
+    message: "Cover is Open",
+    meaning: "Front cover, back cover, or ADF cover is not closed.",
+    remedy: "Close all covers firmly."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
     troubleId: 49,
-    code: "JAM",
-    message: "Paper jam message shown"
+    code: "Jam Tray",
+    message: "Jam Tray",
+    meaning: "Paper jam is detected at the paper tray.",
+    remedy: "Remove the tray and carefully remove jammed paper."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 49,
+    code: "Jam Inside",
+    message: "Jam Inside",
+    meaning: "Paper jam is detected inside the machine.",
+    remedy: "Open the cover and remove jammed paper from inside the machine."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 49,
+    code: "Jam Rear",
+    message: "Jam Rear",
+    meaning: "Paper jam is detected at the rear cover.",
+    remedy: "Open the rear cover and remove jammed paper."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 49,
+    code: "Jam 2-sided",
+    message: "Jam 2-sided",
+    meaning: "Paper jam is detected in the duplex path.",
+    remedy: "Remove the duplex tray or check the back area, then remove jammed paper."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 216,
+    code: "Document Jam",
+    message: "Document Jam",
+    meaning: "Paper or document is stuck in the ADF scanner feeder.",
+    remedy: "Open the ADF and remove the jammed document."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 62,
+    code: "No Paper",
+    message: "No Paper",
+    meaning: "Paper tray is empty or paper is not feeding.",
+    remedy: "Add paper, adjust the paper guides, and reinsert the tray."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 62,
+    code: "Manual Feed",
+    message: "Manual Feed",
+    meaning: "Printer expects paper in the manual feed slot.",
+    remedy: "Insert paper in the manual feed slot or change the paper source setting."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 62,
+    code: "Size Mismatch",
+    message: "Size Mismatch",
+    meaning: "Paper size in the tray does not match the print setting.",
+    remedy: "Set the same paper size in the printer menu and computer print settings."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 102,
+    code: "2-sided Disabled",
+    message: "2-sided Disabled",
+    meaning: "Duplex tray or back cover is not properly installed or closed.",
+    remedy: "Reinsert the duplex tray and close the back cover."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 177,
+    code: "Print Data Full",
+    message: "Print Data Full",
+    meaning: "Printer memory is full.",
+    remedy: "Press Stop/Exit, reduce print resolution or file complexity, or print fewer pages."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 177,
+    code: "Self-Diagnostic",
+    message: "Self-Diagnostic",
+    meaning: "Fuser temperature problem: too hot or not heating correctly.",
+    remedy: "Turn the printer off, wait, then turn it on again. If the message returns, service may be needed."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 177,
+    code: "Print Unable 0A",
+    message: "Print Unable 0A",
+    meaning: "Mechanical or internal printer fault.",
+    remedy: "Turn the printer off, wait a few minutes, then turn it on again. If it returns, service is needed."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 177,
+    code: "Print Unable 0B",
+    message: "Print Unable 0B",
+    meaning: "Mechanical or internal printer fault.",
+    remedy: "Turn the printer off, wait a few minutes, then turn it on again. If it returns, service is needed."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 216,
+    code: "Scan Unable XX",
+    message: "Scan Unable XX",
+    meaning: "Scanner mechanical or internal fault.",
+    remedy: "Restart the printer. If the message returns, service is needed."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 73,
+    code: "Cooling Down",
+    message: "Cooling Down",
+    meaning: "Printer is cooling internal parts.",
+    remedy: "Wait until the printer resumes."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 177,
+    code: "Out of Memory",
+    message: "Out of Memory",
+    meaning: "Copy, scan, or print memory is full.",
+    remedy: "Reduce pages, lower resolution, or split the job."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 172,
+    code: "Disconnected",
+    message: "Disconnected",
+    meaning: "Network or USB communication is lost.",
+    remedy: "Check cable, Wi-Fi, router, and printer driver connection."
+  },
+  {
+    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
+    troubleId: 362,
+    code: "Connection Fail",
+    message: "Connection Fail",
+    meaning: "Wi-Fi setup failed.",
+    remedy: "Reconnect to Wi-Fi and check the password and router."
   }
 ];
 
@@ -232,15 +430,27 @@ function createPortalRequest(payload) {
 
 function modelTroubleErrorOptions(device, troubleId) {
   const modelKey = normalizeModel(device?.model);
-  const matches = modelErrorCodes.filter((entry) => normalizeModel(entry.model) === modelKey && Number(entry.troubleId) === Number(troubleId));
+  const matches = modelErrorCodes.filter((entry) => (
+    (entry.models || []).some((model) => normalizeModel(model) === modelKey)
+    && Number(entry.troubleId) === Number(troubleId)
+  ));
   return [
     { value: "None", label: "None" },
     ...matches.map((entry) => ({
       value: entry.code,
-      label: `${entry.message} (${entry.code})`
+      label: entry.message
     })),
     { value: MANUAL_ERROR_VALUE, label: "Other / not listed" }
   ];
+}
+
+function selectedErrorGuide(device, troubleId, code) {
+  const modelKey = normalizeModel(device?.model);
+  return modelErrorCodes.find((entry) => (
+    (entry.models || []).some((model) => normalizeModel(model) === modelKey)
+    && Number(entry.troubleId) === Number(troubleId)
+    && entry.code === code
+  )) || null;
 }
 
 function errorOptionsMarkup(device, troubleId) {
@@ -257,6 +467,7 @@ function refreshErrorOptions(form) {
   const manualField = form?.querySelector("[data-manual-error-field]");
   if (!errorSelect) return;
   errorSelect.innerHTML = errorOptionsMarkup(device, troubleId);
+  renderErrorGuide(form);
   if (manualField) {
     manualField.classList.add("hidden");
     const input = manualField.querySelector("input");
@@ -265,6 +476,28 @@ function refreshErrorOptions(form) {
       input.value = "";
     }
   }
+}
+
+function renderErrorGuide(form) {
+  const serial = form?.querySelector('[name="serial"]')?.value;
+  const troubleId = Number(form?.querySelector('[name="trouble"]')?.value || 0);
+  const code = form?.querySelector('[name="errorCode"]')?.value || "";
+  const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
+  const guide = selectedErrorGuide(device, troubleId, code);
+  const guideEl = form?.querySelector("[data-error-guide]");
+  if (!guideEl) return;
+  if (!guide) {
+    guideEl.classList.add("hidden");
+    guideEl.innerHTML = "";
+    return;
+  }
+  guideEl.classList.remove("hidden");
+  guideEl.innerHTML = `
+    <span>Initial remedy</span>
+    <strong>${escapeHtml(guide.message)}</strong>
+    <p>${escapeHtml(guide.meaning)}</p>
+    <p>${escapeHtml(guide.remedy)}</p>
+  `;
 }
 
 function serviceTickets() {
@@ -392,6 +625,7 @@ function renderService() {
           <label>Error code / message <select name="errorCode" data-error-code-select required>${errorOptionsMarkup(firstDevice, firstTroubleId)}</select></label>
         </div>
         <label class="manual-error-field hidden" data-manual-error-field>Manual error code / message <input name="manualErrorCode" type="text" placeholder="Type the exact error shown on the machine"></label>
+        <div class="error-guide hidden" data-error-guide></div>
         <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
         <button class="primary-action" type="submit">Submit request</button>
       </form>
@@ -617,6 +851,7 @@ function bindEvents() {
     const selectedError = formData.get("errorCode");
     const manualError = String(formData.get("manualErrorCode") || "").trim();
     const errorCode = selectedError === MANUAL_ERROR_VALUE ? manualError : selectedError;
+    const guide = selectedErrorGuide(device, troubleId, errorCode);
     const request = createPortalRequest({
       type: form.dataset.requestForm === "toner" ? "Toner / Ink" : "Service",
       category: form.dataset.requestForm === "toner" ? formData.get("category") : "Customer Reported Trouble",
@@ -625,6 +860,8 @@ function bindEvents() {
       customerTrouble: trouble?.label || "",
       errorCode,
       errorCodeSource: selectedError === MANUAL_ERROR_VALUE ? "Manual" : "Model Error Table",
+      errorMeaning: guide?.meaning || "",
+      customerRemedy: guide?.remedy || "",
       serial,
       model: device?.model || "",
       branch: device?.branch || "Assigned machine",
@@ -660,6 +897,7 @@ function bindEvents() {
       input.required = shouldShowManual;
       if (!shouldShowManual) input.value = "";
     }
+    renderErrorGuide(form);
   });
   document.body.addEventListener("click", (event) => {
     const acknowledgeButton = event.target.closest("[data-ack-id]");

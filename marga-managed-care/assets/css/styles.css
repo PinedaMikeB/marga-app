@@ -159,6 +159,36 @@ label {
   margin-top: -2px;
 }
 
+.error-guide {
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--lavender-strong);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fbfaff, #f4f0ff);
+}
+
+.error-guide span {
+  display: block;
+  margin-bottom: 5px;
+  color: #6f64aa;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.error-guide strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.84rem;
+}
+
+.error-guide p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.42;
+}
+
 input,
 select,
 textarea {
