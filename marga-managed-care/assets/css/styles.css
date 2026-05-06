@@ -232,6 +232,17 @@ textarea {
   font-size: 0.9rem;
 }
 
+.portal-notice {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--lavender-strong);
+  border-radius: 10px;
+  color: #272036;
+  background: linear-gradient(135deg, #fbfaff, #f1ecff);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -650,6 +661,50 @@ textarea {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.contact-panel {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.contact-panel > span {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  background: var(--active);
+  color: #272036;
+}
+
+.contact-panel svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.contact-panel strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.9rem;
+}
+
+.contact-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
 }
 
 .table-wrap {

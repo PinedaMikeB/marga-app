@@ -19,8 +19,8 @@ const demoData = {
     { serial: "X9K2108831", model: "Canon IR 2525", branch: "Records Room", usage: 6930, toner: "Watch", status: "Service Due" }
   ],
   tickets: [
-    { id: "SR-1042", branch: "Front Desk Head Office", issue: "Paper jam and faint print", status: "In Progress", updated: "Today 3:12 PM" },
-    { id: "SR-1037", branch: "Records Room", issue: "Preventive maintenance request", status: "Scheduled", updated: "Yesterday 9:40 AM" }
+    { id: "SR-1042", serial: "882026041158", branch: "Front Desk Head Office", issue: "Paper jam and faint print", status: "In Progress", updated: "Today 3:12 PM" },
+    { id: "SR-1037", serial: "X9K2108831", branch: "Records Room", issue: "Preventive maintenance request", status: "Scheduled", updated: "Yesterday 9:40 AM" }
   ],
   invoices: [
     { no: "INV-2026-0412", period: "April 2026", amount: 12850, status: "Unpaid", due: "May 10, 2026" },
@@ -40,6 +40,7 @@ const demoData = {
       ticket: "SR-1042",
       type: "Repair / Cleaning",
       status: "Awaiting Acknowledgement",
+      serial: "882026041158",
       machine: "882026041158 - Brother DCP-L2540DW",
       branch: "Front Desk Head Office",
       technician: "R. Santos",
@@ -54,6 +55,7 @@ const demoData = {
       ticket: "SR-1037",
       type: "Preventive Maintenance",
       status: "Acknowledged",
+      serial: "X9K2108831",
       machine: "X9K2108831 - Canon IR 2525",
       branch: "Records Room",
       technician: "M. Dela Cruz",
@@ -66,10 +68,44 @@ const demoData = {
   ]
 };
 
+const pilotAccess = [
+  {
+    serial: "882026041158",
+    pin: "483921",
+    account: "Singapore Medical Diagnostics",
+    accessType: "Standalone Account",
+    companyId: "demo-smd",
+    allowedSerials: ["882026041158"],
+    contactName: "Front Desk Representative",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "X9K2108831",
+    pin: "274611",
+    account: "Singapore Medical Diagnostics",
+    accessType: "Branch-Managed Account",
+    companyId: "demo-smd",
+    allowedSerials: ["X9K2108831"],
+    contactName: "Records Room Representative",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "CNB7K51044",
+    pin: "905144",
+    account: "Singapore Medical Diagnostics",
+    accessType: "Centralized Procurement Account",
+    companyId: "demo-smd",
+    allowedSerials: ["CNB7K51044", "882026041158", "X9K2108831"],
+    contactName: "Purchasing",
+    officialEmail: "service@marga.biz"
+  }
+];
+
 const state = {
   authed: false,
   currentView: "dashboard",
-  data: demoData
+  data: demoData,
+  access: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -100,6 +136,64 @@ function icon(name) {
 
 function money(value) {
   return Number(value || 0).toLocaleString("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
+}
+
+function normalizeSerial(value) {
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function requestStoreKey() {
+  return `marga_care_requests_${state.access?.companyId || "demo"}_${normalizeSerial(state.access?.serial || "all")}`;
+}
+
+function scopedDevices() {
+  if (!state.access) return state.data.devices;
+  const allowed = new Set((state.access.allowedSerials || []).map(normalizeSerial));
+  return state.data.devices.filter((device) => allowed.has(normalizeSerial(device.serial)));
+}
+
+function loadPortalRequests() {
+  try {
+    return JSON.parse(localStorage.getItem(requestStoreKey()) || "[]");
+  } catch (error) {
+    return [];
+  }
+}
+
+function savePortalRequests(requests) {
+  localStorage.setItem(requestStoreKey(), JSON.stringify(requests));
+}
+
+function createPortalRequest(payload) {
+  const requests = loadPortalRequests();
+  const now = new Date();
+  const request = {
+    id: `MC-${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, "0")}-${String(requests.length + 1).padStart(3, "0")}`,
+    source: "Managed Care App",
+    status: "Submitted",
+    createdAt: now.toISOString(),
+    updated: "Just now",
+    account: state.access?.account || state.data.account,
+    requester: state.access?.contactName || "Customer",
+    ...payload
+  };
+  savePortalRequests([request, ...requests]);
+  return request;
+}
+
+function serviceTickets() {
+  const allowed = new Set(scopedDevices().map((device) => normalizeSerial(device.serial)));
+  const saved = loadPortalRequests().map((request) => ({
+    id: request.id,
+    serial: request.serial,
+    branch: request.branch,
+    issue: request.concern || request.notes || request.type,
+    status: request.status,
+    updated: request.updated || "Just now",
+    source: request.source
+  }));
+  const demoTickets = state.data.tickets.filter((ticket) => allowed.has(normalizeSerial(ticket.serial)));
+  return [...saved, ...demoTickets];
 }
 
 function badgeClass(status) {
@@ -144,28 +238,38 @@ function setView(viewKey) {
 }
 
 function renderDashboard() {
-  const openTickets = state.data.tickets.filter((ticket) => ticket.status !== "Closed").length;
+  const tickets = serviceTickets();
+  const devices = scopedDevices();
+  const openTickets = tickets.filter((ticket) => ticket.status !== "Closed").length;
   const unpaid = state.data.invoices.filter((invoice) => invoice.status !== "Paid");
   const pendingAck = acknowledgementJobs().filter((job) => String(job.status || "").toLowerCase().includes("awaiting")).length;
 
   return `
     <section class="hero-panel">
       <div>
-        <p class="eyebrow">Live Account</p>
-        <h2>${state.data.account}</h2>
-        <p>Track service, billing, payments, meter usage, and supplies in one customer workspace.</p>
+        <p class="eyebrow">${escapeHtml(state.access?.accessType || "Live Account")}</p>
+        <h2>${escapeHtml(state.access?.account || state.data.account)}</h2>
+        <p>Track assigned machines, requests, work acknowledgement, and Marga service updates in one customer workspace.</p>
       </div>
       <button class="primary-action" type="button" data-view="service">New service request</button>
     </section>
     <section class="metric-row">
-      ${metric("Active Machines", state.data.devices.length)}
+      ${metric("Assigned Machines", devices.length)}
       ${metric("Open Requests", openTickets)}
       ${metric("Work Acknowledgement", pendingAck)}
       ${metric("Unpaid Balance", money(unpaid.reduce((sum, invoice) => sum + invoice.amount, 0)))}
     </section>
     <section class="split-grid">
-      ${card("Recent Service", timeline(state.data.tickets, "issue"))}
-      ${card("Support Updates", timeline(state.data.updates, "body"))}
+      ${card("Recent Service", timeline(tickets.slice(0, 5), "issue"))}
+      ${card("Official Marga Contact", `
+        <div class="contact-panel">
+          <span>${icon("support")}</span>
+          <div>
+            <strong>${escapeHtml(state.access?.officialEmail || "service@marga.biz")}</strong>
+            <p>Email requests are accepted. Include the machine serial number when the request is machine-related.</p>
+          </div>
+        </div>
+      `)}
     </section>
   `;
 }
@@ -186,17 +290,19 @@ function timeline(items, textKey) {
 }
 
 function renderService() {
+  const devices = scopedDevices();
+  const requests = serviceTickets();
   return `
     ${card("Create Request", `
-      <form class="request-form">
-        <label>Branch <select><option>Front Desk Head Office</option><option>Billing Office</option><option>Records Room</option></select></label>
-        <label>Machine <select>${state.data.devices.map((device) => `<option>${device.serial} - ${device.model}</option>`).join("")}</select></label>
-        <label>Concern <textarea placeholder="Describe the issue or request"></textarea></label>
-        <button class="primary-action" type="button">Prepare request</button>
+      <form class="request-form" data-request-form="service">
+        <label>Machine <select name="serial" required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
+        <label>Request type <select name="category" required><option>Service / Repair</option><option>Preventive Maintenance</option><option>Cleaning</option><option>Unit Replacement</option><option>General Request</option></select></label>
+        <label>Concern <textarea name="concern" placeholder="Describe the issue or request" required></textarea></label>
+        <button class="primary-action" type="submit">Submit request</button>
       </form>
     `, "wide")}
-    ${card("Open Requests", table(["Request", "Branch", "Issue", "Status", "Updated"], state.data.tickets.map((ticket) => [
-      ticket.id, ticket.branch, ticket.issue, statusBadge(ticket.status), ticket.updated
+    ${card("Open Requests", table(["Request", "Branch", "Issue", "Status", "Updated"], requests.map((ticket) => [
+      escapeHtml(ticket.id), escapeHtml(ticket.branch), escapeHtml(ticket.issue), statusBadge(ticket.status), escapeHtml(ticket.updated)
     ])))}
   `;
 }
@@ -214,21 +320,23 @@ function renderPayments() {
 }
 
 function renderUsage() {
-  return card("Printer Usage", table(["Serial", "Model", "Branch", "Monthly Usage", "Status"], state.data.devices.map((device) => [
-    device.serial, device.model, device.branch, device.usage.toLocaleString(), statusBadge(device.status)
+  return card("Printer Usage", table(["Serial", "Model", "Branch", "Monthly Usage", "Status"], scopedDevices().map((device) => [
+    escapeHtml(device.serial), escapeHtml(device.model), escapeHtml(device.branch), device.usage.toLocaleString(), statusBadge(device.status)
   ])), "wide");
 }
 
 function renderToner() {
+  const devices = scopedDevices();
   return `
-    ${card("Supply Status", table(["Serial", "Model", "Branch", "Toner / Ink"], state.data.devices.map((device) => [
-      device.serial, device.model, device.branch, statusBadge(device.toner)
+    ${card("Supply Status", table(["Serial", "Model", "Branch", "Toner / Ink"], devices.map((device) => [
+      escapeHtml(device.serial), escapeHtml(device.model), escapeHtml(device.branch), statusBadge(device.toner)
     ])), "wide")}
     ${card("Request Toner / Ink", `
-      <form class="request-form compact">
-        <label>Machine <select>${state.data.devices.map((device) => `<option>${device.serial} - ${device.model}</option>`).join("")}</select></label>
-        <label>Notes <textarea placeholder="Quantity, cartridge color, or print issue"></textarea></label>
-        <button class="primary-action" type="button">Prepare supply request</button>
+      <form class="request-form compact" data-request-form="toner">
+        <label>Machine <select name="serial" required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
+        <label>Supply type <select name="category" required><option>Toner / Ink Request</option><option>Low Supply Alert</option><option>Cartridge Issue</option></select></label>
+        <label>Notes <textarea name="concern" placeholder="Quantity, cartridge color, or print issue" required></textarea></label>
+        <button class="primary-action" type="submit">Submit supply request</button>
       </form>
     `)}
   `;
@@ -242,7 +350,7 @@ function table(headers, rows) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead>
+        <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
         <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody>
       </table>
     </div>
@@ -269,7 +377,10 @@ function saveAcknowledgementOverride(id, payload) {
 
 function acknowledgementJobs() {
   const saved = loadAcknowledgementOverrides();
-  return state.data.workAcknowledgements.map((job) => ({ ...job, ...(saved[job.id] || {}) }));
+  const allowed = new Set(scopedDevices().map((device) => normalizeSerial(device.serial)));
+  return state.data.workAcknowledgements
+    .filter((job) => allowed.has(normalizeSerial(job.serial)))
+    .map((job) => ({ ...job, ...(saved[job.id] || {}) }));
 }
 
 function renderAcknowledgement() {
@@ -367,22 +478,63 @@ function renderContent() {
 
 function enterApp() {
   state.authed = true;
+  if (!state.access) state.access = pilotAccess[0];
   $("#loginView").classList.add("hidden");
   $("#appView").classList.remove("hidden");
-  $("#accountName").textContent = state.data.account;
-  $("#firebaseStatus").textContent = config.demoMode ? "Demo data" : "Marga Firebase";
+  $("#accountName").textContent = state.access?.account || state.data.account;
+  $("#firebaseStatus").textContent = state.access ? `Serial ${state.access.serial}` : (config.demoMode ? "Demo data" : "Marga Firebase");
+  localStorage.setItem("marga_care_session", JSON.stringify(state.access));
   setView("dashboard");
 }
 
 function bindEvents() {
   $("#loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    $("#loginMessage").textContent = "Customer authentication will be enabled after Firebase rules are scoped.";
+    const serial = normalizeSerial($("#emailInput").value);
+    const pin = String($("#passwordInput").value || "").trim();
+    const access = pilotAccess.find((entry) => normalizeSerial(entry.serial) === serial && entry.pin === pin);
+    if (!access) {
+      $("#loginMessage").textContent = "Serial number or PIN was not recognized. Please check the Marga-issued access details.";
+      return;
+    }
+    state.access = access;
+    enterApp();
   });
-  $("#demoButton").addEventListener("click", enterApp);
-  $("#logoutButton").addEventListener("click", () => location.reload());
+  $("#demoButton").addEventListener("click", () => {
+    state.access = pilotAccess[0];
+    enterApp();
+  });
+  $("#logoutButton").addEventListener("click", () => {
+    localStorage.removeItem("marga_care_session");
+    location.reload();
+  });
   $("#refreshButton").addEventListener("click", renderContent);
   $("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+  document.body.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-request-form]");
+    if (!form) return;
+    event.preventDefault();
+    const formData = new FormData(form);
+    const serial = formData.get("serial");
+    const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
+    const request = createPortalRequest({
+      type: form.dataset.requestForm === "toner" ? "Toner / Ink" : "Service",
+      category: formData.get("category"),
+      serial,
+      branch: device?.branch || "Assigned machine",
+      machine: device ? `${device.serial} - ${device.model}` : serial,
+      concern: formData.get("concern"),
+      notes: formData.get("concern")
+    });
+    form.reset();
+    setView("service");
+    $("#sectionTitle").textContent = "Service Requests";
+    $("#sectionEyebrow").textContent = "Submitted";
+    const notice = document.createElement("div");
+    notice.className = "portal-notice";
+    notice.textContent = `${request.id} was saved and queued for Marga Service.`;
+    $("#content").prepend(notice);
+  });
   document.body.addEventListener("click", (event) => {
     const acknowledgeButton = event.target.closest("[data-ack-id]");
     if (acknowledgeButton) {
@@ -429,3 +581,13 @@ async function registerServiceWorker() {
 
 bindEvents();
 registerServiceWorker();
+
+try {
+  const savedSession = JSON.parse(localStorage.getItem("marga_care_session") || "null");
+  if (savedSession?.serial) {
+    state.access = savedSession;
+    enterApp();
+  }
+} catch (error) {
+  localStorage.removeItem("marga_care_session");
+}

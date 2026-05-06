@@ -29,18 +29,18 @@
 
       <form id="loginForm" class="login-form">
         <label>
-          Company email
-          <input id="emailInput" type="email" autocomplete="email" placeholder="name@company.com" required>
+          Machine serial number
+          <input id="emailInput" type="text" autocomplete="username" placeholder="882026041158" required>
         </label>
         <label>
-          Password
-          <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Password" required>
+          Access PIN
+          <input id="passwordInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Temporary PIN" required>
         </label>
         <button class="primary-action" type="submit">Sign in</button>
       </form>
 
-      <button id="demoButton" class="ghost-action" type="button">Preview customer dashboard</button>
-      <p id="loginMessage" class="small-note">Use preview mode while customer accounts and rules are being prepared.</p>
+      <button id="demoButton" class="ghost-action" type="button">Use pilot access</button>
+      <p id="loginMessage" class="small-note">Pilot access is by machine serial and Marga-issued PIN.</p>
     </div>
   </section>
 
