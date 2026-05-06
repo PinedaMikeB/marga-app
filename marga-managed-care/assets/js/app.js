@@ -123,6 +123,20 @@ const customerTroubles = [
   { id: 102, label: "Other concern", serviceLabel: "Others" }
 ];
 
+const customerErrorOptions = [
+  "None",
+  "Error code shown",
+  "Paper jam message",
+  "Replace toner / ink",
+  "Replace drum",
+  "No paper",
+  "Offline",
+  "Cover open",
+  "Memory full",
+  "Service call",
+  "Other warning message"
+];
+
 const state = {
   authed: false,
   currentView: "dashboard",
@@ -209,7 +223,7 @@ function serviceTickets() {
     id: request.id,
     serial: request.serial,
     branch: request.branch,
-    issue: request.errorCode ? `${request.trouble}: ${request.errorCode}` : (request.trouble || request.concern || request.notes || request.type),
+    issue: request.errorCode && request.errorCode !== "None" ? `${request.trouble}: ${request.errorCode}` : (request.trouble || request.concern || request.notes || request.type),
     status: request.status,
     updated: request.updated || "Just now",
     source: request.source
@@ -318,11 +332,16 @@ function renderService() {
     ${card("Create Request", `
       <form class="request-form" data-request-form="service">
         <label>Machine <select name="serial" required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
-        <label>Trouble <select name="trouble" data-trouble-select required>
-          <option value="">Select observed problem...</option>
-          ${customerTroubles.map((trouble) => `<option value="${trouble.id}" data-service-label="${escapeHtml(trouble.serviceLabel)}">${escapeHtml(trouble.label)}</option>`).join("")}
-        </select></label>
-        <label class="conditional-field hidden" data-error-code-field>Error code or message <input name="errorCode" type="text" placeholder="Example: E50, Replace Drum, Paper Jam Tray 1"></label>
+        <div class="form-pair">
+          <label>Trouble <select name="trouble" required>
+            <option value="">Select observed problem...</option>
+            ${customerTroubles.map((trouble) => `<option value="${trouble.id}" data-service-label="${escapeHtml(trouble.serviceLabel)}">${escapeHtml(trouble.label)}</option>`).join("")}
+          </select></label>
+          <label>Error code / message <select name="errorCode" required>
+            <option value="">Select error status...</option>
+            ${customerErrorOptions.map((error) => `<option>${escapeHtml(error)}</option>`).join("")}
+          </select></label>
+        </div>
         <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
         <button class="primary-action" type="submit">Submit request</button>
       </form>
@@ -566,20 +585,6 @@ function bindEvents() {
     notice.className = "portal-notice";
     notice.textContent = `${request.id} was saved and queued for Marga Service.`;
     $("#content").prepend(notice);
-  });
-  document.body.addEventListener("change", (event) => {
-    const troubleSelect = event.target.closest("[data-trouble-select]");
-    if (!troubleSelect) return;
-    const form = troubleSelect.closest("[data-request-form]");
-    const errorField = form?.querySelector("[data-error-code-field]");
-    if (!errorField) return;
-    const shouldShow = Number(troubleSelect.value || 0) === 107;
-    errorField.classList.toggle("hidden", !shouldShow);
-    const input = errorField.querySelector("input");
-    if (input) {
-      input.required = shouldShow;
-      if (!shouldShow) input.value = "";
-    }
   });
   document.body.addEventListener("click", (event) => {
     const acknowledgeButton = event.target.closest("[data-ack-id]");

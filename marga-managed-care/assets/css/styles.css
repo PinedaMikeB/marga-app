@@ -149,8 +149,10 @@ label {
   text-transform: uppercase;
 }
 
-.conditional-field {
-  margin-top: -4px;
+.form-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 input,
@@ -778,6 +780,7 @@ td {
 
   .metric-row,
   .split-grid,
+  .form-pair,
   .work-detail-grid {
     grid-template-columns: 1fr;
   }
