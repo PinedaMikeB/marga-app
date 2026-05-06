@@ -2232,6 +2232,17 @@ function formatInvoiceMachineSerialValue({ isGroupedPrint = false, modelName = '
         || 'N/A';
 }
 
+function isOneInvoiceMultipleMachinesPrint({ row = null, context = null, estimate = null } = {}) {
+    const billingMode = String(estimate?.billingMode || context?.savedBillingMode || '').trim();
+    const hasVerifiedGroupPrintContext = Boolean(
+        (row?.is_summary_billing_row || row?.is_summary_row || context?.forceGroupedMode)
+        && row?.billing_group
+    );
+    if (!hasVerifiedGroupPrintContext) return false;
+    if (billingMode && billingMode !== 'multi_machine_rtp') return false;
+    return true;
+}
+
 function getInvoiceSearchEntryModel(entry, references = null) {
     const row = entry?.row || {};
     const doc = entry?.doc || {};
@@ -2659,9 +2670,9 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         || row?.company_name
         || ''
     );
-    const groupedRows = row?.is_summary_billing_row || row?.is_summary_row ? getGroupedMachineRows(row, monthKey) : [];
+    const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row });
+    const groupedRows = isGroupedPrint ? getGroupedMachineRows(row, monthKey) : [];
     const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
-    const isGroupedPrint = Boolean(row?.is_summary_billing_row || row?.is_summary_row);
     const address = isGroupedPrint
         ? (getCompanyAddress(company) || 'N/A')
         : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
@@ -2679,14 +2690,14 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         machineModel: modelName || row?.machine_label || 'N/A',
         machineSerial: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
-        presentReadingDate: firstIsoDate(
+        presentReadingDate: period.to || firstIsoDate(
             cell?.task_date,
             readingGroup?.task_date,
             readingGroup?.present_reading_date,
             readingGroup?.reading_date,
             period.endDate
         ),
-        previousReadingDate: readingGroup?.previous_reading_date ? formatIsoDate(asValidDate(readingGroup.previous_reading_date)) : '',
+        previousReadingDate: period.from || (readingGroup?.previous_reading_date ? formatIsoDate(asValidDate(readingGroup.previous_reading_date)) : ''),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: Number(readingGroup?.pages || cell?.reading_pages_total || 0) || 0,
@@ -2725,8 +2736,8 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         || row?.company_name
         || ''
     );
-    const groupedRows = Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
-    const isGroupedPrint = Boolean(row?.is_summary_billing_row || row?.is_summary_row || groupedRows.length > 1);
+    const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row, context, estimate });
+    const groupedRows = isGroupedPrint && Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
     const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
     const address = isGroupedPrint
         ? (getGroupedBillingAddress(references, groupedRows, company) || 'N/A')
@@ -2745,14 +2756,14 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         machineModel: modelName || row?.machine_label || 'N/A',
         machineSerial: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
-        presentReadingDate: firstIsoDate(
+        presentReadingDate: period.to || firstIsoDate(
             context?.targetCell?.task_date,
             context?.targetReadingGroup?.task_date,
             estimate?.taskDate,
             estimate?.readingDate,
             period.endDate
         ),
-        previousReadingDate: context?.latestPriorGroup?.task_date ? formatIsoDate(asValidDate(context.latestPriorGroup.task_date)) : '',
+        previousReadingDate: period.from || (context?.latestPriorGroup?.task_date ? formatIsoDate(asValidDate(context.latestPriorGroup.task_date)) : ''),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
         totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
@@ -3624,9 +3635,10 @@ function buildMeterFormLineRows(estimate) {
 
 function buildMeterFormPrintDocument(preview, estimate) {
     const lines = buildMeterFormLineRows(estimate);
-    const isMultiple = lines.length > 1 || String(estimate?.billingMode || '').trim() === 'multi_machine_rtp';
-    return isMultiple
-        ? buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines)
+    const isMultipleMachineForm = String(estimate?.billingMode || '').trim() === 'multi_machine_rtp';
+    const useTableForm = lines.length > 1 || isMultipleMachineForm;
+    return useTableForm
+        ? buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines, { isMultipleMachineForm })
         : buildSingleMachineMeterFormPrintDocument(preview, estimate, lines[0] || estimate || {});
 }
 
@@ -3643,9 +3655,15 @@ function resolveMeterFormPreviousReadingDate(preview, estimate, lines = []) {
     );
 }
 
+function resolveCustomerMeterFormDates(preview, estimate, lines = []) {
+    return {
+        presentDate: firstIsoDate(preview?.billingTo, preview?.presentReadingDate, estimate?.presentReadingDate),
+        previousDate: firstIsoDate(preview?.billingFrom, resolveMeterFormPreviousReadingDate(preview, estimate, lines))
+    };
+}
+
 function buildSingleMachineMeterFormPrintDocument(preview, estimate, line = {}) {
-    const presentDate = preview?.presentReadingDate || '';
-    const previousDate = resolveMeterFormPreviousReadingDate(preview, estimate, [line]);
+    const { presentDate, previousDate } = resolveCustomerMeterFormDates(preview, estimate, [line]);
     const difference = Number(line.rawPages || 0) || Math.max(0, Number(line.presentMeter || 0) - Number(line.previousMeter || 0));
     const spoilage = Number(line.spoilagePages || line.totalSpoilagePages || 0) || 0;
     const otherDiscount = Number(line.actualSpoilagePages || 0) || 0;
@@ -3744,9 +3762,9 @@ function buildSingleMachineMeterFormPrintDocument(preview, estimate, line = {}) 
 </html>`;
 }
 
-function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = []) {
-    const presentDate = preview?.presentReadingDate || '';
-    const previousDate = resolveMeterFormPreviousReadingDate(preview, estimate, lines);
+function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = [], options = {}) {
+    const { presentDate, previousDate } = resolveCustomerMeterFormDates(preview, estimate, lines);
+    const subtitle = options.isMultipleMachineForm ? '( Multiple Machines )' : '( Single Machine )';
     const totalNet = lines.reduce((sum, line) => sum + Number(line.netPages || 0), 0);
     const representativeRate = Number(lines.find((line) => Number(line.pageRate || 0) > 0)?.pageRate || estimate?.pageRate || preview?.rate || 0) || 0;
     const rows = lines.map((line) => {
@@ -3804,7 +3822,7 @@ function buildMultipleMachineMeterFormPrintDocument(preview, estimate, lines = [
             <div class="company">${escapeHtml(METER_FORM_COMPANY_BLOCK)}</div>
             <div class="title-box">
                 <h1>Meter Reading Form</h1>
-                <div>( Multiple Machines )</div>
+                <div>${escapeHtml(subtitle)}</div>
             </div>
         </section>
         <section class="client-grid">
