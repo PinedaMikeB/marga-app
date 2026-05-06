@@ -2617,14 +2617,31 @@ function computePreviewAmounts(totalAmount, source = {}) {
 }
 
 function computePreviewAmountsFromEstimate(estimate) {
+    const total = roundBillingAmount(estimate?.amountDue || 0);
+    const savedNetAmount = roundBillingAmount(estimate?.netAmount || 0);
+    const savedVatAmount = roundBillingAmount(estimate?.vatAmount || 0);
+    const savedBreakdownMatchesTotal = Math.abs((savedNetAmount + savedVatAmount) - total) <= 0.02;
+    const lineItems = Array.isArray(estimate?.lineItems) ? estimate.lineItems : [];
+    const hasVatInclusiveLines = lineItems.some((line) => (
+        Number(line?.vatAmount || 0) > 0
+        || line?.profile?.with_vat
+    ));
+    const shouldRecomputeInclusiveVat = total > 0 && !savedBreakdownMatchesTotal && (savedVatAmount > 0 || hasVatInclusiveLines);
+    const netAmount = shouldRecomputeInclusiveVat
+        ? roundBillingAmount(total / 1.12)
+        : savedNetAmount;
+    const vatAmount = shouldRecomputeInclusiveVat
+        ? roundBillingAmount(total - netAmount)
+        : savedVatAmount;
+
     return {
-        total: Number(estimate?.amountDue || 0) || 0,
-        vatableSales: Number(estimate?.netAmount || 0) || 0,
-        vatAmount: Number(estimate?.vatAmount || 0) || 0,
+        total,
+        vatableSales: netAmount,
+        vatAmount,
         vatExempt: 0,
         zeroRated: 0,
         lessVat: 0,
-        amountDue: Number(estimate?.amountDue || 0) || 0
+        amountDue: total
     };
 }
 
