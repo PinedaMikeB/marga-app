@@ -3679,26 +3679,27 @@ function buildSingleMachineMeterFormPrintDocument(preview, estimate, line = {}) 
     <meta charset="utf-8">
     <title>Meter Reading Form</title>
     <style>
-        @page { size: A4 portrait; margin: 18mm 16mm; }
+        @page { size: Letter portrait; margin: 10mm 12mm; }
         * { box-sizing: border-box; }
-        body { margin: 0; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.22; }
-        .page { min-height: 260mm; padding: 16mm 8mm 8mm; }
-        .top { display: grid; grid-template-columns: 1fr 1fr; gap: 28mm; align-items: start; }
+        html, body { width: 100%; min-height: 100%; }
+        body { margin: 0; color: #1f2933; font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.18; }
+        .page { padding: 5mm 2mm 0; break-after: avoid; page-break-after: avoid; }
+        .top { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; align-items: start; }
         .company { white-space: pre-line; }
-        h1 { margin: 0 0 9px; text-align: center; font-size: 21px; }
-        .subtitle { text-align: center; font-size: 14px; }
-        .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24mm; margin-top: 22mm; }
-        .label { margin-bottom: 10px; }
-        .client-name { margin-bottom: 24px; }
+        h1 { margin: 0 0 5px; text-align: center; font-size: 16px; }
+        .subtitle { text-align: center; font-size: 11px; }
+        .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; margin-top: 14mm; }
+        .label { margin-bottom: 6px; }
+        .client-name { margin-bottom: 12px; }
         .address { white-space: pre-line; }
-        .info-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; margin-bottom: 12px; }
-        .calc { margin-top: 19mm; display: grid; grid-template-columns: 1fr 1fr; gap: 24mm; }
-        .calc .info-row { grid-template-columns: 170px 1fr; }
+        .info-row { display: grid; grid-template-columns: 34mm 1fr; gap: 8px; margin-bottom: 7px; }
+        .calc { margin-top: 13mm; display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; }
+        .calc .info-row { grid-template-columns: 40mm 1fr; }
         .value { text-align: left; }
-        .signatures { margin-top: 30mm; display: grid; grid-template-columns: 1fr 1fr; gap: 23mm; }
-        .sig-row { min-height: 18mm; }
+        .signatures { margin-top: 14mm; display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; }
+        .sig-row { min-height: 11mm; }
         .sig-row strong { font-weight: 400; }
-        .prepared-name, .officer-name { display: block; margin-top: 10px; }
+        .prepared-name, .officer-name { display: block; margin-top: 5px; }
     </style>
 </head>
 <body>
