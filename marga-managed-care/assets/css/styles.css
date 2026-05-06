@@ -155,6 +155,10 @@ label {
   gap: 14px;
 }
 
+.manual-error-field {
+  margin-top: -2px;
+}
+
 input,
 select,
 textarea {

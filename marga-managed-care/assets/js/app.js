@@ -123,18 +123,27 @@ const customerTroubles = [
   { id: 102, label: "Other concern", serviceLabel: "Others" }
 ];
 
-const customerErrorOptions = [
-  "None",
-  "Error code shown",
-  "Paper jam message",
-  "Replace toner / ink",
-  "Replace drum",
-  "No paper",
-  "Offline",
-  "Cover open",
-  "Memory full",
-  "Service call",
-  "Other warning message"
+const MANUAL_ERROR_VALUE = "__manual_error__";
+
+const modelErrorCodes = [
+  {
+    model: "Brother DCP-L2540DW",
+    troubleId: 177,
+    code: "0A",
+    message: "Print Unable 0A"
+  },
+  {
+    model: "Brother DCP-L2540DW",
+    troubleId: 177,
+    code: "0B",
+    message: "Print Unable 0B"
+  },
+  {
+    model: "Brother DCP-L2540DW",
+    troubleId: 49,
+    code: "JAM",
+    message: "Paper jam message shown"
+  }
 ];
 
 const state = {
@@ -178,6 +187,10 @@ function normalizeSerial(value) {
   return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+function normalizeModel(value) {
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 function requestStoreKey() {
   return `marga_care_requests_${state.access?.companyId || "demo"}_${normalizeSerial(state.access?.serial || "all")}`;
 }
@@ -215,6 +228,43 @@ function createPortalRequest(payload) {
   };
   savePortalRequests([request, ...requests]);
   return request;
+}
+
+function modelTroubleErrorOptions(device, troubleId) {
+  const modelKey = normalizeModel(device?.model);
+  const matches = modelErrorCodes.filter((entry) => normalizeModel(entry.model) === modelKey && Number(entry.troubleId) === Number(troubleId));
+  return [
+    { value: "None", label: "None" },
+    ...matches.map((entry) => ({
+      value: entry.code,
+      label: `${entry.message} (${entry.code})`
+    })),
+    { value: MANUAL_ERROR_VALUE, label: "Other / not listed" }
+  ];
+}
+
+function errorOptionsMarkup(device, troubleId) {
+  return `<option value="">Select error status...</option>${modelTroubleErrorOptions(device, troubleId)
+    .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+    .join("")}`;
+}
+
+function refreshErrorOptions(form) {
+  const serial = form?.querySelector('[name="serial"]')?.value;
+  const troubleId = Number(form?.querySelector('[name="trouble"]')?.value || 0);
+  const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
+  const errorSelect = form?.querySelector('[name="errorCode"]');
+  const manualField = form?.querySelector("[data-manual-error-field]");
+  if (!errorSelect) return;
+  errorSelect.innerHTML = errorOptionsMarkup(device, troubleId);
+  if (manualField) {
+    manualField.classList.add("hidden");
+    const input = manualField.querySelector("input");
+    if (input) {
+      input.required = false;
+      input.value = "";
+    }
+  }
 }
 
 function serviceTickets() {
@@ -328,20 +378,20 @@ function timeline(items, textKey) {
 function renderService() {
   const devices = scopedDevices();
   const requests = serviceTickets();
+  const firstDevice = devices[0];
+  const firstTroubleId = 0;
   return `
     ${card("Create Request", `
       <form class="request-form" data-request-form="service">
-        <label>Machine <select name="serial" required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
+        <label>Machine <select name="serial" data-machine-select required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
         <div class="form-pair">
-          <label>Trouble <select name="trouble" required>
+          <label>Trouble <select name="trouble" data-trouble-select required>
             <option value="">Select observed problem...</option>
             ${customerTroubles.map((trouble) => `<option value="${trouble.id}" data-service-label="${escapeHtml(trouble.serviceLabel)}">${escapeHtml(trouble.label)}</option>`).join("")}
           </select></label>
-          <label>Error code / message <select name="errorCode" required>
-            <option value="">Select error status...</option>
-            ${customerErrorOptions.map((error) => `<option>${escapeHtml(error)}</option>`).join("")}
-          </select></label>
+          <label>Error code / message <select name="errorCode" data-error-code-select required>${errorOptionsMarkup(firstDevice, firstTroubleId)}</select></label>
         </div>
+        <label class="manual-error-field hidden" data-manual-error-field>Manual error code / message <input name="manualErrorCode" type="text" placeholder="Type the exact error shown on the machine"></label>
         <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
         <button class="primary-action" type="submit">Submit request</button>
       </form>
@@ -564,14 +614,19 @@ function bindEvents() {
     const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
     const troubleId = Number(formData.get("trouble") || 0);
     const trouble = customerTroubles.find((item) => item.id === troubleId) || null;
+    const selectedError = formData.get("errorCode");
+    const manualError = String(formData.get("manualErrorCode") || "").trim();
+    const errorCode = selectedError === MANUAL_ERROR_VALUE ? manualError : selectedError;
     const request = createPortalRequest({
       type: form.dataset.requestForm === "toner" ? "Toner / Ink" : "Service",
       category: form.dataset.requestForm === "toner" ? formData.get("category") : "Customer Reported Trouble",
       troubleId,
       trouble: trouble?.serviceLabel || formData.get("category"),
       customerTrouble: trouble?.label || "",
-      errorCode: formData.get("errorCode"),
+      errorCode,
+      errorCodeSource: selectedError === MANUAL_ERROR_VALUE ? "Manual" : "Model Error Table",
       serial,
+      model: device?.model || "",
       branch: device?.branch || "Assigned machine",
       machine: device ? `${device.serial} - ${device.model}` : serial,
       concern: formData.get("concern"),
@@ -585,6 +640,26 @@ function bindEvents() {
     notice.className = "portal-notice";
     notice.textContent = `${request.id} was saved and queued for Marga Service.`;
     $("#content").prepend(notice);
+  });
+  document.body.addEventListener("change", (event) => {
+    const form = event.target.closest("[data-request-form]");
+    if (!form) return;
+
+    if (event.target.closest("[data-machine-select], [data-trouble-select]")) {
+      refreshErrorOptions(form);
+      return;
+    }
+
+    const errorSelect = event.target.closest("[data-error-code-select]");
+    if (!errorSelect) return;
+    const manualField = form.querySelector("[data-manual-error-field]");
+    const input = manualField?.querySelector("input");
+    const shouldShowManual = errorSelect.value === MANUAL_ERROR_VALUE;
+    manualField?.classList.toggle("hidden", !shouldShowManual);
+    if (input) {
+      input.required = shouldShowManual;
+      if (!shouldShowManual) input.value = "";
+    }
   });
   document.body.addEventListener("click", (event) => {
     const acknowledgeButton = event.target.closest("[data-ack-id]");
