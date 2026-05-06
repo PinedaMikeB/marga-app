@@ -14,8 +14,13 @@ const SETTINGS_STATE = {
     moduleDocIds: new Map(),
     roleConfigs: new Map(),
     roleDocIds: new Map(),
-    activeRoleEditor: 'collection'
+    activeRoleEditor: 'collection',
+    appSettings: {
+        allowSavedBillingReprints: true
+    }
 };
+
+const BILLING_PRINT_POLICY_DOC_ID = 'billing_printing_policy_v1';
 
 const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
@@ -81,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('tabEmployees').addEventListener('click', () => setActiveTab('employees'));
     document.getElementById('tabAccounts').addEventListener('click', () => setActiveTab('accounts'));
     document.getElementById('tabRoles').addEventListener('click', () => setActiveTab('roles'));
+    document.getElementById('tabAppSettings').addEventListener('click', () => setActiveTab('app-settings'));
 
     document.getElementById('refreshUsersBtn').addEventListener('click', () => loadDirectory());
     document.getElementById('userSearch').addEventListener('input', () => applyUserFilter());
@@ -109,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('resetRolePermissionsBtn').addEventListener('click', () => resetRolePermissions());
     document.getElementById('newRoleBtn').addEventListener('click', () => openNewRoleEditor());
     document.getElementById('addModuleBtn').addEventListener('click', () => openModuleModal());
+    document.getElementById('saveAppSettingsBtn').addEventListener('click', () => saveAppSettings());
     document.getElementById('roleLabelInput').addEventListener('input', () => {
         const roleIdInput = document.getElementById('roleIdInput');
         if (SETTINGS_STATE.activeRoleEditor !== 'new') return;
@@ -177,24 +184,29 @@ function sanitize(text) {
 }
 
 function setActiveTab(tab) {
-    const next = tab === 'accounts' ? 'accounts' : tab === 'roles' ? 'roles' : 'employees';
+    const next = tab === 'accounts' ? 'accounts' : tab === 'roles' ? 'roles' : tab === 'app-settings' ? 'app-settings' : 'employees';
     const tabEmployees = document.getElementById('tabEmployees');
     const tabAccounts = document.getElementById('tabAccounts');
     const tabRoles = document.getElementById('tabRoles');
+    const tabAppSettings = document.getElementById('tabAppSettings');
     const employeesPane = document.getElementById('employeesPane');
     const accountsPane = document.getElementById('accountsPane');
     const rolesPane = document.getElementById('rolesPane');
+    const appSettingsPane = document.getElementById('appSettingsPane');
 
     tabEmployees.classList.toggle('active', next === 'employees');
     tabAccounts.classList.toggle('active', next === 'accounts');
     tabRoles.classList.toggle('active', next === 'roles');
+    tabAppSettings.classList.toggle('active', next === 'app-settings');
     tabEmployees.setAttribute('aria-selected', next === 'employees' ? 'true' : 'false');
     tabAccounts.setAttribute('aria-selected', next === 'accounts' ? 'true' : 'false');
     tabRoles.setAttribute('aria-selected', next === 'roles' ? 'true' : 'false');
+    tabAppSettings.setAttribute('aria-selected', next === 'app-settings' ? 'true' : 'false');
 
     employeesPane.classList.toggle('open', next === 'employees');
     accountsPane.classList.toggle('open', next === 'accounts');
     rolesPane.classList.toggle('open', next === 'roles');
+    appSettingsPane.classList.toggle('open', next === 'app-settings');
 }
 
 function parseFirestoreValue(value) {
@@ -1279,7 +1291,7 @@ async function loadRoleConfigs() {
 
 async function loadDirectory() {
     document.getElementById('settingsMeta').textContent = 'Loading directory from Firestore...';
-    await Promise.all([loadPositions(), loadEmployees(), loadModuleConfigs(), loadRoleConfigs()]);
+    await Promise.all([loadPositions(), loadEmployees(), loadModuleConfigs(), loadRoleConfigs(), loadAppSettings()]);
     await loadUsers();
 
     const activeEmployees = SETTINGS_STATE.employees.filter((employee) => employee.marga_active !== false).length;
@@ -1292,10 +1304,60 @@ async function loadDirectory() {
     applyUserFilter();
     renderRoleList();
     renderRoleEditor();
+    renderAppSettings();
     renderRoleSelectionGrid('userRolesInput', ['viewer'], { readOnly: !MargaAuth.isAdmin() });
     updateRoleSelectionMeta('userRolesMeta', ['viewer']);
     renderRoleSelectionGrid('employeeRolesInput', ['viewer'], { readOnly: !MargaAuth.isAdmin() });
     updateRoleSelectionMeta('employeeRolesMeta', ['viewer']);
+}
+
+async function loadAppSettings() {
+    try {
+        const doc = await MargaUtils.fetchDoc('tbl_app_settings', BILLING_PRINT_POLICY_DOC_ID);
+        SETTINGS_STATE.appSettings.allowSavedBillingReprints = doc?.allow_saved_billing_reprints !== false;
+    } catch (error) {
+        console.warn('Load app settings failed:', error);
+        SETTINGS_STATE.appSettings.allowSavedBillingReprints = true;
+    }
+}
+
+function renderAppSettings() {
+    const allowReprintsInput = document.getElementById('allowSavedBillingReprints');
+    const saveBtn = document.getElementById('saveAppSettingsBtn');
+    if (allowReprintsInput) {
+        allowReprintsInput.checked = SETTINGS_STATE.appSettings.allowSavedBillingReprints !== false;
+        allowReprintsInput.disabled = !MargaAuth.isAdmin();
+    }
+    if (saveBtn) saveBtn.style.display = MargaAuth.isAdmin() ? 'inline-flex' : 'none';
+    const status = document.getElementById('appSettingsStatus');
+    if (status) status.textContent = 'Global settings loaded.';
+}
+
+async function saveAppSettings() {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can update global settings.');
+        return;
+    }
+    const saveBtn = document.getElementById('saveAppSettingsBtn');
+    const status = document.getElementById('appSettingsStatus');
+    saveBtn.disabled = true;
+    if (status) status.textContent = 'Saving global settings...';
+    try {
+        const allowReprints = document.getElementById('allowSavedBillingReprints')?.checked !== false;
+        await setDocument('tbl_app_settings', BILLING_PRINT_POLICY_DOC_ID, {
+            allow_saved_billing_reprints: allowReprints,
+            updated_at: new Date().toISOString(),
+            updated_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'admin'
+        });
+        SETTINGS_STATE.appSettings.allowSavedBillingReprints = allowReprints;
+        if (status) status.textContent = 'Global settings saved.';
+    } catch (error) {
+        console.error('Save app settings failed:', error);
+        if (status) status.textContent = `Save failed: ${error.message}`;
+        alert(`Save failed: ${error.message}`);
+    } finally {
+        saveBtn.disabled = false;
+    }
 }
 
 function setEmployeeModalOpen(isOpen) {

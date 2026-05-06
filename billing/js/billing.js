@@ -2843,11 +2843,13 @@ const RTP_PRINT_RECOVERED_TEMPLATE_NAME = 'Saved Invoice Layout';
 const RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION = 'tbl_app_settings';
 const RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID = 'billing_invoice_print_templates_v1';
 const RTP_PRINT_TEMPLATE_SETTING_KEY = 'billing_invoice_print_templates';
+const BILLING_PRINT_POLICY_FIRESTORE_DOC_ID = 'billing_printing_policy_v1';
 let currentRtpPrintCalibration = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 let currentRtpPrintTemplates = {};
 let currentRtpPrintTemplateName = 'Default';
 let rtpPrintTemplatesFirebasePromise = null;
 let rtpPrintTemplatesLoadedFromFirebase = false;
+let billingPrintPolicyPromise = null;
 
 function normalizeRtpPrintCalibration(value = {}) {
     const paperWidthCm = Number(value?.paperWidthCm ?? RTP_PRINT_CALIBRATION.paperWidthCm);
@@ -2963,6 +2965,19 @@ function loadRtpPrintTemplates() {
     } catch (error) {
         return templates;
     }
+}
+
+async function loadBillingPrintPolicy() {
+    if (billingPrintPolicyPromise) return billingPrintPolicyPromise;
+    billingPrintPolicyPromise = getFirestoreDocument('tbl_app_settings', BILLING_PRINT_POLICY_FIRESTORE_DOC_ID)
+        .then((doc) => ({
+            allowSavedReprints: doc?.allow_saved_billing_reprints !== false
+        }))
+        .catch((error) => {
+            console.warn('Unable to load billing print policy; allowing saved billing reprints by default.', error);
+            return { allowSavedReprints: true };
+        });
+    return billingPrintPolicyPromise;
 }
 
 function saveRtpPrintTemplates(nextTemplates) {
@@ -6228,7 +6243,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const latestMonthUsed = latest ? (latest.month_label || latest.month_key || 'Previous month') : 'No prior reading';
     const savedMonthLabel = context.targetCell?.month_label_short || context.monthLabel;
     const savedExclusionsForContext = getBillingExclusionsForContext(row, context);
-    const scheduleStaffOptions = await loadBillingScheduleStaffOptions();
+    const [scheduleStaffOptions, billingPrintPolicy] = await Promise.all([
+        loadBillingScheduleStaffOptions(),
+        loadBillingPrintPolicy()
+    ]);
+    const allowSavedReprints = billingPrintPolicy.allowSavedReprints !== false;
 
     els.billingCalcTitle.textContent = `${row.display_name || row.account_name || row.company_name || 'Billing Calculation'}`;
     els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'}`;
@@ -6926,6 +6945,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 saveStatus.textContent = 'Reading schedule only. Invoice number and billing calculation are not required.';
             } else if (!savedDocExists) {
                 saveStatus.textContent = `Save this billing first so it lands in ${savedMonthLabel} and unlocks printing.`;
+            } else if (isDirty && allowSavedReprints) {
+                saveStatus.textContent = `Saved in ${savedMonthLabel}. Reprint is allowed by global Billing settings; save again only if you want to replace the saved invoice.`;
             } else if (isDirty) {
                 saveStatus.textContent = `You changed the billing values. Save again to update ${savedMonthLabel} and re-enable printing.`;
             } else if (needsApproval && !approvalReady) {
@@ -6968,13 +6989,17 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
 
         if (!canPrintInvoice) return;
-        const printEnabled = !isReadingSchedule && previewReady && matchesSaved && approvalReady && scheduleReady;
+        const reprintAllowed = allowSavedReprints && savedDocExists;
+        const printMatchesSaved = matchesSaved || reprintAllowed;
+        const printEnabled = !isReadingSchedule && previewReady && printMatchesSaved && approvalReady && scheduleReady;
         let printHint = 'Preparing preview...';
         if (previewReady) {
             if (workflowError) {
                 printHint = workflowError;
             } else if (!savedDocExists) {
                 printHint = `Save billing first to enable Print ${printContractCode || 'Invoice'}.`;
+            } else if (isDirty && allowSavedReprints) {
+                printHint = 'Reprint is enabled by global Billing settings. Save again only if you need to replace the saved invoice.';
             } else if (isDirty) {
                 printHint = `Save your changes first so the printed ${printContractCode || 'invoice'} matches the saved invoice.`;
             } else if (!approvalReady) {

@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="css/settings.css?v=20260506-global-billing-print-settings-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -190,6 +190,7 @@
                         <button type="button" class="settings-tab active" id="tabEmployees" data-tab="employees" role="tab" aria-selected="true">Employees</button>
                         <button type="button" class="settings-tab" id="tabAccounts" data-tab="accounts" role="tab" aria-selected="false">Accounts</button>
                         <button type="button" class="settings-tab" id="tabRoles" data-tab="roles" role="tab" aria-selected="false">Roles &amp; Permissions</button>
+                        <button type="button" class="settings-tab" id="tabAppSettings" data-tab="app-settings" role="tab" aria-selected="false">Global Settings</button>
                     </div>
                 </div>
 
@@ -320,6 +321,33 @@
                                 <div class="module-access-grid role-module-grid" id="roleModuleAccess"></div>
                                 <div class="ops-subtext" id="roleModuleMeta"></div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-pane" id="appSettingsPane" role="tabpanel" aria-labelledby="tabAppSettings">
+                    <div class="settings-pane-header">
+                        <div class="role-editor">
+                            <div class="role-editor-header">
+                                <div>
+                                    <h4>Global Settings</h4>
+                                    <p class="ops-subtext">Controls that apply across modules for all users.</p>
+                                </div>
+                                <div class="settings-module-toolbar">
+                                    <button type="button" class="btn btn-primary btn-sm" id="saveAppSettingsBtn">Save Global Settings</button>
+                                </div>
+                            </div>
+                            <div class="marga-form-grid">
+                                <label class="marga-field marga-field-full">
+                                    <span>Billing Printing</span>
+                                    <div class="settings-check-row">
+                                        <input type="checkbox" id="allowSavedBillingReprints">
+                                        <span>Allow reprinting saved billing invoices even when the billing form no longer exactly matches the saved snapshot.</span>
+                                    </div>
+                                    <div class="ops-subtext">Keep this on when billing staff need to reprint corrected layouts or replacement copies for already saved invoices.</div>
+                                </label>
+                            </div>
+                            <div class="ops-subtext" id="appSettingsStatus">Loading global settings...</div>
                         </div>
                     </div>
                 </div>
@@ -534,6 +562,6 @@
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="js/settings.js"></script>
+    <script src="js/settings.js?v=20260506-global-billing-print-settings-1"></script>
 </body>
 </html>
