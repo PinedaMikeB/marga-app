@@ -769,7 +769,13 @@ async function fetchDocsByIdList(collection, ids) {
     const uniqueIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
     if (!uniqueIds.length) return new Map();
 
-    const docs = await Promise.all(uniqueIds.map((id) => fetchDoc(collection, String(id))));
+    const docs = await Promise.all(uniqueIds.map(async (id) => {
+        const directDoc = await fetchDoc(collection, String(id));
+        if (collection !== 'tbl_schedule') return directDoc;
+        if (Number(directDoc?.id || 0) === Number(id)) return directDoc;
+        const matches = await queryEquals(collection, 'id', Number(id), 'integer', 5).catch(() => []);
+        return matches.map(parseFirestoreDoc).filter(Boolean).find((doc) => Number(doc.id || 0) === Number(id)) || directDoc;
+    }));
     const rows = mergePendingOfflineRows(collection, docs.filter(Boolean));
     return new Map(
         rows
@@ -2777,6 +2783,10 @@ function applyRowPatch(scheduleId, patch) {
     Object.assign(row, patch);
 }
 
+function scheduleDocIdForRow(row) {
+    return String(row?._docId || row?.schedule_doc_id || row?.id || '').trim();
+}
+
 function getCloseTaskIssues(row, form) {
     if (isFutureScheduleForClose(row)) {
         return ['This schedule is for a future date. It can only be marked Finished on the scheduled day.'];
@@ -2873,7 +2883,7 @@ async function saveDraftUpdate() {
     const button = document.getElementById('fieldModalSaveDraft');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', row.id, payload);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         await upsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, payload);
         renderList();
@@ -2920,7 +2930,7 @@ async function markPendingTask() {
     const button = document.getElementById('fieldModalPendingTask');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', row.id, payload);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         await upsertSchedtimeLog(row, form, 'pending');
         await setDocument(PRODUCTION_QUEUE_COLLECTION, queueDocId, {
             schedule_id: Number(row.id || 0),
@@ -3125,7 +3135,7 @@ async function closeTask() {
     const button = document.getElementById('fieldModalCloseTask');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', row.id, payload);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         if (row.source_planner_doc_id) {
             try {
                 await patchDocument(SCHEDULE_PLANNER_COLLECTION, row.source_planner_doc_id, {
@@ -3200,7 +3210,7 @@ async function reopenTask() {
     const button = document.getElementById('fieldModalReopenTask');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', row.id, payload);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         applyRowPatch(row.id, payload);
         closeModal();
         await loadMySchedule();
@@ -3262,7 +3272,7 @@ async function saveSerialMapping() {
                 bridge_updated_by: staffId,
                 bridge_updated_at: nowIso
             };
-            await patchDocument('tbl_schedule', row.id, patch);
+            await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
             applyRowPatch(row.id, patch);
             serialHint.textContent = 'Submitted for admin approval.';
             alert('Missing serial submitted for admin approval.');
@@ -3289,7 +3299,7 @@ async function saveSerialMapping() {
             bridge_updated_at: nowIso
         };
 
-        await patchDocument('tbl_schedule', row.id, patch);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
         applyRowPatch(row.id, patch);
         await setModalMachineDetails(selectedMachine);
 
@@ -3450,14 +3460,14 @@ async function pinCustomerLocation() {
             }
         }
 
-        await patchDocument('tbl_schedule', row.id, schedulePatch);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), schedulePatch);
         try {
             await patchDocument('tbl_branchinfo', branchId, branchPatch);
         } catch (branchError) {
             console.warn('Branch master location update failed; schedule proof was saved.', branchError);
             schedulePatch.field_customer_location_branch_update_status = 'pending_admin_sync';
             schedulePatch.field_customer_location_branch_update_error = clampText(branchError?.message || branchError, 180);
-            await patchDocument('tbl_schedule', row.id, {
+            await patchDocument('tbl_schedule', scheduleDocIdForRow(row), {
                 field_customer_location_branch_update_status: schedulePatch.field_customer_location_branch_update_status,
                 field_customer_location_branch_update_error: schedulePatch.field_customer_location_branch_update_error
             });
@@ -3505,7 +3515,7 @@ async function markTimeInNow() {
     const button = document.getElementById('fieldTimeInNowBtn');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', row.id, patch);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
         await upsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, patch);
         alert('Time in captured.');
@@ -3740,7 +3750,7 @@ async function markTimeOutNow() {
     const button = document.getElementById('fieldTimeOutNowBtn');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', row.id, patch);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
         await upsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, patch);
         alert('Time out captured.');
