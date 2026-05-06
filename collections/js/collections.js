@@ -45,6 +45,7 @@ let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
 let collectorDashboardRenderSeq = 0;
+let collectorReturnBookmark = null;
 let collectionWorkspaceLookupsLoaded = false;
 let collectionWorkspaceLookupsPromise = null;
 let collectionProfileByBranchId = new Map();
@@ -1082,6 +1083,68 @@ function updateCollectorViewportRange() {
     chips.forEach((chip) => { chip.textContent = text; });
 }
 
+function captureCollectorReturnBookmark(cellId = '') {
+    const container = document.getElementById('collector-matrix-table');
+    collectorReturnBookmark = {
+        cellId: String(cellId || '').trim(),
+        windowScrollY: window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0,
+        matrixScrollLeft: container?.scrollLeft || 0,
+        matrixScrollTop: container?.scrollTop || 0,
+        createdAt: Date.now()
+    };
+}
+
+function findCollectorBookmarkedCell(cellId) {
+    const key = String(cellId || '').trim();
+    if (!key) return null;
+    return Array.from(document.querySelectorAll('[data-collector-cell-id]'))
+        .find((node) => node.dataset.collectorCellId === key) || null;
+}
+
+function applyCollectorReturnBookmark(bookmark) {
+    if (!bookmark) return;
+    fitCollectorMatrixViewport();
+    const container = document.getElementById('collector-matrix-table');
+    if (container) {
+        container.scrollLeft = Number(bookmark.matrixScrollLeft || 0);
+        container.scrollTop = Number(bookmark.matrixScrollTop || 0);
+    }
+
+    const cellNode = findCollectorBookmarkedCell(bookmark.cellId);
+    const rowNode = cellNode?.closest('tr');
+    if (rowNode) {
+        rowNode.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        if (container) {
+            container.scrollLeft = Number(bookmark.matrixScrollLeft || 0);
+            container.scrollTop = Number(bookmark.matrixScrollTop || 0);
+        }
+    }
+
+    window.scrollTo({
+        top: Number(bookmark.windowScrollY || 0),
+        left: 0,
+        behavior: 'auto'
+    });
+    updateCollectorViewportRange();
+    updateCollectorHorizontalScrollbar();
+}
+
+function restoreCollectorReturnBookmark(options = {}) {
+    const bookmark = collectorReturnBookmark;
+    if (!bookmark) return;
+    const delays = Array.isArray(options.delays) ? options.delays : [0, 80, 240, 520, 940];
+    delays.forEach((delay) => {
+        window.setTimeout(() => {
+            if (collectorReturnBookmark === bookmark) applyCollectorReturnBookmark(bookmark);
+        }, delay);
+    });
+    if (options.clear) {
+        window.setTimeout(() => {
+            if (collectorReturnBookmark === bookmark) collectorReturnBookmark = null;
+        }, Math.max(...delays, 0) + 60);
+    }
+}
+
 function getCollectorScrollbarParts() {
     return {
         shell: document.getElementById('collectorHorizontalScrollbar'),
@@ -1192,6 +1255,10 @@ function scrollCollectorMatrixToLatest(options = {}) {
 }
 
 function scheduleCollectorLatestScroll(data) {
+    if (collectorReturnBookmark) {
+        restoreCollectorReturnBookmark({ delays: [0, 80, 240, 520, 940] });
+        return;
+    }
     [0, 80, 220, 500, 900].forEach((delay) => {
         window.setTimeout(() => {
             scrollCollectorMatrixToLatest({ data, behavior: 'auto' });
@@ -3972,7 +4039,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                                     cellText = `<span class="collector-state-label missed">${escapeHtml(missedReading ? 'Missed Reading' : 'Pending Billing')}</span>${followupBadge}`;
                                 }
 
-                                return `<td class="${cellClass}" onclick="openCollectorCellByToken('${encodeURIComponent(cell.id)}')">${cellText}</td>`;
+                                return `<td class="${cellClass}" data-collector-cell-id="${escapeHtml(cell.id)}" onclick="openCollectorCellByToken('${encodeURIComponent(cell.id)}')">${cellText}</td>`;
                             })
                             .join('');
 
@@ -5986,6 +6053,7 @@ function renderCollectorFollowupWorkspace(workspace) {
 async function openCollectorCell(cellId) {
     const cell = collectorCellMap.get(String(cellId || '').trim());
     if (!cell) return;
+    captureCollectorReturnBookmark(cell.id || cellId);
 
     const modal = document.getElementById('collectorCellModal');
     const title = document.getElementById('collectorCellTitle');
@@ -6065,6 +6133,7 @@ function openCollectorCellByToken(token) {
 
 function closeCollectorCellModal() {
     document.getElementById('collectorCellModal')?.classList.add('hidden');
+    restoreCollectorReturnBookmark({ clear: true });
 }
 
 function openCollectorInvoiceFromCell(invoiceKey) {
