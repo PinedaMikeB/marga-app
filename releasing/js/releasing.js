@@ -1145,13 +1145,25 @@ async function printAndSavePulloutForm(event) {
     if (!printWindow) return;
     const button = event.submitter;
     if (button) button.disabled = true;
+    const completed = { ...payload, pulledBy, customerRep: rep, eventDate: date, eventTime: time, pickupReceipt: receipt, remarks };
     try {
-        const completed = { ...payload, pulledBy, customerRep: rep, eventDate: date, eventTime: time, pickupReceipt: receipt, remarks };
-        if (payload.requiresReturnSave) await savePulloutPendingReturns(completed);
         releaseState.lastPrintedPulloutSignature = payload.signature;
         writePrintHtmlDocument(printWindow, buildPulloutPrintDocument(completed));
         closePulloutForm();
-        MargaUtils.showToast('Pull Out Form printed. DR print is now available for this Change Unit.', 'success');
+        if (payload.requiresReturnSave) {
+            try {
+                await savePulloutPendingReturns(completed);
+                MargaUtils.showToast('Pull Out Form printed and pending-return audit saved.', 'success');
+            } catch (saveError) {
+                console.warn('Pull Out Form printed, but pending-return audit save failed:', saveError);
+                await savePulloutSourceAudit(completed).catch((fallbackError) => {
+                    console.warn('Pull Out Form source audit fallback failed:', fallbackError);
+                });
+                MargaUtils.showToast('Pull Out Form printed. Audit save was blocked by permissions; Receiving should verify the return manually.', 'error');
+            }
+        } else {
+            MargaUtils.showToast('Pull Out Form printed.', 'success');
+        }
     } catch (error) {
         printWindow.close();
         console.error('Pull Out Form failed:', error);
@@ -1159,6 +1171,43 @@ async function printAndSavePulloutForm(event) {
     } finally {
         if (button) button.disabled = false;
     }
+}
+
+async function savePulloutSourceAudit(payload) {
+    const now = new Date().toISOString();
+    const fields = {
+        release_pullout_printed: 1,
+        release_pullout_printed_at: now,
+        release_pullout_printed_by: currentUserLabel(),
+        release_pullout_pickup_receipt: payload.pickupReceipt,
+        release_pullout_pulled_by: payload.pulledBy,
+        release_pullout_customer_rep: payload.customerRep,
+        release_pullout_event_at: `${payload.eventDate} ${payload.eventTime}:00`,
+        release_pullout_remarks: payload.remarks
+    };
+    const writes = payload.items.map((item) => {
+        const row = item.row || {};
+        const itemFields = {
+            ...fields,
+            release_pullout_old_machine_id: machineDocId(item.pulledMachine),
+            release_pullout_old_machine_serial: clean(item.pulledMachine?.serial || item.serial),
+            release_pullout_replacement_serial: clean(item.replacementSerial)
+        };
+        if (row.itemDocId) {
+            return patchDocument('tbl_newfordr', row.itemDocId, itemFields, {
+                label: `Pullout source audit ${row.refNo}`,
+                dedupeKey: `releasing-pullout-source-item:${row.itemDocId}:${payload.pickupReceipt}`
+            });
+        }
+        if (row.scheduleDocId) {
+            return patchDocument('tbl_schedule', row.scheduleDocId, itemFields, {
+                label: `Pullout source audit ${row.refNo}`,
+                dedupeKey: `releasing-pullout-source-schedule:${row.scheduleDocId}:${payload.pickupReceipt}`
+            });
+        }
+        return Promise.resolve();
+    });
+    await Promise.all(writes);
 }
 
 async function savePulloutPendingReturns(payload) {
