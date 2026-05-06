@@ -4283,7 +4283,7 @@ function buildCompanySummaryRows(rows, months) {
     rows.forEach((row) => {
         const key = getCompanySummaryGroupKey(row);
         const group = groups.get(key);
-        const qualifies = group && group.rows.length > 1;
+        const qualifies = group && group.billing_group && group.rows.length > 1;
 
         if (qualifies && !inserted.has(key)) {
             inserted.add(key);
@@ -5508,15 +5508,12 @@ function getGroupedMachineRows(row, monthKey) {
     const companyId = String(row?.company_id || '').trim();
     if (!companyId || !lastPayload?.month_matrix?.rows) return [];
     const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
+    if (!groupId) return [];
     const rows = lastPayload.month_matrix.rows
         .filter((entry) => (
             entry
             && !entry.is_summary_row
-            && (
-                groupId
-                    ? String(entry?.billing_group?.id || entry?.billing_group?.group_id || '').trim() === groupId
-                    : String(entry.company_id || '').trim() === companyId
-            )
+            && String(entry?.billing_group?.id || entry?.billing_group?.group_id || '').trim() === groupId
             && getRowBillingProfile(entry)
         ))
         .sort((left, right) => {
@@ -5568,8 +5565,9 @@ function getBillingExclusionsForContext(row, context) {
 
 function buildBillingCalculationContext(row, monthKey) {
     if (!row) return null;
-    const summaryGroupedRows = row.is_summary_row ? getGroupedMachineRows(row, monthKey) : [];
-    const workingRow = row.is_summary_row ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
+    const canUseVerifiedSummaryGroup = Boolean(row.is_summary_row && row.billing_group);
+    const summaryGroupedRows = canUseVerifiedSummaryGroup ? getGroupedMachineRows(row, monthKey) : [];
+    const workingRow = canUseVerifiedSummaryGroup ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
     const profile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
     if (!profile) return null;
 
@@ -5589,7 +5587,7 @@ function buildBillingCalculationContext(row, monthKey) {
 
     return {
         row: workingRow,
-        sourceSummaryRow: row.is_summary_row ? row : null,
+        sourceSummaryRow: canUseVerifiedSummaryGroup ? row : null,
         monthKey,
         targetCell,
         targetReadingGroup,
@@ -5604,7 +5602,7 @@ function buildBillingCalculationContext(row, monthKey) {
         isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
         hasSecondaryRtp: hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2),
         groupedMachineRows: summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey),
-        forceGroupedMode: Boolean(row.is_summary_row)
+        forceGroupedMode: canUseVerifiedSummaryGroup
     };
 }
 
