@@ -3,6 +3,7 @@ const config = window.MARGA_CARE_CONFIG || {};
 const views = [
   { key: "dashboard", label: "Dashboard", title: "Managed Care Dashboard", eyebrow: "Overview", icon: "grid" },
   { key: "service", label: "Service Requests", title: "Service Requests", eyebrow: "Support", icon: "support" },
+  { key: "acknowledgement", label: "Work Acknowledgement", title: "Customer Work Acknowledgement", eyebrow: "Service", icon: "check" },
   { key: "billing", label: "Billing History", title: "Billing History", eyebrow: "Account", icon: "invoice" },
   { key: "payments", label: "Payment Records", title: "Payment Records", eyebrow: "Account", icon: "payment" },
   { key: "usage", label: "Printer Usage", title: "Printer Usage", eyebrow: "Monitoring", icon: "chart" },
@@ -32,6 +33,36 @@ const demoData = {
   updates: [
     { title: "Service request SR-1042 assigned", body: "A technician has been assigned and will confirm the site visit window.", time: "Today" },
     { title: "April invoice posted", body: "Your April billing statement is now available for review.", time: "Yesterday" }
+  ],
+  workAcknowledgements: [
+    {
+      id: "WA-2407",
+      ticket: "SR-1042",
+      type: "Repair / Cleaning",
+      status: "Awaiting Acknowledgement",
+      machine: "882026041158 - Brother DCP-L2540DW",
+      branch: "Front Desk Head Office",
+      technician: "R. Santos",
+      completedAt: "Today 4:18 PM",
+      work: "Cleared paper path, cleaned rollers, tested print output, and checked toner level.",
+      notes: "Print is now clear. Customer reported occasional jam on thick paper; technician advised monitoring.",
+      followUp: "No parts requested.",
+      proof: "2 service photos attached"
+    },
+    {
+      id: "WA-2406",
+      ticket: "SR-1037",
+      type: "Preventive Maintenance",
+      status: "Acknowledged",
+      machine: "X9K2108831 - Canon IR 2525",
+      branch: "Records Room",
+      technician: "M. Dela Cruz",
+      completedAt: "Yesterday 11:25 AM",
+      work: "Performed preventive maintenance, cleaned scanner glass, checked feeder, and verified meter reading.",
+      notes: "Machine is operational. Customer was informed that feed rollers may need future replacement.",
+      followUp: "Service team to monitor roller condition.",
+      proof: "PM checklist attached"
+    }
   ]
 };
 
@@ -43,6 +74,16 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
+
 function icon(name) {
   const icons = {
     grid: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>',
@@ -51,7 +92,8 @@ function icon(name) {
     payment: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v10H4z"/><path d="M4 10h16M7 15h4"/></svg>',
     chart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V5M5 19h14"/><path d="M9 16v-5M13 16V8M17 16v-8"/></svg>',
     drop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s6 6.2 6 11a6 6 0 0 1-12 0c0-4.8 6-11 6-11z"/></svg>',
-    bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4z"/><path d="M10 20h4"/></svg>'
+    bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4z"/><path d="M10 20h4"/></svg>',
+    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5 9.2 18 20 6"/><path d="M20 12a8 8 0 1 1-3.2-6.4"/></svg>'
   };
   return icons[name] || icons.grid;
 }
@@ -62,6 +104,9 @@ function money(value) {
 
 function badgeClass(status) {
   const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("acknowledged")) return "good";
+  if (normalized.includes("concern")) return "danger";
+  if (normalized.includes("awaiting")) return "watch";
   if (normalized.includes("paid") && !normalized.includes("unpaid")) return "good";
   if (normalized.includes("progress") || normalized.includes("scheduled") || normalized.includes("watch")) return "watch";
   if (normalized.includes("low") || normalized.includes("unpaid") || normalized.includes("due")) return "danger";
@@ -101,7 +146,7 @@ function setView(viewKey) {
 function renderDashboard() {
   const openTickets = state.data.tickets.filter((ticket) => ticket.status !== "Closed").length;
   const unpaid = state.data.invoices.filter((invoice) => invoice.status !== "Paid");
-  const lowToner = state.data.devices.filter((device) => device.toner !== "Good").length;
+  const pendingAck = acknowledgementJobs().filter((job) => String(job.status || "").toLowerCase().includes("awaiting")).length;
 
   return `
     <section class="hero-panel">
@@ -115,8 +160,8 @@ function renderDashboard() {
     <section class="metric-row">
       ${metric("Active Machines", state.data.devices.length)}
       ${metric("Open Requests", openTickets)}
+      ${metric("Work Acknowledgement", pendingAck)}
       ${metric("Unpaid Balance", money(unpaid.reduce((sum, invoice) => sum + invoice.amount, 0)))}
-      ${metric("Supply Alerts", lowToner)}
     </section>
     <section class="split-grid">
       ${card("Recent Service", timeline(state.data.tickets, "issue"))}
@@ -205,13 +250,112 @@ function table(headers, rows) {
 }
 
 function statusBadge(status) {
-  return `<span class="badge ${badgeClass(status)}">${status}</span>`;
+  return `<span class="badge ${badgeClass(status)}">${escapeHtml(status)}</span>`;
+}
+
+function loadAcknowledgementOverrides() {
+  try {
+    return JSON.parse(localStorage.getItem("marga_care_work_acknowledgements") || "{}");
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveAcknowledgementOverride(id, payload) {
+  const saved = loadAcknowledgementOverrides();
+  saved[id] = { ...saved[id], ...payload };
+  localStorage.setItem("marga_care_work_acknowledgements", JSON.stringify(saved));
+}
+
+function acknowledgementJobs() {
+  const saved = loadAcknowledgementOverrides();
+  return state.data.workAcknowledgements.map((job) => ({ ...job, ...(saved[job.id] || {}) }));
+}
+
+function renderAcknowledgement() {
+  const jobs = acknowledgementJobs();
+  const pending = jobs.filter((job) => String(job.status || "").toLowerCase().includes("awaiting")).length;
+
+  return `
+    <section class="ack-summary">
+      <article class="panel ack-intro">
+        <div>
+          <p class="eyebrow">Customer Sign-off</p>
+          <h3>Review work details before the field visit is closed.</h3>
+          <p>Confirm the technician or messenger presented the work performed, findings, proof, and any noted follow-up items.</p>
+        </div>
+        <div class="ack-count">
+          <span>Pending</span>
+          <strong>${pending}</strong>
+        </div>
+      </article>
+    </section>
+    <section class="ack-list">
+      ${jobs.map(renderAcknowledgementCard).join("")}
+    </section>
+  `;
+}
+
+function renderAcknowledgementCard(job) {
+  const isPending = String(job.status || "").toLowerCase().includes("awaiting");
+  const isConcern = String(job.status || "").toLowerCase().includes("concern");
+  const disabled = !isPending;
+  const actionLabel = isConcern ? "Concern Reported" : "Work Acknowledged";
+
+  return `
+    <article class="panel work-card">
+      <div class="work-card-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(job.type)}</p>
+          <h3>${escapeHtml(job.ticket)} · ${escapeHtml(job.machine)}</h3>
+          <p>${escapeHtml(job.branch)}</p>
+        </div>
+        ${statusBadge(job.status)}
+      </div>
+
+      <div class="work-meta">
+        <span>${icon("support")} ${escapeHtml(job.technician)}</span>
+        <span>${icon("bell")} ${escapeHtml(job.completedAt)}</span>
+        <span>${icon("invoice")} ${escapeHtml(job.proof)}</span>
+      </div>
+
+      <div class="work-detail-grid">
+        <div>
+          <span>Work Performed</span>
+          <p>${escapeHtml(job.work)}</p>
+        </div>
+        <div>
+          <span>Technician Notes</span>
+          <p>${escapeHtml(job.notes)}</p>
+        </div>
+        <div>
+          <span>Parts / Follow-up</span>
+          <p>${escapeHtml(job.followUp)}</p>
+        </div>
+      </div>
+
+      <label class="ack-remarks">
+        Customer remarks
+        <textarea data-ack-remarks="${escapeHtml(job.id)}" placeholder="Optional: add a note for Marga service staff">${escapeHtml(job.customerRemark || "")}</textarea>
+      </label>
+
+      <div class="work-actions">
+        <button class="primary-action" type="button" data-ack-id="${escapeHtml(job.id)}" ${disabled ? "disabled" : ""}>
+          ${disabled ? actionLabel : "Acknowledge Work"}
+        </button>
+        <button class="ghost-action inline" type="button" data-concern-id="${escapeHtml(job.id)}" ${disabled ? "disabled" : ""}>
+          Report Concern
+        </button>
+      </div>
+    </article>
+  `;
 }
 
 function renderContent() {
   const renderers = {
     dashboard: renderDashboard,
     service: renderService,
+    acknowledgement: renderAcknowledgement,
     billing: renderBilling,
     payments: renderPayments,
     usage: renderUsage,
@@ -240,6 +384,32 @@ function bindEvents() {
   $("#refreshButton").addEventListener("click", renderContent);
   $("#menuButton").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
   document.body.addEventListener("click", (event) => {
+    const acknowledgeButton = event.target.closest("[data-ack-id]");
+    if (acknowledgeButton) {
+      const id = acknowledgeButton.dataset.ackId;
+      const remarks = document.querySelector(`[data-ack-remarks="${id}"]`)?.value || "";
+      saveAcknowledgementOverride(id, {
+        status: "Acknowledged",
+        customerRemark: remarks,
+        acknowledgedAt: new Date().toISOString()
+      });
+      renderContent();
+      return;
+    }
+
+    const concernButton = event.target.closest("[data-concern-id]");
+    if (concernButton) {
+      const id = concernButton.dataset.concernId;
+      const remarks = document.querySelector(`[data-ack-remarks="${id}"]`)?.value || "";
+      saveAcknowledgementOverride(id, {
+        status: "Concern Reported",
+        customerRemark: remarks || "Customer reported a concern after reviewing the work.",
+        acknowledgedAt: new Date().toISOString()
+      });
+      renderContent();
+      return;
+    }
+
     const target = event.target.closest("[data-view]");
     if (!target) return;
     setView(target.dataset.view);
