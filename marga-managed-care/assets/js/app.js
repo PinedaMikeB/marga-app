@@ -217,11 +217,16 @@ function createPortalRequest(payload) {
   return request;
 }
 
-function modelTroubleErrorOptions(device, troubleId) {
+function matchingModelErrorGuides(device, troubleId) {
   const matches = modelErrorCodes.filter((entry) => (
     (entry.models || []).some((model) => modelMatches(model, device?.model))
     && Number(entry.troubleId) === Number(troubleId)
   ));
+  return matches;
+}
+
+function modelTroubleErrorOptions(device, troubleId) {
+  const matches = matchingModelErrorGuides(device, troubleId);
   return [
     { value: "None", label: "None" },
     ...matches.map((entry) => ({
@@ -271,9 +276,20 @@ function renderErrorGuide(form) {
   const code = form?.querySelector('[name="errorCode"]')?.value || "";
   const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
   const guide = selectedErrorGuide(device, troubleId, code);
+  const hasGuides = matchingModelErrorGuides(device, troubleId).length > 0;
   const guideEl = form?.querySelector("[data-error-guide]");
   if (!guideEl) return;
   if (!guide) {
+    if (troubleId && !hasGuides && !code) {
+      const trouble = customerTroubles.find((item) => item.id === troubleId);
+      guideEl.classList.remove("hidden");
+      guideEl.innerHTML = `
+        <span>No LCD guide listed</span>
+        <strong>${escapeHtml(trouble?.label || "Selected trouble")}</strong>
+        <p>No model-specific LCD message is listed for this trouble. Choose None if the machine shows no error message, or Other / not listed if the display shows a message not in our guide.</p>
+      `;
+      return;
+    }
     guideEl.classList.add("hidden");
     guideEl.innerHTML = "";
     return;

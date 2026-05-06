@@ -1,4 +1,4 @@
-const CACHE_NAME = "marga-managed-care-v11";
+const CACHE_NAME = "marga-managed-care-v12";
 const ASSETS = [
   "./",
   "./index.html",
