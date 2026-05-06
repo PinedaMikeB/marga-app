@@ -1,10 +1,11 @@
-const CACHE_NAME = "marga-managed-care-v10";
+const CACHE_NAME = "marga-managed-care-v11";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
   "./assets/css/styles.css",
   "./assets/js/config.js",
+  "./assets/js/error-guides.js",
   "./assets/js/app.js"
 ];
 

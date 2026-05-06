@@ -125,224 +125,7 @@ const customerTroubles = [
 
 const MANUAL_ERROR_VALUE = "__manual_error__";
 
-const modelErrorCodes = [
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 469,
-    code: "Toner Low",
-    message: "Toner Low",
-    meaning: "Toner is nearly empty.",
-    remedy: "Prepare a new toner cartridge. The machine can usually still print for a while."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 469,
-    code: "Replace Toner",
-    message: "Replace Toner",
-    meaning: "Toner cartridge is empty or at end of life.",
-    remedy: "Replace the toner cartridge. Printing stops until toner is replaced."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 469,
-    code: "Toner Ended",
-    message: "Toner Ended",
-    meaning: "Toner is fully used.",
-    remedy: "Replace the toner cartridge."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 469,
-    code: "No Toner",
-    message: "No Toner",
-    meaning: "Toner and drum assembly is not detected properly.",
-    remedy: "Remove the toner and drum assembly, reinstall the toner into the drum, then reinstall the assembly."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 37,
-    code: "Drum !",
-    message: "Drum !",
-    meaning: "Corona wire needs cleaning or the drum/toner is not seated properly.",
-    remedy: "Clean the corona wire and reinstall the toner into the drum."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 38,
-    code: "Drum End Soon",
-    message: "Drum End Soon",
-    meaning: "Drum is near end of life.",
-    remedy: "Prepare a replacement drum unit."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 38,
-    code: "Replace Drum",
-    message: "Replace Drum",
-    meaning: "Drum unit needs replacement.",
-    remedy: "Replace the drum unit and reset the drum counter."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 38,
-    code: "Drum Stop",
-    message: "Drum Stop",
-    meaning: "Drum can no longer print reliably.",
-    remedy: "Replace the drum unit."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 102,
-    code: "Cover is Open",
-    message: "Cover is Open",
-    meaning: "Front cover, back cover, or ADF cover is not closed.",
-    remedy: "Close all covers firmly."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 49,
-    code: "Jam Tray",
-    message: "Jam Tray",
-    meaning: "Paper jam is detected at the paper tray.",
-    remedy: "Remove the tray and carefully remove jammed paper."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 49,
-    code: "Jam Inside",
-    message: "Jam Inside",
-    meaning: "Paper jam is detected inside the machine.",
-    remedy: "Open the cover and remove jammed paper from inside the machine."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 49,
-    code: "Jam Rear",
-    message: "Jam Rear",
-    meaning: "Paper jam is detected at the rear cover.",
-    remedy: "Open the rear cover and remove jammed paper."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 49,
-    code: "Jam 2-sided",
-    message: "Jam 2-sided",
-    meaning: "Paper jam is detected in the duplex path.",
-    remedy: "Remove the duplex tray or check the back area, then remove jammed paper."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 216,
-    code: "Document Jam",
-    message: "Document Jam",
-    meaning: "Paper or document is stuck in the ADF scanner feeder.",
-    remedy: "Open the ADF and remove the jammed document."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 62,
-    code: "No Paper",
-    message: "No Paper",
-    meaning: "Paper tray is empty or paper is not feeding.",
-    remedy: "Add paper, adjust the paper guides, and reinsert the tray."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 62,
-    code: "Manual Feed",
-    message: "Manual Feed",
-    meaning: "Printer expects paper in the manual feed slot.",
-    remedy: "Insert paper in the manual feed slot or change the paper source setting."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 62,
-    code: "Size Mismatch",
-    message: "Size Mismatch",
-    meaning: "Paper size in the tray does not match the print setting.",
-    remedy: "Set the same paper size in the printer menu and computer print settings."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 102,
-    code: "2-sided Disabled",
-    message: "2-sided Disabled",
-    meaning: "Duplex tray or back cover is not properly installed or closed.",
-    remedy: "Reinsert the duplex tray and close the back cover."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 177,
-    code: "Print Data Full",
-    message: "Print Data Full",
-    meaning: "Printer memory is full.",
-    remedy: "Press Stop/Exit, reduce print resolution or file complexity, or print fewer pages."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 177,
-    code: "Self-Diagnostic",
-    message: "Self-Diagnostic",
-    meaning: "Fuser temperature problem: too hot or not heating correctly.",
-    remedy: "Turn the printer off, wait, then turn it on again. If the message returns, service may be needed."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 177,
-    code: "Print Unable 0A",
-    message: "Print Unable 0A",
-    meaning: "Mechanical or internal printer fault.",
-    remedy: "Turn the printer off, wait a few minutes, then turn it on again. If it returns, service is needed."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 177,
-    code: "Print Unable 0B",
-    message: "Print Unable 0B",
-    meaning: "Mechanical or internal printer fault.",
-    remedy: "Turn the printer off, wait a few minutes, then turn it on again. If it returns, service is needed."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 216,
-    code: "Scan Unable XX",
-    message: "Scan Unable XX",
-    meaning: "Scanner mechanical or internal fault.",
-    remedy: "Restart the printer. If the message returns, service is needed."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 73,
-    code: "Cooling Down",
-    message: "Cooling Down",
-    meaning: "Printer is cooling internal parts.",
-    remedy: "Wait until the printer resumes."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 177,
-    code: "Out of Memory",
-    message: "Out of Memory",
-    meaning: "Copy, scan, or print memory is full.",
-    remedy: "Reduce pages, lower resolution, or split the job."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 172,
-    code: "Disconnected",
-    message: "Disconnected",
-    meaning: "Network or USB communication is lost.",
-    remedy: "Check cable, Wi-Fi, router, and printer driver connection."
-  },
-  {
-    models: ["Brother DCP-L2540DW", "DCP-L2540DW", "DCP-L2540", "L2540"],
-    troubleId: 362,
-    code: "Connection Fail",
-    message: "Connection Fail",
-    meaning: "Wi-Fi setup failed.",
-    remedy: "Reconnect to Wi-Fi and check the password and router."
-  }
-];
+const modelErrorCodes = window.MARGA_MODEL_ERROR_GUIDES || [];
 
 const state = {
   authed: false,
@@ -389,6 +172,12 @@ function normalizeModel(value) {
   return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+function modelMatches(entryModel, selectedModel) {
+  const entryKey = normalizeModel(entryModel);
+  const selectedKey = normalizeModel(selectedModel);
+  return Boolean(entryKey && selectedKey && (entryKey === selectedKey || entryKey.includes(selectedKey) || selectedKey.includes(entryKey)));
+}
+
 function requestStoreKey() {
   return `marga_care_requests_${state.access?.companyId || "demo"}_${normalizeSerial(state.access?.serial || "all")}`;
 }
@@ -429,9 +218,8 @@ function createPortalRequest(payload) {
 }
 
 function modelTroubleErrorOptions(device, troubleId) {
-  const modelKey = normalizeModel(device?.model);
   const matches = modelErrorCodes.filter((entry) => (
-    (entry.models || []).some((model) => normalizeModel(model) === modelKey)
+    (entry.models || []).some((model) => modelMatches(model, device?.model))
     && Number(entry.troubleId) === Number(troubleId)
   ));
   return [
@@ -445,9 +233,8 @@ function modelTroubleErrorOptions(device, troubleId) {
 }
 
 function selectedErrorGuide(device, troubleId, code) {
-  const modelKey = normalizeModel(device?.model);
   return modelErrorCodes.find((entry) => (
-    (entry.models || []).some((model) => normalizeModel(model) === modelKey)
+    (entry.models || []).some((model) => modelMatches(model, device?.model))
     && Number(entry.troubleId) === Number(troubleId)
     && entry.code === code
   )) || null;
