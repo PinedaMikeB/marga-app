@@ -255,6 +255,7 @@ function cleanPrintCustomerName(value) {
     return String(value || '')
         .replace(/\s*[\u2022-]\s*company subtotal\s*$/i, '')
         .replace(/\s+company subtotal\s*$/i, '')
+        .replace(/^CHINABANK$/i, 'China Bank Savings Inc. - Branches')
         .replace(/^China\s+Bank\s+Savings?\s*(?:Inc\.?)?\s*-\s*Branches$/i, 'China Bank Savings Inc. - Branches')
         .trim();
 }
