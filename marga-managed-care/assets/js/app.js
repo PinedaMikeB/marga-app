@@ -102,21 +102,25 @@ const pilotAccess = [
 ];
 
 const customerTroubles = [
-  "Paper jam",
-  "Blurred print or copy",
-  "Light print or faded output",
-  "Dark print or dirty output",
-  "Lines, streaks, or spots on output",
-  "Error code / warning message",
-  "No power",
-  "Cannot print",
-  "Slow printing or copying",
-  "Noisy machine",
-  "Scanner or feeder problem",
-  "Toner / ink leak",
-  "Low toner or ink alert",
-  "Network or connection problem",
-  "Other concern"
+  { id: 49, label: "Paper jam", serviceLabel: "Jamming" },
+  { id: 175, label: "Blurred print", serviceLabel: "Blurred Print" },
+  { id: 22, label: "Blurred copy", serviceLabel: "Blurred Copy" },
+  { id: 50, label: "Light print or faded output", serviceLabel: "Light Print" },
+  { id: 183, label: "Dark print", serviceLabel: "Dark Print" },
+  { id: 263, label: "Dark copy", serviceLabel: "Dark Copy" },
+  { id: 123, label: "Lines on print or copy", serviceLabel: "Lines" },
+  { id: 32, label: "Spots on print or copy", serviceLabel: "Dark Spot" },
+  { id: 107, label: "Error code / warning message", serviceLabel: "Error Code" },
+  { id: 58, label: "No power", serviceLabel: "No Power" },
+  { id: 177, label: "Cannot print", serviceLabel: "Unable to Print" },
+  { id: 73, label: "Slow printing or copying", serviceLabel: "Slow Print" },
+  { id: 56, label: "Noisy machine", serviceLabel: "Noisy" },
+  { id: 216, label: "Scanner problem", serviceLabel: "Scanner Problem" },
+  { id: 62, label: "Paper feed problem", serviceLabel: "Paper Feed Problem" },
+  { id: 172, label: "Connection problem", serviceLabel: "Connection" },
+  { id: 362, label: "Network problem", serviceLabel: "Network" },
+  { id: 148, label: "Offline", serviceLabel: "Off Line" },
+  { id: 102, label: "Other concern", serviceLabel: "Others" }
 ];
 
 const state = {
@@ -316,7 +320,7 @@ function renderService() {
         <label>Machine <select name="serial" required>${devices.map((device) => `<option value="${escapeHtml(device.serial)}">${escapeHtml(device.serial)} - ${escapeHtml(device.model)} / ${escapeHtml(device.branch)}</option>`).join("")}</select></label>
         <label>Trouble <select name="trouble" data-trouble-select required>
           <option value="">Select observed problem...</option>
-          ${customerTroubles.map((trouble) => `<option>${escapeHtml(trouble)}</option>`).join("")}
+          ${customerTroubles.map((trouble) => `<option value="${trouble.id}" data-service-label="${escapeHtml(trouble.serviceLabel)}">${escapeHtml(trouble.label)}</option>`).join("")}
         </select></label>
         <label class="conditional-field hidden" data-error-code-field>Error code or message <input name="errorCode" type="text" placeholder="Example: E50, Replace Drum, Paper Jam Tray 1"></label>
         <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
@@ -539,10 +543,14 @@ function bindEvents() {
     const formData = new FormData(form);
     const serial = formData.get("serial");
     const device = scopedDevices().find((item) => item.serial === serial) || scopedDevices()[0];
+    const troubleId = Number(formData.get("trouble") || 0);
+    const trouble = customerTroubles.find((item) => item.id === troubleId) || null;
     const request = createPortalRequest({
       type: form.dataset.requestForm === "toner" ? "Toner / Ink" : "Service",
       category: form.dataset.requestForm === "toner" ? formData.get("category") : "Customer Reported Trouble",
-      trouble: formData.get("trouble") || formData.get("category"),
+      troubleId,
+      trouble: trouble?.serviceLabel || formData.get("category"),
+      customerTrouble: trouble?.label || "",
       errorCode: formData.get("errorCode"),
       serial,
       branch: device?.branch || "Assigned machine",
@@ -565,7 +573,7 @@ function bindEvents() {
     const form = troubleSelect.closest("[data-request-form]");
     const errorField = form?.querySelector("[data-error-code-field]");
     if (!errorField) return;
-    const shouldShow = troubleSelect.value === "Error code / warning message";
+    const shouldShow = Number(troubleSelect.value || 0) === 107;
     errorField.classList.toggle("hidden", !shouldShow);
     const input = errorField.querySelector("input");
     if (input) {
