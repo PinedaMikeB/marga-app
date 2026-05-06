@@ -2223,6 +2223,15 @@ function formatInvoicePrinterModelValue({ modelName = '', serialNumber = '', ser
     return fallbackModel || 'N/A';
 }
 
+function formatInvoiceMachineSerialValue({ isGroupedPrint = false, modelName = '', serialNumber = '', serialNumbers = [], fallbackSerial = '' } = {}) {
+    if (isGroupedPrint) return 'Multiple Machines';
+    return cleanMachineIdentityValue(serialNumber, { skipNA: true })
+        || collectInvoiceSerialNumbers(serialNumbers.map((value) => ({ serial_number: value }))).join(', ')
+        || cleanMachineIdentityValue(fallbackSerial, { skipNA: true })
+        || formatInvoicePrinterModelValue({ modelName })
+        || 'N/A';
+}
+
 function getInvoiceSearchEntryModel(entry, references = null) {
     const row = entry?.row || {};
     const doc = entry?.doc || {};
@@ -2666,9 +2675,9 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
         monthLabel: formatMonthLongLabel(monthKey, monthKey),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: formatInvoicePrinterModelValue({ modelName, serialNumber, serialNumbers: groupedSerialNumbers }),
+        printerModel: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         machineModel: modelName || row?.machine_label || 'N/A',
-        machineSerial: serialNumber || groupedSerialNumbers.join(', ') || row?.serial_number || 'N/A',
+        machineSerial: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
         presentReadingDate: firstIsoDate(
             cell?.task_date,
@@ -2732,9 +2741,9 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
         contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
-        printerModel: formatInvoicePrinterModelValue({ modelName, serialNumber, serialNumbers: groupedSerialNumbers }),
+        printerModel: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         machineModel: modelName || row?.machine_label || 'N/A',
-        machineSerial: serialNumber || groupedSerialNumbers.join(', ') || row?.serial_number || 'N/A',
+        machineSerial: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         contractId: String(row?.contractmain_id || row?.contract_id || '').trim(),
         presentReadingDate: firstIsoDate(
             context?.targetCell?.task_date,
