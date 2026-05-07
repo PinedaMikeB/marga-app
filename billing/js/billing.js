@@ -2681,12 +2681,11 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
     );
     const { modelName, serialNumber } = resolveBillingMachineIdentity({ row, machine, model });
     const accountName = cleanPrintCustomerName(
-        row?.display_name
-        || row?.account_name
+        company?.companyname
+        || row?.company_name
         || billInfo?.payeename
         || billInfo?.endusername
-        || company?.companyname
-        || row?.company_name
+        || row?.account_name
         || ''
     );
     const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row });
@@ -2747,12 +2746,11 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     const invoiceDate = period.endDate || new Date();
     const { modelName, serialNumber } = resolveBillingMachineIdentity({ row, machine, model });
     const accountName = cleanPrintCustomerName(
-        row?.display_name
-        || row?.account_name
+        company?.companyname
+        || row?.company_name
         || billInfo?.payeename
         || billInfo?.endusername
-        || company?.companyname
-        || row?.company_name
+        || row?.account_name
         || ''
     );
     const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row, context, estimate });
@@ -3529,7 +3527,7 @@ function buildRtpPrintDocument(preview) {
             background: #fff;
             overflow: hidden;
         }
-        body { font-family: "Arial", "Helvetica Neue", sans-serif; }
+        body { font-family: Arial, sans-serif; }
         .print-wrap {
             position: relative;
             width: ${paperWidth};
