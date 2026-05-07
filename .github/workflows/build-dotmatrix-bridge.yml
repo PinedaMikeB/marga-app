@@ -1,0 +1,30 @@
+name: Build Dot Matrix Bridge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'local-dotmatrix/**'
+      - '.github/workflows/build-dotmatrix-bridge.yml'
+
+jobs:
+  build-win-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Windows x64 bridge
+        shell: pwsh
+        run: ./local-dotmatrix/build-windows-x64.ps1
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MargaDotMatrixBridge-win-x64
+          path: local-dotmatrix/dist/win-x64/**

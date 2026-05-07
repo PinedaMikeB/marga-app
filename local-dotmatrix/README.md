@@ -2,7 +2,20 @@
 
 This bridge lets the Billing module print invoices to an Epson LX dot-matrix printer as RAW text. It avoids Chrome or Firefox rasterizing the invoice, which can make LX-310 output unreadable.
 
+## EXE Install
+
+For Windows 10 64-bit staff PCs:
+
+1. Extract the `MargaDotMatrixBridge-win-x64` ZIP.
+2. Double-click `Install-MargaDotMatrixBridge.cmd`.
+3. Leave the first bridge window running, or restart Windows once.
+4. In the Billing module, click `Dot Matrix Print`.
+
+The installer copies `MargaDotMatrixBridge.exe` to `%LOCALAPPDATA%\MargaDotMatrixBridge` and creates a Windows logon startup task for the current user.
+
 ## Windows Setup
+
+This section is only needed if you are using the PowerShell fallback bridge instead of the EXE.
 
 1. Open PowerShell on the Windows PC connected to the LX printer.
 2. Optional but recommended: install the bridge to auto-start at Windows login:
