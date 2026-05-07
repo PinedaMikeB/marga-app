@@ -2516,9 +2516,9 @@ function setRtpPrintPayload(payload) {
     els.billingCalcDotMatrixBtn?.classList.toggle('hidden', !payload);
     els.billingCalcMeterFormBtn?.classList.toggle('hidden', !payload);
     if (els.rtpInvoicePrintBtn) els.rtpInvoicePrintBtn.textContent = `Print ${printCode}`;
-    if (els.rtpInvoiceDotMatrixBtn) els.rtpInvoiceDotMatrixBtn.textContent = `${printCode} Dot Matrix TXT`;
+    if (els.rtpInvoiceDotMatrixBtn) els.rtpInvoiceDotMatrixBtn.textContent = `${printCode} Dot Matrix Print`;
     if (els.billingCalcPrintBtn) els.billingCalcPrintBtn.textContent = `Print ${printCode}`;
-    if (els.billingCalcDotMatrixBtn) els.billingCalcDotMatrixBtn.textContent = `${printCode} Dot Matrix TXT`;
+    if (els.billingCalcDotMatrixBtn) els.billingCalcDotMatrixBtn.textContent = `${printCode} Dot Matrix Print`;
     if (els.billingCalcMeterFormBtn) els.billingCalcMeterFormBtn.textContent = 'Print Meter Reading Form';
 }
 
@@ -3660,28 +3660,61 @@ function buildDotMatrixInvoiceText(preview) {
     return `${lines.join('\r\n')}\r\n`;
 }
 
-function downloadTextFile(filename, contents, mimeType = 'text/plain') {
-    const blob = new Blob([contents], { type: `${mimeType};charset=us-ascii` });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+function buildDotMatrixInvoicePrintDocument(preview) {
+    const invoiceText = buildDotMatrixInvoiceText(preview).replace(/\f/g, '');
+    return `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Dot Matrix Invoice Print</title>
+    <style>
+        @page {
+            size: letter portrait;
+            margin: 0;
+        }
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #fff;
+        }
+        body {
+            color: #000;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 10pt;
+            line-height: 1.25;
+        }
+        .dot-matrix-page {
+            box-sizing: border-box;
+            width: 8.5in;
+            min-height: 11in;
+            padding: 1.55in 1.05in 0.8in 1.25in;
+            white-space: pre;
+        }
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .dot-matrix-page {
+                break-after: page;
+            }
+        }
+    </style>
+</head>
+<body>
+<pre class="dot-matrix-page">${escapeHtml(invoiceText)}</pre>
+</body>
+</html>`;
 }
 
-function downloadCurrentDotMatrixInvoice() {
+function printCurrentDotMatrixInvoice() {
     if (!currentRtpPrintPayload) {
         MargaUtils.showToast('Open a printable invoice first.', 'error');
         return;
     }
-    const contractCode = String(currentRtpPrintPayload.contractCode || 'invoice').toLowerCase();
-    const dateKey = String(currentRtpPrintPayload.invoiceDate || '').replace(/\D/g, '') || 'print';
-    const customerKey = slugFirestoreId(currentRtpPrintPayload.customerName || 'customer').slice(0, 32);
-    downloadTextFile(`${contractCode}_${dateKey}_${customerKey}.txt`, buildDotMatrixInvoiceText(currentRtpPrintPayload));
-    MargaUtils.showToast('Dot-matrix text invoice downloaded. Print the TXT file using the LX printer raw/text path.', 'success');
+
+    printHtmlDocument(buildDotMatrixInvoicePrintDocument(currentRtpPrintPayload), 'marga_dot_matrix_invoice_print');
 }
 
 function printCurrentMeterReadingForm() {
@@ -6405,7 +6438,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         els.billingCalcPrintBtn.disabled = true;
     }
     if (els.billingCalcDotMatrixBtn) {
-        els.billingCalcDotMatrixBtn.textContent = `${printContractCode || 'Invoice'} Dot Matrix TXT`;
+        els.billingCalcDotMatrixBtn.textContent = `${printContractCode || 'Invoice'} Dot Matrix Print`;
         els.billingCalcDotMatrixBtn.classList.toggle('hidden', !canPrintInvoice);
         els.billingCalcDotMatrixBtn.disabled = true;
     }
@@ -8602,13 +8635,13 @@ function bindEvents() {
     });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
     els.rtpInvoicePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
-    els.rtpInvoiceDotMatrixBtn?.addEventListener('click', downloadCurrentDotMatrixInvoice);
+    els.rtpInvoiceDotMatrixBtn?.addEventListener('click', printCurrentDotMatrixInvoice);
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
     });
     els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
     els.billingCalcPrintBtn?.addEventListener('click', printCurrentRtpInvoice);
-    els.billingCalcDotMatrixBtn?.addEventListener('click', downloadCurrentDotMatrixInvoice);
+    els.billingCalcDotMatrixBtn?.addEventListener('click', printCurrentDotMatrixInvoice);
     els.billingCalcMeterFormBtn?.addEventListener('click', printCurrentMeterReadingForm);
     els.billingCalcModal?.addEventListener('click', (event) => {
         if (event.target === els.billingCalcModal) closeBillingCalcModal();
