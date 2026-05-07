@@ -29,6 +29,7 @@ const els = {
     invoiceDetailSubtitle: null,
     invoiceDetailContent: null,
     rtpInvoicePrintBtn: null,
+    rtpInvoiceDotMatrixBtn: null,
     invoiceDetailCloseBtn: null,
     serialDetailModal: null,
     serialDetailTitle: null,
@@ -40,6 +41,7 @@ const els = {
     billingCalcSubtitle: null,
     billingCalcContent: null,
     billingCalcPrintBtn: null,
+    billingCalcDotMatrixBtn: null,
     billingCalcMeterFormBtn: null,
     billingCalcCloseBtn: null
 };
@@ -2509,10 +2511,14 @@ function setRtpPrintPayload(payload) {
     currentRtpPrintPayload = payload || null;
     const printCode = String(payload?.contractCode || 'Invoice').trim().toUpperCase() || 'Invoice';
     els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
+    els.rtpInvoiceDotMatrixBtn?.classList.toggle('hidden', !payload);
     els.billingCalcPrintBtn?.classList.toggle('hidden', !payload);
+    els.billingCalcDotMatrixBtn?.classList.toggle('hidden', !payload);
     els.billingCalcMeterFormBtn?.classList.toggle('hidden', !payload);
     if (els.rtpInvoicePrintBtn) els.rtpInvoicePrintBtn.textContent = `Print ${printCode}`;
+    if (els.rtpInvoiceDotMatrixBtn) els.rtpInvoiceDotMatrixBtn.textContent = `${printCode} Dot Matrix TXT`;
     if (els.billingCalcPrintBtn) els.billingCalcPrintBtn.textContent = `Print ${printCode}`;
+    if (els.billingCalcDotMatrixBtn) els.billingCalcDotMatrixBtn.textContent = `${printCode} Dot Matrix TXT`;
     if (els.billingCalcMeterFormBtn) els.billingCalcMeterFormBtn.textContent = 'Print Meter Reading Form';
 }
 
@@ -3591,6 +3597,91 @@ function printCurrentRtpInvoice() {
     }
 
     printHtmlDocument(buildRtpPrintDocument(currentRtpPrintPayload), 'marga_invoice_print');
+}
+
+function sanitizeDotMatrixText(value) {
+    return String(value || '')
+        .normalize('NFKD')
+        .replace(/[^\x20-\x7E\r\n]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function dotMatrixFit(value, width, align = 'left') {
+    const text = sanitizeDotMatrixText(value);
+    const safeWidth = Math.max(1, Number(width || 0) || 1);
+    const clipped = text.length > safeWidth ? text.slice(0, safeWidth) : text;
+    if (align === 'right') return clipped.padStart(safeWidth, ' ');
+    if (align === 'center') {
+        const left = Math.floor((safeWidth - clipped.length) / 2);
+        return `${' '.repeat(Math.max(0, left))}${clipped}`.padEnd(safeWidth, ' ');
+    }
+    return clipped.padEnd(safeWidth, ' ');
+}
+
+function buildDotMatrixPair(label, value, labelWidth = 29, valueWidth = 20) {
+    return `${dotMatrixFit(label, labelWidth)}${dotMatrixFit(value, valueWidth)}`;
+}
+
+function buildDotMatrixInvoiceText(preview) {
+    const totals = preview?.totals || {};
+    const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
+    const isFixedRate = contractCode === 'RTF';
+    const lines = [];
+    lines.push('');
+    lines.push(dotMatrixFit(preview?.customerName || 'Unknown Customer', 58) + dotMatrixFit(preview?.invoiceDate || '', 22, 'right'));
+    lines.push(dotMatrixFit(preview?.tin || 'N/A', 58) + dotMatrixFit(preview?.readingCode || '', 22, 'right'));
+    lines.push(dotMatrixFit(preview?.address || 'N/A', 58) + dotMatrixFit(preview?.monthLabel || '', 22, 'right'));
+    lines.push(dotMatrixFit('', 58) + dotMatrixFit(contractCode, 22, 'right'));
+    lines.push('');
+    lines.push(buildDotMatrixPair('Business Style :', preview?.businessStyle || 'N/A'));
+    lines.push(buildDotMatrixPair('Printer Model/Serial', preview?.printerModel || 'N/A'));
+    lines.push(`${dotMatrixFit('Printer Rental Billing for :', 29)}${dotMatrixFit(preview?.billingFrom || 'N/A', 15)}${dotMatrixFit('to', 8, 'center')}${dotMatrixFit(preview?.billingTo || 'N/A', 15)}`);
+    if (isFixedRate) {
+        lines.push(buildDotMatrixPair('Monthly Rate:', formatFixedAmount(preview?.monthlyRate || preview?.rate || 0)));
+    } else {
+        lines.push(buildDotMatrixPair('Total Pages consumed :', formatCount(preview?.totalPages || 0)));
+        lines.push(buildDotMatrixPair('Rate per Page:', formatFixedAmount(preview?.rate || 0)));
+    }
+    lines.push('');
+    lines.push('');
+    [
+        totals.total,
+        totals.vatAmount,
+        totals.vatableSales,
+        totals.vatExempt,
+        totals.zeroRated,
+        totals.lessVat,
+        totals.amountDue
+    ].forEach((amount, index) => {
+        const amountText = formatFixedAmount(amount || 0);
+        lines.push(`${dotMatrixFit('', 62)}${dotMatrixFit(amountText, 18, 'right')}${index === 6 ? '\f' : ''}`);
+    });
+    return `${lines.join('\r\n')}\r\n`;
+}
+
+function downloadTextFile(filename, contents, mimeType = 'text/plain') {
+    const blob = new Blob([contents], { type: `${mimeType};charset=us-ascii` });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadCurrentDotMatrixInvoice() {
+    if (!currentRtpPrintPayload) {
+        MargaUtils.showToast('Open a printable invoice first.', 'error');
+        return;
+    }
+    const contractCode = String(currentRtpPrintPayload.contractCode || 'invoice').toLowerCase();
+    const dateKey = String(currentRtpPrintPayload.invoiceDate || '').replace(/\D/g, '') || 'print';
+    const customerKey = slugFirestoreId(currentRtpPrintPayload.customerName || 'customer').slice(0, 32);
+    downloadTextFile(`${contractCode}_${dateKey}_${customerKey}.txt`, buildDotMatrixInvoiceText(currentRtpPrintPayload));
+    MargaUtils.showToast('Dot-matrix text invoice downloaded. Print the TXT file using the LX printer raw/text path.', 'success');
 }
 
 function printCurrentMeterReadingForm() {
@@ -6313,6 +6404,11 @@ async function openBillingCalcModal(rowId, monthKey) {
         els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice);
         els.billingCalcPrintBtn.disabled = true;
     }
+    if (els.billingCalcDotMatrixBtn) {
+        els.billingCalcDotMatrixBtn.textContent = `${printContractCode || 'Invoice'} Dot Matrix TXT`;
+        els.billingCalcDotMatrixBtn.classList.toggle('hidden', !canPrintInvoice);
+        els.billingCalcDotMatrixBtn.disabled = true;
+    }
     if (els.billingCalcMeterFormBtn) {
         els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice);
         els.billingCalcMeterFormBtn.disabled = true;
@@ -7079,6 +7175,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (els.billingCalcPrintBtn) {
             els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
             els.billingCalcPrintBtn.disabled = !printEnabled;
+        }
+        if (els.billingCalcDotMatrixBtn) {
+            els.billingCalcDotMatrixBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
+            els.billingCalcDotMatrixBtn.disabled = !printEnabled;
         }
         if (els.billingCalcMeterFormBtn) {
             els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
@@ -8502,11 +8602,13 @@ function bindEvents() {
     });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
     els.rtpInvoicePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
+    els.rtpInvoiceDotMatrixBtn?.addEventListener('click', downloadCurrentDotMatrixInvoice);
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
     });
     els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
     els.billingCalcPrintBtn?.addEventListener('click', printCurrentRtpInvoice);
+    els.billingCalcDotMatrixBtn?.addEventListener('click', downloadCurrentDotMatrixInvoice);
     els.billingCalcMeterFormBtn?.addEventListener('click', printCurrentMeterReadingForm);
     els.billingCalcModal?.addEventListener('click', (event) => {
         if (event.target === els.billingCalcModal) closeBillingCalcModal();
