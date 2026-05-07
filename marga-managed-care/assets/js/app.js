@@ -434,10 +434,10 @@ function renderService() {
         </div>
         <label class="manual-error-field hidden" data-manual-error-field>Manual error code / message <input name="manualErrorCode" type="text" placeholder="Type the exact error shown on the machine"></label>
         <div class="error-guide hidden" data-error-guide></div>
-        <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays." required></textarea></label>
+        <label>Details <textarea name="concern" placeholder="Tell us what happened, when it started, and anything the machine displays. Clear details help us prepare the right parts or tools before dispatch." required></textarea></label>
         <div class="attachment-guide">
           <span>Attachments</span>
-          <p>Please upload one clear image if available. This helps Marga check the issue before dispatch.</p>
+          <p>Please upload one clear image if available. Photos help us identify possible parts to bring, reduce repeat visits, and get your unit running sooner.</p>
           <div class="attachment-grid">
             <label>Control Panel <input name="controlPanelImage" type="file" accept="image/*" capture="environment"></label>
             <label>Sample Print <input name="samplePrintImage" type="file" accept="image/*" capture="environment"></label>
