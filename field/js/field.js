@@ -21,7 +21,7 @@ const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
-const PRODUCTION_QUEUE_COLLECTION = 'marga_production_queue';
+const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
@@ -2930,10 +2930,9 @@ async function markPendingTask() {
     const button = document.getElementById('fieldModalPendingTask');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
-        await upsertSchedtimeLog(row, form, 'pending');
-        await setDocument(PRODUCTION_QUEUE_COLLECTION, queueDocId, {
+        const queuePayload = {
             schedule_id: Number(row.id || 0),
+            schedule_doc_id: scheduleDocIdForRow(row),
             branch_id: Number(row.branch_id || 0) || 0,
             company_id: Number(row.company_id || 0) || 0,
             machine_id: Number(form.selectedMachineId || row.serial || 0) || 0,
@@ -2950,12 +2949,25 @@ async function markPendingTask() {
             present_meter: form.presentMeter ?? 0,
             previous_meter: form.previousMeter ?? 0,
             total_consumed: form.totalConsumed ?? 0
-        });
+        };
+
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
+        await upsertSchedtimeLog(row, form, 'pending');
+        try {
+            await setDocument(PRODUCTION_QUEUE_COLLECTION, queueDocId, queuePayload);
+        } catch (queueError) {
+            console.warn('Production queue write failed; schedule remains pending for parts.', queueError);
+            await patchDocument('tbl_schedule', scheduleDocIdForRow(row), {
+                production_queue_write_status: 'failed',
+                production_queue_write_error: clampText(queueError?.message || queueError, 180),
+                production_queue_write_failed_at: nowIso
+            });
+        }
 
         applyRowPatch(row.id, payload);
         closeModal();
         await loadMySchedule();
-        alert('Marked as Pending (Parts Needed). Production queue updated.');
+        alert('Marked as Pending (Parts Needed).');
     } catch (err) {
         console.error('Mark pending failed:', err);
         alert(`Failed to mark pending: ${err?.message || err}`);

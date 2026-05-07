@@ -16,6 +16,7 @@ const MargaUtils = {
         'tbl_machine',
         'tbl_newmachinestatus',
         'marga_production_queue',
+        'tbl_production_queue',
         'tbl_ownership',
         'tbl_branchinfo',
         'tbl_companylist',
