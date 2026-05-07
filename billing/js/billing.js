@@ -3660,6 +3660,28 @@ function buildDotMatrixInvoiceText(preview) {
     return `${lines.join('\r\n')}\r\n`;
 }
 
+function buildDotMatrixInvoiceRawText(preview) {
+    return `\x1B@${buildDotMatrixInvoiceText(preview)}`;
+}
+
+async function sendDotMatrixInvoiceToLocalBridge(preview) {
+    const response = await fetch('http://127.0.0.1:8765/print-invoice', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            jobName: `${String(preview?.contractCode || 'Invoice').trim().toUpperCase() || 'Invoice'} ${preview?.invoiceDate || ''}`.trim(),
+            text: buildDotMatrixInvoiceRawText(preview)
+        })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || `Dot matrix bridge returned HTTP ${response.status}.`);
+    }
+    return result;
+}
+
 function buildDotMatrixInvoicePrintDocument(preview) {
     const invoiceText = buildDotMatrixInvoiceText(preview).replace(/\f/g, '');
     return `<!doctype html>
@@ -3714,7 +3736,15 @@ function printCurrentDotMatrixInvoice() {
         return;
     }
 
-    printHtmlDocument(buildDotMatrixInvoicePrintDocument(currentRtpPrintPayload), 'marga_dot_matrix_invoice_print');
+    sendDotMatrixInvoiceToLocalBridge(currentRtpPrintPayload)
+        .then((result) => {
+            const printerLabel = result?.printerName ? ` to ${result.printerName}` : '';
+            MargaUtils.showToast(`Dot-matrix invoice sent${printerLabel}.`, 'success');
+        })
+        .catch((error) => {
+            console.error('Dot matrix raw print failed:', error);
+            MargaUtils.showToast('Start the Marga Dot Matrix Print Bridge on this Windows PC, then click Dot Matrix Print again.', 'error');
+        });
 }
 
 function printCurrentMeterReadingForm() {
