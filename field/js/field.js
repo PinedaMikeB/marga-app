@@ -20,7 +20,7 @@ const LEGACY_EMPTY_DATETIME_VALUES = new Set([
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
-const SERIAL_CORRECTION_COLLECTION = 'marga_serial_corrections';
+const SERIAL_CORRECTION_COLLECTION = 'tbl_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
@@ -2874,6 +2874,22 @@ async function upsertSchedtimeLog(row, form, mode = 'draft') {
     state.modalSchedtimeDocId = logDocId;
 }
 
+async function safeUpsertSchedtimeLog(row, form, mode = 'draft') {
+    try {
+        await upsertSchedtimeLog(row, form, mode);
+    } catch (error) {
+        console.warn('Field schedtime log failed; primary schedule save remains authoritative.', error);
+        const nowIso = new Date().toISOString();
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), {
+            field_schedtime_log_status: 'failed',
+            field_schedtime_log_error: clampText(error?.message || error, 180),
+            field_schedtime_log_failed_at: nowIso
+        }).catch((patchError) => {
+            console.warn('Unable to annotate schedtime log failure on schedule.', patchError);
+        });
+    }
+}
+
 async function saveDraftUpdate() {
     const row = getCurrentRow();
     if (!row) return;
@@ -2884,7 +2900,7 @@ async function saveDraftUpdate() {
     button.disabled = true;
     try {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
-        await upsertSchedtimeLog(row, form, 'draft');
+        await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, payload);
         renderList();
         alert('Draft update saved.');
@@ -2952,7 +2968,7 @@ async function markPendingTask() {
         };
 
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
-        await upsertSchedtimeLog(row, form, 'pending');
+        await safeUpsertSchedtimeLog(row, form, 'pending');
         try {
             await setDocument(PRODUCTION_QUEUE_COLLECTION, queueDocId, queuePayload);
         } catch (queueError) {
@@ -3178,7 +3194,7 @@ async function closeTask() {
                 console.warn('Route row close update failed; schedule was closed.', routeError);
             }
         }
-        await upsertSchedtimeLog(row, form, 'finish');
+        await safeUpsertSchedtimeLog(row, form, 'finish');
         applyRowPatch(row.id, {
             ...payload,
             route_status: 0,
@@ -3528,7 +3544,7 @@ async function markTimeInNow() {
     button.disabled = true;
     try {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
-        await upsertSchedtimeLog(row, form, 'draft');
+        await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, patch);
         alert('Time in captured.');
     } catch (err) {
@@ -3763,7 +3779,7 @@ async function markTimeOutNow() {
     button.disabled = true;
     try {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
-        await upsertSchedtimeLog(row, form, 'draft');
+        await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, patch);
         alert('Time out captured.');
     } catch (err) {
