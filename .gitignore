@@ -8,6 +8,7 @@ local-sync/.env
 local-sync/state/
 local-sync/node_modules/
 local-sync/output/
+local-dotmatrix/dist/
 
 # Local Netlify folder
 .netlify
