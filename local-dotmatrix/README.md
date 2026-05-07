@@ -8,7 +8,7 @@ For Windows 10 64-bit staff PCs:
 
 1. Extract the `MargaDotMatrixBridge-win-x64` ZIP.
 2. Double-click `Install-MargaDotMatrixBridge.cmd`.
-3. Leave the first bridge window running, or restart Windows once.
+3. If the window says port `8765` is already in use, the bridge is already running. Close that window.
 4. In the Billing module, click `Dot Matrix Print`.
 
 The installer copies `MargaDotMatrixBridge.exe` to `%LOCALAPPDATA%\MargaDotMatrixBridge` and creates a Windows logon startup task for the current user.

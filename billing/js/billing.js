@@ -7210,6 +7210,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         const reprintAllowed = allowSavedReprints && savedDocExists;
         const printMatchesSaved = matchesSaved || reprintAllowed;
         const printEnabled = !isReadingSchedule && previewReady && printMatchesSaved && approvalReady && scheduleReady;
+        const dotMatrixPrintEnabled = !isReadingSchedule && previewReady && printMatchesSaved && approvalReady;
         let printHint = 'Preparing preview...';
         if (previewReady) {
             if (workflowError) {
@@ -7241,7 +7242,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
         if (els.billingCalcDotMatrixBtn) {
             els.billingCalcDotMatrixBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
-            els.billingCalcDotMatrixBtn.disabled = !printEnabled;
+            els.billingCalcDotMatrixBtn.disabled = !dotMatrixPrintEnabled;
         }
         if (els.billingCalcMeterFormBtn) {
             els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);

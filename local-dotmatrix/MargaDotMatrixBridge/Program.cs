@@ -38,7 +38,13 @@ Console.WriteLine($"Printer: {printerName}");
 Console.WriteLine("Keep this running while billing invoices are printed.");
 
 var listener = new TcpListener(IPAddress.Loopback, port);
-listener.Start();
+try {
+    listener.Start();
+} catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse) {
+    Console.WriteLine($"Port {port} is already in use. The {AppName} is probably already running.");
+    Console.WriteLine("You can close this window and click Dot Matrix Print in the Billing module.");
+    return;
+}
 
 while (true) {
     using var client = listener.AcceptTcpClient();
@@ -48,6 +54,11 @@ while (true) {
 
         if (request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase)) {
             HttpResponse.Write(stream, 200, "OK", new { ok = true });
+            continue;
+        }
+
+        if (request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) && request.Path == "/health") {
+            HttpResponse.Write(stream, 200, "OK", new { ok = true, printerName });
             continue;
         }
 

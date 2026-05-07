@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v38';
+const CACHE_NAME = 'marga-app-shell-v39';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
