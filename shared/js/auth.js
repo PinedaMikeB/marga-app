@@ -340,16 +340,33 @@ MargaAuth.reconcileStoredSessionModules = function reconcileStoredSessionModules
 };
 
 MargaAuth.normalizeModules = function normalizeModules(modules) {
+    const aliases = {
+        collection: 'collections',
+        'collection-module': 'collections',
+        'collections-module': 'collections',
+        'petty-cash': 'pettycash',
+        'pettycash-module': 'pettycash',
+        'accounting-module': 'accounting',
+        'inventory-module': 'inventory',
+        'logistics-inventory': 'inventory',
+        'production-machine-module': 'general-production',
+        'production-toner-module': 'general-production',
+        'payroll-module': 'hr',
+        'billing-module': 'billing',
+        'service-module': 'service',
+        'field-app': 'field'
+    };
     const normalizeModule = (module) => String(module || '')
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
+    const resolveModule = (module) => aliases[module] || module;
     if (Array.isArray(modules)) {
-        return [...new Set(modules.map((m) => normalizeModule(m)).filter(Boolean))];
+        return [...new Set(modules.map((m) => resolveModule(normalizeModule(m))).filter(Boolean))];
     }
     if (typeof modules === 'string' && modules.trim()) {
-        return [...new Set(modules.split(',').map((m) => normalizeModule(m)).filter(Boolean))];
+        return [...new Set(modules.split(',').map((m) => resolveModule(normalizeModule(m))).filter(Boolean))];
     }
     return [];
 };
@@ -471,6 +488,75 @@ MargaAuth.fetchRoleModulesForRoles = async function fetchRoleModulesForRoles(rol
         return this.normalizeModules(this.PERMISSIONS[normalizedRoles[index]] || []);
     }))];
     return resolved;
+};
+
+MargaAuth.refreshCurrentUserFromDirectory = async function refreshCurrentUserFromDirectory() {
+    const sessionUser = this.getUser();
+    if (!sessionUser) return null;
+    if (sessionUser.id === 'default_admin') return sessionUser;
+
+    const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+    let employee = null;
+    if (sessionUser.id) {
+        try {
+            const response = await fetch(
+                `${FIREBASE_CONFIG.baseUrl}/tbl_employee/${encodeURIComponent(String(sessionUser.id))}?key=${FIREBASE_CONFIG.apiKey}`
+            );
+            const payload = await response.json();
+            if (response.ok && !payload?.error && payload?.fields) {
+                employee = this.parseFirestoreDoc(payload);
+            }
+        } catch (error) {
+            console.warn('Current user document refresh failed:', error);
+        }
+    }
+
+    const sessionEmail = normalizeEmail(sessionUser.email || sessionUser.username);
+    const employeeEmail = normalizeEmail(employee?.email || employee?.marga_login_email);
+    if (!employee || (sessionEmail && employeeEmail && sessionEmail !== employeeEmail)) {
+        employee = await this.findUserByEmailOrUsername(sessionEmail || sessionUser.username).catch((error) => {
+            console.warn('Current user lookup refresh failed:', error);
+            return null;
+        });
+    }
+
+    if (!employee || !this.isEmployeeActive(employee)) return sessionUser;
+
+    const roles = this.normalizeRoles(employee.marga_roles || employee.roles || employee.marga_role || employee.role || this.inferRole(employee));
+    const role = roles[0] || 'viewer';
+    const userModulesConfigured = employee.allowed_modules_configured === true;
+    const allowedModules = userModulesConfigured
+        ? this.normalizeModules(employee.marga_allowed_modules || employee.allowed_modules)
+        : [];
+    const roleModules = roles.includes('admin')
+        ? this.normalizeModules(this.PERMISSIONS.admin || [])
+        : await this.fetchRoleModulesForRoles(roles);
+    const sessionName = String(
+        employee.marga_fullname
+        || employee.name
+        || `${String(employee.firstname || '').trim()} ${String(employee.lastname || '').trim()}`.trim()
+        || employee.nickname
+        || sessionUser.name
+        || sessionUser.username
+        || ''
+    ).trim();
+
+    this.currentUser = {
+        ...sessionUser,
+        id: employee._docId || sessionUser.id,
+        username: employee.username || employee.email || sessionUser.username,
+        name: sessionName || sessionUser.name,
+        email: normalizeEmail(employee.email || employee.marga_login_email || sessionUser.email),
+        staff_id: employee.id || employee.staff_id || sessionUser.staff_id || null,
+        role,
+        roles,
+        allowed_modules: allowedModules,
+        role_modules: this.normalizeModules(roleModules),
+        allowed_modules_configured: userModulesConfigured
+    };
+    this.reconcileStoredSessionModules();
+    this.persistCurrentUser();
+    return this.currentUser;
 };
 
 MargaAuth.applyModulePermissions = function applyModulePermissions({ selector = '[data-module]', hideUnauthorized = false } = {}) {

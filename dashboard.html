@@ -452,14 +452,10 @@
 	        };
 
         document.addEventListener('DOMContentLoaded', async () => {
-	            const user = MargaAuth.getUser();
-	            if (user) {
-	                document.getElementById('userName').textContent = user.name;
-	                document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
-	                document.getElementById('userAvatar').textContent = user.name.charAt(0).toUpperCase();
-	            }
+	            renderDashboardUser();
 
 	            await refreshDashboardRoleModules();
+	            renderDashboardUser();
 	            await loadModuleRegistry();
 	            applyModulePermissions();
 	            renderDepartmentTiles();
@@ -467,11 +463,20 @@
 	            loadDashboardData();
 	        });
 
+	        function renderDashboardUser() {
+	            const user = MargaAuth.getUser();
+	            if (!user) return;
+	            document.getElementById('userName').textContent = user.name;
+	            document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
+	            document.getElementById('userAvatar').textContent = (user.name || user.username || 'U').charAt(0).toUpperCase();
+	        }
+
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('open');
         }
 
         async function refreshDashboardRoleModules() {
+            await MargaAuth.refreshCurrentUserFromDirectory?.();
             const user = MargaAuth.getUser();
             if (!user || MargaAuth.isAdmin()) return;
             try {
