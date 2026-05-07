@@ -2220,7 +2220,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['id', 'invoice_id', 'invoice_num', 'client', 'category', 'invoice_amt', 'invoice_date', 'printed_or', 'assigned', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'payment_status', 'tax_2307', 'tax_status', 'deduction_type', 'deduction_amount', 'other_deduction_amount', 'tax_form_status', 'tax_form_received_at', 'tax_form_remarks', 'checkpayment_id', 'check_number', 'check_amt', 'check_date', 'account_bank', 'remarks'],
+        fieldMask: ['id', 'invoice_id', 'invoice_num', 'client', 'category', 'invoice_amt', 'invoice_date', 'printed_or', 'assigned', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'payment_status', 'tax_2307', 'tax_status', 'deduction_type', 'deduction_amount', 'other_deduction_amount', 'tax_form_status', 'tax_form_received_at', 'tax_form_remarks', 'checkpayment_id', 'check_number', 'check_amt', 'check_date', 'account_bank', 'remarks', 'iscancel', 'cancelled_at', 'cancelled_by'],
         maxPages: 260
     });
     const supplementalPaymentDocs = await loadSupplementalCollectionPaymentDocs();
@@ -2240,6 +2240,9 @@ async function loadLookups() {
 
         const amount = Number(getField(f, ['payment_amt']) || 0);
         const tax2307 = Number(getField(f, ['tax_2307']) || 0);
+        const paymentStatus = String(getField(f, ['payment_status']) || '').trim();
+        const isCancelled = Boolean(Number(getField(f, ['iscancel']) || 0)) || /^cancel/i.test(paymentStatus);
+        if (isCancelled) return;
         const deductionType = String(getField(f, ['deduction_type']) || (tax2307 > 0 ? '2307' : '')).trim().toLowerCase();
         const deductionAmount = Number(getField(f, ['deduction_amount']) || tax2307 || 0);
         const otherDeductionAmount = Number(getField(f, ['other_deduction_amount']) || (deductionType && deductionType !== '2307' ? deductionAmount : 0) || 0);
@@ -2271,6 +2274,12 @@ async function loadLookups() {
                 id: String(getField(f, ['id']) || getFirestoreDocumentId(doc) || '').trim(),
                 invoiceId: invoiceIdKey,
                 invoiceNo,
+                client: String(getField(f, ['client']) || '').trim(),
+                category: String(getField(f, ['category']) || '').trim(),
+                invoiceAmount: Number(getField(f, ['invoice_amt']) || 0),
+                invoiceDate: normalizeDate(getField(f, ['invoice_date'])),
+                printedOr: String(getField(f, ['printed_or']) || '').trim(),
+                assigned: String(getField(f, ['assigned']) || '').trim(),
                 amount,
                 balanceAmount,
                 deductionType,
@@ -2282,7 +2291,7 @@ async function loadLookups() {
                 taxDatePaid: normalizeDate(getField(f, ['tax_date_paid'])),
                 orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
-                paymentStatus: String(getField(f, ['payment_status']) || '').trim(),
+                paymentStatus,
                 tax2307,
                 taxStatus,
                 taxFormStatus,
@@ -2496,6 +2505,17 @@ function processInvoice(doc) {
         historyCount: history.length,
         history
     };
+}
+
+function rebuildPaidInvoiceIdsFromPayments() {
+    paidInvoiceIds = new Set();
+    paymentEntries.forEach((payment) => {
+        if (Number(payment.balanceAmount || 0) > 0.01) return;
+        const invoiceId = String(payment.invoiceId || '').trim();
+        const invoiceNo = String(payment.invoiceNo || '').trim();
+        if (invoiceId) paidInvoiceIds.add(invoiceId);
+        if (invoiceNo) paidInvoiceIds.add(invoiceNo);
+    });
 }
 
 function rebuildInvoiceIndex() {
@@ -5612,6 +5632,7 @@ function renderPaymentHistoryRows(payments) {
                         <th>Check #</th>
                         <th>Check Amount</th>
                         <th>Account Bank</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -5629,6 +5650,10 @@ function renderPaymentHistoryRows(payments) {
                             <td>${escapeHtml(payment.checkNumber || '-')}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(payment.checkAmount || 0))}</td>
                             <td>${escapeHtml(payment.accountBank || '-')}</td>
+                            <td>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="editCollectorPaymentRecord('${encodeURIComponent(payment.docId || payment.id || '')}')">Edit</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="cancelCollectorPaymentRecord('${encodeURIComponent(payment.docId || payment.id || '')}')">Cancel</button>
+                            </td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -5670,6 +5695,7 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                         <div>
                             <label>Payment ID</label>
                             <input id="collectorPaymentLegacyId" type="text" value="Auto on save" readonly>
+                            <input id="collectorPaymentDocId" type="hidden" value="">
                         </div>
                         <div>
                             <label>Client</label>
@@ -5765,6 +5791,7 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                     </div>
                     <div class="detail-form-actions">
                         <button class="btn btn-primary" onclick="saveCollectorPayment()">Save Payment</button>
+                        <button class="btn btn-secondary" id="collectorPaymentNewButton" onclick="resetCollectorPaymentForm()" type="button" hidden>New Payment</button>
                         <span class="detail-save-status" id="collectorPaymentSaveStatus">Ready.</span>
                     </div>
                 </div>
@@ -6228,6 +6255,164 @@ function syncCollectorPaymentMethod(method) {
     }
 }
 
+function findCollectorPaymentRecord(docId) {
+    const safeDocId = decodeURIComponent(String(docId || '')).trim();
+    if (!safeDocId) return null;
+    return paymentEntries.find((payment) => String(payment.docId || payment.id || '') === safeDocId) || null;
+}
+
+function resetCollectorPaymentForm() {
+    const summary = document.getElementById('collectorPaymentSummary');
+    const currentBalance = parseMoneyInput(summary?.dataset.invoiceAmount || '0');
+    const legacyId = document.getElementById('collectorPaymentLegacyId');
+    const docIdInput = document.getElementById('collectorPaymentDocId');
+    const newButton = document.getElementById('collectorPaymentNewButton');
+    if (legacyId) legacyId.value = 'Auto on save';
+    if (docIdInput) docIdInput.value = '';
+    if (newButton) newButton.hidden = true;
+
+    [
+        'collectorPaymentPaidAmount',
+        'collectorPaymentOrNumber',
+        'collectorPaymentAssigned',
+        'collectorPaymentCheckNumber',
+        'collectorPaymentCheckBank',
+        'collectorPaymentCheckDate',
+        'collectorPaymentCheckAmount',
+        'collectorPaymentAccountBank',
+        'collectorPaymentDeductionAmount',
+        'collectorPaymentRemarks'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+    });
+
+    const paymentDate = document.getElementById('collectorPaymentDate');
+    const depositDate = document.getElementById('collectorPaymentDepositDate');
+    const status = document.getElementById('collectorPaymentStatus');
+    const deductionType = document.getElementById('collectorPaymentDeductionType');
+    const balance = document.getElementById('collectorPaymentBalance');
+    const pending2307 = document.getElementById('collectorPayment2307Pending');
+    if (paymentDate) paymentDate.value = getTodayInputValue(0);
+    if (depositDate) depositDate.value = getTodayInputValue(0);
+    if (status) status.value = 'Paid';
+    if (deductionType) deductionType.value = '';
+    if (balance) balance.value = currentBalance.toFixed(2);
+    if (pending2307) {
+        pending2307.checked = true;
+        delete pending2307.dataset.touched;
+    }
+    syncCollectorPaymentMethod('cash');
+    updateCollectorPaymentBalance();
+    const statusNode = document.getElementById('collectorPaymentSaveStatus');
+    if (statusNode) statusNode.textContent = 'Ready for new payment.';
+}
+
+function editCollectorPaymentRecord(paymentDocId) {
+    const payment = findCollectorPaymentRecord(paymentDocId);
+    const statusNode = document.getElementById('collectorPaymentSaveStatus');
+    if (!payment) {
+        if (statusNode) statusNode.textContent = 'Payment record could not be loaded for editing.';
+        return;
+    }
+
+    const docId = String(payment.docId || payment.id || '').trim();
+    const legacyId = document.getElementById('collectorPaymentLegacyId');
+    const docIdInput = document.getElementById('collectorPaymentDocId');
+    const newButton = document.getElementById('collectorPaymentNewButton');
+    if (legacyId) legacyId.value = payment.id || docId;
+    if (docIdInput) docIdInput.value = docId;
+    if (newButton) newButton.hidden = false;
+
+    const setValue = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value ?? '';
+    };
+
+    setValue('collectorPaymentClient', payment.client || document.getElementById('collectorPaymentClient')?.value || '');
+    setValue('collectorPaymentCategory', payment.category || document.getElementById('collectorPaymentCategory')?.value || '');
+    setValue('collectorPaymentPaidAmount', Number(payment.amount || 0) ? Number(payment.amount || 0).toFixed(2) : '');
+    setValue('collectorPaymentInvoiceNo', payment.invoiceNo || document.getElementById('collectorPaymentInvoiceNo')?.value || '');
+    setValue('collectorPaymentInvoiceId', payment.invoiceId || payment.invoiceNo || '');
+    setValue('collectorPaymentInvoiceDate', toDateKey(payment.invoiceDate) || document.getElementById('collectorPaymentInvoiceDate')?.value || '');
+    setValue('collectorPaymentOrNumber', payment.orNumber || '');
+    setValue('collectorPaymentPrintedOr', payment.printedOr || document.getElementById('collectorPaymentPrintedOr')?.value || '');
+    setValue('collectorPaymentAssigned', payment.assigned || '');
+    setValue('collectorPaymentDate', toDateKey(payment.datePaid || payment.paymentDate) || getTodayInputValue(0));
+    setValue('collectorPaymentDepositDate', toDateKey(payment.dateDeposit || payment.paymentDate) || getTodayInputValue(0));
+    setValue('collectorPaymentCheckNumber', payment.checkNumber || '');
+    setValue('collectorPaymentCheckBank', payment.accountBank || '');
+    setValue('collectorPaymentCheckDate', toDateKey(payment.checkDate) || '');
+    setValue('collectorPaymentCheckAmount', Number(payment.checkAmount || 0) ? Number(payment.checkAmount || 0).toFixed(2) : '');
+    setValue('collectorPaymentAccountBank', payment.accountBank || '');
+    setValue('collectorPaymentStatus', payment.paymentStatus || (Number(payment.balanceAmount || 0) <= 0.01 ? 'Paid' : 'Partial'));
+    setValue('collectorPaymentDeductionType', payment.deductionType || (Number(payment.tax2307 || 0) > 0 ? '2307' : ''));
+    setValue('collectorPaymentDeductionAmount', Number(getPaymentDeductionAmount(payment) || 0) ? Number(getPaymentDeductionAmount(payment) || 0).toFixed(2) : '');
+    setValue('collectorPaymentBalance', Number(payment.balanceAmount || 0).toFixed(2));
+    setValue('collectorPaymentRemarks', payment.remarks || '');
+
+    const pending2307 = document.getElementById('collectorPayment2307Pending');
+    if (pending2307) {
+        pending2307.checked = is2307DeductionPayment(payment) ? !is2307FormSubmitted(payment) : true;
+        pending2307.dataset.touched = '1';
+    }
+
+    syncCollectorPaymentMethod(formatPaymentTypeLabel(payment.paymentType) === 'CHECK' ? 'check' : 'cash');
+    updateCollectorPaymentBalance();
+    if (statusNode) statusNode.textContent = `Editing payment ${payment.id || docId}. Save will update this record.`;
+}
+
+async function refreshCollectorPaymentWorkspace(message = '') {
+    if (!currentCollectorWorkspace?.cell) return;
+    const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
+    currentCollectorWorkspace = {
+        ...refreshed,
+        cellId: refreshed.cell.id
+    };
+
+    const content = document.getElementById('collectorCellContent');
+    if (content) content.innerHTML = renderCollectorFollowupWorkspace(refreshed);
+    bindCollectorPaymentForm();
+    setCollectorWorkspaceTab('payment');
+    const refreshedStatusNode = document.getElementById('collectorPaymentSaveStatus');
+    if (refreshedStatusNode && message) refreshedStatusNode.textContent = message;
+}
+
+async function cancelCollectorPaymentRecord(paymentDocId) {
+    const docId = decodeURIComponent(String(paymentDocId || '')).trim();
+    const payment = findCollectorPaymentRecord(docId);
+    const statusNode = document.getElementById('collectorPaymentSaveStatus');
+    if (!docId || !payment || isSavingCollectorPayment) {
+        if (statusNode) statusNode.textContent = 'Payment record could not be cancelled.';
+        return;
+    }
+    const ok = window.confirm(`Cancel payment ${payment.id || docId}? This removes it from collection totals but keeps an audit trail.`);
+    if (!ok) return;
+
+    isSavingCollectorPayment = true;
+    if (statusNode) statusNode.textContent = 'Cancelling payment record...';
+    try {
+        const now = toTimestampString(new Date());
+        await firestoreUpdateDocumentFields('tbl_paymentinfo', docId, {
+            payment_status: toFirestoreWriteValue('Cancelled'),
+            iscancel: toFirestoreWriteValue(1),
+            cancelled_at: toFirestoreWriteValue(now),
+            cancelled_by: toFirestoreWriteValue(getCurrentCollectorName()),
+            updated_at: toFirestoreWriteValue(now)
+        });
+        paymentEntries = paymentEntries.filter((entry) => String(entry.docId || entry.id || '') !== docId);
+        rebuildPaidInvoiceIdsFromPayments();
+        collectorDashboardData = null;
+        await refreshCollectorPaymentWorkspace('Payment cancelled. Totals were updated.');
+        void renderCollectorDashboard({ recompute: true });
+    } catch (error) {
+        console.error('Failed to cancel collection payment:', error);
+        if (statusNode) statusNode.textContent = 'Payment cancel failed. Please try again.';
+    } finally {
+        isSavingCollectorPayment = false;
+    }
+}
+
 function useCollectorContact(button) {
     const row = button?.closest?.('tr');
     if (!row) return;
@@ -6296,6 +6481,8 @@ async function saveCollectorPayment() {
 
     const statusNode = document.getElementById('collectorPaymentSaveStatus');
     const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
+    const editingDocId = String(document.getElementById('collectorPaymentDocId')?.value || '').trim();
+    const editingPayment = editingDocId ? findCollectorPaymentRecord(editingDocId) : null;
     const invoiceNo = String(document.getElementById('collectorPaymentInvoiceNo')?.value || selectedInvoice?.invoiceNo || selectedInvoice?.invoiceId || '').trim();
     const invoiceId = String(document.getElementById('collectorPaymentInvoiceId')?.value || selectedInvoice?.invoiceId || selectedInvoice?.invoiceNo || invoiceNo || '').trim();
     const paymentClient = String(document.getElementById('collectorPaymentClient')?.value || selectedInvoice?.accountLabel || selectedInvoice?.company || '').trim();
@@ -6352,13 +6539,16 @@ async function saveCollectorPayment() {
     }
 
     isSavingCollectorPayment = true;
-    if (statusNode) statusNode.textContent = 'Saving payment record...';
+    if (statusNode) statusNode.textContent = editingDocId ? 'Updating payment record...' : 'Saving payment record...';
 
     try {
-        const paymentDocId = createWebDocId('web_payment');
-        const checkDocId = isCheck ? createWebDocId('web_checkpayment') : '';
+        const paymentDocId = editingDocId || createWebDocId('web_payment');
+        const paymentRecordId = editingDocId ? (String(editingPayment?.id || '').trim() || paymentDocId) : paymentDocId;
+        const checkDocId = isCheck
+            ? (String(editingPayment?.checkpaymentId || '').trim() || createWebDocId('web_checkpayment'))
+            : '';
         const paymentFields = {
-            id: toFirestoreWriteValue(paymentDocId),
+            id: toFirestoreWriteValue(paymentRecordId),
             invoice_id: toFirestoreWriteValue(invoiceId || invoiceNo),
             invoice_num: toFirestoreWriteValue(invoiceNo || invoiceId),
             client: toFirestoreWriteValue(paymentClient),
@@ -6389,10 +6579,15 @@ async function saveCollectorPayment() {
             checkpayment_id: toFirestoreWriteValue(checkDocId || 0),
             remarks: toFirestoreWriteValue(remarks),
             timestamp: toFirestoreWriteValue(now),
+            updated_at: toFirestoreWriteValue(now),
             source: toFirestoreWriteValue('collections_web_payment')
         };
 
-        await firestoreSetDocument('tbl_paymentinfo', paymentDocId, paymentFields);
+        if (editingDocId) {
+            await firestoreUpdateDocumentFields('tbl_paymentinfo', paymentDocId, paymentFields);
+        } else {
+            await firestoreSetDocument('tbl_paymentinfo', paymentDocId, paymentFields);
+        }
 
         if (isCheck) {
             await firestoreSetDocument('tbl_checkpayments', checkDocId, {
@@ -6411,11 +6606,17 @@ async function saveCollectorPayment() {
             });
         }
 
-        paymentEntries.push({
+        const updatedPaymentEntry = {
             docId: paymentDocId,
-            id: paymentDocId,
+            id: paymentRecordId,
             invoiceId: invoiceId || invoiceNo,
             invoiceNo: invoiceNo || invoiceId,
+            client: paymentClient,
+            category: paymentCategory,
+            invoiceAmount,
+            invoiceDate: normalizeDate(invoiceDate),
+            printedOr: printedOrRef,
+            assigned,
             amount: amountPaid,
             balanceAmount: balance,
             deductionType,
@@ -6438,21 +6639,12 @@ async function saveCollectorPayment() {
             checkDate: normalizeDate(checkDate),
             accountBank,
             remarks
-        });
-        if (balance <= 0.01 && (invoiceId || invoiceNo)) paidInvoiceIds.add(invoiceId || invoiceNo);
-
-        const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
-        currentCollectorWorkspace = {
-            ...refreshed,
-            cellId: refreshed.cell.id
         };
+        paymentEntries = paymentEntries.filter((entry) => String(entry.docId || entry.id || '') !== paymentDocId);
+        paymentEntries.push(updatedPaymentEntry);
+        rebuildPaidInvoiceIdsFromPayments();
 
-        const content = document.getElementById('collectorCellContent');
-        if (content) content.innerHTML = renderCollectorFollowupWorkspace(refreshed);
-        bindCollectorPaymentForm();
-        setCollectorWorkspaceTab('payment');
-        const refreshedStatusNode = document.getElementById('collectorPaymentSaveStatus');
-        if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Payment record updated.';
+        await refreshCollectorPaymentWorkspace(editingDocId ? 'Updated. Payment record was edited.' : 'Saved. Payment record updated.');
         collectorDashboardData = null;
         void renderCollectorDashboard({ recompute: true });
     } catch (error) {
