@@ -1063,30 +1063,29 @@ function getCollectorPendingBillingProjection(billingCell, billingRow) {
     return Math.max(0, monthlyRate + monthlyRate2, quotaAmount + quotaAmount2);
 }
 
-function getCollectorHistoricalBillingEstimate(row, targetMonthKey) {
-    const targetDate = normalizeDate(`${targetMonthKey}-01`);
-    const estimates = Object.entries(row?.months || {})
-        .map(([monthKey, cellId]) => {
-            if (monthKey === targetMonthKey) return null;
-            const cell = collectorCellMap.get(cellId || '');
-            if (!cell) return null;
-            const amount = Number(cell.displayBilledTotal || cell.billedTotal || 0);
-            if (amount <= 0) return null;
-            const monthDate = normalizeDate(`${monthKey}-01`);
-            return {
-                amount,
-                distance: targetDate && monthDate ? Math.abs(targetDate.getTime() - monthDate.getTime()) : Number.MAX_SAFE_INTEGER,
-                isBeforeTarget: monthKey < targetMonthKey
-            };
-        })
-        .filter(Boolean)
-        .sort((left, right) => {
-            if (left.distance !== right.distance) return left.distance - right.distance;
-            if (left.isBeforeTarget !== right.isBeforeTarget) return left.isBeforeTarget ? -1 : 1;
-            return right.amount - left.amount;
-        });
+function getCollectorPaymentTotalDate(payment) {
+    return normalizeDate(payment?.datePaid || payment?.paymentDate);
+}
 
-    return Number(estimates[0]?.amount || 0);
+function makeCollectorPaymentMonthDetail(payment, column, amount) {
+    const invoiceKey = String(payment.invoiceId || payment.invoiceNo || '').trim();
+    const meta = billingMetaByInvoiceKey.get(String(payment.invoiceId || '').trim())
+        || billingMetaByInvoiceKey.get(String(payment.invoiceNo || '').trim())
+        || {};
+    return {
+        metricKey: 'payment_month',
+        monthKey: column.key,
+        monthLabel: column.fullLabel || column.label || column.key,
+        customer: payment.client || meta.company || 'Unknown',
+        branch: meta.branch || payment.category || '',
+        serial: '-',
+        invoiceNo: payment.invoiceNo || payment.invoiceId || '-',
+        orNumber: payment.orNumber || payment.printedOr || '-',
+        date: getCollectorPaymentTotalDate(payment),
+        status: payment.paymentStatus || payment.paymentType || 'Payment dated this month',
+        amount: Number(amount || 0),
+        cellId: invoiceKey
+    };
 }
 
 function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
@@ -1095,7 +1094,8 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
         { key: 'billed', label: 'Invoice/Billed Total', totals: {}, counts: {}, details: {} },
         { key: 'collected', label: 'Collected Against Billed', totals: {}, counts: {}, details: {} },
         { key: 'receivable', label: 'Unpaid Receivables', totals: {}, counts: {}, details: {} },
-        { key: 'pending_billing', label: 'Pending Billing Projection', totals: {}, counts: {}, details: {} }
+        { key: 'pending_billing', label: 'Pending Billing Projection', totals: {}, counts: {}, details: {} },
+        { key: 'payment_month', label: 'Payments Dated This Month', totals: {}, counts: {}, details: {} }
     ];
 
     monthColumns.forEach((column) => {
@@ -1106,6 +1106,23 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
         });
     });
 
+    paymentEntries.forEach((payment) => {
+        const paymentDate = getCollectorPaymentTotalDate(payment);
+        const paymentMonthKey = getMonthKey(paymentDate);
+        const column = monthColumns.find((item) => item.key === paymentMonthKey);
+        if (!column) return;
+        const amount = Number(payment.amount || 0);
+        if (amount <= 0) return;
+        addCollectorMatrixTotal(
+            totalRows,
+            'payment_month',
+            column.key,
+            amount,
+            1,
+            makeCollectorPaymentMonthDetail(payment, column, amount)
+        );
+    });
+
     customerRows
         .filter((row) => !row.isGroupedChild)
         .forEach((row) => {
@@ -1114,10 +1131,7 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                 if (!cell) return;
                 const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
                 const outstandingBalance = getCellOutstandingBalance(cell);
-                const pendingProjectionBase = cell.pendingBilling ? Number(cell.pendingBillingProjectionTotal || 0) : 0;
-                const pendingProjection = cell.pendingBilling
-                    ? Math.max(pendingProjectionBase, getCollectorHistoricalBillingEstimate(row, column.key))
-                    : 0;
+                const pendingProjection = cell.pendingBilling ? Number(cell.pendingBillingProjectionTotal || 0) : 0;
                 const hasPendingProjection = cell.pendingBilling && pendingProjection > 0;
                 const invoiceCount = row.isGroupedParent
                     ? (billedTarget > 0 ? 1 : 0)
@@ -4480,7 +4494,7 @@ function renderCollectorDashboardFromData(data) {
             : invoiceSearchTerm
                 ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Scorecard rows are by billing month: projected and billed are targets; collected and unpaid are portions of billed invoices; pending billing counts only rows with a contract/reading/history peso estimate.`;
+        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Scorecard rows are by billing month except Payments Dated This Month, which follows the payment/OR date. Pending billing counts only rows with a contract or meter-reading peso estimate.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
