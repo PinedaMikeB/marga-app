@@ -16,7 +16,11 @@ const demoData = {
   devices: [
     { serial: "882026041158", model: "Brother DCP-L2540DW", branch: "Front Desk Head Office", usage: 2540, toner: "Low", status: "Active" },
     { serial: "CNB7K51044", model: "HP LaserJet M404dn", branch: "Billing Office", usage: 1182, toner: "Good", status: "Active" },
-    { serial: "X9K2108831", model: "Canon IR 2525", branch: "Records Room", usage: 6930, toner: "Watch", status: "Service Due" }
+    { serial: "X9K2108831", model: "Canon IR 2525", branch: "Records Room", usage: 6930, toner: "Watch", status: "Service Due" },
+    { serial: "E69909A4N500567", model: "Brother MFC-7860DW", branch: "Makati Accounting and Purchasing", usage: 0, toner: "Good", status: "Active" },
+    { serial: "LP06524695", model: "M8650DN", branch: "Makati Accounting and Purchasing", usage: 0, toner: "Good", status: "Active" },
+    { serial: "E80729L1H811187", model: "Brother DCP-T820DW", branch: "Quality Control", usage: 0, toner: "Good", status: "Active" },
+    { serial: "CNPNC17634", model: "HP3035", branch: "Quality Control Additional 3035", usage: 0, toner: "Good", status: "Active" }
   ],
   tickets: [
     { id: "SR-1042", serial: "882026041158", branch: "Front Desk Head Office", issue: "Paper jam and faint print", status: "In Progress", updated: "Today 3:12 PM" },
@@ -97,6 +101,56 @@ const pilotAccess = [
     companyId: "demo-smd",
     allowedSerials: ["CNB7K51044", "882026041158", "X9K2108831"],
     contactName: "Purchasing",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "LP06524695",
+    pin: "785230",
+    account: "Liberty Flour Mills",
+    accessType: "Account Coordinator",
+    companyId: "liberty-flour",
+    allowedSerials: ["E69909A4N500567", "LP06524695", "E80729L1H811187", "CNPNC17634"],
+    contactName: "Ms. Mary Jaen",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "E69909A4N500567",
+    pin: "493812",
+    account: "Liberty Flour Mills",
+    accessType: "Branch Requester",
+    companyId: "liberty-flour",
+    allowedSerials: ["E69909A4N500567"],
+    contactName: "Makati Accounting and Purchasing",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "LP06524695",
+    pin: "726184",
+    account: "Liberty Flour Mills",
+    accessType: "Branch Requester",
+    companyId: "liberty-flour",
+    allowedSerials: ["LP06524695"],
+    contactName: "Makati Accounting and Purchasing",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "E80729L1H811187",
+    pin: "218604",
+    account: "Liberty Flour Mills Quality Control",
+    accessType: "Department Requester",
+    companyId: "liberty-flour-qc",
+    allowedSerials: ["E80729L1H811187"],
+    contactName: "Quality Control",
+    officialEmail: "service@marga.biz"
+  },
+  {
+    serial: "CNPNC17634",
+    pin: "639205",
+    account: "Liberty Flour Mills Quality Control",
+    accessType: "Department Requester",
+    companyId: "liberty-flour-qc",
+    allowedSerials: ["CNPNC17634"],
+    contactName: "Quality Control Additional 3035",
     officialEmail: "service@marga.biz"
   }
 ];
@@ -186,6 +240,22 @@ function scopedDevices() {
   if (!state.access) return state.data.devices;
   const allowed = new Set((state.access.allowedSerials || []).map(normalizeSerial));
   return state.data.devices.filter((device) => allowed.has(normalizeSerial(device.serial)));
+}
+
+function isDemoAccount() {
+  return state.access?.companyId === "demo-smd";
+}
+
+function accountInvoices() {
+  return isDemoAccount() ? state.data.invoices : [];
+}
+
+function accountPayments() {
+  return isDemoAccount() ? state.data.payments : [];
+}
+
+function accountUpdates() {
+  return isDemoAccount() ? state.data.updates : [];
 }
 
 function loadPortalRequests() {
@@ -368,7 +438,7 @@ function renderDashboard() {
   const tickets = serviceTickets();
   const devices = scopedDevices();
   const openTickets = tickets.filter((ticket) => ticket.status !== "Closed").length;
-  const unpaid = state.data.invoices.filter((invoice) => invoice.status !== "Paid");
+  const unpaid = accountInvoices().filter((invoice) => invoice.status !== "Paid");
   const pendingAck = acknowledgementJobs().filter((job) => String(job.status || "").toLowerCase().includes("awaiting")).length;
 
   return `
@@ -454,13 +524,21 @@ function renderService() {
 }
 
 function renderBilling() {
-  return card("Invoices", table(["Invoice", "Period", "Amount", "Status", "Due"], state.data.invoices.map((invoice) => [
+  const invoices = accountInvoices();
+  if (!invoices.length) {
+    return card("Invoices", emptyState("No billing history is available yet for this beta account."), "wide");
+  }
+  return card("Invoices", table(["Invoice", "Period", "Amount", "Status", "Due"], invoices.map((invoice) => [
     invoice.no, invoice.period, money(invoice.amount), statusBadge(invoice.status), invoice.due
   ])), "wide");
 }
 
 function renderPayments() {
-  return card("Payment Records", table(["OR No.", "Invoice", "Amount", "Date", "Method"], state.data.payments.map((payment) => [
+  const payments = accountPayments();
+  if (!payments.length) {
+    return card("Payment Records", emptyState("No payment records are available yet for this beta account."), "wide");
+  }
+  return card("Payment Records", table(["OR No.", "Invoice", "Amount", "Date", "Method"], payments.map((payment) => [
     payment.or, payment.invoice, money(payment.amount), payment.date, payment.method
   ])), "wide");
 }
@@ -489,7 +567,15 @@ function renderToner() {
 }
 
 function renderUpdates() {
-  return card("Support Timeline", timeline(state.data.updates, "body"), "wide");
+  const updates = accountUpdates();
+  if (!updates.length) {
+    return card("Support Timeline", emptyState("No support updates yet. New Marga service activity will appear here."), "wide");
+  }
+  return card("Support Timeline", timeline(updates, "body"), "wide");
+}
+
+function emptyState(message) {
+  return `<div class="empty-state"><p>${escapeHtml(message)}</p></div>`;
 }
 
 function table(headers, rows) {

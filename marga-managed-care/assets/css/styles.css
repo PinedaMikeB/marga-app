@@ -327,6 +327,19 @@ textarea {
   font-weight: 600;
 }
 
+.empty-state {
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #fbfaff;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
