@@ -115,6 +115,11 @@ const GROUPED_COLLECTION_COMPANIES = [
         companyId: '72',
         parentName: 'China Bank Savings - Branches',
         groupName: 'CHINABANK'
+    },
+    {
+        companyId: '553',
+        parentName: 'Metalcast Corporation',
+        groupName: 'METALCAST'
     }
 ];
 const collectorExpandedGroupRows = new Set();

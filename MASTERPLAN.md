@@ -162,6 +162,8 @@ Collections grouped-customer rules:
   - `tbl_companylist/72`: `China Bank Savings - Branches`, TIN `000-504-532-000`
   - `tbl_groupings/22`: `CHINABANK`, `company_id = 72`
   - `tbl_branchinfo.company_id = 72`: 224 active branches as of 2026-04-29
+- `Metalcast Corporation` is also verified as a one-invoice / multiple-branches grouped Collections account:
+  - `tbl_companylist/553`: `Metalcast Corporation`
 - Do not group by TIN alone. `China Bank Savings Inc.` and other CBS-like company records share the same TIN but are individually billed and must remain separate rows unless explicitly verified as grouped accounts.
 - For grouped accounts, the parent month cell should carry the invoice/payment truth: invoice number badge, OR number badge, payment/partial/no-payment color, and follow-up/payment popup details.
 - Expanded branch rows should show the branch/machine meter-reading amount and reading status for audit, but they should not imply separate invoices when the billing workflow creates one mother invoice.

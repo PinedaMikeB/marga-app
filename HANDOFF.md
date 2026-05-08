@@ -93,6 +93,8 @@ Grouped-customer matrix representation:
   - `tbl_companylist/72`: `China Bank Savings - Branches`
   - `tbl_groupings/22`: `CHINABANK`
   - `tbl_branchinfo.company_id = 72`: 224 active branches as of 2026-04-29
+- Additional verified grouped account:
+  - `tbl_companylist/553`: `Metalcast Corporation`
 - Critical separation rule: do not merge by TIN or broad name match. `China Bank Savings Inc.` (`tbl_companylist/73`) and other CBS-like records share TIN `000-504-532-000` but are individually billed and should remain individual rows unless separately verified as grouped.
 - Because newer CBS billing rows do not consistently populate `tbl_billing.groupings_id`, grouped row construction should use exact grouped `company_id` plus branch/contract resolution, with `tbl_groupings` as a helper.
 
