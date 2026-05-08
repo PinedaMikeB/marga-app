@@ -1067,12 +1067,10 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
     const totalRows = [
         { key: 'projected', label: 'Projected Monthly Billing', totals: {}, counts: {}, details: {} },
         { key: 'billed', label: 'Invoice/Billed Total', totals: {}, counts: {}, details: {} },
-        { key: 'cash', label: 'Collected', totals: {}, counts: {}, details: {} },
+        { key: 'collected', label: 'Collected Against Billed', totals: {}, counts: {}, details: {} },
         { key: 'receivable', label: 'Unpaid Receivables', totals: {}, counts: {}, details: {} },
         { key: 'pending_billing', label: 'Pending Billing Projection', totals: {}, counts: {}, details: {} }
     ];
-    const monthKeys = new Set(monthColumns.map((column) => column.key));
-    const cashInvoiceKeysByMonth = new Map();
 
     monthColumns.forEach((column) => {
         totalRows.forEach((row) => {
@@ -1080,7 +1078,6 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
             row.counts[column.key] = 0;
             row.details[column.key] = [];
         });
-        cashInvoiceKeysByMonth.set(column.key, new Set());
     });
 
     customerRows
@@ -1123,6 +1120,19 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                     );
                 }
 
+                if (billedTarget > 0 && Number(cell.collectedTotal || 0) > 0) {
+                    addCollectorMatrixTotal(
+                        totalRows,
+                        'collected',
+                        column.key,
+                        Number(cell.collectedTotal || 0),
+                        row.isGroupedParent
+                            ? 1
+                            : countCollectorCellInvoices(cell, (record) => Number(record.collectedAmount || 0) > 0, 0),
+                        makeCollectorMatrixDetail(row, column, cell, 'collected', Number(cell.collectedTotal || 0), 'Collected against billed invoice')
+                    );
+                }
+
                 if (billedTarget > 0 && outstandingBalance > 0.01) {
                     addCollectorMatrixTotal(
                         totalRows,
@@ -1155,33 +1165,6 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                 }
             });
         });
-
-    paymentEntries.forEach((entry) => {
-        const paymentMonthKey = getMonthKey(entry.paymentDate);
-        if (!paymentMonthKey || !monthKeys.has(paymentMonthKey)) return;
-        const amount = Number(entry.amount || 0);
-        if (!(amount > 0)) return;
-        const invoiceKey = String(entry.invoiceId || entry.invoiceNo || entry.docId || entry.id || '').trim();
-        if (invoiceKey) cashInvoiceKeysByMonth.get(paymentMonthKey)?.add(invoiceKey);
-        addCollectorMatrixTotal(totalRows, 'cash', paymentMonthKey, amount, 0, {
-            metricKey: 'cash',
-            monthKey: paymentMonthKey,
-            monthLabel: monthColumns.find((column) => column.key === paymentMonthKey)?.fullLabel || paymentMonthKey,
-            customer: entry.client || '-',
-            branch: entry.category || '-',
-            serial: '-',
-            invoiceNo: entry.invoiceNo || entry.invoiceId || '-',
-            orNumber: entry.orNumber || '-',
-            date: entry.datePaid || entry.paymentDate || entry.dateDeposit || null,
-            status: entry.paymentStatus || 'Payment received',
-            amount,
-            cellId: ''
-        });
-    });
-
-    totalRows.find((row) => row.key === 'cash').counts = Object.fromEntries(
-        Array.from(cashInvoiceKeysByMonth.entries()).map(([monthKey, invoiceSet]) => [monthKey, invoiceSet.size])
-    );
 
     return totalRows;
 }
@@ -4467,7 +4450,7 @@ function renderCollectorDashboardFromData(data) {
             : invoiceSearchTerm
                 ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Top and bottom scorecard rows show count / amount and can be clicked for details.`;
+        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Scorecard rows are by billing month: projected and billed are targets; collected and unpaid are portions of billed invoices; pending billing is not yet invoiced.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
