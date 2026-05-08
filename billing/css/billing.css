@@ -367,6 +367,87 @@
     overflow: auto;
 }
 
+.billing-scorecard-wrap {
+    width: 100%;
+    max-width: 100%;
+}
+
+.billing-scorecard-sheet {
+    min-width: 980px;
+}
+
+.billing-scorecard-sheet th,
+.billing-scorecard-sheet td {
+    padding: 0.72rem 0.85rem;
+}
+
+.billing-scorecard-label {
+    min-width: 240px;
+    text-align: left !important;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.billing-scorecard-cell {
+    background: #edf5ff;
+}
+
+.billing-scorecard-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.22rem;
+    width: 100%;
+    min-height: 34px;
+    border: 0;
+    background: transparent;
+    color: var(--bill-muted);
+    font: inherit;
+    font-weight: 800;
+    text-align: right;
+    cursor: pointer;
+}
+
+.billing-scorecard-button:hover,
+.billing-scorecard-button:focus-visible {
+    color: var(--bill-accent);
+    outline: 2px solid #90baf4;
+    outline-offset: 2px;
+}
+
+.billing-scorecard-button strong,
+.billing-scorecard-grand strong {
+    color: var(--bill-ink);
+}
+
+.billing-scorecard-divider {
+    color: #8aa0b8;
+}
+
+.billing-scorecard-grand {
+    background: #f8fbff;
+    color: var(--bill-muted);
+    font-weight: 800;
+    text-align: right !important;
+}
+
+.billing-scorecard-detail-wrap {
+    overflow: auto;
+}
+
+.billing-scorecard-detail-table {
+    min-width: 920px;
+}
+
+.billing-scorecard-detail-table th,
+.billing-scorecard-detail-table td {
+    text-align: left;
+}
+
+.billing-scorecard-detail-table .text-right {
+    text-align: right;
+}
+
 .matrix-scroll {
     width: 100%;
     max-width: 100%;

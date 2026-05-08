@@ -236,6 +236,19 @@
                 </div>
             </section>
 
+            <section class="content-card sheet-card billing-scorecard-card">
+                <div class="sheet-header">
+                    <div>
+                        <div class="sheet-title">Collections Scorecard</div>
+                        <p class="sheet-copy">Same totals logic used in Collections. This is a reference scorecard only; the Billing month-to-month comparison below remains unchanged.</p>
+                    </div>
+                    <div class="sheet-meta">Invoice-month and payment-date metrics separated</div>
+                </div>
+                <div class="sheet-wrap billing-scorecard-wrap" id="billingScorecardWrap">
+                    <div class="empty-panel">Load the dashboard to see the Collections scorecard.</div>
+                </div>
+            </section>
+
             <section class="content-card sheet-card matrix-card">
                 <div class="sheet-header matrix-header">
                     <div>
@@ -310,6 +323,19 @@
         </div>
     </div>
 
+    <div class="billing-modal-overlay hidden" id="billingScorecardModal">
+        <div class="billing-modal-card">
+            <div class="billing-modal-header">
+                <div>
+                    <div class="sheet-title" id="billingScorecardTitle">Scorecard Detail</div>
+                    <p class="sheet-copy" id="billingScorecardSubtitle">Accounts and invoices behind this scorecard cell.</p>
+                </div>
+                <button class="btn btn-secondary" type="button" id="billingScorecardCloseBtn">Close</button>
+            </div>
+            <div class="billing-modal-body" id="billingScorecardContent"></div>
+        </div>
+    </div>
+
     <div class="billing-modal-overlay hidden" id="billingCalcModal">
         <div class="billing-modal-card billing-calc-card">
             <div class="billing-modal-header">
@@ -333,6 +359,6 @@
     <script src="../shared/js/utils.js?v=20260428-employee-assignment-1"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/billing.js?v=20260507-dot-matrix-web-print-1"></script>
+    <script src="js/billing.js?v=20260508-collections-scorecard-1"></script>
 </body>
 </html>

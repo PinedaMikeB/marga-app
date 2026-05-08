@@ -14,6 +14,7 @@ const els = {
     summarySubhead: null,
     sheetMeta: null,
     summaryTableWrap: null,
+    billingScorecardWrap: null,
     matrixTableWrap: null,
     matrixSearchInput: null,
     matrixSortInput: null,
@@ -36,6 +37,11 @@ const els = {
     serialDetailSubtitle: null,
     serialDetailContent: null,
     serialDetailCloseBtn: null,
+    billingScorecardModal: null,
+    billingScorecardTitle: null,
+    billingScorecardSubtitle: null,
+    billingScorecardContent: null,
+    billingScorecardCloseBtn: null,
     billingCalcModal: null,
     billingCalcTitle: null,
     billingCalcSubtitle: null,
@@ -61,6 +67,10 @@ let invoiceSearchGroupCache = new Map();
 const priorMachineReadingCache = new Map();
 const priorBillingReadingCache = new Map();
 let billingExclusionCache = [];
+let billingScorecardData = null;
+let billingScorecardDetailMap = new Map();
+let billingScorecardPaymentEntries = [];
+let billingScorecardPaymentPromise = null;
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
@@ -194,6 +204,16 @@ function formatFixedAmount(value) {
     });
 }
 
+function formatCurrency(value) {
+    return `PHP ${formatFixedAmount(value)}`;
+}
+
+function formatPlainNumber(value) {
+    return Number(value || 0).toLocaleString('en-PH', {
+        maximumFractionDigits: 0
+    });
+}
+
 function formatMetricCount(value, singular, plural = `${singular}s`) {
     const count = Number(value || 0);
     return `${formatCount(count)} ${count === 1 ? singular : plural}`;
@@ -286,6 +306,12 @@ function formatMonthLongLabel(monthKey, fallback = '') {
     if (!match) return fallback || String(monthKey || '');
     const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
     return date.toLocaleString('en-PH', { month: 'long' });
+}
+
+function getDateMonthKey(value) {
+    const date = asValidDate(value);
+    if (!date) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function parseMonthInput(value) {
@@ -8482,10 +8508,432 @@ async function openInvoiceDetailModal(rowId, monthKey) {
     });
 }
 
+function getScorecardPaymentValue(payment, keys) {
+    for (const key of keys) {
+        const value = payment?.[key];
+        if (value !== null && value !== undefined && value !== '') return value;
+    }
+    return null;
+}
+
+async function fetchFirestoreCollectionRows(collection, { pageSize = 1000, maxPages = 260, fieldMask = [] } = {}) {
+    const rows = [];
+    let pageToken = null;
+    let page = 0;
+    do {
+        const params = new URLSearchParams({
+            key: FIREBASE_CONFIG.apiKey,
+            pageSize: String(pageSize)
+        });
+        if (pageToken) params.set('pageToken', pageToken);
+        fieldMask.forEach((field) => params.append('mask.fieldPaths', field));
+        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `Failed to load ${collection}.`);
+        (payload.documents || []).forEach((doc) => {
+            const parsed = MargaUtils.parseFirestoreDoc(doc);
+            if (parsed) rows.push(parsed);
+        });
+        pageToken = payload.nextPageToken || null;
+        page += 1;
+    } while (pageToken && page < maxPages);
+    return rows;
+}
+
+async function loadBillingScorecardPayments() {
+    if (billingScorecardPaymentEntries.length) return billingScorecardPaymentEntries;
+    if (billingScorecardPaymentPromise) return billingScorecardPaymentPromise;
+
+    billingScorecardPaymentPromise = fetchFirestoreCollectionRows('tbl_paymentinfo', {
+        fieldMask: [
+            'id', 'invoice_id', 'invoice_num', 'client', 'category', 'invoice_amt', 'invoice_date',
+            'printed_or', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid',
+            'ornum', 'or_number', 'payment_type', 'payment_status', 'iscancel'
+        ],
+        maxPages: 260
+    }).then((docs) => {
+        const seen = new Set();
+        billingScorecardPaymentEntries = docs.map((doc) => {
+            const amount = Number(getScorecardPaymentValue(doc, ['payment_amt', 'paymentAmount', 'amount']) || 0) || 0;
+            const paymentStatus = String(getScorecardPaymentValue(doc, ['payment_status', 'paymentStatus']) || '').trim();
+            const isCancelled = Boolean(Number(getScorecardPaymentValue(doc, ['iscancel', 'isCancel']) || 0)) || /^cancel/i.test(paymentStatus);
+            const paymentDate = asValidDate(getScorecardPaymentValue(doc, ['date_deposit', 'dateDeposit', 'date_paid', 'datePaid', 'tax_date_paid', 'taxDatePaid']));
+            if (isCancelled || amount <= 0 || !paymentDate) return null;
+            const invoiceId = String(getScorecardPaymentValue(doc, ['invoice_id', 'invoiceId']) || '').trim();
+            const invoiceNo = String(getScorecardPaymentValue(doc, ['invoice_num', 'invoiceNo']) || '').trim();
+            const orNumber = String(getScorecardPaymentValue(doc, ['ornum', 'or_number', 'orNumber', 'printed_or', 'printedOr']) || '').trim();
+            const token = [invoiceId, invoiceNo, amount.toFixed(2), formatIsoDate(paymentDate), orNumber].join('|');
+            if (seen.has(token)) return null;
+            seen.add(token);
+            return {
+                docId: doc._docId || '',
+                invoiceId,
+                invoiceNo,
+                client: String(getScorecardPaymentValue(doc, ['client']) || '').trim(),
+                category: String(getScorecardPaymentValue(doc, ['category']) || '').trim(),
+                invoiceAmount: Number(getScorecardPaymentValue(doc, ['invoice_amt', 'invoiceAmount']) || 0) || 0,
+                invoiceDate: asValidDate(getScorecardPaymentValue(doc, ['invoice_date', 'invoiceDate'])),
+                amount,
+                balanceAmount: Number(getScorecardPaymentValue(doc, ['balance_amt', 'balanceAmount']) || 0) || null,
+                paymentDate,
+                datePaid: asValidDate(getScorecardPaymentValue(doc, ['date_paid', 'datePaid'])) || paymentDate,
+                orNumber,
+                printedOr: String(getScorecardPaymentValue(doc, ['printed_or', 'printedOr']) || '').trim(),
+                paymentType: String(getScorecardPaymentValue(doc, ['payment_type', 'paymentType']) || '').trim(),
+                paymentStatus
+            };
+        }).filter(Boolean);
+        return billingScorecardPaymentEntries;
+    }).finally(() => {
+        billingScorecardPaymentPromise = null;
+    });
+
+    return billingScorecardPaymentPromise;
+}
+
+function getBillingScorecardPendingProjection(cell, row) {
+    if (!cell || !cell.pending) return 0;
+    const readingAmount = Number(cell.reading_amount_total || 0);
+    if (readingAmount > 0) return readingAmount;
+    const displayAmount = Number(cell.display_amount_total || 0);
+    const invoiceAmount = Number(cell.amount_total || 0);
+    if (displayAmount > 0 && invoiceAmount <= 0) return displayAmount;
+
+    const profile = row?.billing_profile || {};
+    const monthlyRate = Number(profile.monthly_rate || 0) || 0;
+    const monthlyRate2 = Number(profile.monthly_rate2 || 0) || 0;
+    const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
+    const monthlyQuota2 = Number(profile.monthly_quota2 || 0) || 0;
+    const pageRate = Number(profile.page_rate || 0) || 0;
+    const pageRate2 = Number(profile.page_rate2 || profile.page_rate_xtra || 0) || 0;
+    const quotaAmount = monthlyQuota > 0 && pageRate > 0 ? monthlyQuota * pageRate : 0;
+    const quotaAmount2 = monthlyQuota2 > 0 && pageRate2 > 0 ? monthlyQuota2 * pageRate2 : 0;
+    return Math.max(0, monthlyRate + monthlyRate2, quotaAmount + quotaAmount2);
+}
+
+function getBillingScorecardPendingReason(cell, row) {
+    if (Number(cell?.reading_amount_total || 0) > 0) return 'Pending billing from actual meter-reading amount';
+    if (Number(cell?.display_amount_total || 0) > 0 && Number(cell?.amount_total || 0) <= 0) return 'Pending billing from displayed meter-reading amount';
+    const profile = row?.billing_profile || {};
+    if (Number(profile.monthly_rate || 0) > 0 || Number(profile.monthly_rate2 || 0) > 0) return 'Pending billing from active fixed monthly rate';
+    if ((Number(profile.monthly_quota || 0) > 0 && Number(profile.page_rate || 0) > 0)
+        || (Number(profile.monthly_quota2 || 0) > 0 && Number(profile.page_rate2 || profile.page_rate_xtra || 0) > 0)) {
+        return 'Pending billing from active contract quota and rate';
+    }
+    return 'Pending billing without peso estimate';
+}
+
+function buildBillingScorecardPaymentMap(payments) {
+    const map = new Map();
+    const put = (key, payment) => {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        if (!map.has(safeKey)) {
+            map.set(safeKey, { amount: 0, latestBalanceAmount: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] });
+        }
+        const summary = map.get(safeKey);
+        summary.amount += Number(payment.amount || 0);
+        if (payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount))) {
+            summary.latestBalanceAmount = Number(payment.balanceAmount || 0);
+        }
+        if (!summary.firstPaymentDate || payment.paymentDate < summary.firstPaymentDate) summary.firstPaymentDate = payment.paymentDate;
+        if (!summary.lastPaymentDate || payment.paymentDate > summary.lastPaymentDate) summary.lastPaymentDate = payment.paymentDate;
+        if (payment.orNumber || payment.printedOr) summary.orNumbers.add(payment.orNumber || payment.printedOr);
+        summary.payments.push(payment);
+    };
+    payments.forEach((payment) => {
+        put(payment.invoiceId, payment);
+        put(payment.invoiceNo, payment);
+    });
+    return map;
+}
+
+function getBillingScorecardPaymentSummary(paymentMap, ...keys) {
+    const summary = keys.map((key) => paymentMap.get(String(key || '').trim())).find(Boolean);
+    return summary || { amount: 0, latestBalanceAmount: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] };
+}
+
+function makeBillingScorecardDetail({ metricKey, monthKey, row, cell, amount, status, invoiceGroup = null, payment = null, collectedAmount = 0, remainingBalance = 0 }) {
+    return {
+        metricKey,
+        monthKey,
+        company: payment?.client || row?.company_name || row?.account_name || 'Unknown',
+        branch: row?.branch_name || payment?.category || '',
+        serial: row?.serial_number || '-',
+        contractId: row?.contractmain_id || '',
+        machineId: row?.machine_id || '',
+        invoiceNo: payment?.invoiceNo || invoiceGroup?.invoice_no || invoiceGroup?.invoice_ref || invoiceGroup?.invoice_id || '-',
+        orNumber: payment?.orNumber || payment?.printedOr || '',
+        invoiceDate: invoiceGroup?.invoice_date || cell?.latest_invoice_date || payment?.invoiceDate || null,
+        paymentDate: payment?.paymentDate || null,
+        amount: Number(amount || 0),
+        invoiceAmount: Number(invoiceGroup?.amount_total || cell?.amount_total || amount || 0),
+        collectedAmount: Number(collectedAmount || 0),
+        remainingBalance: Number(remainingBalance || 0),
+        projectedAmount: Number(amount || 0),
+        status,
+        cellId: row?.row_id && monthKey ? `${row.row_id}:${monthKey}` : ''
+    };
+}
+
+function addBillingScorecardTotal(rows, metricKey, monthKey, amount, count = 1, detail = null) {
+    const row = rows.find((item) => item.key === metricKey);
+    if (!row) return;
+    row.totals[monthKey] = Number(row.totals[monthKey] || 0) + Number(amount || 0);
+    row.counts[monthKey] = Number(row.counts[monthKey] || 0) + Number(count || 0);
+    if (detail) {
+        if (!row.details[monthKey]) row.details[monthKey] = [];
+        row.details[monthKey].push(detail);
+    }
+}
+
+function buildBillingScorecardRows(payload) {
+    const matrix = payload?.month_matrix || {};
+    const months = Array.isArray(matrix.months) ? matrix.months : [];
+    const monthColumns = months.map((monthKey) => ({ key: monthKey, label: formatMonthLabel(monthKey, monthKey) }));
+    const rows = [
+        { key: 'projected', label: 'Projected Monthly Billing', totals: {}, counts: {}, details: {} },
+        { key: 'billed', label: 'Invoice/Billed Total', totals: {}, counts: {}, details: {} },
+        { key: 'collected', label: 'Collected Against Billed', totals: {}, counts: {}, details: {} },
+        { key: 'receivable', label: 'Unpaid Receivables', totals: {}, counts: {}, details: {} },
+        { key: 'pending_billing', label: 'Pending Billing Projection', totals: {}, counts: {}, details: {} },
+        { key: 'payment_month', label: 'Payments Dated This Month', totals: {}, counts: {}, details: {} }
+    ];
+    monthColumns.forEach((column) => rows.forEach((row) => {
+        row.totals[column.key] = 0;
+        row.counts[column.key] = 0;
+        row.details[column.key] = [];
+    }));
+
+    const paymentMap = buildBillingScorecardPaymentMap(billingScorecardPaymentEntries);
+    billingScorecardPaymentEntries.forEach((payment) => {
+        const paymentMonthKey = getDateMonthKey(payment.paymentDate);
+        if (!months.includes(paymentMonthKey)) return;
+        addBillingScorecardTotal(rows, 'payment_month', paymentMonthKey, payment.amount, 1, makeBillingScorecardDetail({
+            metricKey: 'payment_month',
+            monthKey: paymentMonthKey,
+            row: null,
+            cell: null,
+            amount: payment.amount,
+            status: payment.paymentStatus || payment.paymentType || 'Payment dated this month',
+            payment
+        }));
+    });
+
+    (Array.isArray(matrix.rows) ? matrix.rows : [])
+        .filter((row) => !row.is_summary_row && !row.isGroupedChild)
+        .forEach((row) => {
+            months.forEach((monthKey) => {
+                const cell = row.months?.[monthKey];
+                if (!cell) return;
+                const billedTarget = Number(cell.amount_total || cell.display_amount_total || 0) || 0;
+                const pendingProjection = getBillingScorecardPendingProjection(cell, row);
+                const hasPendingProjection = Boolean(cell.pending && pendingProjection > 0);
+                const invoiceGroups = Array.isArray(cell.invoice_groups) ? cell.invoice_groups : [];
+                const invoiceDetails = invoiceGroups.length
+                    ? invoiceGroups
+                    : (billedTarget > 0 ? [{ amount_total: billedTarget, invoice_no: '-', invoice_ref: '', invoice_id: '' }] : []);
+                let collectedTotal = 0;
+                let remainingTotal = 0;
+
+                invoiceDetails.forEach((group) => {
+                    const invoiceAmount = Number(group.amount_total || billedTarget || 0) || 0;
+                    if (invoiceAmount <= 0) return;
+                    const paymentSummary = getBillingScorecardPaymentSummary(paymentMap, group.invoice_id, group.invoice_no, group.invoice_ref);
+                    const paidAgainstInvoice = Math.min(Number(paymentSummary.amount || 0), invoiceAmount);
+                    const computedRemaining = Math.max(0, invoiceAmount - paidAgainstInvoice);
+                    const remaining = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
+                        ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedRemaining)
+                        : computedRemaining;
+                    collectedTotal += paidAgainstInvoice;
+                    remainingTotal += remaining;
+
+                    addBillingScorecardTotal(rows, 'billed', monthKey, invoiceAmount, 1, makeBillingScorecardDetail({
+                        metricKey: 'billed',
+                        monthKey,
+                        row,
+                        cell,
+                        amount: invoiceAmount,
+                        status: 'Invoice billed',
+                        invoiceGroup: group
+                    }));
+                    if (paidAgainstInvoice > 0) {
+                        const collectedDetail = makeBillingScorecardDetail({
+                            metricKey: 'collected',
+                            monthKey,
+                            row,
+                            cell,
+                            amount: paidAgainstInvoice,
+                            status: 'Collected against billed invoice',
+                            invoiceGroup: group,
+                            collectedAmount: paidAgainstInvoice,
+                            remainingBalance: remaining
+                        });
+                        collectedDetail.paymentDate = paymentSummary.lastPaymentDate || paymentSummary.firstPaymentDate || null;
+                        collectedDetail.orNumber = Array.from(paymentSummary.orNumbers || []).filter(Boolean).join(', ');
+                        addBillingScorecardTotal(rows, 'collected', monthKey, paidAgainstInvoice, 1, collectedDetail);
+                    }
+                    if (remaining > 0.01) {
+                        addBillingScorecardTotal(rows, 'receivable', monthKey, remaining, 1, makeBillingScorecardDetail({
+                            metricKey: 'receivable',
+                            monthKey,
+                            row,
+                            cell,
+                            amount: remaining,
+                            status: 'Unpaid balance',
+                            invoiceGroup: group,
+                            collectedAmount: paidAgainstInvoice,
+                            remainingBalance: remaining
+                        }));
+                    }
+                });
+
+                if (billedTarget > 0 || hasPendingProjection) {
+                    addBillingScorecardTotal(rows, 'projected', monthKey, billedTarget + pendingProjection, (billedTarget > 0 ? 1 : 0) + (hasPendingProjection ? 1 : 0) || 1, makeBillingScorecardDetail({
+                        metricKey: 'projected',
+                        monthKey,
+                        row,
+                        cell,
+                        amount: billedTarget + pendingProjection,
+                        status: hasPendingProjection ? 'Projected: billed + pending billing' : 'Projected: billed',
+                        collectedAmount: collectedTotal,
+                        remainingBalance: remainingTotal
+                    }));
+                }
+                if (hasPendingProjection) {
+                    addBillingScorecardTotal(rows, 'pending_billing', monthKey, pendingProjection, 1, makeBillingScorecardDetail({
+                        metricKey: 'pending_billing',
+                        monthKey,
+                        row,
+                        cell,
+                        amount: pendingProjection,
+                        status: getBillingScorecardPendingReason(cell, row)
+                    }));
+                }
+            });
+        });
+
+    return { monthColumns, rows };
+}
+
+function renderBillingScorecard(payload) {
+    if (!els.billingScorecardWrap) return;
+    const data = buildBillingScorecardRows(payload);
+    billingScorecardData = data;
+    billingScorecardDetailMap = new Map();
+    data.rows.forEach((row) => Object.entries(row.details || {}).forEach(([monthKey, details]) => {
+        billingScorecardDetailMap.set(`${row.key}:${monthKey}`, Array.isArray(details) ? details : []);
+    }));
+
+    if (!data.monthColumns.length) {
+        els.billingScorecardWrap.innerHTML = '<div class="empty-panel">No month columns returned for scorecard.</div>';
+        return;
+    }
+    const header = data.monthColumns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
+    const body = data.rows.map((row) => {
+        const monthCells = data.monthColumns.map((column) => {
+            const count = Number(row.counts?.[column.key] || 0);
+            const amount = Number(row.totals?.[column.key] || 0);
+            return `
+                <td class="billing-scorecard-cell">
+                    <button type="button" class="billing-scorecard-button" data-metric-key="${escapeHtml(row.key)}" data-month-key="${escapeHtml(column.key)}">
+                        <span>${escapeHtml(formatPlainNumber(count))}</span>
+                        <span class="billing-scorecard-divider">/</span>
+                        <strong>${escapeHtml(formatPlainNumber(amount))}</strong>
+                    </button>
+                </td>
+            `;
+        }).join('');
+        const grandCount = data.monthColumns.reduce((sum, column) => sum + Number(row.counts?.[column.key] || 0), 0);
+        const grandAmount = data.monthColumns.reduce((sum, column) => sum + Number(row.totals?.[column.key] || 0), 0);
+        return `
+            <tr>
+                <th class="billing-scorecard-label">${escapeHtml(row.label)}</th>
+                ${monthCells}
+                <td class="billing-scorecard-grand">${escapeHtml(formatPlainNumber(grandCount))} / <strong>${escapeHtml(formatPlainNumber(grandAmount))}</strong></td>
+            </tr>
+        `;
+    }).join('');
+    els.billingScorecardWrap.innerHTML = `
+        <table class="billing-sheet billing-scorecard-sheet">
+            <thead><tr><th>Metric</th>${header}<th>Total</th></tr></thead>
+            <tbody>${body}</tbody>
+        </table>
+    `;
+}
+
+function renderBillingScorecardDetails(metricKey, details) {
+    if (!details.length) return '<div class="detail-empty">No detail rows found for this scorecard cell.</div>';
+    const columnsByMetric = {
+        pending_billing: ['company', 'branch', 'serial', 'contractMachine', 'projected', 'status', 'open'],
+        billed: ['invoice', 'company', 'branch', 'invoiceDate', 'amount', 'open'],
+        collected: ['invoice', 'or', 'company', 'branch', 'paid', 'paymentDate', 'open'],
+        receivable: ['invoice', 'company', 'branch', 'invoiceAmount', 'collected', 'remaining', 'open'],
+        payment_month: ['invoice', 'or', 'company', 'branch', 'paid', 'paymentDate'],
+        projected: ['company', 'branch', 'invoice', 'projected', 'status', 'open']
+    };
+    const labels = {
+        company: 'Company', branch: 'Branch / Dept', serial: 'Serial', contractMachine: 'Contract / Machine',
+        invoice: 'Invoice #', or: 'OR #', invoiceDate: 'Invoice Date', paymentDate: 'Payment Date',
+        amount: 'Billed Amount', paid: 'Paid Amount', invoiceAmount: 'Invoice Amount', collected: 'Collected',
+        remaining: 'Remaining Balance', projected: 'Projected Amount', status: 'Why / Status', open: 'Open'
+    };
+    const moneyColumns = new Set(['amount', 'paid', 'invoiceAmount', 'collected', 'remaining', 'projected']);
+    const columns = columnsByMetric[metricKey] || columnsByMetric.projected;
+    const value = (detail, column) => {
+        if (column === 'company') return escapeHtml(detail.company || '-');
+        if (column === 'branch') return escapeHtml(detail.branch || '-');
+        if (column === 'serial') return escapeHtml(detail.serial || '-');
+        if (column === 'contractMachine') return escapeHtml(`Contract ${detail.contractId || '-'} / Machine ${detail.machineId || '-'}`);
+        if (column === 'invoice') return escapeHtml(detail.invoiceNo || '-');
+        if (column === 'or') return escapeHtml(detail.orNumber || '-');
+        if (column === 'invoiceDate') return escapeHtml(formatUsDate(asValidDate(detail.invoiceDate)) || '-');
+        if (column === 'paymentDate') return escapeHtml(formatUsDate(asValidDate(detail.paymentDate)) || '-');
+        if (column === 'amount') return escapeHtml(formatCurrency(detail.amount || 0));
+        if (column === 'paid') return escapeHtml(formatCurrency(detail.amount || detail.collectedAmount || 0));
+        if (column === 'invoiceAmount') return escapeHtml(formatCurrency(detail.invoiceAmount || 0));
+        if (column === 'collected') return escapeHtml(formatCurrency(detail.collectedAmount || 0));
+        if (column === 'remaining') return escapeHtml(formatCurrency(detail.remainingBalance || detail.amount || 0));
+        if (column === 'projected') return escapeHtml(formatCurrency(detail.projectedAmount || detail.amount || 0));
+        if (column === 'status') return escapeHtml(detail.status || '-');
+        if (column === 'open') {
+            return detail.cellId ? `<button type="button" class="btn btn-secondary btn-sm billing-scorecard-open-cell" data-cell-id="${escapeHtml(detail.cellId)}">Open</button>` : '-';
+        }
+        return '-';
+    };
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-sheet billing-scorecard-detail-table">
+                <thead><tr>${columns.map((column) => `<th>${escapeHtml(labels[column] || column)}</th>`).join('')}</tr></thead>
+                <tbody>
+                    ${details.slice().sort((left, right) => Number(right.amount || 0) - Number(left.amount || 0)).map((detail) => `
+                        <tr>${columns.map((column) => `<td class="${moneyColumns.has(column) ? 'text-right' : ''}">${value(detail, column)}</td>`).join('')}</tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function openBillingScorecardTotal(metricKey, monthKey) {
+    const details = billingScorecardDetailMap.get(`${metricKey}:${monthKey}`) || [];
+    const metricLabel = (billingScorecardData?.rows || []).find((row) => row.key === metricKey)?.label || 'Scorecard Detail';
+    const total = details.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = metricLabel;
+    if (els.billingScorecardSubtitle) els.billingScorecardSubtitle.textContent = `${formatMonthLabel(monthKey, monthKey)} • ${details.length.toLocaleString()} detail row(s) • ${formatCurrency(total)}`;
+    if (els.billingScorecardContent) els.billingScorecardContent.innerHTML = renderBillingScorecardDetails(metricKey, details);
+    els.billingScorecardModal?.classList.remove('hidden');
+}
+
+function closeBillingScorecardModal() {
+    els.billingScorecardModal?.classList.add('hidden');
+}
+
 function renderAll(payload) {
     lastPayload = payload;
     renderSelectionCard(payload);
     renderSummaryTable(payload);
+    renderBillingScorecard(payload);
     renderMatrixTable(payload);
     els.rawJson.textContent = JSON.stringify(payload, null, 2);
 }
@@ -8493,6 +8941,7 @@ function renderAll(payload) {
 function renderError(message) {
     els.selectionCard.classList.add('hidden');
     els.summaryTableWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
+    if (els.billingScorecardWrap) els.billingScorecardWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
     els.matrixTableWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
     els.rawJson.textContent = String(message || 'Unknown error');
 }
@@ -8522,6 +8971,12 @@ async function loadDashboard(options = {}) {
         if (getPayloadSearchTerm(payload) !== expectedPayloadSearchTerm) return;
 
         billingExclusionCache = await loadBillingExclusions();
+        if (requestToken !== dashboardRequestToken) return;
+        if (options.forceRefresh || Boolean(els.refreshCacheInput?.checked)) billingScorecardPaymentEntries = [];
+        await loadBillingScorecardPayments().catch((error) => {
+            console.warn('Unable to load payment records for Billing scorecard.', error);
+            billingScorecardPaymentEntries = [];
+        });
         if (requestToken !== dashboardRequestToken) return;
         renderDashboardBillingExclusions();
         renderAll(applyBillingExclusionsToPayload(payload, billingExclusionCache));
@@ -8664,6 +9119,24 @@ function bindEvents() {
         event.preventDefault();
         openBillingCalcModalSafely(trigger.dataset.rowId, trigger.dataset.monthKey);
     });
+    els.billingScorecardWrap?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.billing-scorecard-button');
+        if (!trigger) return;
+        event.preventDefault();
+        openBillingScorecardTotal(trigger.dataset.metricKey, trigger.dataset.monthKey);
+    });
+    els.billingScorecardContent?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.billing-scorecard-open-cell');
+        if (!trigger) return;
+        event.preventDefault();
+        const [rowId, monthKey] = String(trigger.dataset.cellId || '').split(':');
+        closeBillingScorecardModal();
+        if (rowId && monthKey) openBillingCalcModalSafely(rowId, monthKey);
+    });
+    els.billingScorecardCloseBtn?.addEventListener('click', closeBillingScorecardModal);
+    els.billingScorecardModal?.addEventListener('click', (event) => {
+        if (event.target === els.billingScorecardModal) closeBillingScorecardModal();
+    });
     els.invoiceDetailCloseBtn?.addEventListener('click', closeInvoiceDetailModal);
     els.rtpInvoicePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     els.rtpInvoiceDotMatrixBtn?.addEventListener('click', printCurrentDotMatrixInvoice);
@@ -8695,6 +9168,7 @@ function bindEvents() {
         if (event.key === 'Escape') {
             closeInvoiceDetailModal();
             closeSerialDetailModal();
+            closeBillingScorecardModal();
             closeBillingCalcModal();
         }
     });
