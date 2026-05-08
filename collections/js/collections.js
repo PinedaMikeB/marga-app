@@ -1063,6 +1063,32 @@ function getCollectorPendingBillingProjection(billingCell, billingRow) {
     return Math.max(0, monthlyRate + monthlyRate2, quotaAmount + quotaAmount2);
 }
 
+function getCollectorHistoricalBillingEstimate(row, targetMonthKey) {
+    const targetDate = normalizeDate(`${targetMonthKey}-01`);
+    const estimates = Object.entries(row?.months || {})
+        .map(([monthKey, cellId]) => {
+            if (monthKey === targetMonthKey) return null;
+            const cell = collectorCellMap.get(cellId || '');
+            if (!cell) return null;
+            const amount = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+            if (amount <= 0) return null;
+            const monthDate = normalizeDate(`${monthKey}-01`);
+            return {
+                amount,
+                distance: targetDate && monthDate ? Math.abs(targetDate.getTime() - monthDate.getTime()) : Number.MAX_SAFE_INTEGER,
+                isBeforeTarget: monthKey < targetMonthKey
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+            if (left.distance !== right.distance) return left.distance - right.distance;
+            if (left.isBeforeTarget !== right.isBeforeTarget) return left.isBeforeTarget ? -1 : 1;
+            return right.amount - left.amount;
+        });
+
+    return Number(estimates[0]?.amount || 0);
+}
+
 function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
     const totalRows = [
         { key: 'projected', label: 'Projected Monthly Billing', totals: {}, counts: {}, details: {} },
@@ -1088,15 +1114,19 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                 if (!cell) return;
                 const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
                 const outstandingBalance = getCellOutstandingBalance(cell);
-                const pendingProjection = cell.pendingBilling ? Number(cell.pendingBillingProjectionTotal || 0) : 0;
+                const pendingProjectionBase = cell.pendingBilling ? Number(cell.pendingBillingProjectionTotal || 0) : 0;
+                const pendingProjection = cell.pendingBilling
+                    ? Math.max(pendingProjectionBase, getCollectorHistoricalBillingEstimate(row, column.key))
+                    : 0;
+                const hasPendingProjection = cell.pendingBilling && pendingProjection > 0;
                 const invoiceCount = row.isGroupedParent
                     ? (billedTarget > 0 ? 1 : 0)
                     : countCollectorCellInvoices(cell, (record) => Number(record.billedAmount || record.amount || 0) > 0, 0);
                 const pendingCount = row.isGroupedParent
-                    ? (cell.pendingBilling ? 1 : 0)
-                    : (cell.pendingBilling ? 1 : 0);
+                    ? (hasPendingProjection ? 1 : 0)
+                    : (hasPendingProjection ? 1 : 0);
 
-                if (billedTarget > 0 || pendingProjection > 0 || cell.pendingBilling) {
+                if (billedTarget > 0 || hasPendingProjection) {
                     const projectedAmount = billedTarget + pendingProjection;
                     const projectedCount = invoiceCount + pendingCount;
                     addCollectorMatrixTotal(
@@ -1153,7 +1183,7 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                     );
                 }
 
-                if (cell.pendingBilling) {
+                if (hasPendingProjection) {
                     addCollectorMatrixTotal(
                         totalRows,
                         'pending_billing',
@@ -4450,7 +4480,7 @@ function renderCollectorDashboardFromData(data) {
             : invoiceSearchTerm
                 ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Scorecard rows are by billing month: projected and billed are targets; collected and unpaid are portions of billed invoices; pending billing is not yet invoiced.`;
+        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Scorecard rows are by billing month: projected and billed are targets; collected and unpaid are portions of billed invoices; pending billing counts only rows with a contract/reading/history peso estimate.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');

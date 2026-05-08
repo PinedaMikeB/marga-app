@@ -761,6 +761,7 @@ function compactCollectionMatrixRow(row) {
         contractmain_id: row?.contractmain_id || '',
         machine_label: row?.machine_label || '',
         reading_day: row?.reading_day || null,
+        billing_profile: row?.billing_profile || null,
         months
     };
 }
