@@ -1049,14 +1049,20 @@ function getCollectorPendingBillingProjection(billingCell, billingRow) {
     const profile = billingRow?.billing_profile || {};
     const monthlyRate = Number(profile.monthly_rate || 0) || 0;
     const monthlyRate2 = Number(profile.monthly_rate2 || 0) || 0;
-    return Math.max(0, monthlyRate + monthlyRate2);
+    const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
+    const monthlyQuota2 = Number(profile.monthly_quota2 || 0) || 0;
+    const pageRate = Number(profile.page_rate || 0) || 0;
+    const pageRate2 = Number(profile.page_rate2 || profile.page_rate_xtra || 0) || 0;
+    const quotaAmount = monthlyQuota > 0 && pageRate > 0 ? monthlyQuota * pageRate : 0;
+    const quotaAmount2 = monthlyQuota2 > 0 && pageRate2 > 0 ? monthlyQuota2 * pageRate2 : 0;
+    return Math.max(0, monthlyRate + monthlyRate2, quotaAmount + quotaAmount2);
 }
 
 function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
     const totalRows = [
         { key: 'projected', label: 'Projected Monthly Billing', totals: {}, counts: {}, details: {} },
         { key: 'billed', label: 'Invoice/Billed Total', totals: {}, counts: {}, details: {} },
-        { key: 'cash', label: 'Cash Collected', totals: {}, counts: {}, details: {} },
+        { key: 'cash', label: 'Collected', totals: {}, counts: {}, details: {} },
         { key: 'receivable', label: 'Unpaid Receivables', totals: {}, counts: {}, details: {} },
         { key: 'pending_billing', label: 'Pending Billing Projection', totals: {}, counts: {}, details: {} }
     ];
@@ -1081,10 +1087,16 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                 const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
                 const outstandingBalance = getCellOutstandingBalance(cell);
                 const pendingProjection = cell.pendingBilling ? Number(cell.pendingBillingProjectionTotal || 0) : 0;
+                const invoiceCount = row.isGroupedParent
+                    ? (billedTarget > 0 ? 1 : 0)
+                    : countCollectorCellInvoices(cell, (record) => Number(record.billedAmount || record.amount || 0) > 0, 0);
+                const pendingCount = row.isGroupedParent
+                    ? (cell.pendingBilling ? 1 : 0)
+                    : (cell.pendingBilling ? 1 : 0);
 
                 if (billedTarget > 0 || pendingProjection > 0 || cell.pendingBilling) {
                     const projectedAmount = billedTarget + pendingProjection;
-                    const projectedCount = countCollectorCellInvoices(cell, (record) => Number(record.billedAmount || record.amount || 0) > 0, 0) + (cell.pendingBilling ? 1 : 0);
+                    const projectedCount = invoiceCount + pendingCount;
                     addCollectorMatrixTotal(
                         totalRows,
                         'projected',
@@ -1101,7 +1113,7 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                         'billed',
                         column.key,
                         billedTarget,
-                        countCollectorCellInvoices(cell, (record) => Number(record.billedAmount || record.amount || 0) > 0),
+                        invoiceCount || 1,
                         makeCollectorMatrixDetail(row, column, cell, 'billed', billedTarget, 'Invoice billed')
                     );
                 }
@@ -1112,14 +1124,16 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                         'receivable',
                         column.key,
                         outstandingBalance,
-                        countCollectorCellInvoices(cell, (record) => {
-                            const billed = Number(record.billedAmount || record.amount || 0);
-                            const collected = Number(record.collectedAmount || 0);
-                            const balance = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
-                                ? Number(record.latestBalanceAmount || 0)
-                                : Math.max(0, billed - collected);
-                            return billed > 0 && balance > 0.01;
-                        }),
+                        row.isGroupedParent
+                            ? 1
+                            : countCollectorCellInvoices(cell, (record) => {
+                                const billed = Number(record.billedAmount || record.amount || 0);
+                                const collected = Number(record.collectedAmount || 0);
+                                const balance = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
+                                    ? Number(record.latestBalanceAmount || 0)
+                                    : Math.max(0, billed - collected);
+                                return billed > 0 && balance > 0.01;
+                            }),
                         makeCollectorMatrixDetail(row, column, cell, 'receivable', outstandingBalance, 'Unpaid balance')
                     );
                 }
