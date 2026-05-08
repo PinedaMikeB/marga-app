@@ -98,6 +98,19 @@ Grouped-customer matrix representation:
 - Critical separation rule: do not merge by TIN or broad name match. `China Bank Savings Inc.` (`tbl_companylist/73`) and other CBS-like records share TIN `000-504-532-000` but are individually billed and should remain individual rows unless separately verified as grouped.
 - Because newer CBS billing rows do not consistently populate `tbl_billing.groupings_id`, grouped row construction should use exact grouped `company_id` plus branch/contract resolution, with `tbl_groupings` as a helper.
 
+Collections matrix scorecard totals:
+- Current accepted correction point: commit `b4f093a` (`Correct collection payment month totals`) on `main`.
+- The scorecard totals are intentionally separated by meaning:
+  - `Projected Monthly Billing`: invoice-month target from actual billed invoices plus pending billing projection with a real contract or meter-reading peso estimate.
+  - `Invoice/Billed Total`: invoices actually billed/printed for that billing month.
+  - `Collected Against Billed`: payments applied against invoices billed in that invoice month, regardless of payment date.
+  - `Unpaid Receivables`: remaining balance on invoices billed in that invoice month.
+  - `Pending Billing Projection`: not-yet-billed rows for that billing month; amount must come only from actual meter-reading amount or contract quota/fixed monthly rate.
+  - `Payments Dated This Month`: all actual payments with payment/OR date in that month, including payments for older invoices.
+- Do not use a broad historical billed-amount fallback for `Pending Billing Projection`; that caused an incorrect multi-million peso spike (example: April 2026 showing about `₱8.3M` instead of the expected roughly `₱2.5M` range).
+- Pending billing rows with no contract/reading peso estimate should not inflate the projected peso target.
+- If these scorecard totals look wrong again, first check `collections/js/collections.js` around `buildCollectorMatrixTotalRows()` and `getCollectorPendingBillingProjection()`, plus `netlify/functions/openclaw-billing-cohort.js` `compactCollectionMatrixRow()` to ensure `billing_profile` is included in collection response mode.
+
 Collections 2307 / deduction tracking:
 - Do not infer 2307 from `balance_amt`. Balance is only the remaining invoice amount after actual payment and explicit deductions.
 - Payment form should keep these separate:

@@ -172,6 +172,19 @@ Collections grouped-customer rules:
 - If `tbl_billing.groupings_id` is missing or stale for newer bills, resolve the grouped account from the exact grouped `company_id` and its branch contracts. Treat `tbl_groupings` as a helper, not the only source of truth.
 - Current rollback anchor for Collections month-to-month matrix before grouped collapsible work: commit `1683fc9` on `main` plus the recent matrix/payment fixes below it (`d8564c3`, `a128dda`, `3fe81b0`, `99348f1`, `19efa43`, `72d2f10`). Roll back with a forward commit, never by rewriting `main`.
 
+Collections scorecard / totals rules:
+- Current accepted correction point: commit `b4f093a` (`Correct collection payment month totals`) on `main`.
+- Month-to-month scorecard totals must keep invoice-month and payment-date concepts separate:
+  - `Projected Monthly Billing`: billed invoice target plus pending billing projection for the billing month.
+  - `Invoice/Billed Total`: invoice/printed billing for that billing month.
+  - `Collected Against Billed`: payments applied to invoices billed in that billing month.
+  - `Unpaid Receivables`: remaining unpaid balance on invoices billed in that billing month.
+  - `Pending Billing Projection`: not-yet-billed projection for that billing month.
+  - `Payments Dated This Month`: all actual payment amounts whose payment/OR date falls in that month, even if they pay older invoices.
+- Pending billing projection amount must come only from a real meter-reading amount or the active contract quota/fixed monthly rate. Do not use a broad historical billed-total fallback because it can overstate projections badly.
+- Known correction reference: April 2026 briefly showed an incorrect projected monthly billing of about `₱8.3M`; that was considered wrong because normal monthly billing is closer to the `₱2.5M` range. The fix removed the aggressive historical fallback and added the separate `Payments Dated This Month` row.
+- If totals regress, inspect `collections/js/collections.js` `buildCollectorMatrixTotalRows()` and `getCollectorPendingBillingProjection()`, and confirm `netlify/functions/openclaw-billing-cohort.js` collection compact rows still include `billing_profile`.
+
 Collections matrix usability rule:
 - The month matrix must be horizontally reachable on live desktop and mobile.
 - Native scrollbar, custom drag bar, arrow buttons, mouse drag, trackpad movement, or touch swipe are all acceptable only if they work clearly on the live page.
