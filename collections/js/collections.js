@@ -46,6 +46,7 @@ let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
 let collectorDashboardRenderSeq = 0;
 let collectorReturnBookmark = null;
+let collectorMatrixTotalDetailMap = new Map();
 let collectionWorkspaceLookupsLoaded = false;
 let collectionWorkspaceLookupsPromise = null;
 let collectionProfileByBranchId = new Map();
@@ -992,6 +993,50 @@ function getCellOutstandingBalance(cell) {
     return billedTarget;
 }
 
+function getCollectorRecordKey(record) {
+    return String(record?.invoiceKey || record?.invoiceNo || record?.invoiceId || '').trim();
+}
+
+function countCollectorCellInvoices(cell, predicate = null, fallbackCount = 1) {
+    const records = Array.isArray(cell?.records) ? cell.records : [];
+    const keys = new Set();
+    records.forEach((record, index) => {
+        if (predicate && !predicate(record)) return;
+        keys.add(getCollectorRecordKey(record) || `${cell.id || 'cell'}:${index}`);
+    });
+    return keys.size || (cell ? fallbackCount : 0);
+}
+
+function makeCollectorMatrixDetail(row, column, cell, metricKey, amount, statusLabel) {
+    const records = Array.isArray(cell?.records) ? cell.records : [];
+    const record = records[0] || {};
+    return {
+        metricKey,
+        monthKey: column.key,
+        monthLabel: column.fullLabel || column.label || column.key,
+        customer: row.customer || cell?.customer || '',
+        branch: row.branchName || cell?.branchName || '',
+        serial: displaySerialNumber(row.serialNumber || cell?.serialNumber),
+        invoiceNo: record.invoiceNo || record.invoiceId || record.invoiceKey || '-',
+        orNumber: Array.from(record.paymentOrNumbers || cell?.paymentOrNumbers || []).filter(Boolean).join(', '),
+        date: record.lastPaymentDate || record.invoiceDate || record.dueDate || null,
+        status: statusLabel,
+        amount: Number(amount || 0),
+        cellId: cell?.id || ''
+    };
+}
+
+function addCollectorMatrixTotal(totalRows, metricKey, monthKey, amount, count = 1, detail = null) {
+    const row = totalRows.find((item) => item.key === metricKey);
+    if (!row) return;
+    row.totals[monthKey] = Number(row.totals[monthKey] || 0) + Number(amount || 0);
+    row.counts[monthKey] = Number(row.counts[monthKey] || 0) + Number(count || 0);
+    if (detail) {
+        if (!row.details[monthKey]) row.details[monthKey] = [];
+        row.details[monthKey].push(detail);
+    }
+}
+
 function getCollectorPendingBillingProjection(billingCell, billingRow) {
     if (!billingCell || !billingCell.pending) return 0;
     const readingAmount = Number(billingCell.reading_amount_total || 0);
@@ -1005,6 +1050,121 @@ function getCollectorPendingBillingProjection(billingCell, billingRow) {
     const monthlyRate = Number(profile.monthly_rate || 0) || 0;
     const monthlyRate2 = Number(profile.monthly_rate2 || 0) || 0;
     return Math.max(0, monthlyRate + monthlyRate2);
+}
+
+function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
+    const totalRows = [
+        { key: 'projected', label: 'Projected Monthly Billing', totals: {}, counts: {}, details: {} },
+        { key: 'billed', label: 'Invoice/Billed Total', totals: {}, counts: {}, details: {} },
+        { key: 'cash', label: 'Cash Collected', totals: {}, counts: {}, details: {} },
+        { key: 'receivable', label: 'Unpaid Receivables', totals: {}, counts: {}, details: {} },
+        { key: 'pending_billing', label: 'Pending Billing Projection', totals: {}, counts: {}, details: {} }
+    ];
+    const monthKeys = new Set(monthColumns.map((column) => column.key));
+    const cashInvoiceKeysByMonth = new Map();
+
+    monthColumns.forEach((column) => {
+        totalRows.forEach((row) => {
+            row.totals[column.key] = 0;
+            row.counts[column.key] = 0;
+            row.details[column.key] = [];
+        });
+        cashInvoiceKeysByMonth.set(column.key, new Set());
+    });
+
+    customerRows
+        .filter((row) => !row.isGroupedChild)
+        .forEach((row) => {
+            monthColumns.forEach((column) => {
+                const cell = collectorCellMap.get(row.months?.[column.key] || '');
+                if (!cell) return;
+                const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                const outstandingBalance = getCellOutstandingBalance(cell);
+                const pendingProjection = cell.pendingBilling ? Number(cell.pendingBillingProjectionTotal || 0) : 0;
+
+                if (billedTarget > 0 || pendingProjection > 0 || cell.pendingBilling) {
+                    const projectedAmount = billedTarget + pendingProjection;
+                    const projectedCount = countCollectorCellInvoices(cell, (record) => Number(record.billedAmount || record.amount || 0) > 0, 0) + (cell.pendingBilling ? 1 : 0);
+                    addCollectorMatrixTotal(
+                        totalRows,
+                        'projected',
+                        column.key,
+                        projectedAmount,
+                        projectedCount || 1,
+                        makeCollectorMatrixDetail(row, column, cell, 'projected', projectedAmount, cell.pendingBilling ? 'Projected: billed + pending billing' : 'Projected: billed')
+                    );
+                }
+
+                if (billedTarget > 0) {
+                    addCollectorMatrixTotal(
+                        totalRows,
+                        'billed',
+                        column.key,
+                        billedTarget,
+                        countCollectorCellInvoices(cell, (record) => Number(record.billedAmount || record.amount || 0) > 0),
+                        makeCollectorMatrixDetail(row, column, cell, 'billed', billedTarget, 'Invoice billed')
+                    );
+                }
+
+                if (billedTarget > 0 && outstandingBalance > 0.01) {
+                    addCollectorMatrixTotal(
+                        totalRows,
+                        'receivable',
+                        column.key,
+                        outstandingBalance,
+                        countCollectorCellInvoices(cell, (record) => {
+                            const billed = Number(record.billedAmount || record.amount || 0);
+                            const collected = Number(record.collectedAmount || 0);
+                            const balance = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
+                                ? Number(record.latestBalanceAmount || 0)
+                                : Math.max(0, billed - collected);
+                            return billed > 0 && balance > 0.01;
+                        }),
+                        makeCollectorMatrixDetail(row, column, cell, 'receivable', outstandingBalance, 'Unpaid balance')
+                    );
+                }
+
+                if (cell.pendingBilling) {
+                    addCollectorMatrixTotal(
+                        totalRows,
+                        'pending_billing',
+                        column.key,
+                        pendingProjection,
+                        1,
+                        makeCollectorMatrixDetail(row, column, cell, 'pending_billing', pendingProjection, 'Pending billing')
+                    );
+                }
+            });
+        });
+
+    paymentEntries.forEach((entry) => {
+        const paymentMonthKey = getMonthKey(entry.paymentDate);
+        if (!paymentMonthKey || !monthKeys.has(paymentMonthKey)) return;
+        const amount = Number(entry.amount || 0);
+        if (!(amount > 0)) return;
+        const invoiceKey = String(entry.invoiceId || entry.invoiceNo || entry.docId || entry.id || '').trim();
+        if (invoiceKey) cashInvoiceKeysByMonth.get(paymentMonthKey)?.add(invoiceKey);
+        addCollectorMatrixTotal(totalRows, 'cash', paymentMonthKey, amount, 0, {
+            metricKey: 'cash',
+            monthKey: paymentMonthKey,
+            monthLabel: monthColumns.find((column) => column.key === paymentMonthKey)?.fullLabel || paymentMonthKey,
+            customer: entry.client || '-',
+            branch: entry.category || '-',
+            serial: '-',
+            invoiceNo: entry.invoiceNo || entry.invoiceId || '-',
+            orNumber: entry.orNumber || '-',
+            date: entry.datePaid || entry.paymentDate || entry.dateDeposit || null,
+            status: entry.paymentStatus || 'Payment received',
+            amount,
+            cellId: ''
+        });
+    });
+
+    totalRows.find((row) => row.key === 'cash').counts = Object.fromEntries(
+        Array.from(cashInvoiceKeysByMonth.entries()).map(([monthKey, invoiceSet]) => [monthKey, invoiceSet.size])
+    );
+
+    return totalRows;
 }
 
 async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
@@ -3956,6 +4116,7 @@ async function computeCollectorDashboardData() {
         const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
         return (billedTarget > 0 || cell.missedReading || cell.pendingBilling) && cell.collectedTotal <= 0;
     }).length;
+    const matrixTotalRows = buildCollectorMatrixTotalRows(monthColumns, customerRows);
 
     return {
         monthColumns,
@@ -3966,6 +4127,7 @@ async function computeCollectorDashboardData() {
         paymentMonthTotals,
         receivableMonthTotals,
         pendingBillingMonthTotals,
+        matrixTotalRows,
         pendingCountsByMonth,
         pendingCellCount,
         windowStart,
@@ -4014,26 +4176,26 @@ function renderCollectorSummaryTable(data) {
 
 function renderCollectorMatrixTotalRows(data, cellTag = 'td') {
     const tag = cellTag === 'th' ? 'th' : 'td';
-    const rows = [
-        {
-            label: 'Receivables / Unpaid Target',
-            totals: data.receivableMonthTotals || {}
-        },
-        {
-            label: 'Payment Total',
-            totals: data.paymentMonthTotals || {}
-        },
-        {
-            label: 'Pending Billing Projection',
-            totals: data.pendingBillingMonthTotals || {}
-        }
-    ];
+    const rows = Array.isArray(data.matrixTotalRows) ? data.matrixTotalRows : [];
 
     return rows.map((row) => {
         const monthCells = data.monthColumns
-            .map((column) => `<${tag} class="total-cell text-right">${escapeHtml(formatPlainNumber(row.totals?.[column.key] || 0))}</${tag}>`)
+            .map((column) => {
+                const count = Number(row.counts?.[column.key] || 0);
+                const amount = Number(row.totals?.[column.key] || 0);
+                return `
+                    <${tag} class="total-cell text-right collector-total-drilldown-cell">
+                        <button type="button" class="collector-total-button" onclick="openCollectorMatrixTotal('${escapeHtml(row.key)}', '${escapeHtml(column.key)}')">
+                            <span class="collector-total-count">${escapeHtml(formatPlainNumber(count))}</span>
+                            <span class="collector-total-divider">/</span>
+                            <span class="collector-total-amount">${escapeHtml(formatPlainNumber(amount))}</span>
+                        </button>
+                    </${tag}>
+                `;
+            })
             .join('');
         const grandTotal = data.monthColumns.reduce((sum, column) => sum + Number(row.totals?.[column.key] || 0), 0);
+        const grandCount = data.monthColumns.reduce((sum, column) => sum + Number(row.counts?.[column.key] || 0), 0);
         return `
             <tr class="collector-matrix-total-row">
                 <${tag} class="sticky-col rd total-cell"></${tag}>
@@ -4041,15 +4203,99 @@ function renderCollectorMatrixTotalRows(data, cellTag = 'td') {
                 <${tag} class="sticky-col customer total-cell text-left">${escapeHtml(row.label)}</${tag}>
                 <${tag} class="sticky-col branch total-cell"></${tag}>
                 ${monthCells}
-                <${tag} class="total-cell text-right">${escapeHtml(formatPlainNumber(grandTotal))}</${tag}>
+                <${tag} class="total-cell text-right">
+                    <span class="collector-total-count">${escapeHtml(formatPlainNumber(grandCount))}</span>
+                    <span class="collector-total-divider">/</span>
+                    <span class="collector-total-amount">${escapeHtml(formatPlainNumber(grandTotal))}</span>
+                </${tag}>
             </tr>
         `;
     }).join('');
 }
 
+function getCollectorMatrixTotalLabel(metricKey) {
+    const row = (collectorDashboardData?.matrixTotalRows || []).find((item) => item.key === metricKey);
+    return row?.label || 'Matrix Total';
+}
+
+function renderCollectorMatrixTotalDetails(details) {
+    if (!details.length) return '<div class="collection-followup-empty">No detail rows found for this total.</div>';
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table collector-total-detail-table">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Branch / Dept</th>
+                        <th>SN</th>
+                        <th>Invoice / Ref</th>
+                        <th>OR No.</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Amount</th>
+                        <th>Open</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${details
+                        .slice()
+                        .sort((left, right) => Number(right.amount || 0) - Number(left.amount || 0))
+                        .map((detail) => `
+                            <tr>
+                                <td>${escapeHtml(detail.customer || '-')}</td>
+                                <td>${escapeHtml(detail.branch || '-')}</td>
+                                <td>${escapeHtml(detail.serial || '-')}</td>
+                                <td>${escapeHtml(detail.invoiceNo || '-')}</td>
+                                <td>${escapeHtml(detail.orNumber || '-')}</td>
+                                <td>${escapeHtml(formatDate(detail.date))}</td>
+                                <td>${escapeHtml(detail.status || '-')}</td>
+                                <td class="text-right">${escapeHtml(formatCurrency(detail.amount || 0))}</td>
+                                <td>${detail.cellId ? `<button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorMatrixTotalDetailCell('${encodeURIComponent(detail.cellId)}')">Open</button>` : '-'}</td>
+                            </tr>
+                        `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function openCollectorMatrixTotal(metricKey, monthKey) {
+    const safeMetricKey = String(metricKey || '').trim();
+    const safeMonthKey = String(monthKey || '').trim();
+    const modal = document.getElementById('collectorTotalModal');
+    const title = document.getElementById('collectorTotalTitle');
+    const subtitle = document.getElementById('collectorTotalSubtitle');
+    const content = document.getElementById('collectorTotalContent');
+    if (!modal || !title || !subtitle || !content) return;
+
+    const monthColumn = (collectorDashboardData?.monthColumns || []).find((column) => column.key === safeMonthKey);
+    const details = collectorMatrixTotalDetailMap.get(`${safeMetricKey}:${safeMonthKey}`) || [];
+    const amountTotal = details.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+    title.textContent = getCollectorMatrixTotalLabel(safeMetricKey);
+    subtitle.textContent = `${monthColumn?.fullLabel || safeMonthKey || 'Month'} • ${details.length.toLocaleString()} detail row(s) • ${formatCurrency(amountTotal)}`;
+    content.innerHTML = renderCollectorMatrixTotalDetails(details);
+    modal.classList.remove('hidden');
+}
+
+function closeCollectorTotalModal() {
+    document.getElementById('collectorTotalModal')?.classList.add('hidden');
+}
+
+function openCollectorMatrixTotalDetailCell(cellId) {
+    closeCollectorTotalModal();
+    void openCollectorCell(decodeURIComponent(String(cellId || '')));
+}
+
 function renderCollectorMatrixTable(data, visibleRows) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
+    collectorMatrixTotalDetailMap = new Map();
+    (data.matrixTotalRows || []).forEach((row) => {
+        Object.entries(row.details || {}).forEach(([monthKey, details]) => {
+            collectorMatrixTotalDetailMap.set(`${row.key}:${monthKey}`, Array.isArray(details) ? details : []);
+        });
+    });
     const visibleCount = Array.isArray(visibleRows) ? visibleRows.length : 0;
     const totalCount = Array.isArray(data?.customerRows) ? data.customerRows.length : visibleCount;
     const rdCountLabel = visibleCount === totalCount
@@ -4202,7 +4448,7 @@ function renderCollectorDashboardFromData(data) {
             : invoiceSearchTerm
                 ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Matrix totals show receivables/unpaid target, actual payments by payment date, and pending billing projection from contract or meter-reading data.`;
+        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Top and bottom scorecard rows show count / amount and can be clicked for details.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
@@ -7758,6 +8004,7 @@ function setupModalEvents() {
     const detailModal = document.getElementById('detailModal');
     const collectorCellModal = document.getElementById('collectorCellModal');
     const collectorBranchModal = document.getElementById('collectorBranchModal');
+    const collectorTotalModal = document.getElementById('collectorTotalModal');
     const collectorSoaPeriodModal = document.getElementById('collectorSoaPeriodModal');
 
     followupModal?.addEventListener('click', (event) => {
@@ -7776,6 +8023,10 @@ function setupModalEvents() {
         if (event.target === collectorBranchModal) closeCollectorBranchModal();
     });
 
+    collectorTotalModal?.addEventListener('click', (event) => {
+        if (event.target === collectorTotalModal) closeCollectorTotalModal();
+    });
+
     collectorSoaPeriodModal?.addEventListener('click', (event) => {
         if (event.target === collectorSoaPeriodModal) closeCollectorSoaPeriodModal();
     });
@@ -7786,6 +8037,7 @@ function setupModalEvents() {
             closeDetailModal();
             closeCollectorCellModal();
             closeCollectorBranchModal();
+            closeCollectorTotalModal();
             closeCollectorSoaPeriodModal();
             closeWelcomeModal();
         }

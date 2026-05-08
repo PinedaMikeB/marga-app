@@ -829,6 +829,41 @@
             font-weight: 800;
         }
 
+        .collector-sheet thead tr.collector-matrix-total-row th {
+            position: static;
+            top: auto;
+            background: rgba(226, 236, 250, 0.94);
+        }
+
+        .collector-sheet .collector-total-button {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-weight: 900;
+            text-align: right;
+            cursor: pointer;
+        }
+
+        .collector-sheet .collector-total-button:hover {
+            color: #1d4ed8;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .collector-total-count,
+        .collector-total-divider,
+        .collector-total-amount {
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        .collector-total-divider {
+            padding: 0 3px;
+            color: rgba(82, 107, 135, 0.72);
+        }
+
         .collector-sheet tbody tr:hover td {
             background: rgba(239, 246, 255, 0.68);
         }
@@ -3127,6 +3162,20 @@
         </div>
     </div>
 
+    <div class="modal-overlay hidden" id="collectorTotalModal">
+        <div class="modal modal-xl">
+            <div class="modal-header">
+                <h2><span id="collectorTotalTitle">Matrix Total</span></h2>
+                <p id="collectorTotalSubtitle">Rows behind this total</p>
+            </div>
+            <div class="modal-body" id="collectorTotalContent"></div>
+            <div class="modal-footer">
+                <span></span>
+                <button class="btn btn-secondary" onclick="closeCollectorTotalModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay hidden" id="collectorSoaPeriodModal">
         <div class="modal">
             <div class="modal-header">
@@ -3456,6 +3505,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260508-matrix-target-totals-1"></script>
+    <script src="collections/js/collections.js?v=20260508-matrix-scorecard-drilldown-1"></script>
 </body>
 </html>
