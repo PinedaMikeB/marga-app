@@ -632,6 +632,7 @@ function mergeCollectorChildCellIntoParent(parentCell, childCell, parentRow) {
     parentCell.catchUpBilling = Boolean(parentCell.catchUpBilling || childCell.catchUpBilling);
     parentCell.catchUpGapMonths = Math.max(Number(parentCell.catchUpGapMonths || 0), Number(childCell.catchUpGapMonths || 0));
     parentCell.pendingBilling = Boolean(parentCell.pendingBilling || childCell.pendingBilling);
+    parentCell.pendingBillingProjectionTotal += Number(childCell.pendingBillingProjectionTotal || 0);
     parentCell.readingPagesTotal += Number(childCell.readingPagesTotal || 0);
     parentCell.readingTaskCount += Number(childCell.readingTaskCount || 0);
     if (parentCell.billedBasis === 'none' && childCell.billedBasis) parentCell.billedBasis = childCell.billedBasis;
@@ -671,6 +672,7 @@ function buildCollectorGroupedParentCell(parentRow, childRows, column) {
     cell.catchUpBilling = false;
     cell.catchUpGapMonths = 0;
     cell.pendingBilling = false;
+    cell.pendingBillingProjectionTotal = 0;
     cell.readingPagesTotal = 0;
     cell.readingTaskCount = 0;
     cell.records = [];
@@ -874,6 +876,7 @@ function ensureCollectorDisplayCell(cellMap, rowMeta, monthMeta) {
             catchUpBilling: false,
             catchUpGapMonths: 0,
             pendingBilling: false,
+            pendingBillingProjectionTotal: 0,
             readingPagesTotal: 0,
             readingTaskCount: 0,
             records: [],
@@ -987,6 +990,21 @@ function getCellOutstandingBalance(cell) {
     const collected = Number(cell.collectedTotal || 0);
     if (collected > 0 && billedTarget > 0) return Math.max(0, billedTarget - collected);
     return billedTarget;
+}
+
+function getCollectorPendingBillingProjection(billingCell, billingRow) {
+    if (!billingCell || !billingCell.pending) return 0;
+    const readingAmount = Number(billingCell.reading_amount_total || 0);
+    if (readingAmount > 0) return readingAmount;
+
+    const displayAmount = Number(billingCell.display_amount_total || 0);
+    const invoiceAmount = Number(billingCell.amount_total || 0);
+    if (displayAmount > 0 && invoiceAmount <= 0) return displayAmount;
+
+    const profile = billingRow?.billing_profile || {};
+    const monthlyRate = Number(profile.monthly_rate || 0) || 0;
+    const monthlyRate2 = Number(profile.monthly_rate2 || 0) || 0;
+    return Math.max(0, monthlyRate + monthlyRate2);
 }
 
 async function loadCollectorBillingMatrix(windowStart, endMonthDate) {
@@ -3586,12 +3604,16 @@ async function computeCollectorDashboardData() {
     const accountRowsMap = new Map();
     const monthTotals = {};
     const paymentMonthTotals = {};
+    const receivableMonthTotals = {};
+    const pendingBillingMonthTotals = {};
     const pendingCountsByMonth = {};
     collectorCellMap = new Map();
 
     monthColumns.forEach((column) => {
         monthTotals[column.key] = 0;
         paymentMonthTotals[column.key] = 0;
+        receivableMonthTotals[column.key] = 0;
+        pendingBillingMonthTotals[column.key] = 0;
         pendingCountsByMonth[column.key] = 0;
     });
 
@@ -3769,6 +3791,10 @@ async function computeCollectorDashboardData() {
             collectorCell.catchUpBilling = Boolean(collectorCell.catchUpBilling || billingCell.catch_up_billing);
             collectorCell.catchUpGapMonths = Math.max(Number(collectorCell.catchUpGapMonths || 0), Number(billingCell.catch_up_gap_months || 0));
             collectorCell.pendingBilling = Boolean(collectorCell.pendingBilling || billingCell.pending);
+            collectorCell.pendingBillingProjectionTotal = Math.max(
+                Number(collectorCell.pendingBillingProjectionTotal || 0),
+                getCollectorPendingBillingProjection(billingCell, billingRow)
+            );
             collectorCell.readingPagesTotal = Math.max(Number(collectorCell.readingPagesTotal || 0), Number(billingCell.reading_pages_total || 0));
             collectorCell.readingTaskCount = Math.max(Number(collectorCell.readingTaskCount || 0), Number(billingCell.reading_task_count || 0));
             const detailInvoiceDate = normalizeDate(billingCell.latest_invoice_date);
@@ -3909,6 +3935,22 @@ async function computeCollectorDashboardData() {
         .reverse();
 
     const groupedChildRowIds = new Set(customerRows.filter((row) => row.isGroupedChild).map((row) => row.rowId));
+    customerRows
+        .filter((row) => !row.isGroupedChild)
+        .forEach((row) => {
+            monthColumns.forEach((column) => {
+                const cell = collectorCellMap.get(row.months[column.key] || '');
+                if (!cell) return;
+                const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                const outstandingBalance = getCellOutstandingBalance(cell);
+                if (billedTarget > 0 && outstandingBalance > 0.01) {
+                    receivableMonthTotals[column.key] += outstandingBalance;
+                }
+                if (cell.pendingBilling) {
+                    pendingBillingMonthTotals[column.key] += Number(cell.pendingBillingProjectionTotal || 0);
+                }
+            });
+        });
     const pendingCellCount = Array.from(collectorCellMap.values()).filter((cell) => {
         if (groupedChildRowIds.has(cell.rowId)) return false;
         const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
@@ -3922,6 +3964,8 @@ async function computeCollectorDashboardData() {
         monthlySummaryRows,
         monthTotals,
         paymentMonthTotals,
+        receivableMonthTotals,
+        pendingBillingMonthTotals,
         pendingCountsByMonth,
         pendingCellCount,
         windowStart,
@@ -3968,6 +4012,41 @@ function renderCollectorSummaryTable(data) {
     `;
 }
 
+function renderCollectorMatrixTotalRows(data, cellTag = 'td') {
+    const tag = cellTag === 'th' ? 'th' : 'td';
+    const rows = [
+        {
+            label: 'Receivables / Unpaid Target',
+            totals: data.receivableMonthTotals || {}
+        },
+        {
+            label: 'Payment Total',
+            totals: data.paymentMonthTotals || {}
+        },
+        {
+            label: 'Pending Billing Projection',
+            totals: data.pendingBillingMonthTotals || {}
+        }
+    ];
+
+    return rows.map((row) => {
+        const monthCells = data.monthColumns
+            .map((column) => `<${tag} class="total-cell text-right">${escapeHtml(formatPlainNumber(row.totals?.[column.key] || 0))}</${tag}>`)
+            .join('');
+        const grandTotal = data.monthColumns.reduce((sum, column) => sum + Number(row.totals?.[column.key] || 0), 0);
+        return `
+            <tr class="collector-matrix-total-row">
+                <${tag} class="sticky-col rd total-cell"></${tag}>
+                <${tag} class="sticky-col sn total-cell"></${tag}>
+                <${tag} class="sticky-col customer total-cell text-left">${escapeHtml(row.label)}</${tag}>
+                <${tag} class="sticky-col branch total-cell"></${tag}>
+                ${monthCells}
+                <${tag} class="total-cell text-right">${escapeHtml(formatPlainNumber(grandTotal))}</${tag}>
+            </tr>
+        `;
+    }).join('');
+}
+
 function renderCollectorMatrixTable(data, visibleRows) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
@@ -4006,6 +4085,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                         .join('')}
                     <th>Total</th>
                 </tr>
+                ${renderCollectorMatrixTotalRows(data, 'th')}
             </thead>
             <tbody>
                 ${visibleRows
@@ -4093,16 +4173,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
                     .join('')}
             </tbody>
             <tfoot>
-                <tr>
-                    <td class="sticky-col rd total-cell"></td>
-                    <td class="sticky-col sn total-cell"></td>
-                    <td class="sticky-col customer total-cell text-left">Payment Total</td>
-                    <td class="sticky-col branch total-cell"></td>
-                    ${data.monthColumns
-                        .map((column) => `<td class="total-cell text-right">${escapeHtml(formatPlainNumber(data.paymentMonthTotals?.[column.key] || 0))}</td>`)
-                        .join('')}
-                    <td class="total-cell text-right">${escapeHtml(formatPlainNumber(Object.values(data.paymentMonthTotals || {}).reduce((sum, value) => sum + Number(value || 0), 0)))}</td>
-                </tr>
+                ${renderCollectorMatrixTotalRows(data, 'td')}
             </tfoot>
         </table>
     `;
@@ -4131,7 +4202,7 @@ function renderCollectorDashboardFromData(data) {
             : invoiceSearchTerm
                 ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Footer payment totals use actual payment dates from Collection payment records.`;
+        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Matrix totals show receivables/unpaid target, actual payments by payment date, and pending billing projection from contract or meter-reading data.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
