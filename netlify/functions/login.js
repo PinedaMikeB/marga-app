@@ -1,4 +1,4 @@
-import crypto from "crypto";
+const crypto = require("crypto");
 
 const GOOGLE_SCOPE_FIRESTORE = "https://www.googleapis.com/auth/datastore";
 const FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents";
@@ -21,13 +21,14 @@ function env(name) {
 }
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
+  return {
+    statusCode: status,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     },
-  });
+    body: JSON.stringify(data),
+  };
 }
 
 function sanitizePrivateKey(key) {
@@ -252,13 +253,18 @@ function buildSession(user, ident) {
   };
 }
 
-export default async function login(request) {
-  if (request.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
+exports.handler = async function login(event) {
+  if (event.httpMethod !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
   try {
     if (!env("GOOGLE_SERVICE_ACCOUNT_EMAIL") || !env("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY")) {
       return json({ success: false, unavailable: true, message: "Server login is not configured." }, 503);
     }
-    const body = await request.json().catch(() => ({}));
+    let body = {};
+    try {
+      body = JSON.parse(event.body || "{}");
+    } catch (error) {
+      body = {};
+    }
     const ident = String(body.username || body.email || "").trim();
     const password = String(body.password || "");
     if (!ident || !password) return json({ success: false, message: "Email and password are required." }, 400);
@@ -271,8 +277,4 @@ export default async function login(request) {
     console.error("Server login failed:", error);
     return json({ success: false, unavailable: true, message: "Login service is temporarily busy. Please wait a minute and sign in again." }, 503);
   }
-}
-
-export const config = {
-  path: "/api/login",
 };
