@@ -275,6 +275,17 @@ exports.handler = async function login(event) {
     return json({ success: true, user: buildSession(employee, ident) });
   } catch (error) {
     console.error("Server login failed:", error);
-    return json({ success: false, unavailable: true, message: "Login service is temporarily busy. Please wait a minute and sign in again." }, 503);
+    const details = String(error?.message || error || "").toLowerCase();
+    const reason = details.includes("quota")
+      ? "firestore-quota"
+      : details.includes("token") || details.includes("credential") || details.includes("private")
+        ? "google-credentials"
+        : "server-login-error";
+    return json({
+      success: false,
+      unavailable: true,
+      reason,
+      message: "Login service is temporarily busy. Please wait a minute and sign in again."
+    }, 503);
   }
 };
