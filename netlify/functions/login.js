@@ -285,7 +285,6 @@ exports.handler = async function login(event) {
       success: false,
       unavailable: true,
       reason,
-      debug: String(error?.message || error || "").slice(0, 180),
       message: "Login service is temporarily busy. Please wait a minute and sign in again."
     }, 503);
   }
