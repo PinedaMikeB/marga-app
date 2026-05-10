@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v41';
+const CACHE_NAME = 'marga-app-shell-v42';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -66,7 +66,7 @@ const SHELL_ASSETS = [
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
     '/shared/js/firebase-config.js',
-    '/shared/js/auth.js?v=20260511-login-quota-1',
+    '/shared/js/auth.js?v=20260511-server-login-1',
     '/shared/js/utils.js',
     '/shared/js/finance-accounts.js',
     '/shared/js/offline-sync.js',

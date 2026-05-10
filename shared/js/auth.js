@@ -68,6 +68,17 @@ const MargaAuth = {
                 return this.checkDefaultAdmin(ident, password, remember);
             }
 
+            const serverLogin = await this.loginViaServer(ident, password);
+            if (serverLogin?.success && serverLogin.user) {
+                return this.setSession(serverLogin.user, remember);
+            }
+            if (serverLogin && serverLogin.unavailable !== true) {
+                return {
+                    success: false,
+                    message: serverLogin.message || 'Invalid email or password'
+                };
+            }
+
             const user = await this.findUserByEmailOrUsername(ident);
             if (!user) return { success: false, message: 'Invalid email or password' };
             if (!this.isEmployeeActive(user)) return { success: false, message: 'Account is inactive' };
@@ -655,6 +666,27 @@ MargaAuth.base64ToBytes = function base64ToBytes(base64) {
 
 MargaAuth.canHashPasswords = function canHashPasswords() {
     return Boolean(crypto?.subtle);
+};
+
+MargaAuth.loginViaServer = async function loginViaServer(username, password) {
+    try {
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 404) return { success: false, unavailable: true };
+        if (payload?.success) return payload;
+        return {
+            success: false,
+            unavailable: payload?.unavailable === true || response.status >= 500,
+            message: payload?.message || (response.status >= 500 ? 'Login service is temporarily busy. Please wait a minute and sign in again.' : 'Invalid email or password')
+        };
+    } catch (error) {
+        console.warn('Server login unavailable:', error);
+        return { success: false, unavailable: true };
+    }
 };
 
 MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(ident) {
