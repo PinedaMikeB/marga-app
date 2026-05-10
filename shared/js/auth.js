@@ -117,6 +117,12 @@ const MargaAuth = {
 
         } catch (error) {
             console.error('Login error:', error);
+            if (error?.code === 'LOGIN_SERVICE_BUSY') {
+                return {
+                    success: false,
+                    message: 'Login service is temporarily busy. Please wait a minute and sign in again.'
+                };
+            }
             // Fallback to default admin on error
             return this.checkDefaultAdmin(username, password, remember);
         }
@@ -653,38 +659,129 @@ MargaAuth.canHashPasswords = function canHashPasswords() {
 
 MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(ident) {
     const rawIdent = String(ident || '').trim();
-    const email = rawIdent.toLowerCase();
-    const username = rawIdent.toLowerCase();
-    const run = async (collectionId, fieldPath, value) => {
-        const body = {
-            structuredQuery: {
-                from: [{ collectionId }],
-                where: {
-                    fieldFilter: {
-                        field: { fieldPath },
-                        op: 'EQUAL',
-                        value: { stringValue: String(value ?? '') }
-                    }
-                },
-                limit: 10
-            }
-        };
-
+    const normalizedIdent = rawIdent.toLowerCase();
+    const looksLikeEmail = normalizedIdent.includes('@');
+    const normalizeUsername = (value) => String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '')
+        .replace(/^[._-]+|[._-]+$/g, '')
+        .slice(0, 48);
+    const username = normalizeUsername(rawIdent);
+    const emailLocalPart = looksLikeEmail ? normalizeUsername(normalizedIdent.split('@')[0]) : '';
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const makeBusyError = () => {
+        const error = new Error('Firestore login lookup quota exceeded');
+        error.code = 'LOGIN_SERVICE_BUSY';
+        return error;
+    };
+    const readErrorCode = (payload) => {
+        if (payload?.error?.code) return Number(payload.error.code);
+        if (Array.isArray(payload)) {
+            const rowError = payload.find((row) => row?.error)?.error;
+            if (rowError?.code) return Number(rowError.code);
+        }
+        return 0;
+    };
+    const executeEmployeeQuery = async (body, attempt = 0) => {
         const response = await fetch(
             `${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`,
             { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
         );
         const payload = await response.json();
-        if (!response.ok || (Array.isArray(payload) && payload[0]?.error)) return null;
+        const errorCode = readErrorCode(payload);
+        if (response.status === 429 || errorCode === 429) {
+            if (attempt < 2) {
+                await sleep(650 * (attempt + 1));
+                return executeEmployeeQuery(body, attempt + 1);
+            }
+            throw makeBusyError();
+        }
+        if (!response.ok || errorCode) return null;
         const docs = Array.isArray(payload) ? payload.map((row) => row.document).filter(Boolean) : [];
         const users = docs.map((doc) => this.parseFirestoreDoc(doc)).filter(Boolean);
         return users.find((user) => this.isEmployeeActive(user)) || users[0] || null;
     };
+    const run = async (fieldPath, value) => {
+        const lookupValue = String(value ?? '').trim();
+        if (!lookupValue) return null;
+        return executeEmployeeQuery({
+            structuredQuery: {
+                from: [{ collectionId: 'tbl_employee' }],
+                where: {
+                    fieldFilter: {
+                        field: { fieldPath },
+                        op: 'EQUAL',
+                        value: { stringValue: lookupValue }
+                    }
+                },
+                limit: 10
+            }
+        });
+    };
+    const runEmailLocalPart = async (fieldPath, localPart) => {
+        const lookupValue = normalizeUsername(localPart);
+        if (!lookupValue) return null;
+        return executeEmployeeQuery({
+            structuredQuery: {
+                from: [{ collectionId: 'tbl_employee' }],
+                where: {
+                    compositeFilter: {
+                        op: 'AND',
+                        filters: [
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath },
+                                    op: 'GREATER_THAN_OR_EQUAL',
+                                    value: { stringValue: `${lookupValue}@` }
+                                }
+                            },
+                            {
+                                fieldFilter: {
+                                    field: { fieldPath },
+                                    op: 'LESS_THAN',
+                                    value: { stringValue: `${lookupValue}\uf8ff` }
+                                }
+                            }
+                        ]
+                    }
+                },
+                orderBy: [{ field: { fieldPath }, direction: 'ASCENDING' }],
+                limit: 10
+            }
+        });
+    };
 
-    const employeeByEmail = await run('tbl_employee', 'email', email);
-    if (employeeByEmail) return employeeByEmail;
+    const lookups = looksLikeEmail
+        ? [
+            ['email', normalizedIdent],
+            ['marga_login_email', normalizedIdent],
+            ['username', emailLocalPart],
+            ['username', username]
+        ]
+        : [
+            ['username', username],
+            ['marga_username', username],
+            ['email', normalizedIdent],
+            ['marga_login_email', normalizedIdent]
+        ];
+    const seen = new Set();
+    for (const [fieldPath, value] of lookups) {
+        const key = `${fieldPath}:${value}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const user = await run(fieldPath, value);
+        if (user) return user;
+    }
 
-    return await run('tbl_employee', 'username', username);
+    if (!looksLikeEmail && username) {
+        const employeeByEmailLocal = await runEmailLocalPart('email', username);
+        if (employeeByEmailLocal) return employeeByEmailLocal;
+        const employeeByLoginEmailLocal = await runEmailLocalPart('marga_login_email', username);
+        if (employeeByLoginEmailLocal) return employeeByLoginEmailLocal;
+    }
+
+    return null;
 };
 
 MargaAuth.verifyPassword = async function verifyPassword(user, password) {
