@@ -223,7 +223,12 @@ function formatCurrency(amount) {
 }
 
 function getActiveDatabaseBackend() {
-    return localStorage.getItem('marga_data_backend') === 'margabase' ? 'margabase' : 'firebase';
+    if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
+    try {
+        return localStorage.getItem('marga_data_backend') === 'margabase' ? 'margabase' : 'firebase';
+    } catch (err) {
+        return 'firebase';
+    }
 }
 
 function getActiveDatabaseBackendLabel() {
@@ -231,15 +236,32 @@ function getActiveDatabaseBackendLabel() {
 }
 
 function readCollectionsCompareSnapshots() {
+    const fallback = window.__margaCollectionsCompareSnapshots || {};
     try {
-        return JSON.parse(localStorage.getItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY) || '{}') || {};
+        return JSON.parse(localStorage.getItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY) || '{}') || fallback;
     } catch (err) {
-        return {};
+        try {
+            return JSON.parse(sessionStorage.getItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY) || '{}') || fallback;
+        } catch (sessionErr) {
+            return fallback;
+        }
     }
 }
 
 function writeCollectionsCompareSnapshots(snapshots) {
-    localStorage.setItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY, JSON.stringify(snapshots || {}));
+    window.__margaCollectionsCompareSnapshots = snapshots || {};
+    const payload = JSON.stringify(snapshots || {});
+    try {
+        localStorage.setItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY, payload);
+        return true;
+    } catch (err) {
+        try {
+            sessionStorage.setItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY, payload);
+            return true;
+        } catch (sessionErr) {
+            return false;
+        }
+    }
 }
 
 function formatSnapshotNumber(value) {
@@ -341,10 +363,13 @@ function saveCollectionsCompareSnapshot() {
     const snapshot = buildCollectionsCompareSnapshot();
     const snapshots = readCollectionsCompareSnapshots();
     snapshots[snapshot.backend] = snapshot;
-    writeCollectionsCompareSnapshots(snapshots);
+    const persisted = writeCollectionsCompareSnapshots(snapshots);
     renderCollectionsCompareScorecard();
     const saved = document.getElementById('collectionsCompareSaved');
-    if (saved) saved.textContent = `Saved ${snapshot.backendLabel} snapshot at ${new Date(snapshot.savedAt).toLocaleString('en-PH')}.`;
+    if (saved) {
+        const scope = persisted ? 'saved in this browser' : 'saved for this open tab only';
+        saved.textContent = `Saved ${snapshot.backendLabel} snapshot at ${new Date(snapshot.savedAt).toLocaleString('en-PH')} (${scope}).`;
+    }
 }
 
 function formatCurrencyShort(amount) {

@@ -241,7 +241,12 @@ function setActiveTab(tab) {
 }
 
 function getStoredDatabaseBackend() {
-    return localStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
+    if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
+    try {
+        return localStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
+    } catch (err) {
+        return 'firebase';
+    }
 }
 
 function getSelectedDatabaseBackend() {
@@ -311,6 +316,23 @@ async function testMargabaseConnection() {
     }
 }
 
+function writeDatabaseBackendPreference(backend) {
+    if (window.MargaBackendPreference?.write) return window.MargaBackendPreference.write(backend);
+    try {
+        if (backend === 'margabase') localStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
+        else localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+        return true;
+    } catch (err) {
+        try {
+            if (backend === 'margabase') sessionStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
+            else sessionStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+            return true;
+        } catch (sessionErr) {
+            return false;
+        }
+    }
+}
+
 async function applyDatabaseBackend() {
     if (!MargaAuth.isAdmin()) {
         alert('Only admin can switch database backend.');
@@ -320,9 +342,9 @@ async function applyDatabaseBackend() {
     if (backend === 'margabase') {
         const online = await testMargabaseConnection();
         if (!online && !confirm('Margabase API is not responding. Switch this browser anyway?')) return;
-        localStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
+        writeDatabaseBackendPreference('margabase');
     } else {
-        localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+        writeDatabaseBackendPreference('firebase');
     }
     document.getElementById('databaseSettingsStatus').textContent = `Switching to ${formatBackendLabel(backend)}...`;
     window.location.reload();
