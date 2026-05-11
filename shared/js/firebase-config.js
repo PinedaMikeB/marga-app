@@ -18,13 +18,16 @@ const FIREBASE_CONFIG = {
     baseUrl: 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents'
 };
 
+const DEFAULT_MARGABASE_BASE_URL = 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+
 const MARGABASE_CONFIG = {
     ...FIREBASE_CONFIG,
     apiKey: 'margabase-local',
-    baseUrl: 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents'
+    baseUrl: DEFAULT_MARGABASE_BASE_URL
 };
 
 const MARGA_DATA_BACKEND_KEY = 'marga_data_backend';
+const MARGA_API_BASE_URL_KEY = 'marga_api_base_url';
 
 function getMargaCookie(name) {
     const safeName = `${encodeURIComponent(name)}=`;
@@ -83,7 +86,10 @@ function writeMargaDataBackendPreference(backend) {
     if (value === 'firebase') {
         safeStorageRemove(localStorage, MARGA_DATA_BACKEND_KEY);
         safeStorageRemove(sessionStorage, MARGA_DATA_BACKEND_KEY);
+        safeStorageRemove(localStorage, MARGA_API_BASE_URL_KEY);
+        safeStorageRemove(sessionStorage, MARGA_API_BASE_URL_KEY);
         clearMargaCookie(MARGA_DATA_BACKEND_KEY);
+        clearMargaCookie(MARGA_API_BASE_URL_KEY);
         return true;
     }
 
@@ -93,15 +99,57 @@ function writeMargaDataBackendPreference(backend) {
     return saved;
 }
 
+function readMargaApiBaseUrlPreference() {
+    const value = String(
+        safeStorageGet(localStorage, MARGA_API_BASE_URL_KEY)
+        || safeStorageGet(sessionStorage, MARGA_API_BASE_URL_KEY)
+        || decodeURIComponent(getMargaCookie(MARGA_API_BASE_URL_KEY) || '')
+        || ''
+    ).trim();
+    return value || DEFAULT_MARGABASE_BASE_URL;
+}
+
+function writeMargaApiBaseUrlPreference(baseUrl) {
+    const value = String(baseUrl || '').trim();
+    if (!value) {
+        safeStorageRemove(localStorage, MARGA_API_BASE_URL_KEY);
+        safeStorageRemove(sessionStorage, MARGA_API_BASE_URL_KEY);
+        clearMargaCookie(MARGA_API_BASE_URL_KEY);
+        return true;
+    }
+    const saved = safeStorageSet(localStorage, MARGA_API_BASE_URL_KEY, value)
+        || safeStorageSet(sessionStorage, MARGA_API_BASE_URL_KEY, value);
+    setMargaCookie(MARGA_API_BASE_URL_KEY, value);
+    return saved;
+}
+
+function applyMargaBackendUrlParams() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const backend = String(params.get('marga_backend') || params.get('backend') || '').trim().toLowerCase();
+        const apiBaseUrl = String(params.get('marga_api_base_url') || params.get('api') || '').trim();
+        if (apiBaseUrl) writeMargaApiBaseUrlPreference(apiBaseUrl);
+        if (backend === 'margabase') writeMargaDataBackendPreference('margabase');
+        if (backend === 'firebase') writeMargaDataBackendPreference('firebase');
+    } catch (error) {
+        // URL parameter handling is best effort only.
+    }
+}
+
 function getMargaDataBackendConfig() {
-    return readMargaDataBackendPreference() === 'margabase' ? MARGABASE_CONFIG : FIREBASE_CONFIG;
+    return readMargaDataBackendPreference() === 'margabase'
+        ? { ...MARGABASE_CONFIG, baseUrl: readMargaApiBaseUrlPreference() }
+        : FIREBASE_CONFIG;
 }
 
 // Make available globally
+applyMargaBackendUrlParams();
 window.FIREBASE_CONFIG = getMargaDataBackendConfig();
 window.MARGA_FIREBASE_CONFIG = FIREBASE_CONFIG;
-window.MARGABASE_CONFIG = MARGABASE_CONFIG;
+window.MARGABASE_CONFIG = { ...MARGABASE_CONFIG, baseUrl: readMargaApiBaseUrlPreference() };
 window.MargaBackendPreference = {
     read: readMargaDataBackendPreference,
-    write: writeMargaDataBackendPreference
+    write: writeMargaDataBackendPreference,
+    readApiBaseUrl: readMargaApiBaseUrlPreference,
+    writeApiBaseUrl: writeMargaApiBaseUrlPreference
 };
