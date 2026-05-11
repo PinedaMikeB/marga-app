@@ -117,7 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
     dateInput.value = formatDateYmd(new Date());
 
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
-    document.getElementById('fieldForwardTodayBtn')?.addEventListener('click', forwardPendingSchedulesToToday);
     document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
     });
@@ -604,7 +603,7 @@ function getStatusKey(row) {
 function getStatusMeta(row) {
     const key = getStatusKey(row);
     if (key === 'pending') return { key, label: 'Pending', className: 'status-pending' };
-    if (key === 'carryover') return { key, label: 'Carryover', className: 'status-carryover' };
+    if (key === 'carryover') return { key, label: 'Past Pending', className: 'status-carryover' };
     if (key === 'ongoing') return { key, label: 'Ongoing', className: 'status-ongoing' };
     if (key === 'closed') return { key, label: 'Closed', className: 'status-closed' };
     if (key === 'cancelled') return { key, label: 'Cancelled', className: 'status-cancelled' };
@@ -641,15 +640,15 @@ function updateSubtitle() {
     if (!subtitle) return;
     const date = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
     const todaySource = state.routeSourceLabel.toLowerCase();
-    const view = state.activeTab === 'carryover' ? 'carry-over' : todaySource;
+    const view = state.activeTab === 'carryover' ? 'past pending' : todaySource;
     const count = activeRows().length;
     subtitle.textContent = `${count} ${view} task(s) for ${date}.`;
 }
 
 function renderActiveView() {
     updateTabControls();
-    updateForwardTodayButton();
     renderKpis(activeRows());
+    renderEndOfDayReview();
     renderList();
     updateSubtitle();
 }
@@ -674,64 +673,8 @@ function getRouteTaskDateTime(row) {
     return String(row?.task_datetime || '').trim();
 }
 
-function getRouteTaskDateYmd(row) {
-    const taskDate = getRouteTaskDateTime(row).slice(0, 10);
-    return /^\d{4}-\d{2}-\d{2}$/.test(taskDate) ? taskDate : '';
-}
-
-function routeTimePart(row) {
-    const source = String(getRouteTaskDateTime(row) || row?.original_sched || '').trim();
-    const time = source.slice(11, 19);
-    if (!/^\d{2}:\d{2}/.test(time)) return '08:00:00';
-    return time.length >= 8 ? time.slice(0, 8) : `${time}:00`;
-}
-
-function routeDateTimeFor(row, targetDate) {
-    return `${targetDate} ${routeTimePart(row)}`;
-}
-
-function routeDocIdFor(scheduleId, targetDate) {
-    const datePart = String(targetDate || '').replace(/[^0-9]/g, '');
-    const schedulePart = String(Number(scheduleId || 0) || 0).padStart(6, '0').slice(-6);
-    return String(Number(`${datePart}${schedulePart}`));
-}
-
 function getAssignedStaffId(row) {
     return Number(row?.route_tech_id || row?.tech_id || 0);
-}
-
-function isForwardablePastPendingRow(row, targetDate = localDateYmd()) {
-    if (!row) return false;
-    const scheduleId = Number(row.id || row._docId || 0);
-    if (!scheduleId) return false;
-    if (getAssignedStaffId(row) !== Number(state.staffId || 0)) return false;
-    if (isFinishedOrCancelled(row)) return false;
-    const status = getStatusKey(row);
-    if (status !== 'pending' && status !== 'carryover') return false;
-    const taskDate = getRouteTaskDateYmd(row);
-    return Boolean(taskDate && taskDate < targetDate);
-}
-
-function getForwardablePastPendingRows(targetDate = localDateYmd()) {
-    const unique = new Map();
-    state.rows.forEach((row) => {
-        if (!isForwardablePastPendingRow(row, targetDate)) return;
-        const scheduleId = Number(row.id || row._docId || 0);
-        if (!unique.has(scheduleId)) unique.set(scheduleId, row);
-    });
-    return [...unique.values()];
-}
-
-function updateForwardTodayButton() {
-    const button = document.getElementById('fieldForwardTodayBtn');
-    if (!button) return;
-    const targetDate = localDateYmd();
-    const count = getForwardablePastPendingRows(targetDate).length;
-    button.hidden = count === 0;
-    button.disabled = false;
-    button.textContent = count > 0
-        ? `Forward ${count} Pending to Today`
-        : 'Forward Pending to Today';
 }
 
 function pickLatestRouteRows(rows, selectedDate) {
@@ -920,7 +863,7 @@ function renderKpis(rows) {
         acc[k] = (acc[k] || 0) + 1;
         return acc;
     }, {});
-    const primaryLabel = state.activeTab === 'carryover' ? 'Carry Over' : 'Printed Today';
+    const primaryLabel = state.activeTab === 'carryover' ? 'Past Pending' : 'Printed Today';
 
     document.getElementById('fieldKpis').innerHTML = `
         <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${rows.length}</div></div>
@@ -928,6 +871,57 @@ function renderKpis(rows) {
         <div class="field-kpi ${state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
         <div class="field-kpi ${state.statusFilter === 'closed' ? 'is-active-filter' : ''}" data-status-filter="closed"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
         <div class="field-kpi ${state.statusFilter === 'cancelled' ? 'is-active-filter' : ''}" data-status-filter="cancelled"><div class="label">Cancelled</div><div class="value">${counts.cancelled || 0}</div></div>
+    `;
+}
+
+function countRowsByStatus(rows) {
+    return rows.reduce((acc, row) => {
+        const status = getStatusKey(row);
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+    }, {});
+}
+
+function shouldShowEndOfDayReview() {
+    const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    const now = new Date();
+    const isSelectedTodayOrPast = selectedDate <= localDateYmd();
+    const isEndOfDayWindow = now.getHours() >= 17;
+    return isSelectedTodayOrPast && (isEndOfDayWindow || state.todayRows.length || state.carryoverRows.length);
+}
+
+function renderEndOfDayReview() {
+    const card = document.getElementById('fieldEndOfDayReview');
+    if (!card) return;
+    if (!shouldShowEndOfDayReview()) {
+        card.hidden = true;
+        card.innerHTML = '';
+        return;
+    }
+
+    const todayCounts = countRowsByStatus(state.todayRows);
+    const pendingToday = (todayCounts.pending || 0) + (todayCounts.ongoing || 0);
+    const pastPending = state.carryoverRows.filter((row) => ['pending', 'carryover', 'ongoing'].includes(getStatusKey(row))).length;
+    const closedToday = todayCounts.closed || 0;
+    const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    const staffName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || 'Staff';
+    const needsLeader = pendingToday > 0 || pastPending > 0;
+
+    card.hidden = false;
+    card.innerHTML = `
+        <div class="field-endofday-copy">
+            <div class="field-endofday-label">End of Day Review</div>
+            <h2>${sanitize(staffName)} route status for ${sanitize(selectedDate)}</h2>
+            <p>${needsLeader
+                ? `Team leader review needed: ${pendingToday} pending today and ${pastPending} past pending.`
+                : 'All visible work for this route date is closed.'}</p>
+        </div>
+        <div class="field-endofday-stats">
+            <div><span>${state.todayRows.length}</span><small>Today</small></div>
+            <div><span>${closedToday}</span><small>Closed</small></div>
+            <div><span>${pendingToday}</span><small>Pending Today</small></div>
+            <div><span>${pastPending}</span><small>Past Pending</small></div>
+        </div>
     `;
 }
 
@@ -965,7 +959,7 @@ function renderList() {
 
     if (!filtered.length) {
         const emptyText = state.activeTab === 'carryover'
-            ? 'No carry-over tasks for selected date/filter.'
+            ? 'No past pending tasks for selected date/filter.'
             : 'No current tasks for selected date/filter.';
         list.innerHTML = `<div class="loading-cell">${sanitize(emptyText)}</div>`;
         return;
@@ -994,7 +988,7 @@ function renderList() {
             ? `${sanitize(brandName)} ${sanitize(modelName)}`.trim()
             : 'Machine';
         const routeSourceLine = state.activeTab === 'carryover'
-            ? `<div class="sub"><strong>Source:</strong> ${sanitize(row.route_source || 'Carry Over')}</div>`
+            ? `<div class="sub"><strong>Source:</strong> ${sanitize(String(row.route_source || 'Past Pending').replace(/carry[ -]?over/ig, 'Past Pending'))}</div>`
             : '';
         const partsNote = Number(row.pending_parts || 0) === 1 || Number(row.isongoing || 0) === 1
             ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
@@ -1217,14 +1211,14 @@ async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
         .filter((row) => !printedScheduleIds.has(Number(row.schedule_id || 0)))
         .filter((row) => Number(row.iscancelled || row.iscancel || 0) !== 1);
 
-    const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'carry over'))
+    const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'past pending'))
         .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
         .filter((row) => !currentScheduleIds.has(Number(row.id || 0)))
         .filter((row) => !isFinishedOrCancelled(row));
 
     savedCarryoverRows.forEach((row) => {
         currentScheduleIds.add(Number(row.id || 0));
-        row.route_source = 'Saved Carry Over';
+        row.route_source = 'Saved Past Pending';
     });
 
     const olderRows = await loadOlderCarryoverRows(date, currentScheduleIds);
@@ -1306,7 +1300,7 @@ async function loadMySchedule(options = {}) {
             state.rows = [...todayRows, ...carryoverRows];
             await hydrateLookups(carryoverRows);
         } catch (carryoverError) {
-            console.warn('Field carry-over load failed; keeping today route visible.', carryoverError);
+            console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
             state.carryoverRows = [];
             state.rows = todayRows;
         }
@@ -2997,114 +2991,6 @@ function routeCollectionForRow(row) {
     if (source.includes('printed')) return ROUTE_COLLECTION_PRIMARY;
     if (Number(row?.route_id || 0) > 0 || row?.route_doc_id) return ROUTE_COLLECTION_FALLBACK;
     return '';
-}
-
-async function saveForwardedFieldRoute(row, targetDate) {
-    const scheduleId = Number(row.id || row._docId || 0) || 0;
-    if (!scheduleId) throw new Error('This task has no linked schedule ID.');
-    const staffId = Number(getAssignedStaffId(row) || state.staffId || 0) || 0;
-    if (!staffId) throw new Error(`Schedule ${scheduleId} has no assigned staff ID.`);
-
-    const scheduleDocId = String(row._docId || row.id || '').trim();
-    if (!scheduleDocId || scheduleDocId === '0') throw new Error(`Schedule ${scheduleId} has no valid Firestore document ID.`);
-
-    const targetDateTime = routeDateTimeFor(row, targetDate);
-    const routeDocId = routeDocIdFor(scheduleId, targetDate);
-    const nowIso = new Date().toISOString();
-    const previousDateTime = getRouteTaskDateTime(row);
-    const user = MargaAuth.getUser();
-    const actor = String(user?.name || user?.username || user?.email || `Staff ${staffId}`).trim();
-
-    await setDocument(ROUTE_COLLECTION_FALLBACK, routeDocId, {
-        id: Number(routeDocId),
-        schedule_id: scheduleId,
-        tech_id: staffId,
-        task_datetime: targetDateTime,
-        status: 1,
-        iscancelled: 0,
-        date_finished: ZERO_DATETIME,
-        remarks: String(row.route_remarks || row.remarks || row.caller || '').trim(),
-        forwarded_from_date: previousDateTime.slice(0, 10),
-        forwarded_from_schedule_id: scheduleId,
-        forwarded_by: actor,
-        forwarded_at: nowIso,
-        forwarded_source: 'field_app',
-        timestmp: nowIso,
-        bridge_pushed_at: nowIso
-    });
-
-    const schedulePatch = {
-        task_datetime: targetDateTime,
-        tech_id: staffId,
-        date_finished: ZERO_DATETIME,
-        closedby: 0,
-        field_forwarded_to_today: 1,
-        field_forwarded_from_datetime: previousDateTime,
-        field_forwarded_at: nowIso,
-        field_forwarded_by: staffId,
-        field_updated_at: nowIso,
-        field_updated_by: staffId,
-        bridge_updated_at: nowIso,
-        bridge_updated_by: staffId
-    };
-    if (!String(row.original_sched || '').trim() && previousDateTime) {
-        schedulePatch.original_sched = previousDateTime;
-    }
-    await patchDocument('tbl_schedule', scheduleDocId, schedulePatch);
-
-    applyRowPatch(scheduleId, {
-        ...schedulePatch,
-        route_id: Number(routeDocId),
-        route_doc_id: routeDocId,
-        route_source: 'Saved Carry Over',
-        route_tech_id: staffId,
-        route_task_datetime: targetDateTime,
-        route_status: 1,
-        route_iscancelled: 0,
-        route_date_finished: ZERO_DATETIME,
-        route_timestmp: nowIso,
-        route_bridge_pushed_at: nowIso
-    });
-}
-
-async function forwardPendingSchedulesToToday() {
-    const button = document.getElementById('fieldForwardTodayBtn');
-    const targetDate = localDateYmd();
-    const rows = getForwardablePastPendingRows(targetDate);
-    if (!rows.length) {
-        alert('No pending past schedules are available to forward.');
-        updateForwardTodayButton();
-        return;
-    }
-
-    const ok = confirm(`Forward ${rows.length} pending past schedule(s) to ${targetDate}?`);
-    if (!ok) return;
-
-    if (button) {
-        button.disabled = true;
-        button.textContent = `Forwarding ${rows.length}...`;
-    }
-
-    const failures = [];
-    try {
-        for (const row of rows) {
-            try {
-                await saveForwardedFieldRoute(row, targetDate);
-            } catch (error) {
-                failures.push({ row, error });
-            }
-        }
-        await loadMySchedule({ keepTab: true });
-        if (failures.length) {
-            console.warn('Field forward-to-today failures:', failures);
-            alert(`Forwarded ${rows.length - failures.length} schedule(s). ${failures.length} failed; please refresh and try again.`);
-            return;
-        }
-        alert(`Forwarded ${rows.length} pending schedule(s) to today.`);
-    } finally {
-        if (button) button.disabled = false;
-        updateForwardTodayButton();
-    }
 }
 
 async function closeTask() {

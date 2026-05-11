@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v43';
+const CACHE_NAME = 'marga-app-shell-v44';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -32,8 +32,8 @@ const SHELL_ASSETS = [
     '/collections/js/collections.js?v=20260511-active-staff-1',
     '/field/',
     '/field/index.html',
-    '/field/css/field.css',
-    '/field/js/field.js?v=20260429-field-offline-close-merge-1',
+    '/field/css/field.css?v=20260511-end-of-day-review-1',
+    '/field/js/field.js?v=20260511-end-of-day-review-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',

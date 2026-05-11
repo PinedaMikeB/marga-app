@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css">
+    <link rel="stylesheet" href="css/field.css?v=20260511-end-of-day-review-1">
 </head>
 <body>
     <main class="field-shell">
@@ -40,6 +40,8 @@
 
         <section class="field-kpis" id="fieldKpis"></section>
 
+        <section class="field-endofday" id="fieldEndOfDayReview" hidden></section>
+
         <section class="content-card field-card">
             <div class="card-header">
                 <h3>Tasks</h3>
@@ -50,14 +52,13 @@
                             Today <span id="fieldTodayCount">0</span>
                         </button>
                         <button type="button" class="field-tab" id="fieldCarryoverTab" data-tab="carryover" role="tab" aria-selected="false">
-                            Carry Over <span id="fieldCarryoverCount">0</span>
+                            Past Pending <span id="fieldCarryoverCount">0</span>
                         </button>
                     </div>
-                    <button type="button" class="btn btn-secondary btn-sm field-forward-btn" id="fieldForwardTodayBtn" hidden>Forward Pending to Today</button>
                     <select id="fieldStatusFilter" class="ops-purpose-filter" aria-label="Status filter">
                         <option value="all">All Status</option>
                         <option value="pending">Pending</option>
-                        <option value="carryover">Carryover</option>
+                        <option value="carryover">Past Pending</option>
                         <option value="ongoing">Ongoing (Parts)</option>
                         <option value="closed">Closed</option>
                         <option value="cancelled">Cancelled</option>
@@ -357,6 +358,6 @@
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/field.js?v=20260507-parts-queue-permission-1"></script>
+    <script src="js/field.js?v=20260511-end-of-day-review-1"></script>
 </body>
 </html>
