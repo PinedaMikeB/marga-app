@@ -42,6 +42,79 @@ Start every new Marga-App thread by reading:
 - New Collections grouping focus: one-invoice / many-branch customers such as `China Bank Savings - Branches` should show one parent invoice row with expandable branch/machine meter-reading detail.
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
 
+## Margabase Migration Checkpoint - 2026-05-11 Night
+- Public temporary Margabase test access is working through Cloudflare Quick Tunnel:
+  - Tunnel URL: `https://interference-climbing-vitamins-acting.trycloudflare.com`
+  - Margabase Collections test URL: `https://interference-climbing-vitamins-acting.trycloudflare.com/collections.html?marga_backend=margabase&marga_api_base_url=/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents`
+  - Health check: `https://interference-climbing-vitamins-acting.trycloudflare.com/margabase-api/health`
+- Local services known to be running during the checkpoint:
+  - Marga-App local proxy: `127.0.0.1:9100`, screen `marga-cloud-test-proxy`
+  - Cloudflare quick tunnel: screen `marga-cloudflare-tunnel`
+  - Margabase Firestore-compatible API: `127.0.0.1:8787`, screen `margabase-firestore-api`
+  - Import dashboard: `127.0.0.1:4321`, screen `margabase-import-dashboard`
+- Marga-App changes already pushed to `main` for Margabase testing:
+  - `7ca7949` `Add public Margabase test proxy support`
+  - `8eb4051` `Fix backend switch storage fallback`
+  - `b34b65b` `Add Margabase switching and compare snapshots`
+  - `fac1db2` `Fix local billing route`
+- Working app-side features:
+  - Admin Settings now has a `Database` tab for local browser switching between Firebase and Margabase.
+  - The switch is browser-local only; it does not cut over other staff devices.
+  - Collections has a `Database Compare Snapshot` scorecard and snapshot save button for Firebase-vs-Margabase comparisons.
+  - Public quick-tunnel access can render the app and read Margabase through `/margabase-api`.
+- Margabase platform accomplishments in `/Volumes/Wotg Drive Mike/GitHub/marga-platform`:
+  - Postgres database is running locally as `margabase`.
+  - Raw Firebase document mirror exists in `app_meta.firestore_documents`.
+  - Relational tables exist under schema `marga`: `billing_invoices`, `payments`, `service_schedules`, `field_visit_events`, `delivery_receipts`, and related customer/contract/machine tables.
+  - Firestore-compatible API script exists and supports document list/get/create/patch/delete plus `:runQuery`.
+  - Admin sync endpoints exist: `GET /admin/sync/status` and `POST /admin/sync/start`.
+- Current sync state at last checkpoint:
+  - Firebase-to-Margabase sync run `#4` was still running.
+  - Active PID: `23726`
+  - Started: `2026-05-11 9:19 PM` Manila time
+  - Log: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/logs/margabase-firebase-sync-2026-05-11T13-19-40-522Z.log`
+  - Raw mirrored totals had reached roughly `4,750,073` documents across `135` collections.
+  - Important refreshed counts observed:
+    - `tbl_billing`: `77,878`
+    - `tbl_checkpayments`: `86,744`
+    - `tbl_collectionhistory`: `269,743`
+    - `tbl_field_visit_events`: `231`
+    - `tbl_paymentinfo`: `117,480`
+    - `tbl_schedule`: `321,739`
+  - Relational counts observed while sync was running:
+    - `marga.billing_invoices`: `77,878`
+    - `marga.payments`: `117,480`
+    - `marga.service_schedules`: `321,704`
+    - `marga.field_visit_events`: `231`
+    - `marga.delivery_receipts`: `88,811`
+- Do not declare migration complete yet.
+  - The sync was still running at the checkpoint.
+  - Collections Margabase render matched some high-level counts, but not all business logic.
+  - Known mismatches against Firebase screenshots:
+    - Firebase customer rows around `2,496`; Margabase showed around `2,353`.
+    - Firebase pending cells around `5,141`; Margabase showed around `2,381`.
+    - `Pending Billing Projection` in Margabase showed `0 / 0` where Firebase had monthly projection values.
+    - Some projected billing and unpaid receivable month totals differed.
+- Protect before cutover:
+  - Firebase remains production source of truth until Margabase sync, derivation, auth, backup, and module parity are verified.
+  - Do not switch staff globally yet.
+  - Keep the browser-local backend switch so admin can compare Firebase and Margabase without affecting other devices.
+  - Keep Firebase fallback available during the whole test window.
+  - Do not expose unrestricted write APIs publicly; public tunnel testing must be treated as temporary until auth/rate-limit rules are in place.
+- Next thread should start by:
+  - Check `curl -s http://127.0.0.1:8787/admin/sync/status`.
+  - If run `#4` is still running, wait/check tail of the log.
+  - If run `#4` completed, hard refresh the public Margabase Collections URL and save a new snapshot.
+  - Compare Firebase and Margabase scorecard numbers exactly.
+  - Fix the Margabase derivation/API logic for customer row count, pending cells, pending billing projection, and unpaid receivable month totals.
+  - Complete permanent Cloudflare named tunnel only after nameserver propagation is done for `marga.biz`.
+- Cloudflare/domain checkpoint:
+  - User added `marga.biz` to Cloudflare Free plan.
+  - Hostinger nameservers were changed to `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
+  - At the last checkpoint, propagation was not fully complete; Cloudflare Tunnel authorization showed `marga.biz` as invalid nameservers.
+  - Temporary quick tunnel works now, but permanent `api.marga.biz` needs named tunnel setup after Cloudflare recognizes the zone.
+  - Existing `margaapp.netlify.app` remains usable even after nameserver changes.
+
 ## Current Protected Baselines
 - Billing protected baseline: commit `8df832d` `Include multimeter invoice amounts in billing totals`
 - Important Billing-support commits still relied on by current behavior:

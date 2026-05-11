@@ -82,6 +82,63 @@ This file exists to protect the project across new chats by recording:
   - When the device reconnects, Margabase must validate duplicate booklet numbers, stale invoice balances, required fields, and conflicting edits before promoting pending records to server truth.
   - Any conflict must be surfaced in a `Needs Review` workflow for office/admin correction, not silently merged or overwritten.
 
+### Phase 3A: Active Margabase Test Checkpoint - 2026-05-11 Night
+- Current intent:
+  - Keep Firebase as production source of truth.
+  - Use Margabase side-by-side for admin comparison only.
+  - Do not cut over staff globally until sync completion and module parity are proven.
+- App-side test controls completed and pushed:
+  - Admin Settings includes a `Database` tab for browser-local Firebase/Margabase switching.
+  - Collections includes a `Database Compare Snapshot` scorecard.
+  - Browser storage fallback is implemented so backend preference and snapshots do not fail when localStorage is full or blocked.
+  - Local route compatibility was fixed with `billing.html` redirect and sidebar Billing link correction.
+  - Public testing support was added through `scripts/local-margabase-proxy.mjs`, which serves Marga-App and proxies `/margabase-api/*` to the local Margabase API.
+- Current public test route:
+  - Temporary tunnel: `https://interference-climbing-vitamins-acting.trycloudflare.com`
+  - Margabase Collections test URL: `https://interference-climbing-vitamins-acting.trycloudflare.com/collections.html?marga_backend=margabase&marga_api_base_url=/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents`
+  - This is temporary, not the final production URL.
+- Current local service map:
+  - `127.0.0.1:9100`: Marga-App local static/proxy service.
+  - `127.0.0.1:8787`: Margabase Firestore-compatible API.
+  - `127.0.0.1:4321`: Margabase import progress dashboard.
+  - Cloudflare quick tunnel forwards public test traffic to the local proxy.
+- Current database/sync status:
+  - Firebase-to-Margabase sync run `#4` was still running at the checkpoint.
+  - Do not mark migration as complete until this run finishes and the relational derivation has been refreshed.
+  - Important post-migration data is being pulled in, including payments, billing, collection history, field visits, service schedule, and delivery receipts.
+  - Observed refreshed counts while run `#4` was active:
+    - Raw `tbl_billing`: `77,878`
+    - Raw `tbl_checkpayments`: `86,744`
+    - Raw `tbl_collectionhistory`: `269,743`
+    - Raw `tbl_field_visit_events`: `231`
+    - Raw `tbl_paymentinfo`: `117,480`
+    - Raw `tbl_schedule`: `321,739`
+    - Relational `marga.billing_invoices`: `77,878`
+    - Relational `marga.payments`: `117,480`
+    - Relational `marga.service_schedules`: `321,704`
+    - Relational `marga.field_visit_events`: `231`
+    - Relational `marga.delivery_receipts`: `88,811`
+- Known parity gaps before any cutover:
+  - Collections high-level invoice/payment counts can match while matrix business logic still differs.
+  - Firebase screenshot baseline showed customer rows around `2,496`; Margabase showed around `2,353`.
+  - Firebase pending cells around `5,141`; Margabase showed around `2,381`.
+  - Margabase `Pending Billing Projection` showed `0 / 0`, which is wrong compared with Firebase's nonzero monthly projections.
+  - Some projected billing and unpaid receivable month totals differ from Firebase.
+  - Next engineering task is not just importing more rows; it is making the Margabase relational/API calculation reproduce the accepted Collections rules.
+- Permanent public access plan:
+  - `margaapp.netlify.app` remains usable as the existing Netlify fallback.
+  - Future app domain can be `app.marga.biz`.
+  - Future backend API domain should be `api.marga.biz`.
+  - Hostinger nameservers were changed to Cloudflare nameservers: `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
+  - Permanent Cloudflare named tunnel setup must wait until Cloudflare recognizes `marga.biz` as active.
+  - Quick tunnel is acceptable only for temporary testing; do not depend on it for production.
+- Protection requirements:
+  - Do not expose a public write-capable Margabase API without authentication, authorization, logging, and rate limiting.
+  - Keep Firebase/Margabase switch admin-only and browser-local until final cutover.
+  - Keep automated backups, restore tests, and an off-Mac copy plan as blockers for production.
+  - Before staff use, compare Collections, Billing, Service, Master Schedule, follow-up remarks, service close, and time-in/out records after the final sync.
+  - Preserve the ability to hard switch back to Firebase during the test period.
+
 ## Current Protected State
 - Billing protected operational baseline: commit `8df832d`
 - That protected state means:
