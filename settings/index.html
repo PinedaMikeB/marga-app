@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/settings.css?v=20260506-global-billing-print-settings-1">
+    <link rel="stylesheet" href="css/settings.css?v=20260511-database-settings-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -191,6 +191,7 @@
                         <button type="button" class="settings-tab" id="tabAccounts" data-tab="accounts" role="tab" aria-selected="false">Accounts</button>
                         <button type="button" class="settings-tab" id="tabRoles" data-tab="roles" role="tab" aria-selected="false">Roles &amp; Permissions</button>
                         <button type="button" class="settings-tab" id="tabAppSettings" data-tab="app-settings" role="tab" aria-selected="false">Global Settings</button>
+                        <button type="button" class="settings-tab" id="tabDatabase" data-tab="database" role="tab" aria-selected="false">Database</button>
                     </div>
                 </div>
 
@@ -348,6 +349,75 @@
                                 </label>
                             </div>
                             <div class="ops-subtext" id="appSettingsStatus">Loading global settings...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-pane" id="databasePane" role="tabpanel" aria-labelledby="tabDatabase">
+                    <div class="settings-pane-header">
+                        <div class="role-editor">
+                            <div class="role-editor-header">
+                                <div>
+                                    <h4>Database Settings</h4>
+                                    <p class="ops-subtext">Admin-only backend switch for comparing Firebase and Margabase during migration.</p>
+                                </div>
+                                <div class="settings-module-toolbar">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="testMargabaseBtn">Test Margabase</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="applyDatabaseBackendBtn">Apply &amp; Reload</button>
+                                </div>
+                            </div>
+
+                            <div class="database-status-grid">
+                                <div class="database-status-card">
+                                    <span>Current Backend</span>
+                                    <strong id="databaseCurrentBackend">Loading...</strong>
+                                    <p id="databaseCurrentUrl">Checking active endpoint...</p>
+                                </div>
+                                <div class="database-status-card">
+                                    <span>Margabase Local API</span>
+                                    <strong id="margabaseHealthLabel">Not tested</strong>
+                                    <p id="margabaseHealthDetail">Run the local API before switching to Margabase.</p>
+                                </div>
+                            </div>
+
+                            <div class="database-choice-grid" role="radiogroup" aria-label="Select database backend">
+                                <label class="database-choice" id="databaseChoiceFirebase">
+                                    <input type="radio" name="databaseBackend" value="firebase">
+                                    <span>
+                                        <strong>Firebase</strong>
+                                        <small>Current production source of truth. Use this during office hours and when Margabase API is unavailable.</small>
+                                    </span>
+                                </label>
+                                <label class="database-choice" id="databaseChoiceMargabase">
+                                    <input type="radio" name="databaseBackend" value="margabase">
+                                    <span>
+                                        <strong>Margabase</strong>
+                                        <small>Local Postgres/Supabase-compatible backend at 127.0.0.1 for testing and side-by-side comparison.</small>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="settings-sync-box database-warning-box">
+                                <div class="settings-sync-title">Migration Safety</div>
+                                <div class="ops-subtext">This switch changes only this browser. It does not change other staff devices and does not cut production over. Pages reload after switching so every module reads from the selected backend.</div>
+                            </div>
+
+                            <div class="settings-sync-box database-sync-box">
+                                <div class="settings-sync-title">Firebase to Margabase Sync</div>
+                                <div class="ops-subtext">Use these local-only controls after office hours or before comparing data. They call the Margabase service on this Mac.</div>
+                                <div class="settings-sync-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="refreshDatabaseSyncStatusBtn">Refresh Status</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="hardRefreshAppBtn">Hard Refresh App</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="deriveMargabaseBtn">Refresh Relational Tables</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="runMargabaseSyncBtn">Run Firebase Sync</button>
+                                    <a class="btn btn-secondary btn-sm database-link-btn" href="http://127.0.0.1:4321" target="_blank" rel="noopener">Open Progress</a>
+                                </div>
+                                <pre class="database-command" id="databaseSyncCommand">cd "/Volumes/Wotg Drive Mike/GitHub/marga-platform"
+npm run import:firebase</pre>
+                                <div class="ops-subtext" id="databaseSyncStatus">Sync status not checked yet.</div>
+                            </div>
+
+                            <div class="ops-subtext" id="databaseSettingsStatus">Choose a backend, then Apply &amp; Reload.</div>
                         </div>
                     </div>
                 </div>
@@ -562,6 +632,6 @@
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="js/settings.js?v=20260506-global-billing-print-settings-1"></script>
+    <script src="js/settings.js?v=20260511-database-settings-1"></script>
 </body>
 </html>

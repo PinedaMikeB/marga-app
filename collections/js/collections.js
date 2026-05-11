@@ -7,6 +7,8 @@
 
 const API_KEY = FIREBASE_CONFIG.apiKey;
 const BASE_URL = FIREBASE_CONFIG.baseUrl;
+const COLLECTIONS_COMPARE_SNAPSHOT_KEY = 'marga_collections_compare_snapshots_v1';
+const COLLECTIONS_LOAD_STARTED_AT = performance.now();
 
 // State
 let allInvoices = [];
@@ -218,6 +220,131 @@ function formatDate(value) {
 
 function formatCurrency(amount) {
     return '₱' + Number(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function getActiveDatabaseBackend() {
+    return localStorage.getItem('marga_data_backend') === 'margabase' ? 'margabase' : 'firebase';
+}
+
+function getActiveDatabaseBackendLabel() {
+    return getActiveDatabaseBackend() === 'margabase' ? 'Margabase' : 'Firebase';
+}
+
+function readCollectionsCompareSnapshots() {
+    try {
+        return JSON.parse(localStorage.getItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY) || '{}') || {};
+    } catch (err) {
+        return {};
+    }
+}
+
+function writeCollectionsCompareSnapshots(snapshots) {
+    localStorage.setItem(COLLECTIONS_COMPARE_SNAPSHOT_KEY, JSON.stringify(snapshots || {}));
+}
+
+function formatSnapshotNumber(value) {
+    const n = Number(value || 0);
+    return n.toLocaleString('en-PH');
+}
+
+function formatSnapshotMoney(value) {
+    return formatCurrency(Number(value || 0));
+}
+
+function formatSnapshotDelta(current, otherValue, otherLabel, money = false) {
+    if (otherValue === null || otherValue === undefined || !otherLabel) return 'No comparison yet';
+    const diff = Number(current || 0) - Number(otherValue || 0);
+    if (Math.abs(diff) < 0.01) return 'Match';
+    const sign = diff > 0 ? '+' : '';
+    return `${sign}${money ? formatSnapshotMoney(diff) : formatSnapshotNumber(diff)} vs ${otherLabel}`;
+}
+
+function buildCollectionsCompareSnapshot() {
+    const backend = getActiveDatabaseBackend();
+    const totalUnpaid = allInvoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
+    const activeAmount = allInvoices
+        .filter((inv) => Number(inv.age || 0) <= 120)
+        .reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
+    const durationBill = billingEntriesForDuration.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const durationCollections = paymentEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const customerRows = collectorDashboardData?.customerRows || [];
+    const pendingCells = Number(collectorDashboardData?.pendingCellCount || 0);
+    const monthColumns = collectorDashboardData?.monthColumns || [];
+    const range = monthColumns.length
+        ? `${monthColumns[0].fullLabel || monthColumns[0].label} to ${monthColumns[monthColumns.length - 1].fullLabel || monthColumns[monthColumns.length - 1].label}`
+        : 'Preparing range';
+
+    return {
+        backend,
+        backendLabel: backend === 'margabase' ? 'Margabase' : 'Firebase',
+        savedAt: new Date().toISOString(),
+        loadSeconds: Math.max(0, (performance.now() - COLLECTIONS_LOAD_STARTED_AT) / 1000),
+        filteredInvoices: filteredInvoices.length,
+        allInvoices: allInvoices.length,
+        totalUnpaid,
+        activeAmount,
+        durationBill,
+        durationBillCount: billingEntriesForDuration.length,
+        durationCollections,
+        durationCollectionsCount: paymentEntries.length,
+        customerRows: customerRows.length,
+        pendingCells,
+        range,
+    };
+}
+
+function renderCollectionsCompareScorecard() {
+    const grid = document.getElementById('collectionsCompareGrid');
+    const subtitle = document.getElementById('collectionsCompareSubtitle');
+    const saved = document.getElementById('collectionsCompareSaved');
+    if (!grid) return;
+
+    const current = buildCollectionsCompareSnapshot();
+    const snapshots = readCollectionsCompareSnapshots();
+    const otherKey = current.backend === 'margabase' ? 'firebase' : 'margabase';
+    const other = snapshots[otherKey] || null;
+    const currentSaved = snapshots[current.backend] || null;
+
+    if (subtitle) {
+        subtitle.textContent = `${current.backendLabel} render. Save this snapshot before and after switching so counts can be compared without guessing.`;
+    }
+
+    const metrics = [
+        ['Backend', current.backendLabel, `${current.loadSeconds.toFixed(1)}s since page load`],
+        ['Filtered Invoices', formatSnapshotNumber(current.filteredInvoices), formatSnapshotDelta(current.filteredInvoices, other?.filteredInvoices, other?.backendLabel)],
+        ['All Loaded Invoices', formatSnapshotNumber(current.allInvoices), formatSnapshotDelta(current.allInvoices, other?.allInvoices, other?.backendLabel)],
+        ['Total Unpaid', formatSnapshotMoney(current.totalUnpaid), formatSnapshotDelta(current.totalUnpaid, other?.totalUnpaid, other?.backendLabel, true)],
+        ['Customer Rows', formatSnapshotNumber(current.customerRows), formatSnapshotDelta(current.customerRows, other?.customerRows, other?.backendLabel)],
+        ['Pending Cells', formatSnapshotNumber(current.pendingCells), formatSnapshotDelta(current.pendingCells, other?.pendingCells, other?.backendLabel)],
+        ['Bill Records', formatSnapshotNumber(current.durationBillCount), `${formatSnapshotMoney(current.durationBill)} total`],
+        ['Payment Records', formatSnapshotNumber(current.durationCollectionsCount), `${formatSnapshotMoney(current.durationCollections)} total`],
+        ['Month Range', current.range, 'Collector matrix window'],
+        ['Saved Snapshot', currentSaved ? new Date(currentSaved.savedAt).toLocaleString('en-PH') : 'Not saved', currentSaved ? `${currentSaved.backendLabel} baseline exists` : 'Click Save Snapshot']
+    ];
+
+    grid.innerHTML = metrics.map(([label, value, note]) => `
+        <div class="collections-compare-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+            <small>${escapeHtml(note)}</small>
+        </div>
+    `).join('');
+
+    if (saved) {
+        const firebaseSaved = snapshots.firebase ? `Firebase ${new Date(snapshots.firebase.savedAt).toLocaleString('en-PH')}` : 'Firebase not saved';
+        const margabaseSaved = snapshots.margabase ? `Margabase ${new Date(snapshots.margabase.savedAt).toLocaleString('en-PH')}` : 'Margabase not saved';
+        saved.textContent = `${firebaseSaved}. ${margabaseSaved}.`;
+    }
+}
+
+function saveCollectionsCompareSnapshot() {
+    const snapshot = buildCollectionsCompareSnapshot();
+    const snapshots = readCollectionsCompareSnapshots();
+    snapshots[snapshot.backend] = snapshot;
+    writeCollectionsCompareSnapshots(snapshots);
+    renderCollectionsCompareScorecard();
+    const saved = document.getElementById('collectionsCompareSaved');
+    if (saved) saved.textContent = `Saved ${snapshot.backendLabel} snapshot at ${new Date(snapshot.savedAt).toLocaleString('en-PH')}.`;
 }
 
 function formatCurrencyShort(amount) {
@@ -3222,6 +3349,7 @@ function updateAllStats() {
 
     document.getElementById('stale-urgent-count').textContent = staleUrgent.length.toLocaleString();
     document.getElementById('stale-urgent-amount').textContent = formatCurrencyShort(staleUrgentTotal);
+    renderCollectionsCompareScorecard();
 }
 
 function updateDurationSummary() {
@@ -3277,6 +3405,7 @@ function updateDurationSummary() {
 
     needCollectNode.textContent = formatCurrency(needCollect);
     needCollectCountNode.textContent = `${needCollectCount.toLocaleString()} unpaid invoice(s)`;
+    renderCollectionsCompareScorecard();
 }
 
 function computeMonthlyTrendData() {
@@ -4529,6 +4658,7 @@ function renderCollectorDashboardFromData(data) {
         pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
     }
 
+    renderCollectionsCompareScorecard();
     return data;
 }
 
@@ -8110,6 +8240,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     showRandomTip();
     initQuickAgeButtons();
     toggleAnalyticsDashboard(false);
+    renderCollectionsCompareScorecard();
+    document.getElementById('saveCollectionsSnapshotBtn')?.addEventListener('click', saveCollectionsCompareSnapshot);
 
     document.getElementById('collectorSearchInput')?.addEventListener('input', () => {
         if (lastLoadSucceeded) void renderCollectorDashboard();

@@ -99,6 +99,104 @@
     font-size: 0.82rem;
 }
 
+.database-status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+    margin: 0.9rem 0;
+}
+
+.database-status-card,
+.database-choice {
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.82);
+    padding: 0.9rem;
+}
+
+.database-status-card span {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #587090;
+    font-weight: 800;
+}
+
+.database-status-card strong {
+    display: block;
+    margin-top: 0.25rem;
+    color: #1a365d;
+    font-size: 1rem;
+}
+
+.database-status-card p {
+    margin: 0.25rem 0 0;
+    color: #5a6f88;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+.database-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+    margin: 0.85rem 0;
+}
+
+.database-choice {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    cursor: pointer;
+}
+
+.database-choice input {
+    margin-top: 0.25rem;
+}
+
+.database-choice strong {
+    display: block;
+    color: #1a365d;
+    font-size: 0.95rem;
+}
+
+.database-choice small {
+    display: block;
+    margin-top: 0.2rem;
+    color: #5a6f88;
+    line-height: 1.45;
+}
+
+.database-choice.active {
+    border-color: rgba(37, 99, 235, 0.45);
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.database-warning-box {
+    margin-top: 0.9rem;
+}
+
+.database-sync-box {
+    margin-top: 0.9rem;
+}
+
+.database-command {
+    margin: 0.3rem 0 0;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.92);
+    color: #e2e8f0;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+
+.database-link-btn {
+    text-decoration: none;
+}
+
 .marga-modal {
     position: fixed;
     inset: 50% auto auto 50%;

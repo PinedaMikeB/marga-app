@@ -49,12 +49,14 @@ This file exists to protect the project across new chats by recording:
 - SQL syncing becomes a migration bridge, then can be reduced once the new office setup and final process are stable.
 
 ### Phase 3: MargaBase Self-Hosted Backend
-- Next dedicated repo/path: `/Volumes/Wotg Drive Mike/GitHub/margabase`.
+- Dedicated platform repo/path: `/Volumes/Wotg Drive Mike/GitHub/marga-platform`.
+- First app stack path: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/apps/margabase`.
 - Target: Mac mini-hosted backend that provides Firebase-like realtime updates without Firestore per-document read/write billing.
 - Candidate stack:
-  - Supabase self-hosted for PostgreSQL, auth, REST, and realtime; or PocketBase for a simpler embedded realtime app server.
+  - Supabase/Postgres-style self-hosted platform for PostgreSQL, auth, REST, realtime, and future storage.
   - Docker-based deployment on the Mac mini.
   - Local media storage for images/videos with automated backup.
+  - Platform design must support multiple future app/SaaS stacks as siblings of `apps/margabase`, each with separate database/config/backup paths.
 - Network model:
   - Mac mini runs on solar/UPS-backed power and wired LAN.
   - Dual internet providers should terminate at a dual-WAN router for failover.
@@ -68,6 +70,17 @@ This file exists to protect the project across new chats by recording:
 - Cutover rule:
   - Do not cut production Field App/customer workflows to MargaBase until backups, auth isolation, realtime behavior, and offline/failover behavior are verified.
   - Keep Firebase available as a fallback/mirror during transition until the self-hosted backend is proven stable.
+- Database efficiency rule:
+  - Margabase must not simply recreate Firestore's document-by-document loading pattern.
+  - Preserve raw Firebase documents in an import/mirror layer, then derive normalized relational tables and app-facing views.
+  - Use Postgres indexes, joins, constraints, triggers, scheduled jobs, and materialized summaries to centralize business logic and reduce browser work.
+  - Collections is a priority proof point: the current Firebase/browser flow can take around 7 minutes to read and calculate everything. In Postgres, invoice balances, payment-date totals, unpaid receivables, pending billing projections, grouped-customer parent rows, and 2307 follow-up states should be precomputed or queryable through indexed views/API endpoints so the UI requests only the selected month/window/customer set.
+  - Database-side automation should handle core invariants where possible, such as payment rows updating invoice balance, DR finalization marking released items, schedule closure creating audit/event rows, machine pullout setting pending-return state, and nightly jobs refreshing billing/collections summaries.
+- Offline-first rule:
+  - Desktop and mobile should tolerate temporary internet loss by caching app assets/data and saving new actions to an IndexedDB pending-write queue.
+  - MARGA's final invoice numbers, OR numbers, and DR numbers are manually entered from physical booklets, so offline invoice/payment/DR finalization can be allowed as local pending records.
+  - When the device reconnects, Margabase must validate duplicate booklet numbers, stale invoice balances, required fields, and conflicting edits before promoting pending records to server truth.
+  - Any conflict must be surfaced in a `Needs Review` workflow for office/admin correction, not silently merged or overwritten.
 
 ## Current Protected State
 - Billing protected operational baseline: commit `8df832d`

@@ -8,7 +8,7 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
-- New infrastructure direction for next thread: build the self-hosted Marga base in `/Volumes/Wotg Drive Mike/GitHub/margabase`.
+- New infrastructure direction: build the reusable self-hosted Marga platform in `/Volumes/Wotg Drive Mike/GitHub/marga-platform`, with the first app stack under `apps/margabase`.
 - Goal: replace Firebase-style per-read/write billing pressure with a Mac mini local server stack for database/API/realtime workflows.
 - Planned public access model:
   - Customer portal stays normal browser access at `care.marga.biz`.
@@ -16,8 +16,19 @@ Start every new Marga-App thread by reading:
   - Tailscale may be used only for internal/admin/private access, not for customer portal users.
 - Planned stack direction:
   - Mac mini on solar/UPS with dual internet provider failover through the router.
-  - Self-hosted realtime backend such as Supabase or PocketBase, with local media/file storage.
+  - Self-hosted Supabase/Postgres-style backend, with local media/file storage.
+  - Platform must support multiple future app/SaaS stacks, not only MARGA; `margabase` is the first stack, not the whole platform.
   - Automated local and offsite backups are mandatory before production cutover.
+- Margabase performance principle:
+  - Keep a raw Firebase mirror for audit/fallback, then derive relational Postgres tables/views for fast reads.
+  - Use Postgres joins, indexes, constraints, triggers, and scheduled jobs so business rules are enforced centrally instead of depending on every browser click.
+  - Collections is the clearest optimization target: current Firebase/browser loading can take around 7 minutes because it reads broad collections and computes in JavaScript. Margabase should replace that with indexed invoice-month/payment-date tables, precomputed balances, collection status views/materialized summaries, and API filters so the matrix loads from ready-to-query data.
+  - Example database-side automation targets: payment save updates invoice balance, schedule close writes audit/event rows, DR finalization marks released rows, machine pullout sets pending-return state, nightly jobs refresh billing/collections summaries and flag overdue accounts.
+- Margabase offline-first rule:
+  - Temporary offline operation should be supported on desktop and mobile through browser cache + IndexedDB pending-write queue.
+  - Because MARGA invoice numbers, OR numbers, and DR numbers are manually entered from physical booklets, the app may allow offline finalization/draft saves for invoices, OR/payment records, and delivery receipts.
+  - Offline saves must carry unique local operation IDs and sync status; when internet returns, Margabase validates uniqueness, required fields, and conflicts before accepting them as server truth.
+  - Conflicts such as duplicate invoice/OR/DR numbers or stale invoice balances should go into a clear `Needs Review` queue instead of silently overwriting data.
 - Important billing lesson from 2026-05-11:
   - Google Cloud/Firebase billing showed the large charge under `App Engine`, but the operational failure was Firestore returning `429 Quota exceeded`.
   - Treat this as Firestore/Datastore read-write/query billing pressure, even when Google Billing labels the service as App Engine.

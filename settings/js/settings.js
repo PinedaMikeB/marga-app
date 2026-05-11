@@ -21,6 +21,8 @@ const SETTINGS_STATE = {
 };
 
 const BILLING_PRINT_POLICY_DOC_ID = 'billing_printing_policy_v1';
+const DATABASE_BACKEND_STORAGE_KEY = 'marga_data_backend';
+const MARGABASE_ADMIN_BASE_URL = 'http://127.0.0.1:8787';
 
 const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
@@ -87,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('tabAccounts').addEventListener('click', () => setActiveTab('accounts'));
     document.getElementById('tabRoles').addEventListener('click', () => setActiveTab('roles'));
     document.getElementById('tabAppSettings').addEventListener('click', () => setActiveTab('app-settings'));
+    document.getElementById('tabDatabase').addEventListener('click', () => setActiveTab('database'));
 
     document.getElementById('refreshUsersBtn').addEventListener('click', () => loadDirectory());
     document.getElementById('userSearch').addEventListener('input', () => applyUserFilter());
@@ -116,6 +119,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('newRoleBtn').addEventListener('click', () => openNewRoleEditor());
     document.getElementById('addModuleBtn').addEventListener('click', () => openModuleModal());
     document.getElementById('saveAppSettingsBtn').addEventListener('click', () => saveAppSettings());
+    document.getElementById('testMargabaseBtn').addEventListener('click', () => testMargabaseConnection());
+    document.getElementById('applyDatabaseBackendBtn').addEventListener('click', () => applyDatabaseBackend());
+    document.getElementById('refreshDatabaseSyncStatusBtn').addEventListener('click', () => refreshDatabaseSyncStatus());
+    document.getElementById('hardRefreshAppBtn').addEventListener('click', () => hardRefreshApp());
+    document.getElementById('deriveMargabaseBtn').addEventListener('click', () => runMargabaseSync('derive'));
+    document.getElementById('runMargabaseSyncBtn').addEventListener('click', () => runMargabaseSync('firebase'));
+    document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
+        input.addEventListener('change', () => setDatabaseChoice(input.value));
+    });
     document.getElementById('roleLabelInput').addEventListener('input', () => {
         const roleIdInput = document.getElementById('roleIdInput');
         if (SETTINGS_STATE.activeRoleEditor !== 'new') return;
@@ -155,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('employeeAddRoleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('saveRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('resetRolePermissionsBtn').style.display = isAdmin ? 'inline-flex' : 'none';
+    document.getElementById('tabDatabase').style.display = isAdmin ? '' : 'none';
     document.getElementById('syncUsersBtn').style.display = isAdmin ? 'inline-flex' : 'none';
     document.getElementById('userSyncFileInput').disabled = !isAdmin;
     document.getElementById('roleIdInput').disabled = !isAdmin;
@@ -165,10 +178,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('moduleDashboardLabelInput').disabled = !isAdmin;
     document.getElementById('moduleRouteInput').disabled = !isAdmin;
     document.getElementById('moduleNoteInput').disabled = !isAdmin;
+    ['testMargabaseBtn', 'applyDatabaseBackendBtn', 'refreshDatabaseSyncStatusBtn', 'hardRefreshAppBtn', 'deriveMargabaseBtn', 'runMargabaseSyncBtn'].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = !isAdmin;
+    });
+    document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
+        input.disabled = !isAdmin;
+    });
     if (!isAdmin) {
         document.getElementById('syncUsersResult').textContent = 'Only admin can sync XLSX user data.';
     }
 
+    renderDatabaseSettings();
+    if (isAdmin) refreshDatabaseSyncStatus({ quiet: true });
     setActiveTab('employees');
     loadDirectory();
 });
@@ -184,29 +206,194 @@ function sanitize(text) {
 }
 
 function setActiveTab(tab) {
-    const next = tab === 'accounts' ? 'accounts' : tab === 'roles' ? 'roles' : tab === 'app-settings' ? 'app-settings' : 'employees';
+    const next = tab === 'accounts' ? 'accounts' : tab === 'roles' ? 'roles' : tab === 'app-settings' ? 'app-settings' : tab === 'database' && MargaAuth.isAdmin() ? 'database' : 'employees';
     const tabEmployees = document.getElementById('tabEmployees');
     const tabAccounts = document.getElementById('tabAccounts');
     const tabRoles = document.getElementById('tabRoles');
     const tabAppSettings = document.getElementById('tabAppSettings');
+    const tabDatabase = document.getElementById('tabDatabase');
     const employeesPane = document.getElementById('employeesPane');
     const accountsPane = document.getElementById('accountsPane');
     const rolesPane = document.getElementById('rolesPane');
     const appSettingsPane = document.getElementById('appSettingsPane');
+    const databasePane = document.getElementById('databasePane');
 
     tabEmployees.classList.toggle('active', next === 'employees');
     tabAccounts.classList.toggle('active', next === 'accounts');
     tabRoles.classList.toggle('active', next === 'roles');
     tabAppSettings.classList.toggle('active', next === 'app-settings');
+    tabDatabase.classList.toggle('active', next === 'database');
     tabEmployees.setAttribute('aria-selected', next === 'employees' ? 'true' : 'false');
     tabAccounts.setAttribute('aria-selected', next === 'accounts' ? 'true' : 'false');
     tabRoles.setAttribute('aria-selected', next === 'roles' ? 'true' : 'false');
     tabAppSettings.setAttribute('aria-selected', next === 'app-settings' ? 'true' : 'false');
+    tabDatabase.setAttribute('aria-selected', next === 'database' ? 'true' : 'false');
 
     employeesPane.classList.toggle('open', next === 'employees');
     accountsPane.classList.toggle('open', next === 'accounts');
     rolesPane.classList.toggle('open', next === 'roles');
     appSettingsPane.classList.toggle('open', next === 'app-settings');
+    databasePane.classList.toggle('open', next === 'database');
+    if (next === 'database') {
+        renderDatabaseSettings();
+        refreshDatabaseSyncStatus({ quiet: true });
+    }
+}
+
+function getStoredDatabaseBackend() {
+    return localStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
+}
+
+function getSelectedDatabaseBackend() {
+    return document.querySelector('input[name="databaseBackend"]:checked')?.value === 'margabase' ? 'margabase' : 'firebase';
+}
+
+function formatBackendLabel(backend) {
+    return backend === 'margabase' ? 'Margabase' : 'Firebase';
+}
+
+function formatSyncTime(value) {
+    if (!value) return 'not finished';
+    try {
+        return new Date(value).toLocaleString();
+    } catch (err) {
+        return String(value);
+    }
+}
+
+function setDatabaseChoice(backend) {
+    const next = backend === 'margabase' ? 'margabase' : 'firebase';
+    document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
+        input.checked = input.value === next;
+    });
+    document.getElementById('databaseChoiceFirebase')?.classList.toggle('active', next === 'firebase');
+    document.getElementById('databaseChoiceMargabase')?.classList.toggle('active', next === 'margabase');
+    const status = document.getElementById('databaseSettingsStatus');
+    if (status) status.textContent = `Ready to switch this browser to ${formatBackendLabel(next)}. Apply reloads the page.`;
+}
+
+function renderDatabaseSettings() {
+    const backend = getStoredDatabaseBackend();
+    setDatabaseChoice(backend);
+    const currentBackend = document.getElementById('databaseCurrentBackend');
+    const currentUrl = document.getElementById('databaseCurrentUrl');
+    if (currentBackend) currentBackend.textContent = formatBackendLabel(backend);
+    if (currentUrl) {
+        const activeBaseUrl = window.FIREBASE_CONFIG?.baseUrl || '';
+        currentUrl.textContent = activeBaseUrl || 'Endpoint unavailable until config loads.';
+    }
+    const command = document.getElementById('databaseSyncCommand');
+    if (command) {
+        command.textContent = [
+            'cd "/Volumes/Wotg Drive Mike/GitHub/marga-platform"',
+            'npm run import:firebase',
+            'node scripts/import-firebase-to-margabase.mjs --app=margabase --derive-only'
+        ].join('\n');
+    }
+}
+
+async function testMargabaseConnection() {
+    const label = document.getElementById('margabaseHealthLabel');
+    const detail = document.getElementById('margabaseHealthDetail');
+    if (label) label.textContent = 'Testing...';
+    if (detail) detail.textContent = 'Checking local Margabase API on 127.0.0.1:8787.';
+    try {
+        const response = await fetch(`${MARGABASE_ADMIN_BASE_URL}/health`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json();
+        if (label) label.textContent = body.ok ? 'Online' : 'Responded';
+        if (detail) detail.textContent = 'Margabase local API is reachable from this browser.';
+        return true;
+    } catch (err) {
+        if (label) label.textContent = 'Offline';
+        if (detail) detail.textContent = `Start Margabase API first. ${err.message || err}`;
+        return false;
+    }
+}
+
+async function applyDatabaseBackend() {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can switch database backend.');
+        return;
+    }
+    const backend = getSelectedDatabaseBackend();
+    if (backend === 'margabase') {
+        const online = await testMargabaseConnection();
+        if (!online && !confirm('Margabase API is not responding. Switch this browser anyway?')) return;
+        localStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
+    } else {
+        localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+    }
+    document.getElementById('databaseSettingsStatus').textContent = `Switching to ${formatBackendLabel(backend)}...`;
+    window.location.reload();
+}
+
+function hardRefreshApp() {
+    if ('caches' in window) {
+        caches.keys()
+            .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+            .catch((err) => console.warn('Unable to clear app caches before refresh:', err))
+            .finally(() => {
+                window.location.href = `${window.location.pathname}?refresh=${Date.now()}`;
+            });
+        return;
+    }
+    window.location.href = `${window.location.pathname}?refresh=${Date.now()}`;
+}
+
+function summarizeLatestRun(run) {
+    if (!run) return 'No sync run has been recorded yet.';
+    const summary = run.summary || {};
+    const total = Number(summary.totalDocuments || 0).toLocaleString();
+    const collectionCount = summary.collections ? Object.keys(summary.collections).length : 0;
+    const errorText = run.error_message ? ` Error: ${run.error_message.split('\n')[0]}` : '';
+    return `Latest run #${run.id}: ${run.status} | ${total} document(s), ${collectionCount} collection(s) | started ${formatSyncTime(run.started_at)} | finished ${formatSyncTime(run.finished_at)}.${errorText}`;
+}
+
+async function refreshDatabaseSyncStatus({ quiet = false } = {}) {
+    const status = document.getElementById('databaseSyncStatus');
+    if (!status) return;
+    if (!quiet) status.textContent = 'Checking Margabase sync status...';
+    try {
+        const response = await fetch(`${MARGABASE_ADMIN_BASE_URL}/admin/sync/status`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json();
+        const latest = body.latestRuns?.[0] || null;
+        const active = body.activeSync;
+        const totalText = `${Number(body.totals?.rawDocuments || 0).toLocaleString()} raw docs across ${Number(body.totals?.collections || 0).toLocaleString()} collection(s)`;
+        const activeText = active?.running
+            ? `Running ${active.mode} sync since ${formatSyncTime(active.startedAt)}. PID ${active.pid}.`
+            : active
+                ? `Last local button job finished with exit code ${active.exitCode}.`
+                : 'No local button job is running.';
+        status.textContent = `${activeText} ${totalText}. ${summarizeLatestRun(latest)}`;
+    } catch (err) {
+        status.textContent = `Cannot reach Margabase sync service. Start the local API, or run the command shown above. ${err.message || err}`;
+    }
+}
+
+async function runMargabaseSync(mode) {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can run Margabase sync.');
+        return;
+    }
+    const label = mode === 'derive' ? 'refresh relational tables' : 'run Firebase sync';
+    if (mode !== 'derive' && !confirm('Run one more Firebase to Margabase sync now? This is best after office hours so the comparison is clean.')) return;
+    const status = document.getElementById('databaseSyncStatus');
+    if (status) status.textContent = `Starting ${label}...`;
+    try {
+        const response = await fetch(`${MARGABASE_ADMIN_BASE_URL}/admin/sync/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error?.message || `HTTP ${response.status}`);
+        if (status) status.textContent = `${formatBackendLabel('margabase')} ${label} started. PID ${body.sync?.pid || 'unknown'}. Open Progress to watch percentage and ETA.`;
+        setTimeout(() => refreshDatabaseSyncStatus({ quiet: true }), 1500);
+    } catch (err) {
+        if (status) status.textContent = `Could not start ${label}. ${err.message || err}`;
+    }
 }
 
 function parseFirestoreValue(value) {

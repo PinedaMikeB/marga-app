@@ -536,6 +536,75 @@
             color: #4f6f8f;
         }
 
+        .collections-compare-card {
+            margin: 12px;
+            padding: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            background: rgba(255, 255, 255, 0.84);
+            box-shadow: var(--panel-shadow-soft);
+            border-radius: 12px;
+        }
+
+        .collections-compare-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .collections-compare-title {
+            font-weight: 900;
+            color: #173d63;
+        }
+
+        .collections-compare-subtitle,
+        .collections-compare-saved {
+            font-size: 11px;
+            line-height: 1.5;
+            color: #5c7290;
+            font-weight: 700;
+        }
+
+        .collections-compare-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 8px;
+        }
+
+        .collections-compare-metric {
+            min-height: 72px;
+            padding: 10px;
+            border-radius: 10px;
+            background: rgba(239, 246, 255, 0.82);
+            border: 1px solid rgba(147, 197, 253, 0.36);
+        }
+
+        .collections-compare-metric span {
+            display: block;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #5c7290;
+            font-weight: 800;
+        }
+
+        .collections-compare-metric strong {
+            display: block;
+            margin-top: 5px;
+            color: #173d63;
+            font-size: 18px;
+            line-height: 1.12;
+        }
+
+        .collections-compare-metric small {
+            display: block;
+            margin-top: 4px;
+            color: #5c7290;
+            font-weight: 700;
+        }
+
         .collector-chip-row {
             display: flex;
             align-items: center;
@@ -2818,6 +2887,10 @@
             .duration-summary {
                 grid-template-columns: repeat(2, minmax(180px, 1fr));
             }
+
+            .collections-compare-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
         @media (max-width: 1024px) {
@@ -2845,6 +2918,7 @@
             .detail-grid,
             .detail-form-grid,
             .duration-summary,
+            .collections-compare-grid,
             .cell-invoice-grid,
             .collection-followup-facts,
             .collection-payment-summary,
@@ -3376,6 +3450,19 @@
                         <span class="collector-chip pending" id="collector-dashboard-pending">Pending cells: 0</span>
                     </div>
                 </div>
+                <div class="collections-compare-card" id="collectionsCompareCard">
+                    <div class="collections-compare-head">
+                        <div>
+                            <div class="collections-compare-title">Database Compare Snapshot</div>
+                            <div class="collections-compare-subtitle" id="collectionsCompareSubtitle">Capture Firebase now, then switch to Margabase and capture again.</div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="saveCollectionsSnapshotBtn">Save Snapshot</button>
+                    </div>
+                    <div class="collections-compare-grid" id="collectionsCompareGrid">
+                        <div class="collections-compare-metric"><span>Backend</span><strong>Loading</strong><small>Current browser</small></div>
+                    </div>
+                    <div class="collections-compare-saved" id="collectionsCompareSaved">No saved snapshots yet.</div>
+                </div>
                 <div class="collector-table-wrap">
                     <h3 class="collector-section-title">Collection for the Last 6 Months</h3>
                     <div class="collector-sheet-scroll" id="collector-summary-table">
@@ -3505,6 +3592,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260511-active-staff-1"></script>
+    <script src="collections/js/collections.js?v=20260511-database-compare-1"></script>
 </body>
 </html>
