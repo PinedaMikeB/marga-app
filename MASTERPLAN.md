@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-04-29
+Last Updated: 2026-05-11
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -47,6 +47,27 @@ This file exists to protect the project across new chats by recording:
 ### Phase 2: Web Becomes Operational Primary
 - Billing, Collections, Service, and office workflows run primarily from the web app.
 - SQL syncing becomes a migration bridge, then can be reduced once the new office setup and final process are stable.
+
+### Phase 3: MargaBase Self-Hosted Backend
+- Next dedicated repo/path: `/Volumes/Wotg Drive Mike/GitHub/margabase`.
+- Target: Mac mini-hosted backend that provides Firebase-like realtime updates without Firestore per-document read/write billing.
+- Candidate stack:
+  - Supabase self-hosted for PostgreSQL, auth, REST, and realtime; or PocketBase for a simpler embedded realtime app server.
+  - Docker-based deployment on the Mac mini.
+  - Local media storage for images/videos with automated backup.
+- Network model:
+  - Mac mini runs on solar/UPS-backed power and wired LAN.
+  - Dual internet providers should terminate at a dual-WAN router for failover.
+  - Customer portal public hostname `care.marga.biz` should use Cloudflare Tunnel to reach the local Mac mini service.
+  - Customers must not need Tailscale/VPN or any special app; they should just open the browser and log in.
+  - Tailscale is acceptable for internal/admin/private access only.
+- Cost model:
+  - Cloudflare Tunnel/DNS on the free plan is expected to avoid Firebase-style per-read/write database charges.
+  - Cloudflare does not become the database; it only routes web/API traffic to the Mac mini.
+  - Real constraints become Mac mini uptime, CPU/RAM, local storage, upload bandwidth, backups, and security.
+- Cutover rule:
+  - Do not cut production Field App/customer workflows to MargaBase until backups, auth isolation, realtime behavior, and offline/failover behavior are verified.
+  - Keep Firebase available as a fallback/mirror during transition until the self-hosted backend is proven stable.
 
 ## Current Protected State
 - Billing protected operational baseline: commit `8df832d`

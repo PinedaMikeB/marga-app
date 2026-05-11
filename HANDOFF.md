@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-05-05
+Last Updated: 2026-05-11
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,6 +8,20 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
+- New infrastructure direction for next thread: build the self-hosted Marga base in `/Volumes/Wotg Drive Mike/GitHub/margabase`.
+- Goal: replace Firebase-style per-read/write billing pressure with a Mac mini local server stack for database/API/realtime workflows.
+- Planned public access model:
+  - Customer portal stays normal browser access at `care.marga.biz`.
+  - Use Cloudflare Tunnel to route `care.marga.biz` to the Mac mini server without customers installing Tailscale/VPN.
+  - Tailscale may be used only for internal/admin/private access, not for customer portal users.
+- Planned stack direction:
+  - Mac mini on solar/UPS with dual internet provider failover through the router.
+  - Self-hosted realtime backend such as Supabase or PocketBase, with local media/file storage.
+  - Automated local and offsite backups are mandatory before production cutover.
+- Important billing lesson from 2026-05-11:
+  - Google Cloud/Firebase billing showed the large charge under `App Engine`, but the operational failure was Firestore returning `429 Quota exceeded`.
+  - Treat this as Firestore/Datastore read-write/query billing pressure, even when Google Billing labels the service as App Engine.
+  - Cloudflare Tunnel should not charge per database document read/write; the app's database workload would be handled by the Mac mini.
 - Next chat focus: continue **Billing** work.
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
 - Releasing is now live and materially implemented; only parity/tuning work should remain there, not a rebuild.
