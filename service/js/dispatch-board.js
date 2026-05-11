@@ -1668,8 +1668,20 @@ function getScheduleLookups(row) {
 }
 
 function getAssignableStaffList() {
-    return [...opsCache.employees.values()]
-        .filter(Boolean)
+    const sourceEmployees = [...opsCache.employees.values()].filter(Boolean);
+    if (window.MargaUtils?.filterEmployeeAssignmentOptions) {
+        return MargaUtils.filterEmployeeAssignmentOptions(sourceEmployees, { positions: opsCache.positions })
+            .map((staff) => ({
+                id: Number(staff.id || 0),
+                role: staff.designation || staff.role || 'Staff',
+                name: staff.name,
+                email: staff.email || '',
+                username: staff.username || '',
+                estatus: 1
+            }))
+            .filter((staff) => staff.id > 0);
+    }
+    return sourceEmployees
         .filter(isActiveAssignableEmployee)
         .map((employee) => {
             const position = opsCache.positions.get(String(employee.position_id || 0)) || null;

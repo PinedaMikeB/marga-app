@@ -504,6 +504,46 @@ function collectionEmployeeRoleKey(employee) {
     return collectionEmployeeRole(employee).toLowerCase();
 }
 
+function rebuildCollectionAssignableStaff(employeeDocs = []) {
+    const employeeRows = employeeDocs.map((doc) => documentFieldsToPlain(doc));
+    employeeLookupMap = new Map();
+    employeeRows.forEach((row) => {
+        const id = normalizeLookupId(row.id);
+        const name = collectionEmployeeName(row, id);
+        if (id && name) employeeLookupMap.set(id, name);
+    });
+
+    if (window.MargaUtils?.filterEmployeeAssignmentOptions) {
+        collectionAssignableStaff = MargaUtils.filterEmployeeAssignmentOptions(
+            employeeRows.filter(isActiveCollectionEmployee),
+            {
+                positions: collectionPositionMap,
+                includeRoleKeys: ['collection', 'technician', 'messenger', 'driver', 'service', 'production']
+            }
+        ).map((staff) => ({
+            id: normalizeLookupId(staff.id),
+            name: staff.name,
+            role: staff.designation || staff.role || 'Staff'
+        }));
+    } else {
+        collectionAssignableStaff = [];
+        employeeRows.forEach((row) => {
+            const id = normalizeLookupId(row.id);
+            const name = collectionEmployeeName(row, id);
+            const role = collectionEmployeeRole(row);
+            const roleKey = collectionEmployeeRoleKey(row);
+            if (id && name && isActiveCollectionEmployee(row) && isCollectionAssignableRole(roleKey)) {
+                collectionAssignableStaff.push({ id, name, role });
+            }
+        });
+    }
+
+    collectionAssignableStaff.sort((a, b) => {
+        if (a.name !== b.name) return a.name.localeCompare(b.name);
+        return a.role.localeCompare(b.role);
+    });
+}
+
 function buildCollectionAssignableStaffOptions(selectedId = '') {
     const selected = normalizeLookupId(selectedId);
     const rows = collectionAssignableStaff;
@@ -2190,25 +2230,7 @@ async function loadCollectionEmployeeLookup() {
         if (id) collectionPositionMap.set(id, row);
     });
 
-    collectionAssignableStaff = [];
-    employeeDocs.forEach((doc) => {
-        const row = documentFieldsToPlain(doc);
-        const id = normalizeLookupId(row.id);
-        const name = collectionEmployeeName(row, id);
-        const role = collectionEmployeeRole(row);
-        const roleKey = collectionEmployeeRoleKey(row);
-        if (id && name) {
-            employeeLookupMap.set(id, name);
-            if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(roleKey)) {
-                collectionAssignableStaff.push({ id, name, role });
-            }
-        }
-    });
-
-    collectionAssignableStaff.sort((a, b) => {
-        if (a.name !== b.name) return a.name.localeCompare(b.name);
-        return a.role.localeCompare(b.role);
-    });
+    rebuildCollectionAssignableStaff(employeeDocs);
 }
 
 async function loadCollectionHistory() {
@@ -4988,26 +5010,8 @@ async function loadCollectionWorkspaceLookups() {
             if (id) collectionPositionMap.set(id, row);
         });
 
-        employeeLookupMap = new Map();
-        collectionAssignableStaff = [];
         collectionActiveEmployeeEmails = activeRoster;
-        employeeDocs.forEach((doc) => {
-            const row = documentFieldsToPlain(doc);
-            const id = normalizeLookupId(row.id);
-            const name = collectionEmployeeName(row, id);
-            const role = collectionEmployeeRole(row);
-            const roleKey = collectionEmployeeRoleKey(row);
-            if (id && name) {
-                employeeLookupMap.set(id, name);
-                if (isActiveCollectionEmployee(row) && isCollectionAssignableRole(roleKey)) {
-                    collectionAssignableStaff.push({ id, name, role });
-                }
-            }
-        });
-        collectionAssignableStaff.sort((a, b) => {
-            if (a.name !== b.name) return a.name.localeCompare(b.name);
-            return a.role.localeCompare(b.role);
-        });
+        rebuildCollectionAssignableStaff(employeeDocs);
 
         collectionWorkspaceLookupsLoaded = true;
         collectionWorkspaceLookupsPromise = null;

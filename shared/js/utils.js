@@ -163,7 +163,47 @@ const MargaUtils = {
     },
 
     isOfficialActiveEmployee(employee) {
-        return Boolean(employee) && employee.marga_active !== false && Number(employee.id || employee._docId || 0) > 0;
+        if (!employee || typeof employee !== 'object') return false;
+        const id = Number(employee.id || employee._docId || 0);
+        if (!Number.isFinite(id) || id <= 0) return false;
+        if (employee.active === false) return false;
+        if (employee.marga_active === false) return false;
+        if (employee.marga_account_active === false) return false;
+        const estatusRaw = employee.estatus;
+        const estatus = estatusRaw === '' || estatusRaw == null ? NaN : Number(estatusRaw);
+        if (Number.isFinite(estatus) && estatus <= 0) return false;
+        const mstatusRaw = employee.mstatus;
+        const mstatus = mstatusRaw === '' || mstatusRaw == null ? NaN : Number(mstatusRaw);
+        if (Number.isFinite(mstatus) && mstatus <= 0) return false;
+        return true;
+    },
+
+    normalizeEmployeeDedupeKey(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '');
+    },
+
+    getEmployeeDedupeKey(employee, option = null) {
+        const email = this.normalizeEmail(employee?.email || employee?.marga_login_email || option?.email || '');
+        if (email) return `email:${email}`;
+        const username = this.normalizeEmail(employee?.username || option?.username || '');
+        if (username) return `user:${username}`;
+        const name = this.normalizeEmployeeDedupeKey(option?.name || this.getEmployeeFullName(employee, ''));
+        return name ? `name:${name}` : `id:${this.getEmployeeId(employee)}`;
+    },
+
+    getEmployeeOptionScore(employee, option = null, includeRoleKeys = new Set()) {
+        let score = 0;
+        if (employee?.marga_active === true || employee?.active === true) score += 100;
+        if (employee?.marga_account_active === true) score += 50;
+        if (Number(employee?.estatus) === 1) score += 40;
+        if (Number(employee?.mstatus) === 1) score += 20;
+        if (this.normalizeEmail(employee?.email || employee?.marga_login_email || option?.email || '')) score += 10;
+        if (option?.roleKey && includeRoleKeys.has(option.roleKey)) score += 10;
+        score += Math.min(Number(employee?.id || employee?._docId || 0) || 0, 999999) / 1000000;
+        return score;
     },
 
     makeEmployeeAssignmentOption(employee, positions = null) {
@@ -185,11 +225,23 @@ const MargaUtils = {
     filterEmployeeAssignmentOptions(employees = [], options = {}) {
         const positions = options.positions || null;
         const includeRoleKeys = new Set((options.includeRoleKeys || []).map((role) => String(role || '').toLowerCase()));
-        return employees
+        const unique = new Map();
+        employees
             .filter((employee) => this.isOfficialActiveEmployee(employee))
-            .map((employee) => this.makeEmployeeAssignmentOption(employee, positions))
-            .filter((employee) => employee.id && employee.name)
-            .filter((employee) => !includeRoleKeys.size || includeRoleKeys.has(employee.roleKey))
+            .forEach((employee) => {
+                const option = this.makeEmployeeAssignmentOption(employee, positions);
+                if (!option.id || !option.name) return;
+                if (includeRoleKeys.size && !includeRoleKeys.has(option.roleKey)) return;
+                const key = this.getEmployeeDedupeKey(employee, option);
+                const scored = {
+                    ...option,
+                    _score: this.getEmployeeOptionScore(employee, option, includeRoleKeys)
+                };
+                const existing = unique.get(key);
+                if (!existing || scored._score > existing._score) unique.set(key, scored);
+            });
+        return [...unique.values()]
+            .map(({ _score, ...employee }) => employee)
             .sort((left, right) => (
                 left.name.localeCompare(right.name) ||
                 left.designation.localeCompare(right.designation) ||

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v42';
+const CACHE_NAME = 'marga-app-shell-v43';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,14 +22,14 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js',
+    '/billing/js/billing.js?v=20260511-active-staff-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js',
+    '/collections/js/collections.js?v=20260511-active-staff-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css',
@@ -53,7 +53,7 @@ const SHELL_ASSETS = [
     '/service/',
     '/service/index.html',
     '/service/css/service.css?v=20260505-delivery-history-status-1',
-    '/service/js/dispatch-board.js?v=20260505-delivery-history-status-1',
+    '/service/js/dispatch-board.js?v=20260511-active-staff-1',
     '/service/js/service.js',
     '/settings/',
     '/settings/index.html',
@@ -67,7 +67,7 @@ const SHELL_ASSETS = [
     '/shared/css/dashboard.css',
     '/shared/js/firebase-config.js',
     '/shared/js/auth.js?v=20260511-server-login-1',
-    '/shared/js/utils.js',
+    '/shared/js/utils.js?v=20260511-active-staff-1',
     '/shared/js/finance-accounts.js',
     '/shared/js/offline-sync.js',
     '/shared/js/pwa-install.js'

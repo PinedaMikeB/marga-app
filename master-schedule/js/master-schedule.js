@@ -1619,7 +1619,7 @@ function renderStaffSelectOptions(row) {
     const selectedKnown = selectedId && staff.some((employee) => String(employee.id) === selectedId);
     const options = [];
     if (!selectedKnown && row.assignedTo) {
-        options.push(`<option value="" selected>${escapeHtml(row.assignedTo)}</option>`);
+        options.push('<option value="" selected>Inactive or unmapped - reassign</option>');
     }
     options.push(...staff.map((employee) => {
         const id = String(employee.id);
@@ -1983,7 +1983,10 @@ window.openMasterStatusModal = openMasterStatusModal;
 window.forwardScheduleRow = forwardScheduleRow;
 
 function uniqueAssignedStaff(rows = activeRows()) {
-    return Array.from(new Set(rows.map((row) => row.assignedTo || 'Unassigned'))).filter(Boolean).sort();
+    const activeStaffNames = new Set(scheduleStaffOptions().map((employee) => employeeName(employee, employee.id)));
+    return Array.from(new Set(rows.map((row) => row.assignedTo || 'Unassigned')))
+        .filter((name) => name === 'Unassigned' || activeStaffNames.has(name))
+        .sort();
 }
 
 function renderPrintStaffOptions() {
@@ -2211,8 +2214,15 @@ async function ensureSettingsData() {
         if (position.id) masterState.lookups.positions.set(String(position.id), position);
     });
 
+    const activeEmployeeIds = new Set(
+        (window.MargaUtils?.filterEmployeeAssignmentOptions
+            ? MargaUtils.filterEmployeeAssignmentOptions(employeeRows, { positions: masterState.lookups.positions })
+            : employeeRows.filter(isActiveScheduleEmployee))
+            .map((employee) => String(employee.id || ''))
+            .filter(Boolean)
+    );
     masterState.settings.employees = employeeRows
-        .filter((employee) => employee.id)
+        .filter((employee) => employee.id && activeEmployeeIds.has(String(employee.id)))
         .sort((a, b) => employeeName(a, a.id).localeCompare(employeeName(b, b.id)));
     masterState.settings.branches = branchRows
         .filter((branch) => branch.id)

@@ -1460,14 +1460,23 @@ async function loadBillingScheduleStaffOptions() {
         console.warn('Unable to load schedule staff options.', error);
         return [];
     });
-    const options = employees
-        .filter(isActiveBillingScheduleStaff)
-        .map((employee) => ({
+    const options = window.MargaUtils?.filterEmployeeAssignmentOptions
+        ? MargaUtils.filterEmployeeAssignmentOptions(employees, {
+            includeRoleKeys: ['billing', 'collection', 'technician', 'messenger', 'driver']
+        }).map((employee) => ({
+            id: String(employee.id || '').trim(),
+            name: employee.name,
+            role: employee.designation || employee.role || 'Staff',
+            roleKey: employee.roleKey || ''
+        }))
+        : employees
+            .filter(isActiveBillingScheduleStaff)
+            .map((employee) => ({
             id: String(employee.id || employee._docId || '').trim(),
             name: billingScheduleStaffName(employee),
             role: billingScheduleStaffRole(employee),
             roleKey: window.MargaUtils?.getEmployeeRoleKey ? MargaUtils.getEmployeeRoleKey(employee) : ''
-        }))
+            }))
         .filter((employee) => employee.id && employee.name);
     const scheduleOptions = options.filter((employee) => ['billing', 'collection', 'technician', 'messenger', 'driver'].includes(employee.roleKey));
     return (scheduleOptions.length ? scheduleOptions : options)
