@@ -56,3 +56,9 @@
   to = "/.netlify/functions/login"
   status = 200
   force = true
+
+[[redirects]]
+  from = "/api/master-schedule-write"
+  to = "/.netlify/functions/master-schedule-write"
+  status = 200
+  force = true

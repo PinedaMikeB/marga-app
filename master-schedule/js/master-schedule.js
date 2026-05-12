@@ -398,8 +398,25 @@ async function updateDocFields(collection, docId, row) {
         body: JSON.stringify({ fields })
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || 'Update failed.');
+    if (!response.ok || payload?.error) {
+        const message = payload?.error?.message || 'Update failed.';
+        if (/permission|denied|insufficient/i.test(message)) {
+            return updateDocFieldsViaMasterScheduleApi(collection, docId, Object.fromEntries(entries));
+        }
+        throw new Error(message);
+    }
     return payload;
+}
+
+async function updateDocFieldsViaMasterScheduleApi(collection, docId, row) {
+    const response = await fetch('/api/master-schedule-write', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collection, docId: String(docId || '').trim(), fields: row })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.error || 'Master schedule write failed.');
+    return payload.doc || payload;
 }
 
 async function deleteDoc(collection, docId) {
@@ -443,7 +460,9 @@ async function appendActivityLog(row, entry) {
         actor: currentActorLabel(),
         created_at: createdAt
     };
-    await setDoc(MASTER_ACTIVITY_COLLECTION, docId, payload);
+    await setDoc(MASTER_ACTIVITY_COLLECTION, docId, payload).catch((error) => {
+        console.warn('Master schedule activity log save failed:', error);
+    });
     const current = masterState.activityLogs.get(row.activityKey) || [];
     masterState.activityLogs.set(row.activityKey, [{ ...payload, _docId: docId }, ...current]);
     return payload;
