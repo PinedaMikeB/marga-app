@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v45';
+const CACHE_NAME = 'marga-app-shell-v47';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,7 +22,7 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js?v=20260511-active-staff-1',
+    '/billing/js/billing.js?v=20260512-scorecard-disabled-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',

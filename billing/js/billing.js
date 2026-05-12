@@ -71,6 +71,7 @@ let billingScorecardData = null;
 let billingScorecardDetailMap = new Map();
 let billingScorecardPaymentEntries = [];
 let billingScorecardPaymentPromise = null;
+const BILLING_COLLECTIONS_SCORECARD_ENABLED = false;
 const MATRIX_SORT_STORAGE_KEY = 'marga_billing_matrix_sort';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
@@ -8871,6 +8872,28 @@ function renderBillingScorecard(payload) {
     `;
 }
 
+function renderBillingScorecardLoading() {
+    if (!els.billingScorecardWrap) return;
+    billingScorecardData = null;
+    billingScorecardDetailMap = new Map();
+    els.billingScorecardWrap.innerHTML = `
+        <div class="empty-panel">
+            Loading Collections scorecard payments. Billing month-to-month comparison is available below.
+        </div>
+    `;
+}
+
+function renderBillingScorecardError(message) {
+    if (!els.billingScorecardWrap) return;
+    billingScorecardData = null;
+    billingScorecardDetailMap = new Map();
+    els.billingScorecardWrap.innerHTML = `
+        <div class="empty-panel">
+            ${escapeHtml(message || 'Collections scorecard could not load. Billing month-to-month comparison is still available below.')}
+        </div>
+    `;
+}
+
 function renderBillingScorecardDetails(metricKey, details) {
     if (!details.length) return '<div class="detail-empty">No detail rows found for this scorecard cell.</div>';
     const columnsByMetric = {
@@ -8938,11 +8961,17 @@ function closeBillingScorecardModal() {
     els.billingScorecardModal?.classList.add('hidden');
 }
 
-function renderAll(payload) {
+function renderAll(payload, options = {}) {
     lastPayload = payload;
     renderSelectionCard(payload);
     renderSummaryTable(payload);
-    renderBillingScorecard(payload);
+    if (BILLING_COLLECTIONS_SCORECARD_ENABLED) {
+        if (options.scorecardLoading) {
+            renderBillingScorecardLoading();
+        } else {
+            renderBillingScorecard(payload);
+        }
+    }
     renderMatrixTable(payload);
     els.rawJson.textContent = JSON.stringify(payload, null, 2);
 }
@@ -8953,6 +8982,22 @@ function renderError(message) {
     if (els.billingScorecardWrap) els.billingScorecardWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
     els.matrixTableWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
     els.rawJson.textContent = String(message || 'Unknown error');
+}
+
+async function refreshBillingScorecardPayments(payload, requestToken, options = {}) {
+    if (!BILLING_COLLECTIONS_SCORECARD_ENABLED) return;
+    if (!els.billingScorecardWrap) return;
+    if (options.forceRefresh || Boolean(els.refreshCacheInput?.checked)) billingScorecardPaymentEntries = [];
+    try {
+        await loadBillingScorecardPayments();
+        if (requestToken !== dashboardRequestToken) return;
+        renderBillingScorecard(payload);
+    } catch (error) {
+        if (requestToken !== dashboardRequestToken) return;
+        console.warn('Unable to load payment records for Billing scorecard.', error);
+        billingScorecardPaymentEntries = [];
+        renderBillingScorecardError('Collections scorecard payment records could not load. Billing month-to-month comparison is still available below.');
+    }
 }
 
 async function loadDashboard(options = {}) {
@@ -8981,15 +9026,11 @@ async function loadDashboard(options = {}) {
 
         billingExclusionCache = await loadBillingExclusions();
         if (requestToken !== dashboardRequestToken) return;
-        if (options.forceRefresh || Boolean(els.refreshCacheInput?.checked)) billingScorecardPaymentEntries = [];
-        await loadBillingScorecardPayments().catch((error) => {
-            console.warn('Unable to load payment records for Billing scorecard.', error);
-            billingScorecardPaymentEntries = [];
-        });
-        if (requestToken !== dashboardRequestToken) return;
+        const visiblePayload = applyBillingExclusionsToPayload(payload, billingExclusionCache);
         renderDashboardBillingExclusions();
-        renderAll(applyBillingExclusionsToPayload(payload, billingExclusionCache));
+        renderAll(visiblePayload, { scorecardLoading: BILLING_COLLECTIONS_SCORECARD_ENABLED });
         setStatus('Loaded');
+        if (BILLING_COLLECTIONS_SCORECARD_ENABLED) refreshBillingScorecardPayments(visiblePayload, requestToken, options);
     } catch (error) {
         if (error?.name === 'AbortError') return;
         if (requestToken !== dashboardRequestToken) return;
