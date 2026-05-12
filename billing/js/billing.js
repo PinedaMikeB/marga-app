@@ -2647,7 +2647,7 @@ function setRtpPrintPayload(payload) {
 }
 
 function isPrintableContractCode(code) {
-    return ['RTP', 'RTF'].includes(String(code || '').trim().toUpperCase());
+    return ['RTP', 'RTF', 'MAP'].includes(String(code || '').trim().toUpperCase());
 }
 
 function getPrintableContractCode(row, cell) {
