@@ -74,6 +74,11 @@ const masterState = {
         routed: 0,
         unrouted: 0
     },
+    kaizen: {
+        visible: false,
+        report: null,
+        applying: false
+    },
     selectedStatusRowKey: '',
     selectedArea: DEFAULT_AREAS[0],
     selectedTechId: '',
@@ -135,6 +140,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterRefreshBtn')?.addEventListener('click', loadMasterSchedule);
     document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
     document.getElementById('masterForwardOpenBtn')?.addEventListener('click', forwardVisibleOpenSchedules);
+    document.getElementById('masterKaizenBtn')?.addEventListener('click', toggleKaizenAdvisor);
+    document.getElementById('masterKaizenRefreshBtn')?.addEventListener('click', () => renderKaizenAdvisor(true));
     document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
     document.getElementById('masterStatusOverlay')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
@@ -1508,7 +1515,253 @@ function renderMasterSchedule() {
         `).join('')}
         ${pendingRows.length ? renderPendingNotRouted(pendingRows) : ''}
     `;
+    if (masterState.kaizen.visible) renderKaizenAdvisor();
 }
+
+function normalizeKaizenAddress(value) {
+    return clean(value)
+        .toLowerCase()
+        .replace(/\b(unit|room|rm|floor|flr|fl|dept|department|office|suite)\b\.?/g, ' ')
+        .replace(/\b\d+(st|nd|rd|th)?\s*(floor|flr|fl|room|rm)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function kaizenLocationKey(row) {
+    const company = clean(row.companyId);
+    const address = normalizeKaizenAddress(row.address);
+    return `${company || 'company?'}|${address || `branch:${clean(row.branchId) || row.branch || row.customer}`}`;
+}
+
+function kaizenPurposeGroup(row) {
+    const purpose = clean(row.purpose).toLowerCase();
+    const purposeId = Number(row.purposeId || 0) || 0;
+    if (purposeId === 5 || purpose.includes('service')) return 'service';
+    if (purposeId === 1 || purposeId === 8 || purpose.includes('billing') || purpose.includes('reading')) return 'billing';
+    if (purposeId === 2 || purpose.includes('collection')) return 'collection';
+    if (purposeId === 3 || purposeId === 4 || purpose.includes('deliver') || purpose.includes('toner') || purpose.includes('ink') || purpose.includes('cartridge')) return 'delivery';
+    return 'other';
+}
+
+function isKaizenMessengerTask(row) {
+    return ['billing', 'collection', 'delivery'].includes(kaizenPurposeGroup(row));
+}
+
+function toggleKaizenAdvisor() {
+    masterState.kaizen.visible = !masterState.kaizen.visible;
+    document.getElementById('masterKaizenPanel')?.classList.toggle('hidden', !masterState.kaizen.visible);
+    if (masterState.kaizen.visible) renderKaizenAdvisor(true);
+}
+
+function buildKaizenReport() {
+    const rows = getVisibleRows();
+    const activeRows = rows.filter((row) => clean(row.status).toLowerCase() !== 'cancelled');
+    const groups = new Map();
+    activeRows.forEach((row) => {
+        const key = kaizenLocationKey(row);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+    });
+
+    const duplicateLocations = Array.from(groups.values()).filter((items) => items.length > 1);
+    const multiStaffLocations = duplicateLocations.filter((items) => new Set(items.map((row) => clean(row.techId || row.assignedTo)).filter(Boolean)).size > 1);
+    const avoidableTrips = multiStaffLocations.reduce((sum, items) => {
+        const staffCount = new Set(items.map((row) => clean(row.techId || row.assignedTo)).filter(Boolean)).size;
+        return sum + Math.max(0, staffCount - 1);
+    }, 0);
+    const purposeCounts = activeRows.reduce((acc, row) => {
+        const group = kaizenPurposeGroup(row);
+        acc[group] = (acc[group] || 0) + 1;
+        return acc;
+    }, {});
+
+    const actions = multiStaffLocations.map((items, index) => {
+        const owner = items.find((row) => kaizenPurposeGroup(row) === 'service' && clean(row.techId))
+            || items.find((row) => clean(row.techId))
+            || items[0];
+        const transferRows = items.filter((row) => row.rowKey !== owner.rowKey && clean(row.techId) && clean(row.techId) !== clean(owner.techId) && isKaizenMessengerTask(row));
+        return {
+            id: index,
+            priority: transferRows.length ? 'high' : 'medium',
+            location: items[0].customer,
+            branch: items[0].branch,
+            recommendedOwner: owner,
+            transferRows,
+            rows: items,
+            nextStep: transferRows.length
+                ? `Transfer ${transferRows.length} messenger-type task${transferRows.length === 1 ? '' : 's'} to ${owner.assignedTo}.`
+                : 'Review and keep one field owner unless separate trip is required.'
+        };
+    });
+
+    const byStaff = new Map();
+    activeRows.forEach((row) => {
+        const key = row.assignedTo || 'Unassigned';
+        if (!byStaff.has(key)) byStaff.set(key, []);
+        byStaff.get(key).push(row);
+    });
+    const lowDensity = Array.from(byStaff.entries())
+        .map(([staff, items]) => ({
+            staff,
+            schedules: items.length,
+            locations: new Set(items.map(kaizenLocationKey)).size
+        }))
+        .filter((item) => item.schedules <= 3 && item.locations <= 3);
+
+    const fieldAlerts = Array.from(byStaff.entries()).map(([staff, items]) => {
+        const pending = items.filter((row) => row.readyStatus !== 'YES' && !/closed/i.test(clean(row.status))).length;
+        return pending > 0 ? { staff, pending, schedules: items.length } : null;
+    }).filter(Boolean).sort((a, b) => b.pending - a.pending);
+
+    return {
+        rows: activeRows,
+        uniqueLocations: groups.size,
+        duplicateLocationCount: duplicateLocations.length,
+        multiStaffLocationCount: multiStaffLocations.length,
+        avoidableTrips,
+        estimatedSavings: avoidableTrips * 180,
+        purposeCounts,
+        actions,
+        lowDensity,
+        fieldAlerts
+    };
+}
+
+function renderKaizenAdvisor(force = false) {
+    if (!masterState.kaizen.visible && !force) return;
+    masterState.kaizen.visible = true;
+    const panel = document.getElementById('masterKaizenPanel');
+    const content = document.getElementById('masterKaizenContent');
+    if (!panel || !content) return;
+    panel.classList.remove('hidden');
+    const report = buildKaizenReport();
+    masterState.kaizen.report = report;
+    const ownerActions = [
+        report.avoidableTrips > 0
+            ? {
+                priority: 'high',
+                title: 'Approve route consolidation before dispatch.',
+                text: `${report.avoidableTrips} avoidable same-location trip${report.avoidableTrips === 1 ? '' : 's'} detected. Estimated savings: PHP ${report.estimatedSavings.toLocaleString()}.`
+            }
+            : {
+                priority: 'low',
+                title: 'No duplicate-trip waste detected in visible rows.',
+                text: 'Continue checking time logs and petty cash after field work.'
+            },
+        (report.purposeCounts.billing || 0) >= 5
+            ? {
+                priority: 'medium',
+                title: 'Start email-first billing experiment.',
+                text: `${report.purposeCounts.billing || 0} billing/reading task${(report.purposeCounts.billing || 0) === 1 ? '' : 's'} in this schedule. Email billing first when no collection/payment visit is planned.`
+            }
+            : null,
+        report.lowDensity.length
+            ? {
+                priority: 'medium',
+                title: 'Review low-density routes.',
+                text: report.lowDensity.slice(0, 4).map((item) => `${item.staff}: ${item.schedules} task(s), ${item.locations} location(s)`).join('; ')
+            }
+            : null
+    ].filter(Boolean);
+
+    content.innerHTML = `
+        <div class="kaizen-grid">
+            <div class="kaizen-metric"><span>Schedules</span><strong>${report.rows.length}</strong></div>
+            <div class="kaizen-metric"><span>Unique Locations</span><strong>${report.uniqueLocations}</strong></div>
+            <div class="kaizen-metric"><span>Multi-Task Locations</span><strong>${report.duplicateLocationCount}</strong></div>
+            <div class="kaizen-metric"><span>Avoidable Trips</span><strong>${report.avoidableTrips}</strong></div>
+            <div class="kaizen-metric"><span>Est. Savings</span><strong>PHP ${report.estimatedSavings.toLocaleString()}</strong></div>
+        </div>
+        <div class="kaizen-layout">
+            <section class="kaizen-box">
+                <h3>Owner / Team Leader Direction</h3>
+                <div class="kaizen-list">
+                    ${ownerActions.map((item) => `
+                        <article class="kaizen-item ${escapeHtml(item.priority)}">
+                            <strong>${escapeHtml(item.title)}</strong>
+                            <p>${escapeHtml(item.text)}</p>
+                        </article>
+                    `).join('')}
+                    ${report.fieldAlerts.slice(0, 4).map((alert) => `
+                        <article class="kaizen-item high">
+                            <strong>${escapeHtml(alert.staff)} still has ${alert.pending} pending row${alert.pending === 1 ? '' : 's'}.</strong>
+                            <p>Team leader should clear, reassign, or confirm carryover before staff returns to office.</p>
+                        </article>
+                    `).join('')}
+                </div>
+            </section>
+            <section class="kaizen-box">
+                <h3>Recommended Actions Before Finalizing</h3>
+                <div class="kaizen-list">
+                    ${report.actions.length ? report.actions.slice(0, 12).map(renderKaizenAction).join('') : `
+                        <article class="kaizen-item">
+                            <strong>No same-location transfer needed.</strong>
+                            <p>The visible schedule has no multi-staff same-location conflict under current rules.</p>
+                        </article>
+                    `}
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function renderKaizenAction(action) {
+    const transferIds = action.transferRows.map((row) => row.scheduleId || row.referenceNo || row.docId).filter(Boolean);
+    return `
+        <article class="kaizen-item ${escapeHtml(action.priority)}">
+            <strong>${escapeHtml(action.location)}${action.branch ? ` / ${escapeHtml(action.branch)}` : ''}</strong>
+            <p>${escapeHtml(action.nextStep)}</p>
+            <ul>
+                ${action.rows.map((row) => `<li>#${escapeHtml(row.scheduleId || row.referenceNo || row.docId || '-')} ${escapeHtml(row.purpose)} - ${escapeHtml(row.assignedTo)}</li>`).join('')}
+            </ul>
+            <div class="kaizen-item-actions">
+                ${action.transferRows.length ? `<button class="kaizen-apply" type="button" onclick="applyKaizenTransfer(${action.id})">Apply Transfer</button>` : ''}
+                <span class="kaizen-note">${transferIds.length ? `Will move: ${escapeHtml(transferIds.join(', '))}` : 'Review manually'}</span>
+            </div>
+        </article>
+    `;
+}
+
+async function applyKaizenTransfer(actionId) {
+    const report = masterState.kaizen.report || buildKaizenReport();
+    const action = report.actions.find((item) => Number(item.id) === Number(actionId));
+    if (!action || !action.recommendedOwner || !action.transferRows.length || masterState.kaizen.applying) return;
+    const ownerEmployee = getStaffById(action.recommendedOwner.techId);
+    if (!ownerEmployee) {
+        alert(`Cannot apply transfer. ${action.recommendedOwner.assignedTo} is not loaded as an active staff record.`);
+        return;
+    }
+    const ok = window.confirm(`Transfer ${action.transferRows.length} schedule row(s) at ${action.location} to ${action.recommendedOwner.assignedTo}?`);
+    if (!ok) return;
+
+    masterState.kaizen.applying = true;
+    const count = document.getElementById('masterCount');
+    if (count) count.textContent = 'Applying Kaizen transfer...';
+    try {
+        for (const row of action.transferRows) {
+            const previousOwner = row.assignedTo || 'Unassigned';
+            await updateScheduleOwner(row, ownerEmployee);
+            await appendActivityLog(row, {
+                actionType: 'kaizen_transfer',
+                actionLabel: 'Kaizen Transfer',
+                detail: `Transferred from ${previousOwner} to ${action.recommendedOwner.assignedTo} to avoid duplicate same-location trip.`
+            });
+        }
+        await loadMasterSchedule();
+        masterState.kaizen.visible = true;
+        renderKaizenAdvisor(true);
+        alert(`Transferred ${action.transferRows.length} row(s) to ${action.recommendedOwner.assignedTo}.`);
+    } catch (error) {
+        console.error('Kaizen transfer failed:', error);
+        alert(`Kaizen transfer failed: ${error.message || error}`);
+        renderMasterSchedule();
+    } finally {
+        masterState.kaizen.applying = false;
+    }
+}
+
+window.applyKaizenTransfer = applyKaizenTransfer;
 
 function renderReadyTables(rows) {
     const groups = new Map();

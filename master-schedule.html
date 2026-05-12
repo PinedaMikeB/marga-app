@@ -204,6 +204,160 @@
             font-weight: 750;
         }
 
+        .kaizen-panel {
+            border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+            background: #f8fbff;
+            padding: 14px 16px 16px;
+        }
+
+        .kaizen-panel.hidden {
+            display: none;
+        }
+
+        .kaizen-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .kaizen-head h2 {
+            margin: 0;
+            color: #102f4f;
+            font-size: 20px;
+            line-height: 1.1;
+        }
+
+        .kaizen-head p {
+            margin: 4px 0 0;
+            color: #526f8d;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .kaizen-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(120px, 1fr));
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .kaizen-metric {
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 8px;
+            background: #fff;
+            padding: 10px;
+        }
+
+        .kaizen-metric span {
+            display: block;
+            color: #607991;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .kaizen-metric strong {
+            display: block;
+            color: #0f2f4c;
+            font-size: 24px;
+            line-height: 1;
+            margin-top: 5px;
+        }
+
+        .kaizen-layout {
+            display: grid;
+            grid-template-columns: minmax(280px, 0.85fr) minmax(420px, 1.4fr);
+            gap: 12px;
+        }
+
+        .kaizen-box {
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .kaizen-box h3 {
+            margin: 0;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            background: #eef6ff;
+            color: #163b60;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .kaizen-list {
+            display: grid;
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .kaizen-item {
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-left: 4px solid #2f80d1;
+            border-radius: 7px;
+            padding: 9px 10px;
+            background: #fff;
+        }
+
+        .kaizen-item.high {
+            border-left-color: #b42318;
+            background: #fff8f7;
+        }
+
+        .kaizen-item.medium {
+            border-left-color: #b7791f;
+        }
+
+        .kaizen-item strong {
+            display: block;
+            color: #152f4a;
+            font-size: 13px;
+        }
+
+        .kaizen-item p,
+        .kaizen-item ul {
+            margin: 5px 0 0;
+            color: #425c77;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .kaizen-item ul {
+            padding-left: 18px;
+        }
+
+        .kaizen-item-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .kaizen-apply {
+            border: 0;
+            border-radius: 7px;
+            background: #1f5ea8;
+            color: #fff;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+        }
+
+        .kaizen-note {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 750;
+        }
+
         .master-sheet {
             padding: 18px 22px 24px;
             background: #fff;
@@ -921,6 +1075,15 @@
                 text-align: left;
             }
 
+            .kaizen-grid,
+            .kaizen-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .kaizen-head {
+                display: grid;
+            }
+
             .settings-layout,
             .client-settings-grid,
             .client-form-grid,
@@ -1018,6 +1181,7 @@
                     <input type="date" id="masterForwardDateInput">
                 </div>
                 <button class="btn btn-secondary" id="masterForwardOpenBtn" type="button">Forward Open</button>
+                <button class="btn btn-secondary" id="masterKaizenBtn" type="button">Kaizen Advisor</button>
                 <button class="btn btn-primary" id="masterRefreshBtn" type="button">Refresh</button>
                 <button class="btn btn-secondary" id="masterPrintBtn" type="button">Print Schedule</button>
             </div>
@@ -1033,6 +1197,18 @@
                 <div class="master-card-head">
                     <strong>Schedule Format</strong>
                     <span id="masterCount">Loading schedules...</span>
+                </div>
+                <div class="kaizen-panel hidden" id="masterKaizenPanel">
+                    <div class="kaizen-head">
+                        <div>
+                            <h2>Operations Kaizen Advisor</h2>
+                            <p>Recommendations before finalizing schedule: eliminate duplicate trips, tighten time discipline, and reduce cost.</p>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" type="button" id="masterKaizenRefreshBtn">Analyze Again</button>
+                    </div>
+                    <div id="masterKaizenContent">
+                        <div class="master-empty">Click Kaizen Advisor to analyze this schedule.</div>
+                    </div>
                 </div>
                 <div class="master-sheet" id="masterScheduleSheet">
                     <div class="master-empty">Loading Master Schedule...</div>
