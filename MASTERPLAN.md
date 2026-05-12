@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-05-11
+Last Updated: 2026-05-12
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -85,8 +85,14 @@ This file exists to protect the project across new chats by recording:
 ### Phase 3A: Active Margabase Test Checkpoint - 2026-05-11 Night
 - Current intent:
   - Keep Firebase as production source of truth.
-  - Use Margabase side-by-side for admin comparison only.
+  - Margabase is temporarily disabled in the deployed app while background sync and parity checks are completed.
   - Do not cut over staff globally until sync completion and module parity are proven.
+- 2026-05-12 app safety lock:
+  - Commit `c2615ca` `Temporarily lock app to Firebase` was pushed to `main`.
+  - `shared/js/firebase-config.js` preserves the Margabase path behind `MARGABASE_ENABLED = false` so it can be re-enabled later.
+  - While disabled, old browser preferences and query-string backend overrides are cleared/ignored and the app forces the Firebase Firestore REST endpoint.
+  - Browsers with stale cached JS may need refresh/Hard Refresh once; current deployed assets use service worker cache `marga-app-shell-v50`.
+  - Re-enable Margabase only after sync status, record counts, Collections business outputs, and module parity match Firebase closely enough for a deliberate cutover test.
 - App-side test controls completed and pushed:
   - Admin Settings includes a `Database` tab for browser-local Firebase/Margabase switching.
   - Collections includes a `Database Compare Snapshot` scorecard.

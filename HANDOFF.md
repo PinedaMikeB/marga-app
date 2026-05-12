@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-05-11
+Last Updated: 2026-05-12
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -43,6 +43,13 @@ Start every new Marga-App thread by reading:
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
 
 ## Margabase Migration Checkpoint - 2026-05-11 Night
+- 2026-05-12 temporary safety update:
+  - Commit `c2615ca` `Temporarily lock app to Firebase` was pushed to `main`.
+  - `shared/js/firebase-config.js` now keeps the Margabase code path behind `MARGABASE_ENABLED = false`.
+  - While this flag is false, the deployed app ignores/clears saved `marga_data_backend=margabase` and `marga_api_base_url` browser preferences, ignores Margabase query-string intent, and forces `window.FIREBASE_CONFIG.baseUrl` to the Firestore REST endpoint.
+  - Remote browsers that receive the current JS should silently reconnect to Firebase; if a browser is still on old cached assets and attempts Margabase, use a normal refresh or app Hard Refresh so service worker cache `marga-app-shell-v50` pulls the Firebase-only config.
+  - Admin Settings and Collections now describe the lock as temporary. Do not remove the Margabase path; re-enable only after background sync completes and record/parity checks match Firebase.
+  - Before re-enabling, verify sync status, compare exact Firebase vs Margabase counts/business outputs, and flip the flag deliberately instead of using ad hoc browser localStorage.
 - Public temporary Margabase test access is working through Cloudflare Quick Tunnel:
   - Tunnel URL: `https://interference-climbing-vitamins-acting.trycloudflare.com`
   - Margabase Collections test URL: `https://interference-climbing-vitamins-acting.trycloudflare.com/collections.html?marga_backend=margabase&marga_api_base_url=/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents`
