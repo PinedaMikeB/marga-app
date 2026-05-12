@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v49';
+const CACHE_NAME = 'marga-app-shell-v50';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260511-database-compare-1',
+    '/collections/js/collections.js?v=20260512-firebase-only-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260511-end-of-day-review-1',
@@ -58,14 +58,14 @@ const SHELL_ASSETS = [
     '/settings/',
     '/settings/index.html',
     '/settings/css/settings.css',
-    '/settings/js/settings.js',
+    '/settings/js/settings.js?v=20260512-firebase-only-1',
     '/sync/',
     '/sync/index.html',
     '/sync/css/sync.css',
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
-    '/shared/js/firebase-config.js',
+    '/shared/js/firebase-config.js?v=20260512-firebase-only-1',
     '/shared/js/auth.js?v=20260511-server-login-1',
     '/shared/js/utils.js?v=20260511-active-staff-1',
     '/shared/js/finance-accounts.js',

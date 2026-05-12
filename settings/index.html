@@ -359,10 +359,10 @@
                             <div class="role-editor-header">
                                 <div>
                                     <h4>Database Settings</h4>
-                                    <p class="ops-subtext">Admin-only backend switch for comparing Firebase and Margabase during migration.</p>
+                                    <p class="ops-subtext">Firebase is temporarily locked as the active production database while Margabase sync is being verified.</p>
                                 </div>
                                 <div class="settings-module-toolbar">
-                                    <button type="button" class="btn btn-secondary btn-sm" id="testMargabaseBtn">Test Margabase</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="testMargabaseBtn" disabled>Margabase Disabled</button>
                                     <button type="button" class="btn btn-primary btn-sm" id="applyDatabaseBackendBtn">Apply &amp; Reload</button>
                                 </div>
                             </div>
@@ -375,8 +375,8 @@
                                 </div>
                                 <div class="database-status-card">
                                     <span>Margabase Local API</span>
-                                    <strong id="margabaseHealthLabel">Not tested</strong>
-                                    <p id="margabaseHealthDetail">Run the local API before switching to Margabase.</p>
+                                    <strong id="margabaseHealthLabel">Disabled</strong>
+                                    <p id="margabaseHealthDetail">Margabase is temporarily disabled until background sync and record parity are verified.</p>
                                 </div>
                             </div>
 
@@ -385,39 +385,38 @@
                                     <input type="radio" name="databaseBackend" value="firebase">
                                     <span>
                                         <strong>Firebase</strong>
-                                        <small>Current production source of truth. Use this during office hours and when Margabase API is unavailable.</small>
+                                        <small>Current production source of truth. This browser and all modules are locked to Firebase.</small>
                                     </span>
                                 </label>
                                 <label class="database-choice" id="databaseChoiceMargabase">
-                                    <input type="radio" name="databaseBackend" value="margabase">
+                                    <input type="radio" name="databaseBackend" value="margabase" disabled>
                                     <span>
                                         <strong>Margabase</strong>
-                                        <small>Local Postgres/Supabase-compatible backend at 127.0.0.1 for testing and side-by-side comparison.</small>
+                                        <small>Temporarily disabled. Re-enable only after sync matches Firebase records.</small>
                                     </span>
                                 </label>
                             </div>
 
                             <div class="settings-sync-box database-warning-box">
-                                <div class="settings-sync-title">Migration Safety</div>
-                                <div class="ops-subtext">This switch changes only this browser. It does not change other staff devices and does not cut production over. Pages reload after switching so every module reads from the selected backend.</div>
+                                <div class="settings-sync-title">Database Safety</div>
+                                <div class="ops-subtext">Old Margabase browser preferences are cleared automatically on load while the temporary lock is active.</div>
                             </div>
 
                             <div class="settings-sync-box database-sync-box">
-                                <div class="settings-sync-title">Firebase to Margabase Sync</div>
-                                <div class="ops-subtext">Use these local-only controls after office hours or before comparing data. They call the Margabase service on this Mac.</div>
+                                <div class="settings-sync-title">Margabase Controls</div>
+                                <div class="ops-subtext">Disabled while the app is temporarily locked to Firebase.</div>
                                 <div class="settings-sync-actions">
-                                    <button type="button" class="btn btn-secondary btn-sm" id="refreshDatabaseSyncStatusBtn">Refresh Status</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="refreshDatabaseSyncStatusBtn" disabled>Refresh Status</button>
                                     <button type="button" class="btn btn-secondary btn-sm" id="hardRefreshAppBtn">Hard Refresh App</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" id="deriveMargabaseBtn">Refresh Relational Tables</button>
-                                    <button type="button" class="btn btn-primary btn-sm" id="runMargabaseSyncBtn">Run Firebase Sync</button>
-                                    <a class="btn btn-secondary btn-sm database-link-btn" href="http://127.0.0.1:4321" target="_blank" rel="noopener">Open Progress</a>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="deriveMargabaseBtn" disabled>Refresh Relational Tables</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="runMargabaseSyncBtn" disabled>Sync Disabled</button>
+                                    <a class="btn btn-secondary btn-sm database-link-btn" aria-disabled="true">Progress Disabled</a>
                                 </div>
-                                <pre class="database-command" id="databaseSyncCommand">cd "/Volumes/Wotg Drive Mike/GitHub/marga-platform"
-npm run import:firebase</pre>
-                                <div class="ops-subtext" id="databaseSyncStatus">Sync status not checked yet.</div>
+                                <pre class="database-command" id="databaseSyncCommand">Margabase sync controls are temporarily disabled. The web app is locked to Firebase.</pre>
+                                <div class="ops-subtext" id="databaseSyncStatus">Margabase sync status is disabled.</div>
                             </div>
 
-                            <div class="ops-subtext" id="databaseSettingsStatus">Choose a backend, then Apply &amp; Reload.</div>
+                            <div class="ops-subtext" id="databaseSettingsStatus">Firebase is temporarily locked as the active database.</div>
                         </div>
                     </div>
                 </div>
@@ -626,12 +625,12 @@ npm run import:firebase</pre>
         </div>
     </div>
 
-    <script src="../shared/js/firebase-config.js?v=20260511-storage-fallback-1"></script>
+    <script src="../shared/js/firebase-config.js?v=20260512-firebase-only-1"></script>
     <script src="../shared/js/auth.js"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="js/settings.js?v=20260511-database-settings-1"></script>
+    <script src="js/settings.js?v=20260512-firebase-only-1"></script>
 </body>
 </html>

@@ -224,15 +224,11 @@ function formatCurrency(amount) {
 
 function getActiveDatabaseBackend() {
     if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
-    try {
-        return localStorage.getItem('marga_data_backend') === 'margabase' ? 'margabase' : 'firebase';
-    } catch (err) {
-        return 'firebase';
-    }
+    return 'firebase';
 }
 
 function getActiveDatabaseBackendLabel() {
-    return getActiveDatabaseBackend() === 'margabase' ? 'Margabase' : 'Firebase';
+    return 'Firebase';
 }
 
 function readCollectionsCompareSnapshots() {
@@ -298,7 +294,7 @@ function buildCollectionsCompareSnapshot() {
 
     return {
         backend,
-        backendLabel: backend === 'margabase' ? 'Margabase' : 'Firebase',
+        backendLabel: 'Firebase',
         savedAt: new Date().toISOString(),
         loadSeconds: Math.max(0, (performance.now() - COLLECTIONS_LOAD_STARTED_AT) / 1000),
         filteredInvoices: filteredInvoices.length,
@@ -323,21 +319,19 @@ function renderCollectionsCompareScorecard() {
 
     const current = buildCollectionsCompareSnapshot();
     const snapshots = readCollectionsCompareSnapshots();
-    const otherKey = current.backend === 'margabase' ? 'firebase' : 'margabase';
-    const other = snapshots[otherKey] || null;
     const currentSaved = snapshots[current.backend] || null;
 
     if (subtitle) {
-        subtitle.textContent = `${current.backendLabel} render. Save this snapshot before and after switching so counts can be compared without guessing.`;
+        subtitle.textContent = `${current.backendLabel} render. Save this snapshot to compare against later Firebase runs.`;
     }
 
     const metrics = [
         ['Backend', current.backendLabel, `${current.loadSeconds.toFixed(1)}s since page load`],
-        ['Filtered Invoices', formatSnapshotNumber(current.filteredInvoices), formatSnapshotDelta(current.filteredInvoices, other?.filteredInvoices, other?.backendLabel)],
-        ['All Loaded Invoices', formatSnapshotNumber(current.allInvoices), formatSnapshotDelta(current.allInvoices, other?.allInvoices, other?.backendLabel)],
-        ['Total Unpaid', formatSnapshotMoney(current.totalUnpaid), formatSnapshotDelta(current.totalUnpaid, other?.totalUnpaid, other?.backendLabel, true)],
-        ['Customer Rows', formatSnapshotNumber(current.customerRows), formatSnapshotDelta(current.customerRows, other?.customerRows, other?.backendLabel)],
-        ['Pending Cells', formatSnapshotNumber(current.pendingCells), formatSnapshotDelta(current.pendingCells, other?.pendingCells, other?.backendLabel)],
+        ['Filtered Invoices', formatSnapshotNumber(current.filteredInvoices), 'Firebase current render'],
+        ['All Loaded Invoices', formatSnapshotNumber(current.allInvoices), 'Firebase current render'],
+        ['Total Unpaid', formatSnapshotMoney(current.totalUnpaid), 'Firebase current render'],
+        ['Customer Rows', formatSnapshotNumber(current.customerRows), 'Firebase current render'],
+        ['Pending Cells', formatSnapshotNumber(current.pendingCells), 'Firebase current render'],
         ['Bill Records', formatSnapshotNumber(current.durationBillCount), `${formatSnapshotMoney(current.durationBill)} total`],
         ['Payment Records', formatSnapshotNumber(current.durationCollectionsCount), `${formatSnapshotMoney(current.durationCollections)} total`],
         ['Month Range', current.range, 'Collector matrix window'],
@@ -354,8 +348,7 @@ function renderCollectionsCompareScorecard() {
 
     if (saved) {
         const firebaseSaved = snapshots.firebase ? `Firebase ${new Date(snapshots.firebase.savedAt).toLocaleString('en-PH')}` : 'Firebase not saved';
-        const margabaseSaved = snapshots.margabase ? `Margabase ${new Date(snapshots.margabase.savedAt).toLocaleString('en-PH')}` : 'Margabase not saved';
-        saved.textContent = `${firebaseSaved}. ${margabaseSaved}.`;
+        saved.textContent = firebaseSaved;
     }
 }
 

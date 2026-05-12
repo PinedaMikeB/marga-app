@@ -22,7 +22,6 @@ const SETTINGS_STATE = {
 
 const BILLING_PRINT_POLICY_DOC_ID = 'billing_printing_policy_v1';
 const DATABASE_BACKEND_STORAGE_KEY = 'marga_data_backend';
-const MARGABASE_ADMIN_BASE_URL = 'http://127.0.0.1:8787';
 
 const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
@@ -241,20 +240,16 @@ function setActiveTab(tab) {
 }
 
 function getStoredDatabaseBackend() {
-    if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
-    try {
-        return localStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
-    } catch (err) {
-        return 'firebase';
-    }
+    writeDatabaseBackendPreference('firebase');
+    return 'firebase';
 }
 
 function getSelectedDatabaseBackend() {
-    return document.querySelector('input[name="databaseBackend"]:checked')?.value === 'margabase' ? 'margabase' : 'firebase';
+    return 'firebase';
 }
 
 function formatBackendLabel(backend) {
-    return backend === 'margabase' ? 'Margabase' : 'Firebase';
+    return 'Firebase';
 }
 
 function formatSyncTime(value) {
@@ -267,14 +262,14 @@ function formatSyncTime(value) {
 }
 
 function setDatabaseChoice(backend) {
-    const next = backend === 'margabase' ? 'margabase' : 'firebase';
     document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
-        input.checked = input.value === next;
+        input.checked = input.value === 'firebase';
+        input.disabled = input.value !== 'firebase';
     });
-    document.getElementById('databaseChoiceFirebase')?.classList.toggle('active', next === 'firebase');
-    document.getElementById('databaseChoiceMargabase')?.classList.toggle('active', next === 'margabase');
+    document.getElementById('databaseChoiceFirebase')?.classList.add('active');
+    document.getElementById('databaseChoiceMargabase')?.classList.remove('active');
     const status = document.getElementById('databaseSettingsStatus');
-    if (status) status.textContent = `Ready to switch this browser to ${formatBackendLabel(next)}. Apply reloads the page.`;
+    if (status) status.textContent = 'Firebase is temporarily locked as the active database while Margabase sync is verified.';
 }
 
 function renderDatabaseSettings() {
@@ -289,43 +284,28 @@ function renderDatabaseSettings() {
     }
     const command = document.getElementById('databaseSyncCommand');
     if (command) {
-        command.textContent = [
-            'cd "/Volumes/Wotg Drive Mike/GitHub/marga-platform"',
-            'npm run import:firebase',
-            'node scripts/import-firebase-to-margabase.mjs --app=margabase --derive-only'
-        ].join('\n');
+        command.textContent = 'Margabase sync controls are temporarily disabled. The web app is locked to Firebase.';
     }
 }
 
 async function testMargabaseConnection() {
     const label = document.getElementById('margabaseHealthLabel');
     const detail = document.getElementById('margabaseHealthDetail');
-    if (label) label.textContent = 'Testing...';
-    if (detail) detail.textContent = 'Checking local Margabase API on 127.0.0.1:8787.';
-    try {
-        const response = await fetch(`${MARGABASE_ADMIN_BASE_URL}/health`, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const body = await response.json();
-        if (label) label.textContent = body.ok ? 'Online' : 'Responded';
-        if (detail) detail.textContent = 'Margabase local API is reachable from this browser.';
-        return true;
-    } catch (err) {
-        if (label) label.textContent = 'Offline';
-        if (detail) detail.textContent = `Start Margabase API first. ${err.message || err}`;
-        return false;
-    }
+    if (label) label.textContent = 'Disabled';
+    if (detail) detail.textContent = 'Margabase is temporarily disabled. This browser will use Firebase only.';
+    return false;
 }
 
 function writeDatabaseBackendPreference(backend) {
     if (window.MargaBackendPreference?.write) return window.MargaBackendPreference.write(backend);
     try {
-        if (backend === 'margabase') localStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
-        else localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+        localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+        localStorage.removeItem('marga_api_base_url');
         return true;
     } catch (err) {
         try {
-            if (backend === 'margabase') sessionStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
-            else sessionStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+            sessionStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+            sessionStorage.removeItem('marga_api_base_url');
             return true;
         } catch (sessionErr) {
             return false;
@@ -335,18 +315,11 @@ function writeDatabaseBackendPreference(backend) {
 
 async function applyDatabaseBackend() {
     if (!MargaAuth.isAdmin()) {
-        alert('Only admin can switch database backend.');
+        alert('Only admin can refresh database settings.');
         return;
     }
-    const backend = getSelectedDatabaseBackend();
-    if (backend === 'margabase') {
-        const online = await testMargabaseConnection();
-        if (!online && !confirm('Margabase API is not responding. Switch this browser anyway?')) return;
-        writeDatabaseBackendPreference('margabase');
-    } else {
-        writeDatabaseBackendPreference('firebase');
-    }
-    document.getElementById('databaseSettingsStatus').textContent = `Switching to ${formatBackendLabel(backend)}...`;
+    writeDatabaseBackendPreference('firebase');
+    document.getElementById('databaseSettingsStatus').textContent = 'Reloading with Firebase...';
     window.location.reload();
 }
 
@@ -375,47 +348,12 @@ function summarizeLatestRun(run) {
 async function refreshDatabaseSyncStatus({ quiet = false } = {}) {
     const status = document.getElementById('databaseSyncStatus');
     if (!status) return;
-    if (!quiet) status.textContent = 'Checking Margabase sync status...';
-    try {
-        const response = await fetch(`${MARGABASE_ADMIN_BASE_URL}/admin/sync/status`, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const body = await response.json();
-        const latest = body.latestRuns?.[0] || null;
-        const active = body.activeSync;
-        const totalText = `${Number(body.totals?.rawDocuments || 0).toLocaleString()} raw docs across ${Number(body.totals?.collections || 0).toLocaleString()} collection(s)`;
-        const activeText = active?.running
-            ? `Running ${active.mode} sync since ${formatSyncTime(active.startedAt)}. PID ${active.pid}.`
-            : active
-                ? `Last local button job finished with exit code ${active.exitCode}.`
-                : 'No local button job is running.';
-        status.textContent = `${activeText} ${totalText}. ${summarizeLatestRun(latest)}`;
-    } catch (err) {
-        status.textContent = `Cannot reach Margabase sync service. Start the local API, or run the command shown above. ${err.message || err}`;
-    }
+    status.textContent = 'Margabase sync status is temporarily disabled. The web app is locked to Firebase.';
 }
 
 async function runMargabaseSync(mode) {
-    if (!MargaAuth.isAdmin()) {
-        alert('Only admin can run Margabase sync.');
-        return;
-    }
-    const label = mode === 'derive' ? 'refresh relational tables' : 'run Firebase sync';
-    if (mode !== 'derive' && !confirm('Run one more Firebase to Margabase sync now? This is best after office hours so the comparison is clean.')) return;
     const status = document.getElementById('databaseSyncStatus');
-    if (status) status.textContent = `Starting ${label}...`;
-    try {
-        const response = await fetch(`${MARGABASE_ADMIN_BASE_URL}/admin/sync/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode })
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.error?.message || `HTTP ${response.status}`);
-        if (status) status.textContent = `${formatBackendLabel('margabase')} ${label} started. PID ${body.sync?.pid || 'unknown'}. Open Progress to watch percentage and ETA.`;
-        setTimeout(() => refreshDatabaseSyncStatus({ quiet: true }), 1500);
-    } catch (err) {
-        if (status) status.textContent = `Could not start ${label}. ${err.message || err}`;
-    }
+    if (status) status.textContent = 'Margabase sync controls are temporarily disabled. Use Firebase only.';
 }
 
 function parseFirestoreValue(value) {
