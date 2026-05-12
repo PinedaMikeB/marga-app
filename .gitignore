@@ -9,6 +9,7 @@ local-sync/state/
 local-sync/node_modules/
 local-sync/output/
 local-dotmatrix/dist/
+reports/operations-kaizen/
 
 # Local Netlify folder
 .netlify
