@@ -8,7 +8,10 @@ const MASTER_LIMIT = 1200;
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const MASTER_ACTIVITY_COLLECTION = 'marga_master_schedule_activity';
+const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const PENDING_NOT_ROUTED_LOOKBACK_DAYS = 45;
+const PENDING_CARRYOVER_START_DATE = '2026-05-04';
+const REQUIRED_PRIORITY_COUNT = 5;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -101,7 +104,8 @@ const masterState = {
         models: new Map(),
         deliveryInfoByBranch: new Map(),
         serviceRequests: new Map(),
-        finalDeliveryReceipts: new Map()
+        finalDeliveryReceipts: new Map(),
+        closeRequestsBySchedule: new Map()
     },
     activityLogs: new Map(),
     routeForwarding: false,
@@ -654,6 +658,17 @@ function routeDocIdFor(scheduleId, targetDate) {
     return String(Number(`${datePart}${schedulePart}`));
 }
 
+function nowDbDateTime() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
 function isOpenScheduleRow(row) {
     if (!row) return false;
     if (clean(row.status).toLowerCase() === 'cancelled') return false;
@@ -1119,6 +1134,7 @@ function buildLegacyScheduleRow(row) {
         status: lifecycle,
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
         routeDate: dateOnly(getRouteTaskDateTime(row)),
         daysPending: originalDate ? daysBetween(originalDate, selectedDate) : '',
@@ -1169,6 +1185,7 @@ function buildWebScheduleRow(row) {
         status: clean(row.status || 'Active') || 'Active',
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
         routeDate: selectedDate,
         daysPending: daysBetween(originalDate, selectedDate),
@@ -1215,6 +1232,7 @@ function buildPlannerScheduleRow(row) {
         status: row.planner_status || row.task_status || 'Suggested',
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
         routeDate: selectedDate,
         daysPending: daysBetween(originalDate, selectedDate),
@@ -1273,12 +1291,30 @@ async function hydrateReadyLookups(rows) {
     await queryByReferenceIds('tbl_finaldr', finalDrIds, masterState.lookups.finalDeliveryReceipts);
 }
 
+function loadCloseRequestLookup(rows = []) {
+    masterState.lookups.closeRequestsBySchedule = new Map();
+    rows
+        .filter((row) => clean(row.status || 'pending').toLowerCase() === 'pending')
+        .forEach((row) => {
+            const scheduleId = String(row.schedule_id || '');
+            if (!scheduleId) return;
+            const current = masterState.lookups.closeRequestsBySchedule.get(scheduleId);
+            if (!current || clean(row.requested_at).localeCompare(clean(current.requested_at)) > 0) {
+                masterState.lookups.closeRequestsBySchedule.set(scheduleId, row);
+            }
+        });
+}
+
 async function loadPendingNotRoutedRows(date, routeRows) {
     const routedIds = new Set(routeRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0));
-    const staffIds = new Set(routeRows.map(getAssignedStaffId).filter(Boolean));
+    const staffIds = new Set(scheduleStaffOptions().map((employee) => Number(employee.id || 0)).filter(Boolean));
+    routeRows.map(getAssignedStaffId).filter(Boolean).forEach((id) => staffIds.add(Number(id)));
     if (!staffIds.length) return [];
 
-    const sinceDate = addDays(date, -PENDING_NOT_ROUTED_LOOKBACK_DAYS);
+    const lookbackDate = addDays(date, -PENDING_NOT_ROUTED_LOOKBACK_DAYS);
+    const sinceDate = PENDING_CARRYOVER_START_DATE && PENDING_CARRYOVER_START_DATE > lookbackDate
+        ? PENDING_CARRYOVER_START_DATE
+        : lookbackDate;
     const pendingRows = [];
     const days = [];
     for (let cursor = sinceDate; cursor && cursor < date; cursor = addDays(cursor, 1)) {
@@ -1375,12 +1411,13 @@ async function loadMasterSchedule() {
         await ensureSettingsData();
         const start = `${date} 00:00:00`;
         const end = `${date} 23:59:59`;
-        const [scheduleDocs, printedDocs, savedDocs, plannerDocs, webDocs] = await Promise.all([
+        const [scheduleDocs, printedDocs, savedDocs, plannerDocs, webDocs, closeRequestDocs] = await Promise.all([
             queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
             queryDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', start, end).catch(() => []),
             queryDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', start, end).catch(() => []),
             queryEquals('tbl_schedule_planner', 'schedule_date', date).catch(() => []),
-            queryEquals('marga_master_schedule', 'schedule_date', date).catch(() => [])
+            queryEquals('marga_master_schedule', 'schedule_date', date).catch(() => []),
+            queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending').catch(() => [])
         ]);
 
         const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
@@ -1402,6 +1439,8 @@ async function loadMasterSchedule() {
         const lookupRows = [...legacyRows, ...pendingRawRows];
         const plannerRows = plannerDocs.map(parseFirestoreDoc);
         const webRows = webDocs.map(parseFirestoreDoc);
+        const closeRequestRows = closeRequestDocs.map(parseFirestoreDoc).filter(Boolean);
+        loadCloseRequestLookup(closeRequestRows);
         await hydrateLegacyLookups(lookupRows);
         await hydrateReadyLookups(lookupRows);
 
@@ -1410,15 +1449,21 @@ async function loadMasterSchedule() {
         masterState.rows = [
             ...webRows.map(buildWebScheduleRow),
             ...legacyRows.map(buildLegacyScheduleRow),
+            ...pendingRawRows.map(buildLegacyScheduleRow),
             ...plannerRows.map(buildPlannerScheduleRow)
         ].sort((a, b) => {
             if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
+            const ap = schedulePriorityValue(a);
+            const bp = schedulePriorityValue(b);
+            if (ap && bp && ap !== bp) return ap - bp;
+            if (ap && !bp) return -1;
+            if (!ap && bp) return 1;
             if (a.readyStatus !== b.readyStatus) return ['YES', 'NO', 'N/A'].indexOf(a.readyStatus) - ['YES', 'NO', 'N/A'].indexOf(b.readyStatus);
             if (a.area !== b.area) return a.area.localeCompare(b.area);
             if (a.purpose !== b.purpose) return a.purpose.localeCompare(b.purpose);
             return a.customer.localeCompare(b.customer);
         });
-        masterState.pendingRows = pendingRawRows.map(buildLegacyScheduleRow);
+        masterState.pendingRows = [];
 
         renderMasterSchedule();
         renderSettingsIfVisible();
@@ -1455,6 +1500,49 @@ function readySortValue(value) {
     if (value === 'YES') return 0;
     if (value === 'NO') return 1;
     return 2;
+}
+
+function schedulePriorityValue(row) {
+    const value = Number(row?.priorityOrder || row?.master_priority_order || row?.priority || 0);
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function staffPrioritySummary(rows = []) {
+    const activeRows = rows.filter(isOpenScheduleRow);
+    const byStaff = new Map();
+    activeRows.forEach((row) => {
+        const key = row.assignedTo || 'Unassigned';
+        if (!byStaff.has(key)) byStaff.set(key, []);
+        byStaff.get(key).push(row);
+    });
+    return Array.from(byStaff.entries()).map(([staff, staffRows]) => {
+        const required = Math.min(REQUIRED_PRIORITY_COUNT, staffRows.length);
+        const numbered = staffRows.filter((row) => schedulePriorityValue(row) > 0).length;
+        return { staff, total: staffRows.length, required, numbered, remaining: Math.max(0, required - numbered) };
+    }).filter((item) => item.required > 0);
+}
+
+function renderPriorityGate(rows = []) {
+    const summaries = staffPrioritySummary(rows);
+    if (!summaries.length) return '';
+    const incomplete = summaries.filter((item) => item.remaining > 0);
+    const complete = summaries.length - incomplete.length;
+    return `
+        <section class="master-priority-gate ${incomplete.length ? 'needs-work' : 'ready'}">
+            <div>
+                <h2>Priority Order Gate</h2>
+                <p>${incomplete.length
+                    ? `Field App stays locked for ${incomplete.length} staff member${incomplete.length === 1 ? '' : 's'} until at least the first ${REQUIRED_PRIORITY_COUNT} open schedules are numbered.`
+                    : `All staff with open schedules have their first required priorities numbered.`}</p>
+            </div>
+            <div class="priority-gate-list">
+                ${incomplete.slice(0, 8).map((item) => `
+                    <span>${escapeHtml(item.staff)}: ${item.numbered}/${item.required}</span>
+                `).join('')}
+                ${complete ? `<span>${complete} staff ready</span>` : ''}
+            </div>
+        </section>
+    `;
 }
 
 function renderMasterSchedule() {
@@ -1507,6 +1595,7 @@ function renderMasterSchedule() {
                 ${searchQuery ? `<span>Search: ${escapeHtml(searchQuery)}</span>` : ''}
             </div>
         </section>
+        ${renderPriorityGate(rows)}
         ${Array.from(groups.entries()).map(([group, groupRows]) => `
             <section class="master-group">
                 <h2>${escapeHtml(group)}</h2>
@@ -1767,7 +1856,14 @@ function renderReadyTables(rows) {
     const groups = new Map();
     rows
         .slice()
-        .sort((a, b) => readySortValue(a.readyStatus) - readySortValue(b.readyStatus) || Number(b.daysPending || 0) - Number(a.daysPending || 0))
+        .sort((a, b) => {
+            const ap = schedulePriorityValue(a);
+            const bp = schedulePriorityValue(b);
+            if (ap && bp && ap !== bp) return ap - bp;
+            if (ap && !bp) return -1;
+            if (!ap && bp) return 1;
+            return readySortValue(a.readyStatus) - readySortValue(b.readyStatus) || Number(b.daysPending || 0) - Number(a.daysPending || 0);
+        })
         .forEach((row) => {
             const key = row.readyStatus || 'N/A';
             if (!groups.has(key)) groups.set(key, []);
@@ -1788,6 +1884,7 @@ function renderScheduleTable(rows) {
             <thead>
                 <tr>
                     <th>TIN #</th>
+                    <th>Priority</th>
                     <th>Customer / Branch</th>
                     <th>Purpose</th>
                     <th>Model</th>
@@ -1832,14 +1929,19 @@ function renderPendingNotRouted(rows) {
 function renderMasterScheduleRow(row) {
     const staffOptions = renderStaffSelectOptions(row);
     const readyClass = readyClassName(row.readyStatus);
-    const canMove = row.sourceBucket !== 'pending-not-routed';
+    const canMove = true;
     const displayStatus = row.masterStatusLabel || 'Not Set';
     const displayStatusClass = row.masterStatusValue ? statusClassName(row.masterStatusValue) : '';
     const canForward = isOpenScheduleRow(row);
     const defaultForwardDate = clean(document.getElementById('masterForwardDateInput')?.value) || addDays(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()), 1);
+    const priorityValue = schedulePriorityValue(row);
+    const closeRequest = masterState.lookups.closeRequestsBySchedule.get(String(row.scheduleId || ''));
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td data-label="TIN #">${escapeHtml(row.tin || '-')}</td>
+            <td data-label="Priority" class="priority-cell">
+                <input class="schedule-priority-input" type="number" min="1" max="999" inputmode="numeric" value="${priorityValue ? escapeHtml(priorityValue) : ''}" onchange="saveSchedulePriority('${escapeHtml(row.rowKey)}', this.value)" aria-label="Priority order">
+            </td>
             <td data-label="Customer / Branch" class="schedule-account-cell">
                 <strong>${escapeHtml(row.customer || '-')}</strong>
                 <span>${escapeHtml(row.branch || '-')}</span>
@@ -1860,6 +1962,13 @@ function renderMasterScheduleRow(row) {
             <td data-label="Status" class="status-cell">
                 <div class="schedule-status-cell">
                     <span class="schedule-status-label ${escapeHtml(displayStatusClass)}">${escapeHtml(displayStatus)}</span>
+                    ${closeRequest ? `
+                        <div class="schedule-close-request">
+                            <strong>Close requested</strong>
+                            <span>${escapeHtml(closeRequest.requester_name || `Staff #${closeRequest.requester_staff_id || ''}`)}: ${escapeHtml(closeRequest.reason || 'Already done')}</span>
+                            <button type="button" onclick="approveCloseRequest('${escapeHtml(row.rowKey)}')">Approve Close</button>
+                        </div>
+                    ` : ''}
                     <button type="button" class="schedule-status-view" onclick="openMasterStatusModal('${escapeHtml(row.rowKey)}')">View</button>
                     <div class="schedule-forward-tools">
                         <input class="schedule-forward-date" type="date" value="${escapeHtml(defaultForwardDate)}" aria-label="Forward date" ${canForward ? '' : 'disabled'}>
@@ -1902,7 +2011,7 @@ async function updateScheduleOwner(row, employee) {
     const staffName = employeeName(employee, staffId);
     if (!row || !staffId) return;
 
-    if (row.source === 'legacy' || row.source === 'legacy-route') {
+    if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
         await updateDocFields('tbl_schedule', row.docId, { tech_id: Number(staffId) || staffId });
     } else if (row.source === 'web') {
         await updateDocFields('marga_master_schedule', row.docId, {
@@ -1921,6 +2030,39 @@ async function updateScheduleOwner(row, employee) {
     row.techId = staffId;
     row.assignedTo = staffName;
     refreshMasterRowSearch(row);
+}
+
+async function saveSchedulePriority(rowKey, rawValue) {
+    const row = findScheduleRow(rowKey);
+    if (!row) return;
+    const value = Number(rawValue || 0);
+    const priority = Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        priority,
+        master_priority_order: priority,
+        master_priority_updated_at: nowIso,
+        master_priority_updated_by: currentActorLabel()
+    };
+
+    try {
+        if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
+            await updateDocFields('tbl_schedule', row.docId, payload);
+        } else if (row.source === 'web') {
+            await updateDocFields('marga_master_schedule', row.docId, payload);
+        } else if (row.source === 'planner') {
+            await updateDocFields('tbl_schedule_planner', row.docId, payload);
+        }
+        row.priorityOrder = priority;
+        row.priority = priority;
+        row.master_priority_order = priority;
+        refreshMasterRowSearch(row);
+        renderMasterSchedule();
+    } catch (error) {
+        console.error('Priority save failed:', error);
+        window.alert(`Unable to save priority: ${error.message || error}`);
+        renderMasterSchedule();
+    }
 }
 
 async function saveScheduleStatus(row, nextStatusValue) {
@@ -1946,6 +2088,58 @@ async function saveScheduleStatus(row, nextStatusValue) {
     row.readyStatus = readyStatusForSchedule(row);
     row.readyLabel = readyLabel(row.readyStatus);
     refreshMasterRowSearch(row);
+}
+
+async function approveCloseRequest(rowKey) {
+    const row = findScheduleRow(rowKey);
+    if (!row) return;
+    const request = masterState.lookups.closeRequestsBySchedule.get(String(row.scheduleId || ''));
+    if (!request) return;
+    const ok = window.confirm(`Approve close request for ${row.customer || 'this schedule'}?\n\nThis will mark the schedule closed without requiring the field staff to go back on-site.`);
+    if (!ok) return;
+
+    const nowIso = new Date().toISOString();
+    const finishTime = nowDbDateTime();
+    const actor = currentActorLabel();
+    const schedulePayload = {
+        date_finished: finishTime,
+        closedby: Number(request.requester_staff_id || row.techId || 0) || 0,
+        master_schedule_status: 'closed_fixed',
+        master_schedule_status_label: statusLabel('closed_fixed'),
+        master_schedule_status_updated_at: nowIso,
+        master_schedule_status_updated_by: actor,
+        close_request_approved_at: nowIso,
+        close_request_approved_by: actor
+    };
+    const requestPayload = {
+        status: 'approved',
+        approved_at: nowIso,
+        approved_by: actor,
+        closed_schedule_at: finishTime
+    };
+
+    try {
+        await updateDocFields('tbl_schedule', row.docId, schedulePayload);
+        if (row.routeSource && row.routeId && row.routeSource !== 'Schedule') {
+            const routeCollection = String(row.routeSource).toLowerCase().includes('printed') ? ROUTE_COLLECTION_PRIMARY : ROUTE_COLLECTION_FALLBACK;
+            await updateDocFields(routeCollection, row.routeId, {
+                status: 0,
+                date_finished: finishTime,
+                timestmp: nowIso,
+                bridge_pushed_at: nowIso
+            }).catch((error) => console.warn('Route close update failed; schedule was closed.', error));
+        }
+        await updateDocFields(CLOSE_REQUEST_COLLECTION, request._docId || request.id, requestPayload);
+        await appendActivityLog(row, {
+            actionType: 'approve_close_request',
+            actionLabel: 'Close Request Approved',
+            detail: `Approved close request from ${request.requester_name || `staff #${request.requester_staff_id || ''}`}.`
+        }).catch((error) => console.warn('Close approval activity log failed:', error));
+        await loadMasterSchedule();
+    } catch (error) {
+        console.error('Close request approval failed:', error);
+        window.alert(`Unable to approve close request: ${error.message || error}`);
+    }
 }
 
 function renderActivityList(entries = []) {
@@ -2279,6 +2473,8 @@ function activeRows() {
 
 window.openMasterStatusModal = openMasterStatusModal;
 window.forwardScheduleRow = forwardScheduleRow;
+window.saveSchedulePriority = saveSchedulePriority;
+window.approveCloseRequest = approveCloseRequest;
 
 function uniqueAssignedStaff(rows = activeRows()) {
     const activeStaffNames = new Set(scheduleStaffOptions().map((employee) => employeeName(employee, employee.id)));

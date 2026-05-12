@@ -4,6 +4,7 @@ if (!MargaAuth.requireAccess('field')) {
 
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 45;
+const REQUIRED_PRIORITY_COUNT = 5;
 const PARTS_CATALOG_QUERY_LIMIT = 12000;
 const DELIVERY_RECEIPT_LINE_LIMIT = 100;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
@@ -24,6 +25,7 @@ const SERIAL_CORRECTION_COLLECTION = 'tbl_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
+const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
@@ -98,7 +100,13 @@ const state = {
     modalReadOnly: false,
     modalBranchLocationPinned: false,
     attendanceDocId: '',
-    attendance: null
+    attendance: null,
+    priorityGate: {
+        required: 0,
+        numbered: 0,
+        ready: true
+    },
+    closeRequestsBySchedule: new Map()
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -616,6 +624,43 @@ function getStatusMeta(row) {
     return { key, label: 'Pending', className: 'status-pending' };
 }
 
+function schedulePriorityValue(row) {
+    const value = Number(row?.master_priority_order || row?.priority || 0);
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function updatePriorityGate(rows = state.todayRows) {
+    const openRows = rows.filter((row) => !isFinishedOrCancelled(row) && getStatusKey(row) !== 'cancelled');
+    const required = Math.min(REQUIRED_PRIORITY_COUNT, openRows.length);
+    const numbered = openRows.filter((row) => schedulePriorityValue(row) > 0).length;
+    state.priorityGate = {
+        required,
+        numbered,
+        ready: required === 0 || numbered >= required
+    };
+}
+
+function prioritySortedRows(rows) {
+    return rows.slice().sort((a, b) => {
+        const ap = schedulePriorityValue(a);
+        const bp = schedulePriorityValue(b);
+        if (ap && bp && ap !== bp) return ap - bp;
+        if (ap && !bp) return -1;
+        if (!ap && bp) return 1;
+        return String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0));
+    });
+}
+
+function loadCloseRequestLookup(rows = []) {
+    state.closeRequestsBySchedule = new Map();
+    rows
+        .filter((row) => String(row.status || 'pending').trim().toLowerCase() === 'pending')
+        .forEach((row) => {
+            const scheduleId = String(row.schedule_id || '');
+            if (scheduleId) state.closeRequestsBySchedule.set(scheduleId, row);
+        });
+}
+
 function activeRows() {
     return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
 }
@@ -1069,6 +1114,16 @@ function rowMatchesCustomerSearch(row, query) {
 function renderList() {
     const list = document.getElementById('fieldList');
     const rows = activeRows();
+    if (!state.priorityGate.ready) {
+        list.innerHTML = `
+            <div class="field-priority-lock">
+                <strong>Schedule locked: waiting for priority order.</strong>
+                <p>Team leader or CSR must number at least the first ${state.priorityGate.required} open schedule${state.priorityGate.required === 1 ? '' : 's'} before this route can be opened.</p>
+                <span>${state.priorityGate.numbered}/${state.priorityGate.required} priority numbers set</span>
+            </div>
+        `;
+        return;
+    }
     const filtered = rows.filter((row) => {
         const status = getStatusKey(row);
         if (state.statusFilter === 'all' && (status === 'closed' || status === 'cancelled')) return false;
@@ -1084,7 +1139,7 @@ function renderList() {
         return;
     }
 
-    list.innerHTML = filtered.map((row) => {
+    list.innerHTML = prioritySortedRows(filtered).map((row) => {
         const trouble = caches.trouble.get(String(row.trouble_id || 0));
         const troubleLabel = trouble?.trouble || (row.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
         const purposeLabel = PURPOSE_LABELS[row.purpose_id] || `Purpose ${row.purpose_id}`;
@@ -1097,6 +1152,7 @@ function renderList() {
         const brand = machine ? caches.brand.get(String(machine.brand_id || 0)) : null;
 
         const status = getStatusMeta(row);
+        const priority = schedulePriorityValue(row);
         const clientName = company?.companyname || '-';
         const branchName = branch?.branchname || `Branch #${row.branch_id || 0}`;
         const areaName = area?.area_name || '-';
@@ -1109,6 +1165,12 @@ function renderList() {
         const routeSourceLine = state.activeTab === 'carryover'
             ? `<div class="sub"><strong>Source:</strong> ${sanitize(String(row.route_source || 'Past Pending').replace(/carry[ -]?over/ig, 'Past Pending'))}</div>`
             : '';
+        const closeRequest = state.closeRequestsBySchedule.get(String(row.id || ''));
+        const closeRequestAction = state.activeTab === 'carryover'
+            ? (closeRequest
+                ? `<button type="button" class="btn btn-secondary btn-sm" disabled>Close Requested</button>`
+                : `<button type="button" class="btn btn-secondary btn-sm" data-action="request-close" data-id="${row.id}">Request Close</button>`)
+            : '';
         const partsNote = Number(row.pending_parts || 0) === 1 || Number(row.isongoing || 0) === 1
             ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
             : '';
@@ -1119,7 +1181,7 @@ function renderList() {
                 <div class="field-task-top">
                     <div>
                         <h4>#${sanitize(row.id)} ${sanitize(purposeLabel)} / ${sanitize(troubleLabel)}</h4>
-                        <div class="meta">${sanitize(formatTaskDateTime(row.task_datetime))} · <span class="ops-status-badge ${sanitize(status.className)}">${sanitize(status.label)}</span></div>
+                        <div class="meta">${priority ? `Priority ${sanitize(priority)} · ` : ''}${sanitize(formatTaskDateTime(row.task_datetime))} · <span class="ops-status-badge ${sanitize(status.className)}">${sanitize(status.label)}</span></div>
                         <div class="sub">${sanitize(clientName)} · ${sanitize(branchName)} · ${sanitize(areaName)}</div>
                         <div class="sub">${machineLine} · Serial: <strong>${sanitize(machineSerial)}</strong></div>
                         <div class="sub">${sanitize(taskNotes)}</div>
@@ -1127,6 +1189,7 @@ function renderList() {
                         ${partsNote}
                     </div>
                     <div class="field-task-actions">
+                        ${closeRequestAction}
                         <button type="button" class="btn btn-secondary btn-sm" data-action="open" data-id="${row.id}">Update</button>
                     </div>
                 </div>
@@ -1144,6 +1207,60 @@ function renderList() {
             });
         });
     });
+    list.querySelectorAll('button[data-action="request-close"]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const scheduleId = Number(btn.dataset.id || 0);
+            const row = state.rows.find((item) => Number(item.id || 0) === scheduleId);
+            if (!row) return;
+            requestCloseForSchedule(row).catch((err) => {
+                console.error('Close request failed:', err);
+                alert(`Unable to request close: ${err?.message || err}`);
+            });
+        });
+    });
+}
+
+async function requestCloseForSchedule(row) {
+    const scheduleId = Number(row?.id || 0) || 0;
+    if (!scheduleId) return;
+    if (state.closeRequestsBySchedule.has(String(scheduleId))) {
+        alert('Close request already submitted for this schedule.');
+        return;
+    }
+
+    const reason = window.prompt('Why should this old pending schedule be closed? Example: Done last week, forgot to close in app.');
+    if (reason === null) return;
+    const safeReason = String(reason || '').trim();
+    if (!safeReason) {
+        alert('Please add a short reason for approval.');
+        return;
+    }
+
+    const staffId = Number(state.staffId || 0) || 0;
+    const staffName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || '';
+    const nowIso = new Date().toISOString();
+    const docId = `close_${scheduleId}_${staffId}_${Date.now()}`;
+    const payload = {
+        id: docId,
+        schedule_id: scheduleId,
+        schedule_doc_id: scheduleDocIdForRow(row),
+        requester_staff_id: staffId,
+        requester_name: staffName,
+        request_date: localDateYmd(),
+        requested_at: nowIso,
+        status: 'pending',
+        reason: safeReason,
+        task_datetime: String(row.task_datetime || ''),
+        branch_id: Number(row.branch_id || 0) || 0,
+        company_id: Number(row.company_id || 0) || 0,
+        tech_id: Number(row.tech_id || 0) || 0,
+        source: 'field_app_past_pending'
+    };
+
+    await setDocument(CLOSE_REQUEST_COLLECTION, docId, payload);
+    state.closeRequestsBySchedule.set(String(scheduleId), { ...payload, _docId: docId });
+    renderActiveView();
+    alert('Close request sent for team leader/service approval.');
 }
 
 function isFinishedOrCancelled(row) {
@@ -1374,17 +1491,19 @@ async function loadMySchedule(options = {}) {
     try {
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const [printedDocs, savedDocs, scheduleDocs, plannerDocs] = await Promise.all([
+        const [printedDocs, savedDocs, scheduleDocs, plannerDocs, closeRequestDocs] = await Promise.all([
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
-            queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => [])
+            queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => []),
+            queryEquals(CLOSE_REQUEST_COLLECTION, 'requester_staff_id', Number(state.staffId || 0), 'integer', FIELD_QUERY_LIMIT).catch(() => [])
         ]);
 
         const printedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_PRIMARY, printedDocs.map(parseFirestoreDoc).filter(Boolean));
         const savedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_FALLBACK, savedDocs.map(parseFirestoreDoc).filter(Boolean));
         const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
         const plannerSourceRows = mergePendingOfflineRows(SCHEDULE_PLANNER_COLLECTION, plannerDocs.map(parseFirestoreDoc).filter(Boolean));
+        loadCloseRequestLookup(closeRequestDocs.map(parseFirestoreDoc).filter(Boolean));
 
         const printedRows = pickLatestRouteRows(printedSourceRows, date);
         const savedRows = pickLatestRouteRows(savedSourceRows, date);
@@ -1413,6 +1532,7 @@ async function loadMySchedule(options = {}) {
         state.todayRows = todayRows;
         state.carryoverRows = [];
         state.rows = todayRows;
+        updatePriorityGate(todayRows);
         await hydrateLookups(todayRows);
         renderActiveView();
 
@@ -1428,6 +1548,7 @@ async function loadMySchedule(options = {}) {
             state.carryoverRows = [];
             state.rows = todayRows;
         }
+        updatePriorityGate(state.todayRows);
         renderActiveView();
     } catch (err) {
         console.error('Field load failed:', err);
