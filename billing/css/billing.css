@@ -1498,7 +1498,27 @@
 .calc-print-buttons {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.55rem;
+}
+
+.calc-print-name-options {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 44px;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid #d6e1ee;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--bill-muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.calc-print-name-options .calc-checkbox-label {
+    font-size: 0.8rem !important;
 }
 
 .calc-print-hint {
