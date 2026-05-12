@@ -1177,6 +1177,7 @@ function buildLegacyScheduleRow(row) {
         purposeId: String(row.purpose_id || ''),
         scheduleId,
         routeId: Number(row.route_id || 0) || 0,
+        routeDocId: clean(row.route_doc_id || row.route_id),
         routeSource,
         referenceNo: pickReferenceNo(row, scheduleId),
         activityKey: buildActivityKey('tbl_schedule', row._docId || row.id || scheduleId, scheduleId),
@@ -1703,7 +1704,7 @@ function renderPriorityGate(rows = []) {
             <div>
                 <h2>Priority Order Gate</h2>
                 <p>${incomplete.length
-                    ? `Field App stays locked for ${incomplete.length} staff member${incomplete.length === 1 ? '' : 's'} until at least the first ${REQUIRED_PRIORITY_COUNT} open schedules are numbered.`
+                    ? `Field App will warn ${incomplete.length} staff member${incomplete.length === 1 ? '' : 's'} until at least the first ${REQUIRED_PRIORITY_COUNT} open schedules are numbered, but their route remains open for review.`
                     : `All staff with open schedules have their first required priorities numbered.`}</p>
             </div>
             <div class="priority-gate-list">
@@ -2589,6 +2590,8 @@ async function saveForwardedRoute(row, targetDate) {
     const routeDocId = routeDocIdFor(scheduleId, targetDate);
     const nowIso = new Date().toISOString();
     const actor = currentActorLabel();
+    const previousRouteDocId = clean(row.routeDocId || row.routeId);
+    const previousRouteSource = clean(row.routeSource);
     const routePayload = {
         id: Number(routeDocId),
         schedule_id: scheduleId,
@@ -2607,6 +2610,19 @@ async function saveForwardedRoute(row, targetDate) {
     };
     await setDoc(ROUTE_COLLECTION_FALLBACK, routeDocId, routePayload);
 
+    if (previousRouteDocId && previousRouteSource && previousRouteSource !== 'Schedule' && row.routeDate !== targetDate) {
+        const previousRouteCollection = previousRouteSource.toLowerCase().includes('printed')
+            ? ROUTE_COLLECTION_PRIMARY
+            : ROUTE_COLLECTION_FALLBACK;
+        await updateDocFields(previousRouteCollection, previousRouteDocId, {
+            status: 0,
+            iscancelled: 1,
+            date_finished: nowIso,
+            remarks: `${clean(row.remarks || row.trouble || '')} | Forwarded to ${targetDate}`,
+            bridge_pushed_at: nowIso
+        });
+    }
+
     const schedulePayload = {
         task_datetime: targetDateTime,
         tech_id: staffId,
@@ -2621,6 +2637,7 @@ async function saveForwardedRoute(row, targetDate) {
     await updateDocFields('tbl_schedule', scheduleDocId, schedulePayload);
 
     row.routeId = Number(routeDocId);
+    row.routeDocId = routeDocId;
     row.routeSource = 'Saved';
     row.routeDate = targetDate;
     row.status = 'Active';

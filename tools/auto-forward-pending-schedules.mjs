@@ -212,18 +212,29 @@ async function main() {
   const db = new FirestoreClient();
   const lookbackDate = addDays(args.date, -args.lookbackDays);
   const startDate = args.startDate && args.startDate > lookbackDate ? args.startDate : lookbackDate;
-  const [scheduleRows, targetRoutes] = await Promise.all([
+  const [scheduleRows, sourceRoutes, targetRoutes] = await Promise.all([
     db.queryDateRange("tbl_schedule", "task_datetime", `${startDate} 00:00:00`, `${args.date} 23:59:59`),
+    db.queryDateRange(ROUTE_COLLECTION, "task_datetime", `${startDate} 00:00:00`, `${args.date} 23:59:59`),
     db.queryDateRange(ROUTE_COLLECTION, "task_datetime", `${args.targetDate} 00:00:00`, `${args.targetDate} 23:59:59`)
   ]);
 
   const alreadyRouted = new Set(targetRoutes.map((row) => Number(row.schedule_id || 0)).filter(Boolean));
+  const sourceRoutesBySchedule = new Map();
+  sourceRoutes.forEach((route) => {
+    if (Number(route.iscancel || route.iscancelled || 0) === 1) return;
+    if (normalizeLegacyDateTime(route.date_finished)) return;
+    const scheduleId = Number(route.schedule_id || 0);
+    if (!scheduleId) return;
+    if (!sourceRoutesBySchedule.has(scheduleId)) sourceRoutesBySchedule.set(scheduleId, []);
+    sourceRoutesBySchedule.get(scheduleId).push(route);
+  });
   const candidates = scheduleRows
     .filter((row) => isOpenSchedule(row, args.date))
     .filter((row) => !alreadyRouted.has(Number(row.id || row._docId || 0)));
 
   const nowIso = new Date().toISOString();
   const forwarded = [];
+  let cancelledSourceRoutes = 0;
   for (const row of candidates) {
     const scheduleId = Number(row.id || row._docId || 0);
     const staffId = Number(row.tech_id || 0);
@@ -263,6 +274,21 @@ async function main() {
     if (!args.dryRun) {
       await db.set(ROUTE_COLLECTION, routeDocId, routePayload);
       await db.update("tbl_schedule", row._docId || String(scheduleId), schedulePayload);
+      const oldRoutes = sourceRoutesBySchedule.get(scheduleId) || [];
+      for (const oldRoute of oldRoutes) {
+        await db.update(ROUTE_COLLECTION, oldRoute._docId || oldRoute.id, {
+          status: 0,
+          iscancelled: 1,
+          date_finished: nowIso,
+          remarks: `${clean(oldRoute.remarks || row.remarks || row.caller || "")} | Auto-carried over to ${args.targetDate}`,
+          forwarded_to_date: args.targetDate,
+          superseded_by_route_id: routeDocId,
+          bridge_pushed_at: nowIso
+        });
+        cancelledSourceRoutes += 1;
+      }
+    } else {
+      cancelledSourceRoutes += (sourceRoutesBySchedule.get(scheduleId) || []).length;
     }
     forwarded.push({ scheduleId, staffId, from: dateOnly(row.task_datetime), to: args.targetDate, routeDocId });
   }
@@ -275,6 +301,7 @@ async function main() {
     scanned: scheduleRows.length,
     alreadyRouted: alreadyRouted.size,
     forwarded: forwarded.length,
+    cancelledSourceRoutes,
     rows: forwarded
   }, null, 2));
 }

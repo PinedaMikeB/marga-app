@@ -1114,16 +1114,6 @@ function rowMatchesCustomerSearch(row, query) {
 function renderList() {
     const list = document.getElementById('fieldList');
     const rows = activeRows();
-    if (!state.priorityGate.ready) {
-        list.innerHTML = `
-            <div class="field-priority-lock">
-                <strong>Schedule locked: waiting for priority order.</strong>
-                <p>Team leader or CSR must number at least the first ${state.priorityGate.required} open schedule${state.priorityGate.required === 1 ? '' : 's'} before this route can be opened.</p>
-                <span>${state.priorityGate.numbered}/${state.priorityGate.required} priority numbers set</span>
-            </div>
-        `;
-        return;
-    }
     const filtered = rows.filter((row) => {
         const status = getStatusKey(row);
         if (state.statusFilter === 'all' && (status === 'closed' || status === 'cancelled')) return false;
@@ -1139,7 +1129,15 @@ function renderList() {
         return;
     }
 
-    list.innerHTML = prioritySortedRows(filtered).map((row) => {
+    const priorityNotice = !state.priorityGate.ready ? `
+        <div class="field-priority-lock">
+            <strong>Priority discussion pending.</strong>
+            <p>Team leader or CSR has numbered ${state.priorityGate.numbered}/${state.priorityGate.required} priority schedule${state.priorityGate.required === 1 ? '' : 's'}. Review your route while final priority is being discussed.</p>
+            <span>Route is open for study, coordination, and end-of-day review.</span>
+        </div>
+    ` : '';
+
+    list.innerHTML = priorityNotice + prioritySortedRows(filtered).map((row) => {
         const trouble = caches.trouble.get(String(row.trouble_id || 0));
         const troubleLabel = trouble?.trouble || (row.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
         const purposeLabel = PURPOSE_LABELS[row.purpose_id] || `Purpose ${row.purpose_id}`;
