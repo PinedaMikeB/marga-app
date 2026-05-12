@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260511-end-of-day-review-1">
+    <link rel="stylesheet" href="css/field.css?v=20260512-attendance-time-1">
 </head>
 <body>
     <main class="field-shell">
@@ -37,6 +37,28 @@
                 <button type="button" class="btn btn-secondary btn-sm" id="fieldLogout">Logout</button>
             </div>
         </header>
+
+        <section class="field-attendance-card" id="fieldAttendanceCard" aria-live="polite">
+            <div>
+                <div class="field-attendance-label">Daily Attendance</div>
+                <h2>Official field time record</h2>
+                <p id="fieldAttendanceStatus">Loading attendance...</p>
+            </div>
+            <div class="field-attendance-times">
+                <div>
+                    <span>Time In</span>
+                    <strong id="fieldAttendanceTimeIn">--:--</strong>
+                </div>
+                <div>
+                    <span>Time Out</span>
+                    <strong id="fieldAttendanceTimeOut">--:--</strong>
+                </div>
+            </div>
+            <div class="field-attendance-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="fieldAttendanceTimeInBtn">Time In</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldAttendanceTimeOutBtn">Time Out</button>
+            </div>
+        </section>
 
         <section class="field-kpis" id="fieldKpis"></section>
 
@@ -146,23 +168,23 @@
 
             <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldTimeSection" data-default-collapsed="true">
                 <button type="button" class="field-section-toggle" aria-expanded="false">
-                    <span>Time Recording</span>
+                    <span>Customer Check-In &amp; Out Time</span>
                     <span class="field-section-toggle-icon" aria-hidden="true"></span>
                 </button>
                 <div class="field-section-body">
                 <div class="marga-form-grid">
                     <label class="marga-field">
-                        <span>Time In</span>
+                        <span>Customer Time In</span>
                         <div class="field-time-row">
                             <input type="datetime-local" id="fieldTimeIn">
-                            <button type="button" class="btn btn-secondary btn-sm" id="fieldTimeInNowBtn">Time In Now</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="fieldTimeInNowBtn">Check In Now</button>
                         </div>
                     </label>
                     <label class="marga-field">
-                        <span>Time Out</span>
+                        <span>Customer Time Out</span>
                         <div class="field-time-row">
                             <input type="datetime-local" id="fieldTimeOut" readonly>
-                            <button type="button" class="btn btn-secondary btn-sm" id="fieldTimeOutNowBtn">Time Out Now</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="fieldTimeOutNowBtn">Check Out Now</button>
                         </div>
                     </label>
                 </div>

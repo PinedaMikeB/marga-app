@@ -23,6 +23,7 @@ const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SERIAL_CORRECTION_COLLECTION = 'tbl_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
+const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
@@ -95,7 +96,9 @@ const state = {
     modalSchedtimeId: null,
     modalPartsNeeded: [],
     modalReadOnly: false,
-    modalBranchLocationPinned: false
+    modalBranchLocationPinned: false,
+    attendanceDocId: '',
+    attendance: null
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -117,6 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
     dateInput.value = formatDateYmd(new Date());
 
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
+    document.getElementById('fieldAttendanceTimeInBtn')?.addEventListener('click', () => markAttendanceTime('in'));
+    document.getElementById('fieldAttendanceTimeOutBtn')?.addEventListener('click', () => markAttendanceTime('out'));
     document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
     });
@@ -179,6 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTemporaryFieldMode();
     resetModalSectionState();
     void loadMachineStatusOptions();
+    renderAttendanceCard();
 
     loadMySchedule();
 });
@@ -792,6 +798,119 @@ function nowDbDateTime() {
     return toDbDateTimeFromLocal(toLocalInputDateTime(new Date().toISOString()));
 }
 
+function attendanceDocId(staffId, date) {
+    return `${Number(staffId || 0) || 0}_${String(date || '').replace(/[^0-9]/g, '')}`;
+}
+
+function formatAttendanceTime(value) {
+    const normalized = normalizeLegacyDateTime(value);
+    if (!normalized) return '--:--';
+    const local = toLocalInputDateTime(normalized);
+    const time = String(local || normalized).slice(11, 16);
+    if (!time) return '--:--';
+    const [hour, minute] = time.split(':').map((part) => Number(part));
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return time;
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function renderAttendanceCard() {
+    const status = document.getElementById('fieldAttendanceStatus');
+    const timeIn = document.getElementById('fieldAttendanceTimeIn');
+    const timeOut = document.getElementById('fieldAttendanceTimeOut');
+    const timeInBtn = document.getElementById('fieldAttendanceTimeInBtn');
+    const timeOutBtn = document.getElementById('fieldAttendanceTimeOutBtn');
+    if (!status || !timeIn || !timeOut || !timeInBtn || !timeOutBtn) return;
+
+    const attendance = state.attendance || {};
+    const hasTimeIn = Boolean(normalizeLegacyDateTime(attendance.time_in));
+    const hasTimeOut = Boolean(normalizeLegacyDateTime(attendance.time_out));
+    timeIn.textContent = formatAttendanceTime(attendance.time_in);
+    timeOut.textContent = formatAttendanceTime(attendance.time_out);
+    timeInBtn.disabled = hasTimeIn;
+    timeOutBtn.disabled = !hasTimeIn || hasTimeOut;
+
+    if (!hasTimeIn) {
+        status.textContent = 'Tap Time In before starting field work.';
+    } else if (!hasTimeOut) {
+        status.textContent = 'Official attendance is open. Time Out when back at the office.';
+    } else {
+        status.textContent = 'Attendance complete for this route date.';
+    }
+}
+
+async function loadAttendanceForSelectedDate() {
+    const date = document.getElementById('fieldDate')?.value || localDateYmd();
+    const staffId = Number(state.staffId || 0) || 0;
+    if (!staffId || !date) {
+        state.attendanceDocId = '';
+        state.attendance = null;
+        renderAttendanceCard();
+        return;
+    }
+
+    const docId = attendanceDocId(staffId, date);
+    state.attendanceDocId = docId;
+    const direct = await fetchDoc(FIELD_ATTENDANCE_COLLECTION, docId).catch(() => null);
+    state.attendance = direct || {
+        id: docId,
+        staff_id: staffId,
+        attendance_date: date,
+        time_in: ZERO_DATETIME,
+        time_out: ZERO_DATETIME
+    };
+    renderAttendanceCard();
+}
+
+async function markAttendanceTime(direction) {
+    const staffId = Number(state.staffId || 0) || 0;
+    const date = document.getElementById('fieldDate')?.value || localDateYmd();
+    if (!staffId || !date) return;
+
+    const isOut = direction === 'out';
+    const fieldName = isOut ? 'time_out' : 'time_in';
+    const existing = normalizeLegacyDateTime(state.attendance?.[fieldName]);
+    if (existing) return;
+
+    const button = document.getElementById(isOut ? 'fieldAttendanceTimeOutBtn' : 'fieldAttendanceTimeInBtn');
+    const nowIso = new Date().toISOString();
+    const nowDb = nowDbDateTime();
+    const docId = state.attendanceDocId || attendanceDocId(staffId, date);
+    const previous = state.attendance || {};
+    const displayName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || '';
+    const payload = {
+        id: docId,
+        staff_id: staffId,
+        staff_name: displayName,
+        attendance_date: date,
+        time_in: isOut ? (normalizeLegacyDateTime(previous.time_in) || ZERO_DATETIME) : nowDb,
+        time_out: isOut ? nowDb : (normalizeLegacyDateTime(previous.time_out) || ZERO_DATETIME),
+        source: 'field_homepage',
+        created_at: previous.created_at || nowIso,
+        updated_at: nowIso,
+        updated_by: staffId
+    };
+
+    if (isOut && !normalizeLegacyDateTime(payload.time_in)) {
+        alert('Please Time In first before Time Out.');
+        return;
+    }
+
+    if (button) button.disabled = true;
+    try {
+        await setDocument(FIELD_ATTENDANCE_COLLECTION, docId, payload);
+        state.attendanceDocId = docId;
+        state.attendance = payload;
+        renderAttendanceCard();
+        alert(isOut ? 'Attendance time out captured.' : 'Attendance time in captured.');
+    } catch (err) {
+        console.error('Attendance update failed:', err);
+        alert(`Failed to save attendance: ${err?.message || err}`);
+        renderAttendanceCard();
+    }
+}
+
 function parseIntegerInput(value) {
     if (value === null || value === undefined || value === '') return null;
     const num = Number(value);
@@ -1244,6 +1363,11 @@ async function loadMySchedule(options = {}) {
     state.selectedDate = date;
     const subtitle = document.getElementById('fieldSubtitle');
     subtitle.textContent = 'Loading printed route...';
+    await loadAttendanceForSelectedDate().catch((error) => {
+        console.warn('Attendance load failed:', error);
+        const status = document.getElementById('fieldAttendanceStatus');
+        if (status) status.textContent = 'Attendance could not load. Try Refresh.';
+    });
 
     document.getElementById('fieldList').innerHTML = '<div class="loading-cell">Loading...</div>';
 
