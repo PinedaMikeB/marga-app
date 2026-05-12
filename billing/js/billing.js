@@ -16,6 +16,7 @@ const els = {
     summaryTableWrap: null,
     billingScorecardWrap: null,
     matrixTableWrap: null,
+    matrixTotalsWrap: null,
     matrixSearchInput: null,
     matrixSortInput: null,
     matrixSearchMeta: null,
@@ -8160,6 +8161,7 @@ function renderMatrixTable(payload) {
                 ? `Loading full search results for "${els.matrixSearchInput.value.trim()}".`
                 : 'Reloading all billing rows.';
         }
+        if (els.matrixTotalsWrap) els.matrixTotalsWrap.innerHTML = '<div class="empty-panel">Loading billed totals...</div>';
         els.matrixTableWrap.innerHTML = '<div class="empty-panel">Loading current search results...</div>';
         return;
     }
@@ -8213,13 +8215,47 @@ function renderMatrixTable(payload) {
     }
 
     if (!months.length || !rows.length) {
+        if (els.matrixTotalsWrap) els.matrixTotalsWrap.innerHTML = '<div class="empty-panel">No billed totals returned.</div>';
         els.matrixTableWrap.innerHTML = '<div class="empty-panel">No month-to-month billing rows returned.</div>';
         return;
     }
 
     if (searchTerm && !filteredRows.length) {
+        if (els.matrixTotalsWrap) els.matrixTotalsWrap.innerHTML = '<div class="empty-panel">No billed totals for this search.</div>';
         els.matrixTableWrap.innerHTML = `<div class="empty-panel">No billing rows matched "${escapeHtml(els.matrixSearchInput.value.trim())}".</div>`;
         return;
+    }
+
+    const monthTotals = months.map((monthKey) => {
+        const authoritativeTotal = payloadMatchesCurrentSearch
+            ? totals.find((entry) => entry.month_key === monthKey)
+            : null;
+        const amount = authoritativeTotal
+            ? Number(authoritativeTotal.amount_total || 0)
+            : filteredRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0);
+        return {
+            monthKey,
+            label: authoritativeTotal?.month_label_short || formatMonthLabel(monthKey, monthKey),
+            amount,
+            title: authoritativeTotal ? 'Full matched billing total' : 'Loaded row subtotal'
+        };
+    });
+
+    if (els.matrixTotalsWrap) {
+        els.matrixTotalsWrap.innerHTML = `
+            <div class="matrix-total-strip-head">
+                <span>Billed Totals</span>
+                <small>Actual saved invoice amounts per billing month</small>
+            </div>
+            <div class="matrix-total-cards">
+                ${monthTotals.map((total) => `
+                    <article class="matrix-total-card" title="${escapeHtml(total.title)}">
+                        <span>${escapeHtml(total.label)}</span>
+                        <strong>${escapeHtml(formatAmount(total.amount))}</strong>
+                    </article>
+                `).join('')}
+            </div>
+        `;
     }
 
     const header = months.map((monthKey) => {
@@ -8335,18 +8371,12 @@ function renderMatrixTable(payload) {
         `;
     }).join('');
 
-    const footer = months.map((monthKey) => {
-        const authoritativeTotal = payloadMatchesCurrentSearch
-            ? totals.find((entry) => entry.month_key === monthKey)
-            : null;
-        const amount = authoritativeTotal
-            ? Number(authoritativeTotal.amount_total || 0)
-            : filteredRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0);
-        const totalTitle = authoritativeTotal
-            ? 'Full matched billing total'
-            : 'Loaded row subtotal';
-        return `<td class="total-cell" title="${escapeHtml(totalTitle)}">${escapeHtml(formatAmount(amount))}</td>`;
-    }).join('');
+    const footer = monthTotals.map((total) => `
+        <td class="total-cell" title="${escapeHtml(total.title)}">
+            <span class="total-cell-label">Billed Total</span>
+            <strong>${escapeHtml(formatAmount(total.amount))}</strong>
+        </td>
+    `).join('');
 
     els.matrixTableWrap.innerHTML = `
         <table class="billing-sheet matrix-sheet">
@@ -8362,10 +8392,7 @@ function renderMatrixTable(payload) {
             <tbody>${body}</tbody>
             <tfoot>
                 <tr>
-                    <th class="rd-col"></th>
-                    <th class="sn-col"></th>
-                    <th class="customer-col"></th>
-                    <th class="branch-col"></th>
+                    <th class="matrix-total-label" colspan="4">Billed Total</th>
                     ${footer}
                 </tr>
             </tfoot>

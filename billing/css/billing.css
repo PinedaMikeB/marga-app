@@ -505,6 +505,72 @@
     flex: 1 1 auto;
 }
 
+.matrix-total-strip {
+    flex: 0 0 auto;
+    display: grid;
+    gap: 0.65rem;
+    margin: 0 0 0.85rem;
+    padding: 0.85rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 14px;
+    background: #f8fbff;
+}
+
+.matrix-total-strip-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.matrix-total-strip-head span {
+    color: var(--bill-ink);
+    font-size: 0.86rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.matrix-total-strip-head small {
+    color: var(--bill-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.matrix-total-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.6rem;
+}
+
+.matrix-total-card {
+    min-width: 0;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid #cfe0f3;
+    border-radius: 10px;
+    background: var(--bill-paper);
+}
+
+.matrix-total-card span {
+    display: block;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.matrix-total-card strong {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--bill-ink);
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
 .matrix-card .matrix-sheet {
     width: max-content;
     min-width: 100%;
@@ -646,18 +712,18 @@
 
 .month-cell {
     position: relative;
-    width: 75px;
-    min-width: 75px;
-    max-width: 75px;
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
     height: 58px;
     padding: 0;
 }
 
 .matrix-sheet thead th:not(.rd-col):not(.sn-col):not(.customer-col):not(.branch-col),
 .matrix-sheet tfoot .total-cell {
-    width: 75px;
-    min-width: 75px;
-    max-width: 75px;
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
 }
 
 .empty-cell {
@@ -845,6 +911,40 @@
 .billing-sheet tfoot th {
     background: var(--bill-total);
     font-weight: 800;
+}
+
+.matrix-total-label {
+    text-align: left;
+    color: var(--bill-ink);
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.matrix-sheet tfoot .total-cell {
+    padding: 0.55rem 0.45rem;
+    white-space: normal;
+    vertical-align: middle;
+}
+
+.matrix-sheet tfoot .total-cell-label {
+    display: block;
+    margin-bottom: 0.15rem;
+    color: var(--bill-muted);
+    font-size: 0.62rem;
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.matrix-sheet tfoot .total-cell strong {
+    display: block;
+    color: var(--bill-ink);
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
 }
 
 .context-card.hidden {
