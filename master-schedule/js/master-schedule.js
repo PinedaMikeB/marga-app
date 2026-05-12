@@ -80,7 +80,8 @@ const masterState = {
     kaizen: {
         visible: false,
         report: null,
-        applying: false
+        applying: false,
+        prioritizing: false
     },
     selectedStatusRowKey: '',
     selectedArea: DEFAULT_AREAS[0],
@@ -145,7 +146,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
     document.getElementById('masterForwardOpenBtn')?.addEventListener('click', forwardVisibleOpenSchedules);
     document.getElementById('masterKaizenBtn')?.addEventListener('click', toggleKaizenAdvisor);
+    document.getElementById('masterKaizenInlineBtn')?.addEventListener('click', toggleKaizenAdvisor);
     document.getElementById('masterKaizenRefreshBtn')?.addEventListener('click', () => renderKaizenAdvisor(true));
+    document.getElementById('masterAutoPriorityBtn')?.addEventListener('click', autoNumberKaizenPriorities);
+    document.getElementById('masterKaizenAutoPriorityBtn')?.addEventListener('click', autoNumberKaizenPriorities);
     document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
     document.getElementById('masterStatusOverlay')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
@@ -595,6 +599,7 @@ function buildMasterRowSearchText(row) {
     return composeSearchText(
         extractReferenceTokens(row),
         row.referenceNo,
+        scheduleFlags(row).map((flag) => flag.label).join(' '),
         row.purpose,
         row.area,
         row.tin,
@@ -963,6 +968,38 @@ function scheduleNeedsDeliveryReceipt(row) {
     return /toner|ink|cartridge|drum|fuser|scanner|pcr|blade|change unit|pull out|machine/.test(clue);
 }
 
+function truthyFlag(...values) {
+    return values.some((value) => {
+        if (typeof value === 'boolean') return value;
+        const text = clean(value).toLowerCase();
+        return text === '1' || text === 'true' || text === 'yes' || text === 'y';
+    });
+}
+
+function scheduleFlags(row = {}) {
+    const flags = [];
+    if (truthyFlag(row.superUrgent, row.super_urgent)) {
+        flags.push({ key: 'urgent', label: 'Urgent' });
+    }
+    if (truthyFlag(row.hasComplaint, row.withcomplain, row.with_complain, row.withComplaint, row.withcomplaint)) {
+        flags.push({ key: 'complaint', label: 'Complaint' });
+    }
+    if (
+        truthyFlag(row.hasRequest, row.withrequest, row.with_request, row.withRequest)
+        || row.masterStatusValue === 'open_with_request'
+        || hasExplicitReleaseRequest(row)
+    ) {
+        flags.push({ key: 'request', label: 'Request' });
+    }
+    return flags;
+}
+
+function renderScheduleFlags(row = {}) {
+    const flags = scheduleFlags(row);
+    if (!flags.length) return '<span class="schedule-flag empty">None</span>';
+    return flags.map((flag) => `<span class="schedule-flag ${escapeHtml(flag.key)}">${escapeHtml(flag.label)}</span>`).join('');
+}
+
 function readyStatusForSchedule(row) {
     const purposeId = Number(row?.purpose_id || 0);
     const purposeText = purposeFromLegacy(row, masterState.lookups.troubles.get(String(row?.trouble_id || ''))).toLowerCase();
@@ -1104,6 +1141,9 @@ function buildLegacyScheduleRow(row) {
     const routeSource = clean(row.route_source || row.sourceBucket || 'Saved');
     const lifecycle = lifecycleStatus(row);
     const masterStatusValue = deriveMasterStatusValue(row);
+    const superUrgent = truthyFlag(row.super_urgent);
+    const hasComplaint = truthyFlag(row.withcomplain, row.with_complain, row.withcomplaint);
+    const hasRequest = truthyFlag(row.withrequest) || scheduleNeedsDeliveryReceipt(row);
     const sourceNote = routeSource === 'pending-not-routed'
         ? 'Pending Not Routed'
         : (routeSource === 'Schedule' ? 'Awaiting Route' : `${routeSource} Route`);
@@ -1134,6 +1174,9 @@ function buildLegacyScheduleRow(row) {
         status: lifecycle,
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        superUrgent,
+        hasComplaint,
+        hasRequest,
         priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
         routeDate: dateOnly(getRouteTaskDateTime(row)),
@@ -1159,6 +1202,11 @@ function buildWebScheduleRow(row) {
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
     const masterStatusValue = deriveMasterStatusValue(row);
+    const superUrgent = truthyFlag(row.super_urgent, row.superUrgent);
+    const hasComplaint = truthyFlag(row.withcomplain, row.with_complain, row.withComplaint, row.withcomplaint);
+    const hasRequest = truthyFlag(row.withrequest, row.with_request, row.withRequest)
+        || hasExplicitReleaseRequest(row)
+        || masterStatusValue === 'open_with_request';
     const data = {
         source: 'web',
         sourceBucket: 'daily-route',
@@ -1185,6 +1233,9 @@ function buildWebScheduleRow(row) {
         status: clean(row.status || 'Active') || 'Active',
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        superUrgent,
+        hasComplaint,
+        hasRequest,
         priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
         routeDate: selectedDate,
@@ -1207,6 +1258,11 @@ function buildPlannerScheduleRow(row) {
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
     const masterStatusValue = deriveMasterStatusValue(row);
+    const superUrgent = truthyFlag(row.super_urgent, row.superUrgent);
+    const hasComplaint = truthyFlag(row.withcomplain, row.with_complain, row.withComplaint, row.withcomplaint);
+    const hasRequest = truthyFlag(row.withrequest, row.with_request, row.withRequest)
+        || hasExplicitReleaseRequest(row)
+        || masterStatusValue === 'open_with_request';
     const data = {
         source: 'planner',
         sourceBucket: 'daily-route',
@@ -1232,6 +1288,9 @@ function buildPlannerScheduleRow(row) {
         status: row.planner_status || row.task_status || 'Suggested',
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        superUrgent,
+        hasComplaint,
+        hasRequest,
         priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
         routeDate: selectedDate,
@@ -1507,6 +1566,99 @@ function schedulePriorityValue(row) {
     return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
+function scheduleUrgencyScore(row, locationCounts = new Map()) {
+    const reasons = [];
+    let score = 0;
+    const flags = scheduleFlags(row).map((flag) => flag.key);
+    if (flags.includes('urgent')) {
+        score += 1000;
+        reasons.push('super urgent');
+    }
+    if (flags.includes('complaint')) {
+        score += 850;
+        reasons.push('complaint');
+    }
+    if (flags.includes('request')) {
+        score += 420;
+        reasons.push('with request');
+    }
+
+    const purposeGroup = kaizenPurposeGroup(row);
+    if (purposeGroup === 'collection') {
+        score += 500;
+        reasons.push('collection priority');
+    } else if (purposeGroup === 'service') {
+        score += 360;
+        reasons.push('service call');
+    } else if (purposeGroup === 'delivery') {
+        score += 240;
+        reasons.push('delivery');
+    } else if (purposeGroup === 'billing') {
+        score += 160;
+        reasons.push('billing');
+    }
+
+    const troubleText = clean(`${row.trouble || ''} ${row.remarks || ''}`).toLowerCase();
+    if (/asap|urgent|down|cannot|can't|not print|no print|error|jam|leak|complain|escalat/.test(troubleText)) {
+        score += 220;
+        reasons.push('trouble wording');
+    }
+
+    const daysPending = Number(row.daysPending || 0);
+    if (Number.isFinite(daysPending) && daysPending > 0) {
+        score += Math.min(420, daysPending * 45);
+        reasons.push(`${daysPending} day${daysPending === 1 ? '' : 's'} pending`);
+    }
+
+    const locationCount = locationCounts.get(kaizenLocationKey(row)) || 0;
+    if (locationCount > 1) {
+        score += Math.min(180, (locationCount - 1) * 60);
+        reasons.push('same-location cluster');
+    }
+
+    if (clean(row.readyStatus).toUpperCase() === 'NO') {
+        score -= 70;
+        reasons.push('ready NO');
+    }
+
+    return { score, reasons };
+}
+
+function buildKaizenPriorityPlan(rows = getVisibleRows()) {
+    const activeRows = rows.filter(isOpenScheduleRow);
+    const locationCounts = activeRows.reduce((map, row) => {
+        const key = kaizenLocationKey(row);
+        map.set(key, (map.get(key) || 0) + 1);
+        return map;
+    }, new Map());
+    const byStaff = new Map();
+    activeRows.forEach((row) => {
+        const staffKey = row.assignedTo || 'Unassigned';
+        if (!byStaff.has(staffKey)) byStaff.set(staffKey, []);
+        byStaff.get(staffKey).push(row);
+    });
+
+    const planned = [];
+    byStaff.forEach((staffRows, staff) => {
+        const ranked = staffRows.map((row) => ({
+            row,
+            staff,
+            ...scheduleUrgencyScore(row, locationCounts)
+        })).sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            const ap = Number(a.row.daysPending || 0);
+            const bp = Number(b.row.daysPending || 0);
+            if (bp !== ap) return bp - ap;
+            return clean(a.row.customer).localeCompare(clean(b.row.customer));
+        });
+        ranked.forEach((item, index) => {
+            planned.push({ ...item, priority: index + 1 });
+        });
+    });
+
+    return planned;
+}
+
 function staffPrioritySummary(rows = []) {
     const activeRows = rows.filter(isOpenScheduleRow);
     const byStaff = new Map();
@@ -1644,8 +1796,8 @@ function toggleKaizenAdvisor() {
 }
 
 function buildKaizenReport() {
-    const rows = getVisibleRows();
-    const activeRows = rows.filter((row) => clean(row.status).toLowerCase() !== 'cancelled');
+    const rows = [...getVisibleRows(), ...getVisiblePendingRows()];
+    const activeRows = rows.filter(isOpenScheduleRow);
     const groups = new Map();
     activeRows.forEach((row) => {
         const key = kaizenLocationKey(row);
@@ -1702,6 +1854,8 @@ function buildKaizenReport() {
         const pending = items.filter((row) => row.readyStatus !== 'YES' && !/closed/i.test(clean(row.status))).length;
         return pending > 0 ? { staff, pending, schedules: items.length } : null;
     }).filter(Boolean).sort((a, b) => b.pending - a.pending);
+    const priorityPlan = buildKaizenPriorityPlan(activeRows);
+    const priorityChanges = priorityPlan.filter((item) => schedulePriorityValue(item.row) !== item.priority);
 
     return {
         rows: activeRows,
@@ -1713,7 +1867,9 @@ function buildKaizenReport() {
         purposeCounts,
         actions,
         lowDensity,
-        fieldAlerts
+        fieldAlerts,
+        priorityPlan,
+        priorityChanges
     };
 }
 
@@ -1751,7 +1907,18 @@ function renderKaizenAdvisor(force = false) {
                 title: 'Review low-density routes.',
                 text: report.lowDensity.slice(0, 4).map((item) => `${item.staff}: ${item.schedules} task(s), ${item.locations} location(s)`).join('; ')
             }
-            : null
+            : null,
+        report.priorityChanges.length
+            ? {
+                priority: 'high',
+                title: 'Auto-number priorities before releasing Field App.',
+                text: `${report.priorityChanges.length} visible open row${report.priorityChanges.length === 1 ? '' : 's'} can be numbered by urgency, complaint/request flags, collection priority, pending age, and same-location clusters.`
+            }
+            : {
+                priority: 'low',
+                title: 'Priority order already matches Kaizen scoring.',
+                text: 'Review the top five per staff, then release the field schedule.'
+            }
     ].filter(Boolean);
 
     content.innerHTML = `
@@ -1760,6 +1927,7 @@ function renderKaizenAdvisor(force = false) {
             <div class="kaizen-metric"><span>Unique Locations</span><strong>${report.uniqueLocations}</strong></div>
             <div class="kaizen-metric"><span>Multi-Task Locations</span><strong>${report.duplicateLocationCount}</strong></div>
             <div class="kaizen-metric"><span>Avoidable Trips</span><strong>${report.avoidableTrips}</strong></div>
+            <div class="kaizen-metric"><span>Priority Changes</span><strong>${report.priorityChanges.length}</strong></div>
             <div class="kaizen-metric"><span>Est. Savings</span><strong>PHP ${report.estimatedSavings.toLocaleString()}</strong></div>
         </div>
         <div class="kaizen-layout">
@@ -1852,6 +2020,74 @@ async function applyKaizenTransfer(actionId) {
 
 window.applyKaizenTransfer = applyKaizenTransfer;
 
+async function persistSchedulePriority(row, priority) {
+    const nowIso = new Date().toISOString();
+    const payload = {
+        priority,
+        master_priority_order: priority,
+        master_priority_updated_at: nowIso,
+        master_priority_updated_by: currentActorLabel()
+    };
+
+    if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
+        await updateDocFields('tbl_schedule', row.docId, payload);
+    } else if (row.source === 'web') {
+        await updateDocFields('marga_master_schedule', row.docId, payload);
+    } else if (row.source === 'planner') {
+        await updateDocFields('tbl_schedule_planner', row.docId, payload);
+    }
+}
+
+function applyPriorityToLocalRow(row, priority) {
+    row.priorityOrder = priority;
+    row.priority = priority;
+    row.master_priority_order = priority;
+    refreshMasterRowSearch(row);
+}
+
+async function autoNumberKaizenPriorities() {
+    if (masterState.kaizen.prioritizing) return;
+    const plan = buildKaizenPriorityPlan([...getVisibleRows(), ...getVisiblePendingRows()]);
+    const changes = plan.filter((item) => schedulePriorityValue(item.row) !== item.priority);
+    if (!changes.length) {
+        window.alert('Kaizen priority numbering is already up to date for the visible open schedules.');
+        return;
+    }
+    const preview = changes.slice(0, 8).map((item) => {
+        const why = item.reasons.slice(0, 3).join(', ') || 'route balance';
+        return `${item.staff}: #${item.priority} ${item.row.customer} (${why})`;
+    }).join('\n');
+    const ok = window.confirm(`Auto-number ${changes.length} visible open schedule row(s) by Kaizen scoring?\n\n${preview}${changes.length > 8 ? '\n...' : ''}`);
+    if (!ok) return;
+
+    masterState.kaizen.prioritizing = true;
+    const count = document.getElementById('masterCount');
+    if (count) count.textContent = 'Auto-numbering priorities...';
+    try {
+        for (const item of changes) {
+            await persistSchedulePriority(item.row, item.priority);
+            applyPriorityToLocalRow(item.row, item.priority);
+            await appendActivityLog(item.row, {
+                actionType: 'kaizen_priority',
+                actionLabel: 'Kaizen Priority',
+                detail: `Auto-numbered priority ${item.priority}. Score ${Math.round(item.score)}: ${item.reasons.join(', ') || 'route balance'}.`
+            });
+        }
+        masterState.kaizen.visible = true;
+        renderMasterSchedule();
+        renderKaizenAdvisor(true);
+        window.alert(`Kaizen auto-numbered ${changes.length} schedule row(s).`);
+    } catch (error) {
+        console.error('Kaizen priority numbering failed:', error);
+        window.alert(`Kaizen priority numbering failed: ${error.message || error}`);
+        await loadMasterSchedule();
+    } finally {
+        masterState.kaizen.prioritizing = false;
+    }
+}
+
+window.autoNumberKaizenPriorities = autoNumberKaizenPriorities;
+
 function renderReadyTables(rows) {
     const groups = new Map();
     rows
@@ -1884,6 +2120,7 @@ function renderScheduleTable(rows) {
             <thead>
                 <tr>
                     <th>TIN #</th>
+                    <th>Flags</th>
                     <th>Priority</th>
                     <th>Customer / Branch</th>
                     <th>Purpose</th>
@@ -1939,6 +2176,7 @@ function renderMasterScheduleRow(row) {
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td data-label="TIN #">${escapeHtml(row.tin || '-')}</td>
+            <td data-label="Flags" class="flags-cell">${renderScheduleFlags(row)}</td>
             <td data-label="Priority" class="priority-cell">
                 <input class="schedule-priority-input" type="number" min="1" max="999" inputmode="numeric" value="${priorityValue ? escapeHtml(priorityValue) : ''}" onchange="saveSchedulePriority('${escapeHtml(row.rowKey)}', this.value)" aria-label="Priority order">
             </td>
@@ -2037,26 +2275,10 @@ async function saveSchedulePriority(rowKey, rawValue) {
     if (!row) return;
     const value = Number(rawValue || 0);
     const priority = Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
-    const nowIso = new Date().toISOString();
-    const payload = {
-        priority,
-        master_priority_order: priority,
-        master_priority_updated_at: nowIso,
-        master_priority_updated_by: currentActorLabel()
-    };
 
     try {
-        if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
-            await updateDocFields('tbl_schedule', row.docId, payload);
-        } else if (row.source === 'web') {
-            await updateDocFields('marga_master_schedule', row.docId, payload);
-        } else if (row.source === 'planner') {
-            await updateDocFields('tbl_schedule_planner', row.docId, payload);
-        }
-        row.priorityOrder = priority;
-        row.priority = priority;
-        row.master_priority_order = priority;
-        refreshMasterRowSearch(row);
+        await persistSchedulePriority(row, priority);
+        applyPriorityToLocalRow(row, priority);
         renderMasterSchedule();
     } catch (error) {
         console.error('Priority save failed:', error);
