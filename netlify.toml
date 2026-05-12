@@ -34,6 +34,18 @@
   force = true
 
 [[redirects]]
+  from = "/billing"
+  to = "/billing/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/billing/"
+  to = "/billing/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/collections"
   to = "/.netlify/functions/collections"
   status = 200
