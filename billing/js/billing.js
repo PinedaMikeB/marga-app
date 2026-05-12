@@ -288,6 +288,17 @@ function cleanInvoiceNameSuffix(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function stripBaseCustomerNameFromSuffix(suffix, baseName) {
+    const cleanSuffix = cleanInvoiceNameSuffix(suffix);
+    const cleanBase = cleanInvoiceNameSuffix(baseName);
+    if (!cleanSuffix || !cleanBase) return cleanSuffix;
+    const suffixKey = cleanSuffix.toLowerCase();
+    const baseKey = cleanBase.toLowerCase();
+    if (suffixKey === baseKey) return '';
+    if (!suffixKey.startsWith(baseKey)) return cleanSuffix;
+    return cleanInvoiceNameSuffix(cleanSuffix.slice(cleanBase.length).replace(/^[\s\-–—:•,./]+/, ''));
+}
+
 function loadRtpPrintNameOptions() {
     try {
         const parsed = JSON.parse(localStorage.getItem(RTP_PRINT_NAME_OPTIONS_STORAGE_KEY) || '{}');
@@ -327,17 +338,17 @@ function formatRtpInvoiceCustomerName(preview, options = loadRtpPrintNameOptions
     const baseName = cleanPrintCustomerName(preview?.baseCustomerName || preview?.customerName || '') || 'Unknown Customer';
     const suffixes = [];
     if (options.department) {
-        const department = cleanInvoiceNameSuffix(preview?.branchName || preview?.departmentName || '');
+        const department = stripBaseCustomerNameFromSuffix(preview?.branchName || preview?.departmentName || '', baseName);
         if (department && !/^all branches\s*\/\s*departments$/i.test(department) && department.toLowerCase() !== baseName.toLowerCase()) {
             suffixes.push(department);
         }
     }
     if (options.model) {
-        const model = cleanMachineIdentityValue(preview?.machineModel || '', { skipNoMachine: true, skipNA: true });
+        const model = cleanMachineIdentityValue(stripBaseCustomerNameFromSuffix(preview?.machineModel || '', baseName), { skipNoMachine: true, skipNA: true });
         if (model && !/^multiple\s+machines?$/i.test(model)) suffixes.push(model);
     }
     if (options.serial) {
-        const serial = cleanMachineIdentityValue(preview?.machineSerial || '', { skipNA: true });
+        const serial = cleanMachineIdentityValue(stripBaseCustomerNameFromSuffix(preview?.machineSerial || '', baseName), { skipNA: true });
         if (serial && !/^multiple\s+machines?$/i.test(serial)) suffixes.push(serial);
     }
 
