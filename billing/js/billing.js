@@ -8383,6 +8383,42 @@ function closeSerialDetailModal() {
     els.serialDetailModal?.classList.add('hidden');
 }
 
+async function makeSerialBillingAccountInactive(rowId, button = null) {
+    const row = renderedMatrixRows.find((entry) => String(entry.row_id || entry.company_id) === String(rowId))
+        || (lastPayload?.month_matrix?.rows || []).find((entry) => String(entry.row_id || entry.company_id) === String(rowId));
+    if (!row || row.is_summary_row) {
+        MargaUtils.showToast('Billing account row is no longer loaded.', 'error');
+        return;
+    }
+
+    const label = [
+        row.serial_number || row.machine_label || row.machine_id,
+        row.company_name || row.account_name,
+        row.branch_name
+    ].filter(Boolean).join(' - ');
+    const confirmed = window.confirm(`Make ${label || 'this account'} inactive for Billing? It will be hidden from active Billing lists until restored from Saved Billing Exclusions.`);
+    if (!confirmed) return;
+
+    if (button) button.disabled = true;
+    try {
+        const result = await saveBillingExclusion(row, {
+            reason: 'Branch/customer inactive',
+            effectiveDate: formatIsoDate(new Date()),
+            staffNote: 'Marked inactive from serial detail popup.',
+            hideFromFuture: true
+        });
+        MargaUtils.showToast(
+            result.queued ? 'Billing inactive change queued.' : 'Billing account marked inactive.',
+            'success'
+        );
+        closeSerialDetailModal();
+        await loadDashboard({ forceRefresh: true });
+    } catch (error) {
+        if (button) button.disabled = false;
+        MargaUtils.showToast(String(error?.message || 'Unable to mark billing account inactive.'), 'error');
+    }
+}
+
 function openSerialDetailModal(rowId) {
     if (!lastPayload) return;
 
@@ -8399,6 +8435,11 @@ function openSerialDetailModal(rowId) {
     els.serialDetailContent.innerHTML = `
         <div class="detail-action-row">
             <a class="detail-action-link" href="${escapeHtml(openCustomersHref)}">Open In Customers</a>
+            <button
+                class="btn btn-danger"
+                type="button"
+                data-serial-inactive-row-id="${escapeHtml(String(rowId))}"
+            >Make Inactive For Billing</button>
         </div>
         <div class="detail-summary-grid">
             <article class="detail-summary-card">
@@ -9349,6 +9390,12 @@ function bindEvents() {
     els.serialDetailCloseBtn?.addEventListener('click', closeSerialDetailModal);
     els.serialDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.serialDetailModal) closeSerialDetailModal();
+    });
+    els.serialDetailContent?.addEventListener('click', (event) => {
+        const inactiveButton = event.target.closest('[data-serial-inactive-row-id]');
+        if (!inactiveButton) return;
+        event.preventDefault();
+        makeSerialBillingAccountInactive(inactiveButton.dataset.serialInactiveRowId, inactiveButton);
     });
     window.addEventListener('popstate', () => {
         if (lastPayload) {
