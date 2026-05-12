@@ -2607,6 +2607,25 @@ async function saveNewServiceRequest() {
     }
 
     const taskDatetime = `${date} ${time.length === 5 ? `${time}:00` : time}`;
+    if (window.MargaScheduleConsolidation) {
+        const staff = opsCache.employees.get(String(assigneeId)) || null;
+        const consolidation = await MargaScheduleConsolidation.resolveAssignment({
+            moduleName: 'service',
+            date,
+            taskDatetime,
+            companyId,
+            branchId,
+            staffId: assigneeId,
+            staffName: getEmployeeName(staff, assigneeId),
+            purposeId,
+            customerName: opsCache.companies.get(String(companyId))?.companyname || document.getElementById('newReqCompanySearch')?.value || '',
+            getStaffName: (staffId) => getEmployeeName(opsCache.employees.get(String(staffId)), staffId)
+        });
+        if (!consolidation.ok) return;
+        assigneeId = Number(consolidation.staffId || assigneeId) || assigneeId;
+        const assigneeSelect = document.getElementById('newReqAssignee');
+        if (assigneeSelect) assigneeSelect.value = String(assigneeId || '');
+    }
 
     // Allocate next schedule id (max + 1). Note: concurrent creates can collide; acceptable for now.
     let nextId = 0;
@@ -2871,11 +2890,30 @@ async function transferScheduleRow(row) {
     );
     if (selected === null) return;
 
-    const nextStaffId = Number(selected.trim());
+    let nextStaffId = Number(selected.trim());
     const target = candidates.find((staff) => staff.id === nextStaffId);
     if (!target) {
         alert('Invalid staff ID selected.');
         return;
+    }
+
+    if (window.MargaScheduleConsolidation) {
+        const consolidation = await MargaScheduleConsolidation.resolveAssignment({
+            moduleName: 'service',
+            date: String(row.task_datetime || '').slice(0, 10),
+            taskDatetime: row.task_datetime,
+            companyId: row.company_id,
+            branchId: row.branch_id,
+            staffId: nextStaffId,
+            staffName: target.name,
+            purposeId: row.purpose_id,
+            scheduleId: row.id,
+            currentDocId: row._docId || row.id,
+            customerName: row.company_name || row.caller || '',
+            getStaffName: (staffId) => getEmployeeName(opsCache.employees.get(String(staffId)), staffId)
+        });
+        if (!consolidation.ok) return;
+        nextStaffId = Number(consolidation.staffId || nextStaffId) || nextStaffId;
     }
 
     await patchDocument('tbl_schedule', row.id, {

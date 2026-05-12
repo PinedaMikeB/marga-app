@@ -7416,7 +7416,7 @@ async function saveCollectorSchedule() {
     const selectedInvoice = currentCollectorWorkspace.selectedInvoice;
     const context = currentCollectorWorkspace.context;
     const scheduleDate = String(document.getElementById('collectorScheduleDate')?.value || '').trim();
-    const assignee = getCollectionAssignee();
+    let assignee = getCollectionAssignee();
 
     if (!scheduleDate) {
         if (statusNode) statusNode.textContent = 'Please choose a schedule date.';
@@ -7426,6 +7426,35 @@ async function saveCollectorSchedule() {
     if (!assignee.id) {
         if (statusNode) statusNode.textContent = 'Please assign a messenger or technician before saving.';
         return;
+    }
+
+    if (window.MargaScheduleConsolidation) {
+        const consolidation = await MargaScheduleConsolidation.resolveAssignment({
+            moduleName: 'collections',
+            date: scheduleDate,
+            taskDatetime: `${scheduleDate} 08:00:00`,
+            companyId: context.companyId || selectedInvoice.companyId,
+            branchId: context.branchId || selectedInvoice.branchId,
+            staffId: assignee.id,
+            staffName: assignee.name,
+            purposeId: 2,
+            scheduleId: currentCollectorWorkspace.activeSchedule?.tbl_schedule_id || currentCollectorWorkspace.activeSchedule?.schedule_id || '',
+            currentDocId: currentCollectorWorkspace.activeSchedule?._docId || '',
+            customerName: context.companyName || selectedInvoice.customer || selectedInvoice.accountLabel || '',
+            getStaffName: (staffId) => collectionAssignableStaff.find((staff) => normalizeLookupId(staff.id) === normalizeLookupId(staffId))?.name || employeeLookupMap.get(normalizeLookupId(staffId)) || `Staff #${staffId}`
+        });
+        if (!consolidation.ok) return;
+        if (normalizeLookupId(consolidation.staffId) !== normalizeLookupId(assignee.id)) {
+            const nextId = normalizeLookupId(consolidation.staffId);
+            const staff = collectionAssignableStaff.find((item) => normalizeLookupId(item.id) === nextId) || null;
+            assignee = {
+                id: nextId,
+                name: staff?.name || employeeLookupMap.get(nextId) || `Staff #${nextId}`,
+                role: staff?.role || ''
+            };
+            const select = document.getElementById('collectorScheduleAssignee');
+            if (select) select.value = nextId;
+        }
     }
 
     isSavingCollectorSchedule = true;

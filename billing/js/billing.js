@@ -7821,8 +7821,8 @@ async function openBillingCalcModal(rowId, monthKey) {
         const scheduleDate = String(scheduleDateInput?.value || '').trim();
         const scheduleTime = String(scheduleTimeInput?.value || '').trim();
         const scheduleType = schedulePurpose.label;
-        const staffId = String(scheduleStaffInput?.value || '').trim();
-        const staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || null;
+        let staffId = String(scheduleStaffInput?.value || '').trim();
+        let staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || null;
         if (!scheduleDate) {
             MargaUtils.showToast('Choose a schedule date before printing.', 'error');
             return;
@@ -7831,9 +7831,32 @@ async function openBillingCalcModal(rowId, monthKey) {
             MargaUtils.showToast('Choose an assigned messenger or tech before printing.', 'error');
             return;
         }
+        let staffName = staffOption?.name || staffId;
+        if (window.MargaScheduleConsolidation) {
+            const taskDateTime = `${scheduleDate} ${scheduleTime || '08:00'}${scheduleTime && scheduleTime.length === 5 ? ':00' : ''}`;
+            const purposeId = schedulePurpose.key === 'reading' ? 8 : 1;
+            const consolidation = await MargaScheduleConsolidation.resolveAssignment({
+                moduleName: 'billing',
+                date: scheduleDate,
+                taskDatetime: taskDateTime,
+                companyId: row?.company_id,
+                branchId: row?.branch_id || row?.primaryBranchId,
+                staffId,
+                staffName,
+                purposeId,
+                scheduleId: activeEstimate?.scheduleTaskId || '',
+                currentDocId: activeEstimate?.scheduleTaskDocId || '',
+                customerName: row?.company_name || row?.account_name || row?.display_name || '',
+                getStaffName: (id) => scheduleStaffOptions.find((staff) => String(staff.id) === String(id))?.name || `Staff #${id}`
+            });
+            if (!consolidation.ok) return;
+            staffId = String(consolidation.staffId || staffId);
+            staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || staffOption;
+            staffName = staffOption?.name || staffName || staffId;
+            if (scheduleStaffInput) scheduleStaffInput.value = staffId;
+        }
         saveScheduleBtn.disabled = true;
         try {
-            const staffName = staffOption?.name || staffId;
             activeEstimate.schedulePurposeKey = schedulePurpose.key;
             activeEstimate.schedulePurpose = schedulePurpose.label;
             activeEstimate.scheduleType = scheduleType;

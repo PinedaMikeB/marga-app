@@ -1093,6 +1093,7 @@ function buildLegacyScheduleRow(row) {
         techId: String(row.tech_id || ''),
         branchId: String(row.branch_id || ''),
         companyId: String(branch?.company_id || row.company_id || ''),
+        purposeId: String(row.purpose_id || ''),
         scheduleId,
         routeId: Number(row.route_id || 0) || 0,
         routeSource,
@@ -1144,6 +1145,7 @@ function buildWebScheduleRow(row) {
         techId: String(row.assigned_to_id || row.tech_id || ''),
         branchId,
         companyId: String(row.company_id || ''),
+        purposeId: String(row.purpose_id || ''),
         referenceNo: pickReferenceNo(row),
         activityKey: buildActivityKey('marga_master_schedule', row._docId, row._docId),
         purpose,
@@ -1187,6 +1189,9 @@ function buildPlannerScheduleRow(row) {
         rowKey: `planner_${row._docId || row.id || ''}`,
         docId: row._docId || row.id || '',
         techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
+        branchId: String(row.branch_id || row.primary_branch_id || ''),
+        companyId: String(row.company_id || ''),
+        purposeId: String(row.purpose_id || ''),
         referenceNo: pickReferenceNo(row, row.id || row._docId),
         activityKey: buildActivityKey('tbl_schedule_planner', row._docId || row.id || '', row.id || row._docId),
         purpose,
@@ -1821,11 +1826,33 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
     try {
         for (const target of targets) {
             const previousOwner = target.assignedTo || 'Unassigned';
-            await updateScheduleOwner(target, employee);
+            let targetEmployee = employee;
+            if (window.MargaScheduleConsolidation) {
+                const consolidation = await MargaScheduleConsolidation.resolveAssignment({
+                    moduleName: 'master-schedule',
+                    date: target.routeDate || target.originalDate || dateOnly(getRouteTaskDateTime(target)),
+                    taskDatetime: getRouteTaskDateTime(target),
+                    companyId: target.companyId,
+                    branchId: target.branchId,
+                    staffId,
+                    staffName: newStaff,
+                    purposeId: target.purposeId || '',
+                    scheduleId: target.scheduleId,
+                    currentDocId: target.docId,
+                    customerName: target.customer,
+                    getStaffName: (id) => employeeName(masterState.lookups.employees.get(String(id)), id)
+                });
+                if (!consolidation.ok) throw new Error('Reassignment cancelled by consolidation rule.');
+                if (String(consolidation.staffId || staffId) !== String(staffId)) {
+                    targetEmployee = getStaffById(consolidation.staffId);
+                    if (!targetEmployee) throw new Error(`Consolidation target staff #${consolidation.staffId} is not loaded.`);
+                }
+            }
+            await updateScheduleOwner(target, targetEmployee);
             await appendActivityLog(target, {
                 actionType: 'reassign',
                 actionLabel: 'Assigned Staff Updated',
-                detail: `Reassigned from ${previousOwner} to ${newStaff}.`
+                detail: `Reassigned from ${previousOwner} to ${employeeName(targetEmployee, targetEmployee?.id || staffId)}.`
             });
         }
         masterState.rows.sort((a, b) => {
@@ -1847,12 +1874,30 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
 async function saveForwardedRoute(row, targetDate) {
     const scheduleId = Number(row.scheduleId || 0) || 0;
     if (!scheduleId) throw new Error('This row has no linked schedule ID.');
-    const staffId = Number(row.techId || 0) || 0;
+    let staffId = Number(row.techId || 0) || 0;
     if (!staffId) throw new Error('Assign a technician or messenger before forwarding.');
     const scheduleDocId = clean(row.docId || scheduleId);
     if (!scheduleDocId || scheduleDocId === '0') throw new Error(`Schedule ${scheduleId} has no valid Firestore document ID.`);
 
     const targetDateTime = routeDateTimeFor(row, targetDate);
+    if (window.MargaScheduleConsolidation) {
+        const consolidation = await MargaScheduleConsolidation.resolveAssignment({
+            moduleName: 'master-schedule',
+            date: targetDate,
+            taskDatetime: targetDateTime,
+            companyId: row.companyId,
+            branchId: row.branchId,
+            staffId,
+            staffName: row.assignedTo,
+            purposeId: row.purposeId || '',
+            scheduleId,
+            currentDocId: scheduleDocId,
+            customerName: row.customer,
+            getStaffName: (id) => employeeName(masterState.lookups.employees.get(String(id)), id)
+        });
+        if (!consolidation.ok) throw new Error('Forwarding cancelled by consolidation rule.');
+        staffId = Number(consolidation.staffId || staffId) || staffId;
+    }
     const routeDocId = routeDocIdFor(scheduleId, targetDate);
     const nowIso = new Date().toISOString();
     const actor = currentActorLabel();
