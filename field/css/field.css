@@ -655,6 +655,44 @@
     padding: 1rem;
 }
 
+.field-guide-controls {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+    border-top: 1px solid rgba(226, 232, 240, 0.66);
+    background: rgba(239, 246, 255, 0.48);
+}
+
+.field-guide-controls label {
+    display: grid;
+    gap: 0.32rem;
+}
+
+.field-guide-controls span {
+    color: #587090;
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.field-guide-controls input {
+    width: 100%;
+    border: 1px solid rgba(187, 212, 237, 0.82);
+    border-radius: 12px;
+    padding: 0.55rem 0.72rem;
+    background: rgba(255, 255, 255, 0.9);
+    color: #1f3657;
+    font-size: 0.82rem;
+    font-weight: 750;
+}
+
+.field-guide-controls input:focus {
+    outline: 2px solid rgba(29, 78, 216, 0.18);
+    outline-offset: 1px;
+}
+
 .field-guide-empty,
 .field-guide-card {
     border-radius: 16px;
@@ -1254,6 +1292,10 @@
         white-space: normal;
     }
 
+    .field-guide-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .field-endofday {
         grid-template-columns: 1fr;
     }
@@ -1359,6 +1401,10 @@
     }
 
     .field-score-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .field-guide-controls {
         grid-template-columns: 1fr;
     }
 

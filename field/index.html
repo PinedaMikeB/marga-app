@@ -115,9 +115,29 @@
             <div class="card-header">
                 <h3>Troubleshooting Guide</h3>
                 <div class="card-actions">
-                    <input type="search" id="fieldGuideSearch" class="field-customer-search" placeholder="Search paper jam, error 51, model, trouble" aria-label="Search troubleshooting guide">
                     <button type="button" class="btn btn-secondary btn-sm" id="fieldGuideRefresh">Refresh Guide</button>
                 </div>
+            </div>
+            <div class="field-guide-controls">
+                <label>
+                    <span>Brand / Make</span>
+                    <input type="text" id="fieldGuideBrand" list="fieldGuideBrandOptions" placeholder="Auto-filled or type brand">
+                    <datalist id="fieldGuideBrandOptions"></datalist>
+                </label>
+                <label>
+                    <span>Model</span>
+                    <input type="text" id="fieldGuideModel" list="fieldGuideModelOptions" placeholder="Auto-filled or type model">
+                    <datalist id="fieldGuideModelOptions"></datalist>
+                </label>
+                <label>
+                    <span>Error / Trouble</span>
+                    <input type="search" id="fieldGuideError" list="fieldGuideErrorOptions" placeholder="Search/select error, jam, code">
+                    <datalist id="fieldGuideErrorOptions"></datalist>
+                </label>
+                <label>
+                    <span>Keyword</span>
+                    <input type="search" id="fieldGuideSearch" placeholder="Paper jam feeder, error 51, fuser, no paper">
+                </label>
             </div>
             <div class="field-guide-list" id="fieldGuideList">
                 <div class="loading-cell">Loading guide...</div>

@@ -88,6 +88,10 @@ const state = {
     statusFilter: 'all',
     searchQuery: '',
     guideSearchQuery: '',
+    guideBrandQuery: '',
+    guideModelQuery: '',
+    guideErrorQuery: '',
+    guideAutoFilled: false,
     staffId: null,
     routeSourceLabel: 'Printed',
     todayRows: [],
@@ -145,9 +149,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('fieldAnalyticsRefresh')?.addEventListener('click', () => loadFieldAnalytics());
     document.getElementById('fieldGuideRefresh')?.addEventListener('click', () => loadModelErrorGuides({ force: true }));
-    document.getElementById('fieldGuideSearch')?.addEventListener('input', (event) => {
-        state.guideSearchQuery = String(event.target.value || '');
-        renderTroubleshootingGuide();
+    [
+        ['fieldGuideSearch', 'guideSearchQuery'],
+        ['fieldGuideBrand', 'guideBrandQuery'],
+        ['fieldGuideModel', 'guideModelQuery'],
+        ['fieldGuideError', 'guideErrorQuery']
+    ].forEach(([id, stateKey]) => {
+        document.getElementById(id)?.addEventListener('input', (event) => {
+            state[stateKey] = String(event.target.value || '');
+            renderTroubleshootingGuide();
+        });
     });
     document.getElementById('fieldStatusFilter').addEventListener('change', () => {
         state.statusFilter = document.getElementById('fieldStatusFilter').value;
@@ -336,6 +347,16 @@ function parseFirestoreValue(value) {
     if (value.doubleValue !== undefined) return Number(value.doubleValue);
     if (value.booleanValue !== undefined) return value.booleanValue;
     if (value.timestampValue !== undefined) return value.timestampValue;
+    if (value.arrayValue !== undefined) {
+        return (value.arrayValue.values || []).map(parseFirestoreValue);
+    }
+    if (value.mapValue !== undefined) {
+        const parsed = {};
+        Object.entries(value.mapValue.fields || {}).forEach(([key, raw]) => {
+            parsed[key] = parseFirestoreValue(raw);
+        });
+        return parsed;
+    }
     return null;
 }
 
@@ -1728,6 +1749,101 @@ function guideSearchText(row) {
     ].filter(Boolean).join(' '));
 }
 
+function guideBrandText(row) {
+    return String(row.family || '').trim();
+}
+
+function guideModelText(row) {
+    return String(row.model || '').trim();
+}
+
+function guideErrorText(row) {
+    return String(row.lcd_error_message || row.trouble_label || row.service_level_code || '').trim();
+}
+
+function parseCsvRows(text) {
+    const rows = [];
+    let row = [];
+    let value = '';
+    let quoted = false;
+    const clean = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for (let i = 0; i < clean.length; i += 1) {
+        const char = clean[i];
+        if (quoted) {
+            if (char === '"' && clean[i + 1] === '"') {
+                value += '"';
+                i += 1;
+            } else if (char === '"') quoted = false;
+            else value += char;
+            continue;
+        }
+        if (char === '"') quoted = true;
+        else if (char === ',') {
+            row.push(value);
+            value = '';
+        } else if (char === '\n') {
+            row.push(value);
+            if (row.some((cell) => String(cell || '').trim())) rows.push(row);
+            row = [];
+            value = '';
+        } else value += char;
+    }
+    if (value || row.length) {
+        row.push(value);
+        if (row.some((cell) => String(cell || '').trim())) rows.push(row);
+    }
+    const header = (rows.shift() || []).map((cell) => String(cell || '').trim().replace(/^\uFEFF/, ''));
+    return rows.map((cells) => Object.fromEntries(header.map((key, index) => [key, cells[index] || ''])));
+}
+
+function getCurrentRouteMachineGuideContext() {
+    const candidate = workloadRows().find((row) => Number(row.serial || 0) > 0) || workloadRows()[0] || null;
+    if (!candidate) return { brand: '', model: '' };
+    const machine = caches.machine.get(String(candidate.serial || 0));
+    const model = machine ? caches.model.get(String(machine.model_id || 0)) : null;
+    const brand = machine ? caches.brand.get(String(machine.brand_id || 0)) : null;
+    return {
+        brand: getBrandLabel(brand),
+        model: getModelLabel(model, machine)
+    };
+}
+
+function syncGuideInputsFromState() {
+    [
+        ['fieldGuideBrand', state.guideBrandQuery],
+        ['fieldGuideModel', state.guideModelQuery],
+        ['fieldGuideError', state.guideErrorQuery],
+        ['fieldGuideSearch', state.guideSearchQuery]
+    ].forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input && input.value !== value) input.value = value;
+    });
+}
+
+function maybeAutoFillGuideContext() {
+    if (state.guideAutoFilled) return;
+    const context = getCurrentRouteMachineGuideContext();
+    if (context.brand && !state.guideBrandQuery) state.guideBrandQuery = context.brand;
+    if (context.model && !state.guideModelQuery) state.guideModelQuery = context.model;
+    state.guideAutoFilled = true;
+    syncGuideInputsFromState();
+}
+
+function updateGuideDatalists() {
+    const rows = state.modelErrorGuides || [];
+    const setOptions = (id, values) => {
+        const list = document.getElementById(id);
+        if (!list) return;
+        const unique = [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b))
+            .slice(0, 500);
+        list.innerHTML = unique.map((value) => `<option value="${sanitize(value)}"></option>`).join('');
+    };
+    setOptions('fieldGuideBrandOptions', rows.map(guideBrandText));
+    setOptions('fieldGuideModelOptions', rows.flatMap((row) => [guideModelText(row), ...(Array.isArray(row.model_aliases) ? row.model_aliases : [])]));
+    setOptions('fieldGuideErrorOptions', rows.map(guideErrorText));
+}
+
 function currentRouteGuideHints() {
     const rows = workloadRows().slice(0, 8);
     const hints = rows.flatMap((row) => {
@@ -1745,18 +1861,35 @@ function currentRouteGuideHints() {
 }
 
 function getFilteredGuideRows() {
-    const query = normalizeSearchText(state.guideSearchQuery);
+    const query = normalizeSearchText([
+        state.guideSearchQuery,
+        state.guideBrandQuery,
+        state.guideModelQuery,
+        state.guideErrorQuery
+    ].filter(Boolean).join(' '));
+    const brandQuery = normalizeSearchText(state.guideBrandQuery);
+    const modelQuery = normalizeSearchText(state.guideModelQuery);
+    const errorQuery = normalizeSearchText(state.guideErrorQuery);
     const routeHints = currentRouteGuideHints();
     const terms = query ? query.split(/\s+/).filter(Boolean) : [];
     const routeTerms = routeHints ? routeHints.split(/\s+/).filter((term) => term.length >= 3).slice(0, 12) : [];
     return (state.modelErrorGuides || [])
         .map((row) => {
             const text = guideSearchText(row);
+            const brandText = normalizeSearchText(guideBrandText(row));
+            const modelText = normalizeSearchText([
+                guideModelText(row),
+                Array.isArray(row.model_aliases) ? row.model_aliases.join(' ') : row.model_aliases
+            ].filter(Boolean).join(' '));
+            const errorText = normalizeSearchText(guideErrorText(row));
             const queryScore = terms.length ? terms.reduce((score, term) => score + (text.includes(term) ? 10 : 0), 0) : 0;
+            const brandScore = brandQuery && brandText.includes(brandQuery) ? 20 : 0;
+            const modelScore = modelQuery && modelText.includes(modelQuery) ? 35 : 0;
+            const errorScore = errorQuery && errorText.includes(errorQuery) ? 35 : 0;
             const routeScore = routeTerms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
-            return { row, score: query ? queryScore + routeScore : routeScore };
+            return { row, score: query ? queryScore + brandScore + modelScore + errorScore + routeScore : routeScore };
         })
-        .filter((item) => query ? item.score >= Math.min(10, terms.length * 10) : item.score > 0)
+        .filter((item) => query ? item.score >= 10 : item.score > 0)
         .sort((a, b) => b.score - a.score || String(a.row.model || '').localeCompare(String(b.row.model || '')))
         .slice(0, 24)
         .map((item) => item.row);
@@ -1765,6 +1898,8 @@ function getFilteredGuideRows() {
 function renderTroubleshootingGuide() {
     const list = document.getElementById('fieldGuideList');
     if (!list) return;
+    syncGuideInputsFromState();
+    updateGuideDatalists();
     if (!state.modelErrorGuidesLoaded) {
         list.innerHTML = '<div class="loading-cell">Loading troubleshooting guide...</div>';
         return;
@@ -1811,16 +1946,29 @@ async function loadModelErrorGuides(options = {}) {
     try {
         const docs = await queryCollection(MODEL_ERROR_GUIDE_COLLECTION, FIELD_QUERY_LIMIT);
         state.modelErrorGuides = mergePendingOfflineRows(MODEL_ERROR_GUIDE_COLLECTION, docs.map(parseFirestoreDoc).filter(Boolean));
+        if (!state.modelErrorGuides.length) {
+            const response = await fetch('/tools/model-error-guides-import.csv', { cache: 'no-store' });
+            if (response.ok) {
+                state.modelErrorGuides = parseCsvRows(await response.text());
+            }
+        }
         state.modelErrorGuidesLoaded = true;
     } catch (error) {
         console.warn('Troubleshooting guide load failed:', error);
-        state.modelErrorGuides = [];
+        try {
+            const response = await fetch('/tools/model-error-guides-import.csv', { cache: 'no-store' });
+            state.modelErrorGuides = response.ok ? parseCsvRows(await response.text()) : [];
+        } catch (fallbackError) {
+            console.warn('Troubleshooting guide CSV fallback failed:', fallbackError);
+            state.modelErrorGuides = [];
+        }
         state.modelErrorGuidesLoaded = true;
-        if (list) {
+        if (!state.modelErrorGuides.length && list) {
             list.innerHTML = `<div class="loading-cell">Troubleshooting guide could not load: ${sanitize(error?.message || error)}</div>`;
             return;
         }
     }
+    maybeAutoFillGuideContext();
     renderTroubleshootingGuide();
 }
 
