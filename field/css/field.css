@@ -396,6 +396,57 @@
     background: rgba(254, 202, 202, 0.76);
 }
 
+.field-rating-guide {
+    margin-top: 0.65rem;
+    border-radius: 13px;
+    border: 1px solid rgba(203, 213, 225, 0.74);
+    background: rgba(248, 250, 252, 0.82);
+    padding: 0.65rem;
+}
+
+.field-rating-guide strong {
+    display: block;
+    color: #16345b;
+    font-size: 0.82rem;
+}
+
+.field-rating-guide p {
+    margin: 0.28rem 0 0;
+    color: #526985;
+    font-size: 0.74rem;
+    line-height: 1.4;
+}
+
+.field-rating-guide p span {
+    color: #1a365d;
+    font-weight: 850;
+}
+
+.field-rating-guide.is-excellent {
+    border-color: rgba(16, 185, 129, 0.32);
+    background: rgba(236, 253, 245, 0.78);
+}
+
+.field-rating-guide.is-good {
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(240, 253, 244, 0.78);
+}
+
+.field-rating-guide.is-fair {
+    border-color: rgba(234, 179, 8, 0.34);
+    background: rgba(254, 252, 232, 0.84);
+}
+
+.field-rating-guide.is-needs {
+    border-color: rgba(249, 115, 22, 0.34);
+    background: rgba(255, 247, 237, 0.84);
+}
+
+.field-rating-guide.is-poor {
+    border-color: rgba(239, 68, 68, 0.34);
+    background: rgba(254, 242, 242, 0.86);
+}
+
 .field-analytics-card small {
     display: block;
     margin-top: 0.45rem;

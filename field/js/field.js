@@ -1277,9 +1277,53 @@ function getRating(score) {
     return { label: 'Poor', className: 'poor' };
 }
 
+function getRatingGuide(score, context = 'score') {
+    const rating = getRating(score);
+    const guides = {
+        excellent: {
+            why: 'Almost all required records are complete and the work is easy to verify.',
+            action: 'Keep the same discipline and help teammates copy the habit.'
+        },
+        good: {
+            why: 'The work is mostly reliable, with only small gaps that do not hide much risk.',
+            action: 'Fix the small missing records before leaving the last customer or office.'
+        },
+        fair: {
+            why: 'The result is acceptable, but there are enough gaps that the team leader still needs to check.',
+            action: 'Review unfinished items and complete missing time or task updates today.'
+        },
+        needs: {
+            why: 'Too many records are incomplete, so the company cannot clearly see what happened in the route.',
+            action: 'Time in/out, check in/out per customer, and ask for reassignment early when the route is too heavy.'
+        },
+        poor: {
+            why: 'The record is poor because many tasks or time logs are missing, late, or unfinished. This makes payroll, customer follow-up, and performance review unfair and unreliable.',
+            action: 'Explain the reason to the team leader, finish the missing updates, and follow the next route priority one customer at a time.'
+        }
+    };
+    const guide = guides[rating.className] || guides.poor;
+    return {
+        ...rating,
+        title: `${rating.label} ${context}`,
+        why: guide.why,
+        action: guide.action
+    };
+}
+
 function renderRatingBadge(score) {
     const rating = getRating(score);
     return `<em class="field-rating-badge is-${sanitize(rating.className)}">${sanitize(rating.label)}</em>`;
+}
+
+function renderRatingGuide(score, context = 'score') {
+    const guide = getRatingGuide(score, context);
+    return `
+        <div class="field-rating-guide is-${sanitize(guide.className)}">
+            <strong>${sanitize(guide.title)}</strong>
+            <p><span>Why:</span> ${sanitize(guide.why)}</p>
+            <p><span>Improve:</span> ${sanitize(guide.action)}</p>
+        </div>
+    `;
 }
 
 function getAnalyticsSummary() {
@@ -1403,11 +1447,13 @@ function getRouteDisciplineScore(summary) {
 }
 
 function renderScorecardMetric(label, value, note = '', score = null) {
+    const ratingGuide = score === null ? '' : renderRatingGuide(score, label.toLowerCase());
     return `
         <div class="field-score-metric">
             <span>${sanitize(label)}${score === null ? '' : renderRatingBadge(score)}</span>
             <strong>${sanitize(value)}</strong>
             ${note ? `<small>${sanitize(note)}</small>` : ''}
+            ${ratingGuide}
         </div>
     `;
 }
@@ -1491,12 +1537,14 @@ function renderAnalytics() {
                 <strong>${summary.completionRate}% ${renderRatingBadge(summary.completionRate)}</strong>
                 <div class="field-bar">${percentBar(summary.completionRate, 'is-good')}</div>
                 <small>${completed} closed out of ${summary.totalAssigned} assigned workload task(s).</small>
+                ${renderRatingGuide(summary.completionRate, 'completion')}
             </article>
             <article class="field-analytics-card">
                 <span>Time Recording Discipline</span>
                 <strong>${summary.timeDiligenceScore}% ${renderRatingBadge(summary.timeDiligenceScore)}</strong>
                 <div class="field-bar">${percentBar(summary.timeDiligenceScore, 'is-info')}</div>
                 <small>${sanitize(staffName)} official: ${summary.attendanceTimeIn ? formatAttendanceTime(summary.attendanceTimeIn) : 'no time in'} / ${summary.attendanceTimeOut ? formatAttendanceTime(summary.attendanceTimeOut) : 'no time out'}. Customer check-out: ${summary.customerTimeOutRows.length}/${summary.totalAssigned}.</small>
+                ${renderRatingGuide(summary.timeDiligenceScore, 'time recording')}
             </article>
             <article class="field-analytics-card">
                 <span>Past Pending Load</span>
