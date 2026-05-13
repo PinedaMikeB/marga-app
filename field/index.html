@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260512-attendance-time-1">
+    <link rel="stylesheet" href="css/field.css?v=20260513-kaizen-analytics-1">
 </head>
 <body>
     <main class="field-shell">
@@ -60,11 +60,19 @@
             </div>
         </section>
 
-        <section class="field-kpis" id="fieldKpis"></section>
+        <nav class="field-view-tabs" aria-label="Field app sections">
+            <button type="button" class="field-view-tab is-active" data-view="home" aria-selected="true">Home</button>
+            <button type="button" class="field-view-tab" data-view="tasks" aria-selected="false">Task Details</button>
+            <button type="button" class="field-view-tab" data-view="analytics" aria-selected="false">Analytics</button>
+        </nav>
 
-        <section class="field-endofday" id="fieldEndOfDayReview" hidden></section>
+        <section class="field-view-panel" id="fieldHomePanel" data-view-panel="home">
+            <section class="field-kpis" id="fieldKpis"></section>
 
-        <section class="content-card field-card">
+            <section class="field-endofday" id="fieldEndOfDayReview" hidden></section>
+        </section>
+
+        <section class="content-card field-card field-view-panel" id="fieldTaskPanel" data-view-panel="tasks" hidden>
             <div class="card-header">
                 <h3>Tasks</h3>
                 <div class="card-actions">
@@ -87,6 +95,18 @@
             </div>
             <div class="field-list" id="fieldList">
                 <div class="loading-cell">Loading...</div>
+            </div>
+        </section>
+
+        <section class="content-card field-card field-view-panel" id="fieldAnalyticsPanel" data-view-panel="analytics" hidden>
+            <div class="card-header">
+                <h3>Analytics</h3>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldAnalyticsRefresh">Analyze Again</button>
+                </div>
+            </div>
+            <div class="field-analytics" id="fieldAnalytics">
+                <div class="loading-cell">Loading analytics...</div>
             </div>
         </section>
     </main>
@@ -378,6 +398,6 @@
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/field.js?v=20260513-working-route-1"></script>
+    <script src="js/field.js?v=20260513-kaizen-analytics-1"></script>
 </body>
 </html>

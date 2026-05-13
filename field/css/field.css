@@ -57,6 +57,40 @@
     justify-content: flex-end;
 }
 
+.field-view-tabs {
+    margin-top: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    padding: 0.28rem;
+    border-radius: 16px;
+    border: 1px solid rgba(187, 212, 237, 0.72);
+    background: rgba(239, 246, 255, 0.78);
+}
+
+.field-view-tab {
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: #516985;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 850;
+    padding: 0.58rem 0.82rem;
+    transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.field-view-tab.is-active {
+    color: #1d4ed8;
+    background: #fff;
+    box-shadow: 0 8px 22px rgba(30, 64, 175, 0.13);
+}
+
+.field-view-panel[hidden] {
+    display: none;
+}
+
 .field-kpis {
     margin-top: 1rem;
     display: grid;
@@ -146,6 +180,12 @@
     user-select: none;
 }
 
+.field-kpi[data-view-jump],
+.field-kpi[data-tab-jump] {
+    cursor: pointer;
+    user-select: none;
+}
+
 .field-kpi[data-status-filter]:hover {
     border-color: rgba(37, 99, 235, 0.28);
     box-shadow: 0 8px 24px rgba(37, 99, 235, 0.13);
@@ -170,6 +210,10 @@
     font-size: 1.35rem;
     font-weight: 800;
     color: #1a365d;
+}
+
+.field-kpi-passive {
+    cursor: default;
 }
 
 .field-endofday {
@@ -242,6 +286,137 @@
 
 .field-card {
     margin-top: 1rem;
+}
+
+.field-analytics {
+    padding: 1rem;
+}
+
+.field-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.85rem;
+}
+
+.field-analytics-card,
+.field-advice-card {
+    border-radius: 16px;
+    border: 1px solid rgba(191, 219, 254, 0.72);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 8px 24px rgba(30, 64, 175, 0.07);
+    padding: 0.95rem;
+}
+
+.field-analytics-card span {
+    display: block;
+    color: #587090;
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.field-analytics-card strong {
+    display: block;
+    margin-top: 0.2rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.35rem;
+    color: #16345b;
+}
+
+.field-analytics-card small {
+    display: block;
+    margin-top: 0.45rem;
+    color: #64748b;
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.field-bar {
+    margin-top: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(226, 232, 240, 0.9);
+}
+
+.field-bar span {
+    display: block;
+    height: 100%;
+    min-width: 4%;
+    border-radius: inherit;
+    background: #3b82f6;
+}
+
+.field-bar .is-good {
+    background: #16a34a;
+}
+
+.field-bar .is-warning {
+    background: #f59e0b;
+}
+
+.field-bar .is-info {
+    background: #0ea5e9;
+}
+
+.field-bar .is-cost {
+    background: #8b5cf6;
+}
+
+.field-analytics-split {
+    margin-top: 0.9rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr);
+    gap: 0.85rem;
+}
+
+.field-advice-card h4 {
+    margin: 0 0 0.65rem;
+    color: #16345b;
+    font-size: 0.98rem;
+}
+
+.field-advice-item {
+    border-top: 1px solid rgba(203, 213, 225, 0.64);
+    padding-top: 0.65rem;
+    margin-top: 0.65rem;
+}
+
+.field-advice-item:first-of-type {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+}
+
+.field-advice-item strong {
+    color: #1a365d;
+    font-size: 0.88rem;
+}
+
+.field-advice-item p {
+    margin: 0.25rem 0 0;
+    color: #526985;
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.field-signal-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.7rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid rgba(203, 213, 225, 0.64);
+    color: #526985;
+    font-size: 0.82rem;
+}
+
+.field-signal-row:first-of-type {
+    border-top: none;
+}
+
+.field-signal-row strong {
+    color: #16345b;
 }
 
 .field-customer-search {
@@ -726,8 +901,22 @@
         overflow-x: auto;
     }
 
+    .field-view-tabs {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .field-view-tab {
+        flex: 1;
+        white-space: nowrap;
+    }
+
     .field-kpis {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .field-analytics-split {
+        grid-template-columns: 1fr;
     }
 
     .field-endofday {
@@ -823,6 +1012,14 @@
     }
 
     .field-kpis {
+        grid-template-columns: 1fr;
+    }
+
+    .field-analytics {
+        padding: 0.75rem;
+    }
+
+    .field-analytics-grid {
         grid-template-columns: 1fr;
     }
 

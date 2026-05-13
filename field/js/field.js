@@ -27,6 +27,7 @@ const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
+const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
@@ -81,6 +82,7 @@ const caches = {
 
 const state = {
     selectedDate: '',
+    activeView: 'home',
     activeTab: 'today',
     statusFilter: 'all',
     searchQuery: '',
@@ -106,6 +108,7 @@ const state = {
         numbered: 0,
         ready: true
     },
+    pettyCashEntries: [],
     closeRequestsBySchedule: new Map()
 };
 
@@ -133,6 +136,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
     });
+    document.querySelectorAll('.field-view-tab[data-view]').forEach((button) => {
+        button.addEventListener('click', () => setActiveView(button.dataset.view || 'home'));
+    });
+    document.getElementById('fieldAnalyticsRefresh')?.addEventListener('click', () => loadFieldAnalytics());
     document.getElementById('fieldStatusFilter').addEventListener('change', () => {
         state.statusFilter = document.getElementById('fieldStatusFilter').value;
         renderActiveView();
@@ -142,8 +149,20 @@ document.addEventListener('DOMContentLoaded', () => {
         renderActiveView();
     });
     document.getElementById('fieldKpis')?.addEventListener('click', (event) => {
+        const viewJump = event.target.closest('[data-view-jump]');
+        if (viewJump) {
+            setActiveView(viewJump.dataset.viewJump || 'tasks');
+            return;
+        }
+        const tabJump = event.target.closest('[data-tab-jump]');
+        if (tabJump) {
+            setActiveView('tasks');
+            setActiveTab(tabJump.dataset.tabJump || 'today');
+            return;
+        }
         const card = event.target.closest('[data-status-filter]');
         if (!card) return;
+        setActiveView('tasks');
         state.statusFilter = card.dataset.statusFilter || 'all';
         const statusFilter = document.getElementById('fieldStatusFilter');
         if (statusFilter) statusFilter.value = state.statusFilter;
@@ -695,6 +714,25 @@ function activeRows() {
     return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
 }
 
+function todayWorkingRows() {
+    return workingRouteRows(state.todayRows);
+}
+
+function pastPendingWorkingRows() {
+    return workingRouteRows(state.carryoverRows);
+}
+
+function workloadRows() {
+    const seen = new Set();
+    return [...todayWorkingRows(), ...pastPendingWorkingRows()].filter((row) => {
+        const key = String(row.id || row._docId || row.route_doc_id || '');
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 function isWorkingRouteRow(row) {
     return ['pending', 'carryover', 'ongoing'].includes(getStatusKey(row));
 }
@@ -709,6 +747,22 @@ function setActiveTab(tab) {
     const statusFilter = document.getElementById('fieldStatusFilter');
     if (statusFilter) statusFilter.value = 'all';
     renderActiveView();
+}
+
+function setActiveView(view) {
+    state.activeView = ['home', 'tasks', 'analytics'].includes(view) ? view : 'home';
+    renderActiveView();
+}
+
+function updateViewControls() {
+    document.querySelectorAll('.field-view-tab[data-view]').forEach((button) => {
+        const isActive = button.dataset.view === state.activeView;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-view-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.viewPanel !== state.activeView;
+    });
 }
 
 function updateTabControls() {
@@ -728,17 +782,19 @@ function updateSubtitle() {
     const subtitle = document.getElementById('fieldSubtitle');
     if (!subtitle) return;
     const date = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
-    const todaySource = state.routeSourceLabel.toLowerCase();
-    const view = state.activeTab === 'carryover' ? 'past pending' : todaySource;
-    const count = activeRows().length;
-    subtitle.textContent = `${count} ${view} task(s) for ${date}.`;
+    const newToday = todayWorkingRows().length;
+    const pastPending = pastPendingWorkingRows().length;
+    const total = newToday + pastPending;
+    subtitle.textContent = `${total} open workload task(s) for ${date}: ${newToday} new + ${pastPending} past pending.`;
 }
 
 function renderActiveView() {
+    updateViewControls();
     updateTabControls();
-    renderKpis(activeRows());
+    renderKpis();
     renderEndOfDayReview();
     renderList();
+    renderAnalytics();
     updateSubtitle();
 }
 
@@ -1059,19 +1115,55 @@ async function hydrateLookups(rows) {
     ]);
 }
 
-function renderKpis(rows) {
-    const counts = rows.reduce((acc, r) => {
+function isClosedOnSelectedDate(row) {
+    if (getStatusKey(row) !== 'closed') return false;
+    const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    const finishedDate = dateOnly(normalizeLegacyDateTime(row.date_finished))
+        || dateOnly(normalizeLegacyDateTime(row.route_date_finished));
+    if (finishedDate) return finishedDate === selectedDate;
+    return dateOnly(getRouteTaskDateTime(row)) === selectedDate;
+}
+
+function isCancelledOnSelectedDate(row) {
+    if (getStatusKey(row) !== 'cancelled') return false;
+    const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    return dateOnly(getRouteTaskDateTime(row)) === selectedDate;
+}
+
+function getWorkloadSummary() {
+    const todayOpen = todayWorkingRows();
+    const pastOpen = pastPendingWorkingRows();
+    const openRows = workloadRows();
+    const openCounts = openRows.reduce((acc, r) => {
         const k = getStatusKey(r);
         acc[k] = (acc[k] || 0) + 1;
         return acc;
     }, {});
-    const workingCount = workingRouteRows(rows).length;
-    const primaryLabel = state.activeTab === 'carryover' ? 'Past Pending Work' : "Today's Assigned Route";
+    const closedToday = state.rows.filter(isClosedOnSelectedDate).length;
+    const cancelledToday = state.rows.filter(isCancelledOnSelectedDate).length;
+    const pendingNeedsAction = (openCounts.pending || 0) + (openCounts.carryover || 0);
+    return {
+        todayOpen,
+        pastOpen,
+        openRows,
+        openCounts,
+        closedToday,
+        cancelledToday,
+        pendingNeedsAction,
+        totalWorkload: openRows.length
+    };
+}
+
+function renderKpis() {
+    const summary = getWorkloadSummary();
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${workingCount}</div></div>
-        <div class="field-kpi ${state.statusFilter === 'pending' ? 'is-active-filter' : ''}" data-status-filter="pending"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
-        <div class="field-kpi ${state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
+        <div class="field-kpi is-active-filter" data-view-jump="tasks"><div class="label">Today's Workload</div><div class="value">${summary.totalWorkload}</div></div>
+        <div class="field-kpi" data-tab-jump="today"><div class="label">New Today</div><div class="value">${summary.todayOpen.length}</div></div>
+        <div class="field-kpi" data-tab-jump="carryover"><div class="label">Past Pending</div><div class="value">${summary.pastOpen.length}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">Pending / Needs Action</div><div class="value">${summary.pendingNeedsAction}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${summary.openCounts.ongoing || 0}</div></div>
+        <div class="field-kpi field-kpi-passive"><div class="label">Closed Today</div><div class="value">${summary.closedToday}</div></div>
     `;
 }
 
@@ -1100,13 +1192,13 @@ function renderEndOfDayReview() {
         return;
     }
 
-    const todayCounts = countRowsByStatus(state.todayRows);
-    const pendingToday = (todayCounts.pending || 0) + (todayCounts.ongoing || 0);
-    const pastPending = state.carryoverRows.filter((row) => ['pending', 'carryover', 'ongoing'].includes(getStatusKey(row))).length;
-    const closedToday = todayCounts.closed || 0;
+    const summary = getWorkloadSummary();
+    const pendingToday = summary.pendingNeedsAction;
+    const pastPending = summary.pastOpen.length;
+    const closedToday = summary.closedToday;
     const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
     const staffName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || 'Staff';
-    const needsLeader = pendingToday > 0 || pastPending > 0;
+    const needsLeader = summary.totalWorkload > 0 || pastPending > 0;
 
     card.hidden = false;
     card.innerHTML = `
@@ -1114,16 +1206,212 @@ function renderEndOfDayReview() {
             <div class="field-endofday-label">End of Day Review</div>
             <h2>${sanitize(staffName)} route status for ${sanitize(selectedDate)}</h2>
             <p>${needsLeader
-                ? `Team leader review needed: ${pendingToday} pending today and ${pastPending} past pending.`
+                ? `Team leader review needed: ${summary.totalWorkload} open workload task(s), including ${pastPending} past pending.`
                 : 'All visible work for this route date is closed.'}</p>
         </div>
         <div class="field-endofday-stats">
-            <div><span>${state.todayRows.length}</span><small>Today</small></div>
+            <div><span>${summary.totalWorkload}</span><small>Workload</small></div>
             <div><span>${closedToday}</span><small>Closed</small></div>
-            <div><span>${pendingToday}</span><small>Pending Today</small></div>
+            <div><span>${pendingToday}</span><small>Needs Action</small></div>
             <div><span>${pastPending}</span><small>Past Pending</small></div>
         </div>
     `;
+}
+
+function normalizePersonName(value) {
+    return normalizeSearchText(value).replace(/\s+/g, ' ').trim();
+}
+
+function getCurrentStaffName() {
+    return document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0]?.trim() || '';
+}
+
+function isPettyCashForCurrentStaff(entry) {
+    const staffName = normalizePersonName(getCurrentStaffName());
+    if (!staffName) return false;
+    return [
+        entry.requestedBy,
+        entry.requested_by,
+        entry.payee,
+        entry.staff_name,
+        entry.employee_name
+    ].some((value) => {
+        const candidate = normalizePersonName(value);
+        return candidate && (candidate === staffName || candidate.includes(staffName) || staffName.includes(candidate));
+    });
+}
+
+function minutesBetween(startValue, endValue) {
+    const start = normalizeLegacyDateTime(startValue);
+    const end = normalizeLegacyDateTime(endValue);
+    if (!start || !end) return null;
+    const startMs = Date.parse(start.replace(' ', 'T'));
+    const endMs = Date.parse(end.replace(' ', 'T'));
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+    return Math.round((endMs - startMs) / 60000);
+}
+
+function getCustomerMinutes(row) {
+    const direct = minutesBetween(row.field_time_in, row.field_time_out);
+    if (direct !== null) return direct;
+    return null;
+}
+
+function getAnalyticsSummary() {
+    const workload = getWorkloadSummary();
+    const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    const closedRows = state.rows.filter(isClosedOnSelectedDate);
+    const openRows = workload.openRows;
+    const totalAssigned = workload.totalWorkload + closedRows.length;
+    const completionRate = totalAssigned > 0 ? Math.round((closedRows.length / totalAssigned) * 100) : 0;
+    const carryoverRate = workload.totalWorkload > 0 ? Math.round((workload.pastOpen.length / workload.totalWorkload) * 100) : 0;
+    const timedRows = state.rows
+        .map((row) => ({ row, minutes: getCustomerMinutes(row) }))
+        .filter((item) => item.minutes !== null);
+    const averageCustomerMinutes = timedRows.length
+        ? Math.round(timedRows.reduce((sum, item) => sum + item.minutes, 0) / timedRows.length)
+        : 0;
+    const missingCheckout = state.rows.filter((row) => normalizeLegacyDateTime(row.field_time_in) && !normalizeLegacyDateTime(row.field_time_out)).length;
+    const staffPettyCash = state.pettyCashEntries
+        .filter((entry) => String(entry.status || '').trim().toLowerCase() !== 'cancelled')
+        .filter(isPettyCashForCurrentStaff);
+    const pettyCashTotal = staffPettyCash.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const costPerClosedVisit = closedRows.length ? pettyCashTotal / closedRows.length : 0;
+    return {
+        selectedDate,
+        workload,
+        closedRows,
+        openRows,
+        totalAssigned,
+        completionRate,
+        carryoverRate,
+        averageCustomerMinutes,
+        timedRows,
+        missingCheckout,
+        staffPettyCash,
+        pettyCashTotal,
+        costPerClosedVisit
+    };
+}
+
+function buildPerformanceAdvice(summary) {
+    const advice = [];
+    if (summary.workload.pastOpen.length > 0) {
+        advice.push({
+            title: 'Clear old pending first',
+            body: `${summary.workload.pastOpen.length} past pending task(s) are still open. Handle the oldest/highest-priority items before starting low-priority new work.`
+        });
+    }
+    if (summary.workload.openCounts.ongoing > 0) {
+        advice.push({
+            title: 'Separate parts waiting from visit work',
+            body: `${summary.workload.openCounts.ongoing} task(s) are waiting for parts. Confirm if parts are really unavailable so they do not hide inside normal pending work.`
+        });
+    }
+    if (summary.completionRate < 70 && summary.totalAssigned >= 5) {
+        advice.push({
+            title: 'Improve completion rate today',
+            body: `Current completion is ${summary.completionRate}%. Call the team leader early if the route is too heavy, blocked by traffic, or needs reassignment.`
+        });
+    }
+    if (summary.missingCheckout > 0) {
+        advice.push({
+            title: 'Always check out before moving',
+            body: `${summary.missingCheckout} task(s) have check-in without check-out. This weakens travel-time and customer-service-time scoring.`
+        });
+    }
+    if (summary.averageCustomerMinutes > 90) {
+        advice.push({
+            title: 'Explain long customer time',
+            body: `Average customer time is ${summary.averageCustomerMinutes} minutes. Add notes when the delay is customer-caused, parts-caused, or technical.`
+        });
+    }
+    if (summary.pettyCashTotal > 0 && !summary.closedRows.length) {
+        advice.push({
+            title: 'Expense needs accomplishment',
+            body: `${formatPesoAmount(summary.pettyCashTotal)} petty cash is tied to this staff today, but no closed visit is recorded yet. Close finished work or explain the route delay.`
+        });
+    }
+    if (!advice.length) {
+        advice.push({
+            title: 'Keep the route disciplined',
+            body: 'Finish each customer record with check-in, check-out, photo/notes, then move to the next priority. This keeps payroll, cost, and performance reports reliable.'
+        });
+    }
+    return advice;
+}
+
+function renderAnalytics() {
+    const panel = document.getElementById('fieldAnalytics');
+    if (!panel) return;
+    const summary = getAnalyticsSummary();
+    const advice = buildPerformanceAdvice(summary);
+    const completed = summary.closedRows.length;
+    const pending = summary.workload.pendingNeedsAction;
+    const ongoing = summary.workload.openCounts.ongoing || 0;
+    const maxBar = Math.max(summary.totalAssigned, completed, pending, ongoing, 1);
+    const bar = (value, className = '') => `<span class="${className}" style="width:${Math.max(4, Math.round((value / maxBar) * 100))}%"></span>`;
+
+    panel.innerHTML = `
+        <div class="field-analytics-grid">
+            <article class="field-analytics-card">
+                <span>Completion Rate</span>
+                <strong>${summary.completionRate}%</strong>
+                <div class="field-bar">${bar(completed, 'is-good')}</div>
+                <small>${completed} closed out of ${summary.totalAssigned} assigned workload task(s).</small>
+            </article>
+            <article class="field-analytics-card">
+                <span>Past Pending Load</span>
+                <strong>${summary.workload.pastOpen.length}</strong>
+                <div class="field-bar">${bar(summary.workload.pastOpen.length, 'is-warning')}</div>
+                <small>${summary.carryoverRate}% of open workload came from previous schedule dates.</small>
+            </article>
+            <article class="field-analytics-card">
+                <span>Avg Customer Time</span>
+                <strong>${summary.averageCustomerMinutes || '-'}${summary.averageCustomerMinutes ? ' min' : ''}</strong>
+                <div class="field-bar">${bar(Math.min(summary.averageCustomerMinutes || 0, 120), 'is-info')}</div>
+                <small>${summary.timedRows.length} task(s) have usable customer check-in/out.</small>
+            </article>
+            <article class="field-analytics-card">
+                <span>Petty Cash Linked</span>
+                <strong>${sanitize(formatPesoAmount(summary.pettyCashTotal) || 'PHP 0.00')}</strong>
+                <div class="field-bar">${bar(summary.staffPettyCash.length, 'is-cost')}</div>
+                <small>${summary.staffPettyCash.length} petty cash row(s). Cost/closed visit: ${sanitize(formatPesoAmount(summary.costPerClosedVisit) || 'PHP 0.00')}.</small>
+            </article>
+        </div>
+        <div class="field-analytics-split">
+            <section class="field-advice-card">
+                <h4>Performance Advice</h4>
+                ${advice.map((item) => `
+                    <div class="field-advice-item">
+                        <strong>${sanitize(item.title)}</strong>
+                        <p>${sanitize(item.body)}</p>
+                    </div>
+                `).join('')}
+            </section>
+            <section class="field-advice-card">
+                <h4>Kaizen Signals</h4>
+                <div class="field-signal-row"><span>New today</span><strong>${summary.workload.todayOpen.length}</strong></div>
+                <div class="field-signal-row"><span>Past pending</span><strong>${summary.workload.pastOpen.length}</strong></div>
+                <div class="field-signal-row"><span>Needs action</span><strong>${pending}</strong></div>
+                <div class="field-signal-row"><span>Ongoing parts</span><strong>${ongoing}</strong></div>
+                <div class="field-signal-row"><span>Missing check-out</span><strong>${summary.missingCheckout}</strong></div>
+            </section>
+        </div>
+    `;
+}
+
+async function loadFieldAnalytics() {
+    const date = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    const panel = document.getElementById('fieldAnalytics');
+    if (panel) panel.innerHTML = '<div class="loading-cell">Refreshing analytics...</div>';
+    try {
+        const docs = await queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => []);
+        state.pettyCashEntries = mergePendingOfflineRows(PETTY_CASH_ENTRY_COLLECTION, docs.map(parseFirestoreDoc).filter(Boolean));
+    } catch (error) {
+        console.warn('Petty cash analytics refresh failed:', error);
+    }
+    renderAnalytics();
 }
 
 function rowMatchesCustomerSearch(row, query) {
@@ -1533,18 +1821,20 @@ async function loadMySchedule(options = {}) {
     try {
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const [printedDocs, savedDocs, scheduleDocs, plannerDocs, closeRequestDocs] = await Promise.all([
+        const [printedDocs, savedDocs, scheduleDocs, plannerDocs, closeRequestDocs, pettyCashDocs] = await Promise.all([
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => []),
-            queryEquals(CLOSE_REQUEST_COLLECTION, 'requester_staff_id', Number(state.staffId || 0), 'integer', FIELD_QUERY_LIMIT).catch(() => [])
+            queryEquals(CLOSE_REQUEST_COLLECTION, 'requester_staff_id', Number(state.staffId || 0), 'integer', FIELD_QUERY_LIMIT).catch(() => []),
+            queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => [])
         ]);
 
         const printedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_PRIMARY, printedDocs.map(parseFirestoreDoc).filter(Boolean));
         const savedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_FALLBACK, savedDocs.map(parseFirestoreDoc).filter(Boolean));
         const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
         const plannerSourceRows = mergePendingOfflineRows(SCHEDULE_PLANNER_COLLECTION, plannerDocs.map(parseFirestoreDoc).filter(Boolean));
+        state.pettyCashEntries = mergePendingOfflineRows(PETTY_CASH_ENTRY_COLLECTION, pettyCashDocs.map(parseFirestoreDoc).filter(Boolean));
         loadCloseRequestLookup(closeRequestDocs.map(parseFirestoreDoc).filter(Boolean));
 
         const printedRows = pickLatestRouteRows(printedSourceRows, date);
@@ -1582,7 +1872,7 @@ async function loadMySchedule(options = {}) {
         state.todayRows = todayRows;
         state.carryoverRows = forwardedPastPendingRows;
         state.rows = [...todayRows, ...forwardedPastPendingRows];
-        updatePriorityGate(todayRows);
+        updatePriorityGate(workloadRows());
         await hydrateLookups(state.rows);
         renderActiveView();
 
@@ -1603,7 +1893,7 @@ async function loadMySchedule(options = {}) {
             state.carryoverRows = forwardedPastPendingRows;
             state.rows = [...todayRows, ...forwardedPastPendingRows];
         }
-        updatePriorityGate(state.todayRows);
+        updatePriorityGate(workloadRows());
         renderActiveView();
     } catch (err) {
         console.error('Field load failed:', err);
