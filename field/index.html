@@ -64,6 +64,7 @@
             <button type="button" class="field-view-tab is-active" data-view="home" aria-selected="true">Home</button>
             <button type="button" class="field-view-tab" data-view="tasks" aria-selected="false">Task Details</button>
             <button type="button" class="field-view-tab" data-view="analytics" aria-selected="false">Analytics</button>
+            <button type="button" class="field-view-tab" data-view="troubleshooting" aria-selected="false">Troubleshooting Guide</button>
         </nav>
 
         <section class="field-view-panel" id="fieldHomePanel" data-view-panel="home">
@@ -107,6 +108,19 @@
             </div>
             <div class="field-analytics" id="fieldAnalytics">
                 <div class="loading-cell">Loading analytics...</div>
+            </div>
+        </section>
+
+        <section class="content-card field-card field-view-panel" id="fieldTroubleshootingPanel" data-view-panel="troubleshooting" hidden>
+            <div class="card-header">
+                <h3>Troubleshooting Guide</h3>
+                <div class="card-actions">
+                    <input type="search" id="fieldGuideSearch" class="field-customer-search" placeholder="Search paper jam, error 51, model, trouble" aria-label="Search troubleshooting guide">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldGuideRefresh">Refresh Guide</button>
+                </div>
+            </div>
+            <div class="field-guide-list" id="fieldGuideList">
+                <div class="loading-cell">Loading guide...</div>
             </div>
         </section>
     </main>

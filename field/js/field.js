@@ -28,6 +28,7 @@ const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
+const MODEL_ERROR_GUIDE_COLLECTION = 'marga_model_error_guides';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
@@ -86,6 +87,7 @@ const state = {
     activeTab: 'today',
     statusFilter: 'all',
     searchQuery: '',
+    guideSearchQuery: '',
     staffId: null,
     routeSourceLabel: 'Printed',
     todayRows: [],
@@ -109,6 +111,8 @@ const state = {
         ready: true
     },
     pettyCashEntries: [],
+    modelErrorGuides: [],
+    modelErrorGuidesLoaded: false,
     closeRequestsBySchedule: new Map()
 };
 
@@ -140,6 +144,11 @@ document.addEventListener('DOMContentLoaded', () => {
         button.addEventListener('click', () => setActiveView(button.dataset.view || 'home'));
     });
     document.getElementById('fieldAnalyticsRefresh')?.addEventListener('click', () => loadFieldAnalytics());
+    document.getElementById('fieldGuideRefresh')?.addEventListener('click', () => loadModelErrorGuides({ force: true }));
+    document.getElementById('fieldGuideSearch')?.addEventListener('input', (event) => {
+        state.guideSearchQuery = String(event.target.value || '');
+        renderTroubleshootingGuide();
+    });
     document.getElementById('fieldStatusFilter').addEventListener('change', () => {
         state.statusFilter = document.getElementById('fieldStatusFilter').value;
         renderActiveView();
@@ -750,7 +759,10 @@ function setActiveTab(tab) {
 }
 
 function setActiveView(view) {
-    state.activeView = ['home', 'tasks', 'analytics'].includes(view) ? view : 'home';
+    state.activeView = ['home', 'tasks', 'analytics', 'troubleshooting'].includes(view) ? view : 'home';
+    if (state.activeView === 'troubleshooting') {
+        void loadModelErrorGuides();
+    }
     renderActiveView();
 }
 
@@ -795,6 +807,7 @@ function renderActiveView() {
     renderEndOfDayReview();
     renderList();
     renderAnalytics();
+    renderTroubleshootingGuide();
     updateSubtitle();
 }
 
@@ -1257,6 +1270,46 @@ function getCustomerMinutes(row) {
     return null;
 }
 
+function getRowTroubleText(row) {
+    const trouble = caches.trouble.get(String(row?.trouble_id || 0));
+    return normalizeSearchText([
+        trouble?.trouble,
+        row?.trouble_label,
+        row?.route_remarks,
+        row?.remarks,
+        row?.caller,
+        row?.field_work_notes,
+        row?.field_final_summary
+    ].filter(Boolean).join(' '));
+}
+
+function getExpectedCustomerMinutes(row) {
+    const purpose = Number(row?.purpose_id || 0);
+    const text = getRowTroubleText(row);
+    if (purpose === BILLING_PURPOSE_ID) return 20;
+    if (purpose === COLLECTION_PURPOSE_ID) return 25;
+    if (purpose === 3 || purpose === 4) return 20;
+    if (purpose === 8) return 15;
+    if (purpose !== 5) return 30;
+    if (/(paper jam|jamming|jam|paper feed|feed|tray|pull out paper|pulled paper)/.test(text)) return 45;
+    if (/(toner|cartridge|drum|replace|install)/.test(text)) return 45;
+    if (/(clean|maintenance|preventive|pm)/.test(text)) return 75;
+    if (/(error|sc|code|fuser|scanner|laser|motor|network|board|power|no print|down)/.test(text)) return 120;
+    return 90;
+}
+
+function getCustomerTimeScore(timedRows = []) {
+    if (!timedRows.length) return 0;
+    const scores = timedRows.map(({ row, minutes }) => {
+        const expected = getExpectedCustomerMinutes(row);
+        if (!minutes || !expected) return 0;
+        if (minutes <= expected) return 100;
+        const overRatio = (minutes - expected) / expected;
+        return clampScore(100 - (overRatio * 70));
+    });
+    return clampScore(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+}
+
 function formatDurationMinutes(minutes) {
     const value = Number(minutes || 0);
     if (!Number.isFinite(value) || value <= 0) return '-';
@@ -1279,6 +1332,59 @@ function getRating(score) {
 
 function getRatingGuide(score, context = 'score') {
     const rating = getRating(score);
+    const normalizedContext = String(context || '').toLowerCase();
+    if (normalizedContext.includes('past pending')) {
+        const pendingGuides = {
+            excellent: {
+                why: 'Very little old work is mixed into today, so the route is clean and customer follow-up risk is low.',
+                action: 'Keep closing or properly forwarding unfinished work before the next day starts.'
+            },
+            good: {
+                why: 'There is some old work, but it is still controlled and visible.',
+                action: 'Clear the oldest pending tasks first so they do not become repeated customer complaints.'
+            },
+            fair: {
+                why: 'Old work is becoming noticeable, which means today is partly spent recovering from yesterday.',
+                action: 'Ask the team leader to prioritize carryover work and reassign items that need stronger skill or closer location.'
+            },
+            needs: {
+                why: 'Too much of today is old pending work. This usually means customers waited too long or the route was not finished cleanly.',
+                action: 'Handle past pending before new low-priority work, and explain why the previous visit was not completed.'
+            },
+            poor: {
+                why: 'The past pending load is poor because old unfinished work is dominating the route. This creates missed service, customer dissatisfaction, and hidden cost.',
+                action: 'Escalate to the team leader, clear oldest/highest-priority customers first, and request reassignment if the cause is skill, parts, or route overload.'
+            }
+        };
+        const guide = pendingGuides[rating.className] || pendingGuides.poor;
+        return { ...rating, title: `${rating.label} past pending load`, why: guide.why, action: guide.action };
+    }
+    if (normalizedContext.includes('customer time')) {
+        const timeGuides = {
+            excellent: {
+                why: 'The time spent at the customer matches the type of trouble and the task was recorded clearly.',
+                action: 'Keep using the guide and record the actual fix done before leaving.'
+            },
+            good: {
+                why: 'The visit time is reasonable for the trouble, with only minor risk of delay.',
+                action: 'Add clear notes when the customer, parts, or machine condition caused extra time.'
+            },
+            fair: {
+                why: 'The visit time is acceptable but may need review, especially if the trouble was simple.',
+                action: 'Use the troubleshooting guide early and ask for help before spending too long on one machine.'
+            },
+            needs: {
+                why: 'The visit took longer than expected for the trouble type. Long time does not always mean hard work; it may mean unclear diagnosis or skill gap.',
+                action: 'Search the guide, follow the steps, document what was tried, and call the senior tech if the issue is not moving.'
+            },
+            poor: {
+                why: 'The customer time is poor because the stay is much longer than expected for the recorded trouble. For simple jams or paper feed issues, over one hour may mean inefficient troubleshooting unless clearly justified.',
+                action: 'Write the exact cause, use the troubleshooting guide, ask for technical help early, and avoid staying long without progress.'
+            }
+        };
+        const guide = timeGuides[rating.className] || timeGuides.poor;
+        return { ...rating, title: `${rating.label} customer time`, why: guide.why, action: guide.action };
+    }
     const guides = {
         excellent: {
             why: 'Almost all required records are complete and the work is easy to verify.',
@@ -1334,12 +1440,14 @@ function getAnalyticsSummary() {
     const totalAssigned = workload.totalWorkload + closedRows.length;
     const completionRate = totalAssigned > 0 ? Math.round((closedRows.length / totalAssigned) * 100) : 0;
     const carryoverRate = workload.totalWorkload > 0 ? Math.round((workload.pastOpen.length / workload.totalWorkload) * 100) : 0;
+    const pastPendingScore = workload.totalWorkload > 0 ? clampScore(100 - carryoverRate) : 100;
     const timedRows = state.rows
         .map((row) => ({ row, minutes: getCustomerMinutes(row) }))
         .filter((item) => item.minutes !== null);
     const averageCustomerMinutes = timedRows.length
         ? Math.round(timedRows.reduce((sum, item) => sum + item.minutes, 0) / timedRows.length)
         : 0;
+    const customerTimeScore = getCustomerTimeScore(timedRows);
     const attendanceTimeIn = normalizeLegacyDateTime(state.attendance?.time_in);
     const attendanceTimeOut = normalizeLegacyDateTime(state.attendance?.time_out);
     const customerTimeInRows = state.rows.filter((row) => normalizeLegacyDateTime(row.field_time_in));
@@ -1363,8 +1471,10 @@ function getAnalyticsSummary() {
         totalAssigned,
         completionRate,
         carryoverRate,
+        pastPendingScore,
         averageCustomerMinutes,
         averageCustomerDuration: formatDurationMinutes(averageCustomerMinutes),
+        customerTimeScore,
         attendanceTimeIn,
         attendanceTimeOut,
         customerTimeInRows,
@@ -1385,7 +1495,7 @@ function buildPerformanceAdvice(summary) {
     if (summary.workload.pastOpen.length > 0) {
         advice.push({
             title: 'Clear old pending first',
-            body: `${summary.workload.pastOpen.length} past pending task(s) are still open. Handle the oldest/highest-priority items before starting low-priority new work.`
+            body: `${summary.workload.pastOpen.length} past pending task(s) are still open and rated ${getRating(summary.pastPendingScore).label}. Handle the oldest/highest-priority items before starting low-priority new work.`
         });
     }
     if (summary.workload.openCounts.ongoing > 0) {
@@ -1415,7 +1525,7 @@ function buildPerformanceAdvice(summary) {
     if (summary.averageCustomerMinutes > 90) {
         advice.push({
             title: 'Explain long customer time',
-            body: `Average customer time is ${summary.averageCustomerDuration}. Add notes when the delay is customer-caused, parts-caused, or technical.`
+            body: `Average customer time is ${summary.averageCustomerDuration} and rated ${getRating(summary.customerTimeScore).label}. Add notes when the delay is customer-caused, parts-caused, technical, or a skill/escalation issue.`
         });
     }
     if (summary.pettyCashTotal > 0 && !summary.closedRows.length) {
@@ -1548,15 +1658,17 @@ function renderAnalytics() {
             </article>
             <article class="field-analytics-card">
                 <span>Past Pending Load</span>
-                <strong>${summary.workload.pastOpen.length}</strong>
+                <strong>${summary.workload.pastOpen.length} ${renderRatingBadge(summary.pastPendingScore)}</strong>
                 <div class="field-bar">${bar(summary.workload.pastOpen.length, 'is-warning')}</div>
                 <small>${summary.carryoverRate}% of open workload came from previous schedule dates.</small>
+                ${renderRatingGuide(summary.pastPendingScore, 'past pending load')}
             </article>
             <article class="field-analytics-card">
                 <span>Avg Customer Time</span>
-                <strong>${sanitize(summary.averageCustomerDuration)}</strong>
-                <div class="field-bar">${bar(Math.min(summary.averageCustomerMinutes || 0, 120), 'is-info')}</div>
-                <small>${summary.timedRows.length} task(s) have usable customer check-in/out.</small>
+                <strong>${sanitize(summary.averageCustomerDuration)} ${renderRatingBadge(summary.customerTimeScore)}</strong>
+                <div class="field-bar">${percentBar(summary.customerTimeScore, 'is-info')}</div>
+                <small>${summary.timedRows.length} task(s) have usable customer check-in/out. Rated against trouble/task type, not raw time alone.</small>
+                ${renderRatingGuide(summary.customerTimeScore, 'customer time')}
             </article>
             <article class="field-analytics-card">
                 <span>Petty Cash Linked</span>
@@ -1600,6 +1712,116 @@ async function loadFieldAnalytics() {
         console.warn('Petty cash analytics refresh failed:', error);
     }
     renderAnalytics();
+}
+
+function guideSearchText(row) {
+    return normalizeSearchText([
+        row.model,
+        row.family,
+        Array.isArray(row.model_aliases) ? row.model_aliases.join(' ') : row.model_aliases,
+        row.trouble_label,
+        row.lcd_error_message,
+        row.meaning,
+        row.what_to_do,
+        row.service_level_code,
+        row.source_file
+    ].filter(Boolean).join(' '));
+}
+
+function currentRouteGuideHints() {
+    const rows = workloadRows().slice(0, 8);
+    const hints = rows.flatMap((row) => {
+        const trouble = caches.trouble.get(String(row.trouble_id || 0));
+        const machine = caches.machine.get(String(row.serial || 0));
+        const model = machine ? caches.model.get(String(machine.model_id || 0)) : null;
+        return [
+            trouble?.trouble,
+            row.remarks,
+            row.caller,
+            getModelLabel(model, machine)
+        ].filter(Boolean);
+    });
+    return normalizeSearchText(hints.join(' '));
+}
+
+function getFilteredGuideRows() {
+    const query = normalizeSearchText(state.guideSearchQuery);
+    const routeHints = currentRouteGuideHints();
+    const terms = query ? query.split(/\s+/).filter(Boolean) : [];
+    const routeTerms = routeHints ? routeHints.split(/\s+/).filter((term) => term.length >= 3).slice(0, 12) : [];
+    return (state.modelErrorGuides || [])
+        .map((row) => {
+            const text = guideSearchText(row);
+            const queryScore = terms.length ? terms.reduce((score, term) => score + (text.includes(term) ? 10 : 0), 0) : 0;
+            const routeScore = routeTerms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
+            return { row, score: query ? queryScore + routeScore : routeScore };
+        })
+        .filter((item) => query ? item.score >= Math.min(10, terms.length * 10) : item.score > 0)
+        .sort((a, b) => b.score - a.score || String(a.row.model || '').localeCompare(String(b.row.model || '')))
+        .slice(0, 24)
+        .map((item) => item.row);
+}
+
+function renderTroubleshootingGuide() {
+    const list = document.getElementById('fieldGuideList');
+    if (!list) return;
+    if (!state.modelErrorGuidesLoaded) {
+        list.innerHTML = '<div class="loading-cell">Loading troubleshooting guide...</div>';
+        return;
+    }
+    const rows = getFilteredGuideRows();
+    if (!rows.length) {
+        list.innerHTML = `
+            <div class="field-guide-empty">
+                <strong>No guide matched yet.</strong>
+                <p>Search by model, trouble, LCD error, or symptom. Example: paper jam feeder, error 51, fuser, no paper.</p>
+            </div>
+        `;
+        return;
+    }
+    list.innerHTML = rows.map((row) => `
+        <article class="field-guide-card">
+            <div class="field-guide-card-head">
+                <div>
+                    <span>${sanitize(row.family || row.model || 'Machine guide')}</span>
+                    <h4>${sanitize(row.lcd_error_message || row.trouble_label || 'Troubleshooting guide')}</h4>
+                </div>
+                <strong>${sanitize(row.model || 'General')}</strong>
+            </div>
+            <div class="field-guide-meta">
+                <span>${sanitize(row.trouble_label || 'Trouble')}</span>
+                ${row.service_level_code ? `<span>Code: ${sanitize(row.service_level_code)}</span>` : ''}
+            </div>
+            <div class="field-guide-steps">
+                <p><b>Meaning:</b> ${sanitize(row.meaning || 'No meaning recorded.')}</p>
+                <p><b>What to do:</b> ${sanitize(row.what_to_do || 'No steps recorded yet.')}</p>
+            </div>
+        </article>
+    `).join('');
+}
+
+async function loadModelErrorGuides(options = {}) {
+    const { force = false } = options;
+    if (state.modelErrorGuidesLoaded && !force) {
+        renderTroubleshootingGuide();
+        return;
+    }
+    const list = document.getElementById('fieldGuideList');
+    if (list) list.innerHTML = '<div class="loading-cell">Loading troubleshooting guide...</div>';
+    try {
+        const docs = await queryCollection(MODEL_ERROR_GUIDE_COLLECTION, FIELD_QUERY_LIMIT);
+        state.modelErrorGuides = mergePendingOfflineRows(MODEL_ERROR_GUIDE_COLLECTION, docs.map(parseFirestoreDoc).filter(Boolean));
+        state.modelErrorGuidesLoaded = true;
+    } catch (error) {
+        console.warn('Troubleshooting guide load failed:', error);
+        state.modelErrorGuides = [];
+        state.modelErrorGuidesLoaded = true;
+        if (list) {
+            list.innerHTML = `<div class="loading-cell">Troubleshooting guide could not load: ${sanitize(error?.message || error)}</div>`;
+            return;
+        }
+    }
+    renderTroubleshootingGuide();
 }
 
 function rowMatchesCustomerSearch(row, query) {

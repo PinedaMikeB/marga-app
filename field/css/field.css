@@ -649,6 +649,95 @@
     line-height: 1.35;
 }
 
+.field-guide-list {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem;
+}
+
+.field-guide-empty,
+.field-guide-card {
+    border-radius: 16px;
+    border: 1px solid rgba(191, 219, 254, 0.72);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 8px 24px rgba(30, 64, 175, 0.07);
+    padding: 0.95rem;
+}
+
+.field-guide-empty strong {
+    color: #16345b;
+}
+
+.field-guide-empty p {
+    margin: 0.28rem 0 0;
+    color: #526985;
+    font-size: 0.82rem;
+}
+
+.field-guide-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.field-guide-card-head span {
+    display: block;
+    color: #2563eb;
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.field-guide-card-head h4 {
+    margin: 0.18rem 0 0;
+    color: #16345b;
+    font-size: 1rem;
+}
+
+.field-guide-card-head strong {
+    border-radius: 999px;
+    padding: 0.26rem 0.56rem;
+    color: #1d4ed8;
+    background: rgba(219, 234, 254, 0.82);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.field-guide-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.42rem;
+    margin-top: 0.65rem;
+}
+
+.field-guide-meta span {
+    border-radius: 999px;
+    padding: 0.22rem 0.5rem;
+    background: rgba(241, 245, 249, 0.95);
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.field-guide-steps {
+    margin-top: 0.65rem;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.field-guide-steps p {
+    margin: 0;
+    color: #526985;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.field-guide-steps b {
+    color: #16345b;
+}
+
 .field-customer-search {
     min-width: 220px;
     max-width: 100%;
@@ -1155,6 +1244,14 @@
 
     .field-scorecard-status {
         width: 4.2rem;
+    }
+
+    .field-guide-card-head {
+        flex-direction: column;
+    }
+
+    .field-guide-card-head strong {
+        white-space: normal;
     }
 
     .field-endofday {
