@@ -116,6 +116,7 @@
             <div class="card-header">
                 <h3>Troubleshooting Guide</h3>
                 <div class="card-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldGuideBackBtn" hidden>Back to Update</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="fieldGuideRefresh">Refresh Guide</button>
                 </div>
             </div>
@@ -268,15 +269,16 @@
                         <div class="ops-subtext">Technician visit, PM, repair, toner yield, and parts monitoring.</div>
                     </div>
                     <label class="marga-field">
-                        <span>Previous Maintenance Meter</span>
+                        <span>Previous Visit Meter</span>
                         <input type="number" id="fieldMaintenancePreviousMeter" min="0" step="1" placeholder="0">
+                        <div class="ops-subtext" id="fieldMaintenancePreviousMeterHint">Loaded from the last field visit when available.</div>
                     </label>
                     <label class="marga-field">
-                        <span>Present Maintenance Meter</span>
+                        <span>Present Visit Meter</span>
                         <input type="number" id="fieldMaintenancePresentMeter" min="0" step="1" placeholder="0">
                     </label>
                     <label class="marga-field">
-                        <span>Maintenance Yield</span>
+                        <span>Consumption Since Last Visit</span>
                         <input type="number" id="fieldMaintenanceTotalConsumed" min="0" step="1" readonly>
                     </label>
                     <label class="marga-field marga-field-full">
@@ -316,6 +318,12 @@
                         <input type="file" id="fieldAfterPhoto" accept="image/*" capture="environment">
                         <div class="ops-subtext" id="fieldAfterPhotoHint">No file selected.</div>
                     </label>
+                    <label class="marga-field marga-field-full">
+                        <span>Status of Machine</span>
+                        <select id="fieldWorkMachineStatus">
+                            <option value="">Select machine status...</option>
+                        </select>
+                    </label>
                 </div>
                 </div>
             </section>
@@ -346,7 +354,7 @@
 
             <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldDeliverySection" data-default-collapsed="true">
                 <button type="button" class="field-section-toggle" aria-expanded="false">
-                    <span>Delivery and Customer Acknowledgement</span>
+                    <span>Delivery</span>
                     <span class="field-section-toggle-icon" aria-hidden="true"></span>
                 </button>
                 <div class="field-section-body">
@@ -361,21 +369,17 @@
                         <textarea id="fieldEmptyPickupDetails" rows="2" placeholder="Empty items received from customer..."></textarea>
                     </label>
                     <label class="marga-field">
-                        <span>Customer Representative (Signer)</span>
-                        <input type="text" id="fieldCustomerSigner" placeholder="Full name">
+                        <span>Previous Delivery / Machine Meter</span>
+                        <input type="number" id="fieldDeliveryPreviousMeter" min="0" step="1" placeholder="0">
                     </label>
                     <label class="marga-field">
-                        <span>Contact Number</span>
-                        <input type="text" id="fieldCustomerContact" placeholder="09xx... / landline">
-                    </label>
-                    <label class="marga-field marga-field-full">
-                        <span>Final Acknowledgement Summary</span>
-                        <textarea id="fieldFinalSummary" rows="3" placeholder="Short summary of work done, delivered, requested, and next action."></textarea>
+                        <span>Present Delivery / Machine Meter</span>
+                        <input type="number" id="fieldDeliveryPresentMeter" min="0" step="1" placeholder="0">
                     </label>
                     <label class="marga-field">
-                        <span>Customer Secret PIN (4 digits)</span>
-                        <input type="password" id="fieldClosePin" inputmode="numeric" maxlength="4" placeholder="0000">
-                        <div class="ops-subtext" id="fieldPinHint">Required to mark as Finished.</div>
+                        <span>Delivery Meter Consumption</span>
+                        <input type="number" id="fieldDeliveryTotalConsumed" min="0" step="1" readonly>
+                        <div class="ops-subtext">Copied from Work Execution when available. Machine delivery requires beginning/present meter.</div>
                     </label>
                 </div>
                 </div>
@@ -443,6 +447,34 @@
                 </div>
                 </div>
             </section>
+
+            <section class="field-modal-section field-collapsible-section is-collapsed" id="fieldAcknowledgementSection" data-default-collapsed="true">
+                <button type="button" class="field-section-toggle" aria-expanded="false">
+                    <span>Customer Acknowledgement</span>
+                    <span class="field-section-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="field-section-body">
+                <div class="marga-form-grid">
+                    <label class="marga-field">
+                        <span>Customer Representative (Signer)</span>
+                        <input type="text" id="fieldCustomerSigner" placeholder="Full name">
+                    </label>
+                    <label class="marga-field">
+                        <span>Contact Number</span>
+                        <input type="text" id="fieldCustomerContact" placeholder="09xx... / landline">
+                    </label>
+                    <label class="marga-field marga-field-full">
+                        <span>Final Acknowledgement Summary</span>
+                        <textarea id="fieldFinalSummary" rows="3" placeholder="Short summary of work done, delivered, requested, and next action."></textarea>
+                    </label>
+                    <label class="marga-field">
+                        <span>Customer Secret PIN (4 digits)</span>
+                        <input type="password" id="fieldClosePin" inputmode="numeric" maxlength="4" placeholder="0000">
+                        <div class="ops-subtext" id="fieldPinHint">Required to mark as Finished.</div>
+                    </label>
+                </div>
+                </div>
+            </section>
         </div>
         <div class="marga-modal-footer">
             <button type="button" class="btn btn-secondary" id="fieldModalCancel">Cancel</button>
@@ -458,6 +490,6 @@
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/field.js?v=20260513-kaizen-analytics-1"></script>
+    <script src="js/field.js?v=20260514-field-workflow-1"></script>
 </body>
 </html>

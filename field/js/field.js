@@ -57,7 +57,8 @@ const COLLECTION_PURPOSE_ID = 2;
 const FALLBACK_MACHINE_STATUSES = [
     { id: 1, label: 'Running / Print OK' },
     { id: 2, label: 'Running / Print Problem' },
-    { id: 3, label: 'Down / No Print' }
+    { id: 3, label: 'Down / No Print' },
+    { id: 4, label: 'Running / Best Mode Only' }
 ];
 
 const caches = {
@@ -99,6 +100,7 @@ const state = {
     carryoverRows: [],
     rows: [],
     modalScheduleId: null,
+    guideReturnScheduleId: null,
     modalMachineId: null,
     modalBranchId: null,
     modalExpectedPin: '',
@@ -156,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldSolutionRequestsRefresh')?.addEventListener('click', () => loadSolutionRequests({ force: true }));
     document.getElementById('fieldSolutionRequestsList')?.addEventListener('click', handleSolutionRequestAction);
     document.getElementById('fieldOpenGuideBtn')?.addEventListener('click', openGuideForCurrentTask);
+    document.getElementById('fieldGuideBackBtn')?.addEventListener('click', returnToUpdateFromGuide);
     document.getElementById('fieldSubmitSolutionBtn')?.addEventListener('click', submitSolutionRequest);
     [
         ['fieldGuideSearch', 'guideSearchQuery'],
@@ -231,6 +234,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldMaintenancePresentMeter').addEventListener('input', recomputeMaintenanceTotalConsumed);
     document.getElementById('fieldMaintenancePreviousMeter').addEventListener('input', recomputeMaintenanceTotalConsumed);
+    document.getElementById('fieldDeliveryPresentMeter')?.addEventListener('input', recomputeDeliveryTotalConsumed);
+    document.getElementById('fieldDeliveryPreviousMeter')?.addEventListener('input', recomputeDeliveryTotalConsumed);
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
     document.getElementById('fieldPinLocationBtn').addEventListener('click', pinCustomerLocation);
@@ -239,6 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTemporaryFieldMode();
     resetModalSectionState();
     void loadMachineStatusOptions();
+    populateWorkMachineStatusOptions();
     renderAttendanceCard();
 
     loadMySchedule();
@@ -1848,6 +1854,7 @@ function getGuideContextForRow(row) {
 function openGuideForCurrentTask() {
     const row = getCurrentRow();
     const context = getGuideContextForRow(row);
+    state.guideReturnScheduleId = Number(row?.id || state.modalScheduleId || 0) || null;
     state.guideBrandQuery = context.brand;
     state.guideModelQuery = context.model;
     state.guideErrorQuery = context.error;
@@ -1857,6 +1864,21 @@ function openGuideForCurrentTask() {
     closeModal();
     setActiveView('troubleshooting');
     void loadModelErrorGuides();
+}
+
+async function returnToUpdateFromGuide() {
+    const scheduleId = Number(state.guideReturnScheduleId || 0);
+    if (!scheduleId) {
+        setActiveView('tasks');
+        return;
+    }
+    setActiveView('tasks');
+    await openModal(scheduleId);
+    const workSection = document.getElementById('fieldWorkSection');
+    if (workSection) {
+        collapseOtherSections(workSection);
+        setSectionCollapsed(workSection, false);
+    }
 }
 
 function syncGuideInputsFromState() {
@@ -1973,6 +1995,8 @@ function getFilteredGuideRows() {
 function renderTroubleshootingGuide() {
     const list = document.getElementById('fieldGuideList');
     if (!list) return;
+    const backButton = document.getElementById('fieldGuideBackBtn');
+    if (backButton) backButton.hidden = !Number(state.guideReturnScheduleId || 0);
     syncGuideInputsFromState();
     updateGuideDatalists();
     if (!state.modelErrorGuidesLoaded) {
@@ -2066,18 +2090,10 @@ async function submitSolutionRequest() {
     if (!row) return;
     const solution = String(document.getElementById('fieldSolutionNotes')?.value || '').trim();
     if (solution.length < 12) {
-        alert('Please write a clear unique solution before submitting.');
+        alert('Please write a clear solution before submitting.');
         return;
     }
     const key = solutionDedupeKey(row, solution);
-    const existing = (await queryCollection(SOLUTION_REQUEST_COLLECTION, FIELD_QUERY_LIMIT).catch(() => []))
-        .map(parseFirestoreDoc)
-        .filter(Boolean)
-        .find((item) => String(item.dedupe_key || '') === key && String(item.status || '').toLowerCase() !== 'rejected');
-    if (existing) {
-        alert('This solution appears to be a repeat. It was not submitted again.');
-        return;
-    }
     const staffId = Number(state.staffId || 0) || 0;
     const context = getGuideContextForRow(row);
     const nowIso = new Date().toISOString();
@@ -2744,6 +2760,20 @@ async function loadMachineStatusOptions() {
     select.innerHTML = statuses.map((item) => (
         `<option value="${sanitize(item.id)}" data-label="${sanitize(item.label)}">${sanitize(item.label)}</option>`
     )).join('');
+    populateWorkMachineStatusOptions();
+}
+
+function populateWorkMachineStatusOptions() {
+    const select = document.getElementById('fieldWorkMachineStatus');
+    if (!select) return;
+    const statuses = caches.machineStatusesLoaded && caches.machineStatuses.length
+        ? caches.machineStatuses
+        : FALLBACK_MACHINE_STATUSES;
+    const current = String(select.value || '');
+    select.innerHTML = '<option value="">Select machine status...</option>' + statuses.map((item) => (
+        `<option value="${sanitize(item.id)}" data-label="${sanitize(item.label)}">${sanitize(item.label)}</option>`
+    )).join('');
+    if (current && [...select.options].some((option) => option.value === current)) select.value = current;
 }
 
 async function loadPartsCatalog() {
@@ -2975,6 +3005,45 @@ function recomputeMaintenanceTotalConsumed() {
         ? Math.max(0, present - previous)
         : 0;
     document.getElementById('fieldMaintenanceTotalConsumed').value = String(total);
+    syncDeliveryMetersFromMaintenance();
+}
+
+function recomputeDeliveryTotalConsumed() {
+    const previous = parseIntegerInput(document.getElementById('fieldDeliveryPreviousMeter')?.value);
+    const present = parseIntegerInput(document.getElementById('fieldDeliveryPresentMeter')?.value);
+    const total = Number.isFinite(previous) && Number.isFinite(present)
+        ? Math.max(0, present - previous)
+        : 0;
+    const target = document.getElementById('fieldDeliveryTotalConsumed');
+    if (target) target.value = String(total);
+}
+
+function syncDeliveryMetersFromMaintenance(options = {}) {
+    const { force = false } = options;
+    const maintenancePrevious = document.getElementById('fieldMaintenancePreviousMeter');
+    const maintenancePresent = document.getElementById('fieldMaintenancePresentMeter');
+    const deliveryPrevious = document.getElementById('fieldDeliveryPreviousMeter');
+    const deliveryPresent = document.getElementById('fieldDeliveryPresentMeter');
+    if (!maintenancePrevious || !maintenancePresent || !deliveryPrevious || !deliveryPresent) return;
+
+    if ((force || !String(deliveryPrevious.value || '').trim()) && String(maintenancePrevious.value || '').trim()) {
+        deliveryPrevious.value = maintenancePrevious.value;
+    }
+    if ((force || !String(deliveryPresent.value || '').trim()) && String(maintenancePresent.value || '').trim()) {
+        deliveryPresent.value = maintenancePresent.value;
+    }
+    recomputeDeliveryTotalConsumed();
+}
+
+function buildFinalAcknowledgementSummary() {
+    const summary = String(document.getElementById('fieldFinalSummary')?.value || '').trim();
+    if (summary) return summary;
+    const workNotes = String(document.getElementById('fieldCloseNotes')?.value || '').trim();
+    const deliveryDetails = String(document.getElementById('fieldDeliveryDetails')?.value || '').trim();
+    return [
+        workNotes ? `Work done: ${workNotes}` : '',
+        deliveryDetails ? `Delivered/requested: ${deliveryDetails}` : ''
+    ].filter(Boolean).join('\n\n').trim();
 }
 
 function parseSavedPartsList(raw) {
@@ -3380,6 +3449,7 @@ function resetModalFields() {
 
     document.getElementById('fieldCloseNotes').value = '';
     document.getElementById('fieldSolutionNotes').value = '';
+    document.getElementById('fieldWorkMachineStatus').value = '';
     document.getElementById('fieldClosePin').value = '';
     document.getElementById('fieldSerialInput').value = '';
     document.getElementById('fieldSerialHint').textContent = '';
@@ -3392,6 +3462,9 @@ function resetModalFields() {
     document.getElementById('fieldPartQty').value = '1';
     document.getElementById('fieldDeliveryDetails').value = '';
     document.getElementById('fieldEmptyPickupDetails').value = '';
+    document.getElementById('fieldDeliveryPreviousMeter').value = '';
+    document.getElementById('fieldDeliveryPresentMeter').value = '';
+    document.getElementById('fieldDeliveryTotalConsumed').value = '0';
     document.getElementById('fieldCustomerSigner').value = '';
     document.getElementById('fieldCustomerContact').value = '';
     document.getElementById('fieldFinalSummary').value = '';
@@ -3407,6 +3480,7 @@ function resetModalFields() {
     document.getElementById('fieldPresentMeter').value = '';
     document.getElementById('fieldTotalConsumed').value = '0';
     document.getElementById('fieldMaintenancePreviousMeter').value = '';
+    document.getElementById('fieldMaintenancePreviousMeterHint').textContent = 'Loaded from the last field visit when available.';
     document.getElementById('fieldMaintenancePresentMeter').value = '';
     document.getElementById('fieldMaintenanceTotalConsumed').value = '0';
     document.getElementById('fieldTimeIn').value = '';
@@ -3463,6 +3537,7 @@ function setFormDisabled(isReadOnly) {
         'fieldCloseNotes',
         'fieldSolutionNotes',
         'fieldSubmitSolutionBtn',
+        'fieldWorkMachineStatus',
         'fieldPartInput',
         'fieldPartQty',
         'fieldAddPartBtn',
@@ -3479,6 +3554,8 @@ function setFormDisabled(isReadOnly) {
         'fieldLocationPhoto',
         'fieldDeliveryDetails',
         'fieldEmptyPickupDetails',
+        'fieldDeliveryPreviousMeter',
+        'fieldDeliveryPresentMeter',
         'fieldCustomerSigner',
         'fieldCustomerContact',
         'fieldFinalSummary',
@@ -3800,6 +3877,52 @@ async function resolvePreviousMeter(rowOrMachineId, scheduleId, taskDateTime, fa
         : null;
 }
 
+async function resolvePreviousMaintenanceMeter(row, machine = null) {
+    const saved = parseIntegerInput(row?.field_maintenance_previous_meter);
+    if (saved !== null && saved > 0) {
+        return { meter: saved, source: 'saved_field_draft' };
+    }
+
+    const machineId = Number(machine?.id || row?.machine_id || row?.mach_id || row?.serial || 0) || 0;
+    if (!machineId) return null;
+    try {
+        const docs = await queryEquals('tbl_schedule', 'serial', Number(machineId), 'integer', 1200);
+        const referenceTs = new Date(String(row?.task_datetime || '').replace(' ', 'T')).getTime();
+        const candidates = docs
+            .map(parseFirestoreDoc)
+            .filter(Boolean)
+            .filter((item) => Number(item.id || 0) !== Number(row?.id || 0))
+            .filter((item) => Number(item.field_maintenance_present_meter || 0) > 0)
+            .filter((item) => {
+                const finished = normalizeLegacyDateTime(item.date_finished);
+                const basis = finished || String(item.task_datetime || '').trim();
+                const ts = new Date(basis.replace(' ', 'T')).getTime();
+                if (!Number.isFinite(ts) || !Number.isFinite(referenceTs)) return true;
+                return ts <= referenceTs;
+            });
+        candidates.sort((a, b) => {
+            const left = normalizeLegacyDateTime(a.date_finished) || String(a.task_datetime || '');
+            const right = normalizeLegacyDateTime(b.date_finished) || String(b.task_datetime || '');
+            if (left !== right) return right.localeCompare(left);
+            return Number(b.id || 0) - Number(a.id || 0);
+        });
+        const found = candidates[0];
+        if (found) {
+            return {
+                meter: Number(found.field_maintenance_present_meter || 0) || 0,
+                readingDate: String(normalizeLegacyDateTime(found.date_finished) || found.task_datetime || '').trim(),
+                source: 'prior_field_visit'
+            };
+        }
+    } catch (err) {
+        console.warn('Previous maintenance meter lookup failed:', err);
+    }
+    const fallback = parseIntegerInput(machine?.bmeter);
+    return fallback !== null && fallback > 0
+        ? { meter: fallback, source: 'machine_beginning_meter' }
+        : null;
+}
+
 async function fetchLatestSchedtimeLog(scheduleId) {
     try {
         const docs = await queryEquals('tbl_schedtime', 'schedule_id', Number(scheduleId), 'integer', 40);
@@ -3838,6 +3961,34 @@ function setMachineStatusFromRow(row) {
     }
 
     if (!matched) select.selectedIndex = 0;
+}
+
+function setWorkMachineStatusFromRow(row) {
+    populateWorkMachineStatusOptions();
+    const select = document.getElementById('fieldWorkMachineStatus');
+    if (!select?.options?.length) return;
+    const byId = Number(row.field_work_machine_status_id || row.field_machine_status_id || row.tl_status || 0);
+    const byLabel = String(row.field_work_machine_status || row.field_machine_status || '').trim().toUpperCase();
+
+    let matched = false;
+    if (byId > 0) {
+        matched = [...select.options].some((opt) => {
+            if (Number(opt.value || 0) !== byId) return false;
+            opt.selected = true;
+            return true;
+        });
+    }
+
+    if (!matched && byLabel) {
+        matched = [...select.options].some((opt) => {
+            const label = String(opt.dataset.label || opt.textContent || '').toUpperCase();
+            if (label !== byLabel) return false;
+            opt.selected = true;
+            return true;
+        });
+    }
+
+    if (!matched) select.value = '';
 }
 
 async function openModal(scheduleId) {
@@ -3879,10 +4030,10 @@ async function openModal(scheduleId) {
     toggleMissingSerialMode();
 
     setMachineStatusFromRow(row);
+    setWorkMachineStatusFromRow(row);
 
     document.getElementById('fieldCloseNotes').value = String(row.field_work_notes || '').trim();
     document.getElementById('fieldSolutionNotes').value = '';
-    document.getElementById('fieldFinalSummary').value = String(row.field_final_summary || '').trim();
 
     const [branchContact, deliveryInfo, deliveryReceipt] = await Promise.all([
         resolveBranchContact(row.branch_id, row),
@@ -3898,6 +4049,7 @@ async function openModal(scheduleId) {
 
     document.getElementById('fieldDeliveryDetails').value = savedDeliveryDetails || autoDeliveryDetails;
     document.getElementById('fieldEmptyPickupDetails').value = savedEmptyPickupDetails || autoEmptyPickupDetails;
+    document.getElementById('fieldFinalSummary').value = String(row.field_final_summary || '').trim() || buildFinalAcknowledgementSummary();
     document.getElementById('fieldCustomerSigner').value = String(
         row.field_customer_signer ||
         row.collocutor ||
@@ -3965,9 +4117,33 @@ async function openModal(scheduleId) {
 
     const maintenancePreviousMeter = parseIntegerInput(row.field_maintenance_previous_meter);
     const maintenancePresentMeter = parseIntegerInput(row.field_maintenance_present_meter);
-    document.getElementById('fieldMaintenancePreviousMeter').value = maintenancePreviousMeter !== null ? String(maintenancePreviousMeter) : '';
+    const maintenancePreviousLookup = await resolvePreviousMaintenanceMeter(row, machine || null);
+    const effectiveMaintenancePrevious = maintenancePreviousMeter !== null && maintenancePreviousMeter > 0
+        ? maintenancePreviousMeter
+        : parseIntegerInput(maintenancePreviousLookup?.meter);
+    document.getElementById('fieldMaintenancePreviousMeter').value = effectiveMaintenancePrevious !== null ? String(effectiveMaintenancePrevious) : '';
+    const maintenanceHint = document.getElementById('fieldMaintenancePreviousMeterHint');
+    if (maintenanceHint) {
+        if (maintenancePreviousMeter !== null && maintenancePreviousMeter > 0) {
+            maintenanceHint.textContent = 'Loaded from saved field draft.';
+        } else if (Number(maintenancePreviousLookup?.meter || 0) > 0) {
+            const dateLabel = maintenancePreviousLookup.readingDate ? ` (${maintenancePreviousLookup.readingDate.slice(0, 10)})` : '';
+            const sourceLabel = maintenancePreviousLookup.source === 'machine_beginning_meter'
+                ? 'Loaded from machine beginning meter'
+                : 'Loaded from prior field visit';
+            maintenanceHint.textContent = `${sourceLabel}${dateLabel}.`;
+        } else {
+            maintenanceHint.textContent = 'No previous field visit meter found yet.';
+        }
+    }
     document.getElementById('fieldMaintenancePresentMeter').value = maintenancePresentMeter !== null ? String(maintenancePresentMeter) : '';
     recomputeMaintenanceTotalConsumed();
+
+    const deliveryPreviousMeter = parseIntegerInput(row.field_delivery_previous_meter);
+    const deliveryPresentMeter = parseIntegerInput(row.field_delivery_present_meter);
+    document.getElementById('fieldDeliveryPreviousMeter').value = deliveryPreviousMeter !== null ? String(deliveryPreviousMeter) : '';
+    document.getElementById('fieldDeliveryPresentMeter').value = deliveryPresentMeter !== null ? String(deliveryPresentMeter) : '';
+    syncDeliveryMetersFromMaintenance();
 
     const log = await fetchLatestSchedtimeLog(scheduleId);
     if (log) {
@@ -4053,6 +4229,15 @@ function collectModalFormData() {
     const maintenanceTotalConsumed = Number.isFinite(maintenancePreviousMeter) && Number.isFinite(maintenancePresentMeter)
         ? Math.max(0, maintenancePresentMeter - maintenancePreviousMeter)
         : 0;
+    const deliveryPreviousMeter = parseIntegerInput(document.getElementById('fieldDeliveryPreviousMeter')?.value);
+    const deliveryPresentMeter = parseIntegerInput(document.getElementById('fieldDeliveryPresentMeter')?.value);
+    const deliveryTotalConsumed = Number.isFinite(deliveryPreviousMeter) && Number.isFinite(deliveryPresentMeter)
+        ? Math.max(0, deliveryPresentMeter - deliveryPreviousMeter)
+        : 0;
+    const workMachineStatusSelect = document.getElementById('fieldWorkMachineStatus');
+    const workMachineStatusOption = workMachineStatusSelect?.selectedOptions?.[0] || null;
+    const workMachineStatusId = parseIntegerInput(workMachineStatusSelect?.value) || 0;
+    const workMachineStatusLabel = String(workMachineStatusOption?.dataset?.label || workMachineStatusOption?.textContent || '').trim();
 
     const timeInLocal = String(document.getElementById('fieldTimeIn').value || '').trim();
     const timeOutLocal = String(document.getElementById('fieldTimeOut').value || '').trim();
@@ -4060,7 +4245,7 @@ function collectModalFormData() {
 
     return {
         notes: String(document.getElementById('fieldCloseNotes').value || '').trim(),
-        finalSummary: String(document.getElementById('fieldFinalSummary').value || '').trim(),
+        finalSummary: buildFinalAcknowledgementSummary(),
         deliveryDetails: String(document.getElementById('fieldDeliveryDetails').value || '').trim(),
         emptyPickupDetails: String(document.getElementById('fieldEmptyPickupDetails').value || '').trim(),
         customerSigner: String(document.getElementById('fieldCustomerSigner').value || '').trim(),
@@ -4089,6 +4274,11 @@ function collectModalFormData() {
         maintenancePreviousMeter,
         maintenancePresentMeter,
         maintenanceTotalConsumed,
+        deliveryPreviousMeter,
+        deliveryPresentMeter,
+        deliveryTotalConsumed,
+        workMachineStatusId,
+        workMachineStatusLabel,
         timeInLocal,
         timeOutLocal,
         timeInDb: toDbDateTimeFromLocal(timeInLocal),
@@ -4129,6 +4319,11 @@ function buildSchedulePayload(row, form, tag) {
         field_maintenance_previous_meter: form.maintenancePreviousMeter ?? 0,
         field_maintenance_present_meter: form.maintenancePresentMeter ?? 0,
         field_maintenance_total_consumed: form.maintenanceTotalConsumed ?? 0,
+        field_delivery_previous_meter: form.deliveryPreviousMeter ?? 0,
+        field_delivery_present_meter: form.deliveryPresentMeter ?? 0,
+        field_delivery_total_consumed: form.deliveryTotalConsumed ?? 0,
+        field_work_machine_status_id: form.workMachineStatusId || 0,
+        field_work_machine_status: form.workMachineStatusLabel || '',
         field_time_in: form.timeInDb || ZERO_DATETIME,
         field_time_out: form.timeOutDb || ZERO_DATETIME,
         field_parts_needed_json: jsonString(form.partsNeeded, '[]'),
@@ -4195,7 +4390,19 @@ function getCloseTaskIssues(row, form) {
     if (!hasLocation && !canBypassLocationPinForClose(row)) {
         return ['Pin this customer location before marking the schedule as Finished.'];
     }
+    if (isMachineDeliveryTask(row, form) && !Number.isFinite(form.deliveryPresentMeter)) {
+        return ['Enter the machine beginning/present meter in Delivery before marking this machine delivery as Finished.'];
+    }
     return [];
+}
+
+function isMachineDeliveryTask(row, form) {
+    const purposeLabel = String(PURPOSE_LABELS[row?.purpose_id] || '').toLowerCase();
+    const deliveryText = normalizeSearchText(form?.deliveryDetails || row?.remarks || '');
+    const deliveryPurpose = /deliver|delivery/.test(purposeLabel) || /deliver|delivery/.test(deliveryText);
+    const machineWords = /(machine|unit|copier|printer|beginning meter|installation)/i.test(form?.deliveryDetails || row?.remarks || '');
+    const supplyOnly = /(toner|ink|cartridge|drum|waste toner|consumable)/i.test(form?.deliveryDetails || row?.remarks || '');
+    return deliveryPurpose && machineWords && !supplyOnly;
 }
 
 function updateActionButtons() {
