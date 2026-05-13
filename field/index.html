@@ -65,6 +65,7 @@
             <button type="button" class="field-view-tab" data-view="tasks" aria-selected="false">Task Details</button>
             <button type="button" class="field-view-tab" data-view="analytics" aria-selected="false">Analytics</button>
             <button type="button" class="field-view-tab" data-view="troubleshooting" aria-selected="false">Troubleshooting Guide</button>
+            <button type="button" class="field-view-tab" id="fieldSolutionRequestsTab" data-view="solution-requests" aria-selected="false" hidden>Solution Request</button>
         </nav>
 
         <section class="field-view-panel" id="fieldHomePanel" data-view-panel="home">
@@ -141,6 +142,18 @@
             </div>
             <div class="field-guide-list" id="fieldGuideList">
                 <div class="loading-cell">Loading guide...</div>
+            </div>
+        </section>
+
+        <section class="content-card field-card field-view-panel" id="fieldSolutionRequestsPanel" data-view-panel="solution-requests" hidden>
+            <div class="card-header">
+                <h3>Solution Requests</h3>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldSolutionRequestsRefresh">Refresh Requests</button>
+                </div>
+            </div>
+            <div class="field-guide-list" id="fieldSolutionRequestsList">
+                <div class="loading-cell">Loading solution requests...</div>
             </div>
         </section>
     </main>
@@ -270,6 +283,19 @@
                         <span>Work Notes</span>
                         <textarea id="fieldCloseNotes" rows="3" placeholder="Work done, findings, diagnostics, actions..."></textarea>
                     </label>
+                    <div class="marga-field marga-field-full">
+                        <span>Troubleshooting Guide</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="fieldOpenGuideBtn">Open Guide For This Machine / Trouble</button>
+                        <div class="ops-subtext">Use this before spending too long on one machine.</div>
+                    </div>
+                    <label class="marga-field marga-field-full">
+                        <span>Solution For Knowledge Base</span>
+                        <textarea id="fieldSolutionNotes" rows="3" placeholder="Unique proven solution, root cause, steps used, and parts/settings changed..."></textarea>
+                        <div class="ops-subtext">Different from work notes. Submitted to team leader for approval before it becomes a guide.</div>
+                    </label>
+                    <div class="marga-field marga-field-full">
+                        <button type="button" class="btn btn-secondary btn-sm" id="fieldSubmitSolutionBtn">Submit Solution For Approval</button>
+                    </div>
                     <div class="marga-field marga-field-full">
                         <span>Parts Needed</span>
                         <div class="field-parts-row">

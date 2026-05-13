@@ -13,6 +13,7 @@ const MargaAuth = {
         SERVICE: 'service',
         HR: 'hr',
         TECHNICIAN: 'technician',
+        TEAM_LEADER_FIELD_TECHNICIANS: 'team-leader-field-technicians',
         MESSENGER: 'messenger',
         VIEWER: 'viewer'
     },
@@ -26,6 +27,7 @@ const MargaAuth = {
         service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'receiving', 'inventory', 'field'],
         hr: ['hr', 'settings'],
         technician: ['field'],
+        'team-leader-field-technicians': ['field', 'service', 'master-schedule'],
         messenger: ['field', 'schedule'],
         viewer: ['customers', 'reports']
     },

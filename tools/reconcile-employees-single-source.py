@@ -34,6 +34,7 @@ BASE_ROLE_DEFAULTS = {
     "service": ["customers", "ai-product-consultant", "service", "inventory", "field"],
     "hr": ["hr", "settings"],
     "technician": ["field"],
+    "team-leader-field-technicians": ["field", "service", "master-schedule"],
     "messenger": ["field"],
     "viewer": ["customers", "reports"],
 }
@@ -277,6 +278,8 @@ def map_position_to_role(position: str) -> str:
         return "billing"
     if "messenger" in p or "driver" in p:
         return "messenger"
+    if "team leader" in p and any(k in p for k in ("field", "tech", "technician")):
+        return "team-leader-field-technicians"
     if any(k in p for k in ("tech", "maintenance", "refiller")):
         return "technician"
     if any(k in p for k in ("service", "csr", "sales")):

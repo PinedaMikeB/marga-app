@@ -776,6 +776,13 @@
     color: #16345b;
 }
 
+.field-solution-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+}
+
 .field-customer-search {
     min-width: 220px;
     max-width: 100%;

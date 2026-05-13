@@ -29,6 +29,7 @@ const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
 const MODEL_ERROR_GUIDE_COLLECTION = 'marga_model_error_guides';
+const SOLUTION_REQUEST_COLLECTION = 'tbl_field_solution_requests';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
@@ -117,6 +118,8 @@ const state = {
     pettyCashEntries: [],
     modelErrorGuides: [],
     modelErrorGuidesLoaded: false,
+    solutionRequests: [],
+    solutionRequestsLoaded: false,
     closeRequestsBySchedule: new Map()
 };
 
@@ -134,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (badge) badge.textContent = (displayName.charAt(0) || 'U').toUpperCase();
     if (headerTitle) headerTitle.textContent = `${displayName} - Printed Route`;
     if (userLine) userLine.textContent = displayRole ? `Roles: ${displayRole}` : 'Roles: field';
+    applyTeamLeaderVisibility();
 
     const dateInput = document.getElementById('fieldDate');
     dateInput.value = formatDateYmd(new Date());
@@ -149,6 +153,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('fieldAnalyticsRefresh')?.addEventListener('click', () => loadFieldAnalytics());
     document.getElementById('fieldGuideRefresh')?.addEventListener('click', () => loadModelErrorGuides({ force: true }));
+    document.getElementById('fieldSolutionRequestsRefresh')?.addEventListener('click', () => loadSolutionRequests({ force: true }));
+    document.getElementById('fieldSolutionRequestsList')?.addEventListener('click', handleSolutionRequestAction);
+    document.getElementById('fieldOpenGuideBtn')?.addEventListener('click', openGuideForCurrentTask);
+    document.getElementById('fieldSubmitSolutionBtn')?.addEventListener('click', submitSolutionRequest);
     [
         ['fieldGuideSearch', 'guideSearchQuery'],
         ['fieldGuideBrand', 'guideBrandQuery'],
@@ -235,6 +243,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadMySchedule();
 });
+
+function isFieldTechTeamLeader() {
+    return MargaAuth.hasRole('admin')
+        || MargaAuth.hasRole('team-leader-field-technicians')
+        || MargaAuth.hasRole('service');
+}
+
+function applyTeamLeaderVisibility() {
+    const tab = document.getElementById('fieldSolutionRequestsTab');
+    if (tab) tab.hidden = !isFieldTechTeamLeader();
+}
 
 function getFieldWrapper(id) {
     const el = document.getElementById(id);
@@ -780,9 +799,12 @@ function setActiveTab(tab) {
 }
 
 function setActiveView(view) {
-    state.activeView = ['home', 'tasks', 'analytics', 'troubleshooting'].includes(view) ? view : 'home';
+    state.activeView = ['home', 'tasks', 'analytics', 'troubleshooting', 'solution-requests'].includes(view) ? view : 'home';
     if (state.activeView === 'troubleshooting') {
         void loadModelErrorGuides();
+    }
+    if (state.activeView === 'solution-requests') {
+        void loadSolutionRequests();
     }
     renderActiveView();
 }
@@ -829,6 +851,7 @@ function renderActiveView() {
     renderList();
     renderAnalytics();
     renderTroubleshootingGuide();
+    renderSolutionRequests();
     updateSubtitle();
 }
 
@@ -1808,6 +1831,34 @@ function getCurrentRouteMachineGuideContext() {
     };
 }
 
+function getGuideContextForRow(row) {
+    if (!row) return { brand: '', model: '', error: '', keyword: '' };
+    const machine = caches.machine.get(String(row.serial || 0));
+    const model = machine ? caches.model.get(String(machine.model_id || 0)) : null;
+    const brand = machine ? caches.brand.get(String(machine.brand_id || 0)) : null;
+    const trouble = caches.trouble.get(String(row.trouble_id || 0));
+    return {
+        brand: getBrandLabel(brand),
+        model: getModelLabel(model, machine),
+        error: String(trouble?.trouble || row.trouble_label || '').trim(),
+        keyword: String(row.remarks || row.caller || '').trim()
+    };
+}
+
+function openGuideForCurrentTask() {
+    const row = getCurrentRow();
+    const context = getGuideContextForRow(row);
+    state.guideBrandQuery = context.brand;
+    state.guideModelQuery = context.model;
+    state.guideErrorQuery = context.error;
+    state.guideSearchQuery = context.keyword;
+    state.guideAutoFilled = true;
+    syncGuideInputsFromState();
+    closeModal();
+    setActiveView('troubleshooting');
+    void loadModelErrorGuides();
+}
+
 function syncGuideInputsFromState() {
     [
         ['fieldGuideBrand', state.guideBrandQuery],
@@ -1831,6 +1882,18 @@ function maybeAutoFillGuideContext() {
 
 function updateGuideDatalists() {
     const rows = state.modelErrorGuides || [];
+    const brandQuery = normalizeSearchText(state.guideBrandQuery);
+    const modelQuery = normalizeSearchText(state.guideModelQuery);
+    const modelScopedRows = rows.filter((row) => {
+        const brandText = normalizeSearchText(guideBrandText(row));
+        const modelText = normalizeSearchText([
+            guideModelText(row),
+            Array.isArray(row.model_aliases) ? row.model_aliases.join(' ') : row.model_aliases
+        ].filter(Boolean).join(' '));
+        if (brandQuery && !brandText.includes(brandQuery)) return false;
+        if (modelQuery && !modelText.includes(modelQuery)) return false;
+        return true;
+    });
     const setOptions = (id, values) => {
         const list = document.getElementById(id);
         if (!list) return;
@@ -1840,8 +1903,10 @@ function updateGuideDatalists() {
         list.innerHTML = unique.map((value) => `<option value="${sanitize(value)}"></option>`).join('');
     };
     setOptions('fieldGuideBrandOptions', rows.map(guideBrandText));
-    setOptions('fieldGuideModelOptions', rows.flatMap((row) => [guideModelText(row), ...(Array.isArray(row.model_aliases) ? row.model_aliases : [])]));
-    setOptions('fieldGuideErrorOptions', rows.map(guideErrorText));
+    setOptions('fieldGuideModelOptions', rows
+        .filter((row) => !brandQuery || normalizeSearchText(guideBrandText(row)).includes(brandQuery))
+        .flatMap((row) => [guideModelText(row), ...(Array.isArray(row.model_aliases) ? row.model_aliases : [])]));
+    setOptions('fieldGuideErrorOptions', modelScopedRows.map(guideErrorText));
 }
 
 function currentRouteGuideHints() {
@@ -1870,6 +1935,8 @@ function getFilteredGuideRows() {
     const brandQuery = normalizeSearchText(state.guideBrandQuery);
     const modelQuery = normalizeSearchText(state.guideModelQuery);
     const errorQuery = normalizeSearchText(state.guideErrorQuery);
+    const keywordQuery = normalizeSearchText(state.guideSearchQuery);
+    if (!brandQuery || !modelQuery || (!errorQuery && !keywordQuery)) return [];
     const routeHints = currentRouteGuideHints();
     const terms = query ? query.split(/\s+/).filter(Boolean) : [];
     const routeTerms = routeHints ? routeHints.split(/\s+/).filter((term) => term.length >= 3).slice(0, 12) : [];
@@ -1882,14 +1949,22 @@ function getFilteredGuideRows() {
                 Array.isArray(row.model_aliases) ? row.model_aliases.join(' ') : row.model_aliases
             ].filter(Boolean).join(' '));
             const errorText = normalizeSearchText(guideErrorText(row));
+            const brandMismatch = Boolean(brandQuery && !brandText.includes(brandQuery));
+            const modelMismatch = Boolean(modelQuery && !modelText.includes(modelQuery));
+            const errorMismatch = Boolean(errorQuery && !errorText.includes(errorQuery));
+            if (brandMismatch || modelMismatch || errorMismatch) return { row, score: -1 };
             const queryScore = terms.length ? terms.reduce((score, term) => score + (text.includes(term) ? 10 : 0), 0) : 0;
-            const brandScore = brandQuery && brandText.includes(brandQuery) ? 20 : 0;
-            const modelScore = modelQuery && modelText.includes(modelQuery) ? 35 : 0;
-            const errorScore = errorQuery && errorText.includes(errorQuery) ? 35 : 0;
+            const brandScore = brandQuery ? 20 : 0;
+            const modelScore = modelQuery ? 35 : 0;
+            const errorScore = errorQuery ? 35 : 0;
             const routeScore = routeTerms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
             return { row, score: query ? queryScore + brandScore + modelScore + errorScore + routeScore : routeScore };
         })
-        .filter((item) => query ? item.score >= 10 : item.score > 0)
+        .filter((item) => {
+            if (item.score < 0) return false;
+            if (brandQuery && modelQuery && !state.guideErrorQuery && !state.guideSearchQuery) return false;
+            return query ? item.score >= 10 : item.score > 0;
+        })
         .sort((a, b) => b.score - a.score || String(a.row.model || '').localeCompare(String(b.row.model || '')))
         .slice(0, 24)
         .map((item) => item.row);
@@ -1909,7 +1984,7 @@ function renderTroubleshootingGuide() {
         list.innerHTML = `
             <div class="field-guide-empty">
                 <strong>No guide matched yet.</strong>
-                <p>Search by model, trouble, LCD error, or symptom. Example: paper jam feeder, error 51, fuser, no paper.</p>
+                <p>Select or enter Brand / Make and Model, then choose Error / Trouble or type a keyword. This prevents using an error guide from the wrong machine family.</p>
             </div>
         `;
         return;
@@ -1970,6 +2045,185 @@ async function loadModelErrorGuides(options = {}) {
     }
     maybeAutoFillGuideContext();
     renderTroubleshootingGuide();
+}
+
+function normalizeSolutionText(value) {
+    return normalizeSearchText(value).replace(/\s+/g, ' ').trim();
+}
+
+function solutionDedupeKey(row, solution) {
+    const context = getGuideContextForRow(row);
+    return normalizeSolutionText([
+        context.brand,
+        context.model,
+        context.error,
+        solution
+    ].join(' '));
+}
+
+async function submitSolutionRequest() {
+    const row = getCurrentRow();
+    if (!row) return;
+    const solution = String(document.getElementById('fieldSolutionNotes')?.value || '').trim();
+    if (solution.length < 12) {
+        alert('Please write a clear unique solution before submitting.');
+        return;
+    }
+    const key = solutionDedupeKey(row, solution);
+    const existing = (await queryCollection(SOLUTION_REQUEST_COLLECTION, FIELD_QUERY_LIMIT).catch(() => []))
+        .map(parseFirestoreDoc)
+        .filter(Boolean)
+        .find((item) => String(item.dedupe_key || '') === key && String(item.status || '').toLowerCase() !== 'rejected');
+    if (existing) {
+        alert('This solution appears to be a repeat. It was not submitted again.');
+        return;
+    }
+    const staffId = Number(state.staffId || 0) || 0;
+    const context = getGuideContextForRow(row);
+    const nowIso = new Date().toISOString();
+    const docId = `solution_${row.id}_${staffId}_${Date.now()}`;
+    const payload = {
+        id: docId,
+        schedule_id: Number(row.id || 0) || 0,
+        staff_id: staffId,
+        staff_name: getCurrentStaffName(),
+        brand: context.brand,
+        model: context.model,
+        trouble: context.error,
+        keyword: context.keyword,
+        solution,
+        dedupe_key: key,
+        status: 'pending',
+        requested_at: nowIso,
+        requested_by: staffId,
+        approved_at: '',
+        approved_by: 0,
+        rejection_reason: ''
+    };
+    const button = document.getElementById('fieldSubmitSolutionBtn');
+    if (button) button.disabled = true;
+    try {
+        await setDocument(SOLUTION_REQUEST_COLLECTION, docId, payload);
+        alert('Solution request submitted for team leader approval.');
+        document.getElementById('fieldSolutionNotes').value = '';
+    } catch (error) {
+        console.error('Solution request failed:', error);
+        alert(`Failed to submit solution: ${error?.message || error}`);
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function loadSolutionRequests(options = {}) {
+    const { force = false } = options;
+    if (state.solutionRequestsLoaded && !force) {
+        renderSolutionRequests();
+        return;
+    }
+    const list = document.getElementById('fieldSolutionRequestsList');
+    if (list) list.innerHTML = '<div class="loading-cell">Loading solution requests...</div>';
+    const docs = await queryCollection(SOLUTION_REQUEST_COLLECTION, FIELD_QUERY_LIMIT).catch(() => []);
+    state.solutionRequests = mergePendingOfflineRows(SOLUTION_REQUEST_COLLECTION, docs.map(parseFirestoreDoc).filter(Boolean));
+    state.solutionRequestsLoaded = true;
+    renderSolutionRequests();
+}
+
+function renderSolutionRequests() {
+    const list = document.getElementById('fieldSolutionRequestsList');
+    if (!list) return;
+    if (!isFieldTechTeamLeader()) {
+        list.innerHTML = '<div class="loading-cell">Only Team Leader - Field Technicians can view solution requests.</div>';
+        return;
+    }
+    if (!state.solutionRequestsLoaded) {
+        list.innerHTML = '<div class="loading-cell">Loading solution requests...</div>';
+        return;
+    }
+    const pending = state.solutionRequests
+        .filter((row) => String(row.status || 'pending').toLowerCase() === 'pending')
+        .sort((a, b) => String(b.requested_at || '').localeCompare(String(a.requested_at || '')));
+    if (!pending.length) {
+        list.innerHTML = '<div class="field-guide-empty"><strong>No pending solution requests.</strong><p>Approved unique solutions will become part of the troubleshooting knowledge base later.</p></div>';
+        return;
+    }
+    list.innerHTML = pending.map((row) => `
+        <article class="field-guide-card">
+            <div class="field-guide-card-head">
+                <div>
+                    <span>${sanitize(row.staff_name || 'Field technician')}</span>
+                    <h4>${sanitize(row.trouble || 'Solution request')}</h4>
+                </div>
+                <strong>${sanitize(row.model || 'Model')}</strong>
+            </div>
+            <div class="field-guide-meta">
+                <span>${sanitize(row.brand || 'Brand')}</span>
+                <span>Pending approval</span>
+            </div>
+            <div class="field-guide-steps">
+                <p><b>Solution:</b> ${sanitize(row.solution || '')}</p>
+            </div>
+            <div class="field-solution-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-solution-action="approve" data-id="${sanitize(row._docId || row.id || '')}">Approve</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-solution-action="reject" data-id="${sanitize(row._docId || row.id || '')}">Reject</button>
+            </div>
+        </article>
+    `).join('');
+}
+
+function guideDocIdFromSolution(row) {
+    return [
+        row.model || 'general',
+        row.trouble || 'solution',
+        row.solution || ''
+    ].join('__').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 140);
+}
+
+async function handleSolutionRequestAction(event) {
+    const button = event.target.closest('[data-solution-action]');
+    if (!button) return;
+    if (!isFieldTechTeamLeader()) return;
+    const action = button.dataset.solutionAction;
+    const docId = button.dataset.id;
+    const request = state.solutionRequests.find((row) => String(row._docId || row.id || '') === String(docId));
+    if (!request) return;
+    button.disabled = true;
+    try {
+        const nowIso = new Date().toISOString();
+        if (action === 'reject') {
+            await patchDocument(SOLUTION_REQUEST_COLLECTION, docId, {
+                status: 'rejected',
+                reviewed_at: nowIso,
+                reviewed_by: Number(state.staffId || 0) || 0
+            });
+        } else {
+            await setDocument(MODEL_ERROR_GUIDE_COLLECTION, guideDocIdFromSolution(request), {
+                model: request.model || '',
+                model_aliases: [],
+                family: request.brand || '',
+                trouble_id: 0,
+                trouble_label: request.trouble || '',
+                lcd_error_message: request.trouble || '',
+                meaning: `Field-proven solution submitted from schedule ${request.schedule_id || ''}.`,
+                what_to_do: request.solution || '',
+                service_level_code: '',
+                source_reference: `Approved field solution by ${getCurrentStaffName()}`,
+                source_file: 'field_solution_request',
+                updated_at: nowIso
+            });
+            await patchDocument(SOLUTION_REQUEST_COLLECTION, docId, {
+                status: 'approved',
+                approved_at: nowIso,
+                approved_by: Number(state.staffId || 0) || 0
+            });
+        }
+        state.solutionRequestsLoaded = false;
+        state.modelErrorGuidesLoaded = false;
+        await loadSolutionRequests({ force: true });
+    } catch (error) {
+        console.error('Solution request action failed:', error);
+        alert(`Solution request action failed: ${error?.message || error}`);
+        button.disabled = false;
+    }
 }
 
 function rowMatchesCustomerSearch(row, query) {
@@ -3125,6 +3379,7 @@ function resetModalFields() {
     state.modalBranchLocationPinned = false;
 
     document.getElementById('fieldCloseNotes').value = '';
+    document.getElementById('fieldSolutionNotes').value = '';
     document.getElementById('fieldClosePin').value = '';
     document.getElementById('fieldSerialInput').value = '';
     document.getElementById('fieldSerialHint').textContent = '';
@@ -3206,6 +3461,8 @@ function setFormDisabled(isReadOnly) {
         'fieldSaveSerialBtn',
         'fieldMachineStatus',
         'fieldCloseNotes',
+        'fieldSolutionNotes',
+        'fieldSubmitSolutionBtn',
         'fieldPartInput',
         'fieldPartQty',
         'fieldAddPartBtn',
@@ -3624,6 +3881,7 @@ async function openModal(scheduleId) {
     setMachineStatusFromRow(row);
 
     document.getElementById('fieldCloseNotes').value = String(row.field_work_notes || '').trim();
+    document.getElementById('fieldSolutionNotes').value = '';
     document.getElementById('fieldFinalSummary').value = String(row.field_final_summary || '').trim();
 
     const [branchContact, deliveryInfo, deliveryReceipt] = await Promise.all([
