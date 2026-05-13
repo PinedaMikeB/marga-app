@@ -773,7 +773,6 @@ function isPastPendingMasterRow(row) {
 
 function rowMatchesStatusFilter(row, statusFilter) {
     const bucket = rowStatusBucket(row);
-    if (statusFilter === 'all') return true;
     if (statusFilter === 'active') return bucket === 'pending' || bucket === 'ongoing';
     if (statusFilter === 'today') return (bucket === 'pending' || bucket === 'ongoing') && !isPastPendingMasterRow(row);
     if (statusFilter === 'past_pending') return isPastPendingMasterRow(row);

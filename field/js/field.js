@@ -695,6 +695,14 @@ function activeRows() {
     return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
 }
 
+function isWorkingRouteRow(row) {
+    return ['pending', 'carryover', 'ongoing'].includes(getStatusKey(row));
+}
+
+function workingRouteRows(rows = []) {
+    return rows.filter(isWorkingRouteRow);
+}
+
 function setActiveTab(tab) {
     state.activeTab = tab === 'carryover' ? 'carryover' : 'today';
     state.statusFilter = 'all';
@@ -712,8 +720,8 @@ function updateTabControls() {
 
     const todayCount = document.getElementById('fieldTodayCount');
     const carryoverCount = document.getElementById('fieldCarryoverCount');
-    if (todayCount) todayCount.textContent = String(state.todayRows.length);
-    if (carryoverCount) carryoverCount.textContent = String(state.carryoverRows.length);
+    if (todayCount) todayCount.textContent = String(workingRouteRows(state.todayRows).length);
+    if (carryoverCount) carryoverCount.textContent = String(workingRouteRows(state.carryoverRows).length);
 }
 
 function updateSubtitle() {
@@ -1057,14 +1065,13 @@ function renderKpis(rows) {
         acc[k] = (acc[k] || 0) + 1;
         return acc;
     }, {});
-    const primaryLabel = state.activeTab === 'carryover' ? 'Past Pending' : 'Printed Today';
+    const workingCount = workingRouteRows(rows).length;
+    const primaryLabel = state.activeTab === 'carryover' ? 'Past Pending Work' : "Today's Assigned Route";
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${rows.length}</div></div>
+        <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">${sanitize(primaryLabel)}</div><div class="value">${workingCount}</div></div>
         <div class="field-kpi ${state.statusFilter === 'pending' ? 'is-active-filter' : ''}" data-status-filter="pending"><div class="label">Pending</div><div class="value">${counts.pending || 0}</div></div>
         <div class="field-kpi ${state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${counts.ongoing || 0}</div></div>
-        <div class="field-kpi ${state.statusFilter === 'closed' ? 'is-active-filter' : ''}" data-status-filter="closed"><div class="label">Closed</div><div class="value">${counts.closed || 0}</div></div>
-        <div class="field-kpi ${state.statusFilter === 'cancelled' ? 'is-active-filter' : ''}" data-status-filter="cancelled"><div class="label">Cancelled</div><div class="value">${counts.cancelled || 0}</div></div>
     `;
 }
 
@@ -1146,6 +1153,7 @@ function renderList() {
     const rows = activeRows();
     const filtered = rows.filter((row) => {
         const status = getStatusKey(row);
+        if (state.statusFilter === 'all' && !isWorkingRouteRow(row)) return false;
         if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
         return rowMatchesCustomerSearch(row, state.searchQuery);
     });
