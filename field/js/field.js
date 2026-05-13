@@ -1257,6 +1257,31 @@ function getCustomerMinutes(row) {
     return null;
 }
 
+function formatDurationMinutes(minutes) {
+    const value = Number(minutes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '-';
+    const rounded = Math.round(value);
+    const hours = Math.floor(rounded / 60);
+    const mins = rounded % 60;
+    if (hours && mins) return `${hours} hour${hours === 1 ? '' : 's'} ${mins} minute${mins === 1 ? '' : 's'}`;
+    if (hours) return `${hours} hour${hours === 1 ? '' : 's'}`;
+    return `${mins} minute${mins === 1 ? '' : 's'}`;
+}
+
+function getRating(score) {
+    const value = clampScore(score);
+    if (value >= 95) return { label: 'Excellent', className: 'excellent' };
+    if (value >= 85) return { label: 'Good', className: 'good' };
+    if (value >= 75) return { label: 'Fair', className: 'fair' };
+    if (value >= 60) return { label: 'Needs Improvement', className: 'needs' };
+    return { label: 'Poor', className: 'poor' };
+}
+
+function renderRatingBadge(score) {
+    const rating = getRating(score);
+    return `<em class="field-rating-badge is-${sanitize(rating.className)}">${sanitize(rating.label)}</em>`;
+}
+
 function getAnalyticsSummary() {
     const workload = getWorkloadSummary();
     const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
@@ -1271,7 +1296,16 @@ function getAnalyticsSummary() {
     const averageCustomerMinutes = timedRows.length
         ? Math.round(timedRows.reduce((sum, item) => sum + item.minutes, 0) / timedRows.length)
         : 0;
-    const missingCheckout = state.rows.filter((row) => normalizeLegacyDateTime(row.field_time_in) && !normalizeLegacyDateTime(row.field_time_out)).length;
+    const attendanceTimeIn = normalizeLegacyDateTime(state.attendance?.time_in);
+    const attendanceTimeOut = normalizeLegacyDateTime(state.attendance?.time_out);
+    const customerTimeInRows = state.rows.filter((row) => normalizeLegacyDateTime(row.field_time_in));
+    const customerTimeOutRows = state.rows.filter((row) => normalizeLegacyDateTime(row.field_time_in) && normalizeLegacyDateTime(row.field_time_out));
+    const missingCheckout = customerTimeInRows.length - customerTimeOutRows.length;
+    const customerTimeCoverage = totalAssigned > 0 ? Math.round((customerTimeOutRows.length / totalAssigned) * 100) : 0;
+    const officialAttendanceScore = attendanceTimeIn && attendanceTimeOut ? 100 : attendanceTimeIn ? 70 : 0;
+    const timeDiligenceScore = totalAssigned > 0
+        ? clampScore((officialAttendanceScore * 0.3) + (customerTimeCoverage * 0.7))
+        : officialAttendanceScore;
     const staffPettyCash = state.pettyCashEntries
         .filter((entry) => String(entry.status || '').trim().toLowerCase() !== 'cancelled')
         .filter(isPettyCashForCurrentStaff);
@@ -1286,6 +1320,14 @@ function getAnalyticsSummary() {
         completionRate,
         carryoverRate,
         averageCustomerMinutes,
+        averageCustomerDuration: formatDurationMinutes(averageCustomerMinutes),
+        attendanceTimeIn,
+        attendanceTimeOut,
+        customerTimeInRows,
+        customerTimeOutRows,
+        customerTimeCoverage,
+        officialAttendanceScore,
+        timeDiligenceScore,
         timedRows,
         missingCheckout,
         staffPettyCash,
@@ -1320,10 +1362,16 @@ function buildPerformanceAdvice(summary) {
             body: `${summary.missingCheckout} task(s) have check-in without check-out. This weakens travel-time and customer-service-time scoring.`
         });
     }
+    if (summary.timeDiligenceScore < 85) {
+        advice.push({
+            title: 'Improve time recording discipline',
+            body: `Time recording is rated ${getRating(summary.timeDiligenceScore).label}. Time in/out officially, then check in and check out for every customer visit.`
+        });
+    }
     if (summary.averageCustomerMinutes > 90) {
         advice.push({
             title: 'Explain long customer time',
-            body: `Average customer time is ${summary.averageCustomerMinutes} minutes. Add notes when the delay is customer-caused, parts-caused, or technical.`
+            body: `Average customer time is ${summary.averageCustomerDuration}. Add notes when the delay is customer-caused, parts-caused, or technical.`
         });
     }
     if (summary.pettyCashTotal > 0 && !summary.closedRows.length) {
@@ -1354,10 +1402,10 @@ function getRouteDisciplineScore(summary) {
     return clampScore(55 + completionBonus - checkoutPenalty - carryoverPenalty);
 }
 
-function renderScorecardMetric(label, value, note = '') {
+function renderScorecardMetric(label, value, note = '', score = null) {
     return `
         <div class="field-score-metric">
-            <span>${sanitize(label)}</span>
+            <span>${sanitize(label)}${score === null ? '' : renderRatingBadge(score)}</span>
             <strong>${sanitize(value)}</strong>
             ${note ? `<small>${sanitize(note)}</small>` : ''}
         </div>
@@ -1392,10 +1440,10 @@ function renderScorecards(summary) {
                 </div>
                 <div class="field-scorecard-status">${routeDiscipline}</div>
                 <div class="field-score-metrics">
-                    ${renderScorecardMetric('Completion', `${summary.completionRate}%`, `${summary.closedRows.length}/${summary.totalAssigned} workload tasks closed.`)}
+                    ${renderScorecardMetric('Completion', `${summary.completionRate}%`, `${summary.closedRows.length}/${summary.totalAssigned} workload tasks closed.`, summary.completionRate)}
                     ${renderScorecardMetric('Past pending', `${workload.pastOpen.length}`, 'Lower is better; old work should be cleared first.')}
                     ${renderScorecardMetric('Cost / closed visit', costPerVisit, 'Petty cash only for now; salary joins when HR module is ready.')}
-                    ${renderScorecardMetric('Check-out discipline', `${summary.missingCheckout} missing`, 'Every customer visit needs check-in and check-out.')}
+                    ${renderScorecardMetric('Time discipline', `${summary.customerTimeOutRows.length}/${summary.totalAssigned} complete`, 'Official attendance plus customer check-in/check-out.', summary.timeDiligenceScore)}
                 </div>
             </article>
             <article class="field-scorecard field-scorecard-owner">
@@ -1409,7 +1457,7 @@ function renderScorecards(summary) {
                     ${renderScorecardMetric('Open workload', `${summary.totalAssigned}`, `${workload.todayOpen.length} new + ${workload.pastOpen.length} past pending.`)}
                     ${renderScorecardMetric('Petty cash', formatPesoAmount(summary.pettyCashTotal) || 'PHP 0.00', `${summary.staffPettyCash.length} matched row(s) by staff name.`)}
                     ${renderScorecardMetric('Carryover share', `${summary.carryoverRate}%`, 'High carryover means service risk and customer dissatisfaction.')}
-                    ${renderScorecardMetric('Data reliability', summary.timedRows.length ? `${summary.timedRows.length} timed` : 'Weak', 'Better check-in/out data gives fairer coaching.')}
+                    ${renderScorecardMetric('Data reliability', summary.timedRows.length ? `${summary.timedRows.length} timed` : 'Weak', 'Better check-in/out data gives fairer coaching.', summary.timeDiligenceScore)}
                 </div>
             </article>
         </section>
@@ -1421,11 +1469,13 @@ function renderAnalytics() {
     if (!panel) return;
     const summary = getAnalyticsSummary();
     const advice = buildPerformanceAdvice(summary);
+    const staffName = getCurrentStaffName() || 'Staff';
     const completed = summary.closedRows.length;
     const pending = summary.workload.pendingNeedsAction;
     const ongoing = summary.workload.openCounts.ongoing || 0;
     const maxBar = Math.max(summary.totalAssigned, completed, pending, ongoing, 1);
     const bar = (value, className = '') => `<span class="${className}" style="width:${Math.max(4, Math.round((value / maxBar) * 100))}%"></span>`;
+    const percentBar = (value, className = '') => `<span class="${className}" style="width:${Math.max(4, clampScore(value))}%"></span>`;
 
     panel.innerHTML = `
         <div class="field-snapshot-intro">
@@ -1438,9 +1488,15 @@ function renderAnalytics() {
         <div class="field-analytics-grid">
             <article class="field-analytics-card">
                 <span>Completion Rate</span>
-                <strong>${summary.completionRate}%</strong>
-                <div class="field-bar">${bar(completed, 'is-good')}</div>
+                <strong>${summary.completionRate}% ${renderRatingBadge(summary.completionRate)}</strong>
+                <div class="field-bar">${percentBar(summary.completionRate, 'is-good')}</div>
                 <small>${completed} closed out of ${summary.totalAssigned} assigned workload task(s).</small>
+            </article>
+            <article class="field-analytics-card">
+                <span>Time Recording Discipline</span>
+                <strong>${summary.timeDiligenceScore}% ${renderRatingBadge(summary.timeDiligenceScore)}</strong>
+                <div class="field-bar">${percentBar(summary.timeDiligenceScore, 'is-info')}</div>
+                <small>${sanitize(staffName)} official: ${summary.attendanceTimeIn ? formatAttendanceTime(summary.attendanceTimeIn) : 'no time in'} / ${summary.attendanceTimeOut ? formatAttendanceTime(summary.attendanceTimeOut) : 'no time out'}. Customer check-out: ${summary.customerTimeOutRows.length}/${summary.totalAssigned}.</small>
             </article>
             <article class="field-analytics-card">
                 <span>Past Pending Load</span>
@@ -1450,7 +1506,7 @@ function renderAnalytics() {
             </article>
             <article class="field-analytics-card">
                 <span>Avg Customer Time</span>
-                <strong>${summary.averageCustomerMinutes || '-'}${summary.averageCustomerMinutes ? ' min' : ''}</strong>
+                <strong>${sanitize(summary.averageCustomerDuration)}</strong>
                 <div class="field-bar">${bar(Math.min(summary.averageCustomerMinutes || 0, 120), 'is-info')}</div>
                 <small>${summary.timedRows.length} task(s) have usable customer check-in/out.</small>
             </article>
@@ -1477,6 +1533,7 @@ function renderAnalytics() {
                 <div class="field-signal-row"><span>Past pending</span><strong>${summary.workload.pastOpen.length}</strong></div>
                 <div class="field-signal-row"><span>Needs action</span><strong>${pending}</strong></div>
                 <div class="field-signal-row"><span>Ongoing parts</span><strong>${ongoing}</strong></div>
+                <div class="field-signal-row"><span>Customer check-outs</span><strong>${summary.customerTimeOutRows.length}/${summary.totalAssigned}</strong></div>
                 <div class="field-signal-row"><span>Missing check-out</span><strong>${summary.missingCheckout}</strong></div>
             </section>
         </div>
