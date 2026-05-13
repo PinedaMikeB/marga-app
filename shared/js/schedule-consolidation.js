@@ -185,6 +185,40 @@
         return getStaffName?.(staffId) || clean(row.assigned_to || row.assigned_staff_name || row.field_billing_assigned_staff_name) || (staffId ? `Staff #${staffId}` : 'Unassigned');
     }
 
+    function normalizeStaffName(value) {
+        return clean(value).toLowerCase();
+    }
+
+    function invalidStaffName(value) {
+        const normalized = normalizeStaffName(value);
+        return !normalized
+            || normalized === 'unassigned'
+            || normalized === 'suggested / unassigned'
+            || normalized === 'others'
+            || normalized === 'other'
+            || normalized.startsWith('id 0')
+            || normalized.startsWith('staff #0');
+    }
+
+    function validateRequiredAssignment(context = {}) {
+        const staffId = numeric(context.staffId || context.techId || context.assignedStaffId);
+        const staffName = clean(context.staffName || context.assignedTo || context.assignedStaffName);
+        const activeStaffIds = Array.isArray(context.activeStaffIds)
+            ? new Set(context.activeStaffIds.map((id) => String(id || '').trim()).filter(Boolean))
+            : null;
+
+        if (!staffId) {
+            return { ok: false, reason: 'Choose an active assigned staff member before saving this schedule.' };
+        }
+        if (invalidStaffName(staffName)) {
+            return { ok: false, reason: 'Assigned staff must have a real active name, not Unassigned or Others.' };
+        }
+        if (activeStaffIds && activeStaffIds.size && !activeStaffIds.has(String(staffId))) {
+            return { ok: false, reason: `${staffName || `Staff #${staffId}`} is not in the active scheduling roster.` };
+        }
+        return { ok: true, staffId, staffName };
+    }
+
     function taskLabel(row) {
         const purposeId = numeric(row.purpose_id);
         if (purposeId === 1) return 'Billing';
@@ -277,6 +311,14 @@
             return { ok: true, staffId, transferredIds: conflicts.map((row) => row.id || row._docId).filter(Boolean) };
         }
 
+        if (context.allowReassignmentOverride) {
+            const ok = window.confirm(
+                `${customer} already has a same-location schedule on ${date} assigned to ${ownerName}.\n\n${details}\n\nYou are changing the field owner to ${newStaffName}. Continue this reassignment?`
+            );
+            if (!ok) return { ok: false, staffId };
+            return { ok: true, staffId, reassignmentOverride: true };
+        }
+
         const ok = window.confirm(
             `${customer} already has a same-location schedule on ${date} assigned to ${ownerName}.\n\n${details}\n\nTo avoid another trip, assign this task to ${ownerName} too?`
         );
@@ -286,6 +328,7 @@
 
     window.MargaScheduleConsolidation = {
         resolveAssignment,
+        validateRequiredAssignment,
         constants: {
             servicePurposeIds: SERVICE_PURPOSE_IDS,
             messengerPurposeIds: MESSENGER_PURPOSE_IDS

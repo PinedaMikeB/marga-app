@@ -70,6 +70,7 @@ const MASTER_STATUS_OPTIONS = [
 const masterState = {
     rows: [],
     pendingRows: [],
+    exceptionRows: [],
     settingsLoaded: false,
     reassigning: false,
     routeSourceLabel: 'Saved',
@@ -754,10 +755,28 @@ function rowStatusBucket(row) {
     return 'pending';
 }
 
+function selectedMasterDate() {
+    return clean(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()));
+}
+
+function masterRowOriginalDate(row) {
+    return clean(row?.originalDate || dateOnly(row?.original_sched) || dateOnly(row?.task_datetime));
+}
+
+function isPastPendingMasterRow(row) {
+    const bucket = rowStatusBucket(row);
+    if (bucket !== 'pending' && bucket !== 'ongoing') return false;
+    const originalDate = masterRowOriginalDate(row);
+    const selectedDate = selectedMasterDate();
+    return Boolean(originalDate && selectedDate && originalDate < selectedDate);
+}
+
 function rowMatchesStatusFilter(row, statusFilter) {
     const bucket = rowStatusBucket(row);
     if (statusFilter === 'all') return true;
     if (statusFilter === 'active') return bucket === 'pending' || bucket === 'ongoing';
+    if (statusFilter === 'today') return (bucket === 'pending' || bucket === 'ongoing') && !isPastPendingMasterRow(row);
+    if (statusFilter === 'past_pending') return isPastPendingMasterRow(row);
     return bucket === statusFilter;
 }
 
@@ -817,6 +836,40 @@ function scheduleStaffOptions() {
     const employees = masterState.settings.employees;
     const filtered = employees.filter(isScheduleStaff);
     return filtered.length ? filtered : employees.filter(isActiveScheduleEmployee);
+}
+
+function activeScheduleStaffIds() {
+    return scheduleStaffOptions().map((employee) => String(employee.id || '').trim()).filter(Boolean);
+}
+
+function validateScheduleAssignment(row, overrides = {}) {
+    const staffId = clean(overrides.staffId ?? row?.techId ?? row?.assigned_to_id ?? row?.tech_id);
+    const staffName = clean(overrides.staffName ?? row?.assignedTo ?? row?.assigned_to ?? row?.assigned_staff_name);
+    if (window.MargaScheduleConsolidation?.validateRequiredAssignment) {
+        return MargaScheduleConsolidation.validateRequiredAssignment({
+            staffId,
+            staffName,
+            activeStaffIds: activeScheduleStaffIds()
+        });
+    }
+    if (!Number(staffId || 0)) return { ok: false, reason: 'Choose an active assigned staff member before saving this schedule.' };
+    if (!staffName || /^(unassigned|suggested \/ unassigned|others?)$/i.test(staffName)) {
+        return { ok: false, reason: 'Assigned staff must have a real active name, not Unassigned or Others.' };
+    }
+    if (!activeScheduleStaffIds().includes(String(staffId))) return { ok: false, reason: `${staffName} is not in the active scheduling roster.` };
+    return { ok: true, staffId, staffName };
+}
+
+function scheduleExceptionReason(row) {
+    const assignment = validateScheduleAssignment(row);
+    if (!assignment.ok) return assignment.reason;
+    if (/^others?$/i.test(clean(row.area))) return 'Area is Others and needs a real route area before dispatch.';
+    if (/^others?$/i.test(clean(row.purpose)) || Number(row.purposeId || 0) === 9) return 'Purpose is Others and needs a real schedule purpose before dispatch.';
+    return '';
+}
+
+function isScheduleExceptionRow(row) {
+    return Boolean(scheduleExceptionReason(row));
 }
 
 function purposeFromLegacy(row, trouble) {
@@ -1525,7 +1578,7 @@ async function loadMasterSchedule() {
 
         masterState.routeSourceLabel = routeCoverageWithCarry.routed ? 'Schedule + Routes' : 'Schedule';
         masterState.routeCoverage = routeCoverageWithCarry;
-        masterState.rows = [
+        const builtRows = [
             ...webRows.map(buildWebScheduleRow),
             ...legacyRows.map(buildLegacyScheduleRow),
             ...pendingRawRows.map(buildLegacyScheduleRow),
@@ -1542,6 +1595,8 @@ async function loadMasterSchedule() {
             if (a.purpose !== b.purpose) return a.purpose.localeCompare(b.purpose);
             return a.customer.localeCompare(b.customer);
         });
+        masterState.exceptionRows = builtRows.filter(isScheduleExceptionRow);
+        masterState.rows = builtRows.filter((row) => !isScheduleExceptionRow(row));
         masterState.pendingRows = [];
 
         renderMasterSchedule();
@@ -1570,6 +1625,14 @@ function getVisiblePendingRows() {
 
     return masterState.pendingRows.filter((row) => {
         if (!rowMatchesStatusFilter(row, statusFilter)) return false;
+        if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
+        return true;
+    });
+}
+
+function getVisibleExceptionRows() {
+    const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
+    return masterState.exceptionRows.filter((row) => {
         if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
         return true;
     });
@@ -1720,24 +1783,26 @@ function renderPriorityGate(rows = []) {
 function renderMasterSchedule() {
     const rows = getVisibleRows();
     const pendingRows = getVisiblePendingRows();
+    const exceptionRows = getVisibleExceptionRows();
     const sheet = document.getElementById('masterScheduleSheet');
     const count = document.getElementById('masterCount');
     const searchQuery = clean(document.getElementById('masterSearchInput')?.value || '');
-    const totalMatches = rows.length + pendingRows.length;
+    const totalMatches = rows.length + pendingRows.length + exceptionRows.length;
     const routedVisible = rows.filter((row) => Number(row.routeId || 0) > 0).length;
     const awaitingRouteVisible = rows.filter((row) => row.source === 'legacy-route' && Number(row.routeId || 0) <= 0).length;
     if (count) {
         const pendingText = pendingRows.length ? ` · ${pendingRows.length.toLocaleString()} pending not routed` : '';
+        const exceptionText = exceptionRows.length ? ` · ${exceptionRows.length.toLocaleString()} needs assignment` : '';
         const routeText = awaitingRouteVisible ? ` · ${awaitingRouteVisible.toLocaleString()} awaiting route` : '';
         const linkedText = routedVisible ? ` · ${routedVisible.toLocaleString()} route linked` : '';
         const searchText = searchQuery ? ` · ${totalMatches.toLocaleString()} match${totalMatches === 1 ? '' : 'es'}` : '';
-        count.textContent = `${rows.length.toLocaleString()} schedule${rows.length === 1 ? '' : 's'}${linkedText}${routeText}${pendingText}${searchText}`;
+        count.textContent = `${rows.length.toLocaleString()} schedule${rows.length === 1 ? '' : 's'}${linkedText}${routeText}${pendingText}${exceptionText}${searchText}`;
     }
     updateSearchDecorations(searchQuery, totalMatches);
     renderPrintStaffOptions();
     if (!sheet) return;
 
-    if (!rows.length && !pendingRows.length) {
+    if (!rows.length && !pendingRows.length && !exceptionRows.length) {
         sheet.innerHTML = '<div class="master-empty">No schedules found for this date/filter.</div>';
         return;
     }
@@ -1768,6 +1833,7 @@ function renderMasterSchedule() {
             </div>
         </section>
         ${renderPriorityGate(rows)}
+        ${exceptionRows.length ? renderAssignmentExceptions(exceptionRows) : ''}
         ${Array.from(groups.entries()).map(([group, groupRows]) => `
             <section class="master-group">
                 <h2>${escapeHtml(group)}</h2>
@@ -1777,6 +1843,19 @@ function renderMasterSchedule() {
         ${pendingRows.length ? renderPendingNotRouted(pendingRows) : ''}
     `;
     if (masterState.kaizen.visible) renderKaizenAdvisor();
+}
+
+function renderAssignmentExceptions(rows) {
+    return `
+        <section class="master-group pending-not-routed">
+            <h2>Needs Assignment / Stale Pending</h2>
+            <p class="master-note">These rows are quarantined from normal Master Schedule, print, forward, and Field App routes until assigned to active staff with a real purpose and area.</p>
+            ${renderScheduleTable(rows.map((row) => ({
+                ...row,
+                trouble: `${scheduleExceptionReason(row)}${row.trouble ? ` · ${row.trouble}` : ''}`
+            })))}
+        </section>
+    `;
 }
 
 function normalizeKaizenAddress(value) {
@@ -2142,6 +2221,7 @@ function renderScheduleTable(rows) {
                     <th>TIN #</th>
                     <th>Flags</th>
                     <th>Priority</th>
+                    <th>Original Date</th>
                     <th>Customer / Branch</th>
                     <th>Purpose</th>
                     <th>Model</th>
@@ -2189,7 +2269,9 @@ function renderMasterScheduleRow(row) {
     const canMove = true;
     const displayStatus = row.masterStatusLabel || 'Not Set';
     const displayStatusClass = row.masterStatusValue ? statusClassName(row.masterStatusValue) : '';
-    const canForward = isOpenScheduleRow(row);
+    const assignment = validateScheduleAssignment(row);
+    const exceptionReason = scheduleExceptionReason(row);
+    const canForward = isOpenScheduleRow(row) && assignment.ok && !exceptionReason;
     const defaultForwardDate = clean(document.getElementById('masterForwardDateInput')?.value) || addDays(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()), 1);
     const priorityValue = schedulePriorityValue(row);
     const closeRequest = masterState.lookups.closeRequestsBySchedule.get(String(row.scheduleId || ''));
@@ -2200,6 +2282,7 @@ function renderMasterScheduleRow(row) {
             <td data-label="Priority" class="priority-cell">
                 <input class="schedule-priority-input" type="number" min="1" max="999" inputmode="numeric" value="${priorityValue ? escapeHtml(priorityValue) : ''}" onchange="saveSchedulePriority('${escapeHtml(row.rowKey)}', this.value)" aria-label="Priority order">
             </td>
+            <td data-label="Original Date">${escapeHtml(formatShortDate(masterRowOriginalDate(row)))}</td>
             <td data-label="Customer / Branch" class="schedule-account-cell">
                 <strong>${escapeHtml(row.customer || '-')}</strong>
                 <span>${escapeHtml(row.branch || '-')}</span>
@@ -2219,7 +2302,7 @@ function renderMasterScheduleRow(row) {
             </td>
             <td data-label="Status" class="status-cell">
                 <div class="schedule-status-cell">
-                    <span class="schedule-status-label ${escapeHtml(displayStatusClass)}">${escapeHtml(displayStatus)}</span>
+                    <span class="schedule-status-label ${escapeHtml(displayStatusClass)}">${escapeHtml(exceptionReason || displayStatus)}</span>
                     ${closeRequest ? `
                         <div class="schedule-close-request">
                             <strong>Close requested</strong>
@@ -2257,6 +2340,7 @@ function renderStaffSelectOptions(row) {
 function findScheduleRow(rowKey) {
     return masterState.rows.find((row) => row.rowKey === rowKey)
         || masterState.pendingRows.find((row) => row.rowKey === rowKey)
+        || masterState.exceptionRows.find((row) => row.rowKey === rowKey)
         || null;
 }
 
@@ -2268,9 +2352,15 @@ async function updateScheduleOwner(row, employee) {
     const staffId = String(employee?.id || '').trim();
     const staffName = employeeName(employee, staffId);
     if (!row || !staffId) return;
+    const assignment = validateScheduleAssignment(row, { staffId, staffName });
+    if (!assignment.ok) throw new Error(assignment.reason);
 
     if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
         await updateDocFields('tbl_schedule', row.docId, { tech_id: Number(staffId) || staffId });
+        if (row.routeDocId && row.routeSource && row.routeSource !== 'Schedule') {
+            const routeCollection = String(row.routeSource).toLowerCase().includes('printed') ? ROUTE_COLLECTION_PRIMARY : ROUTE_COLLECTION_FALLBACK;
+            await updateDocFields(routeCollection, row.routeDocId, { tech_id: Number(staffId) || staffId });
+        }
     } else if (row.source === 'web') {
         await updateDocFields('marga_master_schedule', row.docId, {
             assigned_to_id: staffId,
@@ -2529,6 +2619,7 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
                     scheduleId: target.scheduleId,
                     currentDocId: target.docId,
                     customerName: target.customer,
+                    allowReassignmentOverride: true,
                     getStaffName: (id) => employeeName(masterState.lookups.employees.get(String(id)), id)
                 });
                 if (!consolidation.ok) throw new Error('Reassignment cancelled by consolidation rule.');
@@ -2565,6 +2656,10 @@ async function saveForwardedRoute(row, targetDate) {
     if (!scheduleId) throw new Error('This row has no linked schedule ID.');
     let staffId = Number(row.techId || 0) || 0;
     if (!staffId) throw new Error('Assign a technician or messenger before forwarding.');
+    const assignment = validateScheduleAssignment(row);
+    if (!assignment.ok) throw new Error(assignment.reason);
+    const exceptionReason = scheduleExceptionReason(row);
+    if (exceptionReason) throw new Error(exceptionReason);
     const scheduleDocId = clean(row.docId || scheduleId);
     if (!scheduleDocId || scheduleDocId === '0') throw new Error(`Schedule ${scheduleId} has no valid Firestore document ID.`);
 
@@ -2726,7 +2821,9 @@ async function forwardVisibleOpenSchedules() {
 }
 
 function activeRows() {
-    return masterState.rows.filter((row) => clean(row.status).toLowerCase() !== 'cancelled');
+    return masterState.rows
+        .filter((row) => clean(row.status).toLowerCase() !== 'cancelled')
+        .filter((row) => validateScheduleAssignment(row).ok && !scheduleExceptionReason(row));
 }
 
 window.openMasterStatusModal = openMasterStatusModal;
@@ -2759,7 +2856,7 @@ function updatePrintStaffVisibility() {
 
 function rowsForPrint() {
     const scope = clean(document.getElementById('masterPrintScopeInput')?.value || 'all');
-    if (scope === 'visible') return getVisibleRows();
+    if (scope === 'visible') return getVisibleRows().filter((row) => validateScheduleAssignment(row).ok && !scheduleExceptionReason(row));
     if (scope === 'staff') {
         const staff = clean(document.getElementById('masterPrintStaffInput')?.value);
         return activeRows().filter((row) => row.assignedTo === staff);

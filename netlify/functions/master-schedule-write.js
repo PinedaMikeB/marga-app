@@ -4,6 +4,23 @@ const GOOGLE_SCOPE_FIRESTORE = "https://www.googleapis.com/auth/datastore";
 const FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents";
 const tokenCache = new Map();
 
+const ROUTE_PATCH_FIELDS = [
+  "tech_id",
+  "task_datetime",
+  "status",
+  "iscancelled",
+  "date_finished",
+  "remarks",
+  "forwarded_to_date",
+  "superseded_by_route_id",
+  "forwarded_from_date",
+  "forwarded_from_schedule_id",
+  "forwarded_by",
+  "forwarded_at",
+  "timestmp",
+  "bridge_pushed_at"
+];
+
 const ALLOWED_PATCH_FIELDS = {
   tbl_schedule: new Set([
     "tech_id",
@@ -55,38 +72,10 @@ const ALLOWED_PATCH_FIELDS = {
     "approved_by",
     "updated_at"
   ]),
-  tbl_scheduledate: new Set([
-    "tech_id",
-    "task_datetime",
-    "status",
-    "iscancelled",
-    "date_finished",
-    "remarks",
-    "forwarded_to_date",
-    "superseded_by_route_id",
-    "forwarded_from_date",
-    "forwarded_from_schedule_id",
-    "forwarded_by",
-    "forwarded_at",
-    "timestmp",
-    "bridge_pushed_at"
-  ]),
-  tbl_schedtime: new Set([
-    "tech_id",
-    "task_datetime",
-    "status",
-    "iscancelled",
-    "date_finished",
-    "remarks",
-    "forwarded_to_date",
-    "superseded_by_route_id",
-    "forwarded_from_date",
-    "forwarded_from_schedule_id",
-    "forwarded_by",
-    "forwarded_at",
-    "timestmp",
-    "bridge_pushed_at"
-  ])
+  tbl_printedscheds: new Set(ROUTE_PATCH_FIELDS),
+  tbl_savedscheds: new Set(ROUTE_PATCH_FIELDS),
+  tbl_scheduledate: new Set(ROUTE_PATCH_FIELDS),
+  tbl_schedtime: new Set(ROUTE_PATCH_FIELDS)
 };
 
 function env(name) {

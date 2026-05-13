@@ -206,6 +206,16 @@ function isOpenSchedule(row, cutoffDate) {
   return Boolean(taskDate && taskDate <= cutoffDate);
 }
 
+function hasValidAssignment(row) {
+  const staffId = Number(row.tech_id || row.assigned_to_id || row.assigned_staff_id || 0) || 0;
+  const purposeId = Number(row.purpose_id || 0) || 0;
+  const name = clean(row.assigned_to || row.assigned_staff_name || row.field_billing_assigned_staff_name);
+  if (!staffId) return false;
+  if (purposeId === 9) return false;
+  if (/^(unassigned|suggested \/ unassigned|others?)$/i.test(name)) return false;
+  return true;
+}
+
 async function main() {
   await loadEnvFile("/Users/mike/.codex/env/marga-app.env");
   const args = parseArgs(process.argv);
@@ -228,8 +238,10 @@ async function main() {
     if (!sourceRoutesBySchedule.has(scheduleId)) sourceRoutesBySchedule.set(scheduleId, []);
     sourceRoutesBySchedule.get(scheduleId).push(route);
   });
-  const candidates = scheduleRows
-    .filter((row) => isOpenSchedule(row, args.date))
+  const openRows = scheduleRows.filter((row) => isOpenSchedule(row, args.date));
+  const assignmentBlockedRows = openRows.filter((row) => !hasValidAssignment(row));
+  const candidates = openRows
+    .filter(hasValidAssignment)
     .filter((row) => !alreadyRouted.has(Number(row.id || row._docId || 0)));
 
   const nowIso = new Date().toISOString();
@@ -300,6 +312,7 @@ async function main() {
     startDate,
     scanned: scheduleRows.length,
     alreadyRouted: alreadyRouted.size,
+    assignmentBlocked: assignmentBlockedRows.length,
     forwarded: forwarded.length,
     cancelledSourceRoutes,
     rows: forwarded

@@ -584,6 +584,30 @@ function shouldPreferScheduleState(row) {
     return scheduleTime >= routeTime;
 }
 
+function dateOnly(value) {
+    return String(value || '').trim().slice(0, 10);
+}
+
+function originalScheduleDate(row) {
+    return dateOnly(row?.original_sched)
+        || dateOnly(row?.forwarded_from_date)
+        || dateOnly(row?.route_forwarded_from_date)
+        || dateOnly(row?.task_datetime);
+}
+
+function formatShortDate(value) {
+    const dateKey = dateOnly(value);
+    if (!dateKey) return '-';
+    const parsed = new Date(`${dateKey}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return dateKey;
+    return parsed.toLocaleDateString('en-PH', { month: 'short', day: '2-digit' });
+}
+
+function isPastPendingByOriginalDate(row) {
+    const originalDate = originalScheduleDate(row);
+    return Boolean(originalDate && state.selectedDate && originalDate < state.selectedDate);
+}
+
 function getStatusKey(row) {
     if (Number(row.route_iscancelled || 0) === 1) return 'cancelled';
     if (Number(row.iscancel || 0) === 1) return 'cancelled';
@@ -604,11 +628,13 @@ function getStatusKey(row) {
     const hasActiveRouteRow = Boolean(getRouteTaskDateTime(row)) && routeStatus !== 0;
     if (hasActiveRouteRow) {
         if (Number(row.isongoing || 0) === 1) return 'ongoing';
+        if (isPastPendingByOriginalDate(row)) return 'carryover';
         const taskDate = getRouteTaskDateTime(row).slice(0, 10);
         if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
         return 'pending';
     }
     if (Number(row.isongoing || 0) === 1) return 'ongoing';
+    if (isPastPendingByOriginalDate(row)) return 'carryover';
     const taskDate = getRouteTaskDateTime(row).slice(0, 10);
     if (taskDate && state.selectedDate && taskDate < state.selectedDate) return 'carryover';
     return 'pending';
@@ -622,6 +648,10 @@ function getStatusMeta(row) {
     if (key === 'closed') return { key, label: 'Closed', className: 'status-closed' };
     if (key === 'cancelled') return { key, label: 'Cancelled', className: 'status-cancelled' };
     return { key, label: 'Pending', className: 'status-pending' };
+}
+
+function isDispatchableFieldRow(row) {
+    return Number(row?.purpose_id || 0) !== 9;
 }
 
 function schedulePriorityValue(row) {
@@ -1116,7 +1146,6 @@ function renderList() {
     const rows = activeRows();
     const filtered = rows.filter((row) => {
         const status = getStatusKey(row);
-        if (state.statusFilter === 'all' && (status === 'closed' || status === 'cancelled')) return false;
         if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
         return rowMatchesCustomerSearch(row, state.searchQuery);
     });
@@ -1160,6 +1189,11 @@ function renderList() {
         const machineLine = brandName || modelName
             ? `${sanitize(brandName)} ${sanitize(modelName)}`.trim()
             : 'Machine';
+        const originalDate = originalScheduleDate(row);
+        const routeDate = dateOnly(getRouteTaskDateTime(row));
+        const originalDateLine = originalDate
+            ? `<div class="sub"><strong>Original schedule:</strong> ${sanitize(formatShortDate(originalDate))}${routeDate && routeDate !== originalDate ? ` · Forwarded to ${sanitize(formatShortDate(routeDate))}` : ''}</div>`
+            : '';
         const routeSourceLine = state.activeTab === 'carryover'
             ? `<div class="sub"><strong>Source:</strong> ${sanitize(String(row.route_source || 'Past Pending').replace(/carry[ -]?over/ig, 'Past Pending'))}</div>`
             : '';
@@ -1181,6 +1215,7 @@ function renderList() {
                         <h4>#${sanitize(row.id)} ${sanitize(purposeLabel)} / ${sanitize(troubleLabel)}</h4>
                         <div class="meta">${priority ? `Priority ${sanitize(priority)} · ` : ''}${sanitize(formatTaskDateTime(row.task_datetime))} · <span class="ops-status-badge ${sanitize(status.className)}">${sanitize(status.label)}</span></div>
                         <div class="sub">${sanitize(clientName)} · ${sanitize(branchName)} · ${sanitize(areaName)}</div>
+                        ${originalDateLine}
                         <div class="sub">${machineLine} · Serial: <strong>${sanitize(machineSerial)}</strong></div>
                         <div class="sub">${sanitize(taskNotes)}</div>
                         ${routeSourceLine}
@@ -1447,6 +1482,7 @@ async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
 
     const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'past pending'))
         .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+        .filter(isDispatchableFieldRow)
         .filter((row) => !currentScheduleIds.has(Number(row.id || 0)))
         .filter((row) => !isFinishedOrCancelled(row));
 
@@ -1456,7 +1492,7 @@ async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
     });
 
     const olderRows = await loadOlderCarryoverRows(date, currentScheduleIds);
-    const combined = [...savedCarryoverRows, ...olderRows];
+    const combined = [...savedCarryoverRows, ...olderRows.filter(isDispatchableFieldRow)];
     const unique = new Map();
     combined.forEach((row) => {
         const scheduleId = Number(row.id || row._docId || 0);
@@ -1509,10 +1545,12 @@ async function loadMySchedule(options = {}) {
         const routeSourceLabel = printedRows.length && savedRows.length ? 'Printed + Saved' : (printedRows.length ? 'Printed' : 'Saved');
 
         const routeBoundTodayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
-            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
+            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+            .filter(isDispatchableFieldRow);
         const routeScheduleIds = new Set(routeBoundTodayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
         const directTodayRows = scheduleSourceRows
             .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
+            .filter(isDispatchableFieldRow)
             .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
             .map(asDirectTodayScheduleRow);
         const existingPlannerIds = new Set(directTodayRows.map((row) => String(row.field_billing_schedule_doc_id || row.source_planner_doc_id || '').trim()).filter(Boolean));
@@ -1520,31 +1558,42 @@ async function loadMySchedule(options = {}) {
         const plannerTodayRows = plannerSourceRows
             .filter((row) => String(row.department || '') === 'billing')
             .filter((row) => Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) === Number(state.staffId || 0))
+            .filter((row) => Number(row.purpose_id || 0) !== 9)
             .filter((row) => !existingPlannerIds.has(String(row._docId || row.id || '').trim()))
             .filter((row) => !closedPlannerIds.has(String(row._docId || row.id || '').trim()))
             .map(plannerRowToFieldSchedule);
-        const todayRows = [...routeBoundTodayRows, ...directTodayRows, ...plannerTodayRows]
+        const allCurrentRows = [...routeBoundTodayRows, ...directTodayRows, ...plannerTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
+        const forwardedPastPendingRows = allCurrentRows.filter((row) => isPastPendingByOriginalDate(row));
+        forwardedPastPendingRows.forEach((row) => {
+            row.route_source = row.route_source || 'Forwarded Past Pending';
+        });
+        const todayRows = allCurrentRows.filter((row) => !isPastPendingByOriginalDate(row));
 
         state.routeSourceLabel = routeRows.length ? routeSourceLabel : 'Schedule';
         state.todayRows = todayRows;
-        state.carryoverRows = [];
-        state.rows = todayRows;
+        state.carryoverRows = forwardedPastPendingRows;
+        state.rows = [...todayRows, ...forwardedPastPendingRows];
         updatePriorityGate(todayRows);
-        await hydrateLookups(todayRows);
+        await hydrateLookups(state.rows);
         renderActiveView();
 
         const carryoverCount = document.getElementById('fieldCarryoverCount');
         if (carryoverCount) carryoverCount.textContent = '...';
         try {
             const carryoverRows = await buildCarryoverRows({ date, printedRows, savedRows, todayRows });
-            state.carryoverRows = carryoverRows;
+            const knownCarryoverIds = new Set(forwardedPastPendingRows.map((row) => Number(row.id || 0)).filter(Boolean));
+            state.carryoverRows = [
+                ...forwardedPastPendingRows,
+                ...carryoverRows.filter((row) => !knownCarryoverIds.has(Number(row.id || 0)))
+            ];
             state.rows = [...todayRows, ...carryoverRows];
-            await hydrateLookups(carryoverRows);
+            state.rows = [...todayRows, ...state.carryoverRows];
+            await hydrateLookups(state.carryoverRows);
         } catch (carryoverError) {
             console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
-            state.carryoverRows = [];
-            state.rows = todayRows;
+            state.carryoverRows = forwardedPastPendingRows;
+            state.rows = [...todayRows, ...forwardedPastPendingRows];
         }
         updatePriorityGate(state.todayRows);
         renderActiveView();
