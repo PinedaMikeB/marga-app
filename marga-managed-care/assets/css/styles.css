@@ -753,6 +753,84 @@ textarea {
   min-height: 78px;
 }
 
+.review-block {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff, #fbfaff);
+}
+
+.review-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-block-head span {
+  display: block;
+  color: #6f64aa;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.review-block-head strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+}
+
+.review-block-head em {
+  min-height: 26px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--blue);
+  background: #eef2ff;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-grid label {
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  text-transform: none;
+}
+
+.review-grid label > span {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.review-grid select {
+  padding: 10px 11px;
+}
+
+.review-grid small,
+.review-note {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.review-note {
+  margin: 0;
+}
+
 .work-actions {
   display: flex;
   flex-wrap: wrap;
@@ -873,6 +951,7 @@ td {
   .split-grid,
   .form-pair,
   .attachment-grid,
+  .review-grid,
   .work-detail-grid {
     grid-template-columns: 1fr;
   }

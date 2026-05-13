@@ -30,6 +30,7 @@ const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
 const MODEL_ERROR_GUIDE_COLLECTION = 'marga_model_error_guides';
 const SOLUTION_REQUEST_COLLECTION = 'tbl_field_solution_requests';
+const CUSTOMER_REVIEW_COLLECTION = 'marga_care_customer_reviews';
 const LOCATION_PIN_CLOSE_BYPASS_DATES = new Set(['2026-05-04', '2026-05-05']);
 const TEMPORARILY_DISABLED_FIELD_GROUPS = {
     missingSerial: true,
@@ -118,6 +119,8 @@ const state = {
         ready: true
     },
     pettyCashEntries: [],
+    customerReviews: [],
+    skillHistoryRows: [],
     modelErrorGuides: [],
     modelErrorGuidesLoaded: false,
     solutionRequests: [],
@@ -1466,6 +1469,136 @@ function getRatingGuide(score, context = 'score') {
     };
 }
 
+function getReviewRatingScore(reviews = []) {
+    if (!reviews.length) return null;
+    const values = reviews
+        .map((review) => Number(review.rating_percent || (Number(review.rating || 0) * 20) || 0))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    if (!values.length) return null;
+    return clampScore(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function isComplaintReview(review) {
+    const text = normalizeSearchText([
+        review?.remarks,
+        review?.review_status,
+        review?.rating_label
+    ].filter(Boolean).join(' '));
+    return Number(review?.complaint_flag || 0) === 1
+        || review?.complaint_flag === true
+        || /complaint|concern|rude|late|not fixed|same problem|poor|bad|disappointed|not satisfied/.test(text)
+        || Number(review?.rating || 0) > 0 && Number(review.rating || 0) <= 2;
+}
+
+function getCustomerSatisfactionScore(reviews = []) {
+    if (!reviews.length) return null;
+    const ratingScore = getReviewRatingScore(reviews);
+    if (ratingScore === null) return null;
+    const complaintPenalty = Math.min(60, reviews.filter(isComplaintReview).length * 30);
+    return clampScore(ratingScore - complaintPenalty);
+}
+
+function getReviewSummaryForCurrentStaff() {
+    const staffName = normalizeSearchText(getCurrentStaffName());
+    const scheduleIds = new Set(state.rows.map((row) => Number(row.id || 0)).filter(Boolean));
+    const reviews = (state.customerReviews || []).filter((review) => {
+        const scheduleId = Number(review.schedule_id || 0);
+        if (scheduleId && scheduleIds.has(scheduleId)) return true;
+        const technician = normalizeSearchText(review.technician_name || review.staff_name || '');
+        return staffName && technician && (technician.includes(staffName) || staffName.includes(technician));
+    });
+    const score = getCustomerSatisfactionScore(reviews);
+    const complaints = reviews.filter(isComplaintReview);
+    return { reviews, score, complaints };
+}
+
+function isServiceRow(row) {
+    return Number(row?.purpose_id || 0) === 5;
+}
+
+function isChangeUnitRequest(row) {
+    const text = getRowTroubleText(row);
+    return /change unit|replace unit|unit replacement|swap unit|pull.?out unit|change machine/.test(text);
+}
+
+function isPartsDiagnosisRisk(row) {
+    const text = getRowTroubleText(row);
+    return Number(row?.pending_parts || 0) === 1
+        || Number(row?.isongoing || 0) === 1
+        || /parts needed|request part|replace part|part request|pending parts/.test(text);
+}
+
+function getBackjobRows(currentRows = [], historyRows = []) {
+    const history = historyRows.filter(isServiceRow);
+    return currentRows.filter(isServiceRow).filter((row) => {
+        const serial = Number(row.serial || 0);
+        const troubleId = Number(row.trouble_id || 0);
+        if (!serial && !troubleId) return false;
+        return history.some((past) => {
+            if (Number(past.id || 0) === Number(row.id || 0)) return false;
+            const sameSerial = serial && Number(past.serial || 0) === serial;
+            const sameTrouble = troubleId && Number(past.trouble_id || 0) === troubleId;
+            if (sameSerial && sameTrouble) return true;
+            return sameSerial && getRowTroubleText(row) && getRowTroubleText(past) && getRowTroubleText(row) === getRowTroubleText(past);
+        });
+    });
+}
+
+function getTechnicianSkillSummary(summary) {
+    const currentServiceRows = state.rows.filter(isServiceRow);
+    const historyRows = state.skillHistoryRows || [];
+    const backjobRows = getBackjobRows(currentServiceRows, historyRows);
+    const changeUnitRows = currentServiceRows.filter(isChangeUnitRequest);
+    const partsRiskRows = currentServiceRows.filter(isPartsDiagnosisRisk);
+    const reviewSummary = getReviewSummaryForCurrentStaff();
+    const firstFixScore = currentServiceRows.length
+        ? clampScore(100 - Math.min(80, (backjobRows.length / currentServiceRows.length) * 100))
+        : 100;
+    const changeUnitScore = currentServiceRows.length
+        ? clampScore(100 - Math.min(50, (changeUnitRows.length / currentServiceRows.length) * 70))
+        : 100;
+    const diagnosisScore = currentServiceRows.length
+        ? clampScore(100 - Math.min(45, (partsRiskRows.length / currentServiceRows.length) * 45))
+        : 100;
+    const documentationScore = summary.timeDiligenceScore;
+    const customerScore = reviewSummary.score;
+    const score = clampScore(
+        ((customerScore ?? 85) * 0.3)
+        + (firstFixScore * 0.3)
+        + (diagnosisScore * 0.2)
+        + (changeUnitScore * 0.1)
+        + (documentationScore * 0.1)
+        - Math.min(40, reviewSummary.complaints.length * 20)
+    );
+    return {
+        score,
+        currentServiceRows,
+        backjobRows,
+        changeUnitRows,
+        partsRiskRows,
+        firstFixScore,
+        changeUnitScore,
+        diagnosisScore,
+        documentationScore,
+        customerScore,
+        reviews: reviewSummary.reviews,
+        complaints: reviewSummary.complaints
+    };
+}
+
+function renderCustomerReviewGuide(reviewSummary) {
+    if (!reviewSummary.reviews.length) {
+        return renderScorecardMetric('Customer review', 'Waiting', 'No care.marga.biz review is linked to this route yet.');
+    }
+    const score = reviewSummary.score ?? 0;
+    return renderScorecardMetric(
+        'Customer review',
+        `${score}%`,
+        `${reviewSummary.reviews.length} review(s), ${reviewSummary.complaints.length} complaint/concern flag(s).`,
+        score
+    );
+}
+
 function renderRatingBadge(score) {
     const rating = getRating(score);
     return `<em class="field-rating-badge is-${sanitize(rating.className)}">${sanitize(rating.label)}</em>`;
@@ -1513,7 +1646,7 @@ function getAnalyticsSummary() {
         .filter(isPettyCashForCurrentStaff);
     const pettyCashTotal = staffPettyCash.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const costPerClosedVisit = closedRows.length ? pettyCashTotal / closedRows.length : 0;
-    return {
+    const baseSummary = {
         selectedDate,
         workload,
         closedRows,
@@ -1537,6 +1670,13 @@ function getAnalyticsSummary() {
         staffPettyCash,
         pettyCashTotal,
         costPerClosedVisit
+    };
+    const reviewSummary = getReviewSummaryForCurrentStaff();
+    const skillSummary = getTechnicianSkillSummary(baseSummary);
+    return {
+        ...baseSummary,
+        reviewSummary,
+        skillSummary
     };
 }
 
@@ -1576,6 +1716,24 @@ function buildPerformanceAdvice(summary) {
         advice.push({
             title: 'Explain long customer time',
             body: `Average customer time is ${summary.averageCustomerDuration} and rated ${getRating(summary.customerTimeScore).label}. Add notes when the delay is customer-caused, parts-caused, technical, or a skill/escalation issue.`
+        });
+    }
+    if (summary.reviewSummary?.complaints?.length) {
+        advice.push({
+            title: 'Customer complaint needs review',
+            body: `${summary.reviewSummary.complaints.length} customer concern/complaint flag(s) are linked to this route. Treat this as urgent coaching and service recovery.`
+        });
+    }
+    if (summary.skillSummary?.backjobRows?.length) {
+        advice.push({
+            title: 'Prevent repeat service calls',
+            body: `${summary.skillSummary.backjobRows.length} possible backjob/repeat issue(s) were detected. Review the original diagnosis, solution, and whether escalation was needed earlier.`
+        });
+    }
+    if (summary.skillSummary?.changeUnitRows?.length) {
+        advice.push({
+            title: 'Review change unit habit',
+            body: `${summary.skillSummary.changeUnitRows.length} change-unit related request(s) need justification. Change unit is allowed when correct, but it should not replace proper troubleshooting.`
         });
     }
     if (summary.pettyCashTotal > 0 && !summary.closedRows.length) {
@@ -1622,6 +1780,7 @@ function renderScorecards(summary) {
     const routeDiscipline = getRouteDisciplineScore(summary);
     const costPerVisit = formatPesoAmount(summary.costPerClosedVisit) || 'PHP 0.00';
     const workload = summary.workload;
+    const skill = summary.skillSummary;
     return `
         <section class="field-scorecards">
             <article class="field-scorecard field-scorecard-tech">
@@ -1630,12 +1789,13 @@ function renderScorecards(summary) {
                     <h4>Quality score, not just speed</h4>
                     <p>For technicians only. This should measure whether assigned customers call less often because machines are maintained thoroughly.</p>
                 </div>
-                <div class="field-scorecard-status">Setup</div>
+                <div class="field-scorecard-status">${skill.currentServiceRows.length ? skill.score : 'N/A'}</div>
                 <div class="field-score-metrics">
+                    ${renderCustomerReviewGuide(summary.reviewSummary)}
+                    ${renderScorecardMetric('Backjob control', `${skill.backjobRows.length}`, 'Same machine and same/similar trouble within the recent service window should be zero.', skill.firstFixScore)}
+                    ${renderScorecardMetric('Diagnosis accuracy', `${skill.partsRiskRows.length} risk`, 'Parts requested or pending parts after troubleshooting need follow-through proof.', skill.diagnosisScore)}
+                    ${renderScorecardMetric('Change unit discipline', `${skill.changeUnitRows.length}`, 'Allowed when justified, but repeated change-unit requests reduce skill confidence.', skill.changeUnitScore)}
                     ${renderScorecardMetric('Area load fairness', 'Waiting', 'Needs active machines/customers per technician from customer/HR assignment.')}
-                    ${renderScorecardMetric('Repeat call rate', 'Waiting', 'Needs 7/15/30 day repeat service history per machine.')}
-                    ${renderScorecardMetric('First-time fix', 'Waiting', 'Needs closed service vs return visit / pending parts history.')}
-                    ${renderScorecardMetric('Thorough PM', 'Waiting', 'Needs preventive checklist before leaving customer.')}
                 </div>
             </article>
             <article class="field-scorecard field-scorecard-messenger">
@@ -1726,6 +1886,20 @@ function renderAnalytics() {
                 <div class="field-bar">${bar(summary.staffPettyCash.length, 'is-cost')}</div>
                 <small>${summary.staffPettyCash.length} petty cash row(s). Cost/closed visit: ${sanitize(formatPesoAmount(summary.costPerClosedVisit) || 'PHP 0.00')}.</small>
             </article>
+            <article class="field-analytics-card">
+                <span>Customer Satisfaction</span>
+                <strong>${summary.reviewSummary.score === null ? 'Waiting' : `${summary.reviewSummary.score}% ${renderRatingBadge(summary.reviewSummary.score)}`}</strong>
+                <div class="field-bar">${percentBar(summary.reviewSummary.score ?? 0, 'is-good')}</div>
+                <small>${summary.reviewSummary.reviews.length} care review(s), ${summary.reviewSummary.complaints.length} concern/complaint flag(s).</small>
+                ${summary.reviewSummary.score === null ? '' : renderRatingGuide(summary.reviewSummary.score, 'customer review')}
+            </article>
+            <article class="field-analytics-card">
+                <span>Technician Skill Signal</span>
+                <strong>${summary.skillSummary.currentServiceRows.length ? `${summary.skillSummary.score}% ${renderRatingBadge(summary.skillSummary.score)}` : 'No service calls'}</strong>
+                <div class="field-bar">${percentBar(summary.skillSummary.currentServiceRows.length ? summary.skillSummary.score : 0, 'is-info')}</div>
+                <small>${summary.skillSummary.backjobRows.length} possible backjob(s), ${summary.skillSummary.changeUnitRows.length} change-unit request(s), ${summary.skillSummary.partsRiskRows.length} diagnosis risk(s).</small>
+                ${summary.skillSummary.currentServiceRows.length ? renderRatingGuide(summary.skillSummary.score, 'technician skill signal') : ''}
+            </article>
         </div>
         <div class="field-analytics-split">
             <section class="field-advice-card">
@@ -1756,10 +1930,19 @@ async function loadFieldAnalytics() {
     const panel = document.getElementById('fieldAnalytics');
     if (panel) panel.innerHTML = '<div class="loading-cell">Refreshing analytics...</div>';
     try {
-        const docs = await queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => []);
+        const historyStart = `${addDaysYmd(date, -30)} 00:00:00`;
+        const dayEnd = `${date} 23:59:59`;
+        const [docs, reviewDocs, skillHistoryDocs] = await Promise.all([
+            queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => []),
+            queryCollection(CUSTOMER_REVIEW_COLLECTION, FIELD_QUERY_LIMIT).catch(() => []),
+            queryByDateRange('tbl_schedule', 'task_datetime', historyStart, dayEnd).catch(() => [])
+        ]);
         state.pettyCashEntries = mergePendingOfflineRows(PETTY_CASH_ENTRY_COLLECTION, docs.map(parseFirestoreDoc).filter(Boolean));
+        state.customerReviews = mergePendingOfflineRows(CUSTOMER_REVIEW_COLLECTION, reviewDocs.map(parseFirestoreDoc).filter(Boolean));
+        state.skillHistoryRows = mergePendingOfflineRows('tbl_schedule', skillHistoryDocs.map(parseFirestoreDoc).filter(Boolean))
+            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
     } catch (error) {
-        console.warn('Petty cash analytics refresh failed:', error);
+        console.warn('Field analytics refresh failed:', error);
     }
     renderAnalytics();
 }
@@ -2649,13 +2832,16 @@ async function loadMySchedule(options = {}) {
     try {
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const [printedDocs, savedDocs, scheduleDocs, plannerDocs, closeRequestDocs, pettyCashDocs] = await Promise.all([
+        const historyStart = `${addDaysYmd(date, -30)} 00:00:00`;
+        const [printedDocs, savedDocs, scheduleDocs, plannerDocs, closeRequestDocs, pettyCashDocs, reviewDocs, skillHistoryDocs] = await Promise.all([
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => []),
             queryEquals(CLOSE_REQUEST_COLLECTION, 'requester_staff_id', Number(state.staffId || 0), 'integer', FIELD_QUERY_LIMIT).catch(() => []),
-            queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => [])
+            queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => []),
+            queryCollection(CUSTOMER_REVIEW_COLLECTION, FIELD_QUERY_LIMIT).catch(() => []),
+            queryByDateRange('tbl_schedule', 'task_datetime', historyStart, dayEnd).catch(() => [])
         ]);
 
         const printedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_PRIMARY, printedDocs.map(parseFirestoreDoc).filter(Boolean));
@@ -2663,6 +2849,9 @@ async function loadMySchedule(options = {}) {
         const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
         const plannerSourceRows = mergePendingOfflineRows(SCHEDULE_PLANNER_COLLECTION, plannerDocs.map(parseFirestoreDoc).filter(Boolean));
         state.pettyCashEntries = mergePendingOfflineRows(PETTY_CASH_ENTRY_COLLECTION, pettyCashDocs.map(parseFirestoreDoc).filter(Boolean));
+        state.customerReviews = mergePendingOfflineRows(CUSTOMER_REVIEW_COLLECTION, reviewDocs.map(parseFirestoreDoc).filter(Boolean));
+        state.skillHistoryRows = mergePendingOfflineRows('tbl_schedule', skillHistoryDocs.map(parseFirestoreDoc).filter(Boolean))
+            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
         loadCloseRequestLookup(closeRequestDocs.map(parseFirestoreDoc).filter(Boolean));
 
         const printedRows = pickLatestRouteRows(printedSourceRows, date);

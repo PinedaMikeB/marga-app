@@ -178,8 +178,38 @@ const customerTroubles = [
 ];
 
 const MANUAL_ERROR_VALUE = "__manual_error__";
+const CUSTOMER_REVIEW_COLLECTION = "marga_care_customer_reviews";
 
 const modelErrorCodes = window.MARGA_MODEL_ERROR_GUIDES || [];
+
+const reviewCriteria = [
+  { key: "professionalism", label: "Professionalism", help: "Grooming, ID/uniform, neatness, and proper conduct." },
+  { key: "courtesy", label: "Respect / Courtesy", help: "Polite, patient, and respectful while inside the customer site." },
+  { key: "communication", label: "Communication", help: "Explained the issue, work done, pending items, and next step clearly." },
+  { key: "accuracy", label: "Work Accuracy", help: "The requested work was handled correctly and completely." },
+  { key: "timeliness", label: "Timeliness", help: "Arrived or updated the customer within a reasonable service window." },
+  { key: "confidence", label: "Customer Confidence", help: "Customer feels the machine/request was handled properly." }
+];
+
+const complaintPatterns = [
+  "complaint",
+  "rude",
+  "disrespect",
+  "argument",
+  "late",
+  "no show",
+  "not fixed",
+  "same problem",
+  "backjob",
+  "dirty",
+  "careless",
+  "unprofessional",
+  "poor",
+  "bad",
+  "angry",
+  "disappointed",
+  "not satisfied"
+];
 
 const state = {
   authed: false,
@@ -198,6 +228,59 @@ function escapeHtml(value) {
     '"': "&quot;",
     "'": "&#39;"
   }[char]));
+}
+
+function toFirestoreFieldValue(value) {
+  if (value === null) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number" && Number.isFinite(value)) return Number.isInteger(value)
+    ? { integerValue: String(value) }
+    : { doubleValue: value };
+  return { stringValue: String(value ?? "") };
+}
+
+async function setFirestoreDocument(collection, docId, fields) {
+  const firebase = config.firebase || {};
+  if (!firebase.baseUrl || !firebase.apiKey) throw new Error("Firebase config is not available.");
+  const body = { fields: {} };
+  Object.entries(fields).forEach(([key, value]) => {
+    body.fields[key] = toFirestoreFieldValue(value);
+  });
+  const response = await fetch(`${firebase.baseUrl}/${collection}/${docId}?key=${firebase.apiKey}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json();
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.error?.message || `Failed to save ${collection}/${docId}`);
+  }
+  return payload;
+}
+
+function average(values) {
+  const clean = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : 0;
+}
+
+function reviewScoreLabel(score) {
+  if (score >= 4.75) return "Excellent";
+  if (score >= 4.25) return "Good";
+  if (score >= 3.5) return "Fair";
+  if (score >= 2.75) return "Needs Improvement";
+  return "Poor";
+}
+
+function detectComplaint(text = "") {
+  const normalized = String(text || "").toLowerCase();
+  return complaintPatterns.some((pattern) => normalized.includes(pattern));
+}
+
+function sentimentLabel(text = "") {
+  const normalized = String(text || "").toLowerCase();
+  if (detectComplaint(normalized)) return "Complaint / Negative";
+  if (/thank|satisfied|good|great|excellent|okay|ok|fixed|resolved|appreciate/.test(normalized)) return "Positive";
+  return "Neutral";
 }
 
 function icon(name) {
@@ -387,7 +470,9 @@ function serviceTickets() {
     issue: request.errorCode && request.errorCode !== "None" ? `${request.trouble}: ${request.errorCode}` : (request.trouble || request.concern || request.notes || request.type),
     status: request.status,
     updated: request.updated || "Just now",
-    source: request.source
+    source: request.source,
+    sentiment: request.sentiment || "Neutral",
+    complaintFlag: Boolean(request.complaintFlag)
   }));
   const demoTickets = state.data.tickets.filter((ticket) => allowed.has(normalizeSerial(ticket.serial)));
   return [...saved, ...demoTickets];
@@ -607,6 +692,61 @@ function saveAcknowledgementOverride(id, payload) {
   localStorage.setItem("marga_care_work_acknowledgements", JSON.stringify(saved));
 }
 
+function collectReviewPayload(job, mode = "acknowledged") {
+  const scores = {};
+  reviewCriteria.forEach((criterion) => {
+    scores[criterion.key] = Number(document.querySelector(`[data-review-score="${job.id}:${criterion.key}"]`)?.value || 0);
+  });
+  const remarks = String(document.querySelector(`[data-ack-remarks="${job.id}"]`)?.value || "").trim();
+  const score = average(Object.values(scores));
+  const complaintFlag = mode === "concern" || detectComplaint(remarks) || Object.values(scores).some((value) => Number(value || 0) <= 2);
+  return {
+    scores,
+    score,
+    scorePercent: Math.round((score / 5) * 100),
+    starRating: Math.round(score * 10) / 10,
+    ratingLabel: reviewScoreLabel(score),
+    remarks,
+    complaintFlag,
+    reviewStatus: mode === "concern" ? "Concern Reported" : "Acknowledged"
+  };
+}
+
+async function saveCustomerReview(job, review) {
+  const now = new Date();
+  const docId = `care_review_${String(job.id || "job").replace(/[^A-Za-z0-9_-]/g, "_")}_${Date.now()}`;
+  const payload = {
+    id: docId,
+    source: "care.marga.biz",
+    acknowledgement_id: String(job.id || ""),
+    ticket_id: String(job.ticket || ""),
+    schedule_id: Number(job.scheduleId || job.schedule_id || 0) || 0,
+    account: state.access?.account || state.data.account || "",
+    company_id: String(state.access?.companyId || ""),
+    serial: String(job.serial || ""),
+    branch: String(job.branch || ""),
+    machine: String(job.machine || ""),
+    technician_name: String(job.technician || ""),
+    review_status: review.reviewStatus,
+    rating: review.starRating,
+    rating_percent: review.scorePercent,
+    rating_label: review.ratingLabel,
+    complaint_flag: review.complaintFlag,
+    remarks: review.remarks,
+    professionalism: review.scores.professionalism || 0,
+    courtesy: review.scores.courtesy || 0,
+    communication: review.scores.communication || 0,
+    accuracy: review.scores.accuracy || 0,
+    timeliness: review.scores.timeliness || 0,
+    confidence: review.scores.confidence || 0,
+    review_date: now.toISOString().slice(0, 10),
+    reviewed_at: now.toISOString(),
+    reviewed_by: state.access?.contactName || "Customer"
+  };
+  await setFirestoreDocument(CUSTOMER_REVIEW_COLLECTION, docId, payload);
+  return payload;
+}
+
 function acknowledgementJobs() {
   const saved = loadAcknowledgementOverrides();
   const allowed = new Set(scopedDevices().map((device) => normalizeSerial(device.serial)));
@@ -681,6 +821,32 @@ function renderAcknowledgementCard(job) {
         Customer remarks
         <textarea data-ack-remarks="${escapeHtml(job.id)}" placeholder="Optional: add a note for Marga service staff">${escapeHtml(job.customerRemark || "")}</textarea>
       </label>
+
+      <div class="review-block">
+        <div class="review-block-head">
+          <div>
+            <span>Customer Satisfaction Review</span>
+            <strong>Rate 1 poor to 5 excellent</strong>
+          </div>
+          <em>${escapeHtml(job.ratingLabel || "Not rated yet")}</em>
+        </div>
+        <div class="review-grid">
+          ${reviewCriteria.map((criterion) => {
+            const savedScore = Number(job.reviewScores?.[criterion.key] || 0);
+            return `
+              <label>
+                <span>${escapeHtml(criterion.label)}</span>
+                <select data-review-score="${escapeHtml(job.id)}:${escapeHtml(criterion.key)}" ${disabled ? "disabled" : ""} required>
+                  <option value="">Select</option>
+                  ${[5, 4, 3, 2, 1].map((score) => `<option value="${score}" ${savedScore === score ? "selected" : ""}>${score} - ${escapeHtml(reviewScoreLabel(score))}</option>`).join("")}
+                </select>
+                <small>${escapeHtml(criterion.help)}</small>
+              </label>
+            `;
+          }).join("")}
+        </div>
+        <p class="review-note">Any complaint or low rating is treated as a service incident for Marga review.</p>
+      </div>
 
       <div class="work-actions">
         <button class="primary-action" type="button" data-ack-id="${escapeHtml(job.id)}" ${disabled ? "disabled" : ""}>
@@ -774,6 +940,8 @@ function bindEvents() {
       machine: device ? `${device.serial} - ${device.model}` : serial,
       concern: formData.get("concern"),
       notes: formData.get("concern"),
+      sentiment: sentimentLabel(formData.get("concern")),
+      complaintFlag: detectComplaint(formData.get("concern")),
       attachments: attachmentSummary
     });
     form.reset();
@@ -806,15 +974,29 @@ function bindEvents() {
     }
     renderErrorGuide(form);
   });
-  document.body.addEventListener("click", (event) => {
+  document.body.addEventListener("click", async (event) => {
     const acknowledgeButton = event.target.closest("[data-ack-id]");
     if (acknowledgeButton) {
       const id = acknowledgeButton.dataset.ackId;
-      const remarks = document.querySelector(`[data-ack-remarks="${id}"]`)?.value || "";
+      const job = acknowledgementJobs().find((item) => String(item.id) === String(id));
+      if (!job) return;
+      const review = collectReviewPayload(job, "acknowledged");
+      if (Object.values(review.scores).some((value) => !Number(value))) {
+        alert("Please complete the 1 to 5 customer satisfaction review before acknowledging.");
+        return;
+      }
+      acknowledgeButton.disabled = true;
       saveAcknowledgementOverride(id, {
         status: "Acknowledged",
-        customerRemark: remarks,
+        customerRemark: review.remarks,
+        reviewScores: review.scores,
+        rating: review.starRating,
+        ratingLabel: review.ratingLabel,
+        complaintFlag: review.complaintFlag,
         acknowledgedAt: new Date().toISOString()
+      });
+      saveCustomerReview(job, review).catch((error) => {
+        console.warn("Customer review sync failed", error);
       });
       renderContent();
       return;
@@ -823,11 +1005,25 @@ function bindEvents() {
     const concernButton = event.target.closest("[data-concern-id]");
     if (concernButton) {
       const id = concernButton.dataset.concernId;
-      const remarks = document.querySelector(`[data-ack-remarks="${id}"]`)?.value || "";
+      const job = acknowledgementJobs().find((item) => String(item.id) === String(id));
+      if (!job) return;
+      const review = collectReviewPayload(job, "concern");
+      if (!review.remarks) {
+        alert("Please write the concern in customer remarks so Marga can review it.");
+        return;
+      }
+      concernButton.disabled = true;
       saveAcknowledgementOverride(id, {
         status: "Concern Reported",
-        customerRemark: remarks || "Customer reported a concern after reviewing the work.",
+        customerRemark: review.remarks || "Customer reported a concern after reviewing the work.",
+        reviewScores: review.scores,
+        rating: review.starRating,
+        ratingLabel: review.ratingLabel,
+        complaintFlag: true,
         acknowledgedAt: new Date().toISOString()
+      });
+      saveCustomerReview(job, { ...review, complaintFlag: true, reviewStatus: "Concern Reported" }).catch((error) => {
+        console.warn("Customer concern sync failed", error);
       });
       renderContent();
       return;
