@@ -292,6 +292,37 @@
     padding: 1rem;
 }
 
+.field-snapshot-intro {
+    margin-bottom: 0.9rem;
+    border-radius: 16px;
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    background: linear-gradient(145deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.82));
+    padding: 0.95rem;
+}
+
+.field-snapshot-intro span,
+.field-scorecard-label {
+    display: block;
+    color: #2563eb;
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.field-snapshot-intro h4 {
+    margin: 0.22rem 0 0;
+    color: #16345b;
+    font-size: 1rem;
+}
+
+.field-snapshot-intro p {
+    margin: 0.28rem 0 0;
+    color: #526985;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
 .field-analytics-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -417,6 +448,110 @@
 
 .field-signal-row strong {
     color: #16345b;
+}
+
+.field-scorecards {
+    margin-top: 0.9rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+}
+
+.field-scorecard {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) auto minmax(0, 1.35fr);
+    gap: 0.9rem;
+    align-items: start;
+    border-radius: 18px;
+    border: 1px solid rgba(191, 219, 254, 0.72);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 8px 24px rgba(30, 64, 175, 0.07);
+    padding: 1rem;
+}
+
+.field-scorecard h4 {
+    margin: 0.22rem 0 0;
+    color: #16345b;
+    font-size: 0.98rem;
+}
+
+.field-scorecard p {
+    margin: 0.28rem 0 0;
+    color: #526985;
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.field-scorecard-status {
+    min-width: 4.2rem;
+    min-height: 4.2rem;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    color: #1a365d;
+    background: rgba(239, 246, 255, 0.95);
+    border: 1px solid rgba(191, 219, 254, 0.86);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.28rem;
+    font-weight: 850;
+}
+
+.field-scorecard-tech .field-scorecard-status {
+    color: #92400e;
+    background: rgba(255, 251, 235, 0.95);
+    border-color: rgba(251, 191, 36, 0.45);
+    font-size: 0.88rem;
+}
+
+.field-scorecard-messenger .field-scorecard-status {
+    color: #166534;
+    background: rgba(240, 253, 244, 0.95);
+    border-color: rgba(134, 239, 172, 0.55);
+}
+
+.field-scorecard-owner .field-scorecard-status {
+    color: #5b21b6;
+    background: rgba(245, 243, 255, 0.95);
+    border-color: rgba(196, 181, 253, 0.55);
+}
+
+.field-score-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+
+.field-score-metric {
+    border-radius: 13px;
+    border: 1px solid rgba(226, 232, 240, 0.88);
+    background: rgba(248, 250, 252, 0.76);
+    padding: 0.65rem;
+}
+
+.field-score-metric span {
+    display: block;
+    color: #587090;
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.field-score-metric strong {
+    display: block;
+    margin-top: 0.16rem;
+    color: #16345b;
+    font-size: 0.98rem;
+}
+
+.field-score-metric small {
+    display: block;
+    margin-top: 0.22rem;
+    color: #64748b;
+    font-size: 0.72rem;
+    line-height: 1.35;
 }
 
 .field-customer-search {
@@ -919,6 +1054,14 @@
         grid-template-columns: 1fr;
     }
 
+    .field-scorecard {
+        grid-template-columns: 1fr;
+    }
+
+    .field-scorecard-status {
+        width: 4.2rem;
+    }
+
     .field-endofday {
         grid-template-columns: 1fr;
     }
@@ -1020,6 +1163,10 @@
     }
 
     .field-analytics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .field-score-metrics {
         grid-template-columns: 1fr;
     }
 

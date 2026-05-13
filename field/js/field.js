@@ -1341,6 +1341,81 @@ function buildPerformanceAdvice(summary) {
     return advice;
 }
 
+function clampScore(value) {
+    const score = Number(value || 0);
+    if (!Number.isFinite(score)) return 0;
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function getRouteDisciplineScore(summary) {
+    const checkoutPenalty = Math.min(35, summary.missingCheckout * 8);
+    const carryoverPenalty = Math.min(35, summary.carryoverRate * 0.35);
+    const completionBonus = summary.completionRate * 0.45;
+    return clampScore(55 + completionBonus - checkoutPenalty - carryoverPenalty);
+}
+
+function renderScorecardMetric(label, value, note = '') {
+    return `
+        <div class="field-score-metric">
+            <span>${sanitize(label)}</span>
+            <strong>${sanitize(value)}</strong>
+            ${note ? `<small>${sanitize(note)}</small>` : ''}
+        </div>
+    `;
+}
+
+function renderScorecards(summary) {
+    const routeDiscipline = getRouteDisciplineScore(summary);
+    const costPerVisit = formatPesoAmount(summary.costPerClosedVisit) || 'PHP 0.00';
+    const workload = summary.workload;
+    return `
+        <section class="field-scorecards">
+            <article class="field-scorecard field-scorecard-tech">
+                <div>
+                    <span class="field-scorecard-label">Technician Maintenance Score</span>
+                    <h4>Quality score, not just speed</h4>
+                    <p>For technicians only. This should measure whether assigned customers call less often because machines are maintained thoroughly.</p>
+                </div>
+                <div class="field-scorecard-status">Setup</div>
+                <div class="field-score-metrics">
+                    ${renderScorecardMetric('Area load fairness', 'Waiting', 'Needs active machines/customers per technician from customer/HR assignment.')}
+                    ${renderScorecardMetric('Repeat call rate', 'Waiting', 'Needs 7/15/30 day repeat service history per machine.')}
+                    ${renderScorecardMetric('First-time fix', 'Waiting', 'Needs closed service vs return visit / pending parts history.')}
+                    ${renderScorecardMetric('Thorough PM', 'Waiting', 'Needs preventive checklist before leaving customer.')}
+                </div>
+            </article>
+            <article class="field-scorecard field-scorecard-messenger">
+                <div>
+                    <span class="field-scorecard-label">Messenger Logistics Score</span>
+                    <h4>Route completion and cost control</h4>
+                    <p>For messengers. This excludes maintenance quality and focuses on completed delivery, billing, collection, route discipline, and field cost.</p>
+                </div>
+                <div class="field-scorecard-status">${routeDiscipline}</div>
+                <div class="field-score-metrics">
+                    ${renderScorecardMetric('Completion', `${summary.completionRate}%`, `${summary.closedRows.length}/${summary.totalAssigned} workload tasks closed.`)}
+                    ${renderScorecardMetric('Past pending', `${workload.pastOpen.length}`, 'Lower is better; old work should be cleared first.')}
+                    ${renderScorecardMetric('Cost / closed visit', costPerVisit, 'Petty cash only for now; salary joins when HR module is ready.')}
+                    ${renderScorecardMetric('Check-out discipline', `${summary.missingCheckout} missing`, 'Every customer visit needs check-in and check-out.')}
+                </div>
+            </article>
+            <article class="field-scorecard field-scorecard-owner">
+                <div>
+                    <span class="field-scorecard-label">Owner Cost/Waste Score</span>
+                    <h4>Waste, carryover, and avoidable cost</h4>
+                    <p>For management. This is the daily Kaizen lens: old pending work, expenses, low completion, and data gaps that hide waste.</p>
+                </div>
+                <div class="field-scorecard-status">${clampScore(100 - summary.carryoverRate - (summary.pettyCashTotal > 0 && !summary.closedRows.length ? 20 : 0))}</div>
+                <div class="field-score-metrics">
+                    ${renderScorecardMetric('Open workload', `${summary.totalAssigned}`, `${workload.todayOpen.length} new + ${workload.pastOpen.length} past pending.`)}
+                    ${renderScorecardMetric('Petty cash', formatPesoAmount(summary.pettyCashTotal) || 'PHP 0.00', `${summary.staffPettyCash.length} matched row(s) by staff name.`)}
+                    ${renderScorecardMetric('Carryover share', `${summary.carryoverRate}%`, 'High carryover means service risk and customer dissatisfaction.')}
+                    ${renderScorecardMetric('Data reliability', summary.timedRows.length ? `${summary.timedRows.length} timed` : 'Weak', 'Better check-in/out data gives fairer coaching.')}
+                </div>
+            </article>
+        </section>
+    `;
+}
+
 function renderAnalytics() {
     const panel = document.getElementById('fieldAnalytics');
     if (!panel) return;
@@ -1353,6 +1428,13 @@ function renderAnalytics() {
     const bar = (value, className = '') => `<span class="${className}" style="width:${Math.max(4, Math.round((value / maxBar) * 100))}%"></span>`;
 
     panel.innerHTML = `
+        <div class="field-snapshot-intro">
+            <div>
+                <span>Daily Route Snapshot</span>
+                <h4>This is not the final performance rating.</h4>
+                <p>These numbers explain today's route. Fair scoring separates technician maintenance quality, messenger logistics, and owner cost/waste.</p>
+            </div>
+        </div>
         <div class="field-analytics-grid">
             <article class="field-analytics-card">
                 <span>Completion Rate</span>
@@ -1381,7 +1463,7 @@ function renderAnalytics() {
         </div>
         <div class="field-analytics-split">
             <section class="field-advice-card">
-                <h4>Performance Advice</h4>
+                <h4>Route Advice</h4>
                 ${advice.map((item) => `
                     <div class="field-advice-item">
                         <strong>${sanitize(item.title)}</strong>
@@ -1398,6 +1480,7 @@ function renderAnalytics() {
                 <div class="field-signal-row"><span>Missing check-out</span><strong>${summary.missingCheckout}</strong></div>
             </section>
         </div>
+        ${renderScorecards(summary)}
     `;
 }
 
