@@ -161,6 +161,16 @@
     font-size: 1rem;
 }
 
+.field-attendance-times small {
+    display: block;
+    max-width: 185px;
+    margin-top: 0.2rem;
+    color: #526985;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
 .field-attendance-actions {
     display: flex;
     gap: 0.45rem;

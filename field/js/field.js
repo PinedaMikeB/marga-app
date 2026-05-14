@@ -5,6 +5,9 @@ if (!MargaAuth.requireAccess('field')) {
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 45;
 const REQUIRED_PRIORITY_COUNT = 5;
+const ATTENDANCE_LOCATION_RADIUS_METERS = 100;
+const FIELD_ATTENDANCE_START_TIME = '08:00';
+const FIELD_ATTENDANCE_GRACE_MINUTES = 15;
 const PARTS_CATALOG_QUERY_LIMIT = 12000;
 const DELIVERY_RECEIPT_LINE_LIMIT = 100;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
@@ -1028,10 +1031,150 @@ function formatAttendanceTime(value) {
     return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
 }
 
+function getAttendanceGraceDateTime(selectedDate) {
+    const [year, month, day] = String(selectedDate || localDateYmd()).split('-').map((part) => Number(part));
+    const [hour, minute] = FIELD_ATTENDANCE_START_TIME.split(':').map((part) => Number(part));
+    const date = new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0);
+    date.setMinutes(date.getMinutes() + FIELD_ATTENDANCE_GRACE_MINUTES);
+    return date;
+}
+
+function getAttendanceTimeliness(attendance = state.attendance || {}) {
+    const timeIn = normalizeLegacyDateTime(attendance.time_in);
+    if (!timeIn) return { status: 'missing', label: 'No official Time In yet.', lateMinutes: 0 };
+    const selectedDate = attendance.attendance_date || state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    const timeInDate = new Date(timeIn.replace(' ', 'T'));
+    const graceDate = getAttendanceGraceDateTime(selectedDate);
+    if (Number.isNaN(timeInDate.getTime())) return { status: 'unknown', label: 'Time In saved, timeliness unknown.', lateMinutes: 0 };
+    const lateMinutes = Math.max(0, Math.ceil((timeInDate.getTime() - graceDate.getTime()) / 60000));
+    if (!lateMinutes) return { status: 'on_time', label: `On time. Grace until ${formatAttendanceTime(`${selectedDate} 08:15:00`)}.`, lateMinutes: 0 };
+    return { status: 'late', label: `Late by ${lateMinutes} minute${lateMinutes === 1 ? '' : 's'}.`, lateMinutes };
+}
+
+function formatAttendanceLocationLine(attendance = state.attendance || {}) {
+    const companyName = firstNonBlank(attendance.time_in_company_name);
+    const branchName = firstNonBlank(attendance.time_in_branch_name);
+    const address = firstNonBlank(attendance.time_in_address);
+    const distance = Number(attendance.time_in_distance_meters || 0);
+    const locationLabel = [companyName, branchName].filter(Boolean).join(' - ');
+    if (!locationLabel && !address) return 'Location not captured';
+    const atLine = `at ${[locationLabel, address].filter(Boolean).join(', ')}`;
+    return distance > 0 ? `${atLine} (${Math.round(distance)}m)` : atLine;
+}
+
+function branchAddressText(branch = {}, area = null) {
+    const exact = firstNonBlank(
+        branch.address,
+        branch.branch_address,
+        branch.branchaddress,
+        branch.complete_address,
+        branch.full_address,
+        branch.location_address,
+        branch.location
+    );
+    if (exact) return exact;
+    const parts = [
+        firstNonBlank(branch.unit, branch.room, branch.floor),
+        firstNonBlank(branch.building, branch.bldg, branch.building_name),
+        firstNonBlank(branch.street, branch.street_address, branch.road),
+        firstNonBlank(branch.barangay, branch.brgy),
+        firstNonBlank(branch.city, branch.municipality),
+        firstNonBlank(branch.province),
+        firstNonBlank(area?.area_name)
+    ].filter(Boolean);
+    return [...new Set(parts)].join(', ');
+}
+
+function scheduleLocationLabel(row) {
+    const branch = caches.branch.get(String(row?.branch_id || 0)) || {};
+    const company = caches.company.get(String(row?.company_id || branch.company_id || 0)) || {};
+    const area = caches.area.get(String(row?.area_id || branch.area_id || 0)) || null;
+    const companyName = firstNonBlank(company.companyname, row?.company_name, row?.client_name);
+    const branchName = firstNonBlank(branch.branchname, row?.branch_name, row?.customer_branch, row?.branch);
+    const address = branchAddressText(branch, area);
+    return {
+        companyName,
+        branchName,
+        address,
+        label: [companyName, branchName].filter(Boolean).join(' - ') || `Schedule #${row?.id || ''}`
+    };
+}
+
+function distanceMeters(aLat, aLng, bLat, bLng) {
+    const radius = 6371000;
+    const toRad = (value) => (value * Math.PI) / 180;
+    const dLat = toRad(bLat - aLat);
+    const dLng = toRad(bLng - aLng);
+    const lat1 = toRad(aLat);
+    const lat2 = toRad(bLat);
+    const sinLat = Math.sin(dLat / 2);
+    const sinLng = Math.sin(dLng / 2);
+    const haversine = (sinLat * sinLat) + (Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng);
+    return radius * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+async function getAttendanceScheduleLocationMatch() {
+    const rows = workloadRows();
+    if (!rows.length) {
+        throw new Error('No open or pending schedule is available for this route date. Time In is blocked.');
+    }
+
+    await hydrateLookups(rows);
+    const pinnedRows = [];
+    const missingPinRows = [];
+    rows.forEach((row) => {
+        const branch = caches.branch.get(String(row.branch_id || 0));
+        const coords = getBranchCoordinates(branch);
+        if (!coords) {
+            missingPinRows.push(row);
+            return;
+        }
+        pinnedRows.push({ row, branch, coords, ...scheduleLocationLabel(row) });
+    });
+
+    if (!pinnedRows.length) {
+        const sample = missingPinRows.slice(0, 3).map((row) => scheduleLocationLabel(row).label).filter(Boolean).join(', ');
+        throw new Error(`No scheduled customer has a saved pin yet. Open the customer task, tap Pin Customer Location while on site, then Time In.${sample ? ` Missing pin example: ${sample}.` : ''}`);
+    }
+
+    const position = await getCurrentPosition();
+    const latitude = Number(position.coords.latitude);
+    const longitude = Number(position.coords.longitude);
+    const accuracy = Number(position.coords.accuracy || 0);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('GPS returned an invalid location.');
+    }
+
+    const ranked = pinnedRows
+        .map((item) => ({
+            ...item,
+            distance: distanceMeters(latitude, longitude, item.coords.latitude, item.coords.longitude)
+        }))
+        .sort((a, b) => a.distance - b.distance);
+    const nearest = ranked[0];
+    if (!nearest || nearest.distance > ATTENDANCE_LOCATION_RADIUS_METERS) {
+        const missingPinHint = missingPinRows.length
+            ? ' If you are already at a scheduled customer with no saved pin, open that task, tap Pin Customer Location, then Time In.'
+            : '';
+        const message = nearest
+            ? `You are ${Math.round(nearest.distance)}m from the nearest open/pending scheduled customer (${nearest.label}). Time In requires ${ATTENDANCE_LOCATION_RADIUS_METERS}m maximum.${missingPinHint}`
+            : `No pinned open/pending customer was found for attendance matching.${missingPinHint}`;
+        throw new Error(message);
+    }
+
+    return {
+        latitude,
+        longitude,
+        accuracy,
+        nearest
+    };
+}
+
 function renderAttendanceCard() {
     const status = document.getElementById('fieldAttendanceStatus');
     const timeIn = document.getElementById('fieldAttendanceTimeIn');
     const timeOut = document.getElementById('fieldAttendanceTimeOut');
+    const timeInLocation = document.getElementById('fieldAttendanceTimeInLocation');
     const timeInBtn = document.getElementById('fieldAttendanceTimeInBtn');
     const timeOutBtn = document.getElementById('fieldAttendanceTimeOutBtn');
     if (!status || !timeIn || !timeOut || !timeInBtn || !timeOutBtn) return;
@@ -1041,15 +1184,16 @@ function renderAttendanceCard() {
     const hasTimeOut = Boolean(normalizeLegacyDateTime(attendance.time_out));
     timeIn.textContent = formatAttendanceTime(attendance.time_in);
     timeOut.textContent = formatAttendanceTime(attendance.time_out);
+    if (timeInLocation) timeInLocation.textContent = hasTimeIn ? formatAttendanceLocationLine(attendance) : `Must be within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of an open/pending customer.`;
     timeInBtn.disabled = hasTimeIn;
     timeOutBtn.disabled = !hasTimeIn || hasTimeOut;
 
     if (!hasTimeIn) {
-        status.textContent = 'Tap Time In before starting field work.';
+        status.textContent = 'Time In requires GPS at an open/pending scheduled customer. If there is no saved pin, pin the customer location first.';
     } else if (!hasTimeOut) {
-        status.textContent = 'Official attendance is open. Time Out when back at the office.';
+        status.textContent = `Official attendance is open. ${getAttendanceTimeliness(attendance).label} Time Out when back at the office.`;
     } else {
-        status.textContent = 'Attendance complete for this route date.';
+        status.textContent = `Attendance complete for this route date. ${getAttendanceTimeliness(attendance).label}`;
     }
 }
 
@@ -1091,8 +1235,11 @@ async function markAttendanceTime(direction) {
     const nowDb = nowDbDateTime();
     const docId = state.attendanceDocId || attendanceDocId(staffId, date);
     const previous = state.attendance || {};
+    const previousFields = { ...previous };
+    delete previousFields._docId;
     const displayName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || '';
     const payload = {
+        ...previousFields,
         id: docId,
         staff_id: staffId,
         staff_name: displayName,
@@ -1112,11 +1259,30 @@ async function markAttendanceTime(direction) {
 
     if (button) button.disabled = true;
     try {
+        if (!isOut) {
+            const match = await getAttendanceScheduleLocationMatch();
+            const nearest = match.nearest;
+            payload.time_in_latitude = match.latitude.toFixed(7);
+            payload.time_in_longitude = match.longitude.toFixed(7);
+            payload.time_in_accuracy_meters = Math.round(match.accuracy);
+            payload.time_in_distance_meters = Math.round(nearest.distance);
+            payload.time_in_schedule_id = Number(nearest.row.id || 0) || 0;
+            payload.time_in_schedule_doc_id = scheduleDocIdForRow(nearest.row);
+            payload.time_in_company_id = Number(nearest.row.company_id || nearest.branch?.company_id || 0) || 0;
+            payload.time_in_branch_id = Number(nearest.row.branch_id || 0) || 0;
+            payload.time_in_company_name = nearest.companyName || '';
+            payload.time_in_branch_name = nearest.branchName || '';
+            payload.time_in_address = nearest.address || '';
+            payload.time_in_location_status = 'matched_open_pending_schedule';
+            const timeliness = getAttendanceTimeliness(payload);
+            payload.time_in_timeliness_status = timeliness.status;
+            payload.time_in_late_minutes = timeliness.lateMinutes;
+        }
         await setDocument(FIELD_ATTENDANCE_COLLECTION, docId, payload);
         state.attendanceDocId = docId;
         state.attendance = payload;
         renderAttendanceCard();
-        alert(isOut ? 'Attendance time out captured.' : 'Attendance time in captured.');
+        alert(isOut ? 'Attendance time out captured.' : `Attendance time in captured ${formatAttendanceLocationLine(payload)}.`);
     } catch (err) {
         console.error('Attendance update failed:', err);
         alert(`Failed to save attendance: ${err?.message || err}`);
@@ -1645,7 +1811,9 @@ function getAnalyticsSummary() {
     const customerTimeOutRows = state.rows.filter((row) => normalizeLegacyDateTime(row.field_time_in) && normalizeLegacyDateTime(row.field_time_out));
     const missingCheckout = customerTimeInRows.length - customerTimeOutRows.length;
     const customerTimeCoverage = totalAssigned > 0 ? Math.round((customerTimeOutRows.length / totalAssigned) * 100) : 0;
-    const officialAttendanceScore = attendanceTimeIn && attendanceTimeOut ? 100 : attendanceTimeIn ? 70 : 0;
+    const attendanceTimeliness = getAttendanceTimeliness(state.attendance || {});
+    const timelinessPenalty = Math.min(40, Number(attendanceTimeliness.lateMinutes || 0) * 2);
+    const officialAttendanceScore = clampScore((attendanceTimeIn && attendanceTimeOut ? 100 : attendanceTimeIn ? 70 : 0) - timelinessPenalty);
     const timeDiligenceScore = totalAssigned > 0
         ? clampScore((officialAttendanceScore * 0.3) + (customerTimeCoverage * 0.7))
         : officialAttendanceScore;
@@ -1668,6 +1836,7 @@ function getAnalyticsSummary() {
         customerTimeScore,
         attendanceTimeIn,
         attendanceTimeOut,
+        attendanceTimeliness,
         customerTimeInRows,
         customerTimeOutRows,
         customerTimeCoverage,
@@ -1712,6 +1881,12 @@ function buildPerformanceAdvice(summary) {
         advice.push({
             title: 'Always check out before moving',
             body: `${summary.missingCheckout} task(s) have check-in without check-out. This weakens travel-time and customer-service-time scoring.`
+        });
+    }
+    if (summary.attendanceTimeliness?.lateMinutes > 0) {
+        advice.push({
+            title: 'Protect official Time In',
+            body: `Official Time In is ${summary.attendanceTimeliness.label.toLowerCase()} Time In must be inside 100m of an open/pending customer by 8:15 AM, including the 15-minute grace period.`
         });
     }
     if (summary.timeDiligenceScore < 85) {
@@ -1871,7 +2046,7 @@ function renderAnalytics() {
                 <span>Time Recording Discipline</span>
                 <strong>${summary.timeDiligenceScore}% ${renderRatingBadge(summary.timeDiligenceScore)}</strong>
                 <div class="field-bar">${percentBar(summary.timeDiligenceScore, 'is-info')}</div>
-                <small>${sanitize(staffName)} official: ${summary.attendanceTimeIn ? formatAttendanceTime(summary.attendanceTimeIn) : 'no time in'} / ${summary.attendanceTimeOut ? formatAttendanceTime(summary.attendanceTimeOut) : 'no time out'}. Customer check-out: ${summary.customerTimeOutRows.length}/${summary.totalAssigned}.</small>
+                <small>${sanitize(staffName)} official: ${summary.attendanceTimeIn ? formatAttendanceTime(summary.attendanceTimeIn) : 'no time in'} / ${summary.attendanceTimeOut ? formatAttendanceTime(summary.attendanceTimeOut) : 'no time out'}. ${sanitize(summary.attendanceTimeliness.label)} Customer check-out: ${summary.customerTimeOutRows.length}/${summary.totalAssigned}.</small>
                 ${renderRatingGuide(summary.timeDiligenceScore, 'time recording')}
             </article>
             <article class="field-analytics-card">
@@ -3383,12 +3558,20 @@ function parseCoordinate(value) {
     return numeric;
 }
 
+function firstNonBlank(...values) {
+    return values.map((value) => String(value ?? '').trim()).find(Boolean) || '';
+}
+
+function getBranchCoordinates(branch) {
+    const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
+    const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
+    if (latitude === null || longitude === null) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+}
+
 function branchHasSavedLocation(branch) {
-    if (!branch) return false;
-    const latitude = parseCoordinate(branch.latitude ?? branch.lat);
-    const longitude = parseCoordinate(branch.longitude ?? branch.lng ?? branch.lon);
-    if (latitude === null || longitude === null) return false;
-    return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+    return Boolean(getBranchCoordinates(branch));
 }
 
 function getBranchLocationStatus(row = getCurrentRow()) {
