@@ -47,10 +47,114 @@
     font-weight: 700;
 }
 
+.hr-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.58);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 16px 32px rgba(24, 57, 103, 0.08);
+}
+
+.hr-tab {
+    min-height: 40px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #50627d;
+    cursor: pointer;
+    padding: 0 0.9rem;
+    font-weight: 800;
+}
+
+.hr-tab.active {
+    background: #24528f;
+    color: #fff;
+}
+
+.hr-pane {
+    display: none;
+}
+
+.hr-pane.open {
+    display: block;
+}
+
+.hr-location-layout.hr-pane.open {
+    display: grid;
+}
+
 .hr-location-layout {
     display: grid;
     grid-template-columns: minmax(340px, 0.95fr) minmax(360px, 1.05fr);
     gap: 1.25rem;
+}
+
+.hr-location-layout.hr-pane {
+    display: none;
+}
+
+.hr-location-layout.hr-pane.open {
+    display: grid;
+}
+
+.hr-payroll-layout {
+    display: grid;
+    gap: 1rem;
+}
+
+.hr-payroll-analysis {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.hr-payroll-analysis h4 {
+    margin: 0;
+    color: #19345c;
+}
+
+.hr-payroll-analysis p,
+.hr-payroll-analysis li {
+    color: #50627d;
+}
+
+.hr-payroll-analysis ul,
+.hr-payroll-analysis ol {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+.hr-detected-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.hr-detected-grid div {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.85rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-detected-grid span {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.hr-detected-grid strong {
+    color: #19345c;
+    font-size: 0.9rem;
 }
 
 .hr-location-form {
@@ -210,7 +314,8 @@
 
 @media (max-width: 1100px) {
     .hr-location-layout,
-    .hr-validator-grid {
+    .hr-validator-grid,
+    .hr-detected-grid {
         grid-template-columns: 1fr;
     }
 

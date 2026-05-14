@@ -107,7 +107,7 @@
             </button>
             <div class="header-title">
                 <h1>Human Resource</h1>
-                <p>Employee roster and GPS work-location controls.</p>
+                <p>Employees, payroll preparation, performance analytics, and GPS work-location controls.</p>
             </div>
             <div class="header-actions">
                 <button type="button" class="btn btn-secondary btn-sm" id="refreshHrBtn">Refresh</button>
@@ -130,10 +130,17 @@
                 </article>
             </section>
 
-            <section class="content-card hr-directory-card">
+            <nav class="hr-tabs" role="tablist" aria-label="Human Resource sections">
+                <button type="button" class="hr-tab active" id="tabEmployees" data-tab="employees" role="tab" aria-selected="true">Employees</button>
+                <button type="button" class="hr-tab" id="tabPayroll" data-tab="payroll" role="tab" aria-selected="false">Payroll</button>
+                <button type="button" class="hr-tab" id="tabPerformance" data-tab="performance" role="tab" aria-selected="false">Performance</button>
+                <button type="button" class="hr-tab" id="tabLocations" data-tab="locations" role="tab" aria-selected="false">Work Locations</button>
+            </nav>
+
+            <section class="content-card hr-directory-card hr-pane open" id="employeesPane" role="tabpanel" aria-labelledby="tabEmployees">
                 <div class="card-header">
                     <div>
-                        <h3>Employee Directory</h3>
+                        <h3>Employees</h3>
                         <p class="ops-subtext" id="hrDirectoryStatus">Loading HR records...</p>
                     </div>
                     <div class="card-actions hr-actions">
@@ -155,6 +162,9 @@
                                 <th>ID</th>
                                 <th>Name</th>
                                 <th>Position</th>
+                                <th>Rate Type</th>
+                                <th>Salary Rate</th>
+                                <th>Allowance</th>
                                 <th>Email</th>
                                 <th>Status</th>
                             </tr>
@@ -164,7 +174,54 @@
                 </div>
             </section>
 
-            <section class="hr-location-layout">
+            <section class="content-card hr-pane" id="payrollPane" role="tabpanel" aria-labelledby="tabPayroll">
+                <div class="card-header">
+                    <div>
+                        <h3>Payroll</h3>
+                        <p class="ops-subtext" id="payrollStatus">Paste the payroll Excel range here so HR can map columns and automate the computation.</p>
+                    </div>
+                </div>
+                <div class="hr-payroll-layout">
+                    <label class="marga-field marga-field-full">
+                        <span>Paste Payroll Sheet Range</span>
+                        <textarea id="payrollPasteInput" rows="10" placeholder="Paste copied Excel cells here, including the header row."></textarea>
+                    </label>
+                    <div class="hr-form-actions">
+                        <button type="button" class="btn btn-secondary" id="clearPayrollPasteBtn">Clear</button>
+                        <button type="button" class="btn btn-primary" id="analyzePayrollPasteBtn">Analyze Payroll Sheet</button>
+                    </div>
+                    <div class="hr-payroll-analysis" id="payrollAnalysis">
+                        <h4>Automation Plan</h4>
+                        <p>Once the payroll sheet is pasted, this tab will detect names, salary-rate columns, attendance days, overtime, deductions, contributions, gross pay, and net pay columns.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="content-card hr-pane" id="performancePane" role="tabpanel" aria-labelledby="tabPerformance">
+                <div class="card-header">
+                    <div>
+                        <h3>Performance</h3>
+                        <p class="ops-subtext" id="performanceStatus">Loading app performance signals...</p>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="table" id="hrPerformanceTable">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Role</th>
+                                <th>App Events</th>
+                                <th>Last Action</th>
+                                <th>Last GPS</th>
+                                <th>Signal</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="hr-location-layout hr-pane" id="locationsPane" role="tabpanel" aria-labelledby="tabLocations">
                 <section class="content-card hr-location-card">
                     <div class="card-header">
                         <div>
@@ -236,7 +293,7 @@
                 </section>
             </section>
 
-            <section class="content-card hr-validator-card">
+            <section class="content-card hr-validator-card hr-pane" id="locationValidatorPane" role="tabpanel" aria-labelledby="tabLocations">
                 <div class="card-header">
                     <div>
                         <h3>Time-In Eligibility Preview</h3>

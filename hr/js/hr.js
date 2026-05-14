@@ -42,7 +42,9 @@ const TYPE_LABELS = {
 const HR_STATE = {
     employees: [],
     positions: new Map(),
-    locations: []
+    locations: [],
+    fieldEvents: [],
+    activeTab: 'employees'
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -55,8 +57,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('refreshHrBtn').addEventListener('click', () => loadHrModule());
+    document.querySelectorAll('.hr-tab').forEach((button) => {
+        button.addEventListener('click', () => setActiveTab(button.dataset.tab));
+    });
     document.getElementById('employeeSearch').addEventListener('input', renderEmployees);
     document.getElementById('employeeStatusFilter').addEventListener('change', renderEmployees);
+    document.getElementById('analyzePayrollPasteBtn').addEventListener('click', analyzePayrollPaste);
+    document.getElementById('clearPayrollPasteBtn').addEventListener('click', () => {
+        document.getElementById('payrollPasteInput').value = '';
+        renderPayrollAnalysis(null);
+    });
     document.getElementById('locationType').addEventListener('change', updateMeterLimit);
     document.getElementById('allowedMeters').addEventListener('input', updateMeterLabel);
     document.getElementById('locationForm').addEventListener('submit', (event) => {
@@ -81,10 +91,11 @@ async function loadHrModule() {
     const status = document.getElementById('hrDirectoryStatus');
     status.textContent = 'Loading HR records...';
     try {
-        const [employees, positions, locations] = await Promise.all([
+        const [employees, positions, locations, fieldEvents] = await Promise.all([
             MargaUtils.fetchCollection('tbl_employee', 500),
             MargaUtils.fetchCollection('tbl_position', 200).catch(() => []),
-            loadWorkLocations()
+            loadWorkLocations(),
+            MargaUtils.fetchCollection('tbl_field_visit_events', 500).catch(() => [])
         ]);
         HR_STATE.employees = employees;
         HR_STATE.positions = new Map(positions.map((position) => [
@@ -92,8 +103,11 @@ async function loadHrModule() {
             position
         ]));
         HR_STATE.locations = locations;
+        HR_STATE.fieldEvents = fieldEvents;
         status.textContent = `${employees.length.toLocaleString()} employee record(s) loaded.`;
         renderEmployees();
+        renderPerformance();
+        renderPayrollAnalysis(null);
         renderLocations();
         resetLocationForm(HR_STATE.locations[0] || DEFAULT_WORK_LOCATIONS[0]);
         updateOverview();
@@ -101,6 +115,21 @@ async function loadHrModule() {
         console.error('HR module load failed:', error);
         status.textContent = `Unable to load HR records: ${error.message || error}`;
     }
+}
+
+function setActiveTab(tab) {
+    const next = ['employees', 'payroll', 'performance', 'locations'].includes(tab) ? tab : 'employees';
+    HR_STATE.activeTab = next;
+    document.querySelectorAll('.hr-tab').forEach((button) => {
+        const active = button.dataset.tab === next;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.getElementById('employeesPane').classList.toggle('open', next === 'employees');
+    document.getElementById('payrollPane').classList.toggle('open', next === 'payroll');
+    document.getElementById('performancePane').classList.toggle('open', next === 'performance');
+    document.getElementById('locationsPane').classList.toggle('open', next === 'locations');
+    document.getElementById('locationValidatorPane').classList.toggle('open', next === 'locations');
 }
 
 async function loadWorkLocations() {
@@ -128,6 +157,9 @@ function renderEmployees() {
                 employee._docId,
                 MargaUtils.getEmployeeFullName(employee, ''),
                 getPositionLabel(employee),
+                getSalaryRate(employee),
+                getRateType(employee),
+                getAllowance(employee),
                 employee.email,
                 employee.marga_login_email,
                 employee.username
@@ -140,12 +172,18 @@ function renderEmployees() {
         const name = sanitize(MargaUtils.getEmployeeFullName(employee, id));
         const email = sanitize(employee.email || employee.marga_login_email || employee.username || '-');
         const position = sanitize(getPositionLabel(employee));
+        const salary = getSalaryRate(employee);
+        const rateType = getRateType(employee);
+        const allowance = getAllowance(employee);
         const active = MargaUtils.isOfficialActiveEmployee(employee);
         return `
             <tr>
                 <td data-label="ID">${id || '-'}</td>
                 <td data-label="Name"><strong>${name}</strong></td>
                 <td data-label="Position">${position}</td>
+                <td data-label="Rate Type">${sanitize(rateType || '-')}</td>
+                <td data-label="Salary Rate">${sanitize(formatMoneyOrDash(salary))}</td>
+                <td data-label="Allowance">${sanitize(formatMoneyOrDash(allowance))}</td>
                 <td data-label="Email">${email}</td>
                 <td data-label="Status"><span class="status-badge ${active ? 'success' : 'neutral'}">${active ? 'Active' : 'Inactive'}</span></td>
             </tr>
@@ -153,16 +191,148 @@ function renderEmployees() {
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5">No employees match the current filter.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8">No employees match the current filter.</td></tr>';
     }
 
     document.getElementById('hrDirectoryStatus').textContent = `${rows.length.toLocaleString()} employee(s) shown.`;
     updateOverview();
 }
 
+function renderPerformance() {
+    const tbody = document.querySelector('#hrPerformanceTable tbody');
+    const activeEmployees = HR_STATE.employees.filter((employee) => MargaUtils.isOfficialActiveEmployee(employee));
+    const eventsByStaff = new Map();
+    HR_STATE.fieldEvents.forEach((event) => {
+        const staffKey = normalizeStaffKey(event.staff_id || event.employee_id || event.employeeId || event.staff_name || event.staff || event.user_name);
+        if (!staffKey) return;
+        if (!eventsByStaff.has(staffKey)) eventsByStaff.set(staffKey, []);
+        eventsByStaff.get(staffKey).push(event);
+    });
+
+    const rows = activeEmployees.map((employee) => {
+        const keys = [
+            employee.id,
+            employee._docId,
+            employee.email,
+            employee.marga_login_email,
+            employee.username,
+            MargaUtils.getEmployeeFullName(employee, '')
+        ].map(normalizeStaffKey).filter(Boolean);
+        const events = [...new Set(keys)].flatMap((key) => eventsByStaff.get(key) || []);
+        events.sort((left, right) => String(right.created_at || right.timestamp || right.updated_at || '').localeCompare(String(left.created_at || left.timestamp || left.updated_at || '')));
+        return { employee, events, last: events[0] || null };
+    }).sort((left, right) => right.events.length - left.events.length || MargaUtils.getEmployeeFullName(left.employee, '').localeCompare(MargaUtils.getEmployeeFullName(right.employee, '')));
+
+    tbody.innerHTML = rows.slice(0, 100).map(({ employee, events, last }) => {
+        const name = sanitize(MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || ''));
+        const role = sanitize(getPositionLabel(employee));
+        const lastAction = sanitize(last?.action || last?.status_label || last?.field_last_action || '-');
+        const gps = hasCoordinates(last)
+            ? `${Number(last.latitude).toFixed(5)}, ${Number(last.longitude).toFixed(5)}`
+            : '-';
+        const signal = events.length ? getPerformanceSignal(events.length) : 'Waiting for app events';
+        return `
+            <tr>
+                <td data-label="Employee"><strong>${name}</strong></td>
+                <td data-label="Role">${role}</td>
+                <td data-label="App Events">${events.length.toLocaleString()}</td>
+                <td data-label="Last Action">${lastAction}</td>
+                <td data-label="Last GPS">${sanitize(gps)}</td>
+                <td data-label="Signal">${sanitize(signal)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No active employees found for performance analytics.</td></tr>';
+    }
+    document.getElementById('performanceStatus').textContent = `${HR_STATE.fieldEvents.length.toLocaleString()} field app event(s) available for evaluation signals.`;
+}
+
+function analyzePayrollPaste() {
+    const text = document.getElementById('payrollPasteInput').value;
+    const parsed = parsePastedTable(text);
+    renderPayrollAnalysis(parsed);
+}
+
+function renderPayrollAnalysis(parsed) {
+    const target = document.getElementById('payrollAnalysis');
+    const status = document.getElementById('payrollStatus');
+    if (!parsed || !parsed.headers.length) {
+        status.textContent = 'Paste the payroll Excel range here so HR can map columns and automate the computation.';
+        target.innerHTML = `
+            <h4>Automation Plan</h4>
+            <p>Once the payroll sheet is pasted, this tab will detect names, salary-rate columns, attendance days, overtime, deductions, contributions, gross pay, and net pay columns.</p>
+            <ul>
+                <li>Employee master data will supply salary rate, rate type, role, and active status.</li>
+                <li>Field App attendance/GPS events can supply time-in/time-out and route proof.</li>
+                <li>Payroll formulas can compute gross pay, overtime, allowances, SSS, PhilHealth, Pag-IBIG, deductions, advances, and net pay.</li>
+            </ul>
+        `;
+        return;
+    }
+
+    const detected = detectPayrollColumns(parsed.headers);
+    status.textContent = `Detected ${parsed.headers.length} column(s) and ${parsed.rows.length} payroll row(s).`;
+    target.innerHTML = `
+        <h4>Detected Payroll Sheet</h4>
+        <div class="hr-detected-grid">
+            ${Object.entries(detected).map(([key, value]) => `
+                <div>
+                    <span>${sanitize(formatDetectedLabel(key))}</span>
+                    <strong>${sanitize(value || 'Not found')}</strong>
+                </div>
+            `).join('')}
+        </div>
+        <h4>How I Can Automate It</h4>
+        <ol>
+            <li>Import or paste the payroll sheet, then map the detected columns to canonical payroll fields.</li>
+            <li>Join each row to active employees by employee ID, email, or normalized name.</li>
+            <li>Use the employee salary rate and rate type as the source of truth, with override fields only when HR intentionally edits a payroll period.</li>
+            <li>Pull Field App attendance and GPS work-location validation into payable days, late/undertime flags, overtime, and absence review.</li>
+            <li>Compute gross pay, taxable/payroll deductions, government contributions, cash advances, net pay, and accounting journal lines.</li>
+            <li>Save each payroll run as a locked period record so future edits produce adjustments instead of rewriting history.</li>
+        </ol>
+    `;
+}
+
 function getPositionLabel(employee) {
     const position = HR_STATE.positions.get(String(employee.position_id || ''));
     return MargaUtils.getEmployeeDesignation(employee, position ? new Map([[String(employee.position_id || ''), position]]) : null);
+}
+
+function getSalaryRate(employee) {
+    return firstPresent(employee, [
+        'salary_rate',
+        'salary',
+        'daily_rate',
+        'rate',
+        'basic_salary',
+        'monthly_salary',
+        'marga_salary_rate',
+        'marga_daily_rate',
+        'payroll_rate'
+    ]);
+}
+
+function getRateType(employee) {
+    return firstPresent(employee, [
+        'rate_type',
+        'salary_type',
+        'pay_type',
+        'payroll_rate_type',
+        'marga_rate_type'
+    ]) || inferRateType(employee);
+}
+
+function getAllowance(employee) {
+    return firstPresent(employee, [
+        'allowance',
+        'daily_allowance',
+        'meal_allowance',
+        'transportation_allowance',
+        'marga_allowance'
+    ]);
 }
 
 function renderLocations() {
@@ -429,6 +599,79 @@ function hasCoordinates(value) {
         && value.longitude !== ''
         && Number.isFinite(Number(value.latitude))
         && Number.isFinite(Number(value.longitude));
+}
+
+function firstPresent(record, keys) {
+    for (const key of keys) {
+        const value = record?.[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+    }
+    return '';
+}
+
+function inferRateType(employee) {
+    if (firstPresent(employee, ['monthly_salary', 'basic_monthly', 'monthly_rate'])) return 'Monthly';
+    if (firstPresent(employee, ['daily_rate', 'marga_daily_rate'])) return 'Daily';
+    if (firstPresent(employee, ['hourly_rate'])) return 'Hourly';
+    return '';
+}
+
+function formatMoneyOrDash(value) {
+    const numeric = Number(String(value ?? '').replace(/,/g, ''));
+    if (!Number.isFinite(numeric) || numeric === 0 && String(value ?? '').trim() === '') return '-';
+    if (Number.isFinite(numeric)) {
+        return `PHP ${numeric.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return String(value || '-');
+}
+
+function normalizeStaffKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9@.]+/g, '');
+}
+
+function getPerformanceSignal(eventCount) {
+    if (eventCount >= 20) return 'Strong app activity';
+    if (eventCount >= 5) return 'Enough data for review';
+    if (eventCount > 0) return 'Light data only';
+    return 'Waiting for app events';
+}
+
+function parsePastedTable(text) {
+    const rows = String(text || '')
+        .split(/\r?\n/)
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim())
+        .map((line) => line.includes('\t') ? line.split('\t') : line.split(','));
+    if (!rows.length) return { headers: [], rows: [] };
+    const headers = rows[0].map((header) => String(header || '').trim()).filter(Boolean);
+    return {
+        headers,
+        rows: rows.slice(1).filter((row) => row.some((cell) => String(cell || '').trim()))
+    };
+}
+
+function detectPayrollColumns(headers) {
+    const find = (...patterns) => {
+        const match = headers.find((header) => patterns.some((pattern) => pattern.test(String(header || '').toLowerCase())));
+        return match || '';
+    };
+    return {
+        employee: find(/employee|name|staff/),
+        salaryRate: find(/salary.*rate|daily.*rate|monthly.*rate|basic.*pay|basic.*salary|\brate\b/),
+        daysWorked: find(/days.*work|work.*days|present|attendance/),
+        overtime: find(/overtime|\bot\b/),
+        allowance: find(/allowance|meal|transport/),
+        grossPay: find(/gross/),
+        sss: find(/\bsss\b/),
+        philHealth: find(/phil.?health/),
+        pagIbig: find(/pag.?ibig|hdmf/),
+        deduction: find(/deduction|advance|loan|cash.*advance/),
+        netPay: find(/net.*pay|take.*home|amount.*due/)
+    };
+}
+
+function formatDetectedLabel(key) {
+    return key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function toRadians(value) {
