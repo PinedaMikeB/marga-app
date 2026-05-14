@@ -186,12 +186,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const viewJump = event.target.closest('[data-view-jump]');
         if (viewJump) {
             setActiveView(viewJump.dataset.viewJump || 'tasks');
+            if (state.activeTab === 'closed') setActiveTab('today');
             return;
         }
         const tabJump = event.target.closest('[data-tab-jump]');
         if (tabJump) {
             setActiveView('tasks');
             setActiveTab(tabJump.dataset.tabJump || 'today');
+            return;
+        }
+        const closedJump = event.target.closest('[data-closed-today]');
+        if (closedJump) {
+            setActiveView('tasks');
+            setActiveTab('closed');
             return;
         }
         const card = event.target.closest('[data-status-filter]');
@@ -769,6 +776,7 @@ function loadCloseRequestLookup(rows = []) {
 }
 
 function activeRows() {
+    if (state.activeTab === 'closed') return state.rows.filter(isClosedOnSelectedDate);
     return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
 }
 
@@ -800,7 +808,7 @@ function workingRouteRows(rows = []) {
 }
 
 function setActiveTab(tab) {
-    state.activeTab = tab === 'carryover' ? 'carryover' : 'today';
+    state.activeTab = tab === 'carryover' ? 'carryover' : (tab === 'closed' ? 'closed' : 'today');
     state.statusFilter = 'all';
     const statusFilter = document.getElementById('fieldStatusFilter');
     if (statusFilter) statusFilter.value = 'all';
@@ -1224,12 +1232,12 @@ function renderKpis() {
     const summary = getWorkloadSummary();
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi is-active-filter" data-view-jump="tasks"><div class="label">Today's Workload</div><div class="value">${summary.totalWorkload}</div></div>
+        <div class="field-kpi ${state.activeTab === 'closed' ? '' : 'is-active-filter'}" data-view-jump="tasks"><div class="label">Today's Workload</div><div class="value">${summary.totalWorkload}</div></div>
         <div class="field-kpi" data-tab-jump="today"><div class="label">New Today</div><div class="value">${summary.todayOpen.length}</div></div>
         <div class="field-kpi" data-tab-jump="carryover"><div class="label">Past Pending</div><div class="value">${summary.pastOpen.length}</div></div>
-        <div class="field-kpi ${state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">Pending / Needs Action</div><div class="value">${summary.pendingNeedsAction}</div></div>
-        <div class="field-kpi ${state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${summary.openCounts.ongoing || 0}</div></div>
-        <div class="field-kpi field-kpi-passive"><div class="label">Closed Today</div><div class="value">${summary.closedToday}</div></div>
+        <div class="field-kpi ${state.activeTab !== 'closed' && state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">Pending / Needs Action</div><div class="value">${summary.pendingNeedsAction}</div></div>
+        <div class="field-kpi ${state.activeTab !== 'closed' && state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${summary.openCounts.ongoing || 0}</div></div>
+        <div class="field-kpi ${state.activeTab === 'closed' ? 'is-active-filter' : ''}" data-closed-today="1"><div class="label">Closed Today</div><div class="value">${summary.closedToday}</div></div>
     `;
 }
 
@@ -2452,20 +2460,29 @@ function renderList() {
     const rows = activeRows();
     const filtered = rows.filter((row) => {
         const status = getStatusKey(row);
+        if (state.activeTab === 'closed') return rowMatchesCustomerSearch(row, state.searchQuery);
         if (state.statusFilter === 'all' && !isWorkingRouteRow(row)) return false;
         if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
         return rowMatchesCustomerSearch(row, state.searchQuery);
     });
 
     if (!filtered.length) {
-        const emptyText = state.activeTab === 'carryover'
+        const emptyText = state.activeTab === 'closed'
+            ? 'No closed tasks for the selected date.'
+            : state.activeTab === 'carryover'
             ? 'No past pending tasks for selected date/filter.'
             : 'No current tasks for selected date/filter.';
         list.innerHTML = `<div class="loading-cell">${sanitize(emptyText)}</div>`;
         return;
     }
 
-    const priorityNotice = !state.priorityGate.ready ? `
+    const closedNotice = state.activeTab === 'closed' ? `
+        <div class="field-priority-lock">
+            <strong>Closed accounts for ${sanitize(state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd())}.</strong>
+            <p>Use Reopen only if a task was accidentally closed or you are testing. Reopened tasks return to open/pending work.</p>
+        </div>
+    ` : '';
+    const priorityNotice = state.activeTab !== 'closed' && !state.priorityGate.ready ? `
         <div class="field-priority-lock">
             <strong>Priority discussion pending.</strong>
             <p>Team leader or CSR has numbered ${state.priorityGate.numbered}/${state.priorityGate.required} priority schedule${state.priorityGate.required === 1 ? '' : 's'}. Review your route while final priority is being discussed.</p>
@@ -2473,7 +2490,7 @@ function renderList() {
         </div>
     ` : '';
 
-    list.innerHTML = priorityNotice + prioritySortedRows(filtered).map((row) => {
+    list.innerHTML = closedNotice + priorityNotice + prioritySortedRows(filtered).map((row) => {
         const trouble = caches.trouble.get(String(row.trouble_id || 0));
         const troubleLabel = trouble?.trouble || (row.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
         const purposeLabel = PURPOSE_LABELS[row.purpose_id] || `Purpose ${row.purpose_id}`;
@@ -2510,6 +2527,9 @@ function renderList() {
                 ? `<button type="button" class="btn btn-secondary btn-sm" disabled>Close Requested</button>`
                 : `<button type="button" class="btn btn-secondary btn-sm" data-action="request-close" data-id="${row.id}">Request Close</button>`)
             : '';
+        const reopenAction = state.activeTab === 'closed'
+            ? `<button type="button" class="btn btn-secondary btn-sm" data-action="reopen-closed" data-id="${row.id}">Reopen</button>`
+            : '';
         const partsNote = Number(row.pending_parts || 0) === 1 || Number(row.isongoing || 0) === 1
             ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
             : '';
@@ -2530,6 +2550,7 @@ function renderList() {
                     </div>
                     <div class="field-task-actions">
                         ${closeRequestAction}
+                        ${reopenAction}
                         <button type="button" class="btn btn-secondary btn-sm" data-action="open" data-id="${row.id}">Update</button>
                     </div>
                 </div>
@@ -2555,6 +2576,18 @@ function renderList() {
             requestCloseForSchedule(row).catch((err) => {
                 console.error('Close request failed:', err);
                 alert(`Unable to request close: ${err?.message || err}`);
+            });
+        });
+    });
+    list.querySelectorAll('button[data-action="reopen-closed"]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const scheduleId = Number(btn.dataset.id || 0);
+            const row = state.rows.find((item) => Number(item.id || 0) === scheduleId);
+            if (!row) return;
+            if (!window.confirm('Reopen this closed task and return it to open/pending?')) return;
+            reopenScheduleRow(row, btn).catch((err) => {
+                console.error('Reopen from closed list failed:', err);
+                alert(`Unable to reopen task: ${err?.message || err}`);
             });
         });
     });
@@ -3360,9 +3393,11 @@ function branchHasSavedLocation(branch) {
 
 function getBranchLocationStatus(row = getCurrentRow()) {
     const branch = caches.branch.get(String(row?.branch_id || state.modalBranchId || 0));
+    const branchLocationSaved = branchHasSavedLocation(branch);
     return {
         branch,
-        hasLocation: branchHasSavedLocation(branch) || state.modalBranchLocationPinned
+        branchLocationSaved,
+        hasLocation: branchLocationSaved || state.modalBranchLocationPinned
     };
 }
 
@@ -4904,38 +4939,146 @@ async function closeTask() {
 async function reopenTask() {
     const row = getCurrentRow();
     if (!row) return;
-    const form = collectModalFormData();
-    const nowIso = new Date().toISOString();
+    const button = document.getElementById('fieldModalReopenTask');
+    try {
+        await reopenScheduleRow(row, button, collectModalFormData());
+        closeModal();
+    } catch (err) {
+        console.error('Reopen task failed:', err);
+        alert(`Failed to reopen task: ${err?.message || err}`);
+    }
+}
 
-    const payload = {
-        ...buildSchedulePayload(row, form, '[REOPENED]'),
+function buildReopenPayload(row, form = null) {
+    const nowIso = new Date().toISOString();
+    const staffId = Number(state.staffId || 0) || 0;
+    return {
+        field_work_notes: '',
+        field_final_summary: '',
+        field_delivery_details: '',
+        field_empty_pickup_details: '',
+        field_customer_signer: '',
+        field_customer_contact: '',
+        field_billing_received_by: '',
+        field_billing_date: '',
+        field_billing_time: '',
+        field_collection_receipt_refs: '',
+        field_collection_invoice_refs: '',
+        field_collection_check_number: '',
+        field_collection_payment_amount: '',
+        field_previous_meter: 0,
+        field_present_meter: 0,
+        field_total_consumed: 0,
+        field_maintenance_previous_meter: 0,
+        field_maintenance_present_meter: 0,
+        field_maintenance_total_consumed: 0,
+        field_delivery_previous_meter: 0,
+        field_delivery_present_meter: 0,
+        field_delivery_total_consumed: 0,
+        field_work_machine_status_id: 0,
+        field_work_machine_status: '',
         date_finished: ZERO_DATETIME,
         field_time_in: ZERO_DATETIME,
         field_time_out: ZERO_DATETIME,
+        field_parts_needed_json: '[]',
+        field_before_photo_name: '',
+        field_before_photo_size: 0,
+        field_before_photo_type: '',
+        field_after_photo_name: '',
+        field_after_photo_size: 0,
+        field_after_photo_type: '',
+        field_collection_voucher_name: '',
+        field_collection_voucher_size: 0,
+        field_collection_voucher_type: '',
+        field_collection_check_name: '',
+        field_collection_check_size: 0,
+        field_collection_check_type: '',
+        field_customer_location_pinned: 0,
+        field_customer_location_pinned_at: '',
+        field_customer_location_pinned_by: 0,
+        field_customer_location_latitude: '',
+        field_customer_location_longitude: '',
+        field_customer_location_accuracy_meters: 0,
+        field_customer_location_photo_url: '',
+        field_customer_location_photo_path: '',
+        field_customer_location_photo_doc_id: '',
+        field_customer_location_photo_storage_mode: '',
+        field_customer_location_photo_data_url: '',
+        field_customer_location_branch_update_status: '',
+        field_customer_location_branch_update_error: '',
+        field_tracking_status: '',
+        field_last_action: '',
+        field_last_update_at: '',
+        field_last_latitude: '',
+        field_last_longitude: '',
         closedby: 0,
         isongoing: 0,
         pending_parts: 0,
         pending_reason: '',
         pending_updated_at: nowIso,
-        pending_updated_by: Number(state.staffId || 0) || 0,
+        pending_updated_by: staffId,
         customer_pin_verified: 0,
         customer_pin_verified_at: '',
-        customer_pin_verified_by: 0
+        customer_pin_verified_by: 0,
+        meter_reading: 0,
+        customer_request: '',
+        collocutor: '',
+        phone_number: '',
+        dev_remarks: appendDevRemarks('', '[REOPENED]', 'Reset field visit outputs for retest.'),
+        field_updated_by: staffId,
+        field_updated_at: nowIso,
+        bridge_updated_by: staffId,
+        bridge_updated_at: nowIso
     };
+}
 
-    const button = document.getElementById('fieldModalReopenTask');
-    button.disabled = true;
+async function reopenScheduleRow(row, button = null, form = null) {
+    if (!row) return;
+    const nowIso = new Date().toISOString();
+    const payload = buildReopenPayload(row, form);
+    if (button) button.disabled = true;
     try {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
-        applyRowPatch(row.id, payload);
-        closeModal();
-        await loadMySchedule();
+        const routeCollection = routeCollectionForRow(row);
+        if (routeCollection && row.route_doc_id) {
+            try {
+                await patchDocument(routeCollection, row.route_doc_id, {
+                    status: 1,
+                    date_finished: ZERO_DATETIME,
+                    remarks: row.remarks || '',
+                    timestmp: nowIso,
+                    bridge_pushed_at: nowIso
+                });
+            } catch (routeError) {
+                console.warn('Route row reopen update failed; schedule was reopened.', routeError);
+            }
+        }
+        if (row.source_planner_doc_id) {
+            try {
+                await patchDocument(SCHEDULE_PLANNER_COLLECTION, row.source_planner_doc_id, {
+                    planner_status: 'open',
+                    task_status: 'open',
+                    route_status: 'open',
+                    date_finished: ZERO_DATETIME,
+                    reopened_at: nowIso,
+                    reopened_by: Number(state.staffId || 0) || 0
+                });
+            } catch (plannerError) {
+                console.warn('Planner row reopen update failed; schedule was reopened.', plannerError);
+            }
+        }
+        applyRowPatch(row.id, {
+            ...payload,
+            route_status: 1,
+            route_date_finished: ZERO_DATETIME,
+            route_remarks: row.remarks || '',
+            route_timestmp: nowIso,
+            route_bridge_pushed_at: nowIso
+        });
+        await loadMySchedule({ keepTab: true });
         alert('Task reopened.');
-    } catch (err) {
-        console.error('Reopen task failed:', err);
-        alert(`Failed to reopen task: ${err?.message || err}`);
     } finally {
-        button.disabled = false;
+        if (button) button.disabled = false;
     }
 }
 
@@ -5057,9 +5200,9 @@ async function pinCustomerLocation() {
         return;
     }
 
-    const { hasLocation } = getBranchLocationStatus(row);
-    if (hasLocation) {
-        alert('This customer already has a saved location.');
+    const { branchLocationSaved } = getBranchLocationStatus(row);
+    if (branchLocationSaved) {
+        alert('This customer already has a saved location in the customer table. New pinning is not allowed.');
         setLocationPinUi(row);
         return;
     }
