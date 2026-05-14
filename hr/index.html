@@ -121,12 +121,12 @@
                     <strong id="activeEmployeeCount">0</strong>
                 </article>
                 <article class="hr-metric">
-                    <span>Official Pins</span>
+                    <span>Field Records</span>
                     <strong id="workLocationCount">0</strong>
                 </article>
                 <article class="hr-metric">
-                    <span>Strictest Gate</span>
-                    <strong id="strictestGate">30m</strong>
+                    <span>Payroll Model</span>
+                    <strong id="strictestGate">Ready</strong>
                 </article>
             </section>
 
@@ -167,6 +167,7 @@
                                 <th>Allowance</th>
                                 <th>Email</th>
                                 <th>Status</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -178,21 +179,13 @@
                 <div class="card-header">
                     <div>
                         <h3>Payroll</h3>
-                        <p class="ops-subtext" id="payrollStatus">Paste the payroll Excel range here so HR can map columns and automate the computation.</p>
+                        <p class="ops-subtext" id="payrollStatus">Formula design from attached workbook: 2nd cut off April 2026.xlsx.</p>
                     </div>
                 </div>
                 <div class="hr-payroll-layout">
-                    <label class="marga-field marga-field-full">
-                        <span>Paste Payroll Sheet Range</span>
-                        <textarea id="payrollPasteInput" rows="10" placeholder="Paste copied Excel cells here, including the header row."></textarea>
-                    </label>
-                    <div class="hr-form-actions">
-                        <button type="button" class="btn btn-secondary" id="clearPayrollPasteBtn">Clear</button>
-                        <button type="button" class="btn btn-primary" id="analyzePayrollPasteBtn">Analyze Payroll Sheet</button>
-                    </div>
                     <div class="hr-payroll-analysis" id="payrollAnalysis">
-                        <h4>Automation Plan</h4>
-                        <p>Once the payroll sheet is pasted, this tab will detect names, salary-rate columns, attendance days, overtime, deductions, contributions, gross pay, and net pay columns.</p>
+                        <h4>Payroll Computation Model</h4>
+                        <p>Loading payroll formula design...</p>
                     </div>
                 </div>
             </section>
@@ -210,10 +203,13 @@
                             <tr>
                                 <th>Employee</th>
                                 <th>Role</th>
-                                <th>App Events</th>
+                                <th>Field App Records</th>
+                                <th>Customer / Company</th>
+                                <th>Branch</th>
                                 <th>Last Action</th>
                                 <th>Last GPS</th>
                                 <th>Signal</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -322,6 +318,85 @@
             </section>
         </div>
     </main>
+
+    <div class="overlay" id="employeeModalOverlay"></div>
+    <div class="marga-modal hr-modal" id="employeeModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-header">
+            <div>
+                <h2 id="employeeModalTitle">Employee Details</h2>
+                <p id="employeeModalSubtitle">Edit HR, payroll, and statutory details on the employee source record.</p>
+            </div>
+            <button class="panel-close" id="employeeModalCloseBtn" type="button" aria-label="Close employee modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="employeeDocId">
+            <div class="hr-modal-section">
+                <h3>Identity</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field"><span>Employee ID</span><input id="employeeIdInput" disabled></label>
+                    <label class="marga-field"><span>First Name</span><input id="employeeFirstNameInput"></label>
+                    <label class="marga-field"><span>Last Name</span><input id="employeeLastNameInput"></label>
+                    <label class="marga-field"><span>Nickname</span><input id="employeeNicknameInput"></label>
+                    <label class="marga-field"><span>Email / Login Email</span><input id="employeeEmailInput" type="email"></label>
+                    <label class="marga-field"><span>Mobile Number</span><input id="employeeMobileInput"></label>
+                    <label class="marga-field"><span>Birthdate</span><input id="employeeBirthdateInput" type="date"></label>
+                    <label class="marga-field"><span>Civil Status</span><input id="employeeCivilStatusInput"></label>
+                    <label class="marga-field marga-field-full"><span>Address</span><textarea id="employeeAddressInput" rows="2"></textarea></label>
+                </div>
+            </div>
+            <div class="hr-modal-section">
+                <h3>Employment & Payroll</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field"><span>Position</span><input id="employeePositionInput"></label>
+                    <label class="marga-field"><span>Hire Date</span><input id="employeeHireDateInput" type="date"></label>
+                    <label class="marga-field"><span>Rate Type</span><select id="employeeRateTypeInput"><option value="">Select</option><option value="Monthly">Monthly</option><option value="Semi-monthly">Semi-monthly</option><option value="Daily">Daily</option><option value="Hourly">Hourly</option></select></label>
+                    <label class="marga-field"><span>Monthly Salary</span><input id="employeeMonthlySalaryInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Semi-monthly Rate</span><input id="employeeSemiMonthlyRateInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Daily Rate</span><input id="employeeDailyRateInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Allowance</span><input id="employeeAllowanceInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Bank Account No.</span><input id="employeeBankAccountInput"></label>
+                </div>
+            </div>
+            <div class="hr-modal-section">
+                <h3>Government & Emergency Details</h3>
+                <div class="marga-form-grid">
+                    <label class="marga-field"><span>SSS Number</span><input id="employeeSssInput"></label>
+                    <label class="marga-field"><span>PhilHealth Number</span><input id="employeePhilhealthInput"></label>
+                    <label class="marga-field"><span>Pag-IBIG / HDMF Number</span><input id="employeePagibigInput"></label>
+                    <label class="marga-field"><span>TIN Number</span><input id="employeeTinInput"></label>
+                    <label class="marga-field"><span>Emergency Contact</span><input id="employeeEmergencyNameInput"></label>
+                    <label class="marga-field"><span>Emergency Phone</span><input id="employeeEmergencyPhoneInput"></label>
+                    <label class="marga-field marga-field-full"><span>HR Notes</span><textarea id="employeeNotesInput" rows="3"></textarea></label>
+                </div>
+            </div>
+            <p class="ops-subtext" id="employeeModalStatus">Ready.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="employeeModalCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="employeeModalSaveBtn">Save Employee</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="performanceModalOverlay"></div>
+    <div class="marga-modal hr-modal" id="performanceModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-header">
+            <div>
+                <h2 id="performanceModalTitle">Performance Details</h2>
+                <p id="performanceModalSubtitle">Field App records and customer context for this staff member.</p>
+            </div>
+            <button class="panel-close" id="performanceModalCloseBtn" type="button" aria-label="Close performance modal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="performanceDetailContent" class="hr-performance-detail"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" id="performanceModalCloseFooterBtn">Done</button>
+        </div>
+    </div>
 
     <script src="../shared/js/firebase-config.js"></script>
     <script src="../shared/js/auth.js"></script>

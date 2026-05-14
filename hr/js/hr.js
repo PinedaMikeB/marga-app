@@ -44,7 +44,10 @@ const HR_STATE = {
     positions: new Map(),
     locations: [],
     fieldEvents: [],
-    activeTab: 'employees'
+    branches: new Map(),
+    companies: new Map(),
+    activeTab: 'employees',
+    editingEmployeeId: ''
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -62,10 +65,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('employeeSearch').addEventListener('input', renderEmployees);
     document.getElementById('employeeStatusFilter').addEventListener('change', renderEmployees);
-    document.getElementById('analyzePayrollPasteBtn').addEventListener('click', analyzePayrollPaste);
-    document.getElementById('clearPayrollPasteBtn').addEventListener('click', () => {
-        document.getElementById('payrollPasteInput').value = '';
-        renderPayrollAnalysis(null);
+    document.querySelector('#hrEmployeesTable tbody').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-employee-view]');
+        if (button) openEmployeeModal(button.dataset.employeeView);
+    });
+    document.getElementById('employeeModalOverlay').addEventListener('click', closeEmployeeModal);
+    document.getElementById('employeeModalCloseBtn').addEventListener('click', closeEmployeeModal);
+    document.getElementById('employeeModalCancelBtn').addEventListener('click', closeEmployeeModal);
+    document.getElementById('employeeModalSaveBtn').addEventListener('click', saveEmployeeDetails);
+    document.getElementById('performanceModalOverlay').addEventListener('click', closePerformanceModal);
+    document.getElementById('performanceModalCloseBtn').addEventListener('click', closePerformanceModal);
+    document.getElementById('performanceModalCloseFooterBtn').addEventListener('click', closePerformanceModal);
+    document.querySelector('#hrPerformanceTable tbody').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-performance-view]');
+        if (button) openPerformanceModal(button.dataset.performanceView);
     });
     document.getElementById('locationType').addEventListener('change', updateMeterLimit);
     document.getElementById('allowedMeters').addEventListener('input', updateMeterLabel);
@@ -104,10 +117,11 @@ async function loadHrModule() {
         ]));
         HR_STATE.locations = locations;
         HR_STATE.fieldEvents = fieldEvents;
+        await hydratePerformanceLookups(fieldEvents);
         status.textContent = `${employees.length.toLocaleString()} employee record(s) loaded.`;
         renderEmployees();
         renderPerformance();
-        renderPayrollAnalysis(null);
+        renderPayrollModel();
         renderLocations();
         resetLocationForm(HR_STATE.locations[0] || DEFAULT_WORK_LOCATIONS[0]);
         updateOverview();
@@ -186,12 +200,13 @@ function renderEmployees() {
                 <td data-label="Allowance">${sanitize(formatMoneyOrDash(allowance))}</td>
                 <td data-label="Email">${email}</td>
                 <td data-label="Status"><span class="status-badge ${active ? 'success' : 'neutral'}">${active ? 'Active' : 'Inactive'}</span></td>
+                <td data-label="Action"><button type="button" class="hr-text-btn" data-employee-view="${id}">View</button></td>
             </tr>
         `;
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="8">No employees match the current filter.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9">No employees match the current filter.</td></tr>';
     }
 
     document.getElementById('hrDirectoryStatus').textContent = `${rows.length.toLocaleString()} employee(s) shown.`;
@@ -227,71 +242,57 @@ function renderPerformance() {
         const name = sanitize(MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || ''));
         const role = sanitize(getPositionLabel(employee));
         const lastAction = sanitize(last?.action || last?.status_label || last?.field_last_action || '-');
+        const context = resolveEventContext(last);
         const gps = hasCoordinates(last)
             ? `${Number(last.latitude).toFixed(5)}, ${Number(last.longitude).toFixed(5)}`
             : '-';
         const signal = events.length ? getPerformanceSignal(events.length) : 'Waiting for app events';
+        const id = sanitize(employee.id || employee._docId || '');
         return `
             <tr>
                 <td data-label="Employee"><strong>${name}</strong></td>
                 <td data-label="Role">${role}</td>
-                <td data-label="App Events">${events.length.toLocaleString()}</td>
+                <td data-label="Field App Records">${events.length.toLocaleString()}</td>
+                <td data-label="Customer / Company">${sanitize(context.company || '-')}</td>
+                <td data-label="Branch">${sanitize(context.branch || '-')}</td>
                 <td data-label="Last Action">${lastAction}</td>
                 <td data-label="Last GPS">${sanitize(gps)}</td>
                 <td data-label="Signal">${sanitize(signal)}</td>
+                <td data-label="Action"><button type="button" class="hr-text-btn" data-performance-view="${id}">View</button></td>
             </tr>
         `;
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="6">No active employees found for performance analytics.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9">No active employees found for performance analytics.</td></tr>';
     }
-    document.getElementById('performanceStatus').textContent = `${HR_STATE.fieldEvents.length.toLocaleString()} field app event(s) available for evaluation signals.`;
+    document.getElementById('performanceStatus').textContent = `${HR_STATE.fieldEvents.length.toLocaleString()} Field App record(s) available. These are staff actions saved by the Field App, such as customer location pinning, time checks, or route progress updates.`;
 }
 
-function analyzePayrollPaste() {
-    const text = document.getElementById('payrollPasteInput').value;
-    const parsed = parsePastedTable(text);
-    renderPayrollAnalysis(parsed);
-}
-
-function renderPayrollAnalysis(parsed) {
-    const target = document.getElementById('payrollAnalysis');
-    const status = document.getElementById('payrollStatus');
-    if (!parsed || !parsed.headers.length) {
-        status.textContent = 'Paste the payroll Excel range here so HR can map columns and automate the computation.';
-        target.innerHTML = `
-            <h4>Automation Plan</h4>
-            <p>Once the payroll sheet is pasted, this tab will detect names, salary-rate columns, attendance days, overtime, deductions, contributions, gross pay, and net pay columns.</p>
-            <ul>
-                <li>Employee master data will supply salary rate, rate type, role, and active status.</li>
-                <li>Field App attendance/GPS events can supply time-in/time-out and route proof.</li>
-                <li>Payroll formulas can compute gross pay, overtime, allowances, SSS, PhilHealth, Pag-IBIG, deductions, advances, and net pay.</li>
-            </ul>
-        `;
-        return;
-    }
-
-    const detected = detectPayrollColumns(parsed.headers);
-    status.textContent = `Detected ${parsed.headers.length} column(s) and ${parsed.rows.length} payroll row(s).`;
-    target.innerHTML = `
-        <h4>Detected Payroll Sheet</h4>
+function renderPayrollModel() {
+    document.getElementById('payrollStatus').textContent = 'Formula design from attached workbook: payroll, attendance summary, and payout summary sheets.';
+    document.getElementById('payrollAnalysis').innerHTML = `
+        <h4>Payroll Sheet Formula Map</h4>
         <div class="hr-detected-grid">
-            ${Object.entries(detected).map(([key, value]) => `
-                <div>
-                    <span>${sanitize(formatDetectedLabel(key))}</span>
-                    <strong>${sanitize(value || 'Not found')}</strong>
-                </div>
-            `).join('')}
+            <div><span>Cutoff</span><strong>April 11-25, 2026</strong></div>
+            <div><span>Source Sheet</span><strong>payroll</strong></div>
+            <div><span>Attendance Sheet</span><strong>Sheet2</strong></div>
+            <div><span>Payout Sheet</span><strong>Sheet1</strong></div>
+            <div><span>Primary Key</span><strong>Employee name, then employee ID once HR fills it</strong></div>
+            <div><span>Output</span><strong>Net salary + bank/encashment summary</strong></div>
         </div>
-        <h4>How I Can Automate It</h4>
+        <h4>Computation Design</h4>
         <ol>
-            <li>Import or paste the payroll sheet, then map the detected columns to canonical payroll fields.</li>
-            <li>Join each row to active employees by employee ID, email, or normalized name.</li>
-            <li>Use the employee salary rate and rate type as the source of truth, with override fields only when HR intentionally edits a payroll period.</li>
-            <li>Pull Field App attendance and GPS work-location validation into payable days, late/undertime flags, overtime, and absence review.</li>
-            <li>Compute gross pay, taxable/payroll deductions, government contributions, cash advances, net pay, and accounting journal lines.</li>
-            <li>Save each payroll run as a locked period record so future edits produce adjustments instead of rewriting history.</li>
+            <li><strong>Semi-monthly rate:</strong> monthly salary / 2, stored from HR employee salary setup.</li>
+            <li><strong>Daily rate:</strong> <code>((semiMonthlyRate * 2) / 313) * 12</code>, matching the workbook's 313-day annual divisor and 12-day pay-period basis.</li>
+            <li><strong>Total basic:</strong> <code>semiMonthlyRate - (dailyRate * absences)</code>.</li>
+            <li><strong>OT pay:</strong> <code>((dailyRate / 8) * 1.25) * overtimeHours</code>.</li>
+            <li><strong>Regular OT / RDOT / adjustments:</strong> added as separate payroll inputs, with attendance defaults from Field App where possible.</li>
+            <li><strong>Total pay:</strong> basic + OT + allowance + RDOT + regular OT + adjustment.</li>
+            <li><strong>Undertime and late deductions:</strong> undertime uses hourly rate * UT hours; late uses per-minute rate * minutes late.</li>
+            <li><strong>Gross income:</strong> total pay - undertime - SSS - provident fund - PhilHealth - HDMF - late deduction.</li>
+            <li><strong>Net salary:</strong> gross income + non-tax allowance - withholding tax + tax refund - SSS loan - coop loan - PhilHealth adjustment - cash advance - Pag-IBIG loan - bank loan - A/R house rental - others.</li>
+            <li><strong>Payout summary:</strong> split by bank account/direct deposit and encashment, then reconcile totals against payroll totals.</li>
         </ol>
     `;
 }
@@ -301,8 +302,190 @@ function getPositionLabel(employee) {
     return MargaUtils.getEmployeeDesignation(employee, position ? new Map([[String(employee.position_id || ''), position]]) : null);
 }
 
+async function hydratePerformanceLookups(events = []) {
+    const branchIds = [...new Set(events.map((event) => String(event.branch_id || '').trim()).filter(Boolean))].slice(0, 120);
+    const companyIds = [...new Set(events.map((event) => String(event.company_id || '').trim()).filter(Boolean))].slice(0, 120);
+    const [branches, companies] = await Promise.all([
+        Promise.all(branchIds.map((id) => MargaUtils.fetchDoc('tbl_branchinfo', id).then((doc) => [id, doc]).catch(() => [id, null]))),
+        Promise.all(companyIds.map((id) => MargaUtils.fetchDoc('tbl_companylist', id).then((doc) => [id, doc]).catch(() => [id, null])))
+    ]);
+    HR_STATE.branches = new Map(branches.filter(([, doc]) => doc));
+    HR_STATE.companies = new Map(companies.filter(([, doc]) => doc));
+}
+
+function resolveEventContext(event = null) {
+    if (!event) return { company: '', branch: '' };
+    const branch = HR_STATE.branches.get(String(event.branch_id || '').trim()) || {};
+    const company = HR_STATE.companies.get(String(event.company_id || branch.company_id || '').trim()) || {};
+    return {
+        company: firstPresent(event, ['company_name', 'account_name', 'customer_name', 'client_name'])
+            || firstPresent(company, ['companyname', 'company_name', 'name'])
+            || (event.company_id ? `Company #${event.company_id}` : ''),
+        branch: firstPresent(event, ['branch_name', 'customer_branch', 'branch'])
+            || firstPresent(branch, ['branchname', 'branch_name', 'name'])
+            || (event.branch_id ? `Branch #${event.branch_id}` : '')
+    };
+}
+
+function findEmployeeById(employeeId) {
+    const id = String(employeeId || '').trim();
+    return HR_STATE.employees.find((employee) => String(employee.id || employee._docId || '').trim() === id) || null;
+}
+
+function openEmployeeModal(employeeId) {
+    const employee = findEmployeeById(employeeId);
+    if (!employee) return;
+    HR_STATE.editingEmployeeId = String(employee.id || employee._docId || '');
+    document.getElementById('employeeDocId').value = HR_STATE.editingEmployeeId;
+    document.getElementById('employeeModalTitle').textContent = MargaUtils.getEmployeeFullName(employee, HR_STATE.editingEmployeeId);
+    document.getElementById('employeeModalSubtitle').textContent = 'This edits tbl_employee, the same employee source used by Service, Billing, Collections, Schedule, login, and Field App assignment.';
+
+    setInputValue('employeeIdInput', employee.id || employee._docId || '');
+    setInputValue('employeeFirstNameInput', employee.firstname || '');
+    setInputValue('employeeLastNameInput', employee.lastname || '');
+    setInputValue('employeeNicknameInput', employee.nickname || '');
+    setInputValue('employeeEmailInput', employee.email || employee.marga_login_email || employee.username || '');
+    setInputValue('employeeMobileInput', firstPresent(employee, ['mobile', 'mobile_no', 'phone', 'contact_no', 'contact_number']));
+    setInputValue('employeeBirthdateInput', toDateInputValue(firstPresent(employee, ['birthdate', 'birthday', 'date_of_birth'])));
+    setInputValue('employeeCivilStatusInput', firstPresent(employee, ['civil_status', 'marital_status']));
+    setInputValue('employeeAddressInput', firstPresent(employee, ['address', 'home_address', 'current_address']));
+    setInputValue('employeePositionInput', getPositionLabel(employee));
+    setInputValue('employeeHireDateInput', toDateInputValue(firstPresent(employee, ['hire_date', 'date_hired', 'employment_date', 'start_date'])));
+    setInputValue('employeeRateTypeInput', getRateType(employee));
+    setInputValue('employeeMonthlySalaryInput', firstPresent(employee, ['monthly_salary', 'basic_salary']));
+    setInputValue('employeeSemiMonthlyRateInput', firstPresent(employee, ['semim_rate', 'semi_monthly_rate', 'semimrate']));
+    setInputValue('employeeDailyRateInput', firstPresent(employee, ['daily_rate', 'marga_daily_rate']));
+    setInputValue('employeeAllowanceInput', getAllowance(employee));
+    setInputValue('employeeBankAccountInput', firstPresent(employee, ['bank_account_no', 'bank_account', 'account_no', 'payroll_account_no']));
+    setInputValue('employeeSssInput', firstPresent(employee, ['sss_no', 'sss_number', 'sss']));
+    setInputValue('employeePhilhealthInput', firstPresent(employee, ['philhealth_no', 'philhealth_number', 'phic_no', 'phic']));
+    setInputValue('employeePagibigInput', firstPresent(employee, ['pagibig_no', 'pagibig_number', 'hdmf_no', 'hdmf']));
+    setInputValue('employeeTinInput', firstPresent(employee, ['tin_no', 'tin_number', 'tin']));
+    setInputValue('employeeEmergencyNameInput', firstPresent(employee, ['emergency_contact_name', 'emergency_contact']));
+    setInputValue('employeeEmergencyPhoneInput', firstPresent(employee, ['emergency_contact_phone', 'emergency_phone']));
+    setInputValue('employeeNotesInput', firstPresent(employee, ['hr_notes', 'notes', 'remarks']));
+    document.getElementById('employeeModalStatus').textContent = 'Ready.';
+    setModalOpen('employeeModal', 'employeeModalOverlay', true);
+}
+
+function closeEmployeeModal() {
+    HR_STATE.editingEmployeeId = '';
+    setModalOpen('employeeModal', 'employeeModalOverlay', false);
+}
+
+async function saveEmployeeDetails() {
+    const docId = document.getElementById('employeeDocId').value;
+    if (!docId) return;
+    const status = document.getElementById('employeeModalStatus');
+    const saveBtn = document.getElementById('employeeModalSaveBtn');
+    status.textContent = 'Saving employee details...';
+    saveBtn.disabled = true;
+    const nowIso = new Date().toISOString();
+    const fields = {
+        firstname: valueOf('employeeFirstNameInput'),
+        lastname: valueOf('employeeLastNameInput'),
+        nickname: valueOf('employeeNicknameInput'),
+        email: valueOf('employeeEmailInput'),
+        marga_login_email: valueOf('employeeEmailInput'),
+        mobile: valueOf('employeeMobileInput'),
+        birthdate: valueOf('employeeBirthdateInput'),
+        civil_status: valueOf('employeeCivilStatusInput'),
+        address: valueOf('employeeAddressInput'),
+        position_name: valueOf('employeePositionInput'),
+        hire_date: valueOf('employeeHireDateInput'),
+        rate_type: valueOf('employeeRateTypeInput'),
+        monthly_salary: numberOrBlank('employeeMonthlySalaryInput'),
+        semi_monthly_rate: numberOrBlank('employeeSemiMonthlyRateInput'),
+        semim_rate: numberOrBlank('employeeSemiMonthlyRateInput'),
+        daily_rate: numberOrBlank('employeeDailyRateInput'),
+        allowance: numberOrBlank('employeeAllowanceInput'),
+        bank_account_no: valueOf('employeeBankAccountInput'),
+        sss_no: valueOf('employeeSssInput'),
+        philhealth_no: valueOf('employeePhilhealthInput'),
+        pagibig_no: valueOf('employeePagibigInput'),
+        tin_no: valueOf('employeeTinInput'),
+        emergency_contact_name: valueOf('employeeEmergencyNameInput'),
+        emergency_contact_phone: valueOf('employeeEmergencyPhoneInput'),
+        hr_notes: valueOf('employeeNotesInput'),
+        hr_updated_at: nowIso,
+        hr_updated_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr'
+    };
+    try {
+        await patchDocument('tbl_employee', docId, fields);
+        const employee = findEmployeeById(docId);
+        if (employee) Object.assign(employee, fields);
+        renderEmployees();
+        status.textContent = 'Employee details saved.';
+    } catch (error) {
+        console.error('Employee save failed:', error);
+        status.textContent = `Save failed: ${error.message || error}`;
+        alert(`Save failed: ${error.message || error}`);
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+function openPerformanceModal(employeeId) {
+    const employee = findEmployeeById(employeeId);
+    if (!employee) return;
+    const keys = [
+        employee.id,
+        employee._docId,
+        employee.email,
+        employee.marga_login_email,
+        employee.username,
+        MargaUtils.getEmployeeFullName(employee, '')
+    ].map(normalizeStaffKey).filter(Boolean);
+    const keySet = new Set(keys);
+    const events = HR_STATE.fieldEvents
+        .filter((event) => keySet.has(normalizeStaffKey(event.staff_id || event.employee_id || event.employeeId || event.staff_name || event.staff || event.user_name)))
+        .sort((left, right) => String(right.occurred_at || right.created_at || '').localeCompare(String(left.occurred_at || left.created_at || '')));
+    document.getElementById('performanceModalTitle').textContent = MargaUtils.getEmployeeFullName(employee, employeeId);
+    document.getElementById('performanceModalSubtitle').textContent = `${events.length.toLocaleString()} Field App record(s). Counts mean saved staff actions from the Field App, not a final HR rating.`;
+    document.getElementById('performanceDetailContent').innerHTML = renderPerformanceDetail(events);
+    setModalOpen('performanceModal', 'performanceModalOverlay', true);
+}
+
+function closePerformanceModal() {
+    setModalOpen('performanceModal', 'performanceModalOverlay', false);
+}
+
+function renderPerformanceDetail(events) {
+    if (!events.length) return '<div class="ops-subtext">No Field App records found for this staff member yet.</div>';
+    return `
+        <div class="hr-performance-summary">
+            <div><span>Total Records</span><strong>${events.length.toLocaleString()}</strong></div>
+            <div><span>Customer Location Pins</span><strong>${events.filter((event) => event.action === 'customer_location_pinned').length.toLocaleString()}</strong></div>
+            <div><span>Unique Customers</span><strong>${new Set(events.map((event) => `${event.company_id || ''}:${event.branch_id || ''}`)).size.toLocaleString()}</strong></div>
+        </div>
+        <div class="table-container">
+            <table class="table">
+                <thead><tr><th>Date/Time</th><th>Action</th><th>Customer / Company</th><th>Branch</th><th>GPS</th></tr></thead>
+                <tbody>
+                    ${events.slice(0, 80).map((event) => {
+                        const context = resolveEventContext(event);
+                        const gps = hasCoordinates(event) ? `${Number(event.latitude).toFixed(5)}, ${Number(event.longitude).toFixed(5)}` : '-';
+                        return `
+                            <tr>
+                                <td>${sanitize(event.occurred_at || event.local_date || '-')}</td>
+                                <td>${sanitize(event.action || event.status_label || '-')}</td>
+                                <td>${sanitize(context.company || '-')}</td>
+                                <td>${sanitize(context.branch || '-')}</td>
+                                <td>${sanitize(gps)}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
 function getSalaryRate(employee) {
     return firstPresent(employee, [
+        'semi_monthly_rate',
+        'semim_rate',
+        'semimrate',
         'salary_rate',
         'salary',
         'daily_rate',
@@ -386,13 +569,9 @@ function renderLocations() {
 
 function updateOverview() {
     const activeEmployees = HR_STATE.employees.filter((employee) => MargaUtils.isOfficialActiveEmployee(employee)).length;
-    const activeLocations = HR_STATE.locations.filter((location) => location.isActive !== false).length;
-    const strictest = HR_STATE.locations.length
-        ? Math.min(...HR_STATE.locations.map((location) => clampAllowedMeters(location.type, location.allowedMeters)))
-        : OFFICE_MAX_METERS;
     document.getElementById('activeEmployeeCount').textContent = activeEmployees.toLocaleString();
-    document.getElementById('workLocationCount').textContent = activeLocations.toLocaleString();
-    document.getElementById('strictestGate').textContent = `${strictest}m`;
+    document.getElementById('workLocationCount').textContent = HR_STATE.fieldEvents.length.toLocaleString();
+    document.getElementById('strictestGate').textContent = 'Ready';
 }
 
 async function saveLocationForm() {
@@ -674,6 +853,40 @@ function formatDetectedLabel(key) {
     return key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function setInputValue(id, value) {
+    const input = document.getElementById(id);
+    if (input) input.value = value ?? '';
+}
+
+function valueOf(id) {
+    return String(document.getElementById(id)?.value || '').trim();
+}
+
+function numberOrBlank(id) {
+    const raw = valueOf(id);
+    if (!raw) return '';
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : '';
+}
+
+function toDateInputValue(value) {
+    if (!value) return '';
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    const text = String(value || '').trim();
+    const match = text.match(/^\d{4}-\d{2}-\d{2}/);
+    if (match) return match[0];
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+}
+
+function setModalOpen(modalId, overlayId, isOpen) {
+    const modal = document.getElementById(modalId);
+    const overlay = document.getElementById(overlayId);
+    modal?.classList.toggle('open', isOpen);
+    overlay?.classList.toggle('visible', isOpen);
+    modal?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+}
+
 function toRadians(value) {
     return Number(value) * Math.PI / 180;
 }
@@ -718,6 +931,29 @@ async function setDocument(collection, docId, fields) {
     );
     const payload = await response.json();
     if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `Failed to set ${collection}/${docId}`);
+    return payload;
+}
+
+async function patchDocument(collection, docId, fields) {
+    const updateKeys = Object.keys(fields);
+    if (!updateKeys.length) return null;
+    const params = updateKeys
+        .map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`)
+        .join('&');
+    const body = { fields: {} };
+    updateKeys.forEach((key) => {
+        body.fields[key] = toFirestoreFieldValue(fields[key]);
+    });
+    const response = await fetch(
+        `${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_CONFIG.apiKey}&${params}`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }
+    );
+    const payload = await response.json();
+    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `Failed to update ${collection}/${docId}`);
     return payload;
 }
 

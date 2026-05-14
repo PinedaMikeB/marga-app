@@ -281,6 +281,111 @@
     font-weight: 800;
 }
 
+.marga-modal {
+    position: fixed;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: min(820px, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.92));
+    border: 1px solid rgba(226, 232, 240, 0.7);
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+}
+
+.marga-modal.open {
+    display: flex;
+}
+
+.hr-modal {
+    width: min(960px, calc(100vw - 2rem));
+    z-index: 270;
+}
+
+.hr-modal .modal-header,
+.hr-modal .modal-footer {
+    padding: 1rem 1.25rem;
+    border-color: rgba(226, 232, 240, 0.65);
+}
+
+.hr-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.65);
+}
+
+.hr-modal .modal-header h2,
+.hr-modal-section h3,
+.hr-performance-detail h3 {
+    margin: 0;
+    color: #19345c;
+}
+
+.hr-modal .modal-header p {
+    margin: 0.25rem 0 0;
+    color: #64748b;
+}
+
+.hr-modal .modal-body {
+    display: grid;
+    gap: 1rem;
+    padding: 1.25rem;
+    overflow: auto;
+}
+
+.hr-modal .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    border-top: 1px solid rgba(226, 232, 240, 0.65);
+    background: rgba(248, 251, 255, 0.84);
+}
+
+.hr-modal-section {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.hr-performance-detail {
+    display: grid;
+    gap: 1rem;
+}
+
+.hr-performance-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.hr-performance-summary div {
+    display: grid;
+    gap: 0.35rem;
+    padding: 1rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-performance-summary span {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.hr-performance-summary strong {
+    color: #19345c;
+    font-size: 1.3rem;
+}
+
 .hr-validator-grid {
     grid-template-columns: 1fr 1fr 1fr minmax(220px, 0.85fr);
 }
@@ -315,7 +420,8 @@
 @media (max-width: 1100px) {
     .hr-location-layout,
     .hr-validator-grid,
-    .hr-detected-grid {
+    .hr-detected-grid,
+    .hr-performance-summary {
         grid-template-columns: 1fr;
     }
 
