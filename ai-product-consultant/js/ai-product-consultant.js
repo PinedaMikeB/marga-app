@@ -1,5 +1,42 @@
 (function () {
     const WEBSITE_INQUIRIES_API = 'https://marga.biz/.netlify/functions/website-inquiries';
+    const SETTINGS_COLLECTION = 'ai_product_consultant_settings';
+    const SETTINGS_DOC_ID = 'default';
+    const SETTINGS_STORAGE_KEY = 'marga_ai_product_consultant_settings_v1';
+    const VOICE_OPTIONS = [
+        { id: 'marin', label: 'Marin', description: 'Natural, clear sales-consultant voice.' },
+        { id: 'cedar', label: 'Cedar', description: 'Warm, steady, and professional.' },
+        { id: 'coral', label: 'Coral', description: 'Friendly and bright for warmer conversations.' },
+        { id: 'shimmer', label: 'Shimmer', description: 'Soft, approachable, and gentle.' },
+        { id: 'sage', label: 'Sage', description: 'Calm, composed, and advisory.' },
+        { id: 'alloy', label: 'Alloy', description: 'Balanced, neutral, and direct.' },
+        { id: 'ash', label: 'Ash', description: 'Even, confident, and businesslike.' },
+        { id: 'ballad', label: 'Ballad', description: 'Expressive and smooth.' },
+        { id: 'echo', label: 'Echo', description: 'Clear and familiar.' },
+        { id: 'verse', label: 'Verse', description: 'Conversational and energetic.' }
+    ];
+    const DEFAULT_SETTINGS = {
+        language: 'taglish',
+        voice: 'marin',
+        realtimeModel: 'gpt-realtime',
+        transcriptionModel: 'gpt-4o-mini-transcribe',
+        greeting: 'Greet the customer warmly. In Taglish, say: "Hi, kumusta po? I’m Marga’s Product Consultant. How can I help po, are you planning to rent a copier or printer?" Do not ask why they need a quotation yet.',
+        prompt: [
+            'Tone: warm, calm, helpful, empathetic, reassuring, interested, and not robotic.',
+            'Pacing: slower, with short natural pauses.',
+            'Sentence length: short spoken sentences, not long paragraphs.',
+            'Conversation style: listen first, confirm what the prospect said, then answer.',
+            'Sales behavior: helpful consultant, not pushy salesperson.',
+            'Opening flow: greet warmly, ask how they are doing, then ask how you can help or whether they are planning to rent a copier or printer.',
+            'Do not open by asking if they have a problem or why they want a quotation.',
+            'After rental interest is confirmed, ask monthly pages, number of users, location, black-only or color, A4/legal or A3, scan/copy needs, and target start date.',
+            'After the practical basics, ask whether they already have a rental or purchased machine and what brand/model it is.',
+            'If they name an existing machine, acknowledge it positively, then ask why they are considering another supplier or another rental option.',
+            'Only explore pain after context is clear. If they mention bad service, toner delays, downtime, billing, or lower-rate needs, validate it naturally.',
+            'If volume is very low, warn honestly that rental may be expensive and buying a small printer may be better.',
+            'Official quotation must be approved by Mike before sending to the prospect.'
+        ].join('\n')
+    };
     const state = {
         leads: [],
         selectedId: '',
@@ -7,6 +44,8 @@
         language: 'all',
         service: 'all',
         query: '',
+        activeTab: 'home',
+        settings: { ...DEFAULT_SETTINGS },
         initialized: false,
         knownLeadIds: new Set()
     };
@@ -64,6 +103,32 @@
         return `PHP ${amount.toFixed(2)}`;
     }
 
+    function firestoreValue(value) {
+        if (value === null || value === undefined) return { nullValue: null };
+        if (value instanceof Date) return { timestampValue: value.toISOString() };
+        if (Array.isArray(value)) return { arrayValue: { values: value.map(firestoreValue) } };
+        if (typeof value === 'boolean') return { booleanValue: value };
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+        }
+        if (typeof value === 'object') {
+            const fields = {};
+            Object.entries(value).forEach(([key, child]) => {
+                fields[key] = firestoreValue(child);
+            });
+            return { mapValue: { fields } };
+        }
+        return { stringValue: String(value) };
+    }
+
+    function firestoreFields(fields) {
+        const mapped = {};
+        Object.entries(fields || {}).forEach(([key, value]) => {
+            mapped[key] = firestoreValue(value);
+        });
+        return mapped;
+    }
+
     function relativeTime(value) {
         if (!value) return 'N/A';
         const date = value instanceof Date ? value : new Date(value);
@@ -92,6 +157,54 @@
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.success) throw new Error(payload.error || `Lead update failed: HTTP ${response.status}`);
+    }
+
+    async function fetchSettings() {
+        const cached = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (cached) {
+            try {
+                state.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(cached) };
+            } catch (error) {
+                state.settings = { ...DEFAULT_SETTINGS };
+            }
+        }
+
+        try {
+            const doc = await MargaUtils.fetchDoc(SETTINGS_COLLECTION, SETTINGS_DOC_ID);
+            if (doc) {
+                state.settings = {
+                    ...DEFAULT_SETTINGS,
+                    ...doc,
+                    language: clean(doc.language || DEFAULT_SETTINGS.language),
+                    voice: clean(doc.voice || DEFAULT_SETTINGS.voice)
+                };
+                localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(state.settings));
+            }
+        } catch (error) {
+            console.warn('Using local AI consultant settings fallback.', error);
+        }
+    }
+
+    async function saveSettings(nextSettings) {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            ...nextSettings,
+            updatedAt: new Date().toISOString(),
+            updatedBy: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'admin'
+        };
+        state.settings = settings;
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+
+        const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${SETTINGS_COLLECTION}/${SETTINGS_DOC_ID}?key=${FIREBASE_CONFIG.apiKey}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: firestoreFields(settings) })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) {
+            throw new Error(payload?.error?.message || `Settings save failed: HTTP ${response.status}`);
+        }
+        return settings;
     }
 
     async function loadLeads() {
@@ -170,6 +283,17 @@
         byId('statNew').textContent = newCount;
         byId('statHuman').textContent = human;
         byId('statConsent').textContent = noConsent;
+        const languageDefault = byId('languageDefault');
+        if (languageDefault) languageDefault.textContent = state.settings.language === 'english' ? 'English' : 'Taglish';
+    }
+
+    function renderTabs() {
+        document.querySelectorAll('.consultant-tab').forEach((tab) => {
+            tab.classList.toggle('active', tab.dataset.tab === state.activeTab);
+        });
+        document.querySelectorAll('.tab-panel').forEach((panel) => {
+            panel.classList.toggle('active', panel.id === `tab-${state.activeTab}`);
+        });
     }
 
     function renderList() {
@@ -297,6 +421,58 @@
         });
     }
 
+    function renderSettings() {
+        if (!els.settingVoice) return;
+        if (!els.settingVoice.options.length) {
+            els.settingVoice.innerHTML = VOICE_OPTIONS
+                .map((voice) => `<option value="${escapeHtml(voice.id)}">${escapeHtml(voice.label)}</option>`)
+                .join('');
+        }
+
+        els.settingLanguage.value = state.settings.language === 'english' ? 'english' : 'taglish';
+        els.settingVoice.value = VOICE_OPTIONS.some((voice) => voice.id === state.settings.voice) ? state.settings.voice : DEFAULT_SETTINGS.voice;
+        els.settingRealtimeModel.value = state.settings.realtimeModel || DEFAULT_SETTINGS.realtimeModel;
+        els.settingTranscriptionModel.value = state.settings.transcriptionModel || DEFAULT_SETTINGS.transcriptionModel;
+        els.settingGreeting.value = state.settings.greeting || DEFAULT_SETTINGS.greeting;
+        els.settingPrompt.value = state.settings.prompt || DEFAULT_SETTINGS.prompt;
+        updateVoicePreview();
+        if (els.settingsStatus) {
+            els.settingsStatus.textContent = state.settings.updatedAt
+                ? `Saved ${formatDateTime(state.settings.updatedAt)}`
+                : 'Draft settings loaded';
+        }
+    }
+
+    function updateVoicePreview() {
+        const selected = VOICE_OPTIONS.find((voice) => voice.id === els.settingVoice?.value) || VOICE_OPTIONS[0];
+        if (byId('voicePreviewName')) byId('voicePreviewName').textContent = selected.label;
+        if (byId('voicePreviewDescription')) byId('voicePreviewDescription').textContent = selected.description;
+    }
+
+    function collectSettingsForm() {
+        return {
+            language: els.settingLanguage.value === 'english' ? 'english' : 'taglish',
+            voice: els.settingVoice.value || DEFAULT_SETTINGS.voice,
+            realtimeModel: clean(els.settingRealtimeModel.value) || DEFAULT_SETTINGS.realtimeModel,
+            transcriptionModel: clean(els.settingTranscriptionModel.value) || DEFAULT_SETTINGS.transcriptionModel,
+            greeting: clean(els.settingGreeting.value) || DEFAULT_SETTINGS.greeting,
+            prompt: clean(els.settingPrompt.value) || DEFAULT_SETTINGS.prompt
+        };
+    }
+
+    function previewBrowserVoice() {
+        if (!('speechSynthesis' in window)) {
+            MargaUtils.showToast('Browser voice preview is not supported on this device.', 'warning');
+            return;
+        }
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(clean(els.voiceTestText.value) || DEFAULT_SETTINGS.greeting);
+        utterance.lang = els.settingLanguage.value === 'english' ? 'en-PH' : 'fil-PH';
+        utterance.rate = 0.86;
+        utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
+    }
+
     function renderTranscript(transcript) {
         if (!Array.isArray(transcript) || !transcript.length) {
             return '<div class="transcript-empty">Transcript will appear here after the browser voice call captures speech.</div>';
@@ -364,9 +540,11 @@
     }
 
     function render() {
+        renderTabs();
         updateStats();
         renderList();
         renderDetail();
+        renderSettings();
         document.querySelectorAll('.stat-card').forEach((card) => {
             card.classList.toggle('active', card.dataset.filter === state.filter);
         });
@@ -389,9 +567,39 @@
         document.querySelectorAll('.stat-card').forEach((card) => {
             card.addEventListener('click', () => {
                 state.filter = card.dataset.filter;
+                state.activeTab = 'leads';
                 render();
             });
         });
+        document.querySelectorAll('.consultant-tab').forEach((tab) => {
+            tab.addEventListener('click', () => {
+                state.activeTab = tab.dataset.tab || 'home';
+                render();
+            });
+        });
+        els.settingsForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            els.settingsStatus.textContent = 'Saving settings...';
+            els.saveSettings.disabled = true;
+            try {
+                await saveSettings(collectSettingsForm());
+                MargaUtils.showToast('AI Product Consultant settings saved.', 'success');
+                renderSettings();
+            } catch (error) {
+                console.error(error);
+                els.settingsStatus.textContent = 'Saved locally. Firestore save failed.';
+                MargaUtils.showToast(`Settings saved locally, but Firestore failed: ${error.message}`, 'warning', 6000);
+            } finally {
+                els.saveSettings.disabled = false;
+            }
+        });
+        els.resetSettings.addEventListener('click', () => {
+            state.settings = { ...DEFAULT_SETTINGS };
+            renderSettings();
+        });
+        els.settingVoice.addEventListener('change', updateVoicePreview);
+        els.testBrowserVoice.addEventListener('click', previewBrowserVoice);
+        els.stopBrowserVoice.addEventListener('click', () => window.speechSynthesis?.cancel());
     }
 
     function showLoadError(error) {
@@ -419,7 +627,21 @@
         els.search = byId('leadSearch');
         els.languageFilter = byId('languageFilter');
         els.serviceFilter = byId('serviceFilter');
+        els.settingsForm = byId('consultantSettingsForm');
+        els.settingLanguage = byId('settingLanguage');
+        els.settingVoice = byId('settingVoice');
+        els.settingRealtimeModel = byId('settingRealtimeModel');
+        els.settingTranscriptionModel = byId('settingTranscriptionModel');
+        els.settingGreeting = byId('settingGreeting');
+        els.settingPrompt = byId('settingPrompt');
+        els.saveSettings = byId('saveSettingsBtn');
+        els.resetSettings = byId('resetSettingsBtn');
+        els.settingsStatus = byId('settingsStatus');
+        els.voiceTestText = byId('voiceTestText');
+        els.testBrowserVoice = byId('testBrowserVoiceBtn');
+        els.stopBrowserVoice = byId('stopBrowserVoiceBtn');
         bindEvents();
+        fetchSettings().then(renderSettings).catch((error) => console.warn('Settings load failed:', error));
         loadLeads().catch(showLoadError);
         setInterval(() => loadLeads().catch((error) => console.warn('Lead polling failed:', error)), 60000);
     }

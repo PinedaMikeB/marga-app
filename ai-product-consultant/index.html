@@ -97,71 +97,154 @@
             </div>
         </header>
 
-        <section class="consultant-hero">
-            <div>
-                <span class="eyebrow">Shared lead inbox</span>
-                <h2>New website inquiries land here first.</h2>
-                <p>The AI Product Consultant queue uses the contact number, language mode, service interest, and call consent from marga.biz.</p>
-            </div>
-            <div class="consultant-health">
-                <span>Language default</span>
-                <strong id="languageDefault">Taglish</strong>
-                <small>Per-lead override is captured from the website form.</small>
-            </div>
-        </section>
+        <nav class="consultant-tabs" aria-label="AI Product Consultant sections">
+            <button class="consultant-tab active" type="button" data-tab="home">Home</button>
+            <button class="consultant-tab" type="button" data-tab="leads">Leads</button>
+            <button class="consultant-tab" type="button" data-tab="settings">Settings</button>
+        </nav>
 
-        <section class="stats-grid" aria-label="Inquiry summary">
-            <button class="stat-card active" data-filter="all">
-                <span>All Leads</span>
-                <strong id="statAll">0</strong>
-            </button>
-            <button class="stat-card urgent" data-filter="pending_call">
-                <span>Pending AI Call</span>
-                <strong id="statPendingCall">0</strong>
-            </button>
-            <button class="stat-card" data-filter="new_inquiry">
-                <span>New Inquiries</span>
-                <strong id="statNew">0</strong>
-            </button>
-            <button class="stat-card" data-filter="needs_human">
-                <span>Needs Human</span>
-                <strong id="statHuman">0</strong>
-            </button>
-            <button class="stat-card" data-filter="waiting_for_call_consent">
-                <span>No Call Consent</span>
-                <strong id="statConsent">0</strong>
-            </button>
-        </section>
-
-        <section class="toolbar">
-            <div class="search-box wide">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"/>
-                    <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <input type="search" id="leadSearch" placeholder="Search name, company, phone, service">
-            </div>
-            <select id="languageFilter">
-                <option value="all">All languages</option>
-                <option value="taglish">Taglish</option>
-                <option value="english">Pure English</option>
-            </select>
-            <select id="serviceFilter">
-                <option value="all">All services</option>
-            </select>
-        </section>
-
-        <section class="consultant-layout">
-            <div class="lead-list" id="leadList">
-                <div class="empty-state">Loading website inquiries...</div>
-            </div>
-
-            <aside class="lead-detail" id="leadDetail">
-                <div class="empty-detail">
-                    <strong>Select a lead</strong>
-                    <span>View inquiry details, call readiness, and next action.</span>
+        <section class="tab-panel active" id="tab-home">
+            <section class="consultant-hero">
+                <div>
+                    <span class="eyebrow">Shared lead inbox</span>
+                    <h2>New website inquiries land here first.</h2>
+                    <p>The AI Product Consultant queue uses the contact number, language mode, service interest, and call consent from marga.biz.</p>
                 </div>
-            </aside>
+                <div class="consultant-health">
+                    <span>Language default</span>
+                    <strong id="languageDefault">Taglish</strong>
+                    <small>Per-lead override is captured from the website form.</small>
+                </div>
+            </section>
+
+            <section class="stats-grid" aria-label="Inquiry summary">
+                <button class="stat-card active" data-filter="all">
+                    <span>All Leads</span>
+                    <strong id="statAll">0</strong>
+                </button>
+                <button class="stat-card urgent" data-filter="pending_call">
+                    <span>Pending AI Call</span>
+                    <strong id="statPendingCall">0</strong>
+                </button>
+                <button class="stat-card" data-filter="new_inquiry">
+                    <span>New Inquiries</span>
+                    <strong id="statNew">0</strong>
+                </button>
+                <button class="stat-card" data-filter="needs_human">
+                    <span>Needs Human</span>
+                    <strong id="statHuman">0</strong>
+                </button>
+                <button class="stat-card" data-filter="waiting_for_call_consent">
+                    <span>No Call Consent</span>
+                    <strong id="statConsent">0</strong>
+                </button>
+            </section>
+        </section>
+
+        <section class="tab-panel" id="tab-leads">
+            <section class="toolbar">
+                <div class="search-box wide">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    <input type="search" id="leadSearch" placeholder="Search name, company, phone, service">
+                </div>
+                <select id="languageFilter">
+                    <option value="all">All languages</option>
+                    <option value="taglish">Taglish</option>
+                    <option value="english">Pure English</option>
+                </select>
+                <select id="serviceFilter">
+                    <option value="all">All services</option>
+                </select>
+            </section>
+
+            <section class="consultant-layout">
+                <div class="lead-list" id="leadList">
+                    <div class="empty-state">Loading website inquiries...</div>
+                </div>
+
+                <aside class="lead-detail" id="leadDetail">
+                    <div class="empty-detail">
+                        <strong>Select a lead</strong>
+                        <span>View inquiry details, call readiness, and next action.</span>
+                    </div>
+                </aside>
+            </section>
+        </section>
+
+        <section class="tab-panel" id="tab-settings">
+            <form class="settings-layout" id="consultantSettingsForm">
+                <section class="settings-card">
+                    <div class="settings-card-head">
+                        <span class="eyebrow">AI Sales Agent Settings</span>
+                        <h2>Voice, prompt, and opening behavior</h2>
+                        <p>These settings live in Marga-App so the public website stays as the visitor entry point only.</p>
+                    </div>
+
+                    <div class="settings-grid">
+                        <label class="settings-field">
+                            <span>Default language</span>
+                            <select id="settingLanguage">
+                                <option value="taglish">Taglish</option>
+                                <option value="english">Pure English</option>
+                            </select>
+                        </label>
+                        <label class="settings-field">
+                            <span>Agent voice</span>
+                            <select id="settingVoice"></select>
+                        </label>
+                        <label class="settings-field">
+                            <span>Realtime model</span>
+                            <input id="settingRealtimeModel" value="gpt-realtime">
+                        </label>
+                        <label class="settings-field">
+                            <span>Transcription model</span>
+                            <input id="settingTranscriptionModel" value="gpt-4o-mini-transcribe">
+                        </label>
+                    </div>
+
+                    <label class="settings-field full">
+                        <span>Opening instruction</span>
+                        <textarea id="settingGreeting" rows="4"></textarea>
+                    </label>
+
+                    <label class="settings-field full">
+                        <span>Agent prompt</span>
+                        <textarea id="settingPrompt" rows="12"></textarea>
+                    </label>
+
+                    <div class="settings-actions">
+                        <button class="btn btn-primary" type="submit" id="saveSettingsBtn">Save Settings</button>
+                        <button class="btn btn-secondary" type="button" id="resetSettingsBtn">Reset Draft</button>
+                        <span id="settingsStatus">Loading settings...</span>
+                    </div>
+                </section>
+
+                <aside class="settings-card voice-test-card">
+                    <div class="settings-card-head compact">
+                        <span class="eyebrow">Voice test</span>
+                        <h2 id="voicePreviewName">marin</h2>
+                        <p id="voicePreviewDescription">Natural, clear sales-consultant voice.</p>
+                    </div>
+
+                    <label class="settings-field full">
+                        <span>Test line</span>
+                        <textarea id="voiceTestText" rows="5">Hi, kumusta po? I’m Marga’s Product Consultant. How can I help po, are you planning to rent a copier or printer?</textarea>
+                    </label>
+
+                    <div class="voice-test-actions">
+                        <button class="btn btn-primary" type="button" id="testBrowserVoiceBtn">Preview with browser voice</button>
+                        <button class="btn btn-secondary" type="button" id="stopBrowserVoiceBtn">Stop</button>
+                    </div>
+
+                    <div class="settings-note">
+                        <strong>Note</strong>
+                        <p>Browser preview uses your device speech engine, so it is only for pacing and wording. The OpenAI voice choice is saved here for the live agent bridge.</p>
+                    </div>
+                </aside>
+            </form>
         </section>
     </main>
 
