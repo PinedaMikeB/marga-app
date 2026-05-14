@@ -85,6 +85,62 @@ body {
     padding: 8px;
 }
 
+.serial-finder {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.26fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid #bfcad5;
+    background: #f4f7fa;
+}
+
+.serial-finder-label span {
+    display: block;
+    color: var(--cust-ink);
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.serial-finder-label small {
+    display: block;
+    margin-top: 2px;
+    color: var(--cust-muted);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.serial-finder-controls {
+    display: grid;
+    grid-template-columns: minmax(190px, 0.34fr) minmax(0, 1fr);
+    gap: 7px;
+}
+
+.serial-finder input,
+.serial-finder select {
+    width: 100%;
+    height: 26px;
+    border: 1px solid #aeb9c5;
+    border-radius: 2px;
+    background: #fff;
+    color: #1f2933;
+    font: 700 0.74rem "Plus Jakarta Sans", sans-serif;
+    padding: 3px 7px;
+    outline: none;
+}
+
+.serial-finder input:focus,
+.serial-finder select:focus {
+    border-color: var(--cust-focus);
+    box-shadow: 0 0 0 2px rgba(18, 100, 163, 0.12);
+}
+
+.serial-finder select:disabled {
+    background: #eef2f5;
+    color: #778391;
+}
+
 .form-band {
     border: 1px solid var(--cust-line);
     background: #f8fafb;
@@ -498,6 +554,8 @@ body {
     .branch-grid,
     .contract-grid,
     .company-grid,
+    .serial-finder,
+    .serial-finder-controls,
     .selector-row,
     .status-strip {
         grid-template-columns: 1fr;

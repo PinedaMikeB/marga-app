@@ -118,6 +118,19 @@
                 </div>
 
                 <div class="legacy-form">
+                    <section class="serial-finder" aria-label="Find customer by machine serial">
+                        <div class="serial-finder-label">
+                            <span>Find by Serial</span>
+                            <small id="serialSearchHint">Type full serial or last 5 digits</small>
+                        </div>
+                        <div class="serial-finder-controls">
+                            <input id="serialSearchInput" type="search" autocomplete="off" placeholder="Serial number or last 5 digits">
+                            <select id="serialSearchResults" aria-label="Matching serial numbers" disabled>
+                                <option value="">Load customer data first</option>
+                            </select>
+                        </div>
+                    </section>
+
                     <section class="form-band">
                         <div class="band-title">
                             <span>Company Information</span>
@@ -405,6 +418,6 @@
     <script src="shared/js/firebase-config.js"></script>
     <script src="shared/js/auth.js"></script>
     <script src="shared/js/utils.js"></script>
-    <script src="customers/js/customers.js?v=20260505-branch-model-picker-1"></script>
+    <script src="customers/js/customers.js?v=20260514-serial-finder-1"></script>
 </body>
 </html>

@@ -35,10 +35,13 @@ const BRANCH_METADATA_OVERRIDES = {
     '231': { company: 'China Bank Savings - Branches', branch: 'La Union (CBS)' },
     '2378': { company: 'China Bank Savings - Branches', branch: 'Cash Center Bulacan (CBS)' },
     '3396': { company: 'China Bank Savings - Branches', branch: 'Cash Center Laguna (CBS)' },
-    '3822': { company: 'China Bank Savings - Branches', branch: 'Cash Center Imus (CBS)' }
+    '3822': { company: 'China Bank Savings - Branches', branch: 'Cash Center Imus (CBS)' },
+    '3579': { company: 'VANS TURF CONSTRUCTION CORP', branch: 'VANS TURF CONSTRUCTION CORP' }
 };
 const CHINABANK_GROUP_COMPANY_ID = '72';
 const CHINABANK_GROUP_BRANCH_IDS = new Set(['2378', '3396', '3822', '3462']);
+const SICCION_GROUP_COMPANY_ID = '610';
+const SICCION_GROUP_BRANCH_IDS = new Set(['1237', '2819']);
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -1091,6 +1094,9 @@ function getRowBillingGroup(cache, companyId, branchId) {
         return getCompanyBillingGroup(cache, CHINABANK_GROUP_COMPANY_ID)
             || getCompanyBillingGroup(cache, companyId);
     }
+    if (String(companyId || '').trim() === SICCION_GROUP_COMPANY_ID && !SICCION_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
+        return null;
+    }
     return getCompanyBillingGroup(cache, companyId);
 }
 
@@ -2005,7 +2011,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             confirmed_received_months_count: row.confirmed_received_months_count,
             unconfirmed_billed_months_count: row.unconfirmed_billed_months_count,
             latest_billed_month: row.latest_billed_month,
-            billing_group: row.billing_group || getCompanyBillingGroup(cache, row.company_id),
+            billing_group: row.billing_group || getRowBillingGroup(cache, row.company_id, row.branch_id),
             billing_profile: row.billing_profile || null,
             months: serializedMonths
         });

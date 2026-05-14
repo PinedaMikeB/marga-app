@@ -29,7 +29,8 @@ const CustomersApp = (() => {
         selectedBranchId: '',
         selectedContractId: '',
         selectedMachineId: '',
-        newBranchMode: false
+        newBranchMode: false,
+        serialSearchMatches: []
     };
 
     const CONTRACT_STATUS = {
@@ -162,6 +163,7 @@ const CustomersApp = (() => {
             renderStats();
             selectInitialCompany();
             setStatus('Ready');
+            renderSerialSearchResults('');
         } catch (error) {
             console.error('Customers load failed:', error);
             setStatus('Unable to load customers');
@@ -274,6 +276,9 @@ const CustomersApp = (() => {
     }
 
     function bindStaticEvents() {
+        byId('serialSearchInput')?.addEventListener('input', MargaUtils.debounce(handleSerialSearchInput, 160));
+        byId('serialSearchInput')?.addEventListener('keydown', handleSerialSearchKeydown);
+        byId('serialSearchResults')?.addEventListener('change', handleSerialSearchPicked);
         byId('customerCompanyPicker')?.addEventListener('change', handleCompanyPicker);
         byId('customerCompanyPicker')?.addEventListener('input', MargaUtils.debounce(handleCompanyPicker, 250));
         byId('branchPicker')?.addEventListener('change', (event) => selectBranch(event.target.value));
@@ -334,6 +339,127 @@ const CustomersApp = (() => {
         setText('branchCount', state.raw.branches.length.toLocaleString());
         setText('contractCount', state.raw.contracts.length.toLocaleString());
         setText('activeContractCount', activeContracts.toLocaleString());
+    }
+
+    function handleSerialSearchInput() {
+        renderSerialSearchResults(clean(byId('serialSearchInput')?.value));
+    }
+
+    function handleSerialSearchKeydown(event) {
+        if (event.key !== 'Enter') return;
+        const firstMatch = state.serialSearchMatches[0];
+        if (!firstMatch) return;
+        event.preventDefault();
+        selectSerialSearchMatch(firstMatch.key);
+    }
+
+    function handleSerialSearchPicked(event) {
+        selectSerialSearchMatch(event.target.value);
+    }
+
+    function renderSerialSearchResults(query) {
+        const select = byId('serialSearchResults');
+        if (!select) return;
+        state.serialSearchMatches = findSerialSearchMatches(query);
+
+        if (!clean(query)) {
+            select.disabled = true;
+            select.innerHTML = '<option value="">Type a serial or last 5 digits</option>';
+            setText('serialSearchHint', 'Type full serial or last 5 digits');
+            return;
+        }
+
+        if (!state.serialSearchMatches.length) {
+            select.disabled = true;
+            select.innerHTML = '<option value="">No matching serial found</option>';
+            setText('serialSearchHint', 'No match');
+            return;
+        }
+
+        select.disabled = false;
+        select.innerHTML = '<option value="">Select matching machine...</option>'
+            + state.serialSearchMatches
+                .map((match) => `<option value="${escapeAttr(match.key)}">${escapeHtml(serialSearchOptionLabel(match))}</option>`)
+                .join('');
+        setText('serialSearchHint', `${state.serialSearchMatches.length.toLocaleString()} match${state.serialSearchMatches.length === 1 ? '' : 'es'}`);
+    }
+
+    function findSerialSearchMatches(query) {
+        const queryKey = normalizeSerial(query);
+        if (!queryKey) return [];
+        const matches = [];
+        const seen = new Set();
+
+        state.raw.contracts.forEach((contract) => {
+            const machine = state.maps.machines.get(clean(contract.mach_id || contract.machine_id)) || null;
+            const serial = clean(contract.xserial) || clean(machine?.serial);
+            if (!serialMatchesQuery(serial, queryKey)) return;
+            const branch = resolveContractBranch(contract);
+            const company = state.maps.companies.get(clean(branch?.company_id)) || null;
+            const key = `contract:${clean(contract.id) || clean(contract.contract_id)}:${clean(machine?.id)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            matches.push({ key, contract, machine, branch, company, serial });
+        });
+
+        state.raw.machines.forEach((machine) => {
+            const serial = clean(machine.serial);
+            if (!serialMatchesQuery(serial, queryKey)) return;
+            const hasContractMatch = matches.some((match) => clean(match.machine?.id) === clean(machine.id));
+            if (hasContractMatch) return;
+            const key = `machine:${clean(machine.id)}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            matches.push({ key, contract: null, machine, branch: null, company: null, serial });
+        });
+
+        return matches
+            .sort((left, right) => {
+                const leftActive = Number(left.contract?.status || 0) === 1 ? 0 : 1;
+                const rightActive = Number(right.contract?.status || 0) === 1 ? 0 : 1;
+                if (leftActive !== rightActive) return leftActive - rightActive;
+                const leftSuffix = normalizeSerial(left.serial).endsWith(queryKey) ? 0 : 1;
+                const rightSuffix = normalizeSerial(right.serial).endsWith(queryKey) ? 0 : 1;
+                if (leftSuffix !== rightSuffix) return leftSuffix - rightSuffix;
+                return serialSearchOptionLabel(left).localeCompare(serialSearchOptionLabel(right), undefined, { numeric: true });
+            })
+            .slice(0, 80);
+    }
+
+    function serialMatchesQuery(serial, queryKey) {
+        const serialKey = normalizeSerial(serial);
+        if (!serialKey || !queryKey) return false;
+        return serialKey.includes(queryKey) || serialKey.endsWith(queryKey);
+    }
+
+    function selectSerialSearchMatch(key) {
+        const match = state.serialSearchMatches.find((entry) => entry.key === key);
+        if (!match) return;
+        const branch = match.branch || resolveContractBranch(match.contract);
+        const company = match.company || state.maps.companies.get(clean(branch?.company_id));
+        if (!company || !branch) {
+            MargaUtils.showToast('Serial found, but no linked customer branch is on file.', 'error');
+            return;
+        }
+
+        selectCompany(clean(company.id), clean(branch.id));
+        state.selectedContractId = clean(match.contract?.id);
+        state.selectedMachineId = clean(match.machine?.id || match.contract?.mach_id);
+        const select = byId('serialSearchResults');
+        if (select) select.value = key;
+        setStatus(`Serial ${match.serial || 'selected'} loaded`);
+        MargaUtils.showToast(`Loaded ${companyName(company)} / ${branch.branchname || 'Branch'}`, 'success');
+    }
+
+    function serialSearchOptionLabel(match) {
+        const serial = clean(match.serial) || 'No serial';
+        const model = modelName(state.maps.models?.get(clean(match.machine?.model_id))) || clean(match.machine?.description) || 'Machine';
+        const company = companyName(match.company) || 'Unlinked customer';
+        const branch = clean(match.branch?.branchname) || 'No branch link';
+        const status = match.contract
+            ? (CONTRACT_STATUS[Number(match.contract.status || 0)] || `Status ${match.contract.status || '-'}`)
+            : 'No contract';
+        return `${serial} - ${model} - ${company} - ${branch} - ${status}`;
     }
 
     function handleCompanyPicker() {
@@ -1458,6 +1584,10 @@ const CustomersApp = (() => {
 
     function normalize(value) {
         return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
+
+    function normalizeSerial(value) {
+        return clean(value).toUpperCase().replace(/[^A-Z0-9]+/g, '');
     }
 
     function numberOrZero(value) {
