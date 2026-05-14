@@ -4,16 +4,16 @@
     const SETTINGS_DOC_ID = 'default';
     const SETTINGS_STORAGE_KEY = 'marga_ai_product_consultant_settings_v1';
     const VOICE_OPTIONS = [
-        { id: 'marin', label: 'Marin', description: 'Natural, clear sales-consultant voice.' },
-        { id: 'cedar', label: 'Cedar', description: 'Warm, steady, and professional.' },
-        { id: 'coral', label: 'Coral', description: 'Friendly and bright for warmer conversations.' },
-        { id: 'shimmer', label: 'Shimmer', description: 'Soft, approachable, and gentle.' },
-        { id: 'sage', label: 'Sage', description: 'Calm, composed, and advisory.' },
-        { id: 'alloy', label: 'Alloy', description: 'Balanced, neutral, and direct.' },
-        { id: 'ash', label: 'Ash', description: 'Even, confident, and businesslike.' },
-        { id: 'ballad', label: 'Ballad', description: 'Expressive and smooth.' },
-        { id: 'echo', label: 'Echo', description: 'Clear and familiar.' },
-        { id: 'verse', label: 'Verse', description: 'Conversational and energetic.' }
+        { id: 'marin', label: 'Marin - balanced', description: 'Natural, clear sales-consultant voice.', previewPitch: 1, previewRate: 0.86, hints: ['samantha', 'google us english'] },
+        { id: 'cedar', label: 'Cedar - male-leaning', description: 'Warm, steady, and professional with a lower tone.', previewPitch: 0.78, previewRate: 0.84, hints: ['daniel', 'alex', 'fred', 'google uk english male', 'microsoft david'] },
+        { id: 'ash', label: 'Ash - male-leaning', description: 'Even, confident, and businesslike.', previewPitch: 0.82, previewRate: 0.84, hints: ['alex', 'daniel', 'google uk english male', 'microsoft david'] },
+        { id: 'echo', label: 'Echo - male-leaning', description: 'Clear, familiar, and slightly deeper.', previewPitch: 0.8, previewRate: 0.86, hints: ['fred', 'alex', 'daniel', 'microsoft mark'] },
+        { id: 'sage', label: 'Sage - calm neutral', description: 'Calm, composed, and advisory.', previewPitch: 0.92, previewRate: 0.82, hints: ['daniel', 'alex', 'google us english'] },
+        { id: 'alloy', label: 'Alloy - neutral', description: 'Balanced, neutral, and direct.', previewPitch: 0.96, previewRate: 0.86, hints: ['google us english', 'samantha', 'alex'] },
+        { id: 'coral', label: 'Coral - warm bright', description: 'Friendly and bright for warmer conversations.', previewPitch: 1.08, previewRate: 0.88, hints: ['samantha', 'victoria', 'google us english'] },
+        { id: 'shimmer', label: 'Shimmer - soft bright', description: 'Soft, approachable, and gentle.', previewPitch: 1.12, previewRate: 0.88, hints: ['samantha', 'victoria', 'karen'] },
+        { id: 'ballad', label: 'Ballad - expressive', description: 'Expressive and smooth.', previewPitch: 1.02, previewRate: 0.86, hints: ['samantha', 'google us english'] },
+        { id: 'verse', label: 'Verse - energetic', description: 'Conversational and energetic.', previewPitch: 1, previewRate: 0.9, hints: ['google us english', 'samantha'] }
     ];
     const DEFAULT_SETTINGS = {
         language: 'taglish',
@@ -449,6 +449,18 @@
         if (byId('voicePreviewDescription')) byId('voicePreviewDescription').textContent = selected.description;
     }
 
+    function findBrowserVoice(selected) {
+        const voices = window.speechSynthesis?.getVoices?.() || [];
+        if (!voices.length) return null;
+        const hints = selected.hints || [];
+        const byHint = voices.find((voice) => {
+            const name = voice.name.toLowerCase();
+            return hints.some((hint) => name.includes(hint));
+        });
+        if (byHint) return byHint;
+        return voices.find((voice) => /^en[-_]/i.test(voice.lang)) || voices[0] || null;
+    }
+
     function collectSettingsForm() {
         return {
             language: els.settingLanguage.value === 'english' ? 'english' : 'taglish',
@@ -466,10 +478,13 @@
             return;
         }
         window.speechSynthesis.cancel();
+        const selected = VOICE_OPTIONS.find((voice) => voice.id === els.settingVoice.value) || VOICE_OPTIONS[0];
         const utterance = new SpeechSynthesisUtterance(clean(els.voiceTestText.value) || DEFAULT_SETTINGS.greeting);
         utterance.lang = els.settingLanguage.value === 'english' ? 'en-PH' : 'fil-PH';
-        utterance.rate = 0.86;
-        utterance.pitch = 1;
+        utterance.rate = selected.previewRate || 0.86;
+        utterance.pitch = selected.previewPitch || 1;
+        const browserVoice = findBrowserVoice(selected);
+        if (browserVoice) utterance.voice = browserVoice;
         window.speechSynthesis.speak(utterance);
     }
 
@@ -598,6 +613,7 @@
             renderSettings();
         });
         els.settingVoice.addEventListener('change', updateVoicePreview);
+        window.speechSynthesis?.addEventListener?.('voiceschanged', updateVoicePreview);
         els.testBrowserVoice.addEventListener('click', previewBrowserVoice);
         els.stopBrowserVoice.addEventListener('click', () => window.speechSynthesis?.cancel());
     }
