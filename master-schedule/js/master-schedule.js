@@ -3017,6 +3017,8 @@ function bindSettingsControls() {
     document.getElementById('addTechAreaBtn')?.addEventListener('click', addTechArea);
     document.getElementById('assignTechAreaBtn')?.addEventListener('click', () => assignAreaToTech(document.getElementById('techAvailableAreaList')?.value));
     document.getElementById('unassignTechAreaBtn')?.addEventListener('click', () => unassignAreaFromTech(document.getElementById('techAssignedAreaList')?.value));
+    document.getElementById('techAvailableAreaList')?.addEventListener('dblclick', (event) => assignAreaToTech(event.target?.value));
+    document.getElementById('techAssignedAreaList')?.addEventListener('dblclick', (event) => unassignAreaFromTech(event.target?.value));
 
     document.getElementById('clientSearchInput')?.addEventListener('input', renderClientResults);
 }
@@ -3282,7 +3284,14 @@ async function addTechArea() {
 
 async function assignAreaToTech(area) {
     area = clean(area);
-    if (!area || !masterState.selectedTechId) return;
+    if (!masterState.selectedTechId) {
+        setSettingsStatus('Select a technician or messenger first.');
+        return;
+    }
+    if (!area) {
+        setSettingsStatus('Select an available area first, then click Assign.');
+        return;
+    }
     const employee = masterState.lookups.employees.get(masterState.selectedTechId);
     const row = {
         tech_id: masterState.selectedTechId,
@@ -3301,8 +3310,19 @@ async function assignAreaToTech(area) {
 
 async function unassignAreaFromTech(area) {
     area = clean(area);
+    if (!masterState.selectedTechId) {
+        setSettingsStatus('Select a technician or messenger first.');
+        return;
+    }
+    if (!area) {
+        setSettingsStatus('Select an assigned area first, then click Remove.');
+        return;
+    }
     const row = masterState.techAreaRows.get(masterState.selectedTechId)?.get(area);
-    if (!row) return;
+    if (!row) {
+        setSettingsStatus(`${area} is not assigned to the selected staff.`);
+        return;
+    }
     await deleteDoc('marga_master_schedule_tech_areas', row._docId || `${slug(masterState.selectedTechId)}_${slug(area)}`);
     masterState.techAreaRows.get(masterState.selectedTechId).delete(area);
     renderTechSettings();
