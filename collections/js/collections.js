@@ -21,6 +21,7 @@ let quickAgeFilter = 'all';
 let dataMode = 'active';
 let todayFollowups = [];
 let collectionHistory = {};
+let collectionScheduleEntries = [];
 
 // Lookup maps
 let contractMap = {};
@@ -95,6 +96,7 @@ const COLLECTION_SCHEDULE_OPTIONS = [
     'Return cheque',
     'Acquire 2307',
     'Update Contact Number',
+    'Service Issue / Payment Hold',
     'Shutdown Notice',
     'Deposit',
     'Start Up',
@@ -2488,12 +2490,104 @@ function updateFollowupBadge() {
     const badge = document.getElementById('followupBadge');
     if (!badge) return;
 
-    if (todayFollowups.length > 0) {
-        badge.textContent = todayFollowups.length.toLocaleString();
+    const scheduledCount = getTodayScheduledInvoices().length;
+    if (scheduledCount > 0) {
+        badge.textContent = scheduledCount.toLocaleString();
         badge.style.display = 'inline-flex';
     } else {
         badge.style.display = 'none';
     }
+}
+
+async function loadCollectionScheduleEntries() {
+    const docs = await safeFirestoreGetAll('marga_master_schedule', null, {
+        fieldMask: [
+            'source',
+            'request_origin',
+            'collection_schedule_source',
+            'invoice_no',
+            'invoice_id',
+            'schedule_status',
+            'schedule_status_key',
+            'schedule_date',
+            'schedule_time',
+            'followup_date',
+            'collection_time',
+            'amount',
+            'balance',
+            'customer',
+            'branch',
+            'assigned_to',
+            'assigned_to_id',
+            'assigned_role',
+            'status',
+            'purpose',
+            'remarks',
+            'updated_at',
+            'created_at'
+        ],
+        maxPages: 320
+    });
+
+    collectionScheduleEntries = docs
+        .map(documentFieldsToPlain)
+        .filter((row) => {
+            const sourceText = `${row.source || ''} ${row.request_origin || ''} ${row.collection_schedule_source || ''}`.toLowerCase();
+            return sourceText.includes('collection');
+        })
+        .filter((row) => String(row.status || 'Active').toLowerCase() !== 'cancelled')
+        .map((row) => ({
+            docId: row._docId || row._docName || '',
+            invoiceKey: String(row.invoice_no || row.invoice_id || '').trim(),
+            scheduleStatus: String(row.schedule_status || row.purpose || '').trim(),
+            scheduleStatusKey: String(row.schedule_status_key || scheduleSlug(row.schedule_status || row.purpose || '')).trim(),
+            purpose: String(row.purpose || '').trim(),
+            scheduleDate: normalizeDate(row.schedule_date || row.followup_date),
+            scheduleDateKey: toDateKey(row.schedule_date || row.followup_date),
+            scheduleTime: normalizeTimeInput(row.schedule_time || row.collection_time || ''),
+            amount: Number(row.balance || row.amount || 0) || 0,
+            customer: String(row.customer || '').trim(),
+            branch: String(row.branch || '').trim(),
+            assignedTo: String(row.assigned_to || '').trim(),
+            assignedToId: normalizeLookupId(row.assigned_to_id || ''),
+            assignedRole: String(row.assigned_role || '').trim(),
+            remarks: String(row.remarks || '').trim(),
+            updatedAt: normalizeDate(row.updated_at || row.created_at)
+        }))
+        .filter((row) => row.invoiceKey || row.customer || row.branch);
+}
+
+function normalizeCollectionScheduleEntry(row = {}) {
+    return {
+        docId: row._docId || row.docId || row._docName || '',
+        invoiceKey: String(row.invoice_no || row.invoice_id || row.invoiceKey || '').trim(),
+        scheduleStatus: String(row.schedule_status || row.scheduleStatus || row.purpose || '').trim(),
+        scheduleStatusKey: String(row.schedule_status_key || row.scheduleStatusKey || scheduleSlug(row.schedule_status || row.scheduleStatus || row.purpose || '')).trim(),
+        purpose: String(row.purpose || '').trim(),
+        scheduleDate: normalizeDate(row.schedule_date || row.scheduleDate || row.followup_date),
+        scheduleDateKey: toDateKey(row.schedule_date || row.scheduleDate || row.followup_date),
+        scheduleTime: normalizeTimeInput(row.schedule_time || row.scheduleTime || row.collection_time || ''),
+        amount: Number(row.balance || row.amount || 0) || 0,
+        customer: String(row.customer || '').trim(),
+        branch: String(row.branch || '').trim(),
+        assignedTo: String(row.assigned_to || row.assignedTo || '').trim(),
+        assignedToId: normalizeLookupId(row.assigned_to_id || row.assignedToId || ''),
+        assignedRole: String(row.assigned_role || row.assignedRole || '').trim(),
+        remarks: String(row.remarks || '').trim(),
+        updatedAt: normalizeDate(row.updated_at || row.updatedAt || row.created_at)
+    };
+}
+
+function upsertCollectionScheduleEntry(row = {}) {
+    const entry = normalizeCollectionScheduleEntry(row);
+    if (!entry.invoiceKey && !entry.customer && !entry.branch) return;
+
+    collectionScheduleEntries = collectionScheduleEntries.filter((existing) => {
+        if (entry.docId && existing.docId === entry.docId) return false;
+        if (entry.invoiceKey && existing.invoiceKey === entry.invoiceKey) return false;
+        return true;
+    });
+    collectionScheduleEntries.push(entry);
 }
 
 async function buildMachineToBranchMap() {
@@ -2723,6 +2817,8 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading collection history...');
     await loadCollectionHistory();
+    updateLoadingStatus('Loading collection schedules...');
+    await loadCollectionScheduleEntries();
 
     lookupsLoaded = true;
 }
@@ -3251,6 +3347,7 @@ function recomputeFilteredInvoices() {
     renderPromiseDueTable();
     renderUrgentStaleTable();
     renderMissingContactTable();
+    renderCollectorActivityTable();
     updateFollowupBadge();
     updateActionBrief();
     updateQueueContext();
@@ -3444,9 +3541,15 @@ function updateAllStats() {
 
     const scheduledToday = getTodayScheduledInvoices();
     const scheduledTotal = scheduledToday.reduce((sum, inv) => sum + inv.amount, 0);
+    const tomorrowConfirmed = getTomorrowConfirmedCollectionInvoices();
+    const tomorrowConfirmedTotal = tomorrowConfirmed.reduce((sum, inv) => sum + inv.amount, 0);
 
     document.getElementById('scheduled-count').textContent = scheduledToday.length.toLocaleString();
     document.getElementById('scheduled-amount').textContent = formatCurrencyShort(scheduledTotal);
+    const tomorrowCountNode = document.getElementById('tomorrow-confirmed-count');
+    const tomorrowAmountNode = document.getElementById('tomorrow-confirmed-amount');
+    if (tomorrowCountNode) tomorrowCountNode.textContent = tomorrowConfirmed.length.toLocaleString();
+    if (tomorrowAmountNode) tomorrowAmountNode.textContent = formatCurrencyShort(tomorrowConfirmedTotal);
 
     const staleUrgent = getUrgentNotCalledInvoices();
     const staleUrgentTotal = staleUrgent.reduce((sum, inv) => sum + inv.amount, 0);
@@ -7584,6 +7687,7 @@ async function saveCollectorSchedule() {
         }
 
         currentCollectorWorkspace.activeSchedule = { ...record, tbl_schedule_id: scheduleId, schedule_id: scheduleId, _docId: docId };
+        upsertCollectionScheduleEntry({ ...record, tbl_schedule_id: scheduleId, schedule_id: scheduleId, _docId: docId });
 
         const content = document.getElementById('collectorCellContent');
         if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
@@ -7591,6 +7695,7 @@ async function saveCollectorSchedule() {
 
         const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = `Saved to Master Schedule #${scheduleId}.`;
+        recomputeFilteredInvoices();
     } catch (error) {
         console.error('Failed to save collection schedule:', error);
         if (statusNode) statusNode.textContent = `Schedule save failed: ${error.message || 'Please try again.'}`;
@@ -7644,6 +7749,7 @@ async function cancelCollectorSchedule() {
             console.warn('Cancelled tbl_schedule but could not mirror marga_master_schedule:', mirrorError);
         }
         currentCollectorWorkspace.activeSchedule = { ...cancelled, _docId: docId };
+        collectionScheduleEntries = collectionScheduleEntries.filter((entry) => entry.docId !== docId && entry.invoiceKey !== String(activeSchedule.invoice_no || activeSchedule.invoice_id || '').trim());
 
         const content = document.getElementById('collectorCellContent');
         if (content) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
@@ -7651,6 +7757,7 @@ async function cancelCollectorSchedule() {
 
         const refreshedStatusNode = document.getElementById('collectorScheduleSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = scheduleId ? `Master Schedule #${scheduleId} cancelled.` : 'Trial schedule cancelled.';
+        recomputeFilteredInvoices();
     } catch (error) {
         console.error('Failed to cancel collection schedule:', error);
         if (statusNode) statusNode.textContent = 'Cancel failed. Please try again.';
@@ -7678,28 +7785,69 @@ function renderTrendDashboard() {
 }
 
 function getTodayScheduledInvoices() {
+    const todayKey = toDateKey(new Date());
+    return getConfirmedCollectionInvoicesForDate(todayKey);
+}
+
+function isConfirmedCollectionSchedule(entry) {
+    const text = `${entry?.scheduleStatus || ''} ${entry?.scheduleStatusKey || ''} ${entry?.remarks || ''}`.toLowerCase();
+    return /confirm|pick[\s-]?up|pickup|collect/.test(text) && !/promise/.test(text);
+}
+
+function isPromiseToPaySchedule(entry) {
+    const text = `${entry?.scheduleStatus || ''} ${entry?.scheduleStatusKey || ''} ${entry?.remarks || ''}`.toLowerCase();
+    return /promise|ptp|will pay|pay on|payment commitment/.test(text);
+}
+
+function isPaymentResolutionSchedule(entry) {
+    const text = `${entry?.scheduleStatus || ''} ${entry?.scheduleStatusKey || ''} ${entry?.purpose || ''} ${entry?.remarks || ''}`.toLowerCase();
+    return /service|trouble|machine|repair|payment hold|hold/.test(text);
+}
+
+function invoiceRowFromScheduleEntry(entry, fallbackLabel = 'Unlinked schedule') {
+    const invoice = findInvoiceByKey(entry.invoiceKey) || null;
+    return {
+        ...(invoice || {}),
+        invoiceKey: invoice?.invoiceKey || entry.invoiceKey,
+        invoiceNo: invoice?.invoiceNo || entry.invoiceKey || '-',
+        invoiceDate: invoice?.invoiceDate || null,
+        dueDate: invoice?.dueDate || null,
+        company: invoice?.company || entry.customer || fallbackLabel,
+        branch: invoice?.branch || entry.branch || '',
+        amount: Number(entry.amount || invoice?.amount || 0),
+        age: Number(invoice?.age || 0),
+        lastContactDays: invoice?.lastContactDays ?? null,
+        lastContactDate: invoice?.lastContactDate || null,
+        scheduledFollowupDate: entry.scheduleDate,
+        scheduledRemarks: entry.remarks,
+        scheduledContactPerson: entry.assignedTo,
+        scheduledStatus: entry.scheduleStatus,
+        scheduleTime: entry.scheduleTime,
+        assignedTo: entry.assignedTo
+    };
+}
+
+function uniqueScheduleRowsForDate(dateKey, predicate, fallbackLabel) {
     const seen = new Set();
     const rows = [];
 
-    todayFollowups.forEach((followup) => {
-        const invoice = findInvoiceByKey(followup.invoiceKey);
-        if (!invoice) return;
-
-        const key = invoice.invoiceKey;
-        if (seen.has(key)) return;
-        seen.add(key);
-
-        rows.push({
-            ...invoice,
-            scheduledFollowupDate: followup.followupDate,
-            scheduledRemarks: followup.remarks,
-            scheduledContactPerson: followup.contactPerson,
-            scheduledStatus: followup.scheduleStatus
+    collectionScheduleEntries
+        .filter((entry) => entry.scheduleDateKey === dateKey)
+        .filter(predicate)
+        .forEach((entry) => {
+            const invoice = findInvoiceByKey(entry.invoiceKey) || null;
+            const key = invoice?.invoiceKey || entry.invoiceKey || `${entry.customer}:${entry.branch}:${entry.scheduleDateKey}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            rows.push(invoiceRowFromScheduleEntry(entry, fallbackLabel));
         });
-    });
 
     rows.sort((a, b) => b.amount - a.amount);
     return rows;
+}
+
+function getConfirmedCollectionInvoicesForDate(dateKey) {
+    return uniqueScheduleRowsForDate(dateKey, isConfirmedCollectionSchedule, 'Unlinked confirmed collection');
 }
 
 function getUrgentNotCalledInvoices() {
@@ -7717,15 +7865,93 @@ function getUrgentNotCalledInvoices() {
 }
 
 function getPromiseDueTodayInvoices() {
-    const rows = getTodayScheduledInvoices().filter((invoice) => {
-        const remarks = String(invoice.scheduledRemarks || '');
-        const status = Number(invoice.scheduleStatus || invoice.scheduledStatus || 0);
-        if (status >= 5) return true;
-        return PROMISE_REMARK_PATTERN.test(remarks);
-    });
+    const todayKey = toDateKey(new Date());
+    const rows = uniqueScheduleRowsForDate(todayKey, isPromiseToPaySchedule, 'Unlinked promise');
+    const seen = invoiceKeySetFromRows(rows);
+    const historySeen = new Set();
+
+    Object.values(collectionHistory)
+        .flat()
+        .forEach((entry) => {
+            if (!entry || entry.followupDateKey !== todayKey) return;
+            const statusLabel = getCollectionStatusLabel(entry.statusId || entry.scheduleStatus);
+            const promiseText = `${entry.remarks || ''} ${statusLabel || ''}`.toLowerCase();
+            if (!PROMISE_REMARK_PATTERN.test(promiseText) && !/promise|ptp|will pay|pay on|payment commitment/.test(promiseText)) return;
+
+            const token = collectionHistoryToken(entry);
+            if (historySeen.has(token)) return;
+            historySeen.add(token);
+
+            const invoice = findInvoiceByKey(entry.invoiceKey || entry.accountRef || entry.accountGroupRef);
+            if (!invoice) return;
+            if (seen.has(invoice.invoiceKey)) return;
+            seen.add(invoice.invoiceKey);
+            rows.push({
+                ...invoice,
+                scheduledFollowupDate: entry.followupDate,
+                scheduledRemarks: entry.remarks,
+                scheduledStatus: statusLabel || entry.scheduleStatus,
+                scheduledContactPerson: entry.contactPerson
+            });
+        });
 
     rows.sort((a, b) => b.amount - a.amount);
     return rows;
+}
+
+function getTomorrowConfirmedCollectionInvoices() {
+    return getConfirmedCollectionInvoicesForDate(getTodayInputValue(1));
+}
+
+function hasMeaningfulRemarks(value) {
+    const text = String(value || '').trim().toLowerCase();
+    return Boolean(text) && text !== 'no remarks' && text !== 'n/a' && text !== 'na' && text !== '-';
+}
+
+function getPendingResolutionInvoices() {
+    const seen = new Set();
+    const rows = [];
+
+    collectionScheduleEntries
+        .filter(isPaymentResolutionSchedule)
+        .forEach((entry) => {
+            const invoice = findInvoiceByKey(entry.invoiceKey) || null;
+            const key = invoice?.invoiceKey || entry.invoiceKey || `${entry.customer}:${entry.branch}:${entry.scheduleDateKey}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            rows.push(invoiceRowFromScheduleEntry(entry, 'Unlinked payment blocker'));
+        });
+
+    rows.sort((a, b) => b.amount - a.amount);
+    return rows;
+}
+
+function getCollectorActivityToday() {
+    const todayKey = toDateKey(new Date());
+    const byCollector = new Map();
+    const seen = new Set();
+
+    Object.values(collectionHistory)
+        .flat()
+        .forEach((entry) => {
+            if (!entry || entry.callDateKey !== todayKey) return;
+            if (!hasMeaningfulRemarks(entry.remarks)) return;
+            if (!entry.followupDateKey) return;
+            const token = collectionHistoryToken(entry);
+            if (seen.has(token)) return;
+            seen.add(token);
+            const collector = String(entry.collectorName || entry.followedUpBy || entry.employeeName || entry.createdBy || 'Unassigned').trim() || 'Unassigned';
+            if (!byCollector.has(collector)) {
+                byCollector.set(collector, { collector, count: 0, promisedAmount: 0, confirmedAmount: 0 });
+            }
+            const row = byCollector.get(collector);
+            row.count += 1;
+            const amount = Number(entry.paymentAmount || 0) || 0;
+            if (/promise/i.test(entry.remarks || '') || Number(entry.scheduleStatus || 0) >= 5) row.promisedAmount += amount;
+            if (/confirm|pickup|pick up|collect/i.test(entry.remarks || '')) row.confirmedAmount += amount;
+        });
+
+    return Array.from(byCollector.values()).sort((a, b) => b.count - a.count || a.collector.localeCompare(b.collector));
 }
 
 function getHighValueDueThisWeekInvoices() {
@@ -7772,9 +7998,11 @@ function getMissingContactInvoices() {
 function updateActionBrief() {
     const scheduled = getTodayScheduledInvoices();
     const promises = getPromiseDueTodayInvoices();
+    const tomorrowConfirmed = getTomorrowConfirmedCollectionInvoices();
     const staleUrgent = getUrgentNotCalledInvoices();
     const highValueDue = getHighValueDueThisWeekInvoices();
     const missingContact = getMissingContactInvoices();
+    const pendingResolution = getPendingResolutionInvoices();
 
     const setText = (id, value) => {
         const node = document.getElementById(id);
@@ -7807,6 +8035,12 @@ function updateActionBrief() {
     );
 
     setText('brief-missing-contact-count', missingContact.length.toLocaleString());
+    setText('brief-tomorrow-confirmed-count', tomorrowConfirmed.length.toLocaleString());
+    setText(
+        'brief-tomorrow-confirmed-amount',
+        `Amount: ${formatCurrencyShort(tomorrowConfirmed.reduce((sum, inv) => sum + inv.amount, 0))}`
+    );
+    setText('brief-pending-resolution-count', pendingResolution.length.toLocaleString());
 }
 
 function renderTodayScheduleTable() {
@@ -7987,6 +8221,45 @@ function renderMissingContactTable() {
                             </tr>
                         `;
                     })
+                    .join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderCollectorActivityTable() {
+    const container = document.getElementById('collector-activity-table');
+    if (!container) return;
+
+    const rows = getCollectorActivityToday();
+
+    if (rows.length === 0) {
+        container.innerHTML = '<div class="empty-followup">No collector call movement recorded today.</div>';
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table mini-table">
+            <thead>
+                <tr>
+                    <th>Collector</th>
+                    <th>Calls With Movement</th>
+                    <th>Promise Amount</th>
+                    <th>Confirmed Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows
+                    .map(
+                        (row) => `
+                    <tr>
+                        <td>${escapeHtml(row.collector)}</td>
+                        <td class="amount">${escapeHtml(row.count.toLocaleString())}</td>
+                        <td class="amount">${escapeHtml(formatCurrency(row.promisedAmount))}</td>
+                        <td class="amount">${escapeHtml(formatCurrency(row.confirmedAmount))}</td>
+                    </tr>
+                `
+                    )
                     .join('')}
             </tbody>
         </table>

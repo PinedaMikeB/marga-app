@@ -3158,9 +3158,14 @@
                     <h4>Priority Queue</h4>
                     <div class="brief-grid">
                         <div class="brief-item">
-                            <div class="kicker">Scheduled Follow-ups</div>
+                            <div class="kicker">Confirmed Collection Today</div>
                             <div class="metric" id="brief-scheduled-count">0</div>
                             <div class="meta" id="brief-scheduled-amount">Amount: P0</div>
+                        </div>
+                        <div class="brief-item">
+                            <div class="kicker">Confirmed Collection Tomorrow</div>
+                            <div class="metric" id="brief-tomorrow-confirmed-count">0</div>
+                            <div class="meta" id="brief-tomorrow-confirmed-amount">Amount: P0</div>
                         </div>
                         <div class="brief-item warning">
                             <div class="kicker">Promise Due Today</div>
@@ -3187,6 +3192,11 @@
                             <div class="kicker">Missing Contact / No Call Log</div>
                             <div class="metric alert" id="brief-missing-contact-count">0</div>
                             <div class="meta">Update contact person and remarks before next call cycle.</div>
+                        </div>
+                        <div class="brief-item warning">
+                            <div class="kicker">Pending Resolution</div>
+                            <div class="metric warning" id="brief-pending-resolution-count">0</div>
+                            <div class="meta">Service issue or payment hold.</div>
                         </div>
                         <div class="brief-item">
                             <div class="kicker">Quick Focus</div>
@@ -3406,9 +3416,14 @@
                     <div class="value" id="collectible-count">0</div>
                 </div>
                 <div class="stat-card warning" data-work-queue-mode="scheduled_today" onclick="setWorkQueueMode('scheduled_today')">
-                    <div class="label">Scheduled Today</div>
+                    <div class="label">Confirmed Collection Today</div>
                     <div class="value" id="scheduled-count">0</div>
                     <div class="subvalue" id="scheduled-amount">P0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Confirmed Tomorrow</div>
+                    <div class="value" id="tomorrow-confirmed-count">0</div>
+                    <div class="subvalue" id="tomorrow-confirmed-amount">P0</div>
                 </div>
                 <div class="stat-card danger" data-work-queue-mode="urgent_stale" onclick="setWorkQueueMode('urgent_stale')">
                     <div class="label">Urgent 20+ Days No Call</div>
@@ -3578,7 +3593,7 @@
 
             <div class="report-grid">
                 <div class="data-table-container" data-work-queue-mode="scheduled_today" onclick="setWorkQueueMode('scheduled_today')">
-                    <div class="report-panel-title">Scheduled Collection Today</div>
+                    <div class="report-panel-title">Confirmed Collection Today</div>
                     <div id="today-schedule-table"><div class="empty-followup">Loading scheduled collection...</div></div>
                 </div>
                 <div class="data-table-container" data-work-queue-mode="promise_due" onclick="setWorkQueueMode('promise_due')">
@@ -3592,6 +3607,10 @@
                 <div class="data-table-container" data-work-queue-mode="missing_contact" onclick="setWorkQueueMode('missing_contact')">
                     <div class="report-panel-title">Missing Contact or No Call Log</div>
                     <div id="missing-contact-table"><div class="empty-followup">Loading data quality queue...</div></div>
+                </div>
+                <div class="data-table-container">
+                    <div class="report-panel-title">Collector Calls Today</div>
+                    <div id="collector-activity-table"><div class="empty-followup">Loading collector activity...</div></div>
                 </div>
             </div>
 
@@ -3617,6 +3636,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260515-work-queue-1"></script>
+    <script src="collections/js/collections.js?v=20260515-schedule-projection-1"></script>
 </body>
 </html>
