@@ -16,6 +16,7 @@ let filteredInvoices = [];
 let currentPage = 1;
 const pageSize = 50;
 let currentPriorityFilter = null;
+let currentWorkQueueMode = 'all';
 let quickAgeFilter = 'all';
 let dataMode = 'active';
 let todayFollowups = [];
@@ -89,9 +90,11 @@ const COLLECTION_LOCATION_OPTIONS = [
 
 const COLLECTION_SCHEDULE_OPTIONS = [
     'Confirmed',
+    'Promise to Pay',
     'Tentative',
     'Return cheque',
     'Acquire 2307',
+    'Update Contact Number',
     'Shutdown Notice',
     'Deposit',
     'Start Up',
@@ -2154,7 +2157,7 @@ function showTodayFollowups() {
                 ${scheduled
                     .map(
                         (inv) => `
-                    <div class="followup-item" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
+                    <div class="followup-item" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                         <div class="followup-company">${escapeHtml(inv.company)}</div>
                         <div class="followup-invoice">Invoice #${escapeHtml(inv.invoiceNo)} • ${escapeHtml(formatCurrency(inv.amount))}</div>
                     </div>
@@ -2439,7 +2442,7 @@ async function loadCollectionHistory() {
             'call_datetime',
             'created_at'
         ],
-        maxPages: 60
+        maxPages: 320
     });
 
     collectionHistory = {};
@@ -3162,6 +3165,43 @@ function invoiceDateInRange(invoice, fromDate, toDate) {
     return true;
 }
 
+function getWorkQueueModeLabel(mode) {
+    const labels = {
+        scheduled_today: 'Scheduled Today',
+        promise_due: 'Promise Due Today',
+        urgent_stale: 'Urgent 20+ Days No Call',
+        missing_contact: 'Missing Contact / No Call Log'
+    };
+    return labels[mode] || 'All priorities';
+}
+
+function invoiceKeySetFromRows(rows = []) {
+    return new Set(rows.map((invoice) => String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim()).filter(Boolean));
+}
+
+function invoiceMatchesWorkQueueMode(invoice) {
+    if (currentWorkQueueMode === 'all') return true;
+    const invoiceKey = String(invoice?.invoiceKey || invoice?.invoiceNo || invoice?.invoiceId || '').trim();
+    if (!invoiceKey) return false;
+    if (currentWorkQueueMode === 'scheduled_today') return invoiceKeySetFromRows(getTodayScheduledInvoices()).has(invoiceKey);
+    if (currentWorkQueueMode === 'promise_due') return invoiceKeySetFromRows(getPromiseDueTodayInvoices()).has(invoiceKey);
+    if (currentWorkQueueMode === 'urgent_stale') return invoiceKeySetFromRows(getUrgentNotCalledInvoices()).has(invoiceKey);
+    if (currentWorkQueueMode === 'missing_contact') return invoiceKeySetFromRows(getMissingContactInvoices()).has(invoiceKey);
+    return true;
+}
+
+function setWorkQueueMode(mode) {
+    currentWorkQueueMode = currentWorkQueueMode === mode ? 'all' : mode;
+    currentPriorityFilter = null;
+    currentPage = 1;
+    document.querySelectorAll('.priority-card').forEach((card) => card.classList.remove('active'));
+    document.querySelectorAll('[data-work-queue-mode]').forEach((card) => {
+        card.classList.toggle('active', currentWorkQueueMode !== 'all' && card.dataset.workQueueMode === currentWorkQueueMode);
+    });
+    recomputeFilteredInvoices();
+    scrollToWorkQueue();
+}
+
 function recomputeFilteredInvoices() {
     const yearFilter = document.getElementById('filter-year')?.value || '';
     const monthFilter = document.getElementById('filter-month')?.value || '';
@@ -3193,6 +3233,8 @@ function recomputeFilteredInvoices() {
             const haystack = `${invoice.invoiceNo} ${invoice.company} ${invoice.branch}`.toLowerCase();
             if (!haystack.includes(searchTerm)) return false;
         }
+
+        if (!invoiceMatchesWorkQueueMode(invoice)) return false;
 
         return true;
     });
@@ -3239,14 +3281,17 @@ function clearFilterInputs() {
 function clearFilters() {
     clearFilterInputs();
     currentPriorityFilter = null;
+    currentWorkQueueMode = 'all';
 
     document.querySelectorAll('.priority-card').forEach((card) => card.classList.remove('active'));
+    document.querySelectorAll('[data-work-queue-mode]').forEach((card) => card.classList.remove('active'));
     setQuickAgeFilter('all');
     currentPage = 1;
     recomputeFilteredInvoices();
 }
 
 function filterByPriority(priority) {
+    currentWorkQueueMode = 'all';
     if (currentPriorityFilter === priority) {
         currentPriorityFilter = null;
     } else {
@@ -3254,6 +3299,7 @@ function filterByPriority(priority) {
     }
 
     document.querySelectorAll('.priority-card').forEach((card) => card.classList.remove('active'));
+    document.querySelectorAll('[data-work-queue-mode]').forEach((card) => card.classList.remove('active'));
     if (currentPriorityFilter) {
         document.querySelector(`.priority-card.${currentPriorityFilter}`)?.classList.add('active');
     }
@@ -3266,7 +3312,17 @@ function filterByPriority(priority) {
 function removeFilter(fieldId) {
     if (fieldId === 'priority') {
         currentPriorityFilter = null;
+        currentWorkQueueMode = 'all';
         document.querySelectorAll('.priority-card').forEach((card) => card.classList.remove('active'));
+        document.querySelectorAll('[data-work-queue-mode]').forEach((card) => card.classList.remove('active'));
+        currentPage = 1;
+        recomputeFilteredInvoices();
+        return;
+    }
+
+    if (fieldId === 'work-queue') {
+        currentWorkQueueMode = 'all';
+        document.querySelectorAll('[data-work-queue-mode]').forEach((card) => card.classList.remove('active'));
         currentPage = 1;
         recomputeFilteredInvoices();
         return;
@@ -3290,6 +3346,10 @@ function showActiveFilters() {
 
     if (currentPriorityFilter) {
         filters.push({ label: `Priority: ${currentPriorityFilter.toUpperCase()}`, field: 'priority' });
+    }
+
+    if (currentWorkQueueMode !== 'all') {
+        filters.push({ label: `Queue: ${getWorkQueueModeLabel(currentWorkQueueMode)}`, field: 'work-queue' });
     }
 
     if (quickAgeFilter !== 'all') {
@@ -3332,8 +3392,10 @@ function updateQueueContext() {
     const node = document.getElementById('queue-context');
     if (!node) return;
 
-    const priorityText = currentPriorityFilter ? `Priority: ${currentPriorityFilter.toUpperCase()}` : 'All priorities';
-    node.textContent = `${priorityText} • ${filteredInvoices.length.toLocaleString()} account(s) in queue`;
+    const queueText = currentWorkQueueMode !== 'all'
+        ? getWorkQueueModeLabel(currentWorkQueueMode)
+        : (currentPriorityFilter ? `Priority: ${currentPriorityFilter.toUpperCase()}` : 'All priorities');
+    node.textContent = `${queueText} • ${filteredInvoices.length.toLocaleString()} account(s) in queue`;
 }
 
 function scrollToWorkQueue() {
@@ -4979,6 +5041,8 @@ function getCurrentCollectorName() {
 
 function getSchedulePurposeLabel(scheduleStatus) {
     const label = String(scheduleStatus || '').trim();
+    if (/promise/i.test(label)) return 'Promise to Pay';
+    if (/contact|number/i.test(label)) return 'Update Contact Number';
     if (/confirmed/i.test(label)) return 'Confirmed Collection';
     if (/toner|ink/i.test(label)) return 'Toner / Ink Delivery';
     if (/shutdown|start up/i.test(label)) return 'Service / Preventive Maintenance';
@@ -7769,7 +7833,7 @@ function renderTodayScheduleTable() {
                     .slice(0, 25)
                     .map(
                         (inv) => `
-                    <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
+                    <tr class="clickable-row" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                         <td>#${escapeHtml(inv.invoiceNo)}</td>
                         <td>${escapeHtml(formatDate(inv.invoiceDate || inv.dueDate))}</td>
                         <td>${escapeHtml(inv.company)}</td>
@@ -7812,7 +7876,7 @@ function renderPromiseDueTable() {
                     .slice(0, 25)
                     .map(
                         (inv) => `
-                    <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
+                    <tr class="clickable-row" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                         <td>#${escapeHtml(inv.invoiceNo)}</td>
                         <td>${escapeHtml(inv.company)}</td>
                         <td><span class="${escapeHtml(getAgeClass(inv.age))}">${escapeHtml(String(inv.age))}d</span></td>
@@ -7861,7 +7925,7 @@ function renderUrgentStaleTable() {
                                 : `${inv.lastContactDays}d ago (${formatDate(inv.lastContactDate)})`;
 
                         return `
-                            <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
+                            <tr class="clickable-row" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                                 <td>#${escapeHtml(inv.invoiceNo)}</td>
                                 <td>${escapeHtml(inv.company)}</td>
                                 <td>${escapeHtml(inv.branch)}</td>
@@ -7910,7 +7974,7 @@ function renderMissingContactTable() {
                                 : `${inv.lastContactDays}d ago (${formatDate(inv.lastContactDate)})`;
 
                         return `
-                            <tr class="clickable-row" onclick="viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
+                            <tr class="clickable-row" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(inv.invoiceKey)}')">
                                 <td>#${escapeHtml(inv.invoiceNo)}</td>
                                 <td>${escapeHtml(inv.company)}</td>
                                 <td><span class="${escapeHtml(getAgeClass(inv.age))}">${escapeHtml(String(inv.age))}d</span></td>
@@ -7969,7 +8033,7 @@ function renderTable() {
                                 : `${invoice.lastContactDays}d ago (${formatDate(invoice.lastContactDate)})`;
 
                         return `
-                            <tr class="${invoice.historyCount > 0 ? 'has-followup' : ''}" onclick="viewInvoiceDetail('${escapeHtml(invoice.invoiceKey)}')">
+                            <tr class="${invoice.historyCount > 0 ? 'has-followup' : ''}" onclick="event.stopPropagation(); viewInvoiceDetail('${escapeHtml(invoice.invoiceKey)}')">
                                 <td><strong>#${escapeHtml(invoice.invoiceNo)}</strong></td>
                                 <td>${escapeHtml(formatDate(invoice.invoiceDate || invoice.dueDate))}</td>
                                 <td>

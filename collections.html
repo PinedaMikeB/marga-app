@@ -175,6 +175,30 @@
             background: rgba(219, 234, 254, 0.85);
         }
 
+        .stat-card[data-work-queue-mode] {
+            cursor: pointer;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+        }
+
+        .stat-card[data-work-queue-mode]:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--panel-shadow);
+        }
+
+        .stat-card[data-work-queue-mode].active {
+            background: rgba(219, 234, 254, 0.9);
+            border-color: rgba(59, 130, 246, 0.6);
+        }
+
+        .data-table-container[data-work-queue-mode] {
+            cursor: pointer;
+        }
+
+        .data-table-container[data-work-queue-mode].active {
+            border-color: rgba(59, 130, 246, 0.6);
+            box-shadow: var(--panel-shadow);
+        }
+
         .priority-card.urgent { border-top-color: #dc2626; }
         .priority-card.high { border-top-color: #f97316; }
         .priority-card.medium { border-top-color: #f59e0b; }
@@ -3374,19 +3398,19 @@
                     <div class="value" id="total-active">P0</div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Filtered Invoices</div>
+                    <div class="label">Work Queue</div>
                     <div class="value" id="invoice-count">0</div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Collectible</div>
+                    <div class="label">Active <=120D Count</div>
                     <div class="value" id="collectible-count">0</div>
                 </div>
-                <div class="stat-card warning">
+                <div class="stat-card warning" data-work-queue-mode="scheduled_today" onclick="setWorkQueueMode('scheduled_today')">
                     <div class="label">Scheduled Today</div>
                     <div class="value" id="scheduled-count">0</div>
                     <div class="subvalue" id="scheduled-amount">P0</div>
                 </div>
-                <div class="stat-card danger">
+                <div class="stat-card danger" data-work-queue-mode="urgent_stale" onclick="setWorkQueueMode('urgent_stale')">
                     <div class="label">Urgent 20+ Days No Call</div>
                     <div class="value" id="stale-urgent-count">0</div>
                     <div class="subvalue" id="stale-urgent-amount">P0</div>
@@ -3553,19 +3577,19 @@
             </section>
 
             <div class="report-grid">
-                <div class="data-table-container">
+                <div class="data-table-container" data-work-queue-mode="scheduled_today" onclick="setWorkQueueMode('scheduled_today')">
                     <div class="report-panel-title">Scheduled Collection Today</div>
                     <div id="today-schedule-table"><div class="empty-followup">Loading scheduled collection...</div></div>
                 </div>
-                <div class="data-table-container">
+                <div class="data-table-container" data-work-queue-mode="promise_due" onclick="setWorkQueueMode('promise_due')">
                     <div class="report-panel-title">Promise Due Today</div>
                     <div id="promise-due-table"><div class="empty-followup">Loading promise-due accounts...</div></div>
                 </div>
-                <div class="data-table-container">
+                <div class="data-table-container" data-work-queue-mode="urgent_stale" onclick="setWorkQueueMode('urgent_stale')">
                     <div class="report-panel-title">Urgent Accounts Not Called 20+ Days</div>
                     <div id="urgent-stale-table"><div class="empty-followup">Loading urgent list...</div></div>
                 </div>
-                <div class="data-table-container">
+                <div class="data-table-container" data-work-queue-mode="missing_contact" onclick="setWorkQueueMode('missing_contact')">
                     <div class="report-panel-title">Missing Contact or No Call Log</div>
                     <div id="missing-contact-table"><div class="empty-followup">Loading data quality queue...</div></div>
                 </div>
@@ -3588,11 +3612,11 @@
 
     <script src="shared/js/firebase-config.js?v=20260511-storage-fallback-1"></script>
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
-    <script src="shared/js/schedule-consolidation.js?v=20260512-one-visit-1"></script>
+    <script src="shared/js/schedule-consolidation.js?v=20260512-assignment-gate-1"></script>
     <script src="shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260512-firebase-only-1"></script>
+    <script src="collections/js/collections.js?v=20260515-work-queue-1"></script>
 </body>
 </html>
