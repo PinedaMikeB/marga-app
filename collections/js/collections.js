@@ -3194,6 +3194,8 @@ function setWorkQueueMode(mode) {
     currentWorkQueueMode = currentWorkQueueMode === mode ? 'all' : mode;
     currentPriorityFilter = null;
     currentPage = 1;
+    clearFilterInputs();
+    setQuickAgeFilter('all');
     document.querySelectorAll('.priority-card').forEach((card) => card.classList.remove('active'));
     document.querySelectorAll('[data-work-queue-mode]').forEach((card) => {
         card.classList.toggle('active', currentWorkQueueMode !== 'all' && card.dataset.workQueueMode === currentWorkQueueMode);
@@ -3292,6 +3294,8 @@ function clearFilters() {
 
 function filterByPriority(priority) {
     currentWorkQueueMode = 'all';
+    clearFilterInputs();
+    setQuickAgeFilter('all');
     if (currentPriorityFilter === priority) {
         currentPriorityFilter = null;
     } else {
