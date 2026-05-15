@@ -877,13 +877,11 @@ function buildCollectorGroupedParentCell(parentRow, childRows, column) {
     Array.from(cell.recordMap.values()).forEach((record) => {
         const billedAmount = Number(record.billedAmount || record.amount || 0);
         const collectedAmount = Number(record.collectedAmount || 0);
-        const outstandingAmount = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
-            ? Number(record.latestBalanceAmount || 0)
-            : Math.max(0, billedAmount - collectedAmount);
+        const outstandingAmount = getCollectorRecordOutstandingBalance(record);
         cell.billedTotal += billedAmount;
         cell.displayBilledTotal += billedAmount;
         cell.collectedTotal += collectedAmount;
-        if (collectedAmount > 0 && outstandingAmount > 0) cell.outstandingBalance += outstandingAmount;
+        if (outstandingAmount > 0) cell.outstandingBalance += outstandingAmount;
     });
 
     return cell;
@@ -1154,10 +1152,6 @@ function finalizeCollectorCellRecords(cellMap) {
         cell.displayBilledTotal = Number(
             (Number(cell.displayBilledTotal || 0) > 0 ? cell.displayBilledTotal : cell.billedTotal) || 0
         );
-        const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
-        if (Number(cell.outstandingBalance || 0) <= 0 && Number(cell.collectedTotal || 0) > 0 && billedTarget > 0) {
-            cell.outstandingBalance = Math.max(0, billedTarget - Number(cell.collectedTotal || 0));
-        }
         cell.records = Array.from(cell.recordMap.values())
             .map((record) => ({
                 ...record,
@@ -1173,8 +1167,22 @@ function finalizeCollectorCellRecords(cellMap) {
     });
 }
 
+function getCollectorRecordOutstandingBalance(record) {
+    if (!record) return 0;
+    const billed = Number(record.billedAmount || record.amount || 0);
+    if (billed <= 0) return 0;
+    if (record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined && Number.isFinite(Number(record.latestBalanceAmount))) {
+        return Math.min(Math.max(0, Number(record.latestBalanceAmount || 0)), billed);
+    }
+    return Math.max(0, billed - Number(record.collectedAmount || 0));
+}
+
 function getCellOutstandingBalance(cell) {
     if (!cell) return 0;
+    const records = Array.isArray(cell.records) ? cell.records : [];
+    if (records.length) {
+        return records.reduce((sum, record) => sum + getCollectorRecordOutstandingBalance(record), 0);
+    }
     const explicit = Number(cell.outstandingBalance || 0);
     if (explicit > 0) return explicit;
     const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
@@ -1199,7 +1207,9 @@ function countCollectorCellInvoices(cell, predicate = null, fallbackCount = 1) {
 
 function makeCollectorMatrixDetail(row, column, cell, metricKey, amount, statusLabel) {
     const records = Array.isArray(cell?.records) ? cell.records : [];
-    const record = records[0] || {};
+    const record = metricKey === 'receivable'
+        ? (records.find((item) => getCollectorRecordOutstandingBalance(item) > 0.01) || records[0] || {})
+        : (records[0] || {});
     return {
         metricKey,
         monthKey: column.key,
@@ -1271,6 +1281,21 @@ function makeCollectorPaymentMonthDetail(payment, column, amount) {
         amount: Number(amount || 0),
         cellId: invoiceKey
     };
+}
+
+function getInvoiceOutstandingFromPaymentSummary(invoiceAmount, paymentSummary) {
+    const billedAmount = Number(invoiceAmount || 0);
+    if (billedAmount <= 0) return 0;
+    if (paymentSummary?.isSettled) return 0;
+
+    const paidAgainstInvoice = Math.min(Number(paymentSummary?.amount || 0), billedAmount);
+    const computedOutstanding = Math.max(0, billedAmount - paidAgainstInvoice);
+    if (paymentSummary?.latestBalanceAmount !== null
+        && paymentSummary?.latestBalanceAmount !== undefined
+        && Number.isFinite(Number(paymentSummary.latestBalanceAmount))) {
+        return Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedOutstanding);
+    }
+    return computedOutstanding;
 }
 
 function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
@@ -1371,12 +1396,7 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
                         row.isGroupedParent
                             ? 1
                             : countCollectorCellInvoices(cell, (record) => {
-                                const billed = Number(record.billedAmount || record.amount || 0);
-                                const collected = Number(record.collectedAmount || 0);
-                                const balance = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
-                                    ? Number(record.latestBalanceAmount || 0)
-                                    : Math.max(0, billed - collected);
-                                return billed > 0 && balance > 0.01;
+                                return getCollectorRecordOutstandingBalance(record) > 0.01;
                             }),
                         makeCollectorMatrixDetail(row, column, cell, 'receivable', outstandingBalance, 'Unpaid balance')
                     );
@@ -4007,7 +4027,7 @@ async function computeCollectorDashboardData() {
         const invoiceDateInBalanceWindow = record.invoiceDate && record.invoiceDate >= previousMonthStart && record.invoiceDate <= today;
         const paymentMonthsInWindow = Array.from(paymentSummary.months.keys()).filter((key) => monthColumnKeys.has(key));
         const invoiceMonthVisible = monthColumnKeys.has(record.monthKey);
-        const unpaidBalance = Math.max(0, Number(record.amount || 0) - Number(paymentSummary.amount || 0));
+        const unpaidBalance = getInvoiceOutstandingFromPaymentSummary(record.amount, paymentSummary);
         const hasUnpaidBalance = unpaidBalance > 0.01;
         const carryoverMonthKey = hasUnpaidBalance && !invoiceMonthVisible ? monthColumns[0]?.key : null;
 
@@ -4051,14 +4071,11 @@ async function computeCollectorDashboardData() {
             const paidAgainstInvoice = paymentSummary.isSettled
                 ? Number(record.amount || 0)
                 : Math.min(Number(paymentSummary.amount || 0), Number(record.amount || 0));
-            const computedOutstanding = Math.max(0, Number(record.amount || 0) - paidAgainstInvoice);
-            const invoiceOutstanding = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
-                ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedOutstanding)
-                : computedOutstanding;
+            const invoiceOutstanding = getInvoiceOutstandingFromPaymentSummary(record.amount, paymentSummary);
             invoiceCell.rdValues.push(record.rd);
             invoiceCell.billedTotal += Number(record.amount || 0);
             invoiceCell.collectedTotal += paidAgainstInvoice;
-            if (paidAgainstInvoice > 0 && invoiceOutstanding > 0) invoiceCell.outstandingBalance += invoiceOutstanding;
+            if (invoiceOutstanding > 0) invoiceCell.outstandingBalance += invoiceOutstanding;
             invoiceCell.displayBilledTotal = Math.max(Number(invoiceCell.displayBilledTotal || 0), Number(invoiceCell.billedTotal || 0));
             upsertCollectorCellRecord(invoiceCell, record.invoiceKey, {
                 ...record,
@@ -4086,6 +4103,8 @@ async function computeCollectorDashboardData() {
                 billedAmount: unpaidBalance,
                 collectedAmount: 0,
                 totalCollectedAmount: Number(paymentSummary.amount || 0),
+                latestBalanceAmount: unpaidBalance,
+                paymentOrNumbers: Array.from(paymentSummary.orNumbers || []),
                 expectedCollectionDate: addDays(record.invoiceDate, 30),
                 firstPaymentDate: paymentSummary.firstPaymentDate,
                 lastPaymentDate: paymentSummary.lastPaymentDate,
@@ -4183,12 +4202,9 @@ async function computeCollectorDashboardData() {
                 const paidAgainstInvoice = paymentSummary.isSettled
                     ? groupAmount
                     : Math.min(Number(paymentSummary.amount || 0), groupAmount);
-                const computedOutstanding = Math.max(0, groupAmount - paidAgainstInvoice);
-                const invoiceOutstanding = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
-                    ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedOutstanding)
-                    : computedOutstanding;
+                const invoiceOutstanding = getInvoiceOutstandingFromPaymentSummary(groupAmount, paymentSummary);
                 groupedPaidTotal += paidAgainstInvoice;
-                if (paidAgainstInvoice > 0 && invoiceOutstanding > 0) collectorCell.outstandingBalance += invoiceOutstanding;
+                if (invoiceOutstanding > 0) collectorCell.outstandingBalance += invoiceOutstanding;
                 upsertCollectorCellRecord(collectorCell, group.invoice_ref || invoiceNo || invoiceId, {
                     invoiceId,
                     invoiceNo: invoiceNo || invoiceId,
@@ -7426,6 +7442,18 @@ async function saveCollectorSchedule() {
     if (!assignee.id) {
         if (statusNode) statusNode.textContent = 'Please assign a messenger or technician before saving.';
         return;
+    }
+
+    if (window.MargaScheduleConsolidation?.validateRequiredAssignment) {
+        const assignment = MargaScheduleConsolidation.validateRequiredAssignment({
+            staffId: assignee.id,
+            staffName: assignee.name,
+            activeStaffIds: collectionAssignableStaff.map((staff) => normalizeLookupId(staff.id)).filter(Boolean)
+        });
+        if (!assignment.ok) {
+            if (statusNode) statusNode.textContent = assignment.reason;
+            return;
+        }
     }
 
     if (window.MargaScheduleConsolidation) {
