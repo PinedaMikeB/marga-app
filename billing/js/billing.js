@@ -70,6 +70,9 @@ const priorBillingReadingCache = new Map();
 let billingExclusionCache = [];
 let billingScorecardData = null;
 let billingScorecardDetailMap = new Map();
+let unbilledProjectionData = null;
+let unbilledProjectionDetailMap = new Map();
+let activeUnbilledProjectionMonthKey = '';
 let billingScorecardPaymentEntries = [];
 let billingScorecardPaymentPromise = null;
 const BILLING_COLLECTIONS_SCORECARD_ENABLED = false;
@@ -8240,6 +8243,9 @@ function renderMatrixTable(payload) {
             title: authoritativeTotal ? 'Full matched billing total' : 'Loaded row subtotal'
         };
     });
+    unbilledProjectionData = buildUnbilledProjectionData(payload, filteredRows);
+    unbilledProjectionDetailMap = unbilledProjectionData.detailsByMonth;
+    const unbilledTotals = unbilledProjectionData.monthTotals;
 
     if (els.matrixTotalsWrap) {
         els.matrixTotalsWrap.innerHTML = `
@@ -8253,6 +8259,24 @@ function renderMatrixTable(payload) {
                         <span>${escapeHtml(total.label)}</span>
                         <strong>${escapeHtml(formatAmount(total.amount))}</strong>
                     </article>
+                `).join('')}
+            </div>
+            <div class="matrix-total-strip-head secondary">
+                <span>Unbilled Projection</span>
+                <small>Projected from pending customers using contract quota or fixed monthly rate</small>
+            </div>
+            <div class="matrix-total-cards unbilled-total-cards">
+                ${unbilledTotals.map((total) => `
+                    <button
+                        class="matrix-total-card unbilled-total-card"
+                        type="button"
+                        data-unbilled-month-key="${escapeHtml(total.monthKey)}"
+                        title="Open unbilled customers for ${escapeHtml(total.label)}"
+                    >
+                        <span>${escapeHtml(total.label)}</span>
+                        <strong>${escapeHtml(formatAmount(total.amount))}</strong>
+                        <small>${escapeHtml(formatMetricCount(total.customerCount, 'customer'))} • ${escapeHtml(formatMetricCount(total.rowCount, 'machine row'))}</small>
+                    </button>
                 `).join('')}
             </div>
         `;
@@ -8843,6 +8867,251 @@ function getBillingScorecardPendingReason(cell, row) {
     return 'Pending billing without peso estimate';
 }
 
+function getUnbilledCustomerKey(row) {
+    return String(row?.company_id || row?.account_name || row?.company_name || row?.row_id || '').trim();
+}
+
+function makeUnbilledProjectionDetail({ row, cell, monthKey, amount }) {
+    const profile = row?.billing_profile || {};
+    return {
+        rowId: String(row?.row_id || row?.company_id || '').trim(),
+        companyId: String(row?.company_id || '').trim(),
+        customerKey: getUnbilledCustomerKey(row),
+        monthKey,
+        monthLabel: cell?.month_label_short || formatMonthLabel(monthKey, monthKey),
+        customer: row?.company_name || row?.account_name || row?.display_name || 'Unknown customer',
+        branch: row?.branch_name || 'Main',
+        serial: row?.serial_number || row?.machine_label || '-',
+        contractId: String(row?.contractmain_id || '').trim(),
+        machineId: String(row?.machine_id || '').trim(),
+        amount: Number(amount || 0),
+        reason: getBillingScorecardPendingReason(cell, row),
+        monthlyRate: Number(profile.monthly_rate || 0) + Number(profile.monthly_rate2 || 0),
+        quotaAmount: (
+            (Number(profile.monthly_quota || 0) * Number(profile.page_rate || 0))
+            + (Number(profile.monthly_quota2 || 0) * Number(profile.page_rate2 || profile.page_rate_xtra || 0))
+        )
+    };
+}
+
+function buildUnbilledProjectionData(payload, filteredRows = null) {
+    const matrix = payload?.month_matrix || {};
+    const months = Array.isArray(matrix.months) ? matrix.months : [];
+    const sourceRows = Array.isArray(filteredRows)
+        ? filteredRows
+        : (Array.isArray(matrix.rows) ? matrix.rows : []);
+    const rows = sourceRows.filter((row) => row && !row.is_summary_row && !row.isGroupedChild);
+    const monthTotals = months.map((monthKey) => ({
+        monthKey,
+        label: formatMonthLabel(monthKey, monthKey),
+        amount: 0,
+        customerCount: 0,
+        rowCount: 0
+    }));
+    const detailsByMonth = new Map();
+    const detailsByCustomer = new Map();
+
+    months.forEach((monthKey) => {
+        detailsByMonth.set(monthKey, []);
+    });
+
+    rows.forEach((row) => {
+        months.forEach((monthKey) => {
+            const cell = row.months?.[monthKey];
+            if (!cell?.pending) return;
+            const amount = getBillingScorecardPendingProjection(cell, row);
+            const detail = makeUnbilledProjectionDetail({ row, cell, monthKey, amount });
+            detailsByMonth.get(monthKey)?.push(detail);
+            const customerKey = detail.customerKey || detail.rowId;
+            if (!detailsByCustomer.has(customerKey)) detailsByCustomer.set(customerKey, []);
+            detailsByCustomer.get(customerKey).push(detail);
+            const total = monthTotals.find((entry) => entry.monthKey === monthKey);
+            if (total) {
+                total.amount += amount;
+                total.rowCount += 1;
+            }
+        });
+    });
+
+    monthTotals.forEach((total) => {
+        const uniqueCustomers = new Set((detailsByMonth.get(total.monthKey) || []).map((detail) => detail.customerKey || detail.rowId));
+        total.customerCount = uniqueCustomers.size;
+        total.amount = Number(total.amount.toFixed(2));
+    });
+
+    return { months, monthTotals, detailsByMonth, detailsByCustomer };
+}
+
+function groupUnbilledDetailsByCustomer(details = []) {
+    const groups = new Map();
+    details.forEach((detail) => {
+        const key = detail.customerKey || detail.rowId || `${detail.customer}:${detail.branch}`;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                customer: detail.customer,
+                branchNames: new Set(),
+                serials: new Set(),
+                amount: 0,
+                rowCount: 0,
+                months: new Set(),
+                details: []
+            });
+        }
+        const group = groups.get(key);
+        group.branchNames.add(detail.branch);
+        group.serials.add(detail.serial);
+        group.months.add(detail.monthKey);
+        group.amount += Number(detail.amount || 0);
+        group.rowCount += 1;
+        group.details.push(detail);
+    });
+    return Array.from(groups.values())
+        .map((group) => ({
+            ...group,
+            amount: Number(group.amount.toFixed(2)),
+            branchNames: Array.from(group.branchNames).filter(Boolean),
+            serials: Array.from(group.serials).filter(Boolean),
+            months: Array.from(group.months).sort()
+        }))
+        .sort((left, right) => Number(right.amount || 0) - Number(left.amount || 0) || String(left.customer || '').localeCompare(String(right.customer || '')));
+}
+
+function renderUnbilledCustomerRows(groups = []) {
+    if (!groups.length) {
+        return '<div class="detail-empty">No unbilled customers found for this month.</div>';
+    }
+    return `
+        <div class="unbilled-detail-list">
+            ${groups.map((group) => `
+                <button
+                    class="unbilled-customer-card"
+                    type="button"
+                    data-unbilled-customer-key="${escapeHtml(group.key)}"
+                    aria-label="Open unbilled months for ${escapeHtml(group.customer)}"
+                >
+                    <span>
+                        <strong>${escapeHtml(group.customer)}</strong>
+                        <small>${escapeHtml(group.branchNames.slice(0, 3).join(', ') || 'Branch not mapped')}${group.branchNames.length > 3 ? ` +${formatCount(group.branchNames.length - 3)} more` : ''}</small>
+                    </span>
+                    <span class="unbilled-card-meta">
+                        <strong>${escapeHtml(formatAmount(group.amount))}</strong>
+                        <small>${escapeHtml(formatMetricCount(group.months.length, 'month'))} • ${escapeHtml(formatMetricCount(group.rowCount, 'machine row'))}</small>
+                    </span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function findUnbilledActionRow(monthDetails = [], monthKey = '') {
+    const companyId = String(monthDetails[0]?.companyId || '').trim();
+    if (companyId && Array.isArray(lastPayload?.month_matrix?.rows)) {
+        const summaryRow = lastPayload.month_matrix.rows.find((row) => (
+            row?.is_summary_row
+            && row?.billing_group
+            && String(row.company_id || '').trim() === companyId
+            && row.months?.[monthKey]?.pending
+        ));
+        if (summaryRow) {
+            return {
+                rowId: String(summaryRow.row_id || summaryRow.company_id || '').trim(),
+                isSummary: true
+            };
+        }
+    }
+    const primary = monthDetails.find((detail) => detail.rowId) || monthDetails[0] || null;
+    return {
+        rowId: String(primary?.rowId || '').trim(),
+        isSummary: false
+    };
+}
+
+function openUnbilledProjectionMonth(monthKey) {
+    activeUnbilledProjectionMonthKey = String(monthKey || '').trim();
+    const details = unbilledProjectionDetailMap.get(monthKey) || [];
+    const groups = groupUnbilledDetailsByCustomer(details);
+    const total = details.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Unbilled Customers';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${formatMonthLabel(monthKey, monthKey)} • ${formatCount(groups.length)} customer(s) • projected ${formatCurrency(total)}`;
+    }
+    if (els.billingScorecardContent) {
+        els.billingScorecardContent.innerHTML = `
+            <div class="detail-empty">
+                Projection uses actual meter-reading amount when present, otherwise the active contract quota or fixed monthly rate.
+            </div>
+            ${renderUnbilledCustomerRows(groups)}
+        `;
+    }
+    els.billingScorecardModal?.classList.remove('hidden');
+}
+
+function renderUnbilledCustomerMonths(customerKey) {
+    const details = (unbilledProjectionData?.detailsByCustomer?.get(customerKey) || [])
+        .slice()
+        .sort((left, right) => String(left.monthKey || '').localeCompare(String(right.monthKey || '')) || String(left.branch || '').localeCompare(String(right.branch || '')));
+    if (!details.length) return '<div class="detail-empty">No unbilled months found for this customer.</div>';
+    const groupedByMonth = new Map();
+    details.forEach((detail) => {
+        if (!groupedByMonth.has(detail.monthKey)) groupedByMonth.set(detail.monthKey, []);
+        groupedByMonth.get(detail.monthKey).push(detail);
+    });
+    return `
+        <div class="unbilled-month-list">
+            ${Array.from(groupedByMonth.entries()).map(([monthKey, monthDetails]) => {
+                const amount = monthDetails.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+                const actionRow = findUnbilledActionRow(monthDetails, monthKey);
+                return `
+                    <article class="unbilled-month-card">
+                        <div>
+                            <strong>${escapeHtml(formatMonthLabel(monthKey, monthKey))}</strong>
+                            <small>${escapeHtml(formatMetricCount(monthDetails.length, 'machine row'))} • ${escapeHtml(monthDetails[0]?.reason || 'Pending billing')}</small>
+                            <small>${escapeHtml(monthDetails.map((detail) => detail.branch).filter(Boolean).slice(0, 4).join(', ') || 'Branch not mapped')}</small>
+                        </div>
+                        <div class="unbilled-card-meta">
+                            <strong>${escapeHtml(formatAmount(amount))}</strong>
+                            <button
+                                class="btn btn-primary btn-sm"
+                                type="button"
+                                data-unbilled-bill-now-row-id="${escapeHtml(actionRow.rowId || '')}"
+                                data-unbilled-bill-now-month="${escapeHtml(monthKey)}"
+                            >Bill Now</button>
+                        </div>
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function openUnbilledCustomerMonths(customerKey) {
+    const details = unbilledProjectionData?.detailsByCustomer?.get(customerKey) || [];
+    const customer = details[0]?.customer || 'Unbilled Customer';
+    const total = details.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = customer;
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${formatCount(new Set(details.map((detail) => detail.monthKey)).size)} unbilled month(s) • projected ${formatCurrency(total)}`;
+    }
+    if (els.billingScorecardContent) {
+        els.billingScorecardContent.innerHTML = `
+            <div class="detail-action-row">
+                <button class="btn btn-secondary" type="button" data-unbilled-back-month="${escapeHtml(activeUnbilledProjectionMonthKey || details[0]?.monthKey || '')}">Back to Month</button>
+            </div>
+            ${renderUnbilledCustomerMonths(customerKey)}
+        `;
+    }
+}
+
+function openUnbilledBillNow(rowId, monthKey) {
+    if (!rowId || !monthKey) {
+        MargaUtils.showToast('This unbilled row is missing billing context.', 'error');
+        return;
+    }
+    closeBillingScorecardModal();
+    openBillingCalcModalSafely(rowId, monthKey);
+}
+
 function buildBillingScorecardPaymentMap(payments) {
     const map = new Map();
     const put = (key, payment) => {
@@ -9319,6 +9588,12 @@ function bindEvents() {
             MargaUtils.showToast(String(error?.message || 'Unable to restore billing account.'), 'error');
         }
     });
+    els.matrixTotalsWrap?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-unbilled-month-key]');
+        if (!trigger) return;
+        event.preventDefault();
+        openUnbilledProjectionMonth(trigger.dataset.unbilledMonthKey);
+    });
     els.invoiceSearchResults?.addEventListener('click', async (event) => {
         const actionButton = event.target.closest('[data-invoice-search-action]');
         if (!actionButton) return;
@@ -9386,6 +9661,24 @@ function bindEvents() {
         openBillingScorecardTotal(trigger.dataset.metricKey, trigger.dataset.monthKey);
     });
     els.billingScorecardContent?.addEventListener('click', (event) => {
+        const customerTrigger = event.target.closest('[data-unbilled-customer-key]');
+        if (customerTrigger) {
+            event.preventDefault();
+            openUnbilledCustomerMonths(customerTrigger.dataset.unbilledCustomerKey);
+            return;
+        }
+        const billNowTrigger = event.target.closest('[data-unbilled-bill-now-row-id]');
+        if (billNowTrigger) {
+            event.preventDefault();
+            openUnbilledBillNow(billNowTrigger.dataset.unbilledBillNowRowId, billNowTrigger.dataset.unbilledBillNowMonth);
+            return;
+        }
+        const backTrigger = event.target.closest('[data-unbilled-back-month]');
+        if (backTrigger) {
+            event.preventDefault();
+            openUnbilledProjectionMonth(backTrigger.dataset.unbilledBackMonth);
+            return;
+        }
         const trigger = event.target.closest('.billing-scorecard-open-cell');
         if (!trigger) return;
         event.preventDefault();

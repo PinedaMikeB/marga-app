@@ -538,6 +538,11 @@
     font-weight: 700;
 }
 
+.matrix-total-strip-head.secondary {
+    padding-top: 0.25rem;
+    border-top: 1px solid #e2ebf6;
+}
+
 .matrix-total-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -550,6 +555,25 @@
     border: 1px solid #cfe0f3;
     border-radius: 10px;
     background: var(--bill-paper);
+}
+
+button.matrix-total-card {
+    width: 100%;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+button.matrix-total-card:hover,
+button.matrix-total-card:focus-visible {
+    border-color: #90baf4;
+    outline: 2px solid #90baf4;
+    outline-offset: 2px;
+}
+
+.unbilled-total-card {
+    background: #fffaf0;
+    border-color: #edd9a8;
 }
 
 .matrix-total-card span {
@@ -569,6 +593,75 @@
     font-weight: 900;
     line-height: 1.2;
     overflow-wrap: anywhere;
+}
+
+.matrix-total-card small {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.unbilled-detail-list,
+.unbilled-month-list {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.unbilled-customer-card,
+.unbilled-month-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--bill-ink);
+    text-align: left;
+}
+
+.unbilled-customer-card {
+    cursor: pointer;
+}
+
+.unbilled-customer-card:hover,
+.unbilled-customer-card:focus-visible {
+    border-color: #90baf4;
+    outline: 2px solid #90baf4;
+    outline-offset: 2px;
+}
+
+.unbilled-customer-card strong,
+.unbilled-month-card strong {
+    display: block;
+    color: var(--bill-ink);
+    font-size: 0.96rem;
+    font-weight: 900;
+}
+
+.unbilled-customer-card small,
+.unbilled-month-card small {
+    display: block;
+    margin-top: 0.22rem;
+    color: var(--bill-muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.unbilled-card-meta {
+    flex: 0 0 auto;
+    min-width: 130px;
+    text-align: right;
+}
+
+.unbilled-card-meta .btn {
+    margin-top: 0.45rem;
 }
 
 .matrix-card .matrix-sheet {
