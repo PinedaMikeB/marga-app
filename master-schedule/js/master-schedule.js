@@ -366,8 +366,9 @@ async function queryByFieldIds(collection, fieldPath, ids, cache) {
 }
 
 async function setDoc(collection, docId, row) {
+    const entries = Object.entries(row).filter(([key]) => !key.startsWith('_') && key !== 'searchText' && key !== 'searchIndex');
     const fields = {};
-    Object.entries(row).forEach(([key, value]) => {
+    entries.forEach(([key, value]) => {
         if (!key.startsWith('_') && key !== 'searchText' && key !== 'searchIndex') fields[key] = firestoreValue(value);
     });
     const response = await fetch(`${MASTER_BASE_URL}/${collection}/${encodeURIComponent(String(docId))}?key=${MASTER_API_KEY}`, {
@@ -376,7 +377,13 @@ async function setDoc(collection, docId, row) {
         body: JSON.stringify({ fields })
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || 'Save failed.');
+    if (!response.ok || payload?.error) {
+        const message = payload?.error?.message || 'Save failed.';
+        if (/permission|denied|insufficient/i.test(message)) {
+            return updateDocFieldsViaMasterScheduleApi(collection, docId, Object.fromEntries(entries));
+        }
+        throw new Error(message);
+    }
     return payload;
 }
 
@@ -424,8 +431,24 @@ async function deleteDoc(collection, docId) {
     const response = await fetch(`${MASTER_BASE_URL}/${collection}/${encodeURIComponent(String(docId))}?key=${MASTER_API_KEY}`, { method: 'DELETE' });
     if (!response.ok && response.status !== 404) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error?.message || 'Delete failed.');
+        const message = payload?.error?.message || 'Delete failed.';
+        if (/permission|denied|insufficient/i.test(message)) {
+            await deleteDocViaMasterScheduleApi(collection, docId);
+            return;
+        }
+        throw new Error(message);
     }
+}
+
+async function deleteDocViaMasterScheduleApi(collection, docId) {
+    const response = await fetch('/api/master-schedule-write', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collection, docId: String(docId || '').trim() })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) throw new Error(payload?.error || 'Master schedule delete failed.');
+    return payload;
 }
 
 async function loadActivityLogEntries(activityKey) {

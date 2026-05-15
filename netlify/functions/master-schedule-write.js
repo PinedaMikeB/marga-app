@@ -78,6 +78,49 @@ const ALLOWED_PATCH_FIELDS = {
   tbl_schedtime: new Set(ROUTE_PATCH_FIELDS)
 };
 
+const CONFIG_COLLECTION_FIELDS = {
+  marga_master_schedule_area_cities: new Set([
+    "area",
+    "city",
+    "updated_at"
+  ]),
+  marga_master_schedule_tech_areas: new Set([
+    "tech_id",
+    "tech_name",
+    "area",
+    "updated_at"
+  ]),
+  marga_master_schedule_client_areas: new Set([
+    "branch_id",
+    "company_id",
+    "company_name",
+    "branch_name",
+    "service_address",
+    "service_contact_person",
+    "service_contact_number",
+    "service_area",
+    "service_city",
+    "billing_address",
+    "billing_contact_person",
+    "billing_contact_number",
+    "billing_area",
+    "billing_city",
+    "collection_address",
+    "collection_contact_person",
+    "collection_contact_number",
+    "collection_area",
+    "collection_city",
+    "delivery_address",
+    "delivery_contact_person",
+    "delivery_contact_number",
+    "delivery_area",
+    "delivery_city",
+    "updated_at"
+  ])
+};
+
+const ALLOWED_DELETE_COLLECTIONS = new Set(Object.keys(CONFIG_COLLECTION_FIELDS));
+
 function env(name) {
   return globalThis.Netlify?.env?.get?.(name) || process.env[name] || "";
 }
@@ -89,7 +132,7 @@ function json(statusCode, body) {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "PATCH,OPTIONS",
+      "Access-Control-Allow-Methods": "PATCH,DELETE,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type"
     },
     body: JSON.stringify(body)
@@ -166,7 +209,7 @@ function cleanIdentifier(value) {
 }
 
 function validatePatch(collection, fields) {
-  const allowed = ALLOWED_PATCH_FIELDS[collection];
+  const allowed = ALLOWED_PATCH_FIELDS[collection] || CONFIG_COLLECTION_FIELDS[collection];
   if (!allowed) throw new Error(`Collection ${collection} is not allowed for master schedule writes.`);
   const entries = Object.entries(fields || {}).filter(([key]) => allowed.has(key));
   if (!entries.length) throw new Error("No allowed fields to update.");
@@ -177,13 +220,31 @@ function validatePatch(collection, fields) {
 
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
-  if (event.httpMethod !== "PATCH") return json(405, { ok: false, error: "Method not allowed" });
+  if (!["PATCH", "DELETE"].includes(event.httpMethod)) return json(405, { ok: false, error: "Method not allowed" });
 
   try {
     const body = JSON.parse(event.body || "{}");
     const collection = cleanIdentifier(body.collection);
     const docId = cleanIdentifier(body.docId);
     if (!collection || !docId) return json(400, { ok: false, error: "Missing collection or docId." });
+
+    const accessToken = await getGoogleAccessToken();
+    const baseUrl = env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
+
+    if (event.httpMethod === "DELETE") {
+      if (!ALLOWED_DELETE_COLLECTIONS.has(collection)) {
+        return json(403, { ok: false, error: `Collection ${collection} is not allowed for master schedule deletes.` });
+      }
+      const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok && response.status !== 404) {
+        return json(response.status || 500, { ok: false, error: payload?.error?.message || "Firestore delete failed." });
+      }
+      return json(200, { ok: true });
+    }
 
     const entries = validatePatch(collection, body.fields || {});
     const params = new URLSearchParams();
@@ -194,8 +255,6 @@ exports.handler = async (event) => {
       fields[key] = firestoreValue(value);
     });
 
-    const accessToken = await getGoogleAccessToken();
-    const baseUrl = env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
     const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}?${params.toString()}`, {
       method: "PATCH",
       headers: {
