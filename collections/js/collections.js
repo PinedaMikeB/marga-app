@@ -130,6 +130,48 @@ const GROUPED_COLLECTION_COMPANIES = [
     }
 ];
 const collectorExpandedGroupRows = new Set();
+const COLLECTION_BILLING_FIELD_MASK = [
+    'id',
+    'invoice_id',
+    'invoiceid',
+    'invoiceno',
+    'invoice_no',
+    'contractmain_id',
+    'month',
+    'year',
+    'due_date',
+    'totalamount',
+    'amount',
+    'vatamount',
+    'contact_number',
+    'date_received',
+    'receivedby',
+    'isreceived',
+    'status',
+    'location',
+    'remarks',
+    'dateprinted',
+    'date_printed',
+    'invdate',
+    'invoice_date',
+    'datex',
+    'company_id',
+    'company_name',
+    'branch_id',
+    'branch_name',
+    'account_name',
+    'display_name',
+    'machine_id',
+    'machine_label',
+    'machine_model',
+    'printer_model',
+    'serial_number',
+    'category_id',
+    'category_code',
+    'billing_mode',
+    'billing_lines_json',
+    'billing_lines_count'
+];
 
 function buildMonthColumns(startValue, endValue) {
     const monthColumns = [];
@@ -1980,6 +2022,33 @@ async function firestoreRunQuery(structuredQuery) {
         .filter(Boolean);
 }
 
+async function firestoreQueryEquals(collection, fieldPath, value, options = {}) {
+    if (value === null || value === undefined || value === '') return [];
+
+    const structuredQuery = {
+        from: [{ collectionId: collection }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath },
+                op: 'EQUAL',
+                value: toFirestoreWriteValue(value)
+            }
+        }
+    };
+
+    if (Array.isArray(options.fieldMask) && options.fieldMask.length) {
+        structuredQuery.select = {
+            fields: options.fieldMask.map((selectedFieldPath) => ({ fieldPath: selectedFieldPath }))
+        };
+    }
+
+    if (Number(options.limit || 0) > 0) {
+        structuredQuery.limit = Number(options.limit || 0);
+    }
+
+    return firestoreRunQuery(structuredQuery);
+}
+
 async function firestoreRunOrderedQuery(collectionId, limit = 1) {
     return firestoreRunQuery({
         from: [{ collectionId }],
@@ -2922,6 +2991,30 @@ function getBillingLocation(contractmainId) {
     };
 }
 
+function getBillingLocationFromFields(fields, contractmainId) {
+    const base = getBillingLocation(contractmainId);
+    const companyName = String(getField(fields, ['company_name', 'account_name']) || base.companyName || 'Unknown').trim() || 'Unknown';
+    const branchName = String(getField(fields, ['branch_name']) || base.branchName || 'Main').trim() || 'Main';
+    const machineId = String(getField(fields, ['machine_id']) || base.machineId || '').trim();
+    const serialNumber = String(getField(fields, ['serial_number']) || base.serialNumber || '').trim();
+    const modelName = String(getField(fields, ['machine_model', 'printer_model']) || base.modelName || '').trim();
+
+    return {
+        ...base,
+        companyName,
+        branchName,
+        accountLabel: String(getField(fields, ['account_name', 'display_name']) || buildAccountLabel(companyName, branchName)).trim(),
+        categoryCode: String(getField(fields, ['category_code']) || base.categoryCode || getCategoryCode(getField(fields, ['category_id']))).trim(),
+        companyId: String(getField(fields, ['company_id']) || base.companyId || '').trim(),
+        branchId: String(getField(fields, ['branch_id']) || base.branchId || '').trim(),
+        machineId,
+        contractmainId: String(contractmainId || '').trim(),
+        serialNumber,
+        modelName,
+        machineLabel: String(getField(fields, ['machine_label']) || base.machineLabel || buildMachineLabel(machineId, contractmainId)).trim()
+    };
+}
+
 function buildAccountLabel(companyName, branchName) {
     const company = String(companyName || '').trim();
     const branch = String(branchName || '').trim();
@@ -2957,7 +3050,7 @@ function processInvoice(doc) {
     if (paidInvoiceIds.has(invoiceIdKey) || paidInvoiceIds.has(invoiceNoKey)) return null;
 
     const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
-    const location = getBillingLocation(contractmainId);
+    const location = getBillingLocationFromFields(f, contractmainId);
 
     const month = getField(f, ['month']);
     const year = getField(f, ['year']);
@@ -3042,6 +3135,57 @@ function findInvoiceByKey(key) {
     return invoiceIndexMap.get(String(key).trim()) || null;
 }
 
+function getCollectionBillingYearsToQuery() {
+    const years = new Set();
+    const today = new Date();
+    const matrixEnd = startOfMonth(new Date(today.getFullYear(), 11, 1));
+    let cursor = startOfMonth(COLLECTOR_DASHBOARD_START);
+
+    while (cursor && matrixEnd && cursor <= matrixEnd) {
+        years.add(String(cursor.getFullYear()));
+        cursor = addMonths(cursor, 1);
+    }
+
+    return Array.from(years);
+}
+
+function mergeFirestoreDocsByName(docGroups = []) {
+    const byName = new Map();
+    docGroups.flat().forEach((doc) => {
+        const key = String(doc?.name || getFirestoreDocumentId(doc) || '').trim();
+        if (!key) return;
+        byName.set(key, doc);
+    });
+    return Array.from(byName.values());
+}
+
+async function loadCollectionBillingDocs(statusCallback = null) {
+    const baseDocs = await firestoreGetAll('tbl_billing', statusCallback, {
+        fieldMask: COLLECTION_BILLING_FIELD_MASK,
+        maxPages: 320
+    });
+
+    const years = getCollectionBillingYearsToQuery();
+    const supplementalQueries = years.flatMap((year) => ([
+        firestoreQueryEquals('tbl_billing', 'year', year, { fieldMask: COLLECTION_BILLING_FIELD_MASK }).catch((error) => {
+            console.warn(`Unable to load supplemental billing year ${year}.`, error);
+            return [];
+        }),
+        firestoreQueryEquals('tbl_billing', 'year', Number(year), { fieldMask: COLLECTION_BILLING_FIELD_MASK }).catch((error) => {
+            console.warn(`Unable to load supplemental billing numeric year ${year}.`, error);
+            return [];
+        })
+    ]));
+
+    if (statusCallback) statusCallback('Loading supplemental billing records for active collection years...');
+    const supplementalDocs = await Promise.all(supplementalQueries);
+    const merged = mergeFirestoreDocsByName([baseDocs, ...supplementalDocs]);
+    if (statusCallback && merged.length > baseDocs.length) {
+        statusCallback(`Loading tbl_billing... ${merged.length.toLocaleString()} including year query supplement`);
+    }
+    return merged;
+}
+
 async function loadInvoices(mode) {
     dataMode = mode;
     const isAllMode = mode === 'all';
@@ -3054,35 +3198,7 @@ async function loadInvoices(mode) {
         await loadLookups();
 
         updateLoadingStatus(isAllMode ? 'Loading all billing records...' : 'Loading active billing records...');
-        const billingDocs = await firestoreGetAll('tbl_billing', updateLoadingStatus, {
-            fieldMask: [
-                'id',
-                'invoice_id',
-                'invoiceid',
-                'invoiceno',
-                'invoice_no',
-                'contractmain_id',
-                'month',
-                'year',
-                'due_date',
-                'totalamount',
-                'amount',
-                'vatamount',
-                'contact_number',
-                'date_received',
-                'receivedby',
-                'isreceived',
-                'status',
-                'location',
-                'remarks',
-                'dateprinted',
-                'date_printed',
-                'invdate',
-                'invoice_date',
-                'datex'
-            ],
-            maxPages: 320
-        });
+        const billingDocs = await loadCollectionBillingDocs(updateLoadingStatus);
 
         allInvoices = [];
         billingEntriesForDuration = [];
@@ -3106,7 +3222,7 @@ async function loadInvoices(mode) {
             const matrixAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
             const amount = matrixAmount;
             const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
-            const location = getBillingLocation(contractmainId);
+            const location = getBillingLocationFromFields(f, contractmainId);
             const billingMeta = {
                 company: location.companyName,
                 branch: location.branchName,
