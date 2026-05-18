@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v5-light-dashboard';
+const CACHE_NAME = 'msp-shell-v6-aidial-replica';
 const SHELL_ASSETS = [
   '/',
   '/install/',
