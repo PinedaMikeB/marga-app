@@ -172,6 +172,10 @@ function getMargaSessionStorage() {
 
 function readMargaDataBackendPreference() {
     if (MARGABASE_ENABLED) {
+        if (isMargabaseHost()) {
+            clearMargaBackendPreference();
+            return 'margabase';
+        }
         const queryBackend = String(readMargaQueryParam(MARGA_DATA_BACKEND_KEY) || readMargaQueryParam('marga_backend')).trim().toLowerCase();
         if (queryBackend === 'margabase') return 'margabase';
         if (queryBackend === 'firebase') return 'firebase';
@@ -198,6 +202,11 @@ function clearMargaBackendPreference() {
 }
 
 function writeMargaDataBackendPreference(backend) {
+    if (MARGABASE_ENABLED && isMargabaseHost()) {
+        clearMargaBackendPreference();
+        setMargaCookie(MARGA_DATA_BACKEND_KEY, 'margabase');
+        return true;
+    }
     if (MARGABASE_ENABLED && backend === 'margabase') {
         const saved = safeStorageSet(getMargaLocalStorage(), MARGA_DATA_BACKEND_KEY, 'margabase')
             || safeStorageSet(getMargaSessionStorage(), MARGA_DATA_BACKEND_KEY, 'margabase');
@@ -210,6 +219,7 @@ function writeMargaDataBackendPreference(backend) {
 
 function readMargaApiBaseUrlPreference() {
     if (MARGABASE_ENABLED) {
+        if (isMargabaseHost()) return DEFAULT_MARGABASE_BASE_URL;
         const queryBaseUrl = String(readMargaQueryParam(MARGA_API_BASE_URL_KEY) || '').trim();
         if (queryBaseUrl) return queryBaseUrl;
         const value = String(
@@ -225,6 +235,11 @@ function readMargaApiBaseUrlPreference() {
 }
 
 function writeMargaApiBaseUrlPreference(baseUrl) {
+    if (MARGABASE_ENABLED && isMargabaseHost()) {
+        clearMargaBackendPreference();
+        setMargaCookie(MARGA_DATA_BACKEND_KEY, 'margabase');
+        return true;
+    }
     if (MARGABASE_ENABLED && baseUrl) {
         const value = String(baseUrl || '').trim();
         const saved = safeStorageSet(getMargaLocalStorage(), MARGA_API_BASE_URL_KEY, value)

@@ -22,6 +22,7 @@ const SETTINGS_STATE = {
 
 const BILLING_PRINT_POLICY_DOC_ID = 'billing_printing_policy_v1';
 const DATABASE_BACKEND_STORAGE_KEY = 'marga_data_backend';
+const DATABASE_API_BASE_URL_KEY = 'marga_api_base_url';
 
 const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
@@ -240,16 +241,27 @@ function setActiveTab(tab) {
 }
 
 function getStoredDatabaseBackend() {
-    writeDatabaseBackendPreference('firebase');
-    return 'firebase';
+    if (window.location.hostname === 'app.marga.biz' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') return 'margabase';
+    if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
+    try {
+        return localStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
+    } catch (err) {
+        try {
+            return sessionStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
+        } catch (sessionErr) {
+            return 'firebase';
+        }
+    }
 }
 
 function getSelectedDatabaseBackend() {
-    return 'firebase';
+    if (window.location.hostname === 'app.marga.biz' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') return 'margabase';
+    const selected = document.querySelector('input[name="databaseBackend"]:checked');
+    return selected?.value === 'margabase' ? 'margabase' : 'firebase';
 }
 
 function formatBackendLabel(backend) {
-    return 'Firebase';
+    return backend === 'margabase' ? 'Margabase' : 'Firebase';
 }
 
 function formatSyncTime(value) {
@@ -262,14 +274,16 @@ function formatSyncTime(value) {
 }
 
 function setDatabaseChoice(backend) {
+    const lockedToMargabase = window.location.hostname === 'app.marga.biz' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+    const selectedBackend = lockedToMargabase || backend === 'margabase' ? 'margabase' : 'firebase';
     document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
-        input.checked = input.value === 'firebase';
-        input.disabled = input.value !== 'firebase';
+        input.checked = input.value === selectedBackend;
+        input.disabled = lockedToMargabase && input.value !== 'margabase';
     });
-    document.getElementById('databaseChoiceFirebase')?.classList.add('active');
-    document.getElementById('databaseChoiceMargabase')?.classList.remove('active');
+    document.getElementById('databaseChoiceFirebase')?.classList.toggle('active', selectedBackend === 'firebase');
+    document.getElementById('databaseChoiceMargabase')?.classList.toggle('active', selectedBackend === 'margabase');
     const status = document.getElementById('databaseSettingsStatus');
-    if (status) status.textContent = 'Firebase is temporarily locked as the active database while Margabase sync is verified.';
+    if (status) status.textContent = lockedToMargabase ? 'Margabase is locked for production. Firebase reads and writes are disabled.' : `${formatBackendLabel(selectedBackend)} selected. Apply & Reload to use it in this browser.`;
 }
 
 function renderDatabaseSettings() {
@@ -284,28 +298,67 @@ function renderDatabaseSettings() {
     }
     const command = document.getElementById('databaseSyncCommand');
     if (command) {
-        command.textContent = 'Margabase sync controls are temporarily disabled. The web app is locked to Firebase.';
+        command.textContent = 'Fresh backup import complete. Live Firebase import is blocked; relational refresh derives from local raw documents only.';
     }
+}
+
+function getPreferredMargabaseBaseUrl() {
+    const defaultBase = window.MARGABASE_CONFIG?.baseUrl || 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+    if (window.location.hostname === 'app.marga.biz' || window.location.origin === 'http://127.0.0.1:9100') {
+        return '/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+    }
+    return defaultBase;
+}
+
+function getMargabaseAdminUrl(path) {
+    const baseUrl = getPreferredMargabaseBaseUrl();
+    if (baseUrl.startsWith('/margabase-api/')) return `/margabase-api${path}`;
+    const origin = new URL(baseUrl, window.location.href).origin;
+    return `${origin}${path}`;
 }
 
 async function testMargabaseConnection() {
     const label = document.getElementById('margabaseHealthLabel');
     const detail = document.getElementById('margabaseHealthDetail');
-    if (label) label.textContent = 'Disabled';
-    if (detail) detail.textContent = 'Margabase is temporarily disabled. This browser will use Firebase only.';
-    return false;
+    if (label) label.textContent = 'Testing...';
+    if (detail) detail.textContent = 'Checking the local Margabase API.';
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/health'), { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.ok !== true) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        if (label) label.textContent = 'Online';
+        if (detail) detail.textContent = 'Margabase API is reachable from this browser.';
+        return true;
+    } catch (error) {
+        if (label) label.textContent = 'Unavailable';
+        if (detail) detail.textContent = error.message || 'Margabase API is not reachable.';
+        return false;
+    }
 }
 
 function writeDatabaseBackendPreference(backend) {
+    if (backend === 'margabase' && window.MargaBackendPreference?.writeApiBaseUrl) {
+        window.MargaBackendPreference.writeApiBaseUrl(getPreferredMargabaseBaseUrl());
+    }
     if (window.MargaBackendPreference?.write) return window.MargaBackendPreference.write(backend);
     try {
-        localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
-        localStorage.removeItem('marga_api_base_url');
+        if (backend === 'margabase') {
+            localStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
+            localStorage.setItem(DATABASE_API_BASE_URL_KEY, getPreferredMargabaseBaseUrl());
+        } else {
+            localStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+            localStorage.removeItem(DATABASE_API_BASE_URL_KEY);
+        }
         return true;
     } catch (err) {
         try {
-            sessionStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
-            sessionStorage.removeItem('marga_api_base_url');
+            if (backend === 'margabase') {
+                sessionStorage.setItem(DATABASE_BACKEND_STORAGE_KEY, 'margabase');
+                sessionStorage.setItem(DATABASE_API_BASE_URL_KEY, getPreferredMargabaseBaseUrl());
+            } else {
+                sessionStorage.removeItem(DATABASE_BACKEND_STORAGE_KEY);
+                sessionStorage.removeItem(DATABASE_API_BASE_URL_KEY);
+            }
             return true;
         } catch (sessionErr) {
             return false;
@@ -318,8 +371,9 @@ async function applyDatabaseBackend() {
         alert('Only admin can refresh database settings.');
         return;
     }
-    writeDatabaseBackendPreference('firebase');
-    document.getElementById('databaseSettingsStatus').textContent = 'Reloading with Firebase...';
+    const backend = getSelectedDatabaseBackend();
+    writeDatabaseBackendPreference(backend);
+    document.getElementById('databaseSettingsStatus').textContent = `Reloading with ${formatBackendLabel(backend)}...`;
     window.location.reload();
 }
 
@@ -348,12 +402,38 @@ function summarizeLatestRun(run) {
 async function refreshDatabaseSyncStatus({ quiet = false } = {}) {
     const status = document.getElementById('databaseSyncStatus');
     if (!status) return;
-    status.textContent = 'Margabase sync status is temporarily disabled. The web app is locked to Firebase.';
+    if (!quiet) status.textContent = 'Checking Margabase status...';
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/sync/status'), { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        const totals = payload.totals || {};
+        const latest = payload.latestRuns?.[0];
+        status.textContent = `Raw documents: ${Number(totals.rawDocuments || 0).toLocaleString()} across ${Number(totals.collections || 0).toLocaleString()} collection(s). ${summarizeLatestRun(latest)}`;
+    } catch (error) {
+        status.textContent = error.message || 'Unable to check Margabase status.';
+    }
 }
 
 async function runMargabaseSync(mode) {
     const status = document.getElementById('databaseSyncStatus');
-    if (status) status.textContent = 'Margabase sync controls are temporarily disabled. Use Firebase only.';
+    if (mode !== 'derive') {
+        if (status) status.textContent = 'Live Firebase sync is blocked during fresh-backup parity testing.';
+        return;
+    }
+    if (status) status.textContent = 'Starting local relational refresh...';
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/sync/start'), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ mode: 'derive' })
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        if (status) status.textContent = `Relational refresh started. PID ${payload.sync?.pid || 'unknown'}.`;
+    } catch (error) {
+        if (status) status.textContent = error.message || 'Unable to start relational refresh.';
+    }
 }
 
 function parseFirestoreValue(value) {

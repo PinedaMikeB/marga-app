@@ -359,7 +359,7 @@
                             <div class="role-editor-header">
                                 <div>
                                     <h4>Database Settings</h4>
-                                    <p class="ops-subtext">Switch this browser between Firebase and the verified local Margabase API.</p>
+                                    <p class="ops-subtext">Production is locked to the verified local Margabase API.</p>
                                 </div>
                                 <div class="settings-module-toolbar">
                                     <button type="button" class="btn btn-secondary btn-sm" id="testMargabaseBtn">Test Margabase</button>
@@ -381,25 +381,18 @@
                             </div>
 
                             <div class="database-choice-grid" role="radiogroup" aria-label="Select database backend">
-                                <label class="database-choice" id="databaseChoiceFirebase">
-                                    <input type="radio" name="databaseBackend" value="firebase">
-                                    <span>
-                                        <strong>Firebase</strong>
-                                        <small>Production source of truth and fallback while parity is checked.</small>
-                                    </span>
-                                </label>
                                 <label class="database-choice" id="databaseChoiceMargabase">
-                                    <input type="radio" name="databaseBackend" value="margabase">
+                                    <input type="radio" name="databaseBackend" value="margabase" checked>
                                     <span>
                                         <strong>Margabase</strong>
-                                        <small>Local fresh-backup mirror for module-by-module parity testing.</small>
+                                        <small>Official production backend. Firebase reads and writes are disabled for app.marga.biz.</small>
                                     </span>
                                 </label>
                             </div>
 
                             <div class="settings-sync-box database-warning-box">
                                 <div class="settings-sync-title">Database Safety</div>
-                                <div class="ops-subtext">This switch only changes the current browser. Keep Firebase as fallback until rendered module parity passes.</div>
+                                <div class="ops-subtext">Firebase is no longer selectable from app.marga.biz. Keep this locked to avoid new Firebase costs and bad records.</div>
                             </div>
 
                             <div class="settings-sync-box database-sync-box">
@@ -625,12 +618,12 @@
         </div>
     </div>
 
-    <script src="../shared/js/firebase-config.js?v=20260518-login-permissions-2"></script>
+    <script src="../shared/js/firebase-config.js?v=20260518-margabase-locked-1"></script>
     <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="js/settings.js?v=20260512-firebase-only-1"></script>
+    <script src="js/settings.js?v=20260518-margabase-locked-1"></script>
 </body>
 </html>
