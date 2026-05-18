@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-05-12
+Last Updated: 2026-05-18
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,6 +8,10 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
+- 2026-05-18 Field App / communications checkpoint:
+  - Latest pushed `main` commit after this work: `2ba8831` `Add explicit repin photo button`.
+  - User expects verified Marga-App code changes to be committed and pushed to `main` automatically unless explicitly told not to push.
+  - Field App is currently production-sensitive; do not revert or weaken the GPS proof rules without explicit user approval.
 - New infrastructure direction: build the reusable self-hosted Marga platform in `/Volumes/Wotg Drive Mike/GitHub/marga-platform`, with the first app stack under `apps/margabase`.
 - Goal: replace Firebase-style per-read/write billing pressure with a Mac mini local server stack for database/API/realtime workflows.
 - Planned public access model:
@@ -42,6 +46,34 @@ Start every new Marga-App thread by reading:
 - Before implementing grouped/collapsible Collections rows, preserve the current working month-to-month matrix as the rollback baseline.
 - New Collections grouping focus: one-invoice / many-branch customers such as `China Bank Savings - Branches` should show one parent invoice row with expandable branch/machine meter-reading detail.
 - Keep Marga App work inside the `Marga-App` repo/thread. If a chat is in `marga-biz`, stop and redirect before editing app code.
+
+## Firebase Complete Backup Method - 2026-05-15
+- Canonical migration backup method:
+  - Do not use repeated collection-walking/import/parity loops as the full-migration baseline; that approach is slow, expensive in Firebase reads, and can still miss rarely used collections.
+  - Use Google-managed Firestore export first, then download the export files locally and convert from local files into Postgres/Margabase.
+  - Separately download Firebase Storage files/images/assets from the original Firebase Storage bucket.
+- Firestore managed export baseline:
+  - Project: `sah-spiritual-journal`.
+  - Temporary export bucket: `gs://marga-firestore-export-us-450636566224`.
+  - Bucket location: `us-central1`.
+  - Export prefix: `firestore-managed-exports/2026-05-15T16-40-43+0800`.
+  - Export snapshot time: `2026-05-15T08:41:00Z` / `2026-05-15 4:41 PM` Manila time.
+  - Export completed successfully with `5,689,231` Firestore documents and `3,197,891,287` bytes across `1,026` export objects.
+- Local backup paths:
+  - Full backup folder: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/backups/margabase/full-firebase-backups/2026-05-15T16-40-43+0800`.
+  - Backup log: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/logs/full-firebase-backup-20260515-164043.log`.
+  - Correct Firebase Storage download log: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/logs/firebase-storage-download-20260515-172634.log`.
+  - Current pointer files: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/state/current-full-firebase-backup-dir.txt` and `/Volumes/Wotg Drive Mike/GitHub/marga-platform/state/current-full-firebase-backup-log.txt`.
+- Storage backup rule:
+  - Firestore export bucket is only for Firestore export files.
+  - Original Firebase Storage/media bucket must be downloaded separately from `sah-spiritual-journal.firebasestorage.app`.
+  - `scripts/full-firebase-backup.mjs` in `/Volumes/Wotg Drive Mike/GitHub/marga-platform` now separates `--firestore-bucket` from `--storage-bucket`; do not point Storage download at the temporary Firestore export bucket.
+- Catch-up rule:
+  - Use the managed export snapshot as the baseline, then run a small overlap catch-up for documents changed from `2026-05-15 4:00 PM` Manila onward so records created during/after export are not missed.
+  - Avoid continuous parity/live-progress reads against Firebase unless the user explicitly asks for a progress or parity check.
+- Cutover rule:
+  - Firebase remains production until local Firestore export import, Storage download, Postgres derivation, compatibility API, critical-flow smoke tests, and parity checks are complete.
+  - MargaBase switching stays admin/browser-local until the app behaves like Firebase for Billing, Collections, Service, Master Schedule, Field App, and Storage-backed image/content flows.
 
 ## Margabase Migration Checkpoint - 2026-05-11 Night
 - 2026-05-12 temporary safety update:
@@ -143,11 +175,65 @@ Start every new Marga-App thread by reading:
   - `e0d2755` `Harden collections month auto scroll`
   - `dbc320d` `Constrain collections matrix viewport`
 - Current live Master Schedule / Field App work already pushed on `main`:
+  - `2ba8831` `Add explicit repin photo button`
+  - `96f9e50` `Show photo picker for field repin`
+  - `d674579` `Allow field customer location repin`
+  - `5283e86` `Add company meeting room`
+  - `aa48513` `Add field staff calls`
+  - `dfd6c81` `Add field attendance location check`
+  - `f356bfa` `Require GPS proof for customer check-in`
   - `3f3ab9c` `Use route data for master schedule readiness`
   - `caafb64` `Match master schedule print columns to VBNet`
   - `dec0127` `Add carryover tab to field app`
   - `4156a67` `Require field customer location pin`
   - `461e7b3` `Require frontage photo for location pins`
+
+## Field App GPS / Attendance / Repin Checkpoint - 2026-05-18
+- Business rule clarified by user:
+  - Official daily attendance `Time In` is separate from per-customer check-in/out.
+  - Staff must official `Time In` only while physically within `100m` of an open/pending scheduled customer location pin.
+  - They cannot time in from home or an unrelated place.
+  - Time Out may be from a customer or the office.
+- Official attendance implementation:
+  - Field App now has a Daily Attendance `Location Check` panel above official time cards.
+  - The panel compares phone GPS against the staff member's open/pending workload, including current route and carryover/past pending tasks.
+  - It shows nearest pinned customer, distance, GPS accuracy, missing-pin count/names, and opens the nearest task or a task needing a pin.
+  - If no open/pending customer is within `100m`, official Time In is blocked.
+- Per-customer check-in implementation:
+  - `tbl_schedule.field_time_in` now requires GPS proof against that task's customer branch pin.
+  - The app writes proof fields such as `field_time_in_latitude`, `field_time_in_longitude`, `field_time_in_distance_meters`, and `field_time_in_location_status = matched_customer_pin`.
+  - The Field App time-in picker is readonly; staff should use the on-device Check In / Time In action so location proof is captured.
+- Local Margabase API guard:
+  - In `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/margabase-firestore-api.mjs`, a local guard was added during this work to reject `tbl_schedule.field_time_in` writes without `matched_customer_pin` proof and distance `<=100m`.
+  - That platform repo was not committed in this Marga-App commit series; inspect `marga-platform` before assuming that guard is versioned.
+- Hener / Denovo diagnostic:
+  - Hener Claveria staff id observed as `54`.
+  - Denovo May 18 route row exists: `Denovo Express Endeavours Corporation - Denovo Express Endeavours Corporation, HR Department`, branch id `2857`, saved pin `14.5754799, 120.9809277`.
+  - Zontar was being shown by the homepage Location Check because it was an older open/past-pending workload item with a saved pin, and the Location Check reports the nearest pinned open/pending customer overall.
+  - Denovo-to-Zontar distance is roughly `969m-982m`, so if a staff member is truly at Denovo but the panel shows Zontar around `803m`, suspect bad phone GPS, a wrong Denovo pin, or the staff not standing near Denovo's saved pin.
+- Repin behavior:
+  - Already-pinned customers now show `Repin Customer Location` instead of blocking pinning.
+  - Repin requires a new frontage/building photo, confirms before replacing the saved branch coordinates, stores previous latitude/longitude for audit, writes `customer_location_repinned`, and refreshes the location check after saving.
+  - Latest fix added an explicit `Take / Select Photo` button because some Android/WebView screens did not expose the native file input clearly after refresh.
+  - Field assets were cache-bumped through `field/index.html` to `field.css?v=20260518-repin-photo-2` and `field.js?v=20260518-repin-photo-2`.
+
+## Field App Calls / Company Meeting Checkpoint - 2026-05-18
+- Source reviewed from Go Mission:
+  - Existing Jitsi pattern came from `/Volumes/Wotg Drive Mike/GitHub/go-mission/www/modules/groups/group-meeting.js`.
+  - Self-hosted Jitsi domain used by MARGA: `call.wotgonline.com`.
+- Field Support calls:
+  - Field App has a `Field Support` panel with `Voice CSR`, `Video CSR`, `Voice Leader`, `Video Leader`, `Join Field Meeting`, and `Join Company Meeting`.
+  - Admin/service/team-leader roles get direct staff call controls by employee/staff ID.
+  - Incoming role/direct calls poll `tbl_field_call_requests`, show an in-app ringing overlay, and open an embedded Jitsi modal on accept.
+  - Ringing only works while the app/page is open. True background/mobile push notification is not implemented yet.
+- Company meeting:
+  - Shared script added: `shared/js/marga-meetings.js`.
+  - Company meeting state is stored in `tbl_field_call_requests` as `type: meeting`, `audience: all`, `status: active`, with daily room name like `MargaCompanyMeetingYYYYMMDD`.
+  - Dashboard shows `Start/Join Company Meeting` in the top bar and Operations Control Center.
+  - Desktop modules using shared dashboard shell get a floating `Meeting` launcher.
+  - Field App has `Join Company Meeting`.
+  - Active meetings show an in-app banner: `Company meeting is live`.
+  - Meeting notifications are banner-style, not phone-style ringing, by design. Direct calls ring; meetings notify.
 - Current live Service Progress map work already pushed on `main`:
   - `f78805d` `Center service progress map on Antipolo office`
   - `0933866` `Reduce service progress map load`

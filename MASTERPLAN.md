@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-05-12
+Last Updated: 2026-05-18
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -77,6 +77,13 @@ This file exists to protect the project across new chats by recording:
   - Collections is a priority proof point: the current Firebase/browser flow can take around 7 minutes to read and calculate everything. In Postgres, invoice balances, payment-date totals, unpaid receivables, pending billing projections, grouped-customer parent rows, and 2307 follow-up states should be precomputed or queryable through indexed views/API endpoints so the UI requests only the selected month/window/customer set.
   - Collections billing source rule for Supabase/Margabase: do not depend on a capped `load all billing` scan. Query billing by the dashboard's active year/month window, merge targeted results with any compatibility scan, and dedupe by billing document/invoice identity before calculating the matrix, search results, and totals. This prevents invoices that exist in Billing, such as invoice `130652`, from being missing in Collections.
   - Database-side automation should handle core invariants where possible, such as payment rows updating invoice balance, DR finalization marking released items, schedule closure creating audit/event rows, machine pullout setting pending-return state, and nightly jobs refreshing billing/collections summaries.
+- Complete backup-first rule:
+  - Before the final migration build-out, capture the whole Firebase estate locally: Google-managed Firestore export plus Firebase Storage bucket download.
+  - Do not rely on repeated SDK collection walking as the canonical full-copy method; it is too read-expensive, too slow, and can leave confidence gaps.
+  - Use the local backup files as the source for Postgres raw import, relational derivation, API compatibility work, and dashboard/parity checks so engineering does not repeatedly reread Firebase.
+  - The 2026-05-15 baseline export is `gs://marga-firestore-export-us-450636566224/firestore-managed-exports/2026-05-15T16-40-43+0800`, snapshot `2026-05-15T08:41:00Z` / `2026-05-15 4:41 PM` Manila, with `5,689,231` Firestore documents and about `3.2 GB` exported.
+  - Firebase Storage/media must be downloaded from the original bucket `sah-spiritual-journal.firebasestorage.app`; the US bucket is only a temporary Firestore export landing zone.
+  - After the baseline, run only an overlapped timestamp catch-up from `2026-05-15 4:00 PM` Manila onward, then compare local results against Firebase on demand.
 - Offline-first rule:
   - Desktop and mobile should tolerate temporary internet loss by caching app assets/data and saving new actions to an IndexedDB pending-write queue.
   - MARGA's final invoice numbers, OR numbers, and DR numbers are manually entered from physical booklets, so offline invoice/payment/DR finalization can be allowed as local pending records.
@@ -179,6 +186,21 @@ Current operations scheduling state:
 - Master Schedule is now a working planning/print surface for daily routes.
 - Field App shows the staff member's current printed route by default and has a Carry Over tab for saved/unprinted or older open assigned jobs.
 - These schedule features should stay aligned: printed route is the daily route; carry-over is for follow-up/planning and should not replace today's default view.
+- Field App GPS attendance rule:
+  - Official daily attendance `Time In` is separate from per-customer check-in/out.
+  - Official Time In must be within `100m` of a pinned open/pending scheduled customer assigned to that staff member.
+  - Homepage/Daily Attendance Location Check may consider both today's route and past pending/carryover workload; it reports the nearest pinned open/pending customer overall.
+  - Per-customer `field_time_in` must match that specific customer's saved branch pin within `100m` and write location proof.
+  - Do not weaken the 100m proof rule without explicit user approval.
+- Field App customer pin/repin rule:
+  - New customer pins and repins require a frontage/building photo when the phone/browser supports image capture.
+  - Already pinned customers must still allow controlled repin because saved pins can be wrong.
+  - Repin must confirm before replacing coordinates, preserve previous coordinates in audit fields, and log a distinct `customer_location_repinned` event.
+- MARGA communications state:
+  - Use self-hosted Jitsi at `call.wotgonline.com`.
+  - Direct/role calls are phone-like and may ring in-app while the app is open.
+  - General/company meetings are meeting-like and should show a live banner/launcher, not ring everyone by default.
+  - Shared company meeting logic lives in `shared/js/marga-meetings.js`; Field App call logic currently lives in `field/js/field.js`.
 
 ## Core Architecture
 - Frontend-first web app hosted on Netlify.
