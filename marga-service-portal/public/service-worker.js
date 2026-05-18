@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v6-aidial-replica';
+const CACHE_NAME = 'msp-shell-v7-aidial-clean';
 const SHELL_ASSETS = [
   '/',
   '/install/',

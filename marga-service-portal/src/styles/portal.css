@@ -4,49 +4,18 @@
   min-height: 100vh;
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);
-  gap: 78px;
+  gap: 28px;
   padding: 4px 14px 18px 17px;
 }
 
 .app-shell::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 148px;
-  width: 54px;
-  z-index: -1;
-  background: var(--rail);
-  border-left: 1px solid #d4dcec;
-  border-right: 1px solid #d4dcec;
+  display: none;
+  content: none;
 }
 
 .app-shell::after {
-  content: "";
-  position: fixed;
-  top: 53px;
-  left: 161px;
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-  background:
-    linear-gradient(currentColor, currentColor) 8px 8px / 5px 5px no-repeat,
-    linear-gradient(currentColor, currentColor) 16px 8px / 5px 5px no-repeat,
-    linear-gradient(currentColor, currentColor) 8px 16px / 5px 5px no-repeat,
-    linear-gradient(currentColor, currentColor) 16px 16px / 5px 5px no-repeat,
-    var(--active);
-  color: #62617a;
-  box-shadow:
-    0 42px 0 -6px #69707e,
-    0 42px 0 -4px var(--rail),
-    0 78px 0 -6px #69707e,
-    0 78px 0 -4px var(--rail),
-    0 114px 0 -6px #69707e,
-    0 114px 0 -4px var(--rail),
-    0 150px 0 -6px #69707e,
-    0 150px 0 -4px var(--rail),
-    0 186px 0 -6px #69707e,
-    0 186px 0 -4px var(--rail);
+  display: none;
+  content: none;
 }
 
 .sidebar {
