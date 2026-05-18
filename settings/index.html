@@ -359,10 +359,10 @@
                             <div class="role-editor-header">
                                 <div>
                                     <h4>Database Settings</h4>
-                                    <p class="ops-subtext">Firebase is temporarily locked as the active production database while Margabase sync is being verified.</p>
+                                    <p class="ops-subtext">Switch this browser between Firebase and the verified local Margabase API.</p>
                                 </div>
                                 <div class="settings-module-toolbar">
-                                    <button type="button" class="btn btn-secondary btn-sm" id="testMargabaseBtn" disabled>Margabase Disabled</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="testMargabaseBtn">Test Margabase</button>
                                     <button type="button" class="btn btn-primary btn-sm" id="applyDatabaseBackendBtn">Apply &amp; Reload</button>
                                 </div>
                             </div>
@@ -375,8 +375,8 @@
                                 </div>
                                 <div class="database-status-card">
                                     <span>Margabase Local API</span>
-                                    <strong id="margabaseHealthLabel">Disabled</strong>
-                                    <p id="margabaseHealthDetail">Margabase is temporarily disabled until background sync and record parity are verified.</p>
+                                    <strong id="margabaseHealthLabel">Ready to test</strong>
+                                    <p id="margabaseHealthDetail">Fresh backup import completed locally. Test before switching this browser.</p>
                                 </div>
                             </div>
 
@@ -385,38 +385,38 @@
                                     <input type="radio" name="databaseBackend" value="firebase">
                                     <span>
                                         <strong>Firebase</strong>
-                                        <small>Current production source of truth. This browser and all modules are locked to Firebase.</small>
+                                        <small>Production source of truth and fallback while parity is checked.</small>
                                     </span>
                                 </label>
                                 <label class="database-choice" id="databaseChoiceMargabase">
-                                    <input type="radio" name="databaseBackend" value="margabase" disabled>
+                                    <input type="radio" name="databaseBackend" value="margabase">
                                     <span>
                                         <strong>Margabase</strong>
-                                        <small>Temporarily disabled. Re-enable only after sync matches Firebase records.</small>
+                                        <small>Local fresh-backup mirror for module-by-module parity testing.</small>
                                     </span>
                                 </label>
                             </div>
 
                             <div class="settings-sync-box database-warning-box">
                                 <div class="settings-sync-title">Database Safety</div>
-                                <div class="ops-subtext">Old Margabase browser preferences are cleared automatically on load while the temporary lock is active.</div>
+                                <div class="ops-subtext">This switch only changes the current browser. Keep Firebase as fallback until rendered module parity passes.</div>
                             </div>
 
                             <div class="settings-sync-box database-sync-box">
                                 <div class="settings-sync-title">Margabase Controls</div>
-                                <div class="ops-subtext">Disabled while the app is temporarily locked to Firebase.</div>
+                                <div class="ops-subtext">Live Firebase sync is blocked. Relational refresh derives from local Margabase raw documents only.</div>
                                 <div class="settings-sync-actions">
-                                    <button type="button" class="btn btn-secondary btn-sm" id="refreshDatabaseSyncStatusBtn" disabled>Refresh Status</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="refreshDatabaseSyncStatusBtn">Refresh Status</button>
                                     <button type="button" class="btn btn-secondary btn-sm" id="hardRefreshAppBtn">Hard Refresh App</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" id="deriveMargabaseBtn" disabled>Refresh Relational Tables</button>
-                                    <button type="button" class="btn btn-primary btn-sm" id="runMargabaseSyncBtn" disabled>Sync Disabled</button>
-                                    <a class="btn btn-secondary btn-sm database-link-btn" aria-disabled="true">Progress Disabled</a>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="deriveMargabaseBtn">Refresh Relational Tables</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="runMargabaseSyncBtn" disabled>Live Sync Blocked</button>
+                                    <a class="btn btn-secondary btn-sm database-link-btn" href="http://127.0.0.1:4322/" target="_blank" rel="noopener">Fresh Import Progress</a>
                                 </div>
-                                <pre class="database-command" id="databaseSyncCommand">Margabase sync controls are temporarily disabled. The web app is locked to Firebase.</pre>
-                                <div class="ops-subtext" id="databaseSyncStatus">Margabase sync status is disabled.</div>
+                                <pre class="database-command" id="databaseSyncCommand">Fresh backup import complete. Use Refresh Status to inspect the local API counts.</pre>
+                                <div class="ops-subtext" id="databaseSyncStatus">Ready to check Margabase status.</div>
                             </div>
 
-                            <div class="ops-subtext" id="databaseSettingsStatus">Firebase is temporarily locked as the active database.</div>
+                            <div class="ops-subtext" id="databaseSettingsStatus">Select a backend, then Apply & Reload.</div>
                         </div>
                     </div>
                 </div>
@@ -625,8 +625,8 @@
         </div>
     </div>
 
-    <script src="../shared/js/firebase-config.js?v=20260512-firebase-only-1"></script>
-    <script src="../shared/js/auth.js"></script>
+    <script src="../shared/js/firebase-config.js?v=20260518-login-permissions-1"></script>
+    <script src="../shared/js/auth.js?v=20260518-login-permissions-1"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>

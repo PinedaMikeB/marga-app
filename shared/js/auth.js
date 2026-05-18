@@ -4,7 +4,7 @@
  */
 
 const MargaAuth = {
-    SESSION_VERSION: '20260516-field-permissions-2',
+    SESSION_VERSION: '20260518-login-permissions-1',
 
     // User roles
     ROLES: {
@@ -25,6 +25,7 @@ const MargaAuth = {
         admin: ['customers', 'ai-product-consultant', 'billing', 'schedule', 'master-schedule', 'apd', 'accounting', 'collections', 'service', 'general-production', 'releasing', 'receiving', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
         'ai-consultant-admin': ['ai-product-consultant'],
         billing: ['customers', 'billing', 'schedule', 'apd', 'accounting', 'pettycash', 'reports'],
+        cashier: ['customers', 'billing', 'collections', 'schedule', 'apd', 'accounting', 'pettycash', 'reports'],
         collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
         service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'receiving', 'inventory', 'field'],
         hr: ['hr', 'settings'],
