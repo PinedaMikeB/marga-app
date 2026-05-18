@@ -243,10 +243,10 @@
   height: 20px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-soft);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .top-icon::before {
@@ -258,8 +258,8 @@
 }
 
 .top-icon img {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
   display: block;
   object-fit: contain;
 }
