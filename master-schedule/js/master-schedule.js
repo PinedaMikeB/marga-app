@@ -279,16 +279,36 @@ async function queryEqualsLimit(collection, fieldPath, value, limit = MASTER_LIM
     });
 }
 
-async function fetchCollection(collection, options = {}) {
-    const { pageSize = 1000, maxPages = 20, fieldMask = null } = options;
+function defaultMargabaseDocumentsBaseUrl() {
+    try {
+        if (window.location.hostname === 'app.marga.biz' || window.location.origin === 'http://127.0.0.1:9100') {
+            return '/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+        }
+        if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') {
+            return 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+        }
+    } catch (error) {
+        // Use the normal configured backend when browser location is unavailable.
+    }
+    return '';
+}
+
+async function fetchCollectionFromBase(collection, options = {}) {
+    const {
+        pageSize = 1000,
+        maxPages = 20,
+        fieldMask = null,
+        baseUrl = MASTER_BASE_URL,
+        apiKey = MASTER_API_KEY
+    } = options;
     const rows = [];
     let token = '';
 
     for (let page = 0; page < maxPages; page += 1) {
-        const params = new URLSearchParams({ pageSize: String(pageSize), key: MASTER_API_KEY });
+        const params = new URLSearchParams({ pageSize: String(pageSize), key: apiKey });
         if (token) params.set('pageToken', token);
         if (Array.isArray(fieldMask)) fieldMask.forEach((path) => params.append('mask.fieldPaths', path));
-        const response = await fetch(`${MASTER_BASE_URL}/${collection}?${params.toString()}`);
+        const response = await fetch(`${baseUrl}/${collection}?${params.toString()}`);
         if (response.status === 404) return rows;
         const payload = await response.json();
         if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `Failed to load ${collection}`);
@@ -298,6 +318,33 @@ async function fetchCollection(collection, options = {}) {
     }
 
     return rows;
+}
+
+async function fetchCollection(collection, options = {}) {
+    return fetchCollectionFromBase(collection, options);
+}
+
+async function fetchConfigCollection(collection, options = {}) {
+    let rows = [];
+    try {
+        rows = await fetchCollection(collection, options);
+    } catch (error) {
+        console.warn(`Primary ${collection} setup load failed; trying Margabase fallback.`, error);
+    }
+    if (rows.length) return rows;
+
+    const fallbackBaseUrl = defaultMargabaseDocumentsBaseUrl();
+    if (!fallbackBaseUrl || fallbackBaseUrl === MASTER_BASE_URL) return rows;
+    try {
+        return await fetchCollectionFromBase(collection, {
+            ...options,
+            baseUrl: fallbackBaseUrl,
+            apiKey: 'margabase-local'
+        });
+    } catch (error) {
+        console.warn(`Margabase ${collection} setup fallback failed.`, error);
+        return rows;
+    }
 }
 
 async function fetchDoc(collection, docId) {
@@ -1562,9 +1609,9 @@ async function loadPendingNotRoutedRows(date, routeRows) {
 
 async function loadMasterConfigs() {
     const [areaCities, techAreas, clientAreas] = await Promise.all([
-        fetchCollection('marga_master_schedule_area_cities', { maxPages: 10 }).catch(() => []),
-        fetchCollection('marga_master_schedule_tech_areas', { maxPages: 10 }).catch(() => []),
-        fetchCollection('marga_master_schedule_client_areas', { maxPages: 20 }).catch(() => [])
+        fetchConfigCollection('marga_master_schedule_area_cities', { maxPages: 10 }),
+        fetchConfigCollection('marga_master_schedule_tech_areas', { maxPages: 10 }),
+        fetchConfigCollection('marga_master_schedule_client_areas', { maxPages: 20 })
     ]);
 
     masterState.areaCityRows = new Map();
