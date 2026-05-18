@@ -74,6 +74,84 @@
             flex-wrap: wrap;
         }
 
+        .receive-payment-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            align-items: end;
+        }
+
+        .receive-payment-grid .full {
+            grid-column: 1 / -1;
+        }
+
+        .receive-payment-search {
+            display: grid;
+            grid-template-columns: minmax(180px, 1fr) auto;
+            gap: 8px;
+            align-items: end;
+        }
+
+        .receive-payment-results {
+            max-height: 180px;
+            overflow: auto;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .receive-payment-result {
+            width: 100%;
+            border: 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+            padding: 8px 10px;
+            background: transparent;
+            text-align: left;
+            cursor: pointer;
+            color: #183b63;
+            font: inherit;
+        }
+
+        .receive-payment-result:hover {
+            background: rgba(219, 234, 254, 0.75);
+        }
+
+        .receive-payment-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .receive-payment-table th,
+        .receive-payment-table td {
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            padding: 7px 8px;
+            vertical-align: top;
+        }
+
+        .receive-payment-table th,
+        .receive-payment-table tfoot td {
+            background: rgba(239, 246, 255, 0.9);
+            color: #284b70;
+            font-weight: 800;
+        }
+
+        .receive-payment-drafts {
+            display: grid;
+            gap: 8px;
+        }
+
+        .receive-payment-draft {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+            padding: 9px 10px;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            border-radius: 10px;
+            background: rgba(248, 250, 252, 0.9);
+        }
+
         #last-updated {
             font-size: 11px;
             color: #486682;
@@ -3212,6 +3290,84 @@
         </div>
     </div>
 
+    <div class="modal-overlay hidden" id="receivePaymentModal">
+        <div class="modal modal-xl">
+            <div class="modal-header">
+                <h2>Receive Payment</h2>
+                <p>Confirm field draft payments or post office payments after invoice allocation is checked.</p>
+            </div>
+            <div class="modal-body">
+                <div class="brief-section">
+                    <h4>Field Draft Payments</h4>
+                    <div id="receivePaymentDraftList" class="receive-payment-drafts">
+                        <div class="empty-followup">Loading draft payments...</div>
+                    </div>
+                </div>
+                <div class="brief-section">
+                    <h4>Invoice Allocation</h4>
+                    <div class="receive-payment-search">
+                        <label>
+                            <span>Invoice No to pay</span>
+                            <input type="search" id="receivePaymentInvoiceSearch" placeholder="Search invoice no, customer, branch">
+                        </label>
+                        <button type="button" class="btn btn-secondary" id="receivePaymentAddBtn">Add</button>
+                    </div>
+                    <div id="receivePaymentSearchResults" class="receive-payment-results" hidden></div>
+                    <div class="collection-followup-table-wrap">
+                        <table class="receive-payment-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Customer / Branch</th>
+                                    <th>Inv No</th>
+                                    <th class="text-right">Amount</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="receivePaymentInvoiceRows">
+                                <tr><td colspan="5" class="collection-followup-empty">No invoice selected yet.</td></tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" class="text-right">Total</td>
+                                    <td class="text-right" id="receivePaymentInvoiceTotal">₱0.00</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                <div class="brief-section">
+                    <h4>Payment Details</h4>
+                    <div class="receive-payment-grid">
+                        <label><span>Date</span><input type="date" id="receivePaymentDate"></label>
+                        <label><span>OR No</span><input type="text" id="receivePaymentOrNumber" placeholder="OR number"></label>
+                        <label><span>Amount Received</span><input type="number" id="receivePaymentAmount" min="0" step="0.01" placeholder="0.00"></label>
+                        <label><span>2307 / Deduction</span><input type="number" id="receivePaymentDeduction" min="0" step="0.01" placeholder="0.00"></label>
+                        <label>
+                            <span>Payment Type</span>
+                            <select id="receivePaymentType">
+                                <option value="cash">Cash</option>
+                                <option value="check">Check</option>
+                            </select>
+                        </label>
+                        <label><span>Check No</span><input type="text" id="receivePaymentCheckNumber" placeholder="Check number"></label>
+                        <label><span>Check Date</span><input type="date" id="receivePaymentCheckDate"></label>
+                        <label><span>Check Bank</span><input type="text" id="receivePaymentCheckBank" placeholder="Bank name"></label>
+                        <label class="full"><span>Remarks</span><textarea id="receivePaymentRemarks" rows="2" placeholder="Notes from field staff, collection staff, or confirmation details"></textarea></label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span class="detail-save-status" id="receivePaymentStatus">Ready.</span>
+                <div class="branch-editor-actions">
+                    <button class="btn btn-secondary" onclick="closeReceivePaymentModal()">Cancel</button>
+                    <button class="btn btn-primary" id="receivePaymentConfirmBtn" onclick="confirmReceivePayment()">Confirm Received</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay hidden" id="followupModal">
         <div class="modal">
             <div class="modal-header">
@@ -3339,6 +3495,7 @@
                     <span id="dataMode">(Active 0-180 days)</span>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-primary btn-sm" onclick="openReceivePaymentModal()">Receive Payment</button>
                     <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">Today's Brief</button>
                     <button class="btn btn-secondary btn-sm" id="btnToggleAnalytics" onclick="toggleAnalyticsDashboard()">Analytics</button>
@@ -3638,6 +3795,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260518-combined-visit-1"></script>
+    <script src="collections/js/collections.js?v=20260518-receive-payment-1"></script>
 </body>
 </html>

@@ -6105,7 +6105,7 @@ async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
         ornum: form.collectionOrNumber || form.collectionReceiptRefs,
         or_number: form.collectionOrNumber || form.collectionReceiptRefs,
         payment_type: isCheck ? 1 : 0,
-        payment_status: form.collectionPaymentStatus || 'Paid',
+        payment_status: 'Draft Payment',
         check_number: form.collectionCheckNumber,
         check_amt: isCheck ? (Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0) : 0,
         check_date: checkDateDb,
@@ -6123,7 +6123,7 @@ async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
         remarks: form.collectionPaymentRemarks,
         timestamp: nowIso,
         updated_at: nowIso,
-        source: 'field_app_collection_payment',
+        source: 'field_app_collection_payment_draft',
         encoded_by: staffId
     };
     await setDocument('tbl_paymentinfo', paymentDocId, paymentPayload);
@@ -6142,7 +6142,7 @@ async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
             remarks: form.collectionPaymentRemarks,
             timestamp: nowIso,
             updated_at: nowIso,
-            source: 'field_app_collection_payment',
+            source: 'field_app_collection_payment_draft',
             encoded_by: staffId
         });
     }

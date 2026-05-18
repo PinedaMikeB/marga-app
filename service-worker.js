@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v61-customer-checkout-required';
+const CACHE_NAME = 'marga-app-shell-v62-receive-payment';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,11 +29,11 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260512-firebase-only-1',
+    '/collections/js/collections.js?v=20260518-receive-payment-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260511-end-of-day-review-1',
-    '/field/js/field.js?v=20260518-customer-checkout-required-1',
+    '/field/js/field.js?v=20260518-field-payment-draft-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
