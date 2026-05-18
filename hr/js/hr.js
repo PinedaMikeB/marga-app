@@ -91,10 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('performanceModalOverlay').addEventListener('click', closePerformanceModal);
     document.getElementById('performanceModalCloseBtn').addEventListener('click', closePerformanceModal);
     document.getElementById('performanceModalCloseFooterBtn').addEventListener('click', closePerformanceModal);
-    document.querySelector('#hrPerformanceTable tbody').addEventListener('click', (event) => {
-        const button = event.target.closest('[data-performance-call]');
-        if (button) callPerformanceStaff(button.dataset.performanceCall);
-    });
     document.querySelector('#hrPerformanceTable tbody').addEventListener('change', (event) => {
         const select = event.target.closest('[data-performance-status]');
         if (select) savePerformanceRowStatus(select.dataset.performanceStatus, select.value);
@@ -354,7 +350,6 @@ function renderPerformanceDetailsTable() {
     const rows = group ? group.rows : HR_STATE.performanceRows;
     tbody.innerHTML = rows.slice(0, 160).map((row) => {
         const rawId = String(row.employee.id || row.employee._docId || '');
-        const id = sanitize(rawId);
         const evidence = buildPerformanceEvidence(row, group?.key || '').slice(0, 4);
         const statusKey = performanceDecisionKey(rawId, group?.key || 'all');
         return `
@@ -366,13 +361,12 @@ function renderPerformanceDetailsTable() {
                 <td data-label="Evidence">${evidence.length ? evidence.map((item) => `<div>${sanitize(item)}</div>`).join('') : 'No detailed exception for selected recommendation.'}</td>
                 <td data-label="Recommendation"><span class="hr-rec-badge ${sanitize(row.recommendationClass)}">${sanitize(group?.actionLabel || row.recommendation)}</span></td>
                 <td data-label="Status">${renderPerformanceStatusSelect(statusKey)}</td>
-                <td data-label="Action"><button type="button" class="hr-text-btn" data-performance-call="${id}">Call</button></td>
             </tr>
         `;
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="8">${group ? 'No staff currently match this recommendation.' : 'No field performance records found for the selected date.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7">${group ? 'No staff currently match this recommendation.' : 'No field performance records found for the selected date.'}</td></tr>`;
     }
 }
 
