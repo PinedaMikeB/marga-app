@@ -125,6 +125,14 @@ function env(name) {
   return globalThis.Netlify?.env?.get?.(name) || process.env[name] || "";
 }
 
+function firestoreBaseUrl() {
+  return env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
+}
+
+function usesGoogleFirestore() {
+  return firestoreBaseUrl().includes("firestore.googleapis.com");
+}
+
 function json(statusCode, body) {
   return {
     statusCode,
@@ -208,6 +216,14 @@ function cleanIdentifier(value) {
   return String(value || "").trim();
 }
 
+function requestHost(event) {
+  return String(event.headers?.host || event.headers?.Host || "").toLowerCase();
+}
+
+function isLegacyNetlifyHost(event) {
+  return requestHost(event).includes("margaapp.netlify.app");
+}
+
 function validatePatch(collection, fields) {
   const allowed = ALLOWED_PATCH_FIELDS[collection] || CONFIG_COLLECTION_FIELDS[collection];
   if (!allowed) throw new Error(`Collection ${collection} is not allowed for master schedule writes.`);
@@ -220,6 +236,12 @@ function validatePatch(collection, fields) {
 
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
+  if (isLegacyNetlifyHost(event)) {
+    return json(410, {
+      ok: false,
+      error: "margaapp.netlify.app is retired. Open https://app.marga.biz to avoid writing bad Firebase records."
+    });
+  }
   if (!["PATCH", "DELETE"].includes(event.httpMethod)) return json(405, { ok: false, error: "Method not allowed" });
 
   try {
@@ -228,16 +250,17 @@ exports.handler = async (event) => {
     const docId = cleanIdentifier(body.docId);
     if (!collection || !docId) return json(400, { ok: false, error: "Missing collection or docId." });
 
-    const accessToken = await getGoogleAccessToken();
-    const baseUrl = env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
+    const accessToken = usesGoogleFirestore() ? await getGoogleAccessToken() : "";
+    const baseUrl = firestoreBaseUrl();
+    const key = env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
 
     if (event.httpMethod === "DELETE") {
       if (!ALLOWED_DELETE_COLLECTIONS.has(collection)) {
         return json(403, { ok: false, error: `Collection ${collection} is not allowed for master schedule deletes.` });
       }
-      const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}`, {
+      const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${encodeURIComponent(key)}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok && response.status !== 404) {
@@ -255,12 +278,12 @@ exports.handler = async (event) => {
       fields[key] = firestoreValue(value);
     });
 
+    params.set("key", key);
+    const headers = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}?${params.toString()}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`
-      },
+      headers,
       body: JSON.stringify({ fields })
     });
     const payload = await response.json().catch(() => ({}));

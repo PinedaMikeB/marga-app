@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v54';
+const CACHE_NAME = 'marga-app-shell-v59-login-fix';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,7 +22,7 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js?v=20260512-readable-totals-1',
+    '/billing/js/billing.js?v=20260516-no-function-cache-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',
@@ -33,7 +33,7 @@ const SHELL_ASSETS = [
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260511-end-of-day-review-1',
-    '/field/js/field.js?v=20260511-end-of-day-review-1',
+    '/field/js/field.js?v=20260516-field-permissions-3',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
@@ -65,12 +65,12 @@ const SHELL_ASSETS = [
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
-    '/shared/js/firebase-config.js?v=20260512-firebase-only-1',
-    '/shared/js/auth.js?v=20260511-server-login-1',
-    '/shared/js/utils.js?v=20260511-active-staff-1',
+    '/shared/js/firebase-config.js?v=20260518-login-fix-1',
+    '/shared/js/auth.js?v=20260518-login-fix-1',
+    '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
-    '/shared/js/offline-sync.js',
-    '/shared/js/pwa-install.js'
+    '/shared/js/offline-sync.js?v=20260516-field-permissions-3',
+    '/shared/js/pwa-install.js?v=20260516-field-permissions-3'
 ];
 
 self.addEventListener('install', (event) => {
@@ -114,6 +114,7 @@ self.addEventListener('fetch', (event) => {
     const requestUrl = new URL(event.request.url);
     const isSameOrigin = requestUrl.origin === self.location.origin;
     const isNavigate = event.request.mode === 'navigate';
+    const isFunctionRequest = isSameOrigin && requestUrl.pathname.startsWith('/.netlify/functions/');
     const isFreshFirstAsset = isSameOrigin && (
         requestUrl.pathname.endsWith('.html')
         || requestUrl.pathname.endsWith('.js')
@@ -147,6 +148,14 @@ self.addEventListener('fetch', (event) => {
 
             if (!isSameOrigin) {
                 return fetch(event.request);
+            }
+
+            if (isFunctionRequest) {
+                try {
+                    return await fetch(event.request, { cache: 'no-store' });
+                } catch (error) {
+                    return new Response('Offline', { status: 503, statusText: 'Offline' });
+                }
             }
 
             if (isFreshFirstAsset) {

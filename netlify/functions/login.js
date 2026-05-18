@@ -20,6 +20,29 @@ function env(name) {
   return globalThis.Netlify?.env?.get?.(name) || process.env[name] || "";
 }
 
+function requestHost(event) {
+  return String(
+    event?.headers?.["x-forwarded-host"]
+    || event?.headers?.["X-Forwarded-Host"]
+    || event?.headers?.host
+    || event?.headers?.Host
+    || ""
+  ).trim().toLowerCase();
+}
+
+function isLegacyNetlifyHost(event) {
+  const host = requestHost(event);
+  return host.endsWith(".netlify.app");
+}
+
+function firestoreBaseUrl() {
+  return env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
+}
+
+function usesGoogleFirestore() {
+  return firestoreBaseUrl().includes("firestore.googleapis.com");
+}
+
 function json(data, status = 200) {
   return {
     statusCode: status,
@@ -159,8 +182,7 @@ function normalizeUsername(value) {
 async function queryEmployee(fieldPath, value) {
   const lookupValue = String(value || "").trim();
   if (!lookupValue) return null;
-  const token = await getGoogleAccessToken();
-  if (!token) return null;
+  const token = usesGoogleFirestore() ? await getGoogleAccessToken() : "";
   const body = {
     structuredQuery: {
       from: [{ collectionId: "tbl_employee" }],
@@ -174,12 +196,12 @@ async function queryEmployee(fieldPath, value) {
       limit: 10,
     },
   };
-  const response = await fetch(`${env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL}:runQuery`, {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const key = env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
+  const response = await fetch(`${firestoreBaseUrl()}:runQuery?key=${encodeURIComponent(key)}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
@@ -256,7 +278,14 @@ function buildSession(user, ident) {
 exports.handler = async function login(event) {
   if (event.httpMethod !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
   try {
-    if (!env("GOOGLE_SERVICE_ACCOUNT_EMAIL") || !env("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY")) {
+    if (isLegacyNetlifyHost(event)) {
+      return json({
+        success: false,
+        blocked: true,
+        message: "This MARGA login address is retired. Please open https://app.marga.biz"
+      }, 403);
+    }
+    if (usesGoogleFirestore() && (!env("GOOGLE_SERVICE_ACCOUNT_EMAIL") || !env("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"))) {
       return json({ success: false, unavailable: true, message: "Server login is not configured." }, 503);
     }
     let body = {};

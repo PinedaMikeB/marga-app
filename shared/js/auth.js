@@ -4,6 +4,8 @@
  */
 
 const MargaAuth = {
+    SESSION_VERSION: '20260516-field-permissions-2',
+
     // User roles
     ROLES: {
         ADMIN: 'admin',
@@ -39,10 +41,17 @@ const MargaAuth = {
      * Initialize auth - check for existing session
      */
     init() {
+        if (this.redirectLegacyNetlifyHost()) return false;
         const stored = localStorage.getItem('marga_user') || sessionStorage.getItem('marga_user');
         if (stored) {
             try {
                 this.currentUser = JSON.parse(stored);
+                if (this.currentUser?.session_version !== this.SESSION_VERSION) {
+                    localStorage.removeItem('marga_user');
+                    sessionStorage.removeItem('marga_user');
+                    this.currentUser = null;
+                    return false;
+                }
                 this.currentUser.roles = this.normalizeRoles(this.currentUser.roles || this.currentUser.role || 'viewer');
                 this.currentUser.role = this.normalizeRole(this.currentUser.role || this.currentUser.roles[0] || 'viewer');
                 this.currentUser.allowed_modules = this.normalizeModules(this.currentUser.allowed_modules);
@@ -78,6 +87,14 @@ const MargaAuth = {
                 return {
                     success: false,
                     message: serverLogin.message || 'Invalid email or password'
+                };
+            }
+            const host = String(window.location.hostname || '').toLowerCase();
+            const allowClientFallback = host === '127.0.0.1' || host === 'localhost';
+            if (!allowClientFallback) {
+                return {
+                    success: false,
+                    message: serverLogin?.message || 'Login service is temporarily unavailable.'
                 };
             }
 
@@ -145,8 +162,9 @@ const MargaAuth = {
      * Check default admin credentials
      */
     checkDefaultAdmin(username, password, remember) {
-        // Default admin account - CHANGE IN PRODUCTION
-        if (username === 'admin' && password === 'marga2025') {
+        const host = String(window.location.hostname || '').toLowerCase();
+        const localOnly = host === '127.0.0.1' || host === 'localhost';
+        if (localOnly && username === 'admin' && password === 'marga2025') {
             return this.setSession({
                 id: 'default_admin',
                 username: 'admin',
@@ -168,6 +186,7 @@ const MargaAuth = {
     setSession(user, remember) {
         this.currentUser = {
             ...user,
+            session_version: this.SESSION_VERSION,
             roles: this.normalizeRoles(user?.roles || user?.role || 'viewer'),
             role: this.normalizeRole(user?.role || user?.roles?.[0] || 'viewer'),
             allowed_modules: this.normalizeModules(user?.allowed_modules),
@@ -282,6 +301,7 @@ const MargaAuth = {
      * Require authentication - redirect to login if not authenticated
      */
     requireAuth() {
+        if (this.redirectLegacyNetlifyHost()) return false;
         if (!this.isLoggedIn()) {
             window.location.href = this.buildAppUrl('index.html');
             return false;
@@ -335,6 +355,37 @@ const MargaAuth = {
             result._docId = doc.name.split('/').pop();
         }
         return result;
+    }
+};
+
+MargaAuth.redirectLegacyNetlifyHost = function redirectLegacyNetlifyHost() {
+    try {
+        const host = String(window.location.hostname || '').toLowerCase();
+        if (!host.endsWith('.netlify.app')) return false;
+        localStorage.removeItem('marga_user');
+        sessionStorage.removeItem('marga_user');
+        document.documentElement.innerHTML = `
+            <head>
+                <title>MARGA App Retired Host</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>
+                    body{margin:0;font-family:Arial,sans-serif;background:#edf6ff;color:#14355c;display:grid;place-items:center;min-height:100vh}
+                    main{max-width:560px;margin:24px;padding:28px;background:#fff;border:1px solid #bfd7ef;border-radius:10px;box-shadow:0 20px 50px rgba(20,53,92,.14)}
+                    h1{margin:0 0 12px;font-size:26px}
+                    p{font-size:16px;line-height:1.5}
+                    a{display:inline-block;margin-top:10px;color:#fff;background:#1f65b7;padding:12px 16px;border-radius:8px;text-decoration:none;font-weight:700}
+                </style>
+            </head>
+            <body>
+                <main>
+                    <h1>This MARGA address is retired.</h1>
+                    <p><strong>margaapp.netlify.app is blocked</strong> to prevent bad Firebase records. Use the official app only.</p>
+                    <a href="https://app.marga.biz/">Open app.marga.biz</a>
+                </main>
+            </body>`;
+        return true;
+    } catch (error) {
+        return false;
     }
 };
 
