@@ -6,6 +6,8 @@ const DEFAULT_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiri
 const DEFAULT_FIREBASE_API_KEY = "AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M";
 const ZERO_DATETIME = "0000-00-00 00:00:00";
 const ROUTE_COLLECTION = "tbl_savedscheds";
+const PRINTED_ROUTE_COLLECTION = "tbl_printedscheds";
+const CLOSE_REQUEST_COLLECTION = "tbl_schedule_close_requests";
 const LOOKBACK_DAYS = 45;
 const DEFAULT_START_DATE = "2026-05-04";
 
@@ -25,8 +27,8 @@ function todayManila() {
 }
 
 function addDays(dateKey, days) {
-  const date = new Date(`${dateKey}T00:00:00+08:00`);
-  date.setUTCDate(date.getUTCDate() + days);
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
   return date.toISOString().slice(0, 10);
 }
 
@@ -162,6 +164,13 @@ class FirestoreClient {
     });
   }
 
+  async queryCollection(collectionId, limit = 5000) {
+    return this.query({
+      from: [{ collectionId }],
+      limit
+    });
+  }
+
   async set(collection, docId, row) {
     const fields = {};
     Object.entries(row).forEach(([key, value]) => {
@@ -206,6 +215,24 @@ function isOpenSchedule(row, cutoffDate) {
   return Boolean(taskDate && taskDate <= cutoffDate);
 }
 
+function routeScheduleId(row) {
+  return Number(row.schedule_id || row.id || row._docId || 0) || 0;
+}
+
+function isClosedOrCancelledRoute(row) {
+  if (Number(row.iscancel || row.iscancelled || 0) === 1) return true;
+  if (normalizeLegacyDateTime(row.date_finished)) return true;
+  const status = row.status === "" || row.status === undefined || row.status === null
+    ? null
+    : Number(row.status);
+  return status === 0;
+}
+
+function isApprovedCloseRequest(row) {
+  const status = clean(row.status || "").toLowerCase();
+  return ["approved", "closed", "completed", "done"].includes(status) || Boolean(normalizeLegacyDateTime(row.closed_schedule_at));
+}
+
 function hasValidAssignment(row) {
   const staffId = Number(row.tech_id || row.assigned_to_id || row.assigned_staff_id || 0) || 0;
   const purposeId = Number(row.purpose_id || 0) || 0;
@@ -222,13 +249,28 @@ async function main() {
   const db = new FirestoreClient();
   const lookbackDate = addDays(args.date, -args.lookbackDays);
   const startDate = args.startDate && args.startDate > lookbackDate ? args.startDate : lookbackDate;
-  const [scheduleRows, sourceRoutes, targetRoutes] = await Promise.all([
+  const [scheduleRows, savedSourceRoutes, printedSourceRoutes, targetRoutes, closeRequestRows] = await Promise.all([
     db.queryDateRange("tbl_schedule", "task_datetime", `${startDate} 00:00:00`, `${args.date} 23:59:59`),
     db.queryDateRange(ROUTE_COLLECTION, "task_datetime", `${startDate} 00:00:00`, `${args.date} 23:59:59`),
-    db.queryDateRange(ROUTE_COLLECTION, "task_datetime", `${args.targetDate} 00:00:00`, `${args.targetDate} 23:59:59`)
+    db.queryDateRange(PRINTED_ROUTE_COLLECTION, "task_datetime", `${startDate} 00:00:00`, `${args.date} 23:59:59`).catch(() => []),
+    db.queryDateRange(ROUTE_COLLECTION, "task_datetime", `${args.targetDate} 00:00:00`, `${args.targetDate} 23:59:59`),
+    db.queryCollection(CLOSE_REQUEST_COLLECTION).catch(() => [])
   ]);
 
+  const sourceRoutes = [...savedSourceRoutes, ...printedSourceRoutes];
   const alreadyRouted = new Set(targetRoutes.map((row) => Number(row.schedule_id || 0)).filter(Boolean));
+  const closedRouteScheduleIds = new Set(sourceRoutes
+    .filter(isClosedOrCancelledRoute)
+    .map(routeScheduleId)
+    .filter(Boolean));
+  const approvedCloseRequestScheduleIds = new Set(closeRequestRows
+    .filter(isApprovedCloseRequest)
+    .map((row) => Number(row.schedule_id || 0))
+    .filter(Boolean));
+  const blockedClosedScheduleIds = new Set([
+    ...closedRouteScheduleIds,
+    ...approvedCloseRequestScheduleIds
+  ]);
   const sourceRoutesBySchedule = new Map();
   sourceRoutes.forEach((route) => {
     if (Number(route.iscancel || route.iscancelled || 0) === 1) return;
@@ -242,6 +284,7 @@ async function main() {
   const assignmentBlockedRows = openRows.filter((row) => !hasValidAssignment(row));
   const candidates = openRows
     .filter(hasValidAssignment)
+    .filter((row) => !blockedClosedScheduleIds.has(Number(row.id || row._docId || 0)))
     .filter((row) => !alreadyRouted.has(Number(row.id || row._docId || 0)));
 
   const nowIso = new Date().toISOString();
@@ -312,6 +355,7 @@ async function main() {
     startDate,
     scanned: scheduleRows.length,
     alreadyRouted: alreadyRouted.size,
+    blockedByClosedRouteOrCloseRequest: blockedClosedScheduleIds.size,
     assignmentBlocked: assignmentBlockedRows.length,
     forwarded: forwarded.length,
     cancelledSourceRoutes,
