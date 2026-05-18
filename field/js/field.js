@@ -278,6 +278,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldTimeInNowBtn').addEventListener('click', markTimeInNow);
     document.getElementById('fieldTimeOutNowBtn').addEventListener('click', markTimeOutNow);
     document.getElementById('fieldPinLocationBtn').addEventListener('click', pinCustomerLocation);
+    document.getElementById('fieldLocationPhotoBtn')?.addEventListener('click', () => {
+        const input = document.getElementById('fieldLocationPhoto');
+        if (input && !input.disabled) input.click();
+    });
     document.getElementById('fieldLocationPhoto').addEventListener('change', updateLocationPhotoHint);
 
     applyTemporaryFieldMode();
@@ -4500,6 +4504,8 @@ function setLocationPinUi(row = getCurrentRow()) {
     const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
     const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
     const photoInput = document.getElementById('fieldLocationPhoto');
+    const photoWrap = document.querySelector('.field-location-photo');
+    const photoButton = document.getElementById('fieldLocationPhotoBtn');
     const photoHint = document.getElementById('fieldLocationPhotoHint');
 
     card.classList.toggle('is-complete', hasLocation || closeBypass);
@@ -4510,6 +4516,11 @@ function setLocationPinUi(row = getCurrentRow()) {
     button.classList.toggle('btn-secondary', branchLocationSaved);
     button.classList.toggle('btn-primary', !branchLocationSaved);
     if (photoInput) photoInput.disabled = state.modalReadOnly;
+    if (photoButton) photoButton.disabled = state.modalReadOnly;
+    if (photoWrap) {
+        photoWrap.hidden = false;
+        photoWrap.style.display = 'grid';
+    }
     if (photoHint && !photoInput?.files?.[0]) {
         photoHint.textContent = branchLocationSaved
             ? 'Required when repinning. Take a new frontage/building photo first.'

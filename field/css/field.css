@@ -1501,6 +1501,10 @@
     font-size: 0.82rem;
 }
 
+.field-location-photo-btn {
+    width: 100%;
+}
+
 .field-location-photo small {
     color: #64748b;
     font-size: 0.76rem;
