@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v59-login-fix';
+const CACHE_NAME = 'marga-app-shell-v60-login-permissions';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -65,8 +65,8 @@ const SHELL_ASSETS = [
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
-    '/shared/js/firebase-config.js?v=20260518-login-permissions-1',
-    '/shared/js/auth.js?v=20260518-login-permissions-1',
+    '/shared/js/firebase-config.js?v=20260518-login-permissions-2',
+    '/shared/js/auth.js?v=20260518-login-permissions-2',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
     '/shared/js/offline-sync.js?v=20260516-field-permissions-3',

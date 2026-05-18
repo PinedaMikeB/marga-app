@@ -4,7 +4,7 @@
  */
 
 const MargaAuth = {
-    SESSION_VERSION: '20260518-login-permissions-1',
+    SESSION_VERSION: '20260518-login-permissions-2',
 
     // User roles
     ROLES: {
