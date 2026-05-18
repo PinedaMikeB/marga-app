@@ -4495,7 +4495,7 @@ function setLocationPinUi(row = getCurrentRow()) {
     const card = document.getElementById('fieldLocationCard');
     if (!status || !button || !card) return;
 
-    const { branch, hasLocation } = getBranchLocationStatus(row);
+    const { branch, hasLocation, branchLocationSaved } = getBranchLocationStatus(row);
     const closeBypass = canBypassLocationPinForClose(row);
     const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
     const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
@@ -4503,15 +4503,18 @@ function setLocationPinUi(row = getCurrentRow()) {
 
     card.classList.toggle('is-complete', hasLocation || closeBypass);
     card.classList.toggle('is-required', !hasLocation && !closeBypass);
-    button.hidden = hasLocation;
-    button.disabled = state.modalReadOnly || hasLocation;
-    if (photoInput) photoInput.disabled = state.modalReadOnly || hasLocation;
+    button.hidden = false;
+    button.disabled = state.modalReadOnly;
+    button.textContent = branchLocationSaved ? 'Repin Customer Location' : 'Pin Customer Location';
+    button.classList.toggle('btn-secondary', branchLocationSaved);
+    button.classList.toggle('btn-primary', !branchLocationSaved);
+    if (photoInput) photoInput.disabled = state.modalReadOnly;
 
     if (hasLocation) {
         const coordText = latitude !== null && longitude !== null
             ? `Saved: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
             : 'Location saved for this customer.';
-        status.textContent = `${coordText} No need to pin again.`;
+        status.textContent = `${coordText} If this is wrong, take a new frontage photo and tap Repin Customer Location.`;
         return;
     }
 
@@ -6278,12 +6281,9 @@ async function pinCustomerLocation() {
         return;
     }
 
-    const { branchLocationSaved } = getBranchLocationStatus(row);
-    if (branchLocationSaved) {
-        alert('This customer already has a saved location in the customer table. New pinning is not allowed.');
-        setLocationPinUi(row);
-        return;
-    }
+    const { branch, branchLocationSaved } = getBranchLocationStatus(row);
+    const previousCoords = getBranchCoordinates(branch);
+    const actionLabel = branchLocationSaved ? 'repin' : 'pin';
 
     const button = document.getElementById('fieldPinLocationBtn');
     const status = document.getElementById('fieldLocationPinStatus');
@@ -6293,12 +6293,21 @@ async function pinCustomerLocation() {
     const nowIso = now.toISOString();
 
     if (!locationPhoto) {
-        alert('Take or select a frontage/building photo before pinning this customer location.');
+        alert(`Take or select a new frontage/building photo before ${actionLabel}ning this customer location.`);
         return;
     }
 
+    if (branchLocationSaved) {
+        const label = scheduleLocationLabel(row).label;
+        const previousText = previousCoords
+            ? `${previousCoords.latitude.toFixed(7)}, ${previousCoords.longitude.toFixed(7)}`
+            : 'saved location';
+        const confirmed = window.confirm(`Repin ${label}?\n\nThis will replace the saved customer location pin (${previousText}) with this phone's current GPS location. Continue only if the staff is physically at the customer site.`);
+        if (!confirmed) return;
+    }
+
     button.disabled = true;
-    if (status) status.textContent = 'Preparing frontage photo and getting GPS location...';
+    if (status) status.textContent = `Preparing frontage photo and getting GPS location for customer ${actionLabel}...`;
 
     try {
         const [position, photoUpload] = await Promise.all([
@@ -6315,14 +6324,18 @@ async function pinCustomerLocation() {
 
         const latitudeText = latitude.toFixed(7);
         const longitudeText = longitude.toFixed(7);
-        const eventId = `${row.id}_pin_${Date.now()}`;
+        const eventAction = branchLocationSaved ? 'customer_location_repinned' : 'customer_location_pinned';
+        const eventId = `${row.id}_${branchLocationSaved ? 'repin' : 'pin'}_${Date.now()}`;
         const branchPatch = {
             latitude: latitudeText,
             longitude: longitudeText,
+            previous_latitude: previousCoords ? previousCoords.latitude.toFixed(7) : '',
+            previous_longitude: previousCoords ? previousCoords.longitude.toFixed(7) : '',
+            location_pin_repin_count: Number(branch?.location_pin_repin_count || 0) + (branchLocationSaved ? 1 : 0),
             location_pin_updated_at: nowIso,
             location_pin_updated_by: staffId,
             location_pin_accuracy_meters: Math.round(accuracy),
-            location_pin_source: 'field_app',
+            location_pin_source: branchLocationSaved ? 'field_app_repin' : 'field_app',
             location_frontage_photo_url: photoUpload.url || '',
             location_frontage_photo_path: photoUpload.path || '',
             location_frontage_photo_doc_id: photoUpload.dataUrl ? eventId : '',
@@ -6343,8 +6356,11 @@ async function pinCustomerLocation() {
             field_customer_location_photo_path: photoUpload.path || '',
             field_customer_location_photo_doc_id: photoUpload.dataUrl ? eventId : '',
             field_customer_location_photo_storage_mode: photoUpload.storageMode,
-            field_tracking_status: 'customer_location_pinned',
-            field_last_action: 'customer_location_pinned',
+            field_customer_location_repin: branchLocationSaved ? 1 : 0,
+            field_customer_location_previous_latitude: previousCoords ? previousCoords.latitude.toFixed(7) : '',
+            field_customer_location_previous_longitude: previousCoords ? previousCoords.longitude.toFixed(7) : '',
+            field_tracking_status: eventAction,
+            field_last_action: eventAction,
             field_last_update_at: nowIso,
             field_last_latitude: latitudeText,
             field_last_longitude: longitudeText,
@@ -6359,13 +6375,15 @@ async function pinCustomerLocation() {
             staff_id: staffId,
             branch_id: branchId,
             company_id: Number(row.company_id || 0) || 0,
-            action: 'customer_location_pinned',
-            status_label: 'Customer Location Pinned',
+            action: eventAction,
+            status_label: branchLocationSaved ? 'Customer Location Repinned' : 'Customer Location Pinned',
             occurred_at: nowIso,
             local_date: localDateYmd(now),
             local_time: now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
             latitude: latitudeText,
             longitude: longitudeText,
+            previous_latitude: previousCoords ? previousCoords.latitude.toFixed(7) : '',
+            previous_longitude: previousCoords ? previousCoords.longitude.toFixed(7) : '',
             accuracy_meters: Math.round(accuracy),
             frontage_photo_url: photoUpload.url || '',
             frontage_photo_path: photoUpload.path || '',
@@ -6424,7 +6442,10 @@ async function pinCustomerLocation() {
         updateActionButtons();
         renderAttendanceLocationSummary();
         renderList();
-        alert('Customer location pinned. This customer will not need pinning again.');
+        await checkAttendanceLocation().catch((checkError) => {
+            console.warn('Location recheck after pin failed:', checkError);
+        });
+        alert(branchLocationSaved ? 'Customer location repinned and location check refreshed.' : 'Customer location pinned and location check refreshed.');
     } catch (err) {
         console.error('Customer location pin failed:', err);
         if (status) status.textContent = 'Unable to pin location. Check GPS permission and try again.';
