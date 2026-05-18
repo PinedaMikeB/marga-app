@@ -1170,6 +1170,79 @@ async function getAttendanceScheduleLocationMatch() {
     };
 }
 
+function hasCustomerTimeInLocationProof(row) {
+    const status = String(row?.field_time_in_location_status || '').trim();
+    const latitude = parseCoordinate(row?.field_time_in_latitude);
+    const longitude = parseCoordinate(row?.field_time_in_longitude);
+    const distance = Number(row?.field_time_in_distance_meters || 0);
+    return Boolean(status && latitude !== null && longitude !== null && Number.isFinite(distance) && distance <= ATTENDANCE_LOCATION_RADIUS_METERS);
+}
+
+async function getCustomerTaskLocationMatch(row) {
+    if (!row) throw new Error('No active customer task is open.');
+    await hydrateLookups([row]);
+
+    const branch = caches.branch.get(String(row.branch_id || state.modalBranchId || 0));
+    const coords = getBranchCoordinates(branch);
+    const labelInfo = scheduleLocationLabel(row);
+    if (!coords) {
+        throw new Error(`This customer has no saved location pin yet (${labelInfo.label}). Tap Pin Customer Location while on site before checking in.`);
+    }
+
+    const position = await getCurrentPosition();
+    const latitude = Number(position.coords.latitude);
+    const longitude = Number(position.coords.longitude);
+    const accuracy = Number(position.coords.accuracy || 0);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('GPS returned an invalid location.');
+    }
+
+    const distance = distanceMeters(latitude, longitude, coords.latitude, coords.longitude);
+    if (distance > ATTENDANCE_LOCATION_RADIUS_METERS) {
+        throw new Error(`You are ${Math.round(distance)}m from this customer location pin (${labelInfo.label}). Customer check-in requires ${ATTENDANCE_LOCATION_RADIUS_METERS}m maximum.`);
+    }
+
+    return {
+        latitude,
+        longitude,
+        accuracy,
+        distance,
+        branch,
+        ...labelInfo
+    };
+}
+
+function buildCustomerTimeInLocationPatch(row, match, nowIso = new Date().toISOString()) {
+    return {
+        field_time_in_latitude: match.latitude.toFixed(7),
+        field_time_in_longitude: match.longitude.toFixed(7),
+        field_time_in_accuracy_meters: Math.round(match.accuracy),
+        field_time_in_distance_meters: Math.round(match.distance),
+        field_time_in_location_status: 'matched_customer_pin',
+        field_time_in_location_checked_at: nowIso,
+        field_time_in_company_id: Number(row.company_id || match.branch?.company_id || 0) || 0,
+        field_time_in_branch_id: Number(row.branch_id || state.modalBranchId || 0) || 0,
+        field_time_in_company_name: match.companyName || '',
+        field_time_in_branch_name: match.branchName || '',
+        field_time_in_address: match.address || '',
+        field_tracking_status: 'customer_checked_in',
+        field_last_action: 'customer_checked_in',
+        field_last_update_at: nowIso,
+        field_last_latitude: match.latitude.toFixed(7),
+        field_last_longitude: match.longitude.toFixed(7)
+    };
+}
+
+async function ensureCustomerTimeInLocationProof(row, form) {
+    if (!form?.timeInDb || form.timeInDb === ZERO_DATETIME) return {};
+    const savedTimeIn = normalizeLegacyDateTime(row?.field_time_in);
+    const formTimeIn = normalizeLegacyDateTime(form.timeInDb);
+    const existingProofStillApplies = savedTimeIn && savedTimeIn === formTimeIn && hasCustomerTimeInLocationProof(row);
+    if (existingProofStillApplies) return {};
+    const match = await getCustomerTaskLocationMatch(row);
+    return buildCustomerTimeInLocationPatch(row, match);
+}
+
 function renderAttendanceCard() {
     const status = document.getElementById('fieldAttendanceStatus');
     const timeIn = document.getElementById('fieldAttendanceTimeIn');
@@ -4908,11 +4981,15 @@ async function saveDraftUpdate() {
     const row = getCurrentRow();
     if (!row) return;
     const form = collectModalFormData();
-    const payload = buildSchedulePayload(row, form, '[FIELD_DRAFT]');
 
     const button = document.getElementById('fieldModalSaveDraft');
     button.disabled = true;
     try {
+        const timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
+        const payload = {
+            ...buildSchedulePayload(row, form, '[FIELD_DRAFT]'),
+            ...timeInLocationPatch
+        };
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, payload);
@@ -4947,19 +5024,20 @@ async function markPendingTask() {
         form.timeInDb = toDbDateTimeFromLocal(nowLocal);
     }
 
-    const payload = {
-        ...buildSchedulePayload(row, form, '[PENDING_PARTS]'),
-        isongoing: 1,
-        date_finished: ZERO_DATETIME,
-        pending_parts: 1,
-        pending_reason: 'parts_needed',
-        pending_updated_at: nowIso,
-        pending_updated_by: staffId
-    };
-
     const button = document.getElementById('fieldModalPendingTask');
     button.disabled = true;
     try {
+        const timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
+        const payload = {
+            ...buildSchedulePayload(row, form, '[PENDING_PARTS]'),
+            ...timeInLocationPatch,
+            isongoing: 1,
+            date_finished: ZERO_DATETIME,
+            pending_parts: 1,
+            pending_reason: 'parts_needed',
+            pending_updated_at: nowIso,
+            pending_updated_by: staffId
+        };
         const queuePayload = {
             schedule_id: Number(row.id || 0),
             schedule_doc_id: scheduleDocIdForRow(row),
@@ -5052,8 +5130,17 @@ async function closeTask() {
     const nowIso = new Date().toISOString();
     const staffId = Number(state.staffId || 0) || 0;
 
+    let timeInLocationPatch = {};
+    try {
+        timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
+    } catch (err) {
+        alert(`Cannot mark finished: ${err?.message || err}`);
+        return;
+    }
+
     const payload = {
         ...buildSchedulePayload(row, form, '[FINISHED]'),
+        ...timeInLocationPatch,
         date_finished: form.timeOutDb,
         closedby: staffId,
         isongoing: 0,
@@ -5546,24 +5633,31 @@ async function markTimeInNow() {
     document.getElementById('fieldTimeIn').value = nowLocal;
 
     const form = collectModalFormData();
+    const nowIso = new Date().toISOString();
     const patch = {
         field_time_in: form.timeInDb,
-        field_updated_at: new Date().toISOString(),
+        field_updated_at: nowIso,
         field_updated_by: Number(state.staffId || 0) || 0,
         bridge_updated_by: Number(state.staffId || 0) || 0,
-        bridge_updated_at: new Date().toISOString()
+        bridge_updated_at: nowIso
     };
 
     const button = document.getElementById('fieldTimeInNowBtn');
     button.disabled = true;
     try {
-        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
+        const timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
+        const verifiedPatch = {
+            ...patch,
+            ...timeInLocationPatch
+        };
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), verifiedPatch);
         await safeUpsertSchedtimeLog(row, form, 'draft');
-        applyRowPatch(row.id, patch);
-        alert('Time in captured.');
+        applyRowPatch(row.id, verifiedPatch);
+        alert(`Time in captured within ${Math.round(Number(verifiedPatch.field_time_in_distance_meters || 0))}m of the customer pin.`);
     } catch (err) {
         console.error('Time in failed:', err);
         alert(`Failed to capture time in: ${err?.message || err}`);
+        document.getElementById('fieldTimeIn').value = toLocalInputDateTime(normalizeLegacyDateTime(row.field_time_in));
     } finally {
         button.disabled = false;
     }
