@@ -872,8 +872,8 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
 MargaAuth.verifyPassword = async function verifyPassword(user, password) {
     const provided = String(password || '');
 
-    // Legacy fallback (plaintext). Prefer migrating to password_hash.
-    if (user.password && !user.password_hash) {
+    // Legacy fallback. Some active staff still know the legacy password while a hash is present.
+    if (user.password && String(user.password) === provided) {
         return String(user.password) === provided;
     }
 

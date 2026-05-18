@@ -236,7 +236,7 @@ async function findEmployee(ident) {
 
 function verifyPassword(user, password) {
   const provided = String(password || "");
-  if (user.password && !user.password_hash) return String(user.password) === provided;
+  if (user.password && String(user.password) === provided) return true;
   const hashB64 = String(user.password_hash || "").trim();
   const saltB64 = String(user.password_salt || "").trim();
   const iterations = Number(user.password_iterations || 120000);
