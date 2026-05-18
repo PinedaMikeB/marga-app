@@ -15,7 +15,7 @@
     <title>MARGA - Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="shared/css/styles.css">
-    <link rel="stylesheet" href="shared/css/dashboard.css">
+    <link rel="stylesheet" href="shared/css/dashboard.css?v=20260518-company-meeting-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -253,6 +253,9 @@
                 <p id="dashboardSubtitle">Welcome back! Here's your business overview.</p>
             </div>
             <div class="header-actions">
+                <button type="button" class="btn btn-secondary btn-sm dashboard-meeting-button" data-marga-meeting-action="join-company" data-marga-meeting-idle-label="Start Company Meeting" data-marga-meeting-live-label="Join Company Meeting">
+                    Start Company Meeting
+                </button>
                 <div class="search-box">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="11" cy="11" r="8"/>
@@ -321,8 +324,13 @@
                 <div class="content-card dashboard-admin-note">
                     <div class="card-header">
                         <h3>Operations Control Center</h3>
-                        <a href="service/index.html" class="btn btn-secondary btn-sm">Open Service Dispatch Board</a>
+                        <div class="dashboard-ops-actions">
+                            <span class="dashboard-meeting-live" data-marga-meeting-live hidden>Meeting live</span>
+                            <button type="button" class="btn btn-primary btn-sm" data-marga-meeting-action="join-company" data-marga-meeting-idle-label="Start Company Meeting" data-marga-meeting-live-label="Join Company Meeting">Start Company Meeting</button>
+                            <a href="service/index.html" class="btn btn-secondary btn-sm">Open Service Dispatch Board</a>
+                        </div>
                     </div>
+                    <p class="dashboard-meeting-status" data-marga-meeting-status>No active company meeting.</p>
                 </div>
             </section>
 
@@ -417,6 +425,7 @@
 	    <script src="shared/js/auth.js?v=20260505-accounting-open-2"></script>
 	    <script src="shared/js/utils.js"></script>
 	    <script src="shared/js/offline-sync.js"></script>
+    <script src="shared/js/marga-meetings.js?v=20260518-company-meeting-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
 	    <script>
 	        if (!MargaAuth.requireAuth()) {}

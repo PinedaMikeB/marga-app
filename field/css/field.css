@@ -126,8 +126,111 @@
 
 .field-call-actions {
     display: grid;
-    grid-template-columns: repeat(5, minmax(92px, auto));
+    grid-template-columns: repeat(6, minmax(92px, auto));
     gap: 0.45rem;
+}
+
+.marga-company-meeting-banner {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 10010;
+    width: min(390px, calc(100vw - 2rem));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.8rem;
+    border: 1px solid rgba(147, 197, 253, 0.72);
+    border-radius: 16px;
+    background: rgba(240, 249, 255, 0.96);
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18);
+}
+
+.marga-company-meeting-banner span {
+    display: block;
+    color: #2563eb;
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.marga-company-meeting-banner strong {
+    display: block;
+    color: #16345b;
+    font-size: 0.9rem;
+}
+
+.marga-company-meeting-banner p {
+    margin: 0.12rem 0 0;
+    color: #526985;
+    font-size: 0.74rem;
+}
+
+.marga-company-meeting-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10030;
+    display: flex;
+    flex-direction: column;
+    background: #020617;
+}
+
+.marga-company-meeting-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.96));
+}
+
+.marga-company-meeting-header h2 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 0.98rem;
+}
+
+.marga-company-meeting-header p {
+    margin: 0.12rem 0 0;
+    color: #cbd5e1;
+    font-size: 0.72rem;
+}
+
+.marga-company-meeting-actions {
+    display: flex;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+.marga-company-meeting-status {
+    flex-shrink: 0;
+    padding: 0.45rem 0.85rem;
+    color: #dbeafe;
+    background: rgba(15, 23, 42, 0.92);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.marga-company-meeting-status:empty {
+    display: none;
+}
+
+.marga-company-meeting-frame {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: #000;
+}
+
+.marga-company-meeting-frame iframe {
+    width: 100% !important;
+    height: 100% !important;
+    border: 0;
 }
 
 .field-direct-call {
