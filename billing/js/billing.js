@@ -1512,6 +1512,9 @@ async function saveBillingScheduleToFieldTask({ plannerDocId, row, context, esti
         updated_at: nowIso,
         bridge_updated_at: nowIso
     };
+    if (estimate?.scheduleConsolidationFields && typeof estimate.scheduleConsolidationFields === 'object') {
+        Object.assign(fields, estimate.scheduleConsolidationFields);
+    }
     const result = await setFirestoreDocument('tbl_schedule', taskDocId, fields, {
         mode: 'set',
         label: `Field schedule ${purpose?.label || 'Billing'} ${row?.serial_number || taskDocId}`,
@@ -7855,6 +7858,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             });
             if (!consolidation.ok) return;
             staffId = String(consolidation.staffId || staffId);
+            activeEstimate.scheduleConsolidationFields = consolidation.scheduleFields || {};
             staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || staffOption;
             staffName = staffOption?.name || staffName || staffId;
             if (scheduleStaffInput) scheduleStaffInput.value = staffId;

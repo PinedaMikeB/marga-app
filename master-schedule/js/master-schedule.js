@@ -69,6 +69,7 @@ const MASTER_STATUS_OPTIONS = [
 
 const masterState = {
     rows: [],
+    displayRows: [],
     pendingRows: [],
     exceptionRows: [],
     settingsLoaded: false,
@@ -1250,6 +1251,9 @@ function buildLegacyScheduleRow(row) {
         branchId: String(row.branch_id || ''),
         companyId: String(branch?.company_id || row.company_id || ''),
         purposeId: String(row.purpose_id || ''),
+        combinedVisitId: clean(row.combined_visit_id),
+        combinedVisitOwnerStaffId: String(row.combined_visit_owner_staff_id || ''),
+        combinedVisitPrimaryScheduleId: String(row.combined_visit_primary_schedule_id || ''),
         scheduleId,
         routeId: Number(row.route_id || 0) || 0,
         routeDocId: clean(row.route_doc_id || row.route_id),
@@ -1284,6 +1288,51 @@ function buildLegacyScheduleRow(row) {
     };
 
     return refreshMasterRowSearch(data);
+}
+
+function masterCombinedKey(row) {
+    if (row.combinedVisitId) return `combined:${row.combinedVisitId}`;
+    return `branch:${row.companyId || '0'}:${row.branchId || '0'}`;
+}
+
+function masterPurposePriority(row) {
+    const purposeId = Number(row.purposeId || 0);
+    if (purposeId === 5) return 1;
+    if ([3, 4].includes(purposeId)) return 2;
+    if ([1, 8].includes(purposeId)) return 3;
+    if (purposeId === 2) return 4;
+    return 5;
+}
+
+function combineMasterRows(rows = []) {
+    const groups = new Map();
+    rows.forEach((row) => {
+        const key = masterCombinedKey(row);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(row);
+    });
+    return Array.from(groups.values()).map((items) => {
+        if (items.length === 1) return items[0];
+        const primary = items.slice().sort((a, b) => {
+            const ap = masterPurposePriority(a);
+            const bp = masterPurposePriority(b);
+            if (ap !== bp) return ap - bp;
+            return schedulePriorityValue(a) - schedulePriorityValue(b) || Number(a.scheduleId || 0) - Number(b.scheduleId || 0);
+        })[0];
+        const purposeLabels = Array.from(new Set(items.map((item) => clean(item.purpose)).filter(Boolean)));
+        const troubleLabels = Array.from(new Set(items.map((item) => clean(item.trouble || item.remarks)).filter(Boolean))).slice(0, 4);
+        return {
+            ...primary,
+            rowKey: `combined_${primary.combinedVisitId || primary.branchId || primary.rowKey}`,
+            combinedRows: items,
+            purpose: purposeLabels.join(' + '),
+            trouble: troubleLabels.join(' | '),
+            remarks: troubleLabels.join(' | '),
+            referenceNo: items.map((item) => item.referenceNo).filter(Boolean).slice(0, 4).join(', '),
+            readyStatus: items.some((item) => item.readyStatus === 'NO') ? 'NO' : (items.some((item) => item.readyStatus === 'YES') ? 'YES' : primary.readyStatus),
+            sourceNote: `Combined visit: ${items.length} schedules`
+        };
+    });
 }
 
 function buildWebScheduleRow(row) {
@@ -1803,7 +1852,8 @@ function renderPriorityGate(rows = []) {
 }
 
 function renderMasterSchedule() {
-    const rows = getVisibleRows();
+    const rows = combineMasterRows(getVisibleRows());
+    masterState.displayRows = rows;
     const pendingRows = getVisiblePendingRows();
     const exceptionRows = getVisibleExceptionRows();
     const sheet = document.getElementById('masterScheduleSheet');
@@ -2360,7 +2410,8 @@ function renderStaffSelectOptions(row) {
 }
 
 function findScheduleRow(rowKey) {
-    return masterState.rows.find((row) => row.rowKey === rowKey)
+    return (masterState.displayRows || []).find((row) => row.rowKey === rowKey)
+        || masterState.rows.find((row) => row.rowKey === rowKey)
         || masterState.pendingRows.find((row) => row.rowKey === rowKey)
         || masterState.exceptionRows.find((row) => row.rowKey === rowKey)
         || null;
@@ -2819,7 +2870,7 @@ async function forwardScheduleRow(rowKey, button) {
     const moveAllStaff = staffRows.length > 1
         ? window.confirm(`Move all the schedule of ${staffName} to ${targetDate}?\n\nOK = move all ${staffRows.length} open schedule(s).\nCancel = move only the selected row.`)
         : false;
-    const targets = moveAllStaff ? staffRows : [row];
+    const targets = moveAllStaff ? staffRows : (Array.isArray(row.combinedRows) && row.combinedRows.length ? row.combinedRows : [row]);
     button.disabled = true;
     try {
         await forwardScheduleRows(targets, targetDate);

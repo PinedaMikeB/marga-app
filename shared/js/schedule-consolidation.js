@@ -230,6 +230,26 @@
         return clean(row.purpose || row.schedule_purpose || row.trouble || 'Schedule');
     }
 
+    function combinedVisitIdFor(date, branchId, companyId, existing = []) {
+        const existingId = existing.map((row) => clean(row.combined_visit_id)).find(Boolean);
+        if (existingId) return existingId;
+        const locationId = branchId ? `branch_${branchId}` : `company_${companyId || 'unknown'}`;
+        return `cv_${date}_${locationId}`;
+    }
+
+    function combinedVisitFields({ visitId, ownerId, ownerName, primaryScheduleId, reason, nowIso }) {
+        return {
+            combined_visit_id: visitId,
+            combined_visit_owner_staff_id: ownerId,
+            combined_visit_owner_staff_name: ownerName,
+            combined_visit_primary_schedule_id: primaryScheduleId || 0,
+            combined_visit_role: primaryScheduleId ? 'primary_or_item' : 'item',
+            combined_visit_status: 'open',
+            combined_visit_reason: reason,
+            combined_visit_updated_at: nowIso
+        };
+    }
+
     function customerLabel(context, conflicts) {
         return clean(context.customerName || context.companyName)
             || clean(conflicts[0]?.company_name || conflicts[0]?.caller)
@@ -280,11 +300,13 @@
 
         const getStaffName = context.getStaffName || null;
         const newIsService = isServiceTask(candidate);
-        const owner = chooseOwner(conflicts, context, getStaffName);
+        const owner = newIsService
+            ? { ...candidate, id: currentScheduleId || currentDocId || 0, tech_id: staffId }
+            : chooseOwner(conflicts, context, getStaffName);
         if (!owner) return { ok: true, staffId };
 
-        const ownerId = numeric(owner.tech_id);
-        if (!ownerId || ownerId === staffId) return { ok: true, staffId };
+        const ownerId = newIsService ? staffId : numeric(owner.tech_id);
+        if (!ownerId) return { ok: true, staffId };
 
         const customer = customerLabel(context, conflicts);
         const ownerName = assignedName(owner, getStaffName);
@@ -293,22 +315,41 @@
             .slice(0, 5)
             .map((row) => `#${row.id || row._docId || '-'} ${taskLabel(row)} assigned to ${assignedName(row, getStaffName)}`)
             .join('\n');
+        const nowIso = new Date().toISOString();
+        const visitId = combinedVisitIdFor(date, branchId, companyId, conflicts);
+        const primaryScheduleId = numeric(owner.id || owner.schedule_id || owner._docId || currentScheduleId);
+        const reason = newIsService ? 'same_customer_location_service_wins' : 'same_customer_location_combined_visit';
+        const ownerFields = combinedVisitFields({
+            visitId,
+            ownerId,
+            ownerName: newIsService ? newStaffName : ownerName,
+            primaryScheduleId,
+            reason,
+            nowIso
+        });
 
         if (newIsService) {
             const ok = window.confirm(
-                `${customer} already has schedule(s) on ${date} for the same location:\n\n${details}\n\nService should carry billing, collection, and delivery tasks when a technician is already going there.\n\nTransfer these same-location schedule(s) to ${newStaffName}?`
+                `${customer} already has schedule(s) on ${date} for the same location:\n\n${details}\n\nThis Service schedule will combine the customer visit. ${newStaffName} will own the field stop, and the existing billing/collection/delivery/reading records will stay as child records.\n\nSave as one combined visit?`
             );
             if (!ok) return { ok: false, staffId };
 
             await Promise.all(conflicts
-                .filter((row) => numeric(row.tech_id) !== staffId)
                 .map((row) => patchDoc('tbl_schedule', row._docId || row.id, {
                     tech_id: staffId,
-                    dispatch_consolidated_at: new Date().toISOString(),
+                    ...ownerFields,
+                    combined_visit_role: numeric(row.id || row.schedule_id) === primaryScheduleId ? 'primary' : 'item',
+                    dispatch_consolidated_at: nowIso,
                     dispatch_consolidated_by_module: clean(context.moduleName || 'schedule'),
-                    dispatch_consolidated_reason: 'same_customer_location_service_wins'
+                    dispatch_consolidated_reason: reason
                 })));
-            return { ok: true, staffId, transferredIds: conflicts.map((row) => row.id || row._docId).filter(Boolean) };
+            return {
+                ok: true,
+                staffId,
+                combinedVisitId: visitId,
+                scheduleFields: { ...ownerFields, combined_visit_role: 'primary' },
+                transferredIds: conflicts.map((row) => row.id || row._docId).filter(Boolean)
+            };
         }
 
         if (context.allowReassignmentOverride) {
@@ -320,10 +361,23 @@
         }
 
         const ok = window.confirm(
-            `${customer} already has a same-location schedule on ${date} assigned to ${ownerName}.\n\n${details}\n\nTo avoid another trip, assign this task to ${ownerName} too?`
+            `${customer} already has schedule(s) on ${date} for the same location:\n\n${details}\n\nThis schedule will be recorded as part of one combined customer visit owned by ${ownerName}. The original ${taskLabel(candidate)} record will still be kept as a child schedule.\n\nSave as one combined visit?`
         );
         if (!ok) return { ok: false, staffId };
-        return { ok: true, staffId: ownerId, consolidatedToId: ownerId };
+        await Promise.all(conflicts.map((row) => patchDoc('tbl_schedule', row._docId || row.id, {
+            ...ownerFields,
+            combined_visit_role: numeric(row.id || row.schedule_id) === primaryScheduleId ? 'primary' : 'item',
+            dispatch_consolidated_at: nowIso,
+            dispatch_consolidated_by_module: clean(context.moduleName || 'schedule'),
+            dispatch_consolidated_reason: reason
+        })));
+        return {
+            ok: true,
+            staffId: ownerId,
+            consolidatedToId: ownerId,
+            combinedVisitId: visitId,
+            scheduleFields: { ...ownerFields, combined_visit_role: 'item' }
+        };
     }
 
     window.MargaScheduleConsolidation = {

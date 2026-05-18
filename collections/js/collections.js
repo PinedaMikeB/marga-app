@@ -7743,6 +7743,7 @@ async function saveCollectorSchedule() {
         }
     }
 
+    let consolidationFields = {};
     if (window.MargaScheduleConsolidation) {
         const consolidation = await MargaScheduleConsolidation.resolveAssignment({
             moduleName: 'collections',
@@ -7759,6 +7760,7 @@ async function saveCollectorSchedule() {
             getStaffName: (staffId) => collectionAssignableStaff.find((staff) => normalizeLookupId(staff.id) === normalizeLookupId(staffId))?.name || employeeLookupMap.get(normalizeLookupId(staffId)) || `Staff #${staffId}`
         });
         if (!consolidation.ok) return;
+        consolidationFields = consolidation.scheduleFields || {};
         if (normalizeLookupId(consolidation.staffId) !== normalizeLookupId(assignee.id)) {
             const nextId = normalizeLookupId(consolidation.staffId);
             const staff = collectionAssignableStaff.find((item) => normalizeLookupId(item.id) === nextId) || null;
@@ -7786,6 +7788,7 @@ async function saveCollectorSchedule() {
             tblScheduleId: scheduleId
         });
         const legacySchedule = buildCollectorLegacyScheduleRecord(currentCollectorWorkspace, record, scheduleId);
+        Object.assign(legacySchedule, consolidationFields);
         const legacyFields = {};
         Object.entries(legacySchedule).forEach(([key, value]) => {
             if (!key.startsWith('_')) legacyFields[key] = toFirestoreWriteValue(value);

@@ -1389,6 +1389,8 @@ function prioritySortedRows(rows) {
 }
 
 function combinedStopKey(row) {
+    const visitId = String(row?.combined_visit_id || '').trim();
+    if (visitId) return `combined:${visitId}`;
     const branchId = Number(row?.branch_id || 0) || 0;
     const companyId = Number(row?.company_id || 0) || 0;
     return branchId ? `branch:${branchId}` : `company:${companyId || 'unknown'}`;
@@ -1457,6 +1459,12 @@ function getModalRelatedRows(row = getCurrentRow()) {
         : [row.id];
     const idSet = new Set(relatedIds.map((id) => Number(id || 0)).filter(Boolean));
     const rows = state.rows.filter((item) => idSet.has(Number(item.id || 0)));
+    if (rows.length > 1) return rows;
+    const visitId = String(row.combined_visit_id || '').trim();
+    if (visitId) {
+        const visitRows = state.rows.filter((item) => String(item.combined_visit_id || '').trim() === visitId);
+        if (visitRows.length) return visitRows;
+    }
     return rows.length ? rows : [row];
 }
 
@@ -5788,7 +5796,7 @@ function getCloseTaskIssues(row, form) {
     }
     const { hasLocation } = getBranchLocationStatus(row);
     if (!hasLocation && !canBypassLocationPinForClose(row)) {
-        return ['Pin this customer location before marking the schedule as Finished.'];
+        return ['Cannot mark Finished yet: this customer is not detected because the branch has no saved GPS pin. Tap Pin Customer Location while you are at the customer site. If the saved pin is wrong, take a new frontage/building photo and tap Repin Customer Location, then try Mark Finished again.'];
     }
     if (isMachineDeliveryTask(row, form) && !Number.isFinite(form.deliveryPresentMeter)) {
         return ['Enter the machine beginning/present meter in Delivery before marking this machine delivery as Finished.'];
@@ -6110,6 +6118,9 @@ async function closeTask() {
         pending_reason: '',
         pending_updated_at: nowIso,
         pending_updated_by: staffId,
+        combined_visit_status: row.combined_visit_id ? 'closed' : (row.combined_visit_status || ''),
+        combined_visit_closed_at: row.combined_visit_id ? nowIso : (row.combined_visit_closed_at || ''),
+        combined_visit_closed_by: row.combined_visit_id ? staffId : (row.combined_visit_closed_by || 0),
         customer_pin_verified: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? 1 : 0,
         customer_pin_verified_at: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? nowIso : '',
         customer_pin_verified_by: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? staffId : 0
@@ -6172,6 +6183,9 @@ async function closeTask() {
                 pending_reason: '',
                 pending_updated_at: nowIso,
                 pending_updated_by: staffId,
+                combined_visit_status: relatedRow.combined_visit_id ? 'closed' : (relatedRow.combined_visit_status || ''),
+                combined_visit_closed_at: relatedRow.combined_visit_id ? nowIso : (relatedRow.combined_visit_closed_at || ''),
+                combined_visit_closed_by: relatedRow.combined_visit_id ? staffId : (relatedRow.combined_visit_closed_by || 0),
                 customer_pin_verified: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? 1 : 0,
                 customer_pin_verified_at: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? nowIso : '',
                 customer_pin_verified_by: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? staffId : 0

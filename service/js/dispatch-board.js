@@ -2607,6 +2607,7 @@ async function saveNewServiceRequest() {
     }
 
     const taskDatetime = `${date} ${time.length === 5 ? `${time}:00` : time}`;
+    let consolidationFields = {};
     if (window.MargaScheduleConsolidation) {
         const staff = opsCache.employees.get(String(assigneeId)) || null;
         const consolidation = await MargaScheduleConsolidation.resolveAssignment({
@@ -2623,6 +2624,7 @@ async function saveNewServiceRequest() {
         });
         if (!consolidation.ok) return;
         assigneeId = Number(consolidation.staffId || assigneeId) || assigneeId;
+        consolidationFields = consolidation.scheduleFields || {};
         const assigneeSelect = document.getElementById('newReqAssignee');
         if (assigneeSelect) assigneeSelect.value = String(assigneeId || '');
     }
@@ -2730,6 +2732,7 @@ async function saveNewServiceRequest() {
         collocutor: '',
         dev_remarks: ''
     };
+    Object.assign(fullDoc, consolidationFields);
 
     const saveBtn = document.getElementById('newReqSaveBtn');
     saveBtn.disabled = true;
