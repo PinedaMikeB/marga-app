@@ -74,6 +74,82 @@
             flex-wrap: wrap;
         }
 
+        #receivePaymentModal .modal {
+            border-radius: 18px;
+            overflow: hidden;
+            background: #f8fafc;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.38);
+        }
+
+        #receivePaymentModal .modal-header {
+            background: linear-gradient(135deg, #2458ce 0%, #21496f 100%);
+            color: #fff;
+            padding: 20px 22px;
+            border-bottom: 0;
+        }
+
+        #receivePaymentModal .modal-header h2,
+        #receivePaymentModal .modal-header p {
+            color: #fff;
+        }
+
+        #receivePaymentModal .modal-body {
+            padding: 18px 22px;
+            display: grid;
+            gap: 14px;
+            background: linear-gradient(180deg, #ffffff 0%, #f6f9fd 100%);
+        }
+
+        #receivePaymentModal .brief-section {
+            margin: 0;
+            padding: 0;
+        }
+
+        #receivePaymentModal label {
+            display: grid;
+            gap: 5px;
+            color: #12233b;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        #receivePaymentModal label span,
+        #receivePaymentModal .brief-section h4 {
+            color: #385b82;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        #receivePaymentModal input,
+        #receivePaymentModal select,
+        #receivePaymentModal textarea {
+            width: 100%;
+            min-height: 38px;
+            border: 1px solid #bed0e6;
+            border-radius: 9px;
+            background: #fff;
+            color: #12233b;
+            padding: 8px 10px;
+            font: inherit;
+            font-size: 13px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+        }
+
+        #receivePaymentModal textarea {
+            min-height: 70px;
+            resize: vertical;
+        }
+
+        #receivePaymentModal input:focus,
+        #receivePaymentModal select:focus,
+        #receivePaymentModal textarea:focus {
+            outline: 2px solid rgba(37, 99, 235, 0.2);
+            border-color: #3b73df;
+        }
+
         .receive-payment-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -141,15 +217,70 @@
             gap: 8px;
         }
 
-        .receive-payment-draft {
+        .receive-payment-group {
+            border: 1px solid rgba(37, 99, 235, 0.16);
+            border-radius: 12px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .receive-payment-group-head {
             display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 8px;
+            grid-template-columns: 1fr auto auto;
+            gap: 12px;
             align-items: center;
-            padding: 9px 10px;
-            border: 1px solid rgba(148, 163, 184, 0.4);
-            border-radius: 10px;
-            background: rgba(248, 250, 252, 0.9);
+            padding: 12px 14px;
+            background: #eef5ff;
+        }
+
+        .receive-payment-messenger {
+            font-size: 15px;
+            font-weight: 800;
+            color: #16365f;
+        }
+
+        .receive-payment-group-total {
+            text-align: right;
+            color: #16365f;
+            font-weight: 800;
+        }
+
+        .receive-payment-group-total span {
+            display: block;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #5b7190;
+        }
+
+        .receive-payment-batch-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .receive-payment-batch-table th,
+        .receive-payment-batch-table td {
+            padding: 8px 10px;
+            border-top: 1px solid rgba(148, 163, 184, 0.24);
+        }
+
+        .receive-payment-batch-table th {
+            color: #58708f;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            background: #fbfdff;
+        }
+
+        .receive-payment-checkcell {
+            width: 34px;
+            text-align: center;
+        }
+
+        .receive-payment-checkcell input {
+            width: 16px;
+            height: 16px;
         }
 
         #last-updated {
@@ -3291,14 +3422,14 @@
     </div>
 
     <div class="modal-overlay hidden" id="receivePaymentModal">
-        <div class="modal modal-xl">
+        <div class="modal modal-xl receive-payment-modal">
             <div class="modal-header">
                 <h2>Receive Payment</h2>
-                <p>Confirm field draft payments or post office payments after invoice allocation is checked.</p>
+                <p>Match messenger encoded collections against actual cash, checks, and bank slips before posting.</p>
             </div>
             <div class="modal-body">
                 <div class="brief-section">
-                    <h4>Field Draft Payments</h4>
+                    <h4>Messenger Turnover Batches</h4>
                     <div id="receivePaymentDraftList" class="receive-payment-drafts">
                         <div class="empty-followup">Loading draft payments...</div>
                     </div>
@@ -3349,6 +3480,7 @@
                             <select id="receivePaymentType">
                                 <option value="cash">Cash</option>
                                 <option value="check">Check</option>
+                                <option value="mixed">Mixed turnover</option>
                             </select>
                         </label>
                         <label><span>Check No</span><input type="text" id="receivePaymentCheckNumber" placeholder="Check number"></label>
@@ -3795,6 +3927,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260518-receive-payment-1"></script>
+    <script src="collections/js/collections.js?v=20260518-receive-payment-batches-1"></script>
 </body>
 </html>

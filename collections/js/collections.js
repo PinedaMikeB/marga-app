@@ -77,6 +77,8 @@ let draftPaymentEntries = [];
 const receivePaymentState = {
     selectedInvoices: [],
     selectedDraft: null,
+    selectedDraftGroup: [],
+    matchedDraftIds: new Set(),
     searchResults: []
 };
 
@@ -7175,7 +7177,11 @@ function setReceivePaymentStatus(message) {
 function clearReceivePaymentSelection({ keepDraft = false } = {}) {
     receivePaymentState.selectedInvoices = [];
     receivePaymentState.searchResults = [];
-    if (!keepDraft) receivePaymentState.selectedDraft = null;
+    receivePaymentState.matchedDraftIds = new Set();
+    if (!keepDraft) {
+        receivePaymentState.selectedDraft = null;
+        receivePaymentState.selectedDraftGroup = [];
+    }
     const search = document.getElementById('receivePaymentInvoiceSearch');
     const results = document.getElementById('receivePaymentSearchResults');
     if (search) search.value = '';
@@ -7185,6 +7191,40 @@ function clearReceivePaymentSelection({ keepDraft = false } = {}) {
     }
 }
 
+function getDraftMessengerName(payment) {
+    return String(payment?.assigned || payment?.encodedBy || payment?.messenger || 'Unassigned messenger').trim() || 'Unassigned messenger';
+}
+
+function getDraftTurnoverAmount(payment) {
+    return Number(payment?.amount || 0) + getPaymentDeductionAmount(payment);
+}
+
+function groupDraftPaymentsByMessenger() {
+    const groups = new Map();
+    draftPaymentEntries.forEach((payment) => {
+        const key = getDraftMessengerName(payment);
+        if (!groups.has(key)) {
+            groups.set(key, {
+                messenger: key,
+                payments: [],
+                amount: 0,
+                deduction: 0,
+                cash: 0,
+                checks: 0
+            });
+        }
+        const group = groups.get(key);
+        const amount = Number(payment.amount || 0);
+        const deduction = getPaymentDeductionAmount(payment);
+        group.payments.push(payment);
+        group.amount += amount;
+        group.deduction += deduction;
+        if (formatPaymentTypeLabel(payment.paymentType) === 'CHECK') group.checks += amount;
+        else group.cash += amount;
+    });
+    return Array.from(groups.values()).sort((left, right) => right.amount + right.deduction - left.amount - left.deduction);
+}
+
 function renderReceivePaymentDrafts() {
     const list = document.getElementById('receivePaymentDraftList');
     if (!list) return;
@@ -7192,17 +7232,50 @@ function renderReceivePaymentDrafts() {
         list.innerHTML = '<div class="empty-followup">No field draft payments waiting for confirmation.</div>';
         return;
     }
-    list.innerHTML = draftPaymentEntries
-        .slice()
-        .sort((left, right) => (right.paymentDate || new Date(0)) - (left.paymentDate || new Date(0)))
-        .map((payment) => `
-            <div class="receive-payment-draft">
-                <div>
-                    <strong>${escapeHtml(payment.client || 'Field payment draft')}</strong>
-                    <div class="collector-sub">${escapeHtml([payment.category, payment.invoiceNo || payment.invoiceId, formatDate(payment.paymentDate)].filter(Boolean).join(' · '))}</div>
-                    <div class="collector-sub">Amount ${escapeHtml(formatCurrency(payment.amount || 0))}${getPaymentDeductionAmount(payment) ? ` · Deduction ${escapeHtml(formatCurrency(getPaymentDeductionAmount(payment)))}` : ''}</div>
+    list.innerHTML = groupDraftPaymentsByMessenger()
+        .map((group) => `
+            <div class="receive-payment-group">
+                <div class="receive-payment-group-head">
+                    <div>
+                        <div class="receive-payment-messenger">${escapeHtml(group.messenger)}</div>
+                        <div class="collector-sub">${group.payments.length} customer collection${group.payments.length === 1 ? '' : 's'} encoded · Cash ${escapeHtml(formatCurrency(group.cash))} · Checks ${escapeHtml(formatCurrency(group.checks))}</div>
+                    </div>
+                    <div class="receive-payment-group-total"><span>Turnover total</span>${escapeHtml(formatCurrency(group.amount + group.deduction))}</div>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="loadReceivePaymentDraftGroup('${encodeURIComponent(group.messenger)}')">Review Batch</button>
                 </div>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="loadReceivePaymentDraft('${encodeURIComponent(payment.docId || payment.id || '')}')">Review</button>
+                <table class="receive-payment-batch-table">
+                    <thead>
+                        <tr>
+                            <th class="receive-payment-checkcell">OK</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Check No</th>
+                            <th>Check Date</th>
+                            <th>Inv No</th>
+                            <th>OR No</th>
+                            <th class="text-right">Net</th>
+                            <th class="text-right">2307</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${group.payments.map((payment) => {
+                            const docId = String(payment.docId || payment.id || '');
+                            return `
+                                <tr>
+                                    <td class="receive-payment-checkcell"><input type="checkbox" ${receivePaymentState.matchedDraftIds.has(docId) ? 'checked' : ''} onchange="toggleReceivePaymentDraftMatch('${encodeURIComponent(docId)}', this.checked)"></td>
+                                    <td>${escapeHtml(formatDate(payment.paymentDate))}</td>
+                                    <td>${escapeHtml(payment.client || '')}</td>
+                                    <td>${escapeHtml(payment.checkNumber || '-')}</td>
+                                    <td>${escapeHtml(formatDate(payment.checkDate))}</td>
+                                    <td>${escapeHtml(payment.invoiceNo || payment.invoiceId || '-')}</td>
+                                    <td>${escapeHtml(payment.orNumber || payment.printedOr || '-')}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(payment.amount || 0))}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(getPaymentDeductionAmount(payment)))}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
             </div>
         `).join('');
 }
@@ -7249,13 +7322,25 @@ function renderReceivePaymentInvoices() {
     totalNode.textContent = formatCurrency(total);
 }
 
+function toggleReceivePaymentDraftMatch(paymentDocId, checked) {
+    const docId = decodeURIComponent(String(paymentDocId || '')).trim();
+    if (!docId) return;
+    if (checked) receivePaymentState.matchedDraftIds.add(docId);
+    else receivePaymentState.matchedDraftIds.delete(docId);
+    updateReceivePaymentBalanceStatus();
+}
+
 function updateReceivePaymentBalanceStatus() {
     const total = receivePaymentState.selectedInvoices.reduce((sum, invoice) => sum + Number(invoice.receiveAmount || 0), 0);
     const amount = parseMoneyInput(document.getElementById('receivePaymentAmount')?.value || '0');
     const deduction = parseMoneyInput(document.getElementById('receivePaymentDeduction')?.value || '0');
     const delta = total - amount - deduction;
+    const group = receivePaymentState.selectedDraftGroup || [];
+    const allMatched = group.length && group.every((payment) => receivePaymentState.matchedDraftIds.has(String(payment.docId || payment.id || '')));
     if (!receivePaymentState.selectedInvoices.length) {
-        setReceivePaymentStatus('Select invoice(s), or review a field draft payment.');
+        setReceivePaymentStatus('Select invoice(s), or review a messenger turnover batch.');
+    } else if (group.length && !allMatched) {
+        setReceivePaymentStatus('Tick each draft row only after actual cash, check, or bank slip matches the encoded transaction.');
     } else if (Math.abs(delta) <= 0.01) {
         setReceivePaymentStatus('Ready to confirm. Invoice total matches amount received plus deduction.');
     } else {
@@ -7329,6 +7414,52 @@ function loadReceivePaymentDraft(paymentDocId) {
     }
 }
 
+function loadReceivePaymentDraftGroup(messengerName) {
+    const messenger = decodeURIComponent(String(messengerName || '')).trim();
+    const group = draftPaymentEntries.filter((entry) => getDraftMessengerName(entry) === messenger);
+    if (!group.length) {
+        setReceivePaymentStatus('Messenger batch could not be loaded.');
+        return;
+    }
+    clearReceivePaymentSelection({ keepDraft: true });
+    receivePaymentState.selectedDraft = group[0];
+    receivePaymentState.selectedDraftGroup = group;
+
+    const amountTotal = group.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const deductionTotal = group.reduce((sum, payment) => sum + getPaymentDeductionAmount(payment), 0);
+    const hasCash = group.some((payment) => formatPaymentTypeLabel(payment.paymentType) !== 'CHECK');
+    const hasCheck = group.some((payment) => formatPaymentTypeLabel(payment.paymentType) === 'CHECK');
+    const setValue = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value ?? '';
+    };
+
+    setValue('receivePaymentDate', toDateKey(group[0].datePaid || group[0].paymentDate) || getTodayInputValue(0));
+    setValue('receivePaymentOrNumber', group.map((payment) => payment.orNumber || payment.printedOr || '').filter(Boolean).join(', '));
+    setValue('receivePaymentAmount', amountTotal ? amountTotal.toFixed(2) : '');
+    setValue('receivePaymentDeduction', deductionTotal ? deductionTotal.toFixed(2) : '');
+    setValue('receivePaymentType', hasCash && hasCheck ? 'mixed' : hasCheck ? 'check' : 'cash');
+    setValue('receivePaymentCheckNumber', group.map((payment) => payment.checkNumber || '').filter(Boolean).join(', '));
+    setValue('receivePaymentCheckDate', toDateKey(group.find((payment) => payment.checkDate)?.checkDate) || '');
+    setValue('receivePaymentCheckBank', group.map((payment) => payment.accountBank || '').filter(Boolean).join(', '));
+    setValue('receivePaymentRemarks', `Messenger turnover: ${messenger}`);
+
+    group.forEach((draft) => {
+        const invoice = findReceivePaymentInvoice(draft.invoiceNo || draft.invoiceId);
+        if (!invoice) return;
+        const turnoverTotal = getDraftTurnoverAmount(draft);
+        receivePaymentState.selectedInvoices.push({
+            ...invoice,
+            receiveAmount: turnoverTotal || receivePaymentOutstandingForInvoice(invoice),
+            draftDocId: String(draft.docId || draft.id || '')
+        });
+    });
+
+    renderReceivePaymentDrafts();
+    renderReceivePaymentInvoices();
+    updateReceivePaymentBalanceStatus();
+}
+
 function openReceivePaymentModal() {
     const modal = document.getElementById('receivePaymentModal');
     if (!modal) return;
@@ -7369,12 +7500,14 @@ async function confirmReceivePayment() {
     const deduction = parseMoneyInput(document.getElementById('receivePaymentDeduction')?.value || '0');
     const paymentDate = String(document.getElementById('receivePaymentDate')?.value || '').trim();
     const orNumber = String(document.getElementById('receivePaymentOrNumber')?.value || '').trim();
-    const isCheck = String(document.getElementById('receivePaymentType')?.value || '') === 'check';
+    const selectedPaymentType = String(document.getElementById('receivePaymentType')?.value || '');
+    const isCheck = selectedPaymentType === 'check';
     const checkNumber = String(document.getElementById('receivePaymentCheckNumber')?.value || '').trim();
     const checkDate = String(document.getElementById('receivePaymentCheckDate')?.value || '').trim();
     const checkBank = String(document.getElementById('receivePaymentCheckBank')?.value || '').trim();
     const remarks = String(document.getElementById('receivePaymentRemarks')?.value || '').trim();
     const draft = receivePaymentState.selectedDraft;
+    const draftGroup = receivePaymentState.selectedDraftGroup || [];
 
     if (!invoices.length) {
         setReceivePaymentStatus('Add at least one invoice before confirming received payment.');
@@ -7386,6 +7519,10 @@ async function confirmReceivePayment() {
     }
     if (Math.abs(selectedTotal - amount - deduction) > 0.01) {
         setReceivePaymentStatus('Invoice total must match amount received plus 2307/deduction before confirmation.');
+        return;
+    }
+    if (draftGroup.length && !draftGroup.every((payment) => receivePaymentState.matchedDraftIds.has(String(payment.docId || payment.id || '')))) {
+        setReceivePaymentStatus('Confirm the actual cash/check/slip match for every row in the messenger batch.');
         return;
     }
     if (isCheck && (!checkNumber || !checkDate || !checkBank)) {
@@ -7400,15 +7537,29 @@ async function confirmReceivePayment() {
     try {
         const now = toTimestampString(new Date());
         const confirmedBy = getCurrentCollectorName();
-        const sharedGroupId = draft?.docId || createWebDocId('received_payment_group');
+        const sharedGroupId = draftGroup.length ? `turnover_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` : (draft?.docId || createWebDocId('received_payment_group'));
         const createdEntries = [];
 
         for (let index = 0; index < invoices.length; index += 1) {
             const invoice = invoices[index];
-            const allocation = buildReceivePaymentAllocation(amount, deduction, Number(invoice.receiveAmount || 0), selectedTotal);
-            const paymentDocId = index === 0 && draft?.docId ? draft.docId : createWebDocId('received_payment');
-            const paymentRecordId = index === 0 && draft?.id ? draft.id : paymentDocId;
-            const checkDocId = isCheck ? createWebDocId('received_checkpayment') : '';
+            const sourceDraft = String(invoice.draftDocId || '')
+                ? draftGroup.find((payment) => String(payment.docId || payment.id || '') === String(invoice.draftDocId || ''))
+                : (!draftGroup.length && index === 0 ? draft : null);
+            const allocation = sourceDraft
+                ? {
+                    paymentAmount: Number(sourceDraft.amount || 0),
+                    deductionAmount: getPaymentDeductionAmount(sourceDraft),
+                    balanceAmount: Math.max(0, Number(invoice.receiveAmount || 0) - Number(sourceDraft.amount || 0) - getPaymentDeductionAmount(sourceDraft))
+                }
+                : buildReceivePaymentAllocation(amount, deduction, Number(invoice.receiveAmount || 0), selectedTotal);
+            const paymentDocId = sourceDraft?.docId || createWebDocId('received_payment');
+            const paymentRecordId = sourceDraft?.id || paymentDocId;
+            const entryIsCheck = sourceDraft ? formatPaymentTypeLabel(sourceDraft.paymentType) === 'CHECK' : isCheck;
+            const entryCheckNumber = sourceDraft?.checkNumber || checkNumber;
+            const entryCheckDate = toDateKey(sourceDraft?.checkDate) || checkDate;
+            const entryCheckBank = sourceDraft?.accountBank || checkBank;
+            const entryOrNumber = sourceDraft?.orNumber || sourceDraft?.printedOr || orNumber;
+            const checkDocId = entryIsCheck ? (sourceDraft?.checkpaymentId && sourceDraft.checkpaymentId !== '0' ? sourceDraft.checkpaymentId : createWebDocId('received_checkpayment')) : '';
             const taxFormStatus = allocation.deductionAmount > 0 ? 'pending' : '';
             const paymentFields = {
                 id: toFirestoreWriteValue(paymentRecordId),
@@ -7418,20 +7569,20 @@ async function confirmReceivePayment() {
                 category: toFirestoreWriteValue(invoice.branch || ''),
                 invoice_amt: toFirestoreWriteValue(Number(invoice.receiveAmount || 0)),
                 invoice_date: toFirestoreWriteValue(formatInputDateTime(toDateKey(invoice.invoiceDate))),
-                printed_or: toFirestoreWriteValue(orNumber),
+                printed_or: toFirestoreWriteValue(entryOrNumber),
                 assigned: toFirestoreWriteValue(confirmedBy),
                 payment_amt: toFirestoreWriteValue(allocation.paymentAmount),
                 balance_amt: toFirestoreWriteValue(allocation.balanceAmount),
                 date_deposit: toFirestoreWriteValue(formatInputDateTime(paymentDate)),
                 date_paid: toFirestoreWriteValue(formatInputDateTime(paymentDate)),
-                ornum: toFirestoreWriteValue(orNumber),
-                or_number: toFirestoreWriteValue(orNumber),
-                payment_type: toFirestoreWriteValue(isCheck ? 1 : 0),
+                ornum: toFirestoreWriteValue(entryOrNumber),
+                or_number: toFirestoreWriteValue(entryOrNumber),
+                payment_type: toFirestoreWriteValue(entryIsCheck ? 1 : 0),
                 payment_status: toFirestoreWriteValue(allocation.balanceAmount <= 0.01 ? 'Paid' : 'Partial'),
-                check_number: toFirestoreWriteValue(checkNumber),
-                check_amt: toFirestoreWriteValue(isCheck ? allocation.paymentAmount : 0),
-                check_date: toFirestoreWriteValue(formatInputDateTime(checkDate)),
-                account_bank: toFirestoreWriteValue(checkBank),
+                check_number: toFirestoreWriteValue(entryCheckNumber),
+                check_amt: toFirestoreWriteValue(entryIsCheck ? allocation.paymentAmount : 0),
+                check_date: toFirestoreWriteValue(formatInputDateTime(entryCheckDate)),
+                account_bank: toFirestoreWriteValue(entryCheckBank),
                 tax_2307: toFirestoreWriteValue(allocation.deductionAmount),
                 tax_date_paid: toFirestoreWriteValue(formatInputDateTime(allocation.deductionAmount > 0 ? paymentDate : '')),
                 tax_status: toFirestoreWriteValue(allocation.deductionAmount > 0 ? 1 : 0),
@@ -7441,30 +7592,31 @@ async function confirmReceivePayment() {
                 checkpayment_id: toFirestoreWriteValue(checkDocId || 0),
                 remarks: toFirestoreWriteValue(remarks),
                 received_payment_group_id: toFirestoreWriteValue(sharedGroupId),
-                field_draft_payment_id: toFirestoreWriteValue(draft?.docId || ''),
+                field_draft_payment_id: toFirestoreWriteValue(sourceDraft?.docId || draft?.docId || ''),
+                messenger_turnover_by: toFirestoreWriteValue(sourceDraft ? getDraftMessengerName(sourceDraft) : ''),
                 field_confirmed_at: toFirestoreWriteValue(now),
                 field_confirmed_by: toFirestoreWriteValue(confirmedBy),
                 timestamp: toFirestoreWriteValue(now),
                 updated_at: toFirestoreWriteValue(now),
-                source: toFirestoreWriteValue(draft ? 'collections_confirmed_field_payment' : 'collections_received_payment')
+                source: toFirestoreWriteValue(sourceDraft ? 'collections_confirmed_field_payment' : 'collections_received_payment')
             };
 
-            if (index === 0 && draft?.docId) {
+            if (sourceDraft?.docId) {
                 await firestoreUpdateDocumentFields('tbl_paymentinfo', paymentDocId, paymentFields);
             } else {
                 await firestoreSetDocument('tbl_paymentinfo', paymentDocId, paymentFields);
             }
 
-            if (isCheck) {
+            if (entryIsCheck) {
                 await firestoreSetDocument('tbl_checkpayments', checkDocId, {
                     id: toFirestoreWriteValue(checkDocId),
                     payments_id: toFirestoreWriteValue(paymentDocId),
                     invoice_id: toFirestoreWriteValue(invoice.invoiceId || invoice.invoiceNo),
-                    check_number: toFirestoreWriteValue(checkNumber),
-                    bank: toFirestoreWriteValue(checkBank),
-                    account_bank: toFirestoreWriteValue(checkBank),
+                    check_number: toFirestoreWriteValue(entryCheckNumber),
+                    bank: toFirestoreWriteValue(entryCheckBank),
+                    account_bank: toFirestoreWriteValue(entryCheckBank),
                     check_amt: toFirestoreWriteValue(allocation.paymentAmount),
-                    check_date: toFirestoreWriteValue(formatInputDateTime(checkDate)),
+                    check_date: toFirestoreWriteValue(formatInputDateTime(entryCheckDate)),
                     remarks: toFirestoreWriteValue(remarks),
                     source: toFirestoreWriteValue('collections_received_payment'),
                     timestamp: toFirestoreWriteValue(now)
@@ -7487,21 +7639,24 @@ async function confirmReceivePayment() {
                 paymentDate: normalizeDate(paymentDate),
                 datePaid: normalizeDate(paymentDate),
                 dateDeposit: normalizeDate(paymentDate),
-                orNumber,
-                paymentType: isCheck ? '1' : '0',
+                orNumber: entryOrNumber,
+                paymentType: entryIsCheck ? '1' : '0',
                 paymentStatus: allocation.balanceAmount <= 0.01 ? 'Paid' : 'Partial',
                 tax2307: allocation.deductionAmount,
                 taxStatus: allocation.deductionAmount > 0 ? '1' : '0',
                 taxFormStatus,
-                checkNumber,
-                checkAmount: isCheck ? allocation.paymentAmount : 0,
-                checkDate: normalizeDate(checkDate),
-                accountBank: checkBank,
+                checkNumber: entryCheckNumber,
+                checkAmount: entryIsCheck ? allocation.paymentAmount : 0,
+                checkDate: normalizeDate(entryCheckDate),
+                accountBank: entryCheckBank,
                 remarks
             });
         }
 
-        if (draft?.docId) {
+        if (draftGroup.length) {
+            const confirmedIds = new Set(draftGroup.map((entry) => String(entry.docId || entry.id || '')));
+            draftPaymentEntries = draftPaymentEntries.filter((entry) => !confirmedIds.has(String(entry.docId || entry.id || '')));
+        } else if (draft?.docId) {
             draftPaymentEntries = draftPaymentEntries.filter((entry) => String(entry.docId || entry.id || '') !== String(draft.docId || draft.id || ''));
         }
         createdEntries.forEach((entry) => {
