@@ -111,6 +111,8 @@ const state = {
     carryoverRows: [],
     rows: [],
     modalScheduleId: null,
+    modalRelatedScheduleIds: [],
+    combinedTaskGroups: new Map(),
     guideReturnScheduleId: null,
     modalMachineId: null,
     modalBranchId: null,
@@ -1384,6 +1386,78 @@ function prioritySortedRows(rows) {
         if (!ap && bp) return 1;
         return String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0));
     });
+}
+
+function combinedStopKey(row) {
+    const branchId = Number(row?.branch_id || 0) || 0;
+    const companyId = Number(row?.company_id || 0) || 0;
+    return branchId ? `branch:${branchId}` : `company:${companyId || 'unknown'}`;
+}
+
+function purposePriorityValue(row) {
+    const purposeId = Number(row?.purpose_id || 0);
+    if (purposeId === 5) return 1;
+    if ([3, 4].includes(purposeId)) return 2;
+    if ([1, 8].includes(purposeId)) return 3;
+    if (purposeId === 2) return 4;
+    return 5;
+}
+
+function combinedWorkLabel(row) {
+    const trouble = caches.trouble.get(String(row?.trouble_id || 0));
+    const troubleLabel = trouble?.trouble || (row?.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
+    const purposeLabel = PURPOSE_LABELS[row?.purpose_id] || `Purpose ${row?.purpose_id || 0}`;
+    return `${purposeLabel} / ${troubleLabel}`;
+}
+
+function uniqueCombinedWorkLabels(rows) {
+    const seen = new Set();
+    return rows
+        .map((row) => combinedWorkLabel(row))
+        .filter((label) => {
+            const key = label.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+function pickPrimaryCombinedRow(rows) {
+    return rows.slice().sort((a, b) => {
+        const ap = purposePriorityValue(a);
+        const bp = purposePriorityValue(b);
+        if (ap !== bp) return ap - bp;
+        return prioritySortedRows([a, b])[0] === a ? -1 : 1;
+    })[0] || rows[0];
+}
+
+function buildCombinedTaskGroups(rows) {
+    const byStop = new Map();
+    rows.forEach((row) => {
+        const key = combinedStopKey(row);
+        if (!byStop.has(key)) byStop.set(key, []);
+        byStop.get(key).push(row);
+    });
+    const groups = Array.from(byStop.values()).map((groupRows) => {
+        const sortedRows = prioritySortedRows(groupRows);
+        const primary = pickPrimaryCombinedRow(sortedRows);
+        return {
+            primary,
+            rows: sortedRows
+        };
+    });
+    const primaryOrder = new Map(prioritySortedRows(groups.map((group) => group.primary)).map((row, index) => [Number(row.id || 0), index]));
+    return groups.sort((a, b) => (primaryOrder.get(Number(a.primary.id || 0)) ?? 0) - (primaryOrder.get(Number(b.primary.id || 0)) ?? 0));
+}
+
+function getModalRelatedRows(row = getCurrentRow()) {
+    if (!row) return [];
+    const relatedIds = Array.isArray(state.modalRelatedScheduleIds) && state.modalRelatedScheduleIds.length
+        ? state.modalRelatedScheduleIds
+        : [row.id];
+    const idSet = new Set(relatedIds.map((id) => Number(id || 0)).filter(Boolean));
+    const rows = state.rows.filter((item) => idSet.has(Number(item.id || 0)));
+    return rows.length ? rows : [row];
 }
 
 function loadCloseRequestLookup(rows = []) {
@@ -3545,7 +3619,15 @@ function renderList() {
         </div>
     ` : '';
 
-    list.innerHTML = closedNotice + priorityNotice + prioritySortedRows(filtered).map((row) => {
+    state.combinedTaskGroups = new Map();
+    const taskGroups = state.activeTab === 'closed'
+        ? prioritySortedRows(filtered).map((row) => ({ primary: row, rows: [row] }))
+        : buildCombinedTaskGroups(filtered);
+
+    list.innerHTML = closedNotice + priorityNotice + taskGroups.map((group) => {
+        const row = group.primary;
+        const relatedRows = Array.isArray(group.rows) && group.rows.length ? group.rows : [row];
+        state.combinedTaskGroups.set(String(row.id || ''), relatedRows.map((item) => Number(item.id || 0)).filter(Boolean));
         const trouble = caches.trouble.get(String(row.trouble_id || 0));
         const troubleLabel = trouble?.trouble || (row.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
         const purposeLabel = PURPOSE_LABELS[row.purpose_id] || `Purpose ${row.purpose_id}`;
@@ -3589,6 +3671,10 @@ function renderList() {
             ? '<div class="sub"><strong>Pending:</strong> parts preparation in progress.</div>'
             : '';
         const taskNotes = row.route_remarks || row.remarks || row.caller || '-';
+        const combinedLabels = uniqueCombinedWorkLabels(relatedRows);
+        const combinedLine = relatedRows.length > 1
+            ? `<div class="sub"><strong>Combined stop:</strong> ${sanitize(combinedLabels.join(', '))}. ${relatedRows.length} schedule${relatedRows.length === 1 ? '' : 's'} grouped here.</div>`
+            : '';
 
         return `
             <div class="field-task">
@@ -3599,6 +3685,7 @@ function renderList() {
                         <div class="sub">${sanitize(clientName)} · ${sanitize(branchName)} · ${sanitize(areaName)}</div>
                         ${originalDateLine}
                         <div class="sub">${machineLine} · Serial: <strong>${sanitize(machineSerial)}</strong></div>
+                        ${combinedLine}
                         <div class="sub">${sanitize(taskNotes)}</div>
                         ${routeSourceLine}
                         ${partsNote}
@@ -5304,6 +5391,7 @@ async function openModal(scheduleId) {
     if (!row) return;
 
     state.modalScheduleId = scheduleId;
+    state.modalRelatedScheduleIds = state.combinedTaskGroups.get(String(scheduleId)) || [scheduleId];
     state.modalMachineId = Number(row.serial || 0) || null;
     state.modalBranchId = Number(row.branch_id || 0) || null;
     state.modalStatusKey = getStatusKey(row);
@@ -5317,9 +5405,13 @@ async function openModal(scheduleId) {
     const trouble = caches.trouble.get(String(row.trouble_id || 0));
     const purposeLabel = PURPOSE_LABELS[row.purpose_id] || `Purpose ${row.purpose_id}`;
     const troubleLabel = trouble?.trouble || (row.trouble_id ? `Trouble ${row.trouble_id}` : 'Unspecified');
+    const relatedRows = getModalRelatedRows(row);
+    const combinedLabels = uniqueCombinedWorkLabels(relatedRows);
+    const combinedSuffix = relatedRows.length > 1 ? ` (+${relatedRows.length - 1} more)` : '';
+    const combinedSubtitle = relatedRows.length > 1 ? ` · Combined: ${combinedLabels.join(', ')}` : '';
 
-    document.getElementById('fieldModalTitle').textContent = `#${row.id} ${purposeLabel} / ${troubleLabel}`;
-    document.getElementById('fieldModalSubtitle').textContent = `${company?.companyname || '-'} · ${branch?.branchname || '-'} · ${formatTaskDateTime(row.task_datetime)}`;
+    document.getElementById('fieldModalTitle').textContent = `#${row.id} ${purposeLabel} / ${troubleLabel}${combinedSuffix}`;
+    document.getElementById('fieldModalSubtitle').textContent = `${company?.companyname || '-'} · ${branch?.branchname || '-'} · ${formatTaskDateTime(row.task_datetime)}${combinedSubtitle}`;
     setLocationPinUi(row);
 
     await Promise.all([
@@ -5704,6 +5796,48 @@ function getCloseTaskIssues(row, form) {
     return [];
 }
 
+async function closeCombinedScheduleRow(row, payload, form, nowIso, staffId) {
+    await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
+    if (row.source_planner_doc_id) {
+        try {
+            await patchDocument(SCHEDULE_PLANNER_COLLECTION, row.source_planner_doc_id, {
+                planner_status: 'closed',
+                task_status: 'closed',
+                route_status: 'closed',
+                date_finished: form.timeOutDb,
+                closed_at: nowIso,
+                closed_by: staffId,
+                field_closed_schedule_id: Number(row.id || 0) || 0,
+                field_closed_at: nowIso
+            });
+        } catch (plannerError) {
+            console.warn('Planner row close update failed; schedule was closed.', plannerError);
+        }
+    }
+    const routeCollection = routeCollectionForRow(row);
+    if (routeCollection && row.route_doc_id) {
+        try {
+            await patchDocument(routeCollection, row.route_doc_id, {
+                status: 0,
+                date_finished: form.timeOutDb,
+                remarks: form.notes || form.finalSummary || row.route_remarks || row.remarks || '',
+                timestmp: nowIso,
+                bridge_pushed_at: nowIso
+            });
+        } catch (routeError) {
+            console.warn('Route row close update failed; schedule was closed.', routeError);
+        }
+    }
+    await safeUpsertSchedtimeLog(row, form, 'finish');
+    applyRowPatch(row.id, {
+        ...payload,
+        route_status: 0,
+        route_date_finished: form.timeOutDb,
+        route_timestmp: nowIso,
+        route_bridge_pushed_at: nowIso
+    });
+}
+
 function isMachineDeliveryTask(row, form) {
     const purposeLabel = String(PURPOSE_LABELS[row?.purpose_id] || '').toLowerCase();
     const deliveryText = normalizeSearchText(form?.deliveryDetails || row?.remarks || '');
@@ -6023,9 +6157,31 @@ async function closeTask() {
             route_timestmp: nowIso,
             route_bridge_pushed_at: nowIso
         });
+        const relatedRows = getModalRelatedRows(row)
+            .filter((item) => Number(item.id || 0) !== Number(row.id || 0))
+            .filter((item) => !isFinishedOrCancelled(item) && getStatusKey(item) !== 'closed' && getStatusKey(item) !== 'cancelled');
+        let combinedClosed = 0;
+        for (const relatedRow of relatedRows) {
+            const relatedPayload = {
+                ...buildSchedulePayload(relatedRow, form, '[FINISHED_COMBINED]'),
+                ...timeInLocationPatch,
+                date_finished: form.timeOutDb,
+                closedby: staffId,
+                isongoing: 0,
+                pending_parts: 0,
+                pending_reason: '',
+                pending_updated_at: nowIso,
+                pending_updated_by: staffId,
+                customer_pin_verified: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? 1 : 0,
+                customer_pin_verified_at: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? nowIso : '',
+                customer_pin_verified_by: (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) ? staffId : 0
+            };
+            await closeCombinedScheduleRow(relatedRow, relatedPayload, form, nowIso, staffId);
+            combinedClosed += 1;
+        }
         closeModal();
         await loadMySchedule();
-        alert('Task marked as Finished.');
+        alert(combinedClosed ? `Task marked as Finished. ${combinedClosed} combined schedule${combinedClosed === 1 ? '' : 's'} also closed.` : 'Task marked as Finished.');
     } catch (err) {
         console.error('Close task failed:', err);
         alert(`Failed to close task: ${err?.message || err}`);

@@ -190,26 +190,7 @@
 
     function renderBanner(doc) {
         const existing = document.getElementById('margaCompanyMeetingBanner');
-        if (!doc) {
-            existing?.remove();
-            return;
-        }
-        const startedBy = doc.caller_name || doc.created_by_name || 'MARGA';
-        const banner = existing || document.createElement('div');
-        banner.id = 'margaCompanyMeetingBanner';
-        banner.className = 'marga-company-meeting-banner';
-        banner.innerHTML = `
-            <div>
-                <span>Company meeting is live</span>
-                <strong>${escapeHtml(doc.title || 'MARGA Company Meeting')}</strong>
-                <p>Started by ${escapeHtml(startedBy)}</p>
-            </div>
-            <button type="button" class="btn btn-primary btn-sm" data-marga-meeting-action="join-company">Join</button>
-        `;
-        if (!existing) document.body.appendChild(banner);
-        banner.querySelector('[data-marga-meeting-action="join-company"]')?.addEventListener('click', () => {
-            void joinCompanyMeeting();
-        });
+        existing?.remove();
     }
 
     async function refreshCompanyMeeting() {
