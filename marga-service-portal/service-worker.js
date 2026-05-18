@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v7-aidial-clean';
+const CACHE_NAME = 'msp-shell-v8-customer-billing-dashboard';
 const SHELL_ASSETS = [
   '/',
   '/install/',

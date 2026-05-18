@@ -13,8 +13,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="manifest" href="/public/manifest.json" />
   <link rel="apple-touch-icon" href="/public/assets/icons/icon-192.png" />
-  <link rel="stylesheet" href="/src/styles/app.css?v=20260518-aidial-clean" />
-  <link rel="stylesheet" href="/src/styles/portal.css?v=20260518-aidial-clean" />
+  <link rel="stylesheet" href="/src/styles/app.css?v=20260518-customer-billing-dashboard" />
+  <link rel="stylesheet" href="/src/styles/portal.css?v=20260518-customer-billing-dashboard" />
 </head>
 <body>
   <div class="ambient-bg" aria-hidden="true"></div>
@@ -77,8 +77,9 @@
           <p id="viewSubtitle">Operational overview</p>
         </div>
         <div class="top-actions">
-          <a class="btn btn-secondary" href="/install/?target=portal">Install Guide</a>
-          <button id="installBtn" class="btn btn-secondary hidden">Install App</button>
+          <a class="top-icon call-icon" href="tel:+63281234567" aria-label="Call Marga"></a>
+          <a class="top-icon chat-icon" href="mailto:support@marga.biz" aria-label="Chat with Marga"></a>
+          <button id="installBtn" class="btn btn-secondary hidden" type="button" disabled aria-hidden="true">Install App</button>
           <span id="syncBadge" class="status-badge">Online</span>
         </div>
       </header>
@@ -105,6 +106,6 @@
   </template>
 
   <script src="/public/config.js"></script>
-  <script type="module" src="/src/portal-main.js?v=20260518-aidial-clean"></script>
+  <script type="module" src="/src/portal-main.js?v=20260518-customer-billing-dashboard"></script>
 </body>
 </html>

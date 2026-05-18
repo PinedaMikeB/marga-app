@@ -229,28 +229,37 @@
   gap: 8px;
 }
 
-.top-actions::before,
-.top-actions::after {
-  content: "";
+.top-icon {
   width: 20px;
   height: 20px;
+  display: inline-grid;
+  place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-soft);
 }
 
-.top-actions::before {
-  background:
-    radial-gradient(circle at 50% 35%, #7f8190 0 3px, transparent 3.5px),
-    radial-gradient(circle at 50% 65%, #7f8190 0 6px, transparent 6.5px),
-    #fff;
+.top-icon::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  display: block;
+  color: #747782;
 }
 
-.top-actions::after {
-  background:
-    radial-gradient(circle, #6f7180 0 2px, transparent 2.5px) center / 100% 100% no-repeat,
-    #fff;
+.call-icon::before {
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-left-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-35deg);
+}
+
+.chat-icon::before {
+  border: 1.6px solid currentColor;
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 -1.5px #fff, 3px 3px 0 -0.2px currentColor;
 }
 
 #announcements {
@@ -426,11 +435,6 @@
   .icon-btn {
     display: inline-grid;
     place-items: center;
-  }
-
-  .top-actions::before,
-  .top-actions::after {
-    display: none;
   }
 
   .bottom-nav {

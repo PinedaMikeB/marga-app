@@ -151,18 +151,12 @@ function rbacBranchOptions(branches) {
 }
 
 async function renderDashboard() {
-  const [summary, tickets, toner] = await Promise.all([
-    service.getDashboardSummary(state.user),
-    service.listTickets(state.user),
-    service.listTonerRequests(state.user)
-  ]);
-
-  const latestTickets = tickets.slice(0, 5);
-  const latestToner = toner.slice(0, 4);
+  const summary = await service.getDashboardSummary(state.user);
+  const groupMachines = summary.activeGroupMachines ?? summary.groupActiveMachines ?? summary.groupMachines ?? summary.activeDevices ?? 0;
+  const individualMachines = summary.activeIndividualMachines ?? summary.individualActiveMachines ?? summary.individualMachines ?? 0;
 
   const billingBlock = ['marga_admin', 'corporate_admin', 'branch_manager'].includes(state.user.role)
-    ? `<div class="kpi-card"><div class="value">${summary.unpaidInvoices}</div><div class="label">Unpaid Invoices</div></div>
-       <div class="kpi-card"><div class="value money-value">${formatMoney(summary.unpaidAmount)}</div><div class="label">Unpaid Amount</div></div>`
+    ? `<div class="kpi-card"><div class="value money-value">${formatMoney(summary.unpaidAmount)}</div><div class="label">Unpaid Amount</div></div>`
     : '';
 
   viewContainer.innerHTML = `
@@ -171,118 +165,49 @@ async function renderDashboard() {
         <h2>Dashboard</h2>
         <p>Latest Analytics</p>
       </div>
-      <div class="performance-tabs">
-        <strong>AI & Agent Performance</strong>
-        <span>Today</span>
-        <span>Total</span>
-      </div>
     </section>
 
     <section class="panel glass dashboard-summary-card">
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="value">${summary.activeDevices}</div><div class="label">Active Devices</div></div>
+        <div class="kpi-card"><div class="value">${groupMachines}</div><div class="label">Active Group Machines</div></div>
+        <div class="kpi-card"><div class="value">${individualMachines}</div><div class="label">Active Individual Machines</div></div>
         <div class="kpi-card"><div class="value">${summary.openTickets}</div><div class="label">Open Tickets</div></div>
-        <div class="kpi-card"><div class="value">${summary.pendingToner}</div><div class="label">Pending Toner Requests</div></div>
+        <div class="kpi-card"><div class="value">${summary.pendingToner}</div><div class="label">Pending Toner/Ink Requests</div></div>
         ${billingBlock}
       </div>
     </section>
 
     <section class="dashboard-overview-grid">
       <article class="panel glass overview-card">
-        <div class="panel-head"><h3>Overview</h3><span class="select-pill">Requests</span></div>
-        <div class="bar-chart" aria-label="Monthly service activity">
+        <div class="panel-head"><h3>Monthly Billing Group Account</h3><span class="select-pill">Billing</span></div>
+        <div class="bar-chart" aria-label="Monthly billing group account">
           ${[22, 58, 42, 92, 82, 34, 53, 66, 35, 41, 22, 88]
             .map((height, index) => `<span style="--h:${height}%"><em>${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][index]}</em></span>`)
             .join('')}
         </div>
       </article>
-      <article class="panel glass agent-list-card">
-        <div class="panel-head"><h3>Recent Toner Requests</h3><span class="mini-icon"></span></div>
-        ${
-          latestToner.length
-            ? `<div class="rank-list">${latestToner
-                .map(
-                  (request, index) => `<article>
-                    <div class="avatar-dot">${index + 1}</div>
-                    <div>
-                      <strong>${escapeHtml(request.id)}</strong>
-                      <p>${escapeHtml(request.notes || 'No notes')}</p>
-                    </div>
-                    <span>${escapeHtml(request.status || 'History')}</span>
-                  </article>`
-                )
-                .join('')}</div>`
-            : '<div class="empty-state">No toner requests yet.</div>'
-        }
+      <article class="panel glass overview-card">
+        <div class="panel-head"><h3>Monthly Billing Individual Accounts</h3><span class="mini-icon"></span></div>
+        <div class="bar-chart bar-chart-individual" aria-label="Monthly billing individual accounts">
+          ${[18, 34, 39, 54, 48, 29, 44, 51, 33, 36, 24, 57]
+            .map((height, index) => `<span style="--h:${height}%"><em>${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][index]}</em></span>`)
+            .join('')}
+        </div>
       </article>
     </section>
 
     <section class="dashboard-detail-grid">
       <article class="panel glass donut-card">
-        <div class="panel-head"><h3>Request Type</h3><span class="mini-icon"></span></div>
+        <div class="panel-head"><h3>Individual Accounts Overview</h3><span class="mini-icon"></span></div>
         <div class="donut-wrap">
-          <div class="donut-chart"><span>4</span></div>
+          <div class="donut-chart"><span>${individualMachines}</span></div>
           <div class="legend-list">
-            <span><i></i> Devices · ${summary.activeDevices}</span>
-            <span><i></i> Tickets · ${summary.openTickets}</span>
-            <span><i></i> Toner · ${summary.pendingToner}</span>
-            <span><i></i> Billing · ${summary.unpaidInvoices || 0}</span>
+            <span><i></i> Current Billing · ${formatMoney(summary.unpaidAmount || 0)}</span>
+            <span><i></i> Open Tickets · ${summary.openTickets}</span>
+            <span><i></i> Toner/Ink · ${summary.pendingToner}</span>
+            <span><i></i> Machines · ${individualMachines}</span>
           </div>
         </div>
-      </article>
-      <article class="panel glass reason-card">
-        <div class="panel-head"><h3>Top 3 Service Subjects</h3><span class="mini-icon"></span></div>
-        <div class="progress-list">
-          <label>Service Request · ${summary.openTickets}</label><span style="--w:94%"></span>
-          <label>Toner Request · ${summary.pendingToner}</label><span style="--w:72%"></span>
-          <label>Billing Follow-up · ${summary.unpaidInvoices || 0}</label><span style="--w:48%"></span>
-        </div>
-      </article>
-      <article class="panel glass approval-card">
-        <div class="panel-head"><h3>Command Request Approvals</h3><span class="mini-icon"></span></div>
-        <div class="approval-bars">
-          <span class="approved">75%</span>
-          <span class="rejected">25%</span>
-          <div><b></b> Approved · ${Math.max(summary.activeDevices || 0, 1)}</div>
-          <div><b></b> Rejected · ${summary.openTickets || 0}</div>
-        </div>
-      </article>
-    </section>
-
-    <section class="grid-2">
-      <article class="panel glass resources-card">
-        <div class="panel-head"><h3>Recent Tickets</h3><span class="muted">Ticket numbers and timestamps</span></div>
-        ${
-          latestTickets.length
-            ? `<div class="timeline">${latestTickets
-                .map(
-                  (ticket) => `<article class="timeline-item">
-                    <strong>${escapeHtml(ticket.ticketNo || ticket.id)}</strong>
-                    <div class="tag ${statusClass(ticket.status)}">${escapeHtml(ticket.status || 'Open')}</div>
-                    <p>${escapeHtml(ticket.description || '')}</p>
-                    <p>${formatDate(ticket.updatedAt || ticket.createdAt)}</p>
-                  </article>`
-                )
-                .join('')}</div>`
-            : '<div class="empty-state">No tickets yet.</div>'
-        }
-      </article>
-      <article class="panel glass resources-card">
-        <div class="panel-head"><h3>Recent Toner Requests</h3></div>
-        ${
-          latestToner.length
-            ? `<div class="timeline">${latestToner
-                .map(
-                  (request) => `<article class="timeline-item">
-                    <strong>${escapeHtml(request.id)}</strong>
-                    <div class="tag ${statusClass(request.status)}">${escapeHtml(request.status)}</div>
-                    <p>${escapeHtml(request.notes || 'No notes')}</p>
-                    <p>${formatDate(request.updatedAt || request.createdAt)}</p>
-                  </article>`
-                )
-                .join('')}</div>`
-            : '<div class="empty-state">No toner requests yet.</div>'
-        }
       </article>
     </section>
   `;
@@ -1003,7 +928,7 @@ async function init() {
   });
 
   setupPwa({
-    installButton: installBtn,
+    installButton: null,
     onConnectivityChange: (isOnline) => {
       syncBadge.textContent = isOnline ? 'Online' : 'Offline';
       syncBadge.className = `status-badge ${isOnline ? 'neutral' : 'warn'}`;
