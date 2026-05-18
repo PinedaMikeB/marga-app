@@ -6450,9 +6450,9 @@ async function pinCustomerLocation() {
             console.warn('Field visit event write failed; schedule proof was saved.', eventError);
         }
 
-        const branch = caches.branch.get(String(branchId)) || {};
-        Object.assign(branch, branchPatch);
-        caches.branch.set(String(branchId), branch);
+        const cachedBranch = caches.branch.get(String(branchId)) || {};
+        Object.assign(cachedBranch, branchPatch);
+        caches.branch.set(String(branchId), cachedBranch);
         state.modalBranchLocationPinned = true;
         applyRowPatch(row.id, schedulePatch);
         setLocationPinUi(row);
