@@ -58,6 +58,15 @@
   display: none;
 }
 
+.sidebar-logo-mark {
+  width: 31px;
+  height: 31px;
+  display: block;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: var(--shadow-soft);
+}
+
 .sidebar-nav {
   display: grid;
   align-content: start;
@@ -246,6 +255,17 @@
   height: 10px;
   display: block;
   color: #747782;
+}
+
+.top-icon img {
+  width: 15px;
+  height: 15px;
+  display: block;
+  object-fit: contain;
+}
+
+.top-icon:has(img)::before {
+  display: none;
 }
 
 .call-icon::before {

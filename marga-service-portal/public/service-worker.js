@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v8-customer-billing-dashboard';
+const CACHE_NAME = 'msp-shell-v9-marga-icons';
 const SHELL_ASSETS = [
   '/',
   '/install/',
@@ -18,6 +18,9 @@ const SHELL_ASSETS = [
   '/public/config.js',
   '/public/assets/icons/icon-192.svg',
   '/public/assets/icons/icon-512.svg',
+  '/public/assets/icons/marga-logo-source.png',
+  '/public/assets/icons/call.png',
+  '/public/assets/icons/chat.png',
   '/public/assets/icons/icon-192.png',
   '/public/assets/icons/icon-512.png',
   '/public/assets/icons/tech-icon-192.svg',
