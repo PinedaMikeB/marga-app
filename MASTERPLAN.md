@@ -33,6 +33,8 @@ This file exists to protect the project across new chats by recording:
 - Keep Marga App implementation in the `Marga-App` repo/thread. If the active thread or cwd is `marga-biz`, stop and redirect before editing app code.
 - User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
 - Default release behavior for new Codex threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
+- Production backend protection: `app.marga.biz` is the production app path and must use Margabase/Postgres. Do not allow production staff to write new operational records to Firebase.
+- Firebase cost/data protection: after the 2026-05-18 rescue, do not restart live Firebase sync, admin catch-up, or broad Firebase parity readers unless the user explicitly approves a targeted rescue/check. Prefer local backups, saved rescue reports, and Margabase tables first.
 - Do not rewrite history on `main` for rollback work. Use forward commits.
 - Do not revert unrelated dirty files in the repo.
 - Treat Billing, Collections, Service, Customers, APD, Petty Cash, and Sync as separate risk zones.
@@ -70,6 +72,12 @@ This file exists to protect the project across new chats by recording:
 - Cutover rule:
   - Do not cut production Field App/customer workflows to MargaBase until backups, auth isolation, realtime behavior, and offline/failover behavior are verified.
   - Keep Firebase available as a fallback/mirror during transition until the self-hosted backend is proven stable.
+- Production protection rule after May 18 rescue:
+  - Current `app.marga.biz` production behavior is locked to Margabase/Postgres by commit `ac93600` `Lock production backend to Margabase`.
+  - `app.marga.biz`, `127.0.0.1`, and `localhost` must ignore old Firebase browser preferences and backend query strings.
+  - Settings must not offer Firebase as a selectable production backend.
+  - Do not run continuous Firebase readers/writers in the background once catch-up is complete. A one-time catch-up is allowed only for a named rescue window or named missing record, and should be stopped immediately after verification.
+  - Old deployed app paths that still point to Firebase must be blocked or forced to Margabase before staff can use them.
 - Database efficiency rule:
   - Margabase must not simply recreate Firestore's document-by-document loading pattern.
   - Preserve raw Firebase documents in an import/mirror layer, then derive normalized relational tables and app-facing views.

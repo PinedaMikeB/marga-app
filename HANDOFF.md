@@ -8,6 +8,15 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
+- 2026-05-18 Production backend protection checkpoint:
+  - Current production app domain is `app.marga.biz`; it must use Margabase/Postgres, not Firebase.
+  - Latest pushed protection commit: `ac93600` `Lock production backend to Margabase`.
+  - Do not restart Firebase live sync, admin catch-up, or parity readers unless the user explicitly asks for a verified rescue/check. Firebase reads/writes cost money and can create conflicting production records.
+  - `app.marga.biz`, `127.0.0.1`, and `localhost` now force Margabase in `shared/js/firebase-config.js`, ignore old Firebase localStorage/cookie/query preferences, and remove the Firebase choice from Settings.
+  - After the May 18 rescue, no Firebase live-sync/admin-catchup process was running; leave it off if the catch-up is complete.
+  - Margabase local API/proxy on `127.0.0.1:8787` may remain running because it serves the Postgres/Margabase compatibility API, not Firebase.
+  - If records appear missing, first check Margabase tables and the saved rescue reports before reading Firebase again. Prefer local backups/export data over live Firebase reads.
+  - Old/retired app paths must not be allowed to add records to Firebase. If a legacy domain/build is reachable, block access or force it to `app.marga.biz`/Margabase before staff use.
 - 2026-05-18 Field App / communications checkpoint:
   - Latest pushed `main` commit after this work: `2ba8831` `Add explicit repin photo button`.
   - User expects verified Marga-App code changes to be committed and pushed to `main` automatically unless explicitly told not to push.
@@ -74,6 +83,20 @@ Start every new Marga-App thread by reading:
 - Cutover rule:
   - Firebase remains production until local Firestore export import, Storage download, Postgres derivation, compatibility API, critical-flow smoke tests, and parity checks are complete.
   - MargaBase switching stays admin/browser-local until the app behaves like Firebase for Billing, Collections, Service, Master Schedule, Field App, and Storage-backed image/content flows.
+
+## Firebase Rescue / Margabase Protection - 2026-05-18
+- Operational incident:
+  - Staff used an old Firebase-backed path during the May 18 operating day, so schedules, field movements, service requests, collections, billing-related updates, payments, and close requests had to be rescued into Margabase.
+  - The rescue priority was the May 18 window from early morning through dispatch/evening, especially records created between roughly `6:00 AM` and `3:00 PM` before the app was locked down.
+- Rescue verification completed:
+  - One-time Firebase-to-Margabase catch-up was run from `/Volumes/Wotg Drive Mike/GitHub/marga-platform` using `node scripts/live-firebase-to-margabase.mjs --app=margabase --once`.
+  - The live catch-up log completed around `2026-05-18T12:59:25Z` / `8:59 PM` Manila with zero reported errors for the hot collections.
+  - Strict check against `/Volumes/Wotg Drive Mike/GitHub/Marga-App/reports/firebase-new-records-since-8am-2026-05-18T07-22-37-270Z.json` ended with no missing rows after manually upserting the final missing documents.
+  - Final checked rescue counts from the report included: `tbl_schedule 341/341`, `tbl_billing 37/37`, `tbl_paymentinfo 15/15`, `tbl_field_visit_events 28/28`, `tbl_finaldr 19/19`, `tbl_collectionhistory 35/35`, `tbl_checkpayments 10/10`, `tbl_schedule_close_requests 8/8`, and `tbl_savedscheds 109/109`.
+- Protection rule after rescue:
+  - Do not run continuous Firebase sync in the background after rescue completion.
+  - Do not run broad Firebase collection scans just to "check again"; use targeted checks only when there is a named missing record or a user-approved rescue.
+  - Leave Firebase read/write paths disabled for production staff. Margabase/Postgres is the protected production path.
 
 ## Margabase Migration Checkpoint - 2026-05-11 Night
 - 2026-05-12 temporary safety update:
