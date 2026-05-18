@@ -44,6 +44,12 @@ const HR_STATE = {
     positions: new Map(),
     locations: [],
     fieldEvents: [],
+    performanceSchedules: [],
+    performanceAttendance: [],
+    finishBlocks: [],
+    closeRequests: [],
+    performanceRows: [],
+    performanceTab: 'summary',
     branches: new Map(),
     companies: new Map(),
     activeTab: 'employees',
@@ -58,8 +64,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
         document.getElementById('userAvatar').textContent = String(user.name || user.username || 'U').charAt(0).toUpperCase();
     }
+    const performanceDate = document.getElementById('performanceDateInput');
+    if (performanceDate) performanceDate.value = todayDateKey();
 
     document.getElementById('refreshHrBtn').addEventListener('click', () => loadHrModule());
+    performanceDate?.addEventListener('change', () => refreshPerformanceDate());
+    document.querySelectorAll('[data-performance-tab]').forEach((button) => {
+        button.addEventListener('click', () => setPerformanceTab(button.dataset.performanceTab));
+    });
     document.querySelectorAll('.hr-tab').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab));
     });
@@ -117,6 +129,7 @@ async function loadHrModule() {
         ]));
         HR_STATE.locations = locations;
         HR_STATE.fieldEvents = fieldEvents;
+        await loadPerformanceDateData(getPerformanceDate());
         await hydratePerformanceLookups(fieldEvents);
         status.textContent = `${employees.length.toLocaleString()} employee record(s) loaded.`;
         renderEmployees();
@@ -144,6 +157,99 @@ function setActiveTab(tab) {
     document.getElementById('performancePane').classList.toggle('open', next === 'performance');
     document.getElementById('locationsPane').classList.toggle('open', next === 'locations');
     document.getElementById('locationValidatorPane').classList.toggle('open', next === 'locations');
+}
+
+function setPerformanceTab(tab) {
+    const next = tab === 'details' ? 'details' : 'summary';
+    HR_STATE.performanceTab = next;
+    document.querySelectorAll('[data-performance-tab]').forEach((button) => {
+        const active = button.dataset.performanceTab === next;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.getElementById('performanceSummaryView')?.classList.toggle('open', next === 'summary');
+    document.getElementById('performanceDetailsView')?.classList.toggle('open', next === 'details');
+}
+
+function getPerformanceDate() {
+    return document.getElementById('performanceDateInput')?.value || todayDateKey();
+}
+
+async function refreshPerformanceDate() {
+    document.getElementById('performanceStatus').textContent = 'Loading selected day performance...';
+    await loadPerformanceDateData(getPerformanceDate());
+    await hydratePerformanceLookups(HR_STATE.fieldEvents);
+    renderPerformance();
+}
+
+function todayDateKey() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(new Date());
+    const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function firestoreValue(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    return { stringValue: String(value ?? '') };
+}
+
+async function runHrQuery(structuredQuery) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structuredQuery })
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.error || (Array.isArray(payload) && payload[0]?.error)) {
+        throw new Error(payload?.error?.message || payload?.[0]?.error?.message || 'HR query failed.');
+    }
+    return Array.isArray(payload)
+        ? payload.map((row) => row.document).filter(Boolean).map((doc) => MargaUtils.parseFirestoreDoc(doc))
+        : [];
+}
+
+async function queryHrDateRange(collectionId, fieldPath, start, end, limit = 2000) {
+    return runHrQuery({
+        from: [{ collectionId }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    { fieldFilter: { field: { fieldPath }, op: 'GREATER_THAN_OR_EQUAL', value: firestoreValue(start) } },
+                    { fieldFilter: { field: { fieldPath }, op: 'LESS_THAN_OR_EQUAL', value: firestoreValue(end) } }
+                ]
+            }
+        },
+        limit
+    });
+}
+
+async function queryHrEquals(collectionId, fieldPath, value, limit = 2000) {
+    return runHrQuery({
+        from: [{ collectionId }],
+        where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: firestoreValue(value) } },
+        limit
+    });
+}
+
+async function loadPerformanceDateData(date) {
+    const start = `${date} 00:00:00`;
+    const end = `${date} 23:59:59`;
+    const [schedules, attendance, finishBlocks, closeRequests] = await Promise.all([
+        queryHrDateRange('tbl_schedule', 'task_datetime', start, end, 2500).catch(() => []),
+        queryHrEquals('tbl_field_attendance', 'attendance_date', date, 500).catch(() => []),
+        queryHrDateRange('tbl_field_finish_blocks', 'blocked_at', `${date}T00:00:00`, `${date}T23:59:59`, 1000).catch(() => []),
+        queryHrEquals('tbl_schedule_close_requests', 'request_date', date, 1000).catch(() => [])
+    ]);
+    HR_STATE.performanceSchedules = schedules;
+    HR_STATE.performanceAttendance = attendance;
+    HR_STATE.finishBlocks = finishBlocks;
+    HR_STATE.closeRequests = closeRequests;
 }
 
 async function loadWorkLocations() {
@@ -216,57 +322,214 @@ function renderEmployees() {
 function renderPerformance() {
     const tbody = document.querySelector('#hrPerformanceTable tbody');
     const activeEmployees = HR_STATE.employees.filter((employee) => MargaUtils.isOfficialActiveEmployee(employee));
-    const eventsByStaff = new Map();
-    HR_STATE.fieldEvents.forEach((event) => {
-        const staffKey = normalizeStaffKey(event.staff_id || event.employee_id || event.employeeId || event.staff_name || event.staff || event.user_name);
-        if (!staffKey) return;
-        if (!eventsByStaff.has(staffKey)) eventsByStaff.set(staffKey, []);
-        eventsByStaff.get(staffKey).push(event);
-    });
+    const rows = activeEmployees
+        .filter(isFieldPerformanceEmployee)
+        .map(buildPerformanceRow)
+        .filter((row) => row.assignedCount > 0 || row.attendance || row.finishBlocks.length || row.events.length || row.closeRequests.length)
+        .sort((left, right) => performanceSeverity(right) - performanceSeverity(left) || right.assignedCount - left.assignedCount || left.name.localeCompare(right.name));
 
-    const rows = activeEmployees.map((employee) => {
-        const keys = [
-            employee.id,
-            employee._docId,
-            employee.email,
-            employee.marga_login_email,
-            employee.username,
-            MargaUtils.getEmployeeFullName(employee, '')
-        ].map(normalizeStaffKey).filter(Boolean);
-        const events = [...new Set(keys)].flatMap((key) => eventsByStaff.get(key) || []);
-        events.sort((left, right) => String(right.created_at || right.timestamp || right.updated_at || '').localeCompare(String(left.created_at || left.timestamp || left.updated_at || '')));
-        return { employee, events, last: events[0] || null };
-    }).sort((left, right) => right.events.length - left.events.length || MargaUtils.getEmployeeFullName(left.employee, '').localeCompare(MargaUtils.getEmployeeFullName(right.employee, '')));
+    HR_STATE.performanceRows = rows;
+    renderPerformanceDashboard(rows);
 
-    tbody.innerHTML = rows.slice(0, 100).map(({ employee, events, last }) => {
-        const name = sanitize(MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || ''));
-        const role = sanitize(getPositionLabel(employee));
-        const lastAction = sanitize(last?.action || last?.status_label || last?.field_last_action || '-');
-        const context = resolveEventContext(last);
-        const gps = hasCoordinates(last)
-            ? `${Number(last.latitude).toFixed(5)}, ${Number(last.longitude).toFixed(5)}`
-            : '-';
-        const signal = events.length ? getPerformanceSignal(events.length) : 'Waiting for app events';
-        const id = sanitize(employee.id || employee._docId || '');
+    tbody.innerHTML = rows.slice(0, 120).map((row) => {
+        const id = sanitize(row.employee.id || row.employee._docId || '');
         return `
             <tr>
-                <td data-label="Employee"><strong>${name}</strong></td>
-                <td data-label="Role">${role}</td>
-                <td data-label="Field App Records">${events.length.toLocaleString()}</td>
-                <td data-label="Customer / Company">${sanitize(context.company || '-')}</td>
-                <td data-label="Branch">${sanitize(context.branch || '-')}</td>
-                <td data-label="Last Action">${lastAction}</td>
-                <td data-label="Last GPS">${sanitize(gps)}</td>
-                <td data-label="Signal">${sanitize(signal)}</td>
+                <td data-label="Employee"><strong>${sanitize(row.name)}</strong></td>
+                <td data-label="Role">${sanitize(row.role)}</td>
+                <td data-label="Attendance">${sanitize(row.attendanceLabel)}</td>
+                <td data-label="Workload">${row.finishedCount}/${row.assignedCount} finished · ${row.unfinishedCount} open</td>
+                <td data-label="Execution Flags">${row.flags.length ? sanitize(row.flags.slice(0, 3).join(', ')) : 'None'}</td>
+                <td data-label="Recommendation"><span class="hr-rec-badge ${sanitize(row.recommendationClass)}">${sanitize(row.recommendation)}</span></td>
                 <td data-label="Action"><button type="button" class="hr-text-btn" data-performance-view="${id}">View</button></td>
             </tr>
         `;
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9">No active employees found for performance analytics.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">No field performance records found for the selected date.</td></tr>';
     }
-    document.getElementById('performanceStatus').textContent = `${HR_STATE.fieldEvents.length.toLocaleString()} Field App record(s) available. These are staff actions saved by the Field App, such as customer location pinning, time checks, or route progress updates.`;
+    document.getElementById('performanceStatus').textContent = `${getPerformanceDate()} performance summary. ${rows.length.toLocaleString()} field staff with activity, schedule, or attendance evidence.`;
+}
+
+function isFieldPerformanceEmployee(employee) {
+    const role = getPositionLabel(employee).toLowerCase();
+    return /field|technician|messenger|collector|collection|service|refiller|driver/.test(role);
+}
+
+function employeeKeys(employee) {
+    return [
+        employee.id,
+        employee._docId,
+        employee.email,
+        employee.marga_login_email,
+        employee.username,
+        MargaUtils.getEmployeeFullName(employee, '')
+    ].map(normalizeStaffKey).filter(Boolean);
+}
+
+function rowMatchesEmployee(row, keys) {
+    const values = [
+        row.tech_id,
+        row.staff_id,
+        row.employee_id,
+        row.employeeId,
+        row.requester_staff_id,
+        row.staff_name,
+        row.requester_name,
+        row.staff,
+        row.user_name
+    ].map(normalizeStaffKey).filter(Boolean);
+    return values.some((value) => keys.has(value));
+}
+
+function normalizeDbDateTime(value) {
+    const text = String(value || '').trim();
+    if (!text || /^0{4}-0{2}-0{2}/.test(text) || ['undefined', 'null', 'invalid date'].includes(text.toLowerCase())) return '';
+    return text;
+}
+
+function isScheduleFinished(row) {
+    return Boolean(normalizeDbDateTime(row.date_finished || row.field_time_out));
+}
+
+function timeFromDateTime(value) {
+    const text = normalizeDbDateTime(value);
+    const match = text.match(/(?:T|\s)(\d{2}):(\d{2})/);
+    return match ? `${match[1]}:${match[2]}` : '';
+}
+
+function minutesAfterEight(value) {
+    const time = timeFromDateTime(value);
+    if (!time) return null;
+    const [hour, minute] = time.split(':').map(Number);
+    return (hour * 60 + minute) - (8 * 60);
+}
+
+function hasNumberValue(value) {
+    return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
+function purposeId(row) {
+    return Number(row?.purpose_id || 0) || 0;
+}
+
+function buildPerformanceRow(employee) {
+    const keySet = new Set(employeeKeys(employee));
+    const date = getPerformanceDate();
+    const schedules = HR_STATE.performanceSchedules.filter((row) => rowMatchesEmployee(row, keySet));
+    const attendance = HR_STATE.performanceAttendance.find((row) => rowMatchesEmployee(row, keySet)) || null;
+    const finishBlocks = HR_STATE.finishBlocks.filter((row) => rowMatchesEmployee(row, keySet));
+    const closeRequests = HR_STATE.closeRequests.filter((row) => rowMatchesEmployee(row, keySet));
+    const events = HR_STATE.fieldEvents
+        .filter((event) => rowMatchesEmployee(event, keySet) && rowDateKey(event.occurred_at || event.created_at || event.timestamp || event.local_date) === date)
+        .sort((left, right) => String(right.occurred_at || right.created_at || right.timestamp || '').localeCompare(String(left.occurred_at || left.created_at || left.timestamp || '')));
+    const finished = schedules.filter(isScheduleFinished);
+    const unfinished = schedules.filter((row) => !isScheduleFinished(row));
+    const lateMinutes = minutesAfterEight(attendance?.time_in);
+    const flags = [];
+    if (schedules.length && !attendance) flags.push('No attendance time in');
+    if (lateMinutes !== null && lateMinutes > 0) flags.push(`Late ${lateMinutes} min`);
+    if (unfinished.length) flags.push(`${unfinished.length} not finished`);
+    if (finishBlocks.length) flags.push(`${finishBlocks.length} blocked finish`);
+    const missingWork = finished.filter((row) => purposeId(row) === 5 && !String(row.field_work_notes || '').trim()).length;
+    const missingBillingMeter = finished.filter((row) => [1, 8].includes(purposeId(row)) && !hasNumberValue(row.field_present_meter || row.meter_reading)).length;
+    const missingCollection = finished.filter((row) => purposeId(row) === 2 && !hasNumberValue(row.field_collection_payment_amount)).length;
+    const missingDelivery = finished.filter((row) => [3, 4].includes(purposeId(row)) && !String(row.field_delivery_details || '').trim()).length;
+    if (missingWork) flags.push(`${missingWork} no work notes`);
+    if (missingBillingMeter) flags.push(`${missingBillingMeter} no billing meter`);
+    if (missingCollection) flags.push(`${missingCollection} no collection details`);
+    if (missingDelivery) flags.push(`${missingDelivery} no delivery details`);
+    const recommendation = recommendPerformance({ flags, schedules, unfinished, finishBlocks, lateMinutes, attendance });
+    return {
+        employee,
+        name: MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || ''),
+        role: getPositionLabel(employee),
+        schedules,
+        assignedCount: schedules.length,
+        finishedCount: finished.length,
+        unfinishedCount: unfinished.length,
+        attendance,
+        attendanceLabel: attendance ? `${timeFromDateTime(attendance.time_in) || 'No time'}${lateMinutes > 0 ? ` · late ${lateMinutes}m` : ' · on time'}` : (schedules.length ? 'No time in' : 'No schedule'),
+        lateMinutes,
+        finishBlocks,
+        closeRequests,
+        events,
+        flags,
+        recommendation: recommendation.label,
+        recommendationClass: recommendation.className
+    };
+}
+
+function rowDateKey(value) {
+    const text = String(value || '').trim();
+    const match = text.match(/^\d{4}-\d{2}-\d{2}/);
+    return match ? match[0] : '';
+}
+
+function recommendPerformance({ flags, schedules, unfinished, finishBlocks, lateMinutes, attendance }) {
+    if ((schedules.length && !attendance) || finishBlocks.length >= 3 || unfinished.length >= 5) return { label: 'For Memo', className: 'memo' };
+    if (finishBlocks.length || unfinished.length >= 2 || (lateMinutes || 0) > 15) return { label: 'For Warning', className: 'warning' };
+    if (flags.length) return { label: 'For Coaching', className: 'coaching' };
+    return { label: 'OK', className: 'ok' };
+}
+
+function performanceSeverity(row) {
+    return { memo: 4, warning: 3, coaching: 2, ok: 1 }[row.recommendationClass] || 0;
+}
+
+function renderPerformanceDashboard(rows) {
+    const assignedStaff = rows.filter((row) => row.assignedCount > 0).length;
+    const noTimeIn = rows.filter((row) => row.assignedCount > 0 && !row.attendance).length;
+    const late = rows.filter((row) => (row.lateMinutes || 0) > 0).length;
+    const blocks = rows.reduce((sum, row) => sum + row.finishBlocks.length, 0);
+    const unfinished = rows.reduce((sum, row) => sum + row.unfinishedCount, 0);
+    const memo = rows.filter((row) => row.recommendationClass === 'memo');
+    const warning = rows.filter((row) => row.recommendationClass === 'warning');
+    const coaching = rows.filter((row) => row.recommendationClass === 'coaching');
+    document.getElementById('hrPerformanceDashboard').innerHTML = `
+        <div class="hr-performance-hero">
+            <div class="hr-performance-command">
+                <span>${sanitize(getPerformanceDate())} Field Discipline</span>
+                <strong>${sanitize(String(rows.length))}</strong>
+                <p>HR summary for attendance, route completion, blocked Mark Finished attempts, and missing execution details. Staff details stay in the Details tab for review.</p>
+            </div>
+            <div class="hr-risk-card">
+                <span>Memo Candidates</span>
+                <strong>${memo.length.toLocaleString()}</strong>
+                <p>${memo.length ? 'Review before issuing memo. The report is evidence, not an automatic decision.' : 'No immediate memo candidates from today’s data.'}</p>
+            </div>
+        </div>
+        <div class="hr-perf-tile-grid">
+            ${renderPerfTile('Assigned Field Staff', assignedStaff, 'Staff with at least one schedule today.')}
+            ${renderPerfTile('No Attendance Time In', noTimeIn, 'Assigned staff with no official field attendance time in.')}
+            ${renderPerfTile('Late After 8:00', late, 'Attendance time in after 8:00 AM.')}
+            ${renderPerfTile('Blocked Finish Attempts', blocks, 'Tried Mark Finished but required details were incomplete.')}
+            ${renderPerfTile('Still Open', unfinished, 'Assigned schedules not yet marked finished.')}
+            ${renderPerfTile('Close Requests', rows.reduce((sum, row) => sum + row.closeRequests.length, 0), 'Close requests submitted by field staff.')}
+            ${renderPerfTile('Warnings', warning.length, 'Staff recommended for warning review.')}
+            ${renderPerfTile('Coaching', coaching.length, 'Staff needing coaching based on missing details.')}
+        </div>
+        <div class="hr-performance-lanes">
+            ${renderPerformanceLane('For Memo', memo)}
+            ${renderPerformanceLane('For Warning', warning)}
+            ${renderPerformanceLane('For Coaching', coaching)}
+        </div>
+    `;
+}
+
+function renderPerfTile(label, value, text) {
+    return `<article class="hr-perf-tile"><span>${sanitize(label)}</span><strong>${Number(value || 0).toLocaleString()}</strong><p>${sanitize(text)}</p></article>`;
+}
+
+function renderPerformanceLane(title, rows) {
+    const items = rows.slice(0, 5).map((row) => `<li><span>${sanitize(row.name)}</span><em>${sanitize(row.flags[0] || row.recommendation)}</em></li>`).join('');
+    return `
+        <section class="hr-performance-lane">
+            <h4>${sanitize(title)}</h4>
+            <ul>${items || '<li><span>None</span><em>Clear</em></li>'}</ul>
+        </section>
+    `;
 }
 
 function renderPayrollModel() {
@@ -303,8 +566,14 @@ function getPositionLabel(employee) {
 }
 
 async function hydratePerformanceLookups(events = []) {
-    const branchIds = [...new Set(events.map((event) => String(event.branch_id || '').trim()).filter(Boolean))].slice(0, 120);
-    const companyIds = [...new Set(events.map((event) => String(event.company_id || '').trim()).filter(Boolean))].slice(0, 120);
+    const sourceRows = [
+        ...events,
+        ...HR_STATE.performanceSchedules,
+        ...HR_STATE.finishBlocks,
+        ...HR_STATE.closeRequests
+    ];
+    const branchIds = [...new Set(sourceRows.map((event) => String(event.branch_id || '').trim()).filter(Boolean))].slice(0, 160);
+    const companyIds = [...new Set(sourceRows.map((event) => String(event.company_id || '').trim()).filter(Boolean))].slice(0, 160);
     const [branches, companies] = await Promise.all([
         Promise.all(branchIds.map((id) => MargaUtils.fetchDoc('tbl_branchinfo', id).then((doc) => [id, doc]).catch(() => [id, null]))),
         Promise.all(companyIds.map((id) => MargaUtils.fetchDoc('tbl_companylist', id).then((doc) => [id, doc]).catch(() => [id, null])))
@@ -428,21 +697,10 @@ async function saveEmployeeDetails() {
 function openPerformanceModal(employeeId) {
     const employee = findEmployeeById(employeeId);
     if (!employee) return;
-    const keys = [
-        employee.id,
-        employee._docId,
-        employee.email,
-        employee.marga_login_email,
-        employee.username,
-        MargaUtils.getEmployeeFullName(employee, '')
-    ].map(normalizeStaffKey).filter(Boolean);
-    const keySet = new Set(keys);
-    const events = HR_STATE.fieldEvents
-        .filter((event) => keySet.has(normalizeStaffKey(event.staff_id || event.employee_id || event.employeeId || event.staff_name || event.staff || event.user_name)))
-        .sort((left, right) => String(right.occurred_at || right.created_at || '').localeCompare(String(left.occurred_at || left.created_at || '')));
+    const row = HR_STATE.performanceRows.find((item) => String(item.employee.id || item.employee._docId || '') === String(employeeId)) || buildPerformanceRow(employee);
     document.getElementById('performanceModalTitle').textContent = MargaUtils.getEmployeeFullName(employee, employeeId);
-    document.getElementById('performanceModalSubtitle').textContent = `${events.length.toLocaleString()} Field App record(s). Counts mean saved staff actions from the Field App, not a final HR rating.`;
-    document.getElementById('performanceDetailContent').innerHTML = renderPerformanceDetail(events);
+    document.getElementById('performanceModalSubtitle').textContent = `${getPerformanceDate()} review · ${row.assignedCount.toLocaleString()} schedule(s), ${row.finishBlocks.length.toLocaleString()} blocked finish attempt(s).`;
+    document.getElementById('performanceDetailContent').innerHTML = renderPerformanceDetail(row);
     setModalOpen('performanceModal', 'performanceModalOverlay', true);
 }
 
@@ -450,17 +708,54 @@ function closePerformanceModal() {
     setModalOpen('performanceModal', 'performanceModalOverlay', false);
 }
 
-function renderPerformanceDetail(events) {
-    if (!events.length) return '<div class="ops-subtext">No Field App records found for this staff member yet.</div>';
+function renderPerformanceDetail(row) {
+    if (!row) return '<div class="ops-subtext">No Field App records found for this staff member yet.</div>';
+    const events = row.events || [];
+    const schedules = row.schedules || [];
+    const blocks = row.finishBlocks || [];
     return `
         <div class="hr-performance-summary">
-            <div><span>Total Records</span><strong>${events.length.toLocaleString()}</strong></div>
-            <div><span>Customer Location Pins</span><strong>${events.filter((event) => event.action === 'customer_location_pinned').length.toLocaleString()}</strong></div>
-            <div><span>Unique Customers</span><strong>${new Set(events.map((event) => `${event.company_id || ''}:${event.branch_id || ''}`)).size.toLocaleString()}</strong></div>
+            <div><span>Attendance</span><strong>${sanitize(row.attendanceLabel)}</strong></div>
+            <div><span>Finished</span><strong>${row.finishedCount}/${row.assignedCount}</strong></div>
+            <div><span>Recommendation</span><strong>${sanitize(row.recommendation)}</strong></div>
+        </div>
+        <div class="hr-modal-section">
+            <h3>Reason For Review</h3>
+            <p class="ops-subtext">${row.flags.length ? sanitize(row.flags.join(', ')) : 'No major flags for selected date.'}</p>
+        </div>
+        ${blocks.length ? `
+            <div class="hr-modal-section">
+                <h3>Blocked Mark Finished Attempts</h3>
+                <div class="table-container">
+                    <table class="table">
+                        <thead><tr><th>Time</th><th>Purpose</th><th>Reason</th></tr></thead>
+                        <tbody>${blocks.map((block) => `<tr><td>${sanitize(block.blocked_at || '-')}</td><td>${sanitize(block.purpose_label || '-')}</td><td>${sanitize(block.reason || '-')}</td></tr>`).join('')}</tbody>
+                    </table>
+                </div>
+            </div>
+        ` : ''}
+        <div class="table-container">
+            <table class="table">
+                <thead><tr><th>Schedule</th><th>Purpose</th><th>Status</th><th>Customer / Company</th><th>Branch</th></tr></thead>
+                <tbody>
+                    ${schedules.slice(0, 80).map((schedule) => {
+                        const context = resolveEventContext(schedule);
+                        return `
+                            <tr>
+                                <td>${sanitize(schedule.id || schedule._docId || '-')}</td>
+                                <td>${sanitize(schedule.purpose_label || schedule.purpose || schedule.purpose_id || '-')}</td>
+                                <td>${isScheduleFinished(schedule) ? 'Finished' : 'Open'}</td>
+                                <td>${sanitize(context.company || '-')}</td>
+                                <td>${sanitize(context.branch || '-')}</td>
+                            </tr>
+                        `;
+                    }).join('') || '<tr><td colspan="5">No schedules for selected date.</td></tr>'}
+                </tbody>
+            </table>
         </div>
         <div class="table-container">
             <table class="table">
-                <thead><tr><th>Date/Time</th><th>Action</th><th>Customer / Company</th><th>Branch</th><th>GPS</th></tr></thead>
+                <thead><tr><th>Field Event Time</th><th>Action</th><th>Customer / Company</th><th>Branch</th><th>GPS</th></tr></thead>
                 <tbody>
                     ${events.slice(0, 80).map((event) => {
                         const context = resolveEventContext(event);
@@ -474,7 +769,7 @@ function renderPerformanceDetail(events) {
                                 <td>${sanitize(gps)}</td>
                             </tr>
                         `;
-                    }).join('')}
+                    }).join('') || '<tr><td colspan="5">No field event records for selected date.</td></tr>'}
                 </tbody>
             </table>
         </div>

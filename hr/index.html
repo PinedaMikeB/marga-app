@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/hr.css">
+    <link rel="stylesheet" href="css/hr.css?v=20260518-performance-dashboard-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -196,24 +196,37 @@
                         <h3>Performance</h3>
                         <p class="ops-subtext" id="performanceStatus">Loading app performance signals...</p>
                     </div>
+                    <div class="hr-performance-controls">
+                        <label for="performanceDateInput">Date</label>
+                        <input type="date" id="performanceDateInput">
+                    </div>
                 </div>
-                <div class="table-container">
-                    <table class="table" id="hrPerformanceTable">
-                        <thead>
-                            <tr>
-                                <th>Employee</th>
-                                <th>Role</th>
-                                <th>Field App Records</th>
-                                <th>Customer / Company</th>
-                                <th>Branch</th>
-                                <th>Last Action</th>
-                                <th>Last GPS</th>
-                                <th>Signal</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+                <div class="hr-performance-tabs" role="tablist" aria-label="Performance report views">
+                    <button type="button" class="hr-performance-tab active" data-performance-tab="summary" role="tab" aria-selected="true">Dashboard</button>
+                    <button type="button" class="hr-performance-tab" data-performance-tab="details" role="tab" aria-selected="false">Details</button>
+                </div>
+                <div class="hr-performance-view open" id="performanceSummaryView" role="tabpanel">
+                    <div class="hr-performance-dashboard" id="hrPerformanceDashboard">
+                        <div class="ops-subtext">Loading performance dashboard...</div>
+                    </div>
+                </div>
+                <div class="hr-performance-view" id="performanceDetailsView" role="tabpanel">
+                    <div class="table-container">
+                        <table class="table" id="hrPerformanceTable">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Role</th>
+                                    <th>Attendance</th>
+                                    <th>Workload</th>
+                                    <th>Execution Flags</th>
+                                    <th>Recommendation</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -402,6 +415,6 @@
     <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="js/hr.js"></script>
+    <script src="js/hr.js?v=20260518-performance-dashboard-1"></script>
 </body>
 </html>

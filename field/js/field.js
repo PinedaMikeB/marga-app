@@ -58,6 +58,10 @@ const PURPOSE_LABELS = {
 
 const BILLING_PURPOSE_ID = 1;
 const COLLECTION_PURPOSE_ID = 2;
+const DELIVERY_PURPOSE_IDS = new Set([3, 4]);
+const SERVICE_PURPOSE_ID = 5;
+const READING_PURPOSE_ID = 8;
+const FIELD_FINISH_BLOCK_COLLECTION = 'tbl_field_finish_blocks';
 const FIELD_CALL_DOMAIN = 'call.wotgonline.com';
 const FIELD_CALL_PUBLIC_DOMAIN = 'meet.jit.si';
 const FIELD_CALL_ALLOW_PUBLIC_FALLBACK = false;
@@ -4176,9 +4180,7 @@ async function loadMachineStatusOptions() {
 function populateWorkMachineStatusOptions() {
     const select = document.getElementById('fieldWorkMachineStatus');
     if (!select) return;
-    const statuses = caches.machineStatusesLoaded && caches.machineStatuses.length
-        ? caches.machineStatuses
-        : FALLBACK_MACHINE_STATUSES;
+    const statuses = FALLBACK_MACHINE_STATUSES;
     const current = String(select.value || '');
     select.innerHTML = '<option value="">Select machine status...</option>' + statuses.map((item) => (
         `<option value="${sanitize(item.id)}" data-label="${sanitize(item.label)}">${sanitize(item.label)}</option>`
@@ -4853,6 +4855,18 @@ function isCollectionTicket(row) {
     return normalizeTicketPurpose(row) === COLLECTION_PURPOSE_ID;
 }
 
+function isReadingTicket(row) {
+    return normalizeTicketPurpose(row) === READING_PURPOSE_ID;
+}
+
+function isServiceTicket(row) {
+    return normalizeTicketPurpose(row) === SERVICE_PURPOSE_ID;
+}
+
+function isDeliveryTicket(row) {
+    return DELIVERY_PURPOSE_IDS.has(normalizeTicketPurpose(row));
+}
+
 function isPendingReplacementState(row, form = null) {
     const pendingReason = String(row?.pending_reason || '').trim().toLowerCase();
     const hasLocalParts = Array.isArray(form?.partsNeeded) && form.partsNeeded.length > 0;
@@ -4910,7 +4924,19 @@ function resetModalFields() {
     document.getElementById('fieldCollectionReceiptRefs').value = '';
     document.getElementById('fieldCollectionInvoiceRefs').value = '';
     document.getElementById('fieldCollectionCheckNumber').value = '';
+    document.getElementById('fieldCollectionCheckBank').value = '';
+    document.getElementById('fieldCollectionCheckDate').value = '';
+    document.getElementById('fieldCollectionCheckAmount').value = '';
     document.getElementById('fieldCollectionAmount').value = '';
+    document.getElementById('fieldCollectionPaymentDate').value = '';
+    document.getElementById('fieldCollectionDepositDate').value = '';
+    document.getElementById('fieldCollectionOrNumber').value = '';
+    document.getElementById('fieldCollectionPaymentType').value = '';
+    document.getElementById('fieldCollectionPaymentStatus').value = '';
+    document.getElementById('fieldCollectionDeductionType').value = '';
+    document.getElementById('fieldCollectionDeductionAmount').value = '';
+    document.getElementById('fieldCollection2307Status').value = '';
+    document.getElementById('fieldCollectionPaymentRemarks').value = '';
     document.getElementById('fieldPreviousMeter').value = '';
     document.getElementById('fieldPreviousMeterHint').textContent = 'Loaded from billing meter history when available.';
     document.getElementById('fieldPresentMeter').value = '';
@@ -5003,7 +5029,19 @@ function setFormDisabled(isReadOnly) {
         'fieldCollectionReceiptRefs',
         'fieldCollectionInvoiceRefs',
         'fieldCollectionCheckNumber',
+        'fieldCollectionCheckBank',
+        'fieldCollectionCheckDate',
+        'fieldCollectionCheckAmount',
         'fieldCollectionAmount',
+        'fieldCollectionPaymentDate',
+        'fieldCollectionDepositDate',
+        'fieldCollectionOrNumber',
+        'fieldCollectionPaymentType',
+        'fieldCollectionPaymentStatus',
+        'fieldCollectionDeductionType',
+        'fieldCollectionDeductionAmount',
+        'fieldCollection2307Status',
+        'fieldCollectionPaymentRemarks',
         'fieldClosePin',
         'fieldModalSaveDraft',
         'fieldModalPendingTask',
@@ -5514,7 +5552,19 @@ async function openModal(scheduleId) {
     document.getElementById('fieldCollectionReceiptRefs').value = String(row.field_collection_receipt_refs || '').trim();
     document.getElementById('fieldCollectionInvoiceRefs').value = String(row.field_collection_invoice_refs || '').trim();
     document.getElementById('fieldCollectionCheckNumber').value = String(row.field_collection_check_number || '').trim();
+    document.getElementById('fieldCollectionCheckBank').value = String(row.field_collection_check_bank || '').trim();
+    document.getElementById('fieldCollectionCheckDate').value = dateOnly(row.field_collection_check_date);
+    document.getElementById('fieldCollectionCheckAmount').value = String(row.field_collection_check_amount || '').trim();
     document.getElementById('fieldCollectionAmount').value = String(row.field_collection_payment_amount || '').trim();
+    document.getElementById('fieldCollectionPaymentDate').value = dateOnly(row.field_collection_payment_date) || localDateYmd();
+    document.getElementById('fieldCollectionDepositDate').value = dateOnly(row.field_collection_deposit_date) || localDateYmd();
+    document.getElementById('fieldCollectionOrNumber').value = String(row.field_collection_or_number || '').trim();
+    document.getElementById('fieldCollectionPaymentType').value = String(row.field_collection_payment_type || '').trim();
+    document.getElementById('fieldCollectionPaymentStatus').value = String(row.field_collection_payment_status || '').trim() || 'Paid';
+    document.getElementById('fieldCollectionDeductionType').value = String(row.field_collection_deduction_type || '').trim();
+    document.getElementById('fieldCollectionDeductionAmount').value = String(row.field_collection_deduction_amount || '').trim();
+    document.getElementById('fieldCollection2307Status').value = String(row.field_collection_2307_status || '').trim();
+    document.getElementById('fieldCollectionPaymentRemarks').value = String(row.field_collection_payment_remarks || '').trim();
 
     const beforeSaved = String(row.field_before_photo_name || '').trim();
     const afterSaved = String(row.field_after_photo_name || '').trim();
@@ -5683,6 +5733,8 @@ function collectModalFormData() {
     const timeInLocal = String(document.getElementById('fieldTimeIn').value || '').trim();
     const timeOutLocal = String(document.getElementById('fieldTimeOut').value || '').trim();
     const collectionAmount = String(document.getElementById('fieldCollectionAmount').value || '').trim();
+    const collectionDeductionAmount = String(document.getElementById('fieldCollectionDeductionAmount')?.value || '').trim();
+    const collectionCheckAmount = String(document.getElementById('fieldCollectionCheckAmount')?.value || '').trim();
 
     return {
         notes: String(document.getElementById('fieldCloseNotes').value || '').trim(),
@@ -5697,8 +5749,22 @@ function collectModalFormData() {
         collectionReceiptRefs: String(document.getElementById('fieldCollectionReceiptRefs').value || '').trim(),
         collectionInvoiceRefs: String(document.getElementById('fieldCollectionInvoiceRefs').value || '').trim(),
         collectionCheckNumber: String(document.getElementById('fieldCollectionCheckNumber').value || '').trim(),
+        collectionCheckBank: String(document.getElementById('fieldCollectionCheckBank')?.value || '').trim(),
+        collectionCheckDate: String(document.getElementById('fieldCollectionCheckDate')?.value || '').trim(),
+        collectionCheckAmount,
+        collectionCheckAmountNumber: Number(collectionCheckAmount || 0),
         collectionAmount,
         collectionAmountNumber: Number(collectionAmount || 0),
+        collectionPaymentDate: String(document.getElementById('fieldCollectionPaymentDate')?.value || '').trim(),
+        collectionDepositDate: String(document.getElementById('fieldCollectionDepositDate')?.value || '').trim(),
+        collectionOrNumber: String(document.getElementById('fieldCollectionOrNumber')?.value || '').trim(),
+        collectionPaymentType: String(document.getElementById('fieldCollectionPaymentType')?.value || '').trim(),
+        collectionPaymentStatus: String(document.getElementById('fieldCollectionPaymentStatus')?.value || '').trim(),
+        collectionDeductionType: String(document.getElementById('fieldCollectionDeductionType')?.value || '').trim(),
+        collectionDeductionAmount,
+        collectionDeductionAmountNumber: Number(collectionDeductionAmount || 0),
+        collection2307Status: String(document.getElementById('fieldCollection2307Status')?.value || '').trim(),
+        collectionPaymentRemarks: String(document.getElementById('fieldCollectionPaymentRemarks')?.value || '').trim(),
         pin: TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin
             ? ''
             : String(document.getElementById('fieldClosePin').value || '').trim(),
@@ -5753,7 +5819,19 @@ function buildSchedulePayload(row, form, tag) {
         field_collection_receipt_refs: form.collectionReceiptRefs,
         field_collection_invoice_refs: form.collectionInvoiceRefs,
         field_collection_check_number: form.collectionCheckNumber,
+        field_collection_check_bank: form.collectionCheckBank,
+        field_collection_check_date: form.collectionCheckDate ? `${form.collectionCheckDate} 00:00:00` : ZERO_DATETIME,
+        field_collection_check_amount: form.collectionCheckAmount,
         field_collection_payment_amount: form.collectionAmount,
+        field_collection_payment_date: form.collectionPaymentDate ? `${form.collectionPaymentDate} 00:00:00` : ZERO_DATETIME,
+        field_collection_deposit_date: form.collectionDepositDate ? `${form.collectionDepositDate} 00:00:00` : ZERO_DATETIME,
+        field_collection_or_number: form.collectionOrNumber,
+        field_collection_payment_type: form.collectionPaymentType,
+        field_collection_payment_status: form.collectionPaymentStatus,
+        field_collection_deduction_type: form.collectionDeductionType,
+        field_collection_deduction_amount: form.collectionDeductionAmount,
+        field_collection_2307_status: form.collection2307Status,
+        field_collection_payment_remarks: form.collectionPaymentRemarks,
         field_previous_meter: form.previousMeter ?? 0,
         field_present_meter: form.presentMeter ?? 0,
         field_total_consumed: form.totalConsumed ?? 0,
@@ -5823,18 +5901,248 @@ function scheduleDocIdForRow(row) {
     return String(row?._docId || row?.schedule_doc_id || row?.id || '').trim();
 }
 
+function closeIssue(message, sectionId = '', fieldId = '', code = 'finish_validation') {
+    return { message, sectionId, fieldId, code };
+}
+
+function closeIssueMessage(issue) {
+    return typeof issue === 'string' ? issue : String(issue?.message || 'Cannot mark finished: required details are incomplete.');
+}
+
+function revealCloseIssue(issue) {
+    const sectionId = issue?.sectionId || '';
+    const fieldId = issue?.fieldId || '';
+    if (sectionId) {
+        const section = document.getElementById(sectionId);
+        if (section) {
+            collapseOtherSections(section);
+            setSectionCollapsed(section, false);
+        }
+    }
+    if (fieldId) {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.focus({ preventScroll: true });
+            field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+}
+
+function isValidMoney(value) {
+    return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
+function getPurposeRequirementLabel(row) {
+    return PURPOSE_LABELS[normalizeTicketPurpose(row)] || `Purpose ${normalizeTicketPurpose(row) || '-'}`;
+}
+
 function getCloseTaskIssues(row, form) {
     if (isFutureScheduleForClose(row)) {
-        return ['This schedule is for a future date. It can only be marked Finished on the scheduled day.'];
+        return [closeIssue('This schedule is for a future date. It can only be marked Finished on the scheduled day.', '', '', 'future_schedule')];
     }
     const { hasLocation } = getBranchLocationStatus(row);
     if (!hasLocation && !canBypassLocationPinForClose(row)) {
-        return ['Cannot mark Finished yet: this customer is not detected because the branch has no saved GPS pin. Tap Pin Customer Location while you are at the customer site. If the saved pin is wrong, take a new frontage/building photo and tap Repin Customer Location, then try Mark Finished again.'];
+        return [closeIssue('Cannot mark Finished yet: this customer is not detected because the branch has no saved GPS pin. Tap Pin Customer Location while you are at the customer site. If the saved pin is wrong, take a new frontage/building photo and tap Repin Customer Location, then try Mark Finished again.', 'fieldLocationSection', 'fieldPinLocationBtn', 'missing_customer_pin')];
     }
-    if (isMachineDeliveryTask(row, form) && !Number.isFinite(form.deliveryPresentMeter)) {
-        return ['Enter the machine beginning/present meter in Delivery before marking this machine delivery as Finished.'];
+
+    if ((isBillingTicket(row) || isReadingTicket(row)) && !Number.isFinite(form.presentMeter)) {
+        return [closeIssue(`Cannot mark finished: complete the ${isReadingTicket(row) ? 'bill meter reading' : 'billing meter reading'} first.`, 'fieldMeterSection', 'fieldPresentMeter', 'missing_billing_meter')];
     }
+
+    if (isBillingTicket(row)) {
+        if (!form.billingReceivedBy) {
+            return [closeIssue('Cannot mark finished: enter who received the billing first.', 'fieldBillingSection', 'fieldBillingReceivedBy', 'missing_billing_receiver')];
+        }
+        if (!form.billingDate) {
+            return [closeIssue('Cannot mark finished: select the billing date first.', 'fieldBillingSection', 'fieldBillingDate', 'missing_billing_date')];
+        }
+    }
+
+    if (isServiceTicket(row)) {
+        if (String(form.notes || '').trim().length < 6) {
+            return [closeIssue('Cannot mark finished: complete the work execution notes first.', 'fieldWorkSection', 'fieldCloseNotes', 'missing_work_execution')];
+        }
+        if (!Number.isFinite(form.maintenancePresentMeter)) {
+            return [closeIssue('Cannot mark finished: enter the present visit meter first.', 'fieldWorkSection', 'fieldMaintenancePresentMeter', 'missing_maintenance_meter')];
+        }
+        if (!form.workMachineStatusId) {
+            return [closeIssue('Cannot mark finished: select the machine status first.', 'fieldWorkSection', 'fieldWorkMachineStatus', 'missing_machine_status')];
+        }
+    }
+
+    if (isDeliveryTicket(row)) {
+        if (!form.deliveryDetails) {
+            return [closeIssue('Cannot mark finished: complete the toner/ink delivery details first.', 'fieldDeliverySection', 'fieldDeliveryDetails', 'missing_delivery_details')];
+        }
+        if (!form.emptyPickupDetails) {
+            return [closeIssue('Cannot mark finished: record the empty toner/ink pickup details first.', 'fieldDeliverySection', 'fieldEmptyPickupDetails', 'missing_empty_pickup')];
+        }
+        if (isMachineDeliveryTask(row, form) && !Number.isFinite(form.deliveryPresentMeter) && !Number.isFinite(form.maintenancePresentMeter)) {
+            return [closeIssue('Cannot mark finished: enter the present delivery machine meter first.', 'fieldDeliverySection', 'fieldDeliveryPresentMeter', 'missing_delivery_meter')];
+        }
+    }
+
+    if (isCollectionTicket(row)) {
+        if (!form.collectionPaymentType) {
+            return [closeIssue('Cannot mark finished: select the collection payment type first.', 'fieldCollectionSection', 'fieldCollectionPaymentType', 'missing_collection_payment_type')];
+        }
+        if (!isValidMoney(form.collectionAmountNumber) && !isValidMoney(form.collectionDeductionAmountNumber)) {
+            return [closeIssue('Cannot mark finished: enter the collection payment amount or deduction amount first.', 'fieldCollectionSection', 'fieldCollectionAmount', 'missing_collection_amount')];
+        }
+        if (!form.collectionPaymentDate) {
+            return [closeIssue('Cannot mark finished: select the collection payment date first.', 'fieldCollectionSection', 'fieldCollectionPaymentDate', 'missing_collection_payment_date')];
+        }
+        if (!form.collectionInvoiceRefs) {
+            return [closeIssue('Cannot mark finished: enter the invoice number(s) covered by the payment first.', 'fieldCollectionSection', 'fieldCollectionInvoiceRefs', 'missing_collection_invoice_refs')];
+        }
+        if (!form.collectionOrNumber && !form.collectionReceiptRefs) {
+            return [closeIssue('Cannot mark finished: enter the OR/receipt reference first.', 'fieldCollectionSection', 'fieldCollectionOrNumber', 'missing_collection_or')];
+        }
+        if (form.collectionPaymentType === 'check') {
+            if (!form.collectionCheckNumber) {
+                return [closeIssue('Cannot mark finished: enter the check number first.', 'fieldCollectionSection', 'fieldCollectionCheckNumber', 'missing_check_number')];
+            }
+            if (!form.collectionCheckBank) {
+                return [closeIssue('Cannot mark finished: enter the check bank first.', 'fieldCollectionSection', 'fieldCollectionCheckBank', 'missing_check_bank')];
+            }
+            if (!form.collectionCheckDate) {
+                return [closeIssue('Cannot mark finished: select the check date first.', 'fieldCollectionSection', 'fieldCollectionCheckDate', 'missing_check_date')];
+            }
+        }
+        if (form.collectionDeductionType === '2307' && !form.collection2307Status) {
+            return [closeIssue('Cannot mark finished: select the 2307 form status first.', 'fieldCollectionSection', 'fieldCollection2307Status', 'missing_2307_status')];
+        }
+    }
+
+    if (isPendingReplacementState(row, form) && String(form.notes || '').trim().length < 6) {
+        return [closeIssue('Cannot mark finished: add work notes or parts request details first.', 'fieldWorkSection', 'fieldCloseNotes', 'missing_parts_notes')];
+    }
+
     return [];
+}
+
+async function logFinishBlockedAttempt(row, issue, form) {
+    const scheduleId = Number(row?.id || 0) || 0;
+    if (!scheduleId) return;
+    const nowIso = new Date().toISOString();
+    const docId = `finish_block_${scheduleId}_${Number(state.staffId || 0) || 0}_${Date.now()}`;
+    const payload = {
+        id: docId,
+        schedule_id: scheduleId,
+        schedule_doc_id: scheduleDocIdForRow(row),
+        staff_id: Number(state.staffId || 0) || 0,
+        staff_name: getCurrentStaffName(),
+        purpose_id: Number(row?.purpose_id || 0) || 0,
+        purpose_label: getPurposeRequirementLabel(row),
+        branch_id: Number(row?.branch_id || 0) || 0,
+        company_id: Number(row?.company_id || 0) || 0,
+        task_datetime: String(row?.task_datetime || ''),
+        blocked_at: nowIso,
+        status: 'blocked',
+        reason_code: issue?.code || 'finish_validation',
+        reason: closeIssueMessage(issue),
+        source: 'field_app_mark_finished',
+        form_snapshot: jsonString({
+            hasWorkNotes: Boolean(form?.notes),
+            hasBillingMeter: Number.isFinite(form?.presentMeter),
+            hasMaintenanceMeter: Number.isFinite(form?.maintenancePresentMeter),
+            hasDeliveryDetails: Boolean(form?.deliveryDetails),
+            hasCollectionAmount: isValidMoney(form?.collectionAmountNumber),
+            collectionPaymentType: form?.collectionPaymentType || ''
+        }, '{}')
+    };
+    await setDocument(FIELD_FINISH_BLOCK_COLLECTION, docId, payload).catch((error) => {
+        console.warn('Finish blocked attempt log failed.', error);
+    });
+}
+
+async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
+    if (!isCollectionTicket(row)) return {};
+    const paymentDocId = `field_payment_${Number(row.id || 0) || Date.now()}`;
+    const isCheck = form.collectionPaymentType === 'check';
+    const deductionType = String(form.collectionDeductionType || '').trim().toLowerCase();
+    const deductionAmount = Number(form.collectionDeductionAmountNumber || 0) || 0;
+    const tax2307 = deductionType === '2307' ? deductionAmount : 0;
+    const otherDeductionAmount = deductionType && deductionType !== '2307' ? deductionAmount : 0;
+    const taxFormStatus = tax2307 > 0 ? (form.collection2307Status || 'pending') : '';
+    const taxStatus = tax2307 > 0 ? (taxFormStatus === 'submitted' ? 2 : 1) : 0;
+    const paymentDateDb = form.collectionPaymentDate ? `${form.collectionPaymentDate} 00:00:00` : ZERO_DATETIME;
+    const depositDateDb = form.collectionDepositDate ? `${form.collectionDepositDate} 00:00:00` : paymentDateDb;
+    const checkDateDb = form.collectionCheckDate ? `${form.collectionCheckDate} 00:00:00` : ZERO_DATETIME;
+    const checkDocId = isCheck ? `field_checkpayment_${Number(row.id || 0) || Date.now()}` : '';
+    const branch = caches.branch.get(String(row.branch_id || 0));
+    const company = caches.company.get(String(row.company_id || branch?.company_id || 0));
+    const clientName = company?.companyname || row.company_name || '';
+    const category = branch?.branchname || row.branch_name || '';
+    const invoiceRef = form.collectionInvoiceRefs || form.collectionReceiptRefs || String(row.collection_no || row.reference_no || '');
+    const paymentPayload = {
+        id: paymentDocId,
+        schedule_id: Number(row.id || 0) || 0,
+        schedule_doc_id: scheduleDocIdForRow(row),
+        branch_id: Number(row.branch_id || 0) || 0,
+        company_id: Number(row.company_id || branch?.company_id || 0) || 0,
+        invoice_id: invoiceRef,
+        invoice_num: invoiceRef,
+        client: clientName,
+        category,
+        invoice_amt: 0,
+        invoice_date: ZERO_DATETIME,
+        printed_or: form.collectionReceiptRefs,
+        assigned: getCurrentStaffName(),
+        payment_amt: Number(form.collectionAmountNumber || 0) || 0,
+        balance_amt: 0,
+        date_deposit: depositDateDb,
+        date_paid: paymentDateDb,
+        ornum: form.collectionOrNumber || form.collectionReceiptRefs,
+        or_number: form.collectionOrNumber || form.collectionReceiptRefs,
+        payment_type: isCheck ? 1 : 0,
+        payment_status: form.collectionPaymentStatus || 'Paid',
+        check_number: form.collectionCheckNumber,
+        check_amt: isCheck ? (Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0) : 0,
+        check_date: checkDateDb,
+        account_bank: form.collectionCheckBank,
+        tax_2307: tax2307,
+        tax_date_paid: tax2307 > 0 ? paymentDateDb : ZERO_DATETIME,
+        tax_status: taxStatus,
+        deduction_type: deductionType,
+        deduction_amount: deductionAmount,
+        other_deduction_amount: otherDeductionAmount,
+        tax_form_status: taxFormStatus,
+        tax_form_received_at: tax2307 > 0 && taxFormStatus === 'submitted' ? nowIso : '',
+        tax_form_remarks: form.collectionPaymentRemarks,
+        checkpayment_id: checkDocId || 0,
+        remarks: form.collectionPaymentRemarks,
+        timestamp: nowIso,
+        updated_at: nowIso,
+        source: 'field_app_collection_payment',
+        encoded_by: staffId
+    };
+    await setDocument('tbl_paymentinfo', paymentDocId, paymentPayload);
+    if (isCheck) {
+        await setDocument('tbl_checkpayments', checkDocId, {
+            id: checkDocId,
+            paymentinfo_id: paymentDocId,
+            schedule_id: Number(row.id || 0) || 0,
+            check_number: form.collectionCheckNumber,
+            check_bank: form.collectionCheckBank,
+            account_bank: form.collectionCheckBank,
+            check_date: checkDateDb,
+            check_amt: Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0,
+            amount: Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0,
+            status: 'pending',
+            remarks: form.collectionPaymentRemarks,
+            timestamp: nowIso,
+            updated_at: nowIso,
+            source: 'field_app_collection_payment',
+            encoded_by: staffId
+        });
+    }
+    return {
+        field_collection_payment_doc_id: paymentDocId,
+        field_collection_check_doc_id: checkDocId,
+        field_collection_payment_recorded_at: nowIso,
+        field_collection_payment_recorded_by: staffId
+    };
 }
 
 async function closeCombinedScheduleRow(row, payload, form, nowIso, staffId) {
@@ -5910,8 +6218,8 @@ function updateActionButtons() {
 
     const form = collectModalFormData();
     const issues = getCloseTaskIssues(row, form);
-    closeButton.disabled = issues.length > 0;
-    closeButton.title = issues[0] || '';
+    closeButton.disabled = false;
+    closeButton.title = issues.length ? closeIssueMessage(issues[0]) : '';
     pendingButton.disabled = false;
 }
 
@@ -6111,7 +6419,10 @@ async function closeTask() {
     const pinPattern = /^\d{4}$/;
 
     if (closeIssues.length) {
-        alert(closeIssues[0]);
+        const issue = closeIssues[0];
+        revealCloseIssue(issue);
+        await logFinishBlockedAttempt(row, issue, form);
+        alert(closeIssueMessage(issue));
         return;
     }
 
@@ -6157,8 +6468,17 @@ async function closeTask() {
         return;
     }
 
+    let collectionPaymentPatch = {};
+    try {
+        collectionPaymentPatch = await saveFieldCollectionPaymentRecord(row, form, nowIso, staffId);
+    } catch (err) {
+        alert(`Cannot mark finished: collection payment record could not be saved. ${err?.message || err}`);
+        return;
+    }
+
     const payload = {
         ...buildSchedulePayload(row, form, '[FINISHED]'),
+        ...collectionPaymentPatch,
         ...timeInLocationPatch,
         date_finished: form.timeOutDb,
         closedby: staffId,
@@ -6282,7 +6602,19 @@ function buildReopenPayload(row, form = null) {
         field_collection_receipt_refs: '',
         field_collection_invoice_refs: '',
         field_collection_check_number: '',
+        field_collection_check_bank: '',
+        field_collection_check_date: ZERO_DATETIME,
+        field_collection_check_amount: '',
         field_collection_payment_amount: '',
+        field_collection_payment_date: ZERO_DATETIME,
+        field_collection_deposit_date: ZERO_DATETIME,
+        field_collection_or_number: '',
+        field_collection_payment_type: '',
+        field_collection_payment_status: '',
+        field_collection_deduction_type: '',
+        field_collection_deduction_amount: '',
+        field_collection_2307_status: '',
+        field_collection_payment_remarks: '',
         field_previous_meter: 0,
         field_present_meter: 0,
         field_total_consumed: 0,
