@@ -4500,6 +4500,7 @@ function setLocationPinUi(row = getCurrentRow()) {
     const latitude = parseCoordinate(branch?.latitude ?? branch?.lat);
     const longitude = parseCoordinate(branch?.longitude ?? branch?.lng ?? branch?.lon);
     const photoInput = document.getElementById('fieldLocationPhoto');
+    const photoHint = document.getElementById('fieldLocationPhotoHint');
 
     card.classList.toggle('is-complete', hasLocation || closeBypass);
     card.classList.toggle('is-required', !hasLocation && !closeBypass);
@@ -4509,6 +4510,11 @@ function setLocationPinUi(row = getCurrentRow()) {
     button.classList.toggle('btn-secondary', branchLocationSaved);
     button.classList.toggle('btn-primary', !branchLocationSaved);
     if (photoInput) photoInput.disabled = state.modalReadOnly;
+    if (photoHint && !photoInput?.files?.[0]) {
+        photoHint.textContent = branchLocationSaved
+            ? 'Required when repinning. Take a new frontage/building photo first.'
+            : 'Required when pinning a new customer location.';
+    }
 
     if (hasLocation) {
         const coordText = latitude !== null && longitude !== null

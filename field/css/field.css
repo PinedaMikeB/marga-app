@@ -1506,10 +1506,6 @@
     font-size: 0.76rem;
 }
 
-.field-location-card.is-complete .field-location-photo {
-    display: none;
-}
-
 .marga-modal {
     position: fixed;
     inset: 50% auto auto 50%;
