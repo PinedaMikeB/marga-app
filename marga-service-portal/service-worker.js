@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v10-marga-icons-clean';
+const CACHE_NAME = 'msp-shell-v11-cropped-contact-icons';
 const SHELL_ASSETS = [
   '/',
   '/install/',

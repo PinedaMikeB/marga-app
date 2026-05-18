@@ -239,8 +239,8 @@
 }
 
 .top-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
   border: 0;
@@ -258,8 +258,8 @@
 }
 
 .top-icon img {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: block;
   object-fit: contain;
 }
