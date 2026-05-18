@@ -135,6 +135,153 @@
     gap: 1rem;
 }
 
+.hr-recommendation-board {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.hr-recommendation-lead {
+    position: sticky;
+    top: 0.75rem;
+    border: 1px solid rgba(36, 82, 143, 0.16);
+    border-radius: 8px;
+    padding: 1.15rem;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(238, 247, 255, 0.86)),
+        repeating-linear-gradient(90deg, rgba(25, 52, 92, 0.05) 0, rgba(25, 52, 92, 0.05) 1px, transparent 1px, transparent 16px);
+}
+
+.hr-recommendation-lead span,
+.hr-recommendation-main span {
+    display: block;
+    color: #50627d;
+    font-size: 0.73rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.hr-recommendation-lead h4 {
+    margin: 0.45rem 0;
+    color: #132948;
+    font-size: 1.45rem;
+    line-height: 1.08;
+}
+
+.hr-recommendation-lead p,
+.hr-recommendation-main p,
+.hr-recommendation-main small {
+    margin: 0;
+    color: #50627d;
+    font-weight: 700;
+    line-height: 1.42;
+}
+
+.hr-recommendation-stack {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.hr-recommendation-card {
+    display: grid;
+    gap: 0;
+    border: 1px solid rgba(36, 82, 143, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 14px 28px rgba(24, 57, 103, 0.07);
+    overflow: hidden;
+}
+
+.hr-recommendation-card.active {
+    border-color: #2b78cf;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16), 0 16px 32px rgba(24, 57, 103, 0.09);
+}
+
+.hr-recommendation-main {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.45rem 1rem;
+    width: 100%;
+    border: 0;
+    padding: 1rem;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.hr-recommendation-main:disabled {
+    cursor: default;
+    opacity: 0.62;
+}
+
+.hr-recommendation-main strong {
+    grid-column: 1;
+    color: #132948;
+    font-size: 1.05rem;
+    line-height: 1.25;
+}
+
+.hr-recommendation-main em {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    min-width: 96px;
+    border-radius: 999px;
+    padding: 0.45rem 0.7rem;
+    background: #eaf4ff;
+    color: #0f4f91;
+    font-style: normal;
+    font-weight: 900;
+    text-align: center;
+}
+
+.hr-recommendation-main p,
+.hr-recommendation-main small {
+    grid-column: 1 / -1;
+}
+
+.hr-recommendation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid rgba(36, 82, 143, 0.1);
+    background: rgba(248, 251, 255, 0.82);
+}
+
+.hr-action-btn {
+    min-height: 34px;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    padding: 0.38rem 0.65rem;
+    background: #fff;
+    color: #19345c;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.hr-action-btn:hover:not(:disabled) {
+    border-color: #2b78cf;
+    color: #0f4f91;
+}
+
+.hr-action-btn.danger {
+    border-color: #fed7aa;
+    color: #9a3412;
+}
+
+.hr-action-btn.neutral {
+    border-color: #d1d5db;
+    color: #475569;
+}
+
+.hr-action-btn:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
 .hr-performance-hero {
     display: grid;
     grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
@@ -656,10 +803,15 @@
     .hr-validator-grid,
     .hr-detected-grid,
     .hr-performance-summary,
+    .hr-recommendation-board,
     .hr-performance-hero,
     .hr-perf-tile-grid,
     .hr-performance-lanes {
         grid-template-columns: 1fr;
+    }
+
+    .hr-recommendation-lead {
+        position: static;
     }
 
     .hr-validator-grid .hr-form-actions {

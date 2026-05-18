@@ -49,7 +49,9 @@ const HR_STATE = {
     finishBlocks: [],
     closeRequests: [],
     performanceRows: [],
+    performanceGroups: [],
     performanceTab: 'summary',
+    selectedRecommendationKey: '',
     branches: new Map(),
     companies: new Map(),
     activeTab: 'employees',
@@ -91,6 +93,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('#hrPerformanceTable tbody').addEventListener('click', (event) => {
         const button = event.target.closest('[data-performance-view]');
         if (button) openPerformanceModal(button.dataset.performanceView);
+    });
+    document.getElementById('hrPerformanceDashboard')?.addEventListener('click', (event) => {
+        const viewButton = event.target.closest('[data-recommendation-view]');
+        const actionButton = event.target.closest('[data-performance-action]');
+        if (viewButton) {
+            openRecommendationEvidence(viewButton.dataset.recommendationView);
+            return;
+        }
+        if (actionButton) {
+            savePerformanceRecommendationAction(actionButton.dataset.recommendationKey, actionButton.dataset.performanceAction);
+        }
     });
     document.getElementById('locationType').addEventListener('change', updateMeterLimit);
     document.getElementById('allowedMeters').addEventListener('input', updateMeterLabel);
@@ -177,6 +190,7 @@ function getPerformanceDate() {
 
 async function refreshPerformanceDate() {
     document.getElementById('performanceStatus').textContent = 'Loading selected day performance...';
+    HR_STATE.selectedRecommendationKey = '';
     await loadPerformanceDateData(getPerformanceDate());
     await hydratePerformanceLookups(HR_STATE.fieldEvents);
     renderPerformance();
@@ -330,26 +344,33 @@ function renderPerformance() {
 
     HR_STATE.performanceRows = rows;
     renderPerformanceDashboard(rows);
+    renderPerformanceDetailsTable();
+    document.getElementById('performanceStatus').textContent = `${getPerformanceDate()} performance summary. ${rows.length.toLocaleString()} field staff with activity, schedule, or attendance evidence.`;
+}
 
-    tbody.innerHTML = rows.slice(0, 120).map((row) => {
+function renderPerformanceDetailsTable() {
+    const tbody = document.querySelector('#hrPerformanceTable tbody');
+    const group = getSelectedPerformanceGroup();
+    const rows = group ? group.rows : HR_STATE.performanceRows;
+    tbody.innerHTML = rows.slice(0, 160).map((row) => {
         const id = sanitize(row.employee.id || row.employee._docId || '');
+        const evidence = buildPerformanceEvidence(row, group?.key || '').slice(0, 4);
         return `
             <tr>
                 <td data-label="Employee"><strong>${sanitize(row.name)}</strong></td>
                 <td data-label="Role">${sanitize(row.role)}</td>
                 <td data-label="Attendance">${sanitize(row.attendanceLabel)}</td>
                 <td data-label="Workload">${row.finishedCount}/${row.assignedCount} finished · ${row.unfinishedCount} open</td>
-                <td data-label="Execution Flags">${row.flags.length ? sanitize(row.flags.slice(0, 3).join(', ')) : 'None'}</td>
-                <td data-label="Recommendation"><span class="hr-rec-badge ${sanitize(row.recommendationClass)}">${sanitize(row.recommendation)}</span></td>
+                <td data-label="Evidence">${evidence.length ? evidence.map((item) => `<div>${sanitize(item)}</div>`).join('') : 'No detailed exception for selected recommendation.'}</td>
+                <td data-label="Recommendation"><span class="hr-rec-badge ${sanitize(row.recommendationClass)}">${sanitize(group?.actionLabel || row.recommendation)}</span></td>
                 <td data-label="Action"><button type="button" class="hr-text-btn" data-performance-view="${id}">View</button></td>
             </tr>
         `;
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="7">No field performance records found for the selected date.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="7">${group ? 'No staff currently match this recommendation.' : 'No field performance records found for the selected date.'}</td></tr>`;
     }
-    document.getElementById('performanceStatus').textContent = `${getPerformanceDate()} performance summary. ${rows.length.toLocaleString()} field staff with activity, schedule, or attendance evidence.`;
 }
 
 function isFieldPerformanceEmployee(employee) {
@@ -479,57 +500,184 @@ function performanceSeverity(row) {
 }
 
 function renderPerformanceDashboard(rows) {
-    const assignedStaff = rows.filter((row) => row.assignedCount > 0).length;
-    const noTimeIn = rows.filter((row) => row.assignedCount > 0 && !row.attendance).length;
-    const late = rows.filter((row) => (row.lateMinutes || 0) > 0).length;
-    const blocks = rows.reduce((sum, row) => sum + row.finishBlocks.length, 0);
-    const unfinished = rows.reduce((sum, row) => sum + row.unfinishedCount, 0);
-    const memo = rows.filter((row) => row.recommendationClass === 'memo');
-    const warning = rows.filter((row) => row.recommendationClass === 'warning');
-    const coaching = rows.filter((row) => row.recommendationClass === 'coaching');
+    const groups = buildPerformanceRecommendationGroups(rows);
+    HR_STATE.performanceGroups = groups;
+    if (HR_STATE.selectedRecommendationKey && !groups.some((group) => group.key === HR_STATE.selectedRecommendationKey)) {
+        HR_STATE.selectedRecommendationKey = '';
+    }
+    const activeGroups = groups.filter((group) => group.rows.length);
+    const actionCount = activeGroups.reduce((sum, group) => sum + group.rows.length, 0);
     document.getElementById('hrPerformanceDashboard').innerHTML = `
-        <div class="hr-performance-hero">
-            <div class="hr-performance-command">
-                <span>${sanitize(getPerformanceDate())} Field Discipline</span>
-                <strong>${sanitize(String(rows.length))}</strong>
-                <p>HR summary for attendance, route completion, blocked Mark Finished attempts, and missing execution details. Staff details stay in the Details tab for review.</p>
+        <div class="hr-recommendation-board">
+            <section class="hr-recommendation-lead">
+                <span>${sanitize(getPerformanceDate())} Manager Recommendations</span>
+                <h4>${activeGroups.length ? `${activeGroups.length} HR action area${activeGroups.length === 1 ? '' : 's'} for field staff` : 'No field discipline recommendation today'}</h4>
+                <p>${activeGroups.length ? `${actionCount.toLocaleString()} staff evidence item(s) require HR review. Click a recommendation to see customer-level evidence before deciding. Production, collections, and billing performance rules can be added as their measurements are finalized.` : 'The selected day has no field attendance or execution pattern that needs HR action.'}</p>
+            </section>
+            <div class="hr-recommendation-stack">
+                ${groups.map((group, index) => renderPerformanceRecommendationCard(group, index + 1)).join('')}
             </div>
-            <div class="hr-risk-card">
-                <span>Memo Candidates</span>
-                <strong>${memo.length.toLocaleString()}</strong>
-                <p>${memo.length ? 'Review before issuing memo. The report is evidence, not an automatic decision.' : 'No immediate memo candidates from today’s data.'}</p>
-            </div>
-        </div>
-        <div class="hr-perf-tile-grid">
-            ${renderPerfTile('Assigned Field Staff', assignedStaff, 'Staff with at least one schedule today.')}
-            ${renderPerfTile('No Attendance Time In', noTimeIn, 'Assigned staff with no official field attendance time in.')}
-            ${renderPerfTile('Late After 8:00', late, 'Attendance time in after 8:00 AM.')}
-            ${renderPerfTile('Blocked Finish Attempts', blocks, 'Tried Mark Finished but required details were incomplete.')}
-            ${renderPerfTile('Still Open', unfinished, 'Assigned schedules not yet marked finished.')}
-            ${renderPerfTile('Close Requests', rows.reduce((sum, row) => sum + row.closeRequests.length, 0), 'Close requests submitted by field staff.')}
-            ${renderPerfTile('Warnings', warning.length, 'Staff recommended for warning review.')}
-            ${renderPerfTile('Coaching', coaching.length, 'Staff needing coaching based on missing details.')}
-        </div>
-        <div class="hr-performance-lanes">
-            ${renderPerformanceLane('For Memo', memo)}
-            ${renderPerformanceLane('For Warning', warning)}
-            ${renderPerformanceLane('For Coaching', coaching)}
         </div>
     `;
 }
 
-function renderPerfTile(label, value, text) {
-    return `<article class="hr-perf-tile"><span>${sanitize(label)}</span><strong>${Number(value || 0).toLocaleString()}</strong><p>${sanitize(text)}</p></article>`;
+function buildPerformanceRecommendationGroups(rows) {
+    const groups = [
+        {
+            key: 'no_attendance',
+            severity: 'Memo review',
+            actionLabel: 'Verbal counseling',
+            title: 'Give verbal counseling for no official attendance time-in',
+            rationale: 'Attendance time-in is the proof that the route started under company supervision. Without it, payroll, dispatch accountability, and field safety cannot be verified.',
+            rows: rows.filter((row) => row.assignedCount > 0 && !row.attendance)
+        },
+        {
+            key: 'late_attendance',
+            severity: 'Warning review',
+            actionLabel: 'Verbal counseling',
+            title: 'Give verbal counseling for late field attendance after 8:00 AM',
+            rationale: 'Late time-in delays the route and creates same-day pressure on billing, service, collection, and messenger commitments. Review exceptions before deciding discipline.',
+            rows: rows.filter((row) => (row.lateMinutes || 0) > 0)
+        },
+        {
+            key: 'low_accomplishment',
+            severity: 'Warning review',
+            actionLabel: 'Performance coaching',
+            title: 'Coach staff with less than 50% route accomplishment',
+            rationale: 'Low completion pushes work to the next day, increases customer follow-up, and hides whether the problem is routing, attendance, coordination, or field execution.',
+            rows: rows.filter((row) => row.assignedCount >= 2 && (row.finishedCount / Math.max(row.assignedCount, 1)) < 0.5)
+        },
+        {
+            key: 'blocked_finish',
+            severity: 'Coaching review',
+            actionLabel: 'App compliance coaching',
+            title: 'Coach staff blocked from Mark Finished because required details were missing',
+            rationale: 'A blocked finish means the staff tried to close work but the evidence was incomplete. This should be reviewed before accepting the schedule as finished.',
+            rows: rows.filter((row) => row.finishBlocks.length)
+        },
+        {
+            key: 'missing_execution',
+            severity: 'Coaching review',
+            actionLabel: 'Work execution counseling',
+            title: 'Counsel staff with missing work execution, meter, payment, billing, or delivery details',
+            rationale: 'Finished work without the required purpose-specific details weakens machine history, billing records, collection accountability, and delivery traceability.',
+            rows: rows.filter((row) => row.flags.some((flag) => /no work notes|no billing meter|no collection details|no delivery details/i.test(flag)))
+        },
+        {
+            key: 'open_work',
+            severity: 'Manager follow-up',
+            actionLabel: 'Route follow-up',
+            title: 'Follow up staff with open schedules still not marked finished',
+            rationale: 'Open schedules must be explained before tomorrow’s route is prepared so legitimate delays, unvisited customers, and app issues are separated.',
+            rows: rows.filter((row) => row.unfinishedCount > 0)
+        }
+    ];
+
+    return groups.map((group) => ({
+        ...group,
+        rows: group.rows.sort((left, right) => performanceSeverity(right) - performanceSeverity(left) || right.unfinishedCount - left.unfinishedCount || left.name.localeCompare(right.name))
+    }));
 }
 
-function renderPerformanceLane(title, rows) {
-    const items = rows.slice(0, 5).map((row) => `<li><span>${sanitize(row.name)}</span><em>${sanitize(row.flags[0] || row.recommendation)}</em></li>`).join('');
+function renderPerformanceRecommendationCard(group, number) {
+    const names = group.rows.slice(0, 6).map((row) => row.name).join(', ');
+    const extra = Math.max(group.rows.length - 6, 0);
+    const nameText = group.rows.length ? `${names}${extra ? `, +${extra} more` : ''}` : 'None for selected date';
+    const activeClass = HR_STATE.selectedRecommendationKey === group.key ? ' active' : '';
+    const disabled = group.rows.length ? '' : ' disabled';
     return `
-        <section class="hr-performance-lane">
-            <h4>${sanitize(title)}</h4>
-            <ul>${items || '<li><span>None</span><em>Clear</em></li>'}</ul>
-        </section>
+        <article class="hr-recommendation-card${activeClass}">
+            <button type="button" class="hr-recommendation-main"${disabled} data-recommendation-view="${sanitize(group.key)}">
+                <span>Recommendation ${number} · ${sanitize(group.severity)}</span>
+                <strong>${sanitize(group.title)}</strong>
+                <em>${group.rows.length.toLocaleString()} staff member${group.rows.length === 1 ? '' : 's'}</em>
+                <p>${sanitize(nameText)}</p>
+                <small>${sanitize(group.rationale)}</small>
+            </button>
+            <div class="hr-recommendation-actions" aria-label="Recommendation actions">
+                <button type="button" class="hr-action-btn" data-recommendation-view="${sanitize(group.key)}"${disabled}>View Evidence</button>
+                <button type="button" class="hr-action-btn" data-performance-action="print_memo" data-recommendation-key="${sanitize(group.key)}"${disabled}>Print Memo</button>
+                <button type="button" class="hr-action-btn" data-performance-action="received_memo" data-recommendation-key="${sanitize(group.key)}"${disabled}>Received Memo</button>
+                <button type="button" class="hr-action-btn" data-performance-action="counseled_verbally" data-recommendation-key="${sanitize(group.key)}"${disabled}>Counseled Verbally</button>
+                <button type="button" class="hr-action-btn danger" data-performance-action="for_suspension" data-recommendation-key="${sanitize(group.key)}"${disabled}>For Suspension</button>
+                <button type="button" class="hr-action-btn neutral" data-performance-action="not_applicable" data-recommendation-key="${sanitize(group.key)}"${disabled}>Not Applicable</button>
+            </div>
+        </article>
     `;
+}
+
+function getSelectedPerformanceGroup() {
+    if (!HR_STATE.selectedRecommendationKey) return null;
+    return HR_STATE.performanceGroups.find((group) => group.key === HR_STATE.selectedRecommendationKey) || null;
+}
+
+function openRecommendationEvidence(key) {
+    HR_STATE.selectedRecommendationKey = String(key || '');
+    renderPerformanceDashboard(HR_STATE.performanceRows);
+    renderPerformanceDetailsTable();
+    setPerformanceTab('details');
+}
+
+function buildPerformanceEvidence(row, groupKey = '') {
+    const contextLabel = (schedule) => {
+        const context = resolveEventContext(schedule);
+        const name = [context.company, context.branch].filter(Boolean).join(' / ');
+        return name || schedule.customer_name || schedule.branch_name || schedule.id || schedule._docId || 'schedule';
+    };
+    if (groupKey === 'no_attendance') {
+        return row.schedules.slice(0, 8).map((schedule, index) => `${index + 1}. ${contextLabel(schedule)} - failed to time in for assigned schedule.`);
+    }
+    if (groupKey === 'late_attendance') {
+        return [`Official time-in ${timeFromDateTime(row.attendance?.time_in) || 'not recorded'} - late by ${row.lateMinutes || 0} minute(s).`];
+    }
+    if (groupKey === 'low_accomplishment') {
+        const rate = row.assignedCount ? Math.round((row.finishedCount / row.assignedCount) * 100) : 0;
+        return [
+            `${row.finishedCount}/${row.assignedCount} finished (${rate}% accomplishment).`,
+            ...row.schedules.filter((schedule) => !isScheduleFinished(schedule)).slice(0, 7).map((schedule, index) => `${index + 1}. ${contextLabel(schedule)} - still open.`)
+        ];
+    }
+    if (groupKey === 'blocked_finish') {
+        return row.finishBlocks.slice(0, 8).map((block, index) => `${index + 1}. ${block.reason || block.purpose_label || 'Mark Finished blocked because required details were incomplete.'}`);
+    }
+    if (groupKey === 'missing_execution') {
+        return row.flags.filter((flag) => /no work notes|no billing meter|no collection details|no delivery details/i.test(flag));
+    }
+    if (groupKey === 'open_work') {
+        return row.schedules.filter((schedule) => !isScheduleFinished(schedule)).slice(0, 8).map((schedule, index) => `${index + 1}. ${contextLabel(schedule)} - not marked finished.`);
+    }
+    return row.flags.length ? row.flags : ['No exception details for this selection.'];
+}
+
+async function savePerformanceRecommendationAction(groupKey, action) {
+    const group = HR_STATE.performanceGroups.find((item) => item.key === groupKey);
+    if (!group || !group.rows.length) return;
+    const actionLabels = {
+        print_memo: 'Print Memo',
+        received_memo: 'Received Memo',
+        counseled_verbally: 'Counseled Verbally',
+        for_suspension: 'For Suspension',
+        not_applicable: 'Not Applicable'
+    };
+    const label = actionLabels[action] || action;
+    try {
+        const id = `hr_perf_${getPerformanceDate()}_${group.key}_${Date.now()}`;
+        await setDocument('tbl_hr_performance_actions', id, {
+            date: getPerformanceDate(),
+            recommendation_key: group.key,
+            recommendation_title: group.title,
+            action,
+            action_label: label,
+            staff_count: group.rows.length,
+            staff_names: group.rows.map((row) => row.name).join(', '),
+            created_at: new Date().toISOString(),
+            created_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr'
+        });
+        alert(`${label} recorded for ${group.rows.length} staff member(s).`);
+    } catch (error) {
+        console.error('Performance action failed:', error);
+        alert(`Could not record action: ${error.message || error}`);
+    }
 }
 
 function renderPayrollModel() {
