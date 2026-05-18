@@ -52,6 +52,7 @@ const HR_STATE = {
     performanceGroups: [],
     performanceTab: 'summary',
     selectedRecommendationKey: '',
+    performanceStatus: new Map(),
     branches: new Map(),
     companies: new Map(),
     activeTab: 'employees',
@@ -91,18 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('performanceModalCloseBtn').addEventListener('click', closePerformanceModal);
     document.getElementById('performanceModalCloseFooterBtn').addEventListener('click', closePerformanceModal);
     document.querySelector('#hrPerformanceTable tbody').addEventListener('click', (event) => {
-        const button = event.target.closest('[data-performance-view]');
-        if (button) openPerformanceModal(button.dataset.performanceView);
+        const button = event.target.closest('[data-performance-call]');
+        if (button) callPerformanceStaff(button.dataset.performanceCall);
+    });
+    document.querySelector('#hrPerformanceTable tbody').addEventListener('change', (event) => {
+        const select = event.target.closest('[data-performance-status]');
+        if (select) savePerformanceRowStatus(select.dataset.performanceStatus, select.value);
     });
     document.getElementById('hrPerformanceDashboard')?.addEventListener('click', (event) => {
         const viewButton = event.target.closest('[data-recommendation-view]');
-        const actionButton = event.target.closest('[data-performance-action]');
         if (viewButton) {
             openRecommendationEvidence(viewButton.dataset.recommendationView);
-            return;
-        }
-        if (actionButton) {
-            savePerformanceRecommendationAction(actionButton.dataset.recommendationKey, actionButton.dataset.performanceAction);
         }
     });
     document.getElementById('locationType').addEventListener('change', updateMeterLimit);
@@ -353,8 +353,10 @@ function renderPerformanceDetailsTable() {
     const group = getSelectedPerformanceGroup();
     const rows = group ? group.rows : HR_STATE.performanceRows;
     tbody.innerHTML = rows.slice(0, 160).map((row) => {
-        const id = sanitize(row.employee.id || row.employee._docId || '');
+        const rawId = String(row.employee.id || row.employee._docId || '');
+        const id = sanitize(rawId);
         const evidence = buildPerformanceEvidence(row, group?.key || '').slice(0, 4);
+        const statusKey = performanceDecisionKey(rawId, group?.key || 'all');
         return `
             <tr>
                 <td data-label="Employee"><strong>${sanitize(row.name)}</strong></td>
@@ -363,13 +365,14 @@ function renderPerformanceDetailsTable() {
                 <td data-label="Workload">${row.finishedCount}/${row.assignedCount} finished · ${row.unfinishedCount} open</td>
                 <td data-label="Evidence">${evidence.length ? evidence.map((item) => `<div>${sanitize(item)}</div>`).join('') : 'No detailed exception for selected recommendation.'}</td>
                 <td data-label="Recommendation"><span class="hr-rec-badge ${sanitize(row.recommendationClass)}">${sanitize(group?.actionLabel || row.recommendation)}</span></td>
-                <td data-label="Action"><button type="button" class="hr-text-btn" data-performance-view="${id}">View</button></td>
+                <td data-label="Status">${renderPerformanceStatusSelect(statusKey)}</td>
+                <td data-label="Action"><button type="button" class="hr-text-btn" data-performance-call="${id}">Call</button></td>
             </tr>
         `;
     }).join('');
 
     if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="7">${group ? 'No staff currently match this recommendation.' : 'No field performance records found for the selected date.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8">${group ? 'No staff currently match this recommendation.' : 'No field performance records found for the selected date.'}</td></tr>`;
     }
 }
 
@@ -594,14 +597,6 @@ function renderPerformanceRecommendationCard(group, number) {
                 <p>${sanitize(nameText)}</p>
                 <small>${sanitize(group.rationale)}</small>
             </button>
-            <div class="hr-recommendation-actions" aria-label="Recommendation actions">
-                <button type="button" class="hr-action-btn" data-recommendation-view="${sanitize(group.key)}"${disabled}>View Evidence</button>
-                <button type="button" class="hr-action-btn" data-performance-action="print_memo" data-recommendation-key="${sanitize(group.key)}"${disabled}>Print Memo</button>
-                <button type="button" class="hr-action-btn" data-performance-action="received_memo" data-recommendation-key="${sanitize(group.key)}"${disabled}>Received Memo</button>
-                <button type="button" class="hr-action-btn" data-performance-action="counseled_verbally" data-recommendation-key="${sanitize(group.key)}"${disabled}>Counseled Verbally</button>
-                <button type="button" class="hr-action-btn danger" data-performance-action="for_suspension" data-recommendation-key="${sanitize(group.key)}"${disabled}>For Suspension</button>
-                <button type="button" class="hr-action-btn neutral" data-performance-action="not_applicable" data-recommendation-key="${sanitize(group.key)}"${disabled}>Not Applicable</button>
-            </div>
         </article>
     `;
 }
@@ -649,34 +644,74 @@ function buildPerformanceEvidence(row, groupKey = '') {
     return row.flags.length ? row.flags : ['No exception details for this selection.'];
 }
 
-async function savePerformanceRecommendationAction(groupKey, action) {
-    const group = HR_STATE.performanceGroups.find((item) => item.key === groupKey);
-    if (!group || !group.rows.length) return;
-    const actionLabels = {
-        print_memo: 'Print Memo',
-        received_memo: 'Received Memo',
-        counseled_verbally: 'Counseled Verbally',
-        for_suspension: 'For Suspension',
-        not_applicable: 'Not Applicable'
+function renderPerformanceStatusSelect(statusKey) {
+    const current = HR_STATE.performanceStatus.get(statusKey) || 'pending';
+    const options = [
+        ['pending', 'Pending'],
+        ['called', 'Called'],
+        ['counseled', 'Counseled'],
+        ['received_memo', 'Received memo'],
+        ['suspended', 'Suspended'],
+        ['not_applicable', 'Not applicable']
+    ];
+    return `
+        <select class="hr-status-select" data-performance-status="${sanitize(statusKey)}">
+            ${options.map(([value, label]) => `<option value="${sanitize(value)}"${current === value ? ' selected' : ''}>${sanitize(label)}</option>`).join('')}
+        </select>
+    `;
+}
+
+function performanceDecisionKey(employeeId, groupKey) {
+    return `${getPerformanceDate()}::${groupKey || 'all'}::${employeeId}`;
+}
+
+function findPerformanceRowByEmployeeId(employeeId) {
+    const id = String(employeeId || '').trim();
+    return HR_STATE.performanceRows.find((row) => String(row.employee.id || row.employee._docId || '').trim() === id) || null;
+}
+
+function callPerformanceStaff(employeeId) {
+    const row = findPerformanceRowByEmployeeId(employeeId);
+    if (!row) return;
+    const phone = String(firstPresent(row.employee, ['mobile', 'mobile_no', 'phone', 'contact_no', 'contact_number']) || '').trim();
+    if (!phone) {
+        alert(`No phone number found for ${row.name}.`);
+        return;
+    }
+    window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
+}
+
+async function savePerformanceRowStatus(statusKey, status) {
+    HR_STATE.performanceStatus.set(statusKey, status);
+    const [, groupKey, employeeId] = String(statusKey || '').split('::');
+    const group = HR_STATE.performanceGroups.find((item) => item.key === groupKey) || null;
+    const row = findPerformanceRowByEmployeeId(employeeId);
+    if (!row) return;
+    const labels = {
+        pending: 'Pending',
+        called: 'Called',
+        counseled: 'Counseled',
+        received_memo: 'Received memo',
+        suspended: 'Suspended',
+        not_applicable: 'Not applicable'
     };
-    const label = actionLabels[action] || action;
     try {
-        const id = `hr_perf_${getPerformanceDate()}_${group.key}_${Date.now()}`;
+        const id = `hr_perf_${getPerformanceDate()}_${groupKey || 'all'}_${employeeId}_${Date.now()}`;
         await setDocument('tbl_hr_performance_actions', id, {
             date: getPerformanceDate(),
-            recommendation_key: group.key,
-            recommendation_title: group.title,
-            action,
-            action_label: label,
-            staff_count: group.rows.length,
-            staff_names: group.rows.map((row) => row.name).join(', '),
+            recommendation_key: groupKey || 'all',
+            recommendation_title: group?.title || row.recommendation,
+            action: status,
+            action_label: labels[status] || status,
+            staff_id: employeeId,
+            staff_name: row.name,
+            staff_role: row.role,
             created_at: new Date().toISOString(),
             created_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr'
         });
-        alert(`${label} recorded for ${group.rows.length} staff member(s).`);
     } catch (error) {
-        console.error('Performance action failed:', error);
-        alert(`Could not record action: ${error.message || error}`);
+        console.error('Performance status failed:', error);
+        alert(`Could not record status: ${error.message || error}`);
     }
 }
 

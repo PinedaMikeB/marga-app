@@ -242,44 +242,15 @@
     grid-column: 1 / -1;
 }
 
-.hr-recommendation-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid rgba(36, 82, 143, 0.1);
-    background: rgba(248, 251, 255, 0.82);
-}
-
-.hr-action-btn {
-    min-height: 34px;
+.hr-status-select {
+    min-width: 150px;
     border: 1px solid #d9e4f2;
     border-radius: 8px;
-    padding: 0.38rem 0.65rem;
+    padding: 0.45rem 0.6rem;
     background: #fff;
     color: #19345c;
-    font-weight: 900;
-    cursor: pointer;
-}
-
-.hr-action-btn:hover:not(:disabled) {
-    border-color: #2b78cf;
-    color: #0f4f91;
-}
-
-.hr-action-btn.danger {
-    border-color: #fed7aa;
-    color: #9a3412;
-}
-
-.hr-action-btn.neutral {
-    border-color: #d1d5db;
-    color: #475569;
-}
-
-.hr-action-btn:disabled {
-    cursor: default;
-    opacity: 0.55;
+    font: inherit;
+    font-weight: 850;
 }
 
 .hr-performance-hero {
