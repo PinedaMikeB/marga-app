@@ -188,10 +188,11 @@ Current operations scheduling state:
 - These schedule features should stay aligned: printed route is the daily route; carry-over is for follow-up/planning and should not replace today's default view.
 - Field App GPS attendance rule:
   - Official daily attendance `Time In` is separate from per-customer check-in/out.
-  - Official Time In must be within `100m` of a pinned open/pending scheduled customer assigned to that staff member.
+  - Official Time In must be within `200m` of a pinned open/pending scheduled customer assigned to that staff member.
   - Homepage/Daily Attendance Location Check may consider both today's route and past pending/carryover workload; it reports the nearest pinned open/pending customer overall.
-  - Per-customer `field_time_in` must match that specific customer's saved branch pin within `100m` and write location proof.
-  - Do not weaken the 100m proof rule without explicit user approval.
+  - Per-customer `field_time_in` must match that specific customer's saved branch pin within `200m` and write location proof.
+  - Per-customer check-in/check-out is required before Mark Finished; official daily attendance Time In does not satisfy a customer visit check-in.
+  - Do not weaken the 200m proof rule without explicit user approval.
 - Field App customer pin/repin rule:
   - New customer pins and repins require a frontage/building photo when the phone/browser supports image capture.
   - Already pinned customers must still allow controlled repin because saved pins can be wrong.

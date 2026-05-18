@@ -191,20 +191,21 @@ Start every new Marga-App thread by reading:
 ## Field App GPS / Attendance / Repin Checkpoint - 2026-05-18
 - Business rule clarified by user:
   - Official daily attendance `Time In` is separate from per-customer check-in/out.
-  - Staff must official `Time In` only while physically within `100m` of an open/pending scheduled customer location pin.
+  - Staff must official `Time In` only while physically within `200m` of an open/pending scheduled customer location pin.
   - They cannot time in from home or an unrelated place.
   - Time Out may be from a customer or the office.
 - Official attendance implementation:
   - Field App now has a Daily Attendance `Location Check` panel above official time cards.
   - The panel compares phone GPS against the staff member's open/pending workload, including current route and carryover/past pending tasks.
   - It shows nearest pinned customer, distance, GPS accuracy, missing-pin count/names, and opens the nearest task or a task needing a pin.
-  - If no open/pending customer is within `100m`, official Time In is blocked.
+  - If no open/pending customer is within `200m`, official Time In is blocked.
 - Per-customer check-in implementation:
   - `tbl_schedule.field_time_in` now requires GPS proof against that task's customer branch pin.
   - The app writes proof fields such as `field_time_in_latitude`, `field_time_in_longitude`, `field_time_in_distance_meters`, and `field_time_in_location_status = matched_customer_pin`.
   - The Field App time-in picker is readonly; staff should use the on-device Check In / Time In action so location proof is captured.
+  - Mark Finished now requires both per-customer Check In and Check Out to be recorded first; official daily attendance Time In is only once per day and is not reused as task check-in.
 - Local Margabase API guard:
-  - In `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/margabase-firestore-api.mjs`, a local guard was added during this work to reject `tbl_schedule.field_time_in` writes without `matched_customer_pin` proof and distance `<=100m`.
+  - In `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/margabase-firestore-api.mjs`, a local guard was added during this work to reject `tbl_schedule.field_time_in` writes without `matched_customer_pin` proof and distance `<=200m`.
   - That platform repo was not committed in this Marga-App commit series; inspect `marga-platform` before assuming that guard is versioned.
 - Hener / Denovo diagnostic:
   - Hener Claveria staff id observed as `54`.

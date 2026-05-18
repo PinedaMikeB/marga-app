@@ -5,7 +5,7 @@ if (!MargaAuth.requireAccess('field')) {
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 45;
 const REQUIRED_PRIORITY_COUNT = 5;
-const ATTENDANCE_LOCATION_RADIUS_METERS = 100;
+const ATTENDANCE_LOCATION_RADIUS_METERS = 200;
 const FIELD_ATTENDANCE_START_TIME = '08:00';
 const FIELD_ATTENDANCE_GRACE_MINUTES = 15;
 const PARTS_CATALOG_QUERY_LIMIT = 12000;
@@ -2870,7 +2870,7 @@ function buildPerformanceAdvice(summary) {
     if (summary.attendanceTimeliness?.lateMinutes > 0) {
         advice.push({
             title: 'Protect official Time In',
-            body: `Official Time In is ${summary.attendanceTimeliness.label.toLowerCase()} Time In must be inside 100m of an open/pending customer by 8:15 AM, including the 15-minute grace period.`
+            body: `Official Time In is ${summary.attendanceTimeliness.label.toLowerCase()} Time In must be inside ${ATTENDANCE_LOCATION_RADIUS_METERS}m of an open/pending customer by 8:15 AM, including the 15-minute grace period.`
         });
     }
     if (summary.timeDiligenceScore < 85) {
@@ -5940,6 +5940,15 @@ function getCloseTaskIssues(row, form) {
     if (isFutureScheduleForClose(row)) {
         return [closeIssue('This schedule is for a future date. It can only be marked Finished on the scheduled day.', '', '', 'future_schedule')];
     }
+    if (!normalizeLegacyDateTime(form.timeInDb)) {
+        return [closeIssue('Cannot mark finished: customer check-in is required for this task. Attendance time-in is only once per day; this customer check-in must be done for every customer visit.', 'fieldTimeSection', 'fieldTimeInNowBtn', 'missing_customer_check_in')];
+    }
+    if (!hasCustomerTimeInLocationProof(row)) {
+        return [closeIssue(`Cannot mark finished: customer check-in needs GPS proof within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of this customer pin. Tap Check In Now while at the customer site, then Check Out Now before closing.`, 'fieldTimeSection', 'fieldTimeInNowBtn', 'missing_customer_check_in_gps')];
+    }
+    if (!normalizeLegacyDateTime(form.timeOutDb)) {
+        return [closeIssue('Cannot mark finished: customer check-out is required for this task. Tap Check Out Now before closing every customer visit.', 'fieldTimeSection', 'fieldTimeOutNowBtn', 'missing_customer_check_out')];
+    }
     const { hasLocation } = getBranchLocationStatus(row);
     if (!hasLocation && !canBypassLocationPinForClose(row)) {
         return [closeIssue('Cannot mark Finished yet: this customer is not detected because the branch has no saved GPS pin. Tap Pin Customer Location while you are at the customer site. If the saved pin is wrong, take a new frontage/building photo and tap Repin Customer Location, then try Mark Finished again.', 'fieldLocationSection', 'fieldPinLocationBtn', 'missing_customer_pin')];
@@ -6444,18 +6453,8 @@ async function closeTask() {
             document.getElementById('fieldTimeIn').value = savedLocal;
             form.timeInLocal = savedLocal;
             form.timeInDb = savedTimeIn;
-        } else {
-            const nowLocal = toLocalInputDateTime(new Date().toISOString());
-            document.getElementById('fieldTimeIn').value = nowLocal;
-            form.timeInLocal = nowLocal;
-            form.timeInDb = toDbDateTimeFromLocal(nowLocal);
         }
     }
-
-    const nowLocal = toLocalInputDateTime(new Date().toISOString());
-    document.getElementById('fieldTimeOut').value = nowLocal;
-    form.timeOutLocal = nowLocal;
-    form.timeOutDb = toDbDateTimeFromLocal(nowLocal);
 
     const nowIso = new Date().toISOString();
     const staffId = Number(state.staffId || 0) || 0;
@@ -7268,6 +7267,12 @@ async function markTimeOutNow() {
     if (state.modalReadOnly) return;
     const row = getCurrentRow();
     if (!row) return;
+
+    const currentTimeIn = normalizeLegacyDateTime(row.field_time_in);
+    if (!currentTimeIn || !hasCustomerTimeInLocationProof(row)) {
+        alert('Please Check In Now for this customer task before checking out.');
+        return;
+    }
 
     const nowLocal = toLocalInputDateTime(new Date().toISOString());
     document.getElementById('fieldTimeOut').value = nowLocal;

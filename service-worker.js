@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v60-login-permissions';
+const CACHE_NAME = 'marga-app-shell-v61-customer-checkout-required';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -33,7 +33,7 @@ const SHELL_ASSETS = [
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260511-end-of-day-review-1',
-    '/field/js/field.js?v=20260516-field-permissions-3',
+    '/field/js/field.js?v=20260518-customer-checkout-required-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
