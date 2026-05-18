@@ -741,6 +741,48 @@
             cursor: pointer;
         }
 
+        .master-close-request-list {
+            display: grid;
+            gap: 12px;
+            padding: 18px;
+        }
+
+        .master-close-request-card {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: start;
+            border: 1px solid rgba(31, 94, 168, 0.18);
+            border-radius: 8px;
+            padding: 14px;
+            background: #f8fbff;
+        }
+
+        .master-close-request-card input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-top: 3px;
+        }
+
+        .master-close-request-card h3 {
+            margin: 0 0 6px;
+            color: #11213a;
+            font-size: 17px;
+            line-height: 1.25;
+        }
+
+        .master-close-request-card p {
+            margin: 4px 0;
+            color: #4f6584;
+            font-size: 14px;
+            line-height: 1.35;
+        }
+
+        .master-close-request-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
         .schedule-status-view {
             width: 100%;
             border: 1px solid rgba(31, 94, 168, 0.24);
@@ -1363,6 +1405,7 @@
         <div class="master-tabs">
             <button class="master-tab active" type="button" data-master-view="schedule">Master Schedule</button>
             <button class="master-tab" type="button" data-master-view="settings">Settings</button>
+            <button class="master-tab" type="button" data-master-view="close-requests" id="masterCloseRequestsTab" hidden>Close Requests</button>
         </div>
 
         <section class="master-view" id="masterScheduleView">
@@ -1392,6 +1435,23 @@
                 </div>
                 <div class="master-sheet" id="masterScheduleSheet">
                     <div class="master-empty">Loading Master Schedule...</div>
+                </div>
+            </section>
+        </section>
+
+        <section class="master-view hidden" id="masterCloseRequestsView">
+            <section class="master-card">
+                <div class="master-card-head">
+                    <strong>Close Requests</strong>
+                    <div class="master-card-head-actions">
+                        <span id="masterCloseRequestsCount">0 pending</span>
+                        <button class="btn btn-secondary btn-sm" id="masterCloseRequestsSelectAllBtn" type="button">Select All</button>
+                        <button class="btn btn-secondary btn-sm" id="masterCloseRequestsClearBtn" type="button">Clear</button>
+                        <button class="btn btn-primary btn-sm" id="masterCloseRequestsApproveSelectedBtn" type="button">Approve Selected</button>
+                    </div>
+                </div>
+                <div class="master-close-request-list" id="masterCloseRequestsContent">
+                    <div class="master-empty">Loading close requests...</div>
                 </div>
             </section>
         </section>
@@ -1544,6 +1604,6 @@
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
     <script src="shared/js/schedule-consolidation.js?v=20260518-combined-visit-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260518-config-fallback-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260518-close-requests-1"></script>
 </body>
 </html>

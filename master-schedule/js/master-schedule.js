@@ -110,6 +110,7 @@ const masterState = {
         finalDeliveryReceipts: new Map(),
         closeRequestsBySchedule: new Map()
     },
+    closeRequestRows: [],
     activityLogs: new Map(),
     routeForwarding: false,
     activeEmployeeEmails: new Set(),
@@ -157,6 +158,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCancelBtn')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusSaveBtn')?.addEventListener('click', saveMasterStatusFromModal);
+    applyCloseRequestAccess();
+    document.getElementById('masterCloseRequestsSelectAllBtn')?.addEventListener('click', () => setAllCloseRequestChecks(true));
+    document.getElementById('masterCloseRequestsClearBtn')?.addEventListener('click', () => setAllCloseRequestChecks(false));
+    document.getElementById('masterCloseRequestsApproveSelectedBtn')?.addEventListener('click', approveSelectedCloseRequests);
 
     document.querySelectorAll('[data-master-view]').forEach((button) => {
         button.addEventListener('click', () => switchMasterView(button.dataset.masterView));
@@ -177,6 +182,27 @@ function escapeHtml(value) {
         '"': '&quot;',
         "'": '&#39;'
     }[char]));
+}
+
+function canManageCloseRequests() {
+    const user = window.MargaAuth?.getUser?.() || {};
+    const identity = [
+        user.email,
+        user.username,
+        user.name,
+        user.displayName
+    ].map((value) => clean(value).toLowerCase()).join(' ');
+    return Boolean(
+        identity.includes('michael.marga')
+        || identity.includes('mike pineda')
+    );
+}
+
+function applyCloseRequestAccess() {
+    const allowed = canManageCloseRequests();
+    const tab = document.getElementById('masterCloseRequestsTab');
+    if (tab) tab.hidden = !allowed;
+    if (!allowed) document.getElementById('masterCloseRequestsView')?.classList.add('hidden');
 }
 
 function formatDateYmd(date) {
@@ -1543,8 +1569,10 @@ async function hydrateReadyLookups(rows) {
 
 function loadCloseRequestLookup(rows = []) {
     masterState.lookups.closeRequestsBySchedule = new Map();
-    rows
+    masterState.closeRequestRows = rows
         .filter((row) => clean(row.status || 'pending').toLowerCase() === 'pending')
+        .sort((a, b) => clean(b.requested_at).localeCompare(clean(a.requested_at)));
+    masterState.closeRequestRows
         .forEach((row) => {
             const scheduleId = String(row.schedule_id || '');
             if (!scheduleId) return;
@@ -1962,6 +1990,78 @@ function renderMasterSchedule() {
         ${pendingRows.length ? renderPendingNotRouted(pendingRows) : ''}
     `;
     if (masterState.kaizen.visible) renderKaizenAdvisor();
+    renderCloseRequestsPanel();
+}
+
+function closeRequestScheduleRow(request) {
+    const scheduleId = Number(request?.schedule_id || 0);
+    if (!scheduleId) return null;
+    return [...masterState.rows, ...masterState.pendingRows, ...masterState.exceptionRows]
+        .find((row) => Number(row.scheduleId || row.id || 0) === scheduleId) || null;
+}
+
+function closeRequestDisplayData(request) {
+    const row = closeRequestScheduleRow(request);
+    const branch = masterState.lookups.branches.get(String(request.branch_id || row?.branchId || ''));
+    const company = masterState.lookups.companies.get(String(request.company_id || branch?.company_id || row?.companyId || ''));
+    const employee = masterState.lookups.employees.get(String(request.requester_staff_id || request.tech_id || row?.techId || ''));
+    return {
+        row,
+        scheduleId: Number(request.schedule_id || row?.scheduleId || 0) || 0,
+        customer: row?.customer || company?.companyname || `Company #${request.company_id || '-'}`,
+        branch: row?.branch || branch?.branchname || `Branch #${request.branch_id || '-'}`,
+        purpose: row?.purpose || MASTER_PURPOSE_LABELS[Number(row?.purposeId || 0)] || 'Schedule',
+        requester: request.requester_name || employeeName(employee, request.requester_staff_id) || `Staff #${request.requester_staff_id || '-'}`,
+        taskDate: request.task_datetime || row?.taskDatetime || row?.routeDate || '',
+        reason: request.reason || 'No reason supplied.'
+    };
+}
+
+function renderCloseRequestsPanel() {
+    const panel = document.getElementById('masterCloseRequestsContent');
+    const count = document.getElementById('masterCloseRequestsCount');
+    if (!panel) return;
+    const requests = masterState.closeRequestRows || [];
+    if (count) count.textContent = `${requests.length} pending`;
+    if (!canManageCloseRequests()) {
+        panel.innerHTML = '<div class="master-empty">Close requests are only available for the owner/admin login.</div>';
+        return;
+    }
+    if (!requests.length) {
+        panel.innerHTML = '<div class="master-empty">No pending close requests.</div>';
+        return;
+    }
+    panel.innerHTML = requests.map((request) => {
+        const data = closeRequestDisplayData(request);
+        const scheduleId = String(data.scheduleId || request.schedule_id || '');
+        return `
+            <article class="master-close-request-card">
+                <input type="checkbox" class="master-close-request-check" value="${escapeHtml(scheduleId)}" aria-label="Select close request #${escapeHtml(scheduleId)}">
+                <div>
+                    <h3>#${escapeHtml(data.scheduleId)} ${escapeHtml(data.customer)}</h3>
+                    <p>${escapeHtml(data.branch)} · ${escapeHtml(data.purpose)}</p>
+                    <p><strong>Requested by:</strong> ${escapeHtml(data.requester)} · ${escapeHtml(formatActivityTimestamp(request.requested_at))}</p>
+                    <p><strong>Reason:</strong> ${escapeHtml(data.reason)}</p>
+                    <p><strong>Task date:</strong> ${escapeHtml(data.taskDate || '-')}</p>
+                </div>
+                <div class="master-close-request-actions">
+                    <button class="btn btn-primary btn-sm" type="button" onclick="approveCloseRequestBySchedule('${escapeHtml(scheduleId)}')">Approve Close</button>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function selectedCloseRequestScheduleIds() {
+    return [...document.querySelectorAll('.master-close-request-check:checked')]
+        .map((input) => clean(input.value))
+        .filter(Boolean);
+}
+
+function setAllCloseRequestChecks(checked) {
+    document.querySelectorAll('.master-close-request-check').forEach((input) => {
+        input.checked = Boolean(checked);
+    });
 }
 
 function renderAssignmentExceptions(rows) {
@@ -2542,56 +2642,132 @@ async function saveScheduleStatus(row, nextStatusValue) {
     refreshMasterRowSearch(row);
 }
 
-async function approveCloseRequest(rowKey) {
-    const row = findScheduleRow(rowKey);
-    if (!row) return;
-    const request = masterState.lookups.closeRequestsBySchedule.get(String(row.scheduleId || ''));
-    if (!request) return;
-    const ok = window.confirm(`Approve close request for ${row.customer || 'this schedule'}?\n\nThis will mark the schedule closed without requiring the field staff to go back on-site.`);
-    if (!ok) return;
+function routeCollectionForSource(routeSource) {
+    return clean(routeSource).toLowerCase().includes('printed')
+        ? ROUTE_COLLECTION_PRIMARY
+        : ROUTE_COLLECTION_FALLBACK;
+}
 
-    const nowIso = new Date().toISOString();
-    const finishTime = nowDbDateTime();
-    const actor = currentActorLabel();
-    const schedulePayload = {
+async function applyApprovedCloseRequest(request, row = null, options = {}) {
+    const scheduleId = Number(request?.schedule_id || row?.scheduleId || 0) || 0;
+    const nowIso = options.nowIso || new Date().toISOString();
+    const finishTime = options.finishTime || nowDbDateTime();
+    const actor = options.actor || currentActorLabel();
+    const scheduleDocId = clean(row?.docId || request?.schedule_doc_id || scheduleId);
+    if (!scheduleDocId) throw new Error(`Missing schedule document id for close request #${scheduleId || '-'}`);
+
+    await updateDocFields('tbl_schedule', scheduleDocId, {
         date_finished: finishTime,
-        closedby: Number(request.requester_staff_id || row.techId || 0) || 0,
+        closedby: Number(request?.requester_staff_id || request?.tech_id || row?.techId || 0) || 0,
         master_schedule_status: 'closed_fixed',
         master_schedule_status_label: statusLabel('closed_fixed'),
         master_schedule_status_updated_at: nowIso,
         master_schedule_status_updated_by: actor,
         close_request_approved_at: nowIso,
         close_request_approved_by: actor
-    };
-    const requestPayload = {
+    });
+
+    const routeDocId = clean(row?.routeDocId || request?.route_doc_id);
+    const routeSource = clean(row?.routeSource || request?.route_source);
+    if (routeDocId && routeSource && routeSource !== 'Schedule') {
+        await updateDocFields(routeCollectionForSource(routeSource), routeDocId, {
+            status: 0,
+            date_finished: finishTime,
+            timestmp: nowIso,
+            bridge_pushed_at: nowIso
+        }).catch((error) => console.warn('Route close update failed; schedule was closed.', error));
+    }
+
+    await updateDocFields(CLOSE_REQUEST_COLLECTION, request?._docId || request?.id, {
         status: 'approved',
         approved_at: nowIso,
         approved_by: actor,
         closed_schedule_at: finishTime
-    };
+    });
 
-    try {
-        await updateDocFields('tbl_schedule', row.docId, schedulePayload);
-        if (row.routeSource && row.routeId && row.routeSource !== 'Schedule') {
-            const routeCollection = String(row.routeSource).toLowerCase().includes('printed') ? ROUTE_COLLECTION_PRIMARY : ROUTE_COLLECTION_FALLBACK;
-            await updateDocFields(routeCollection, row.routeId, {
-                status: 0,
-                date_finished: finishTime,
-                timestmp: nowIso,
-                bridge_pushed_at: nowIso
-            }).catch((error) => console.warn('Route close update failed; schedule was closed.', error));
-        }
-        await updateDocFields(CLOSE_REQUEST_COLLECTION, request._docId || request.id, requestPayload);
+    if (row) {
         await appendActivityLog(row, {
             actionType: 'approve_close_request',
             actionLabel: 'Close Request Approved',
             detail: `Approved close request from ${request.requester_name || `staff #${request.requester_staff_id || ''}`}.`
         }).catch((error) => console.warn('Close approval activity log failed:', error));
-        await loadMasterSchedule();
+    }
+}
+
+async function approveCloseRequest(rowKey, options = {}) {
+    const row = findScheduleRow(rowKey);
+    if (!row) return;
+    const request = masterState.lookups.closeRequestsBySchedule.get(String(row.scheduleId || ''));
+    if (!request) return;
+    if (!options.skipConfirm) {
+        const ok = window.confirm(`Approve close request for ${row.customer || 'this schedule'}?\n\nThis will mark the schedule closed without requiring the field staff to go back on-site.`);
+        if (!ok) return;
+    }
+
+    try {
+        await applyApprovedCloseRequest(request, row, options);
+        if (!options.skipReload) await loadMasterSchedule();
     } catch (error) {
         console.error('Close request approval failed:', error);
         window.alert(`Unable to approve close request: ${error.message || error}`);
     }
+}
+
+async function approveCloseRequestBySchedule(scheduleId, options = {}) {
+    const request = masterState.lookups.closeRequestsBySchedule.get(String(scheduleId || ''));
+    if (!request) return;
+    const row = closeRequestScheduleRow(request);
+    if (!options.skipConfirm) {
+        const data = closeRequestDisplayData(request);
+        const ok = window.confirm(`Approve close request for ${data.customer || `schedule #${scheduleId}`}?\n\nReason: ${request.reason || 'No reason supplied.'}`);
+        if (!ok) return;
+    }
+    try {
+        await applyApprovedCloseRequest(request, row, options);
+        if (!options.skipReload) {
+            await loadMasterSchedule();
+            switchMasterView('close-requests');
+        }
+    } catch (error) {
+        console.error('Close request approval failed:', error);
+        window.alert(`Unable to approve close request: ${error.message || error}`);
+    }
+}
+
+async function approveSelectedCloseRequests() {
+    const scheduleIds = selectedCloseRequestScheduleIds();
+    if (!scheduleIds.length) {
+        window.alert('Select at least one close request first.');
+        return;
+    }
+    const ok = window.confirm(`Approve ${scheduleIds.length} selected close request${scheduleIds.length === 1 ? '' : 's'}?\n\nApproved schedules will be closed and removed from field pending lists.`);
+    if (!ok) return;
+    const nowIso = new Date().toISOString();
+    const finishTime = nowDbDateTime();
+    const actor = currentActorLabel();
+    let approvedCount = 0;
+    let failedCount = 0;
+    for (const scheduleId of scheduleIds) {
+        const request = masterState.lookups.closeRequestsBySchedule.get(String(scheduleId || ''));
+        if (!request) {
+            failedCount += 1;
+            continue;
+        }
+        try {
+            await applyApprovedCloseRequest(request, closeRequestScheduleRow(request), {
+                nowIso,
+                finishTime,
+                actor
+            });
+            approvedCount += 1;
+        } catch (error) {
+            failedCount += 1;
+            console.error(`Close request approval failed for schedule #${scheduleId}:`, error);
+        }
+    }
+    window.alert(`Approved ${approvedCount} close request${approvedCount === 1 ? '' : 's'}.${failedCount ? ` ${failedCount} failed; check console before retrying.` : ''}`);
+    await loadMasterSchedule();
+    switchMasterView('close-requests');
 }
 
 function renderActivityList(entries = []) {
@@ -2950,6 +3126,7 @@ window.openMasterStatusModal = openMasterStatusModal;
 window.forwardScheduleRow = forwardScheduleRow;
 window.saveSchedulePriority = saveSchedulePriority;
 window.approveCloseRequest = approveCloseRequest;
+window.approveCloseRequestBySchedule = approveCloseRequestBySchedule;
 
 function uniqueAssignedStaff(rows = activeRows()) {
     const activeStaffNames = new Set(scheduleStaffOptions().map((employee) => employeeName(employee, employee.id)));
@@ -3208,15 +3385,18 @@ async function ensureSettingsData() {
 }
 
 async function switchMasterView(view) {
+    if (view === 'close-requests' && !canManageCloseRequests()) view = 'schedule';
     document.querySelectorAll('[data-master-view]').forEach((button) => {
         button.classList.toggle('active', button.dataset.masterView === view);
     });
     document.getElementById('masterScheduleView')?.classList.toggle('hidden', view !== 'schedule');
     document.getElementById('masterSettingsView')?.classList.toggle('hidden', view !== 'settings');
+    document.getElementById('masterCloseRequestsView')?.classList.toggle('hidden', view !== 'close-requests');
     if (view === 'settings') {
         await ensureSettingsData();
         renderSettings();
     }
+    if (view === 'close-requests') renderCloseRequestsPanel();
 }
 
 function switchSettingsTab(tab) {

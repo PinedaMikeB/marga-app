@@ -191,6 +191,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldGuideRefresh')?.addEventListener('click', () => loadModelErrorGuides({ force: true }));
     document.getElementById('fieldSolutionRequestsRefresh')?.addEventListener('click', () => loadSolutionRequests({ force: true }));
     document.getElementById('fieldSolutionRequestsList')?.addEventListener('click', handleSolutionRequestAction);
+    document.getElementById('fieldList')?.addEventListener('click', (event) => {
+        const button = event.target?.closest?.('button[data-action="request-close"]');
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        handleRequestCloseButton(button);
+    });
     document.getElementById('fieldOpenGuideBtn')?.addEventListener('click', openGuideForCurrentTask);
     document.getElementById('fieldGuideBackBtn')?.addEventListener('click', returnToUpdateFromGuide);
     document.getElementById('fieldSubmitSolutionBtn')?.addEventListener('click', submitSolutionRequest);
@@ -1481,6 +1488,17 @@ function loadCloseRequestLookup(rows = []) {
 function activeRows() {
     if (state.activeTab === 'closed') return state.rows.filter(isClosedOnSelectedDate);
     return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
+}
+
+function findFieldScheduleRow(scheduleId) {
+    const id = Number(scheduleId || 0);
+    if (!id) return null;
+    return [
+        ...activeRows(),
+        ...state.todayRows,
+        ...state.carryoverRows,
+        ...state.rows
+    ].find((row) => Number(row.id || 0) === id) || null;
 }
 
 function todayWorkingRows() {
@@ -3667,7 +3685,8 @@ function renderList() {
             ? `<div class="sub"><strong>Source:</strong> ${sanitize(String(row.route_source || 'Past Pending').replace(/carry[ -]?over/ig, 'Past Pending'))}</div>`
             : '';
         const closeRequest = state.closeRequestsBySchedule.get(String(row.id || ''));
-        const closeRequestAction = state.activeTab === 'carryover'
+        const canRequestClose = state.activeTab !== 'closed';
+        const closeRequestAction = canRequestClose
             ? (closeRequest
                 ? `<button type="button" class="btn btn-secondary btn-sm" disabled>Close Requested</button>`
                 : `<button type="button" class="btn btn-secondary btn-sm" data-action="request-close" data-id="${row.id}">Request Close</button>`)
@@ -3719,14 +3738,10 @@ function renderList() {
         });
     });
     list.querySelectorAll('button[data-action="request-close"]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const scheduleId = Number(btn.dataset.id || 0);
-            const row = state.rows.find((item) => Number(item.id || 0) === scheduleId);
-            if (!row) return;
-            requestCloseForSchedule(row).catch((err) => {
-                console.error('Close request failed:', err);
-                alert(`Unable to request close: ${err?.message || err}`);
-            });
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleRequestCloseButton(btn);
         });
     });
     list.querySelectorAll('button[data-action="reopen-closed"]').forEach((btn) => {
@@ -3743,6 +3758,22 @@ function renderList() {
     });
 }
 
+function handleRequestCloseButton(button) {
+    const scheduleId = Number(button?.dataset?.id || 0);
+    const row = findFieldScheduleRow(scheduleId);
+    if (!row) {
+        alert('Unable to find this schedule. Please tap Refresh and try again.');
+        return;
+    }
+    button.disabled = true;
+    requestCloseForSchedule(row).catch((err) => {
+        console.error('Close request failed:', err);
+        alert(`Unable to request close: ${err?.message || err}`);
+    }).finally(() => {
+        button.disabled = false;
+    });
+}
+
 async function requestCloseForSchedule(row) {
     const scheduleId = Number(row?.id || 0) || 0;
     if (!scheduleId) return;
@@ -3751,7 +3782,7 @@ async function requestCloseForSchedule(row) {
         return;
     }
 
-    const reason = window.prompt('Why should this old pending schedule be closed? Example: Done last week, forgot to close in app.');
+    const reason = window.prompt('Why should this schedule be closed? Example: Done today but GPS/app would not allow Mark Finished.');
     if (reason === null) return;
     const safeReason = String(reason || '').trim();
     if (!safeReason) {
@@ -3777,13 +3808,15 @@ async function requestCloseForSchedule(row) {
         branch_id: Number(row.branch_id || 0) || 0,
         company_id: Number(row.company_id || 0) || 0,
         tech_id: Number(row.tech_id || 0) || 0,
-        source: 'field_app_past_pending'
+        route_doc_id: String(row.route_doc_id || ''),
+        route_source: String(row.route_source || ''),
+        source: state.activeTab === 'carryover' ? 'field_app_past_pending' : 'field_app_today'
     };
 
     await setDocument(CLOSE_REQUEST_COLLECTION, docId, payload);
     state.closeRequestsBySchedule.set(String(scheduleId), { ...payload, _docId: docId });
     renderActiveView();
-    alert('Close request sent for team leader/service approval.');
+    alert('Close request sent for approval.');
 }
 
 function isFinishedOrCancelled(row) {
