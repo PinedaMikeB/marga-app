@@ -1985,7 +1985,7 @@ async function ensureCustomerTimeInLocationProof(row, form) {
     if (!form?.timeInDb || form.timeInDb === ZERO_DATETIME) return {};
     const savedTimeIn = normalizeLegacyDateTime(row?.field_time_in);
     const formTimeIn = normalizeLegacyDateTime(form.timeInDb);
-    const existingProofStillApplies = savedTimeIn && savedTimeIn === formTimeIn && hasCustomerTimeInLocationProof(row);
+    const existingProofStillApplies = savedTimeIn && (!formTimeIn || savedTimeIn === formTimeIn) && hasCustomerTimeInLocationProof(row);
     if (existingProofStillApplies) return {};
     const match = await getCustomerTaskLocationMatch(row);
     return buildCustomerTimeInLocationPatch(row, match);
@@ -5988,10 +5988,18 @@ async function markPendingTask() {
     const queueDocId = `${row.id}_${Date.now()}`;
 
     if (!form.timeInLocal) {
-        const nowLocal = toLocalInputDateTime(new Date().toISOString());
-        document.getElementById('fieldTimeIn').value = nowLocal;
-        form.timeInLocal = nowLocal;
-        form.timeInDb = toDbDateTimeFromLocal(nowLocal);
+        const savedTimeIn = normalizeLegacyDateTime(row.field_time_in);
+        if (savedTimeIn && hasCustomerTimeInLocationProof(row)) {
+            const savedLocal = toLocalInputDateTime(savedTimeIn);
+            document.getElementById('fieldTimeIn').value = savedLocal;
+            form.timeInLocal = savedLocal;
+            form.timeInDb = savedTimeIn;
+        } else {
+            const nowLocal = toLocalInputDateTime(new Date().toISOString());
+            document.getElementById('fieldTimeIn').value = nowLocal;
+            form.timeInLocal = nowLocal;
+            form.timeInDb = toDbDateTimeFromLocal(nowLocal);
+        }
     }
 
     const button = document.getElementById('fieldModalPendingTask');
@@ -6086,10 +6094,18 @@ async function closeTask() {
     }
 
     if (!form.timeInLocal) {
-        const nowLocal = toLocalInputDateTime(new Date().toISOString());
-        document.getElementById('fieldTimeIn').value = nowLocal;
-        form.timeInLocal = nowLocal;
-        form.timeInDb = toDbDateTimeFromLocal(nowLocal);
+        const savedTimeIn = normalizeLegacyDateTime(row.field_time_in);
+        if (savedTimeIn && hasCustomerTimeInLocationProof(row)) {
+            const savedLocal = toLocalInputDateTime(savedTimeIn);
+            document.getElementById('fieldTimeIn').value = savedLocal;
+            form.timeInLocal = savedLocal;
+            form.timeInDb = savedTimeIn;
+        } else {
+            const nowLocal = toLocalInputDateTime(new Date().toISOString());
+            document.getElementById('fieldTimeIn').value = nowLocal;
+            form.timeInLocal = nowLocal;
+            form.timeInDb = toDbDateTimeFromLocal(nowLocal);
+        }
     }
 
     const nowLocal = toLocalInputDateTime(new Date().toISOString());
