@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v3';
+const CACHE_NAME = 'msp-shell-v5-light-dashboard';
 const SHELL_ASSETS = [
   '/',
   '/install/',
@@ -12,6 +12,7 @@ const SHELL_ASSETS = [
   '/src/styles/portal.css',
   '/src/styles/tech.css',
   '/src/lib/install-guide.js',
+  '/src/lib/data-service.js',
   '/src/portal-main.js',
   '/src/tech-main.js',
   '/public/config.js',

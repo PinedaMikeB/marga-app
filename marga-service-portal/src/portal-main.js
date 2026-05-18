@@ -33,6 +33,21 @@ const installBtn = document.getElementById('installBtn');
 const sidebar = document.getElementById('portalSidebar');
 
 const roleViews = {
+  marga_admin: [
+    { key: 'dashboard', label: 'Dashboard', subtitle: 'All-customer Margabase portal view' },
+    { key: 'devices', label: 'Devices', subtitle: 'Machine inventory and service history' },
+    { key: 'tickets', label: 'Service Tickets', subtitle: 'Service requests and follow-ups' },
+    { key: 'toner', label: 'Toner / Ink', subtitle: 'Supply requests and status' },
+    { key: 'billing', label: 'Billing', subtitle: 'Invoices, payments, and statements' },
+    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' }
+  ],
+  marga_staff: [
+    { key: 'dashboard', label: 'Dashboard', subtitle: 'Marga staff portal view' },
+    { key: 'devices', label: 'Devices', subtitle: 'Machine inventory and service history' },
+    { key: 'tickets', label: 'Service Tickets', subtitle: 'Service requests and follow-ups' },
+    { key: 'toner', label: 'Toner / Ink', subtitle: 'Supply requests and status' },
+    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' }
+  ],
   corporate_admin: [
     { key: 'dashboard', label: 'Dashboard', subtitle: 'Consolidated operational view' },
     { key: 'devices', label: 'Devices', subtitle: 'Machine inventory and service history' },
@@ -145,7 +160,7 @@ async function renderDashboard() {
   const latestTickets = tickets.slice(0, 5);
   const latestToner = toner.slice(0, 4);
 
-  const billingBlock = ['corporate_admin', 'branch_manager'].includes(state.user.role)
+  const billingBlock = ['marga_admin', 'corporate_admin', 'branch_manager'].includes(state.user.role)
     ? `<div class="kpi-card"><div class="value">${summary.unpaidInvoices}</div><div class="label">Unpaid Invoices</div></div>
        <div class="kpi-card"><div class="value">${formatMoney(summary.unpaidAmount)}</div><div class="label">Unpaid Amount</div></div>`
     : '';
@@ -336,7 +351,7 @@ async function renderTickets() {
         <div class="panel-head"><h3>Create Service Ticket</h3></div>
         <form id="createTicketForm" class="form-grid">
           ${
-            state.user.role === 'corporate_admin'
+            ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role)
               ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
               : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
           }
@@ -415,7 +430,7 @@ async function renderTickets() {
     const form = event.currentTarget;
     const formData = new FormData(form);
 
-    const branchId = state.user.role === 'corporate_admin' ? formData.get('branchId') : state.user.branchId;
+    const branchId = ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role) ? formData.get('branchId') : state.user.branchId;
     const payload = {
       companyId: state.user.companyId,
       branchId,
@@ -462,7 +477,7 @@ async function renderToner() {
         <div class="panel-head"><h3>Request Toner / Ink</h3></div>
         <form id="createTonerForm" class="form-grid">
           ${
-            state.user.role === 'corporate_admin'
+            ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role)
               ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
               : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
           }
@@ -499,7 +514,7 @@ async function renderToner() {
 
     const payload = {
       companyId: state.user.companyId,
-      branchId: state.user.role === 'corporate_admin' ? formData.get('branchId') : state.user.branchId,
+      branchId: ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role) ? formData.get('branchId') : state.user.branchId,
       deviceId: formData.get('deviceId'),
       notes: formData.get('notes')
     };
@@ -516,7 +531,7 @@ async function renderToner() {
 }
 
 async function renderBilling() {
-  if (!['corporate_admin', 'branch_manager'].includes(state.user.role)) {
+  if (!['marga_admin', 'corporate_admin', 'branch_manager'].includes(state.user.role)) {
     viewContainer.innerHTML = '<div class="panel glass"><div class="empty-state">Billing access is not available for this role.</div></div>';
     return;
   }

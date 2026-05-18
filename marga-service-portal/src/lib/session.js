@@ -22,6 +22,8 @@ export function clearSession() {
 export function roleLabel(role) {
   const map = {
     corporate_admin: 'Corporate Admin',
+    marga_admin: 'Marga Admin',
+    marga_staff: 'Marga Staff',
     branch_manager: 'Branch Manager',
     end_user: 'End User',
     tech: 'Technician'
