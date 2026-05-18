@@ -104,6 +104,7 @@ const opsState = {
     logsByStaff: new Map(),
     serviceProgressMap: null,
     serviceProgressMarkers: [],
+    serviceProgressCustomerMarkers: [],
     serviceProgressCircle: null,
     serviceProgressOfficeMarker: null,
     serviceProgressResizeObserver: null,
@@ -3330,10 +3331,12 @@ function ensureServiceProgressMap() {
     mapEl.style.height = `${Math.floor(wrapRect.height)}px`;
 
     opsState.serviceProgressMap = L.map(mapEl, {
-        zoomControl: true,
+        zoomControl: false,
         attributionControl: true,
         preferCanvas: true
     }).setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM);
+
+    L.control.zoom({ position: 'topright' }).addTo(opsState.serviceProgressMap);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -3397,6 +3400,8 @@ function clearServiceProgressMarkers() {
     if (!map) return;
     opsState.serviceProgressMarkers.forEach((marker) => marker.remove());
     opsState.serviceProgressMarkers = [];
+    opsState.serviceProgressCustomerMarkers.forEach((marker) => marker.remove());
+    opsState.serviceProgressCustomerMarkers = [];
 }
 
 function markerHtmlForProgressItem(item) {
@@ -3407,6 +3412,62 @@ function markerHtmlForProgressItem(item) {
         .map((part) => part.charAt(0).toUpperCase())
         .join('') || 'S';
     return `<div class="service-progress-pin ${getProgressStatusClass(item)}"><span>${sanitize(initials)}</span></div>`;
+}
+
+function customerMarkerLabel(row) {
+    const branch = opsCache.branches.get(String(row.branch_id || 0)) || null;
+    const company = opsCache.companies.get(String(row.company_id || branch?.company_id || 0)) || null;
+    const companyName = String(company?.companyname || row.company_name || row.caller || '').trim();
+    const branchName = String(branch?.branchname || row.branch_name || '').trim();
+    return {
+        companyName: companyName || 'Customer',
+        branchName: branchName || 'Scheduled branch'
+    };
+}
+
+function buildServiceProgressCustomerPins() {
+    const unique = new Map();
+    opsState.selectedRows.forEach((row) => {
+        const branch = opsCache.branches.get(String(row.branch_id || 0));
+        const coords = getBranchCoordinates(branch);
+        if (!coords) return;
+        const distanceFromOfficeMeters = distanceMetersBetween(
+            { latitude: SERVICE_PROGRESS_OFFICE.latitude, longitude: SERVICE_PROGRESS_OFFICE.longitude },
+            coords
+        );
+        if (distanceFromOfficeMeters === null || distanceFromOfficeMeters > SERVICE_PROGRESS_RADIUS_METERS) return;
+        const key = `${row.company_id || branch?.company_id || 0}:${row.branch_id || 0}`;
+        const label = customerMarkerLabel(row);
+        const current = unique.get(key);
+        if (current) {
+            current.taskCount += 1;
+            current.scheduleIds.push(Number(row.id || 0) || 0);
+            return;
+        }
+        unique.set(key, {
+            key,
+            ...label,
+            branchId: Number(row.branch_id || 0) || 0,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            taskCount: 1,
+            scheduleIds: [Number(row.id || 0) || 0]
+        });
+    });
+    return [...unique.values()].sort((a, b) => a.companyName.localeCompare(b.companyName));
+}
+
+function markerHtmlForCustomerPin(item) {
+    const initials = item.companyName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join('') || 'C';
+    return `
+        <div class="service-progress-customer-pin"><span>${sanitize(initials)}</span></div>
+        <div class="service-progress-customer-label">${sanitize(item.companyName)}</div>
+    `;
 }
 
 function renderServiceProgressRoster(items) {
@@ -3450,9 +3511,8 @@ function renderServiceProgressRoster(items) {
 function renderServiceProgressMap() {
     const allItems = buildServiceProgressItems();
     const items = getVisibleServiceProgressItems();
-    const mappedItems = items.filter((item) => (
-        item.hasCoordinates && (item.hasGpsEvent || SERVICE_PROGRESS_SHOW_SCHEDULED_PINS)
-    ));
+    const mappedItems = items.filter((item) => item.hasCoordinates && item.hasGpsEvent);
+    const customerPins = buildServiceProgressCustomerPins();
     const hiddenOutsideRadius = allItems.filter((item) => item.hasCoordinates && !item.isInsideOfficeRadius).length;
     const hiddenUnmapped = allItems.filter((item) => !item.hasCoordinates).length;
     const subtitle = document.getElementById('serviceProgressSubtitle');
@@ -3462,7 +3522,7 @@ function renderServiceProgressMap() {
 
     if (subtitle) {
         const gpsCount = items.filter((item) => item.hasGpsEvent).length;
-        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${items.length} staff inside ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius, ${gpsCount} with live GPS. ${hiddenOutsideRadius} outside radius, ${hiddenUnmapped} no pin.`;
+        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${items.length} staff inside ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius, ${gpsCount} with live GPS. ${customerPins.length} customer pin${customerPins.length === 1 ? '' : 's'} shown. ${hiddenOutsideRadius} outside radius, ${hiddenUnmapped} no pin.`;
     }
 
     if (!window.L) {
@@ -3480,7 +3540,7 @@ function renderServiceProgressMap() {
     }
     clearServiceProgressMarkers();
 
-    if (!mappedItems.length) {
+    if (!mappedItems.length && !customerPins.length) {
         map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
         if (empty) {
             empty.hidden = false;
@@ -3495,6 +3555,29 @@ function renderServiceProgressMap() {
 
     if (empty) empty.hidden = true;
 
+    customerPins.forEach((item) => {
+        const icon = L.divIcon({
+            className: 'service-progress-customer-leaflet-icon',
+            html: markerHtmlForCustomerPin(item),
+            iconSize: [176, 58],
+            iconAnchor: [18, 48],
+            popupAnchor: [0, -40]
+        });
+        const marker = L.marker([item.latitude, item.longitude], {
+            icon,
+            zIndexOffset: 80
+        }).addTo(map);
+        marker.bindPopup(`
+            <div class="service-progress-popup">
+                <strong>${sanitize(item.companyName)}</strong>
+                <span>${sanitize(item.branchName)}</span>
+                <small>Customer pinned location · ${item.taskCount} task${item.taskCount === 1 ? '' : 's'}</small>
+                <small>${item.scheduleIds.filter(Boolean).slice(0, 4).map((id) => `#${sanitize(id)}`).join(', ')}</small>
+            </div>
+        `);
+        opsState.serviceProgressCustomerMarkers.push(marker);
+    });
+
     mappedItems.forEach((item) => {
         const icon = L.divIcon({
             className: 'service-progress-leaflet-icon',
@@ -3503,13 +3586,13 @@ function renderServiceProgressMap() {
             iconAnchor: [21, 50],
             popupAnchor: [0, -44]
         });
-        const marker = L.marker([item.latitude, item.longitude], { icon }).addTo(map);
+        const marker = L.marker([item.latitude, item.longitude], { icon, zIndexOffset: 300 }).addTo(map);
         marker.bindPopup(`
             <div class="service-progress-popup">
                 <strong>${sanitize(item.staffName)}</strong>
                 <span>${sanitize(item.actionLabel)} · ${sanitize(item.lastUpdateLabel)}</span>
                 <small>${sanitize(item.companyName)} / ${sanitize(item.branchName)}</small>
-                <small>${sanitize(item.coordinateSource)}${item.scheduleId ? ` · Task #${sanitize(item.scheduleId)}` : ''}</small>
+                <small>Staff GPS${item.scheduleId ? ` · Task #${sanitize(item.scheduleId)}` : ''}</small>
             </div>
         `);
         opsState.serviceProgressMarkers.push(marker);

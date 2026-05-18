@@ -998,6 +998,57 @@
     position: static;
 }
 
+.service-progress-map .leaflet-top,
+.service-progress-map .leaflet-bottom {
+    position: absolute;
+    z-index: 900;
+    pointer-events: none;
+}
+
+.service-progress-map .leaflet-top {
+    top: 0.8rem;
+}
+
+.service-progress-map .leaflet-right {
+    right: 0.8rem;
+}
+
+.service-progress-map .leaflet-left {
+    left: 0.8rem;
+}
+
+.service-progress-map .leaflet-bottom {
+    bottom: 0.8rem;
+}
+
+.service-progress-map .leaflet-control {
+    pointer-events: auto;
+}
+
+.service-progress-map .leaflet-control-zoom {
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+}
+
+.service-progress-map .leaflet-control-zoom a {
+    display: grid;
+    place-items: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    color: #0f172a;
+    text-decoration: none;
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.service-progress-map .leaflet-control-zoom a + a {
+    border-top: 1px solid rgba(203, 213, 225, 0.9);
+}
+
 .service-progress-empty {
     position: absolute;
     inset: 1rem auto auto 50%;
@@ -1016,6 +1067,11 @@
 }
 
 .service-progress-leaflet-icon {
+    background: transparent;
+    border: 0;
+}
+
+.service-progress-customer-leaflet-icon {
     background: transparent;
     border: 0;
 }
@@ -1076,6 +1132,43 @@
 
 .service-progress-pin span {
     transform: rotate(45deg);
+}
+
+.service-progress-customer-pin {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    border: 3px solid #ffffff;
+    border-radius: 50% 50% 50% 0;
+    background: #7c3aed;
+    color: #ffffff;
+    font-size: 0.74rem;
+    font-weight: 950;
+    transform: rotate(-45deg);
+    box-shadow: 0 12px 26px rgba(76, 29, 149, 0.32);
+}
+
+.service-progress-customer-pin span {
+    transform: rotate(45deg);
+}
+
+.service-progress-customer-label {
+    position: absolute;
+    left: 2.05rem;
+    top: 0.1rem;
+    max-width: 10.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border: 1px solid rgba(124, 58, 237, 0.28);
+    border-radius: 999px;
+    padding: 0.26rem 0.5rem;
+    background: rgba(255, 255, 255, 0.96);
+    color: #4c1d95;
+    font-size: 0.7rem;
+    font-weight: 900;
+    box-shadow: 0 10px 24px rgba(76, 29, 149, 0.16);
 }
 
 .service-progress-popup {
