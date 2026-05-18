@@ -28,6 +28,7 @@ const SERIAL_CORRECTION_COLLECTION = 'tbl_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
+const FIELD_CALL_COLLECTION = 'tbl_field_call_requests';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
@@ -57,6 +58,12 @@ const PURPOSE_LABELS = {
 
 const BILLING_PURPOSE_ID = 1;
 const COLLECTION_PURPOSE_ID = 2;
+const FIELD_CALL_DOMAIN = 'call.wotgonline.com';
+const FIELD_CALL_PUBLIC_DOMAIN = 'meet.jit.si';
+const FIELD_CALL_ALLOW_PUBLIC_FALLBACK = false;
+const FIELD_CALL_POLL_MS = 7000;
+const FIELD_CALL_RING_TIMEOUT_MS = 120000;
+const FIELD_CALL_SCRIPT_TIMEOUT_MS = 4500;
 
 const FALLBACK_MACHINE_STATUSES = [
     { id: 1, label: 'Running / Print OK' },
@@ -117,6 +124,15 @@ const state = {
     attendanceDocId: '',
     attendance: null,
     attendanceLocationCheckScheduleId: null,
+    callPollTimer: null,
+    activeIncomingCallId: '',
+    activeCallDocId: '',
+    activeCallApi: null,
+    activeCallRoomUrl: '',
+    activeCallDomain: FIELD_CALL_DOMAIN,
+    activeCallMode: 'voice',
+    jitsiScriptPromise: null,
+    ringTone: null,
     priorityGate: {
         required: 0,
         numbered: 0,
@@ -156,6 +172,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldAttendanceTimeOutBtn')?.addEventListener('click', () => markAttendanceTime('out'));
     document.getElementById('fieldCheckLocationBtn')?.addEventListener('click', checkAttendanceLocation);
     document.getElementById('fieldOpenLocationTaskBtn')?.addEventListener('click', openAttendanceLocationTask);
+    document.getElementById('fieldVoiceOfficeBtn')?.addEventListener('click', () => startFieldRoleCall('csr', 'voice'));
+    document.getElementById('fieldVideoOfficeBtn')?.addEventListener('click', () => startFieldRoleCall('csr', 'video'));
+    document.getElementById('fieldVoiceTechLeaderBtn')?.addEventListener('click', () => startFieldRoleCall('tech_leader', 'voice'));
+    document.getElementById('fieldVideoTechLeaderBtn')?.addEventListener('click', () => startFieldRoleCall('tech_leader', 'video'));
+    document.getElementById('fieldJoinMeetingBtn')?.addEventListener('click', () => joinDailyFieldMeeting('video'));
+    document.getElementById('fieldDirectVoiceBtn')?.addEventListener('click', () => startFieldDirectCall('voice'));
+    document.getElementById('fieldDirectVideoBtn')?.addEventListener('click', () => startFieldDirectCall('video'));
     document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
     });
@@ -262,6 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
     void loadMachineStatusOptions();
     populateWorkMachineStatusOptions();
     renderAttendanceCard();
+    startFieldCallPolling();
 
     loadMySchedule();
 });
@@ -272,9 +296,61 @@ function isFieldTechTeamLeader() {
         || MargaAuth.hasRole('service');
 }
 
+function currentFieldDisplayName() {
+    const user = MargaAuth.getUser();
+    return String(
+        user?.name ||
+        user?.displayName ||
+        user?.username ||
+        user?.email ||
+        document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] ||
+        'Field Staff'
+    ).trim();
+}
+
+function currentFieldEmail() {
+    const user = MargaAuth.getUser();
+    return String(user?.email || '').trim();
+}
+
+function currentFieldRoles() {
+    return MargaAuth.getRoles(MargaAuth.getUser()).map((role) => String(role || '').trim()).filter(Boolean);
+}
+
+function fieldCallRoleMatches(targetRole) {
+    const normalized = String(targetRole || '').trim().toLowerCase();
+    if (!normalized) return false;
+    const roles = currentFieldRoles();
+    if (normalized === 'csr') {
+        return roles.some((role) => ['csr', 'customer-service', 'customer_service', 'service', 'admin'].includes(role));
+    }
+    if (normalized === 'tech_leader') {
+        return roles.some((role) => ['team-leader-field-technicians', 'service', 'admin'].includes(role));
+    }
+    if (normalized === 'admin') return roles.includes('admin');
+    return roles.includes(normalized);
+}
+
+function fieldCallRoleLabel(role) {
+    const normalized = String(role || '').trim();
+    const labels = {
+        csr: 'CSR',
+        tech_leader: 'Tech Leader',
+        admin: 'Admin',
+        field: 'Field Staff'
+    };
+    return labels[normalized] || MargaAuth.formatRoleLabel(normalized);
+}
+
+function fieldCallModeLabel(mode) {
+    return String(mode || 'voice') === 'video' ? 'Video call' : 'Voice call';
+}
+
 function applyTeamLeaderVisibility() {
     const tab = document.getElementById('fieldSolutionRequestsTab');
     if (tab) tab.hidden = !isFieldTechTeamLeader();
+    const directCall = document.getElementById('fieldDirectCallAdmin');
+    if (directCall) directCall.hidden = !isFieldTechTeamLeader();
 }
 
 function getFieldWrapper(id) {
@@ -620,6 +696,541 @@ async function queryIn(collectionId, fieldPath, values = [], options = {}) {
         if (key && !byDocId.has(key)) byDocId.set(key, parsed);
     });
     return [...byDocId.values()];
+}
+
+function makeFieldCallId() {
+    const random = Math.random().toString(36).slice(2, 10);
+    return `field_call_${Date.now()}_${random}`;
+}
+
+function cleanFieldCallRoomPart(value, fallback = 'Room') {
+    const cleaned = String(value || '')
+        .replace(/[^a-zA-Z0-9]+/g, '')
+        .slice(0, 34);
+    return cleaned || fallback;
+}
+
+function normalizeFieldCallRoomName(value, fallback = 'MargaFieldRoom') {
+    const cleaned = String(value || '')
+        .replace(/[^a-zA-Z0-9]+/g, '');
+    return cleaned || fallback;
+}
+
+function dailyFieldMeetingRoomName() {
+    const date = String(state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd()).replace(/[^0-9]/g, '');
+    return `MargaFieldDaily${date}`;
+}
+
+function callRoomName(callId, targetLabel = '') {
+    const date = localDateYmd().replace(/[^0-9]/g, '');
+    const staffId = Number(state.staffId || 0) || 0;
+    const suffix = String(callId || makeFieldCallId()).split('_').pop();
+    return `MargaCall${date}S${staffId}${cleanFieldCallRoomPart(targetLabel, 'Support')}${cleanFieldCallRoomPart(suffix, 'Room')}`;
+}
+
+function setFieldCallStatus(text) {
+    const el = document.getElementById('fieldCallStatus');
+    if (el) el.textContent = text || 'Voice starts with camera off. Video starts with camera on.';
+}
+
+async function startFieldRoleCall(targetRole, mode = 'voice') {
+    const roleLabel = fieldCallRoleLabel(targetRole);
+    const callId = makeFieldCallId();
+    const roomName = callRoomName(callId, roleLabel);
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: callId,
+        type: 'role_call',
+        source: 'field_app',
+        mode: String(mode || 'voice') === 'video' ? 'video' : 'voice',
+        room_name: roomName,
+        room_domain: FIELD_CALL_DOMAIN,
+        room_url: `https://${FIELD_CALL_DOMAIN}/${roomName}`,
+        title: `${fieldCallModeLabel(mode)} to ${roleLabel}`,
+        status: 'ringing',
+        caller_staff_id: Number(state.staffId || 0) || 0,
+        caller_name: currentFieldDisplayName(),
+        caller_email: currentFieldEmail(),
+        caller_roles: currentFieldRoles().join(','),
+        target_role: targetRole,
+        target_role_label: roleLabel,
+        target_staff_id: 0,
+        created_at: nowIso,
+        updated_at: nowIso,
+        expires_at: new Date(Date.now() + FIELD_CALL_RING_TIMEOUT_MS).toISOString()
+    };
+
+    setFieldCallStatus(`Calling ${roleLabel}...`);
+    try {
+        await setDocument(FIELD_CALL_COLLECTION, callId, payload);
+        await openFieldCallRoom({
+            ...payload,
+            _docId: callId
+        }, { mode: payload.mode, outgoing: true });
+    } catch (err) {
+        console.error('Start field role call failed:', err);
+        setFieldCallStatus(`Call failed: ${err?.message || err}`);
+        alert(`Unable to start call: ${err?.message || err}`);
+    }
+}
+
+async function startFieldDirectCall(mode = 'voice') {
+    if (!isFieldTechTeamLeader()) {
+        alert('Only admin, service, or field team leader accounts can call staff directly.');
+        return;
+    }
+    const input = document.getElementById('fieldDirectCallStaffId');
+    const targetStaffId = Number(input?.value || 0) || 0;
+    if (!targetStaffId) {
+        alert('Enter the field staff employee ID to call.');
+        input?.focus();
+        return;
+    }
+    if (targetStaffId === Number(state.staffId || 0)) {
+        alert('Enter another staff ID.');
+        return;
+    }
+
+    const callId = makeFieldCallId();
+    const roomName = callRoomName(callId, `Staff${targetStaffId}`);
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: callId,
+        type: 'direct_call',
+        source: 'field_app_admin',
+        mode: String(mode || 'voice') === 'video' ? 'video' : 'voice',
+        room_name: roomName,
+        room_domain: FIELD_CALL_DOMAIN,
+        room_url: `https://${FIELD_CALL_DOMAIN}/${roomName}`,
+        title: `${fieldCallModeLabel(mode)} to Staff #${targetStaffId}`,
+        status: 'ringing',
+        caller_staff_id: Number(state.staffId || 0) || 0,
+        caller_name: currentFieldDisplayName(),
+        caller_email: currentFieldEmail(),
+        caller_roles: currentFieldRoles().join(','),
+        target_role: '',
+        target_role_label: '',
+        target_staff_id: targetStaffId,
+        created_at: nowIso,
+        updated_at: nowIso,
+        expires_at: new Date(Date.now() + FIELD_CALL_RING_TIMEOUT_MS).toISOString()
+    };
+
+    setFieldCallStatus(`Calling Staff #${targetStaffId}...`);
+    try {
+        await setDocument(FIELD_CALL_COLLECTION, callId, payload);
+        await openFieldCallRoom({
+            ...payload,
+            _docId: callId
+        }, { mode: payload.mode, outgoing: true });
+    } catch (err) {
+        console.error('Start direct field call failed:', err);
+        setFieldCallStatus(`Call failed: ${err?.message || err}`);
+        alert(`Unable to call staff: ${err?.message || err}`);
+    }
+}
+
+async function joinDailyFieldMeeting(mode = 'video') {
+    const roomName = dailyFieldMeetingRoomName();
+    const callId = `field_meeting_${String(state.selectedDate || localDateYmd()).replace(/[^0-9]/g, '')}`;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: callId,
+        type: 'meeting',
+        source: 'field_app',
+        mode: String(mode || 'video') === 'voice' ? 'voice' : 'video',
+        room_name: roomName,
+        room_domain: FIELD_CALL_DOMAIN,
+        room_url: `https://${FIELD_CALL_DOMAIN}/${roomName}`,
+        title: `Field Daily Meeting ${state.selectedDate || localDateYmd()}`,
+        status: 'active',
+        caller_staff_id: Number(state.staffId || 0) || 0,
+        caller_name: currentFieldDisplayName(),
+        caller_email: currentFieldEmail(),
+        target_role: 'field',
+        target_role_label: 'Field Staff',
+        created_at: nowIso,
+        updated_at: nowIso
+    };
+
+    setFieldCallStatus('Joining field meeting...');
+    try {
+        await setDocument(FIELD_CALL_COLLECTION, callId, payload);
+        await openFieldCallRoom({
+            ...payload,
+            _docId: callId
+        }, { mode: payload.mode, outgoing: false });
+    } catch (err) {
+        console.error('Join field meeting failed:', err);
+        setFieldCallStatus(`Meeting failed: ${err?.message || err}`);
+        alert(`Unable to join field meeting: ${err?.message || err}`);
+    }
+}
+
+function isIncomingFieldCall(call) {
+    if (!call || String(call.status || '') !== 'ringing') return false;
+    const callerStaffId = Number(call.caller_staff_id || 0) || 0;
+    const myStaffId = Number(state.staffId || 0) || 0;
+    if (callerStaffId && callerStaffId === myStaffId) return false;
+
+    const targetStaffId = Number(call.target_staff_id || 0) || 0;
+    if (targetStaffId && targetStaffId === myStaffId) return true;
+    return fieldCallRoleMatches(call.target_role);
+}
+
+async function pollIncomingFieldCalls() {
+    if (!state.staffId || state.activeIncomingCallId || state.activeCallDocId) return;
+    try {
+        const docs = await queryEquals(FIELD_CALL_COLLECTION, 'status', 'ringing', 'string', 80);
+        const now = Date.now();
+        const calls = docs
+            .map(parseFirestoreDoc)
+            .filter(isIncomingFieldCall)
+            .filter((call) => {
+                const expiresAt = Date.parse(call.expires_at || '');
+                if (Number.isFinite(expiresAt) && expiresAt < now) return false;
+                const createdAt = Date.parse(call.created_at || '');
+                return !Number.isFinite(createdAt) || (now - createdAt) <= FIELD_CALL_RING_TIMEOUT_MS;
+            })
+            .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+        if (calls[0]) showIncomingFieldCall(calls[0]);
+    } catch (err) {
+        console.warn('Incoming call poll failed:', err);
+    }
+}
+
+function startFieldCallPolling() {
+    if (state.callPollTimer) clearInterval(state.callPollTimer);
+    void pollIncomingFieldCalls();
+    state.callPollTimer = setInterval(() => {
+        void pollIncomingFieldCalls();
+    }, FIELD_CALL_POLL_MS);
+}
+
+function playFieldRingTone() {
+    stopFieldRingTone();
+    try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        const context = new AudioContextClass();
+        const gain = context.createGain();
+        gain.gain.value = 0.035;
+        gain.connect(context.destination);
+        const interval = setInterval(() => {
+            const osc = context.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            osc.connect(gain);
+            osc.start();
+            osc.stop(context.currentTime + 0.22);
+        }, 700);
+        state.ringTone = { context, interval };
+    } catch (err) {
+        console.warn('Ringtone unavailable:', err);
+    }
+}
+
+function stopFieldRingTone() {
+    if (!state.ringTone) return;
+    try {
+        clearInterval(state.ringTone.interval);
+        state.ringTone.context?.close?.();
+    } catch (_) {}
+    state.ringTone = null;
+}
+
+function showIncomingFieldCall(call) {
+    state.activeIncomingCallId = call._docId || String(call.id || '');
+    playFieldRingTone();
+    const existing = document.getElementById('fieldIncomingCall');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'fieldIncomingCall';
+    modal.className = 'field-incoming-call';
+    modal.innerHTML = `
+        <div class="field-incoming-call-card">
+            <span>Incoming ${sanitize(fieldCallModeLabel(call.mode))}</span>
+            <h2>${sanitize(call.caller_name || 'Marga user')}</h2>
+            <p>${sanitize(call.title || 'Field support call')}</p>
+            <p>${sanitize(call.target_role_label ? `For ${call.target_role_label}` : 'Direct call')}</p>
+            <div class="field-incoming-call-actions">
+                <button type="button" class="btn btn-secondary" id="fieldDeclineCallBtn">Decline</button>
+                <button type="button" class="btn btn-primary" id="fieldAcceptCallBtn">Accept</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('fieldDeclineCallBtn')?.addEventListener('click', () => declineIncomingFieldCall(call));
+    document.getElementById('fieldAcceptCallBtn')?.addEventListener('click', () => acceptIncomingFieldCall(call));
+}
+
+function closeIncomingFieldCall() {
+    stopFieldRingTone();
+    state.activeIncomingCallId = '';
+    document.getElementById('fieldIncomingCall')?.remove();
+}
+
+async function acceptIncomingFieldCall(call) {
+    const docId = call._docId || String(call.id || '');
+    const nowIso = new Date().toISOString();
+    try {
+        await patchDocument(FIELD_CALL_COLLECTION, docId, {
+            status: 'accepted',
+            answered_by_staff_id: Number(state.staffId || 0) || 0,
+            answered_by_name: currentFieldDisplayName(),
+            answered_at: nowIso,
+            updated_at: nowIso
+        });
+    } catch (err) {
+        console.warn('Unable to mark call accepted; joining anyway.', err);
+    }
+    closeIncomingFieldCall();
+    await openFieldCallRoom({ ...call, status: 'accepted', _docId: docId }, { mode: call.mode || 'voice', outgoing: false });
+}
+
+async function declineIncomingFieldCall(call) {
+    const docId = call._docId || String(call.id || '');
+    const nowIso = new Date().toISOString();
+    try {
+        await patchDocument(FIELD_CALL_COLLECTION, docId, {
+            status: 'declined',
+            declined_by_staff_id: Number(state.staffId || 0) || 0,
+            declined_by_name: currentFieldDisplayName(),
+            declined_at: nowIso,
+            updated_at: nowIso
+        });
+    } catch (err) {
+        console.warn('Unable to mark call declined:', err);
+    }
+    closeIncomingFieldCall();
+}
+
+function setFieldCallModalStatus(text) {
+    const el = document.getElementById('fieldCallModalStatus');
+    if (el) el.textContent = text || '';
+}
+
+function showFieldCallModal(call) {
+    document.getElementById('fieldCallModal')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'fieldCallModal';
+    modal.className = 'field-call-modal';
+    modal.innerHTML = `
+        <div class="field-call-modal-header">
+            <div>
+                <h2>${sanitize(call.title || 'Marga Field Call')}</h2>
+                <p>${sanitize(call.room_domain || FIELD_CALL_DOMAIN)} / ${sanitize(call.room_name || '')}</p>
+            </div>
+            <div class="field-call-modal-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldCallCopyLinkBtn">Copy Link</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldCallRetryBtn">Retry</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldCallLeaveBtn">Leave</button>
+            </div>
+        </div>
+        <div class="field-call-status" id="fieldCallModalStatus">Preparing call...</div>
+        <div class="field-jitsi-container" id="fieldJitsiContainer"></div>
+    `;
+    document.body.appendChild(modal);
+    document.body.style.overflow = 'hidden';
+    document.getElementById('fieldCallLeaveBtn')?.addEventListener('click', leaveFieldCall);
+    document.getElementById('fieldCallRetryBtn')?.addEventListener('click', retryActiveFieldCall);
+    document.getElementById('fieldCallCopyLinkBtn')?.addEventListener('click', copyActiveFieldCallLink);
+}
+
+function loadFieldJitsiScript(domain = FIELD_CALL_DOMAIN) {
+    if (window.JitsiMeetExternalAPI) return Promise.resolve();
+    if (state.jitsiScriptPromise) return state.jitsiScriptPromise;
+
+    const domains = (FIELD_CALL_ALLOW_PUBLIC_FALLBACK ? [domain, FIELD_CALL_PUBLIC_DOMAIN] : [domain])
+        .filter((item, index, arr) => item && arr.indexOf(item) === index);
+    const urls = domains.flatMap((item) => [
+        `https://${item}/external_api.js`,
+        `https://${item}/libs/external_api.min.js`
+    ]);
+
+    state.jitsiScriptPromise = new Promise((resolve, reject) => {
+        const loadAt = (index) => {
+            if (window.JitsiMeetExternalAPI) {
+                resolve();
+                return;
+            }
+            if (index >= urls.length) {
+                reject(new Error('Unable to load Jitsi meeting script.'));
+                return;
+            }
+            setFieldCallModalStatus('Loading meeting tools...');
+            const script = document.createElement('script');
+            script.src = urls[index];
+            script.async = true;
+            const timer = setTimeout(() => {
+                script.remove();
+                loadAt(index + 1);
+            }, FIELD_CALL_SCRIPT_TIMEOUT_MS);
+            script.onload = () => {
+                clearTimeout(timer);
+                if (window.JitsiMeetExternalAPI) resolve();
+                else {
+                    script.remove();
+                    loadAt(index + 1);
+                }
+            };
+            script.onerror = () => {
+                clearTimeout(timer);
+                script.remove();
+                loadAt(index + 1);
+            };
+            document.head.appendChild(script);
+        };
+        loadAt(0);
+    }).finally(() => {
+        state.jitsiScriptPromise = null;
+    });
+    return state.jitsiScriptPromise;
+}
+
+async function ensureFieldCallMedia(mode = 'voice') {
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    const constraints = String(mode || 'voice') === 'video'
+        ? { audio: true, video: { width: { ideal: 480, max: 720 }, height: { ideal: 480, max: 720 }, facingMode: 'user' } }
+        : { audio: true, video: false };
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream.getTracks().forEach((track) => track.stop());
+    } catch (err) {
+        console.warn('Call media permission probe failed:', err);
+    }
+}
+
+async function openFieldCallRoom(call, options = {}) {
+    const mode = String(options.mode || call.mode || 'voice') === 'video' ? 'video' : 'voice';
+    const roomName = normalizeFieldCallRoomName(call.room_name, dailyFieldMeetingRoomName());
+    const domain = String(call.room_domain || FIELD_CALL_DOMAIN).trim() || FIELD_CALL_DOMAIN;
+    try {
+        state.activeCallApi?.dispose?.();
+    } catch (_) {}
+    state.activeCallApi = null;
+    state.activeCallDocId = call._docId || String(call.id || '');
+    state.activeCallMode = mode;
+    state.activeCallDomain = domain;
+    state.activeCallRoomUrl = `https://${domain}/${roomName}`;
+
+    showFieldCallModal({ ...call, room_name: roomName, room_domain: domain, mode });
+    setFieldCallModalStatus('Requesting microphone/camera permission...');
+    await ensureFieldCallMedia(mode);
+    setFieldCallModalStatus(`Connecting to ${domain}...`);
+    await loadFieldJitsiScript(domain);
+    if (!window.JitsiMeetExternalAPI) throw new Error('Jitsi meeting API is not available.');
+
+    const container = document.getElementById('fieldJitsiContainer');
+    if (!container) throw new Error('Meeting container is missing.');
+    container.innerHTML = '';
+
+    state.activeCallApi = new JitsiMeetExternalAPI(domain, {
+        roomName,
+        parentNode: container,
+        width: '100%',
+        height: '100%',
+        userInfo: {
+            displayName: currentFieldDisplayName(),
+            email: currentFieldEmail()
+        },
+        configOverwrite: {
+            prejoinPageEnabled: true,
+            prejoinConfig: { enabled: true },
+            startWithAudioMuted: false,
+            startWithVideoMuted: mode !== 'video',
+            disableDeepLinking: true,
+            disableInviteFunctions: true,
+            enableWelcomePage: false,
+            enableClosePage: false,
+            enableLobby: false,
+            fileRecordingsEnabled: false,
+            liveStreamingEnabled: false,
+            localRecording: { enabled: false },
+            resolution: 480,
+            p2p: { enabled: true },
+            toolbarButtons: ['microphone', 'camera', 'desktop', 'overflowmenu', 'hangup', 'tileview', 'chat']
+        },
+        interfaceConfigOverwrite: {
+            TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'overflowmenu', 'hangup', 'tileview', 'chat'],
+            MAIN_TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'overflowmenu', 'hangup'],
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+            SHOW_BRAND_WATERMARK: false,
+            SHOW_POWERED_BY: false,
+            MOBILE_APP_PROMO: false,
+            DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+            HIDE_INVITE_MORE_HEADER: true,
+            SETTINGS_SECTIONS: ['devices']
+        }
+    });
+
+    state.activeCallApi.addListener('videoConferenceJoined', () => {
+        setFieldCallModalStatus('');
+        setFieldCallStatus('Connected to field call.');
+        if (state.activeCallDocId) {
+            patchDocument(FIELD_CALL_COLLECTION, state.activeCallDocId, {
+                status: 'active',
+                joined_by_staff_id: Number(state.staffId || 0) || 0,
+                joined_by_name: currentFieldDisplayName(),
+                joined_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }).catch((err) => console.warn('Unable to mark call active:', err));
+        }
+    });
+    state.activeCallApi.addListener('videoConferenceLeft', leaveFieldCall);
+    state.activeCallApi.addListener('readyToClose', leaveFieldCall);
+    state.activeCallApi.addListener('errorOccurred', (event) => {
+        console.error('Field call Jitsi error:', event);
+        setFieldCallModalStatus('Meeting error. Tap Retry or Copy Link.');
+    });
+    state.activeCallApi.addListener('connectionFailed', () => {
+        setFieldCallModalStatus('Connection failed. Tap Retry or Copy Link.');
+    });
+}
+
+function retryActiveFieldCall() {
+    if (!state.activeCallRoomUrl) return;
+    const roomName = state.activeCallRoomUrl.split('/').pop();
+    void openFieldCallRoom({
+        _docId: state.activeCallDocId,
+        id: state.activeCallDocId,
+        title: 'Marga Field Call',
+        room_name: roomName,
+        room_domain: state.activeCallDomain || FIELD_CALL_DOMAIN,
+        mode: state.activeCallMode
+    }, { mode: state.activeCallMode });
+}
+
+function copyActiveFieldCallLink() {
+    if (!state.activeCallRoomUrl) return;
+    navigator.clipboard?.writeText(state.activeCallRoomUrl)
+        .then(() => setFieldCallModalStatus('Meeting link copied.'))
+        .catch(() => {
+            window.prompt('Copy meeting link:', state.activeCallRoomUrl);
+        });
+}
+
+function leaveFieldCall() {
+    try {
+        state.activeCallApi?.dispose?.();
+    } catch (_) {}
+    state.activeCallApi = null;
+    if (state.activeCallDocId) {
+        patchDocument(FIELD_CALL_COLLECTION, state.activeCallDocId, {
+            last_left_by_staff_id: Number(state.staffId || 0) || 0,
+            last_left_by_name: currentFieldDisplayName(),
+            last_left_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        }).catch((err) => console.warn('Unable to mark call leave:', err));
+    }
+    state.activeCallDocId = '';
+    state.activeCallRoomUrl = '';
+    state.activeCallDomain = FIELD_CALL_DOMAIN;
+    document.getElementById('fieldCallModal')?.remove();
+    document.body.style.overflow = '';
+    setFieldCallStatus('');
 }
 
 function normalizeInlineText(value) {

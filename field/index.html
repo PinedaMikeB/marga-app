@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260518-location-check-1">
+    <link rel="stylesheet" href="css/field.css?v=20260518-field-calls-1">
 </head>
 <body>
     <main class="field-shell">
@@ -37,6 +37,31 @@
                 <button type="button" class="btn btn-secondary btn-sm" id="fieldLogout">Logout</button>
             </div>
         </header>
+
+        <section class="field-call-card" id="fieldCallCard">
+            <div>
+                <div class="field-call-label">Field Support</div>
+                <h2>Call office or join field meeting</h2>
+                <p id="fieldCallStatus">Voice starts with camera off. Video starts with camera on.</p>
+            </div>
+            <div class="field-call-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldVoiceOfficeBtn">Voice CSR</button>
+                <button type="button" class="btn btn-primary btn-sm" id="fieldVideoOfficeBtn">Video CSR</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldVoiceTechLeaderBtn">Voice Leader</button>
+                <button type="button" class="btn btn-primary btn-sm" id="fieldVideoTechLeaderBtn">Video Leader</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldJoinMeetingBtn">Join Field Meeting</button>
+            </div>
+            <div class="field-direct-call" id="fieldDirectCallAdmin" hidden>
+                <label>
+                    <span>Call field staff by employee ID</span>
+                    <input type="number" id="fieldDirectCallStaffId" min="1" step="1" placeholder="Staff ID">
+                </label>
+                <div class="field-direct-call-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldDirectVoiceBtn">Voice Staff</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="fieldDirectVideoBtn">Video Staff</button>
+                </div>
+            </div>
+        </section>
 
         <section class="field-attendance-card" id="fieldAttendanceCard" aria-live="polite">
             <div>
@@ -503,6 +528,6 @@
     <script src="../shared/js/utils.js?v=20260516-field-permissions-3"></script>
     <script src="../shared/js/offline-sync.js?v=20260516-field-permissions-3"></script>
     <script src="/shared/js/pwa-install.js?v=20260516-field-permissions-3"></script>
-    <script src="js/field.js?v=20260518-location-check-1"></script>
+    <script src="js/field.js?v=20260518-field-calls-1"></script>
 </body>
 </html>
