@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260513-kaizen-analytics-1">
+    <link rel="stylesheet" href="css/field.css?v=20260518-location-check-1">
 </head>
 <body>
     <main class="field-shell">
@@ -43,6 +43,18 @@
                 <div class="field-attendance-label">Daily Attendance</div>
                 <h2>Official field time record</h2>
                 <p id="fieldAttendanceStatus">Loading attendance...</p>
+            </div>
+            <div class="field-location-check" id="fieldAttendanceLocationCheck" data-status="idle">
+                <div>
+                    <span>Location Check</span>
+                    <strong id="fieldLocationCheckTitle">Not checked yet</strong>
+                    <p id="fieldLocationCheckBody">Tap Check My Location before Time In to confirm if you are near a scheduled customer.</p>
+                    <small id="fieldLocationCheckMeta"></small>
+                </div>
+                <div class="field-location-check-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldCheckLocationBtn">Check My Location</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldOpenLocationTaskBtn" hidden>Open Task</button>
+                </div>
             </div>
             <div class="field-attendance-times">
                 <div>
@@ -491,6 +503,6 @@
     <script src="../shared/js/utils.js?v=20260516-field-permissions-3"></script>
     <script src="../shared/js/offline-sync.js?v=20260516-field-permissions-3"></script>
     <script src="/shared/js/pwa-install.js?v=20260516-field-permissions-3"></script>
-    <script src="js/field.js?v=20260518-customer-time-location-1"></script>
+    <script src="js/field.js?v=20260518-location-check-1"></script>
 </body>
 </html>

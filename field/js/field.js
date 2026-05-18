@@ -116,6 +116,7 @@ const state = {
     modalBranchLocationPinned: false,
     attendanceDocId: '',
     attendance: null,
+    attendanceLocationCheckScheduleId: null,
     priorityGate: {
         required: 0,
         numbered: 0,
@@ -153,6 +154,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
     document.getElementById('fieldAttendanceTimeInBtn')?.addEventListener('click', () => markAttendanceTime('in'));
     document.getElementById('fieldAttendanceTimeOutBtn')?.addEventListener('click', () => markAttendanceTime('out'));
+    document.getElementById('fieldCheckLocationBtn')?.addEventListener('click', checkAttendanceLocation);
+    document.getElementById('fieldOpenLocationTaskBtn')?.addEventListener('click', openAttendanceLocationTask);
     document.querySelectorAll('.field-tab[data-tab]').forEach((button) => {
         button.addEventListener('click', () => setActiveTab(button.dataset.tab || 'today'));
     });
@@ -1113,10 +1116,26 @@ function distanceMeters(aLat, aLng, bLat, bLng) {
     return radius * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
-async function getAttendanceScheduleLocationMatch() {
+function formatDistanceForLocationCheck(meters) {
+    const distance = Number(meters || 0);
+    if (!Number.isFinite(distance)) return '-';
+    if (distance >= 1000) return `${(distance / 1000).toFixed(distance >= 10000 ? 1 : 2)}km`;
+    return `${Math.round(distance)}m`;
+}
+
+async function getAttendanceLocationSnapshot({ withGps = false } = {}) {
     const rows = workloadRows();
     if (!rows.length) {
-        throw new Error('No open or pending schedule is available for this route date. Time In is blocked.');
+        return {
+            rows,
+            pinnedRows: [],
+            missingPinRows: [],
+            latitude: null,
+            longitude: null,
+            accuracy: null,
+            ranked: [],
+            nearest: null
+        };
     }
 
     await hydrateLookups(rows);
@@ -1126,15 +1145,23 @@ async function getAttendanceScheduleLocationMatch() {
         const branch = caches.branch.get(String(row.branch_id || 0));
         const coords = getBranchCoordinates(branch);
         if (!coords) {
-            missingPinRows.push(row);
+            missingPinRows.push({ row, branch, ...scheduleLocationLabel(row) });
             return;
         }
         pinnedRows.push({ row, branch, coords, ...scheduleLocationLabel(row) });
     });
 
-    if (!pinnedRows.length) {
-        const sample = missingPinRows.slice(0, 3).map((row) => scheduleLocationLabel(row).label).filter(Boolean).join(', ');
-        throw new Error(`No scheduled customer has a saved pin yet. Open the customer task, tap Pin Customer Location while on site, then Time In.${sample ? ` Missing pin example: ${sample}.` : ''}`);
+    if (!withGps) {
+        return {
+            rows,
+            pinnedRows,
+            missingPinRows,
+            latitude: null,
+            longitude: null,
+            accuracy: null,
+            ranked: [],
+            nearest: null
+        };
     }
 
     const position = await getCurrentPosition();
@@ -1151,9 +1178,33 @@ async function getAttendanceScheduleLocationMatch() {
             distance: distanceMeters(latitude, longitude, item.coords.latitude, item.coords.longitude)
         }))
         .sort((a, b) => a.distance - b.distance);
-    const nearest = ranked[0];
+
+    return {
+        rows,
+        pinnedRows,
+        missingPinRows,
+        latitude,
+        longitude,
+        accuracy,
+        ranked,
+        nearest: ranked[0] || null
+    };
+}
+
+async function getAttendanceScheduleLocationMatch() {
+    const snapshot = await getAttendanceLocationSnapshot({ withGps: true });
+    if (!snapshot.rows.length) {
+        throw new Error('No open or pending schedule is available for this route date. Time In is blocked.');
+    }
+
+    if (!snapshot.pinnedRows.length) {
+        const sample = snapshot.missingPinRows.slice(0, 3).map((item) => item.label).filter(Boolean).join(', ');
+        throw new Error(`No scheduled customer has a saved pin yet. Open the customer task, tap Pin Customer Location while on site, then Time In.${sample ? ` Missing pin example: ${sample}.` : ''}`);
+    }
+
+    const nearest = snapshot.nearest;
     if (!nearest || nearest.distance > ATTENDANCE_LOCATION_RADIUS_METERS) {
-        const missingPinHint = missingPinRows.length
+        const missingPinHint = snapshot.missingPinRows.length
             ? ' If you are already at a scheduled customer with no saved pin, open that task, tap Pin Customer Location, then Time In.'
             : '';
         const message = nearest
@@ -1163,9 +1214,9 @@ async function getAttendanceScheduleLocationMatch() {
     }
 
     return {
-        latitude,
-        longitude,
-        accuracy,
+        latitude: snapshot.latitude,
+        longitude: snapshot.longitude,
+        accuracy: snapshot.accuracy,
         nearest
     };
 }
@@ -1241,6 +1292,147 @@ async function ensureCustomerTimeInLocationProof(row, form) {
     if (existingProofStillApplies) return {};
     const match = await getCustomerTaskLocationMatch(row);
     return buildCustomerTimeInLocationPatch(row, match);
+}
+
+function setAttendanceLocationCheckUi({ status = 'idle', title = 'Not checked yet', body = 'Tap Check My Location before Time In to confirm if you are near a scheduled customer.', meta = '', scheduleId = null, buttonLabel = 'Open Task' } = {}) {
+    const card = document.getElementById('fieldAttendanceLocationCheck');
+    const titleEl = document.getElementById('fieldLocationCheckTitle');
+    const bodyEl = document.getElementById('fieldLocationCheckBody');
+    const metaEl = document.getElementById('fieldLocationCheckMeta');
+    const openBtn = document.getElementById('fieldOpenLocationTaskBtn');
+    if (!card || !titleEl || !bodyEl || !metaEl || !openBtn) return;
+
+    card.dataset.status = status;
+    titleEl.textContent = title;
+    bodyEl.textContent = body;
+    metaEl.textContent = meta;
+    state.attendanceLocationCheckScheduleId = scheduleId ? Number(scheduleId) : null;
+    openBtn.hidden = !state.attendanceLocationCheckScheduleId;
+    openBtn.textContent = buttonLabel;
+}
+
+function summarizeMissingPins(missingPinRows = []) {
+    if (!missingPinRows.length) return '';
+    const labels = missingPinRows.slice(0, 3).map((item) => item.label).filter(Boolean);
+    const more = Math.max(0, missingPinRows.length - labels.length);
+    return `${missingPinRows.length} scheduled customer${missingPinRows.length === 1 ? '' : 's'} need pin${missingPinRows.length === 1 ? '' : 's'}${labels.length ? `: ${labels.join(', ')}${more ? `, +${more} more` : ''}` : ''}.`;
+}
+
+function renderAttendanceLocationSummary() {
+    const rows = workloadRows();
+    if (!rows.length) {
+        setAttendanceLocationCheckUi({
+            status: 'warning',
+            title: 'No open customer for this date',
+            body: 'Time In needs an open or pending scheduled customer.',
+            meta: ''
+        });
+        return;
+    }
+
+    const pinnedCount = rows.filter((row) => {
+        const branch = caches.branch.get(String(row.branch_id || 0));
+        return Boolean(getBranchCoordinates(branch));
+    }).length;
+    const missingCount = Math.max(0, rows.length - pinnedCount);
+    setAttendanceLocationCheckUi({
+        status: missingCount ? 'warning' : 'idle',
+        title: 'Ready to check location',
+        body: `Tap Check My Location to compare your GPS against ${pinnedCount} pinned scheduled customer${pinnedCount === 1 ? '' : 's'}.`,
+        meta: missingCount ? `${missingCount} scheduled customer${missingCount === 1 ? '' : 's'} still need location pin${missingCount === 1 ? '' : 's'}.` : ''
+    });
+}
+
+function renderAttendanceLocationResult(snapshot) {
+    const nearest = snapshot.nearest;
+    const missingSummary = summarizeMissingPins(snapshot.missingPinRows);
+    const accuracyText = Number.isFinite(snapshot.accuracy) && snapshot.accuracy > 0
+        ? `GPS accuracy ${Math.round(snapshot.accuracy)}m.`
+        : '';
+    const checkedText = `Checked ${new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.`;
+    const meta = [accuracyText, missingSummary, checkedText].filter(Boolean).join(' ');
+
+    if (!snapshot.rows.length) {
+        setAttendanceLocationCheckUi({
+            status: 'warning',
+            title: 'No open customer for this date',
+            body: 'Time In needs an open or pending scheduled customer.',
+            meta
+        });
+        return;
+    }
+
+    if (!snapshot.pinnedRows.length) {
+        const target = snapshot.missingPinRows[0];
+        setAttendanceLocationCheckUi({
+            status: 'warning',
+            title: 'No scheduled customer has a pin yet',
+            body: 'If you are already at a customer, open that task and pin the customer location first.',
+            meta,
+            scheduleId: target?.row?.id,
+            buttonLabel: 'Open Task To Pin'
+        });
+        return;
+    }
+
+    if (nearest && nearest.distance <= ATTENDANCE_LOCATION_RADIUS_METERS) {
+        setAttendanceLocationCheckUi({
+            status: 'allowed',
+            title: `Within ${formatDistanceForLocationCheck(nearest.distance)} of ${nearest.label}`,
+            body: 'You are near a pinned scheduled customer. Official Time In is allowed.',
+            meta,
+            scheduleId: nearest.row?.id,
+            buttonLabel: 'Open Customer Task'
+        });
+        return;
+    }
+
+    setAttendanceLocationCheckUi({
+        status: 'blocked',
+        title: nearest ? `${formatDistanceForLocationCheck(nearest.distance)} from ${nearest.label}` : 'No pinned customer nearby',
+        body: `You are not within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of a pinned open/pending customer. Official Time In will be blocked.`,
+        meta,
+        scheduleId: nearest?.row?.id || snapshot.missingPinRows[0]?.row?.id,
+        buttonLabel: nearest ? 'Open Nearest Task' : 'Open Task To Pin'
+    });
+}
+
+async function checkAttendanceLocation() {
+    const button = document.getElementById('fieldCheckLocationBtn');
+    if (button) button.disabled = true;
+    setAttendanceLocationCheckUi({
+        status: 'idle',
+        title: 'Checking GPS...',
+        body: 'Please stay at the customer entrance or office while the phone gets your current location.',
+        meta: ''
+    });
+
+    try {
+        const snapshot = await getAttendanceLocationSnapshot({ withGps: true });
+        renderAttendanceLocationResult(snapshot);
+    } catch (err) {
+        console.error('Attendance location check failed:', err);
+        setAttendanceLocationCheckUi({
+            status: 'blocked',
+            title: 'Location check failed',
+            body: err?.message || 'Unable to read GPS location. Check browser location permission and try again.',
+            meta: ''
+        });
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+function openAttendanceLocationTask() {
+    const scheduleId = Number(state.attendanceLocationCheckScheduleId || 0);
+    if (!scheduleId) return;
+    setActiveView('tasks');
+    const row = state.rows.find((item) => Number(item.id || 0) === scheduleId);
+    if (!row) return;
+    openModal(scheduleId).catch((err) => {
+        console.error('Open location task failed:', err);
+        alert(`Unable to open task: ${err?.message || err}`);
+    });
 }
 
 function renderAttendanceCard() {
@@ -3100,6 +3292,8 @@ async function loadMySchedule(options = {}) {
     const { keepTab = false } = options;
     if (!keepTab) state.activeTab = 'today';
     state.selectedDate = date;
+    state.attendanceLocationCheckScheduleId = null;
+    setAttendanceLocationCheckUi();
     const subtitle = document.getElementById('fieldSubtitle');
     subtitle.textContent = 'Loading printed route...';
     await loadAttendanceForSelectedDate().catch((error) => {
@@ -3172,6 +3366,7 @@ async function loadMySchedule(options = {}) {
         state.rows = [...todayRows, ...forwardedPastPendingRows];
         updatePriorityGate(workloadRows());
         await hydrateLookups(state.rows);
+        renderAttendanceLocationSummary();
         renderActiveView();
 
         const carryoverCount = document.getElementById('fieldCarryoverCount');
@@ -3186,10 +3381,12 @@ async function loadMySchedule(options = {}) {
             state.rows = [...todayRows, ...carryoverRows];
             state.rows = [...todayRows, ...state.carryoverRows];
             await hydrateLookups(state.carryoverRows);
+            renderAttendanceLocationSummary();
         } catch (carryoverError) {
             console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
             state.carryoverRows = forwardedPastPendingRows;
             state.rows = [...todayRows, ...forwardedPastPendingRows];
+            renderAttendanceLocationSummary();
         }
         updatePriorityGate(workloadRows());
         renderActiveView();
@@ -5614,6 +5811,7 @@ async function pinCustomerLocation() {
         applyRowPatch(row.id, schedulePatch);
         setLocationPinUi(row);
         updateActionButtons();
+        renderAttendanceLocationSummary();
         renderList();
         alert('Customer location pinned. This customer will not need pinning again.');
     } catch (err) {
