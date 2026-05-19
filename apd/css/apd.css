@@ -805,6 +805,10 @@ body::before {
     width: min(760px, calc(100vw - 28px));
 }
 
+.check-print-panel {
+    width: min(1360px, calc(100vw - 28px));
+}
+
 .status-guide-card {
     margin: 0 1rem 1rem;
 }
@@ -837,6 +841,171 @@ body::before {
 .month-payable-side strong {
     color: #103756;
     white-space: nowrap;
+}
+
+.check-print-workbench {
+    display: grid;
+    grid-template-columns: minmax(330px, 0.72fr) minmax(0, 1.28fr);
+    gap: 1rem;
+    padding: 0 1rem 1rem;
+}
+
+.check-print-tools,
+.check-print-preview-card {
+    min-height: 100%;
+}
+
+.check-template-grid,
+.check-print-grid,
+.check-section-grid {
+    position: relative;
+    z-index: 1;
+}
+
+.check-template-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 1rem 1rem 0.8rem;
+}
+
+.check-template-actions {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.check-print-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    padding: 0 1rem 0.95rem;
+}
+
+.check-print-field {
+    display: grid;
+    gap: 0.32rem;
+}
+
+.check-print-field span,
+.check-print-section-title {
+    color: #587083;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.check-print-field input,
+.check-print-field select {
+    width: 100%;
+    min-height: 38px;
+    padding: 0.52rem 0.65rem;
+    border: 1px solid rgba(20, 50, 77, 0.13);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--apd-navy);
+    font-weight: 650;
+}
+
+.check-print-section-title {
+    padding: 0 1rem 0.6rem;
+}
+
+.check-section-grid {
+    display: grid;
+    gap: 0.7rem;
+    padding: 0 1rem 1rem;
+}
+
+.check-section-card {
+    padding: 0.8rem;
+    border: 1px solid rgba(20, 50, 77, 0.1);
+    border-radius: 14px;
+    background: rgba(248, 251, 255, 0.84);
+}
+
+.check-section-card h4 {
+    margin: 0;
+    color: var(--apd-navy);
+    font-size: 0.94rem;
+}
+
+.check-section-card p {
+    margin: 0.18rem 0 0.7rem;
+    color: #6a8193;
+    font-size: 0.78rem;
+}
+
+.check-section-card .section-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 0;
+}
+
+.check-print-preview-header {
+    position: relative;
+    z-index: 1;
+    padding: 1rem 1.15rem 0;
+}
+
+.check-print-preview-wrap {
+    position: relative;
+    z-index: 1;
+    padding: 1rem 1.15rem 1.2rem;
+    overflow: auto;
+}
+
+.check-calibration-shell {
+    display: inline-block;
+    padding: 16px;
+    border-radius: 14px;
+    background:
+        linear-gradient(90deg, rgba(20, 50, 77, 0.07) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(20, 50, 77, 0.07) 1px, transparent 1px),
+        #eaf4fb;
+    background-size: 17px 17px;
+}
+
+.check-calibration-paper {
+    position: relative;
+    overflow: hidden;
+    border: 1px dashed rgba(20, 50, 77, 0.42);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 16px 34px rgba(13, 49, 80, 0.16);
+}
+
+.check-calibration-sheet {
+    position: absolute;
+    inset: 0;
+    transform-origin: top left;
+}
+
+.check-print-section {
+    position: absolute;
+    min-height: 18px;
+    padding: 1px 3px;
+    border: 1px solid rgba(59, 123, 177, 0.24);
+    background: rgba(255, 255, 255, 0.52);
+    color: #101b25;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.25;
+    overflow: hidden;
+}
+
+.check-date,
+.check-amount {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.check-payee {
+    white-space: nowrap;
+}
+
+.check-words {
+    white-space: normal;
 }
 
 .table-scroll {
@@ -1011,6 +1180,10 @@ body::before {
     .account-manager-grid {
         grid-template-columns: 1fr;
     }
+
+    .check-print-workbench {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 820px) {
@@ -1068,5 +1241,10 @@ body::before {
 
     .month-payable-side {
         justify-content: flex-start;
+    }
+
+    .check-print-grid,
+    .check-section-card .section-controls {
+        grid-template-columns: 1fr;
     }
 }

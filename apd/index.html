@@ -539,6 +539,7 @@
                         </label>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">Save Check Record</button>
+                            <button type="button" class="btn btn-secondary" id="checkPreviewPrintBtn">Preview / Print Check</button>
                             <button type="button" class="btn btn-secondary" id="checkFormClearBtn">Clear</button>
                         </div>
                     </form>
@@ -725,6 +726,39 @@
                 </div>
             </div>
             <div class="month-payables-list" id="monthPayablesList"></div>
+        </section>
+    </div>
+
+    <div class="modal-shell hidden" id="checkPrintModal" aria-hidden="true">
+        <div class="modal-backdrop" data-close-check-print="1"></div>
+        <section class="modal-panel check-print-panel" role="dialog" aria-modal="true" aria-labelledby="checkPrintTitle">
+            <div class="modal-header">
+                <div>
+                    <h3 id="checkPrintTitle">Check Print Layout</h3>
+                    <p class="card-subtext" id="checkPrintMeta">Adjust the four check sections, save the template, then print.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="checkPrintResetBtn">Reset</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="checkPrintNowBtn">Print Check</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-close-check-print="1">Close</button>
+                </div>
+            </div>
+            <div class="check-print-workbench">
+                <article class="content-card check-print-tools">
+                    <div id="checkPrintAdjustPanel"></div>
+                </article>
+                <article class="content-card check-print-preview-card">
+                    <div class="check-print-preview-header">
+                        <div>
+                            <h3>Preview</h3>
+                            <p class="card-subtext">Only the printable fields are shown so the physical check stock supplies the rest.</p>
+                        </div>
+                    </div>
+                    <div class="check-print-preview-wrap">
+                        <div id="checkPrintPreviewPage"></div>
+                    </div>
+                </article>
+            </div>
         </section>
     </div>
 

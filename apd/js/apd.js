@@ -5,7 +5,9 @@ if (!MargaAuth.requireAccess('apd')) {
 const APD_STORAGE_KEYS = {
     accounts: MargaFinanceAccounts?.getStorageKey?.() || 'marga_apd_accounts_v1',
     bills: 'marga_apd_bills_v1',
-    checks: 'marga_apd_checks_v1'
+    checks: 'marga_apd_checks_v1',
+    checkPrintTemplates: 'marga_apd_check_print_templates_v1',
+    checkPrintActiveTemplate: 'marga_apd_check_print_active_template_v1'
 };
 
 const PETTY_CASH_SYNC_STORAGE_KEYS = {
@@ -33,6 +35,32 @@ const CHECK_STATUSES = [
     'Spoiled',
     'Skipped'
 ];
+
+const CHECK_PRINT_PREVIEW_MM_PX = 3.4;
+
+const CHECK_PRINT_SECTION_LAYOUT = {
+    payee: { label: 'Payee', subtitle: 'Name line on the check', xMm: 24, yMm: 42, widthMm: 132, fontScale: 1 },
+    date: { label: 'Date', subtitle: 'Check issue date', xMm: 158, yMm: 22, widthMm: 36, fontScale: 1 },
+    amount: { label: 'Amount', subtitle: 'Numeric peso amount', xMm: 158, yMm: 42, widthMm: 34, fontScale: 1 },
+    words: { label: 'Pesos In Words', subtitle: 'Amount written in words', xMm: 22, yMm: 55, widthMm: 150, fontScale: 1 }
+};
+
+const CHECK_PRINT_CALIBRATION = {
+    paperWidthCm: 20.3,
+    paperHeightCm: 9.2,
+    offsetXmm: 0,
+    offsetYmm: 0,
+    scale: 1,
+    sections: Object.fromEntries(Object.entries(CHECK_PRINT_SECTION_LAYOUT).map(([key, layout]) => [
+        key,
+        {
+            xMm: 0,
+            yMm: 0,
+            widthMm: layout.widthMm,
+            fontScale: layout.fontScale
+        }
+    ]))
+};
 
 const STATUS_TO_BILL = {
     'For Check Printing': 'For Check Printing',
@@ -111,13 +139,18 @@ const DEFAULT_CHECKS = [
 const APD_STATE = {
     accounts: [],
     bills: [],
-    checks: []
+    checks: [],
+    activePrintPayload: null
 };
 
 const VIEW_STATE = {
     activeView: 'dashboard',
     dashboardOffset: 0
 };
+
+let currentCheckPrintTemplates = {};
+let currentCheckPrintTemplateName = 'Default';
+let currentCheckPrintCalibration = normalizeCheckPrintCalibration(CHECK_PRINT_CALIBRATION);
 
 const DOC_TYPE_PRESETS = {
     'Loan Amortization': { accountId: 'loan_amortization_lending_institution', planType: 'monthly_term', label: 'Loan Amortization' },
@@ -152,6 +185,7 @@ const BILL_STATUS_GUIDE = [
 document.addEventListener('DOMContentLoaded', () => {
     loadUserHeader();
     hydrateState();
+    initializeCheckPrintTemplateState();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindFormControls();
     bindTabControls();
@@ -184,6 +218,7 @@ function bindFormControls() {
     document.getElementById('checkForm').addEventListener('submit', onCheckSubmit);
     document.getElementById('billFormClearBtn').addEventListener('click', clearBillForm);
     document.getElementById('checkFormClearBtn').addEventListener('click', clearCheckForm);
+    document.getElementById('checkPreviewPrintBtn').addEventListener('click', openCheckPrintFromForm);
     document.getElementById('billDocTypeInput').addEventListener('change', onBillDocTypeChange);
     document.getElementById('billPlanTypeInput').addEventListener('change', updatePlanHint);
     document.getElementById('billSimpleLoanModeInput').addEventListener('change', syncLoanFields);
@@ -209,6 +244,18 @@ function bindFormControls() {
     document.querySelectorAll('[data-close-status-guide]').forEach((button) => {
         button.addEventListener('click', closeStatusGuide);
     });
+    document.querySelectorAll('[data-close-check-print]').forEach((button) => {
+        button.addEventListener('click', closeCheckPrintModal);
+    });
+    document.getElementById('checkPrintAdjustPanel').addEventListener('input', handleCheckPrintControlInput);
+    document.getElementById('checkPrintAdjustPanel').addEventListener('change', handleCheckPrintControlInput);
+    document.getElementById('checkPrintAdjustPanel').addEventListener('click', handleCheckPrintToolClick);
+    document.getElementById('checkPrintResetBtn').addEventListener('click', () => {
+        resetCheckPrintCalibration();
+        renderCheckPrintAdjustmentControls();
+        renderActiveCheckPrintPreview();
+    });
+    document.getElementById('checkPrintNowBtn').addEventListener('click', printActiveCheck);
     document.getElementById('accountManagerTableBody').addEventListener('click', onAccountTableAction);
     syncLoanFields();
     syncSeriesEditFields();
@@ -219,6 +266,8 @@ function onExternalApdStateChange(event) {
         APD_STORAGE_KEYS.accounts,
         APD_STORAGE_KEYS.bills,
         APD_STORAGE_KEYS.checks,
+        APD_STORAGE_KEYS.checkPrintTemplates,
+        APD_STORAGE_KEYS.checkPrintActiveTemplate,
         PETTY_CASH_SYNC_STORAGE_KEYS.requests,
         PETTY_CASH_SYNC_STORAGE_KEYS.entries
     ].includes(event.key)) {
@@ -698,6 +747,7 @@ function renderBillsTable() {
                     <div class="row-actions">
                         <button type="button" class="row-btn" data-action="edit-bill" data-id="${bill.id}">Edit</button>
                         <button type="button" class="row-btn" data-action="link-check" data-id="${bill.id}">Use In Check</button>
+                        <button type="button" class="row-btn" data-action="print-check-bill" data-id="${bill.id}">Print Check</button>
                     </div>
                 </td>
             </tr>
@@ -736,6 +786,7 @@ function renderChecksTable() {
                 <td>
                     <div class="row-actions">
                         <button type="button" class="row-btn" data-action="edit-check" data-id="${check.id}">Edit</button>
+                        <button type="button" class="row-btn" data-action="print-check" data-id="${check.id}">Print</button>
                     </div>
                 </td>
             </tr>
@@ -1026,6 +1077,11 @@ function onBillTableAction(event) {
 
     if (button.dataset.action === 'link-check') {
         prepareCheckForBill(bill);
+        return;
+    }
+
+    if (button.dataset.action === 'print-check-bill') {
+        openCheckPrintForBill(bill);
     }
 }
 
@@ -1047,6 +1103,10 @@ function onCheckTableAction(event) {
         document.getElementById('checkStatusInput').value = check.status;
         document.getElementById('checkReceiptInput').value = check.receiptNumber || '';
         document.getElementById('checkReasonInput').value = check.reason || '';
+        return;
+    }
+    if (button.dataset.action === 'print-check') {
+        openCheckPrintForCheck(check);
     }
 }
 
@@ -1596,6 +1656,7 @@ function openMonthPayablesModal(ids, label, monthLabel) {
                     <span class="status-badge ${slugify(bill.status)}">${MargaUtils.escapeHtml(bill.status)}</span>
                     <button type="button" class="row-btn" data-open-month-bill="${MargaUtils.escapeHtml(bill.id)}">Open</button>
                     <button type="button" class="row-btn" data-check-month-bill="${MargaUtils.escapeHtml(bill.id)}">Prepare Check</button>
+                    <button type="button" class="row-btn" data-print-month-bill="${MargaUtils.escapeHtml(bill.id)}">Print Check</button>
                 </div>
             </article>
         `;
@@ -1613,13 +1674,18 @@ function closeMonthPayablesModal() {
 function onMonthPayablePick(event) {
     const openButton = event.target.closest('[data-open-month-bill]');
     const checkButton = event.target.closest('[data-check-month-bill]');
-    const billId = openButton?.dataset.openMonthBill || checkButton?.dataset.checkMonthBill || '';
+    const printButton = event.target.closest('[data-print-month-bill]');
+    const billId = openButton?.dataset.openMonthBill || checkButton?.dataset.checkMonthBill || printButton?.dataset.printMonthBill || '';
     if (!billId) return;
     const bill = APD_STATE.bills.find((item) => item.id === billId);
     if (!bill) return;
     closeMonthPayablesModal();
     if (checkButton) {
         prepareCheckForBill(bill);
+        return;
+    }
+    if (printButton) {
+        openCheckPrintForBill(bill);
         return;
     }
     openBillInWorkspace(bill);
@@ -1631,6 +1697,534 @@ function prepareCheckForBill(bill) {
     document.getElementById('checkBillSelect').value = bill.id;
     syncCheckBillSelection();
     document.getElementById('checkNumberInput').focus();
+}
+
+function openCheckPrintForBill(bill) {
+    const check = getLatestCheckForBill(bill.id);
+    openCheckPrintModal(buildCheckPrintPayload({ bill, check }));
+}
+
+function openCheckPrintForCheck(check) {
+    const bill = APD_STATE.bills.find((item) => item.id === check.billId);
+    if (!bill) {
+        MargaUtils.showToast('Cannot print: linked payable is missing.', 'error');
+        return;
+    }
+    openCheckPrintModal(buildCheckPrintPayload({ bill, check }));
+}
+
+function openCheckPrintFromForm() {
+    const bill = APD_STATE.bills.find((item) => item.id === document.getElementById('checkBillSelect').value);
+    if (!bill) {
+        MargaUtils.showToast('Choose a linked payable before printing.', 'error');
+        return;
+    }
+    const draftCheck = normalizeCheck({
+        id: document.getElementById('checkIdInput').value || '',
+        billId: bill.id,
+        bank: document.getElementById('checkBankInput').value,
+        checkNumber: document.getElementById('checkNumberInput').value,
+        issueDate: document.getElementById('checkIssueDateInput').value,
+        amount: document.getElementById('checkAmountInput').value || bill.amount,
+        status: document.getElementById('checkStatusInput').value || 'For Check Printing',
+        receiptNumber: document.getElementById('checkReceiptInput').value,
+        reason: document.getElementById('checkReasonInput').value
+    });
+    if (!draftCheck.issueDate || !(draftCheck.amount > 0)) {
+        MargaUtils.showToast('Enter the check issue date and amount before printing.', 'error');
+        return;
+    }
+    openCheckPrintModal(buildCheckPrintPayload({ bill, check: draftCheck }));
+}
+
+function openCheckPrintModal(payload) {
+    APD_STATE.activePrintPayload = payload;
+    document.getElementById('checkPrintMeta').textContent = `${payload.payee} · ${formatPesoAmount(payload.amount)} · ${payload.dateText}`;
+    renderCheckPrintAdjustmentControls();
+    renderActiveCheckPrintPreview();
+    const modal = document.getElementById('checkPrintModal');
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeCheckPrintModal() {
+    const modal = document.getElementById('checkPrintModal');
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+function getLatestCheckForBill(billId) {
+    return APD_STATE.checks
+        .filter((check) => String(check.billId || '').trim() === String(billId || '').trim())
+        .sort((left, right) => `${right.issueDate} ${right.id}`.localeCompare(`${left.issueDate} ${left.id}`))[0] || null;
+}
+
+function buildCheckPrintPayload({ bill, check = null }) {
+    const amount = Number(check?.amount || bill.amount || 0);
+    const issueDate = check?.issueDate || bill.dueDate || toDateInputValue(new Date());
+    return {
+        billId: bill.id,
+        checkId: check?.id || '',
+        checkNumber: String(check?.checkNumber || '').trim(),
+        bank: String(check?.bank || '').trim(),
+        payee: String(bill.payee || '').trim(),
+        dateValue: issueDate,
+        dateText: formatCheckDate(issueDate),
+        amount,
+        amountText: formatPesoAmount(amount),
+        words: pesosToWords(amount),
+        sourceStatus: check?.status || bill.status || 'For Check Printing'
+    };
+}
+
+function normalizeCheckPrintCalibration(value = {}) {
+    const paperWidthCm = Number(value?.paperWidthCm ?? CHECK_PRINT_CALIBRATION.paperWidthCm);
+    const paperHeightCm = Number(value?.paperHeightCm ?? CHECK_PRINT_CALIBRATION.paperHeightCm);
+    const offsetXmm = Number(value?.offsetXmm ?? CHECK_PRINT_CALIBRATION.offsetXmm);
+    const offsetYmm = Number(value?.offsetYmm ?? CHECK_PRINT_CALIBRATION.offsetYmm);
+    const scale = Number(value?.scale ?? CHECK_PRINT_CALIBRATION.scale);
+    const rawSections = value?.sections || {};
+    return {
+        paperWidthCm: Number.isFinite(paperWidthCm) ? Math.max(10, Math.min(30, paperWidthCm)) : CHECK_PRINT_CALIBRATION.paperWidthCm,
+        paperHeightCm: Number.isFinite(paperHeightCm) ? Math.max(5, Math.min(15, paperHeightCm)) : CHECK_PRINT_CALIBRATION.paperHeightCm,
+        offsetXmm: Number.isFinite(offsetXmm) ? Math.max(-60, Math.min(60, offsetXmm)) : CHECK_PRINT_CALIBRATION.offsetXmm,
+        offsetYmm: Number.isFinite(offsetYmm) ? Math.max(-40, Math.min(40, offsetYmm)) : CHECK_PRINT_CALIBRATION.offsetYmm,
+        scale: Number.isFinite(scale) ? Math.max(0.75, Math.min(1.35, scale)) : CHECK_PRINT_CALIBRATION.scale,
+        sections: Object.fromEntries(Object.keys(CHECK_PRINT_SECTION_LAYOUT).map((sectionKey) => {
+            const defaults = CHECK_PRINT_CALIBRATION.sections[sectionKey];
+            const current = rawSections?.[sectionKey] || {};
+            const xMm = Number(current?.xMm ?? defaults.xMm);
+            const yMm = Number(current?.yMm ?? defaults.yMm);
+            const widthMm = Number(current?.widthMm ?? defaults.widthMm);
+            const fontScale = Number(current?.fontScale ?? defaults.fontScale);
+            return [sectionKey, {
+                xMm: Number.isFinite(xMm) ? Math.max(-80, Math.min(80, xMm)) : defaults.xMm,
+                yMm: Number.isFinite(yMm) ? Math.max(-50, Math.min(50, yMm)) : defaults.yMm,
+                widthMm: Number.isFinite(widthMm) ? Math.max(20, Math.min(190, widthMm)) : defaults.widthMm,
+                fontScale: Number.isFinite(fontScale) ? Math.max(0.65, Math.min(1.8, fontScale)) : defaults.fontScale
+            }];
+        }))
+    };
+}
+
+function initializeCheckPrintTemplateState() {
+    currentCheckPrintTemplates = loadCheckPrintTemplates();
+    const storedActive = loadCheckPrintActiveTemplateName();
+    currentCheckPrintTemplateName = currentCheckPrintTemplates[storedActive] ? storedActive : 'Default';
+    currentCheckPrintCalibration = currentCheckPrintTemplates[currentCheckPrintTemplateName] || normalizeCheckPrintCalibration(CHECK_PRINT_CALIBRATION);
+    saveCheckPrintActiveTemplateName(currentCheckPrintTemplateName);
+    saveCheckPrintTemplates(currentCheckPrintTemplates);
+}
+
+function loadCheckPrintTemplates() {
+    const templates = { Default: normalizeCheckPrintCalibration(CHECK_PRINT_CALIBRATION) };
+    try {
+        const parsed = JSON.parse(localStorage.getItem(APD_STORAGE_KEYS.checkPrintTemplates) || '{}');
+        Object.entries(parsed || {}).forEach(([templateName, calibration]) => {
+            templates[normalizeCheckPrintTemplateName(templateName)] = normalizeCheckPrintCalibration(calibration);
+        });
+    } catch (error) {
+        console.warn('Unable to load APD check print templates.', error);
+    }
+    return templates;
+}
+
+function saveCheckPrintTemplates(nextTemplates = currentCheckPrintTemplates) {
+    currentCheckPrintTemplates = Object.fromEntries(Object.entries(nextTemplates || {}).map(([templateName, calibration]) => [
+        normalizeCheckPrintTemplateName(templateName),
+        normalizeCheckPrintCalibration(calibration)
+    ]));
+    if (!Object.keys(currentCheckPrintTemplates).length) {
+        currentCheckPrintTemplates.Default = normalizeCheckPrintCalibration(CHECK_PRINT_CALIBRATION);
+    }
+    try {
+        localStorage.setItem(APD_STORAGE_KEYS.checkPrintTemplates, JSON.stringify(currentCheckPrintTemplates));
+    } catch (error) {
+        console.warn('Unable to save APD check print templates.', error);
+    }
+    return currentCheckPrintTemplates;
+}
+
+function normalizeCheckPrintTemplateName(value = '') {
+    const normalized = String(value || '').trim().replace(/\s+/g, ' ');
+    return normalized.slice(0, 48) || 'Default';
+}
+
+function loadCheckPrintActiveTemplateName() {
+    try {
+        return normalizeCheckPrintTemplateName(localStorage.getItem(APD_STORAGE_KEYS.checkPrintActiveTemplate) || 'Default');
+    } catch (error) {
+        return 'Default';
+    }
+}
+
+function saveCheckPrintActiveTemplateName(templateName) {
+    currentCheckPrintTemplateName = normalizeCheckPrintTemplateName(templateName);
+    try {
+        localStorage.setItem(APD_STORAGE_KEYS.checkPrintActiveTemplate, currentCheckPrintTemplateName);
+    } catch (error) {
+        console.warn('Unable to save active APD check print template.', error);
+    }
+    return currentCheckPrintTemplateName;
+}
+
+function saveCheckPrintCalibration(nextValue, options = {}) {
+    currentCheckPrintCalibration = normalizeCheckPrintCalibration(nextValue);
+    if (options.persistTemplate !== false) {
+        currentCheckPrintTemplates[currentCheckPrintTemplateName] = currentCheckPrintCalibration;
+        saveCheckPrintTemplates(currentCheckPrintTemplates);
+    }
+    return currentCheckPrintCalibration;
+}
+
+function resetCheckPrintCalibration() {
+    saveCheckPrintActiveTemplateName('Default');
+    return saveCheckPrintCalibration(CHECK_PRINT_CALIBRATION);
+}
+
+function applyCheckPrintTemplate(templateName) {
+    const normalized = normalizeCheckPrintTemplateName(templateName);
+    const nextCalibration = currentCheckPrintTemplates[normalized];
+    if (!nextCalibration) return currentCheckPrintCalibration;
+    saveCheckPrintActiveTemplateName(normalized);
+    return saveCheckPrintCalibration(nextCalibration, { persistTemplate: false });
+}
+
+function saveCurrentCheckPrintTemplate(templateName) {
+    const normalized = normalizeCheckPrintTemplateName(templateName || currentCheckPrintTemplateName);
+    saveCheckPrintActiveTemplateName(normalized);
+    currentCheckPrintTemplates[normalized] = normalizeCheckPrintCalibration(currentCheckPrintCalibration);
+    saveCheckPrintTemplates(currentCheckPrintTemplates);
+    return currentCheckPrintTemplates[normalized];
+}
+
+function deleteCheckPrintTemplate(templateName) {
+    const normalized = normalizeCheckPrintTemplateName(templateName);
+    if (normalized === 'Default') return currentCheckPrintCalibration;
+    const nextTemplates = { ...currentCheckPrintTemplates };
+    delete nextTemplates[normalized];
+    saveCheckPrintTemplates(nextTemplates);
+    const nextActive = currentCheckPrintTemplates[currentCheckPrintTemplateName] ? currentCheckPrintTemplateName : 'Default';
+    return applyCheckPrintTemplate(nextActive);
+}
+
+function getCheckPrintSectionCalibration(sectionKey) {
+    return currentCheckPrintCalibration.sections?.[sectionKey] || CHECK_PRINT_CALIBRATION.sections[sectionKey];
+}
+
+function checkSizeUnit(valueMm, mode = 'print') {
+    return mode === 'screen'
+        ? `${Number(valueMm || 0) * CHECK_PRINT_PREVIEW_MM_PX}px`
+        : `${valueMm}mm`;
+}
+
+function buildCheckSectionStyle(sectionKey, mode = 'print') {
+    const layout = CHECK_PRINT_SECTION_LAYOUT[sectionKey];
+    const calibration = getCheckPrintSectionCalibration(sectionKey);
+    return [
+        'position:absolute',
+        `left:${checkSizeUnit((layout.xMm || 0) + (calibration.xMm || 0), mode)}`,
+        `top:${checkSizeUnit((layout.yMm || 0) + (calibration.yMm || 0), mode)}`,
+        `width:${checkSizeUnit(calibration.widthMm || layout.widthMm || 40, mode)}`,
+        'transform-origin:top left',
+        `transform:scale(${calibration.fontScale || 1})`
+    ].join(';');
+}
+
+function renderCheckPrintAdjustmentControls() {
+    const panel = document.getElementById('checkPrintAdjustPanel');
+    if (!panel) return;
+    const templateOptions = Object.keys(currentCheckPrintTemplates)
+        .sort((left, right) => left.localeCompare(right))
+        .map((templateName) => `<option value="${escapeAttr(templateName)}"${templateName === currentCheckPrintTemplateName ? ' selected' : ''}>${MargaUtils.escapeHtml(templateName)}</option>`)
+        .join('');
+    panel.innerHTML = `
+        <div class="check-template-grid">
+            <label class="check-print-field">
+                <span>Template</span>
+                <select id="checkPrintTemplateSelect">${templateOptions}</select>
+            </label>
+            <label class="check-print-field">
+                <span>Template Name</span>
+                <input type="text" id="checkPrintTemplateNameInput" value="${escapeAttr(currentCheckPrintTemplateName)}" placeholder="BDO check layout">
+            </label>
+            <div class="check-template-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="checkPrintSaveTemplateBtn">Save Template</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="checkPrintDeleteTemplateBtn"${currentCheckPrintTemplateName === 'Default' ? ' disabled' : ''}>Delete</button>
+            </div>
+        </div>
+        <div class="check-print-grid">
+            <label class="check-print-field">
+                <span>Paper W (cm)</span>
+                <input type="number" data-check-print-control="paperWidthCm" step="0.1" min="10" max="30" value="${escapeAttr(String(currentCheckPrintCalibration.paperWidthCm))}">
+            </label>
+            <label class="check-print-field">
+                <span>Paper H (cm)</span>
+                <input type="number" data-check-print-control="paperHeightCm" step="0.1" min="5" max="15" value="${escapeAttr(String(currentCheckPrintCalibration.paperHeightCm))}">
+            </label>
+            <label class="check-print-field">
+                <span>Left (mm)</span>
+                <input type="number" data-check-print-control="offsetXmm" step="0.5" value="${escapeAttr(String(currentCheckPrintCalibration.offsetXmm))}">
+            </label>
+            <label class="check-print-field">
+                <span>Top (mm)</span>
+                <input type="number" data-check-print-control="offsetYmm" step="0.5" value="${escapeAttr(String(currentCheckPrintCalibration.offsetYmm))}">
+            </label>
+            <label class="check-print-field">
+                <span>Scale</span>
+                <input type="number" data-check-print-control="scale" step="0.01" min="0.75" max="1.35" value="${escapeAttr(String(currentCheckPrintCalibration.scale))}">
+            </label>
+        </div>
+        <div class="check-print-section-title">Section Adjustments</div>
+        <div class="check-section-grid">
+            ${Object.entries(CHECK_PRINT_SECTION_LAYOUT).map(([sectionKey, layout]) => {
+                const calibration = getCheckPrintSectionCalibration(sectionKey);
+                return `
+                    <div class="check-section-card">
+                        <h4>${MargaUtils.escapeHtml(layout.label)}</h4>
+                        <p>${MargaUtils.escapeHtml(layout.subtitle)}</p>
+                        <div class="check-print-grid section-controls">
+                            <label class="check-print-field">
+                                <span>X (mm)</span>
+                                <input type="number" data-check-section-key="${escapeAttr(sectionKey)}" data-check-section-field="xMm" step="0.5" value="${escapeAttr(String(calibration.xMm))}">
+                            </label>
+                            <label class="check-print-field">
+                                <span>Y (mm)</span>
+                                <input type="number" data-check-section-key="${escapeAttr(sectionKey)}" data-check-section-field="yMm" step="0.5" value="${escapeAttr(String(calibration.yMm))}">
+                            </label>
+                            <label class="check-print-field">
+                                <span>Width</span>
+                                <input type="number" data-check-section-key="${escapeAttr(sectionKey)}" data-check-section-field="widthMm" step="1" value="${escapeAttr(String(calibration.widthMm))}">
+                            </label>
+                            <label class="check-print-field">
+                                <span>Font</span>
+                                <input type="number" data-check-section-key="${escapeAttr(sectionKey)}" data-check-section-field="fontScale" step="0.05" min="0.65" max="1.8" value="${escapeAttr(String(calibration.fontScale))}">
+                            </label>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function handleCheckPrintControlInput(event) {
+    const target = event.target;
+    if (target?.id === 'checkPrintTemplateSelect') {
+        applyCheckPrintTemplate(target.value);
+        renderCheckPrintAdjustmentControls();
+        renderActiveCheckPrintPreview();
+        return;
+    }
+    if (!target?.matches?.('[data-check-print-control], [data-check-section-key][data-check-section-field]')) return;
+    updateCheckPrintCalibrationFromControls();
+}
+
+function handleCheckPrintToolClick(event) {
+    if (event.target?.id === 'checkPrintSaveTemplateBtn') {
+        const nameInput = document.getElementById('checkPrintTemplateNameInput');
+        saveCurrentCheckPrintTemplate(nameInput?.value || currentCheckPrintTemplateName);
+        renderCheckPrintAdjustmentControls();
+        renderActiveCheckPrintPreview();
+        MargaUtils.showToast(`Check print template "${currentCheckPrintTemplateName}" saved.`, 'success');
+        return;
+    }
+    if (event.target?.id === 'checkPrintDeleteTemplateBtn') {
+        const deletedTemplate = currentCheckPrintTemplateName;
+        deleteCheckPrintTemplate(currentCheckPrintTemplateName);
+        renderCheckPrintAdjustmentControls();
+        renderActiveCheckPrintPreview();
+        MargaUtils.showToast(`Check print template "${deletedTemplate}" deleted.`, 'success');
+    }
+}
+
+function updateCheckPrintCalibrationFromControls() {
+    const modal = document.getElementById('checkPrintModal');
+    const nextSections = Object.fromEntries(Object.keys(CHECK_PRINT_SECTION_LAYOUT).map((sectionKey) => {
+        const defaults = currentCheckPrintCalibration.sections?.[sectionKey] || CHECK_PRINT_CALIBRATION.sections[sectionKey];
+        const sectionValues = { ...defaults };
+        modal.querySelectorAll('[data-check-section-key][data-check-section-field]').forEach((input) => {
+            if (input.dataset.checkSectionKey !== sectionKey) return;
+            sectionValues[input.dataset.checkSectionField] = Number(input.value || 0);
+        });
+        return [sectionKey, sectionValues];
+    }));
+    const controlValue = (key, fallback) => {
+        const input = modal.querySelector(`[data-check-print-control="${key}"]`);
+        return input ? Number(input.value || 0) : fallback;
+    };
+    saveCheckPrintCalibration({
+        paperWidthCm: controlValue('paperWidthCm', currentCheckPrintCalibration.paperWidthCm),
+        paperHeightCm: controlValue('paperHeightCm', currentCheckPrintCalibration.paperHeightCm),
+        offsetXmm: controlValue('offsetXmm', currentCheckPrintCalibration.offsetXmm),
+        offsetYmm: controlValue('offsetYmm', currentCheckPrintCalibration.offsetYmm),
+        scale: controlValue('scale', currentCheckPrintCalibration.scale),
+        sections: nextSections
+    });
+    renderActiveCheckPrintPreview();
+}
+
+function renderActiveCheckPrintPreview() {
+    if (!APD_STATE.activePrintPayload) return;
+    document.getElementById('checkPrintPreviewPage').innerHTML = buildCheckPrintHtml(APD_STATE.activePrintPayload, 'screen');
+}
+
+function buildCheckPrintHtml(payload, mode = 'screen') {
+    const paperWidthMm = currentCheckPrintCalibration.paperWidthCm * 10;
+    const paperHeightMm = currentCheckPrintCalibration.paperHeightCm * 10;
+    return `
+        <section class="check-calibration-shell" aria-label="Check print preview">
+            <div
+                class="check-calibration-paper"
+                style="--check-paper-width-mm:${paperWidthMm}; --check-paper-height-mm:${paperHeightMm}; width:${checkSizeUnit(paperWidthMm, mode)}; height:${checkSizeUnit(paperHeightMm, mode)};"
+            >
+                <div
+                    class="check-calibration-sheet"
+                    style="transform: translate(${checkSizeUnit(currentCheckPrintCalibration.offsetXmm, mode)}, ${checkSizeUnit(currentCheckPrintCalibration.offsetYmm, mode)}) scale(${currentCheckPrintCalibration.scale});"
+                >
+                    <div class="check-print-section check-payee" style="${buildCheckSectionStyle('payee', mode)}">${MargaUtils.escapeHtml(payload.payee)}</div>
+                    <div class="check-print-section check-date" style="${buildCheckSectionStyle('date', mode)}">${MargaUtils.escapeHtml(payload.dateText)}</div>
+                    <div class="check-print-section check-amount" style="${buildCheckSectionStyle('amount', mode)}">${MargaUtils.escapeHtml(payload.amountText)}</div>
+                    <div class="check-print-section check-words" style="${buildCheckSectionStyle('words', mode)}">${MargaUtils.escapeHtml(payload.words)}</div>
+                </div>
+            </div>
+        </section>
+    `;
+}
+
+function printActiveCheck() {
+    const payload = APD_STATE.activePrintPayload;
+    if (!payload) return;
+    savePrintedCheckRecord(payload);
+    writePrintHtmlDocument(openPrintWindow(`marga_apd_check_${payload.checkNumber || payload.billId}`), buildCheckPrintDocument(payload));
+}
+
+function savePrintedCheckRecord(payload) {
+    if (!payload.checkNumber || !payload.billId) return;
+    const existingDuplicate = APD_STATE.checks.find((check) => (
+        check.id !== payload.checkId
+        && check.checkNumber === payload.checkNumber
+        && String(check.bank || '').toLowerCase() === String(payload.bank || '').toLowerCase()
+    ));
+    if (existingDuplicate) {
+        MargaUtils.showToast('Printed preview opened, but the check record was not changed because that check number already exists for the same bank.', 'info');
+        return;
+    }
+    const next = normalizeCheck({
+        id: payload.checkId || createCheckId(),
+        billId: payload.billId,
+        bank: payload.bank || 'Operating Check Account',
+        checkNumber: payload.checkNumber,
+        issueDate: payload.dateValue,
+        amount: payload.amount,
+        status: 'Printed',
+        createdAt: isoNow()
+    });
+    upsertById(APD_STATE.checks, next);
+    syncBillStatusFromCheck(next);
+    persistState();
+    syncPettyCashRequestsFromChecks();
+    renderAll();
+}
+
+function openPrintWindow(windowName) {
+    const printWindow = window.open('', windowName, 'width=1000,height=760');
+    if (!printWindow) {
+        alert('Please allow pop-ups to print the check.');
+        return null;
+    }
+    printWindow.document.write('<!DOCTYPE html><html><head><title>Preparing Check</title></head><body style="font-family:Arial,sans-serif;padding:24px;">Preparing check print...</body></html>');
+    printWindow.document.close();
+    return printWindow;
+}
+
+function writePrintHtmlDocument(printWindow, html) {
+    if (!printWindow) return;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    const triggerPrint = () => {
+        try {
+            printWindow.print();
+        } catch (error) {
+            console.warn('Check print failed:', error);
+        }
+    };
+    printWindow.addEventListener('load', triggerPrint, { once: true });
+    window.setTimeout(triggerPrint, 500);
+}
+
+function buildCheckPrintDocument(payload) {
+    const paperWidthCm = currentCheckPrintCalibration.paperWidthCm;
+    const paperHeightCm = currentCheckPrintCalibration.paperHeightCm;
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>APD Check ${MargaUtils.escapeHtml(payload.checkNumber || payload.billId)}</title>
+            <style>
+                @page { size: ${paperWidthCm}cm ${paperHeightCm}cm; margin: 0; }
+                * { box-sizing: border-box; }
+                body { margin: 0; background: #fff; color: #111; font-family: Arial, sans-serif; }
+                .check-print-wrap { width: ${paperWidthCm}cm; height: ${paperHeightCm}cm; overflow: hidden; position: relative; }
+                .check-calibration-shell, .check-calibration-paper { width: 100%; height: 100%; position: relative; overflow: hidden; background: #fff; }
+                .check-calibration-sheet { position: absolute; inset: 0; transform-origin: top left; }
+                .check-print-section { position: absolute; white-space: nowrap; overflow: hidden; line-height: 1.25; color: #111; font-size: 12pt; }
+                .check-date, .check-amount { text-align: right; }
+                .check-words { white-space: normal; font-size: 11pt; }
+            </style>
+        </head>
+        <body><div class="check-print-wrap">${buildCheckPrintHtml(payload, 'print')}</div></body>
+        </html>
+    `;
+}
+
+function formatCheckDate(value) {
+    const date = parseDateOnly(value);
+    if (!date) return '';
+    return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function formatPesoAmount(value) {
+    return Number(value || 0).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+function pesosToWords(value) {
+    const amount = Math.max(0, Number(value || 0));
+    const pesos = Math.floor(amount);
+    const cents = Math.round((amount - pesos) * 100);
+    return `${numberToEnglishWords(pesos)} Pesos and ${String(cents).padStart(2, '0')}/100 Only`;
+}
+
+function numberToEnglishWords(value) {
+    const number = Math.floor(Number(value || 0));
+    const small = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    if (number === 0) return 'Zero';
+    if (number < 20) return small[number];
+    if (number < 100) return [tens[Math.floor(number / 10)], small[number % 10]].filter(Boolean).join(' ');
+    if (number < 1000) return [small[Math.floor(number / 100)], 'Hundred', numberToEnglishWords(number % 100)].filter((part) => part && part !== 'Zero').join(' ');
+    const scales = [
+        { value: 1000000000, label: 'Billion' },
+        { value: 1000000, label: 'Million' },
+        { value: 1000, label: 'Thousand' }
+    ];
+    for (const scale of scales) {
+        if (number >= scale.value) {
+            const head = numberToEnglishWords(Math.floor(number / scale.value));
+            const tail = numberToEnglishWords(number % scale.value);
+            return [head, scale.label, tail === 'Zero' ? '' : tail].filter(Boolean).join(' ');
+        }
+    }
+    return String(number);
+}
+
+function escapeAttr(value) {
+    return MargaUtils.escapeHtml(String(value ?? '')).replace(/"/g, '&quot;');
 }
 
 function getDueClass(dateValue, status) {
