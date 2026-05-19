@@ -1259,8 +1259,55 @@ function persistApdSharedState() {
 }
 
 async function fetchApdCollection(collection) {
-    const rows = await MargaUtils.fetchCollection(collection, 500);
+    const rows = await fetchApdCollectionDirect(collection).catch(async (listError) => {
+        console.warn(`APD list read failed for ${collection}; trying runQuery fallback.`, listError);
+        return fetchApdCollectionByQuery(collection);
+    });
     return rows.filter((row) => Number(row.is_archived || 0) !== 1);
+}
+
+async function fetchApdCollectionDirect(collection) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}?pageSize=500&key=${FIREBASE_CONFIG.apiKey}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to load ${collection}`);
+    }
+    return (payload.documents || []).map(parseApdFirestoreDocument).filter(Boolean);
+}
+
+async function fetchApdCollectionByQuery(collection) {
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            structuredQuery: {
+                from: [{ collectionId: collection }],
+                limit: 500
+            }
+        })
+    });
+    const payload = await response.json().catch(() => []);
+    if (!response.ok || payload?.error || payload?.[0]?.error) {
+        throw new Error(payload?.error?.message || payload?.[0]?.error?.message || `Failed to query ${collection}`);
+    }
+    return Array.isArray(payload)
+        ? payload.map((row) => row.document ? parseApdFirestoreDocument(row.document) : null).filter(Boolean)
+        : [];
+}
+
+function parseApdFirestoreDocument(doc) {
+    if (MargaUtils?.parseFirestoreDoc) return MargaUtils.parseFirestoreDoc(doc);
+    const fields = doc?.fields || {};
+    const row = {};
+    Object.entries(fields).forEach(([key, value]) => {
+        if (value.stringValue !== undefined) row[key] = value.stringValue;
+        else if (value.integerValue !== undefined) row[key] = Number(value.integerValue);
+        else if (value.doubleValue !== undefined) row[key] = Number(value.doubleValue);
+        else if (value.booleanValue !== undefined) row[key] = Boolean(value.booleanValue);
+        else row[key] = '';
+    });
+    if (doc?.name) row._docId = doc.name.split('/').pop();
+    return row;
 }
 
 function shouldShareLocalBill(bill) {
