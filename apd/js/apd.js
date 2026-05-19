@@ -1039,7 +1039,8 @@ function onCheckSubmit(event) {
     syncBillStatusFromCheck(next);
     persistState();
     syncPettyCashRequestsFromChecks();
-    clearCheckForm();
+    populateBillSelect(next.billId);
+    fillCheckForm(next);
     renderAll();
     MargaUtils.showToast('Check register updated.', 'success');
 }
@@ -1054,9 +1055,21 @@ function syncBillStatusFromCheck(check) {
 }
 
 function syncCheckBillSelection() {
-    const bill = APD_STATE.bills.find((item) => item.id === document.getElementById('checkBillSelect').value);
+    const billId = document.getElementById('checkBillSelect').value;
+    const bill = APD_STATE.bills.find((item) => item.id === billId);
     if (!bill) return;
+    const savedCheck = getLatestCheckForBill(bill.id);
+    if (savedCheck) {
+        fillCheckForm(savedCheck);
+        return;
+    }
+    document.getElementById('checkIdInput').value = '';
     document.getElementById('checkAmountInput').value = Number(bill.amount || 0).toFixed(2);
+    document.getElementById('checkNumberInput').value = '';
+    document.getElementById('checkIssueDateInput').value = bill.dueDate || toDateInputValue(new Date());
+    document.getElementById('checkStatusInput').value = 'For Check Printing';
+    document.getElementById('checkReceiptInput').value = '';
+    document.getElementById('checkReasonInput').value = '';
     if (!document.getElementById('checkBankInput').value) {
         document.getElementById('checkBankInput').value = 'Operating Check Account';
     }
@@ -1093,16 +1106,7 @@ function onCheckTableAction(event) {
     if (button.dataset.action === 'edit-check') {
         showView('workspace');
         setActiveTab('check-register-entry');
-        document.getElementById('checkIdInput').value = check.id;
-        populateBillSelect(check.billId);
-        document.getElementById('checkBillSelect').value = check.billId;
-        document.getElementById('checkBankInput').value = check.bank || '';
-        document.getElementById('checkNumberInput').value = check.checkNumber;
-        document.getElementById('checkIssueDateInput').value = check.issueDate;
-        document.getElementById('checkAmountInput').value = Number(check.amount || 0).toFixed(2);
-        document.getElementById('checkStatusInput').value = check.status;
-        document.getElementById('checkReceiptInput').value = check.receiptNumber || '';
-        document.getElementById('checkReasonInput').value = check.reason || '';
+        fillCheckForm(check);
         return;
     }
     if (button.dataset.action === 'print-check') {
@@ -1388,6 +1392,19 @@ function fillBillForm(bill) {
     updatePlanHint();
     syncLoanFields();
     syncSeriesEditFields();
+}
+
+function fillCheckForm(check) {
+    document.getElementById('checkIdInput').value = check.id;
+    populateBillSelect(check.billId);
+    document.getElementById('checkBillSelect').value = check.billId;
+    document.getElementById('checkBankInput').value = check.bank || '';
+    document.getElementById('checkNumberInput').value = check.checkNumber;
+    document.getElementById('checkIssueDateInput').value = check.issueDate;
+    document.getElementById('checkAmountInput').value = Number(check.amount || 0).toFixed(2);
+    document.getElementById('checkStatusInput').value = check.status;
+    document.getElementById('checkReceiptInput').value = check.receiptNumber || '';
+    document.getElementById('checkReasonInput').value = check.reason || '';
 }
 
 function createBillsFromPlan(baseBill) {
