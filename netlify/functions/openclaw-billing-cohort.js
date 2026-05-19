@@ -2284,16 +2284,28 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
     });
 
     const visibleMatrixRows = searchTerm
-        ? matrixRows.filter((row) => rowMatchesSearch(searchTerm, [
-            row.display_name,
-            row.account_name,
-            row.company_name,
-            row.branch_name,
-            row.serial_number,
-            row.machine_label,
-            row.machine_id,
-            row.reading_day
-        ]))
+        ? (() => {
+            const directMatches = matrixRows.filter((row) => rowMatchesSearch(searchTerm, [
+                row.display_name,
+                row.account_name,
+                row.company_name,
+                row.branch_name,
+                row.serial_number,
+                row.machine_label,
+                row.machine_id,
+                row.reading_day
+            ]));
+            const matchedGroupIds = new Set(directMatches
+                .map((row) => String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim())
+                .filter(Boolean));
+            if (!matchedGroupIds.size) return directMatches;
+            const directRowIds = new Set(directMatches.map((row) => String(row.row_id || row.company_id || '').trim()));
+            return matrixRows.filter((row) => {
+                const rowId = String(row.row_id || row.company_id || '').trim();
+                const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
+                return directRowIds.has(rowId) || matchedGroupIds.has(groupId);
+            });
+        })()
         : matrixRows;
 
     visibleMatrixRows.sort((a, b) => {

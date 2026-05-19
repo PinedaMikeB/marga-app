@@ -274,6 +274,26 @@ function getSucceedingPageRate(profile) {
     return Number(profile?.succeeding_page_rate || profile?.page_rate_xtra || profile?.page_rate2 || 0) || pageRate;
 }
 
+function getSharedBillingGroupProfile(row, fallbackProfile = {}) {
+    const group = row?.billing_group || null;
+    if (!group) return fallbackProfile || {};
+    const categoryMeta = getContractCategoryMeta(group.category_id || fallbackProfile?.category_id);
+    const pageRate = Number(group.page_rate || fallbackProfile?.page_rate || 0) || 0;
+    return {
+        ...(fallbackProfile || {}),
+        category_id: Number(group.category_id || fallbackProfile?.category_id || 0) || 0,
+        category_code: fallbackProfile?.category_code || categoryMeta.code,
+        category_label: fallbackProfile?.category_label || categoryMeta.label,
+        pricing_mode: 'reading',
+        monthly_quota: Number(group.monthly_quota || fallbackProfile?.monthly_quota || 0) || 0,
+        monthly_rate: Number(group.monthly_rate || fallbackProfile?.monthly_rate || 0) || 0,
+        page_rate: pageRate,
+        succeeding_page_rate: Number(group.page_rate_xtra || group.succeeding_page_rate || fallbackProfile?.succeeding_page_rate || fallbackProfile?.page_rate_xtra || pageRate || 0) || pageRate,
+        page_rate_xtra: Number(group.page_rate_xtra || fallbackProfile?.page_rate_xtra || pageRate || 0) || pageRate,
+        with_vat: group.with_vat === undefined ? Boolean(fallbackProfile?.with_vat) : Boolean(group.with_vat)
+    };
+}
+
 function formatRtpRatePlan({ quota = 0, pageRate = 0, succeedingRate = 0 } = {}) {
     const effectiveSucceedingRate = succeedingRate || pageRate;
     if (Number(quota || 0) > 0) {
@@ -6078,10 +6098,12 @@ function getBillingExclusionsForContext(row, context) {
 
 function buildBillingCalculationContext(row, monthKey) {
     if (!row) return null;
-    const canUseVerifiedSummaryGroup = Boolean(row.is_summary_row && row.billing_group);
-    const summaryGroupedRows = canUseVerifiedSummaryGroup ? getGroupedMachineRows(row, monthKey) : [];
-    const workingRow = canUseVerifiedSummaryGroup ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
-    const profile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
+    const hasVerifiedBillingGroup = Boolean(row.billing_group);
+    const isVerifiedSummaryGroup = Boolean(row.is_summary_row && row.billing_group);
+    const summaryGroupedRows = hasVerifiedBillingGroup ? getGroupedMachineRows(row, monthKey) : [];
+    const workingRow = isVerifiedSummaryGroup ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
+    const baseProfile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
+    const profile = hasVerifiedBillingGroup ? getSharedBillingGroupProfile(row, baseProfile) : baseProfile;
     if (!profile) return null;
 
     const targetCell = workingRow.months?.[monthKey] || {};
@@ -6115,7 +6137,7 @@ function buildBillingCalculationContext(row, monthKey) {
         isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
         hasSecondaryRtp: hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2),
         groupedMachineRows: summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey),
-        forceGroupedMode: canUseVerifiedSummaryGroup
+        forceGroupedMode: hasVerifiedBillingGroup && summaryGroupedRows.length > 1
     };
 }
 
@@ -6148,7 +6170,7 @@ function getBillingModeOptions(context) {
     const options = [];
     const savedMode = String(context?.savedBillingMode || '').trim();
     const groupedRows = context?.groupedMachineRows || [];
-    const canUseGroupedInvoiceMode = context?.forceGroupedMode || savedMode === 'multi_machine_rtp';
+    const canUseGroupedInvoiceMode = context?.forceGroupedMode || savedMode === 'multi_machine_rtp' || Boolean(context?.row?.billing_group);
     if (context?.isReading) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
     if (context?.isReading && context?.hasSecondaryRtp) options.push({ key: 'multi_meter_rtp', label: 'Multiple Meter RTP' });
     if (context?.isFixed) options.push({ key: 'rtf', label: 'RTF Fixed Rate' });
@@ -6720,7 +6742,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const groupedRowsForBilling = context.groupedMachineRows || [];
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
         const draft = billingDraftsByLine.get(getBillingDraftLineKey(machineRow)) || null;
-        const baseProfile = getRowBillingProfile(machineRow) || profile;
+        const baseProfile = getSharedBillingGroupProfile(machineRow, getRowBillingProfile(machineRow) || profile);
         const machineProfile = draft
             ? {
                 ...baseProfile,
@@ -7406,11 +7428,11 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (activeBillingMode === 'multi_machine_rtp') {
             const lines = multiMachineSeedLines.map((seed, index) => estimateLineFromSeed({
                 ...seed,
-                profile: getRowBillingProfile(groupedRowsForBilling[index]) || profile,
+                profile: seed.profile || getSharedBillingGroupProfile(groupedRowsForBilling[index], getRowBillingProfile(groupedRowsForBilling[index]) || profile),
                 row: groupedRowsForBilling[index] || row
             }, activeBillingMode, index));
-            lines.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
-            const summary = summarizeBillingLines(lines);
+            const summary = applySharedMultiMeterQuota(lines);
+            summary.lineItems.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
             summary.billingMode = activeBillingMode;
             return summary;
         }
@@ -7456,7 +7478,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (activeBillingMode === 'multi_meter_rtp') {
                 modeSummaryCopy.textContent = 'Print and Copy counters are computed separately for black/white and colored pages, then summed into one invoice.';
             } else if (activeBillingMode === 'multi_machine_rtp') {
-                modeSummaryCopy.textContent = 'Each machine line is computed separately under the same invoice number.';
+                modeSummaryCopy.textContent = 'Machine lines share one invoice number, one combined quota, and one rate plan.';
             } else if (activeBillingMode === 'rtf') {
                 modeSummaryCopy.textContent = 'This invoice uses the fixed monthly contract rate.';
             } else {
@@ -8365,15 +8387,27 @@ function renderMatrixTable(payload) {
         : rows.length;
     const isRowWindowed = matchedRowCount > rows.length;
     const filteredRows = searchTerm
-        ? rows.filter((row) => textMatchesSearch(searchTerm, [
-              row.serial_number,
-              row.account_name,
-              row.company_name,
-              row.branch_name,
-              row.machine_label,
-              row.machine_id,
-              row.reading_day
-          ]))
+        ? (() => {
+            const directMatches = rows.filter((row) => textMatchesSearch(searchTerm, [
+                row.serial_number,
+                row.account_name,
+                row.company_name,
+                row.branch_name,
+                row.machine_label,
+                row.machine_id,
+                row.reading_day
+            ]));
+            const matchedGroupIds = new Set(directMatches
+                .map((row) => String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim())
+                .filter(Boolean));
+            if (!matchedGroupIds.size) return directMatches;
+            const directRowIds = new Set(directMatches.map((row) => String(row.row_id || row.company_id || '').trim()));
+            return rows.filter((row) => {
+                const rowId = String(row.row_id || row.company_id || '').trim();
+                const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
+                return directRowIds.has(rowId) || matchedGroupIds.has(groupId);
+            });
+        })()
         : rows;
     const sortedRows = [...filteredRows].sort((left, right) => compareBillingRows(left, right, getMatrixSortValue()));
     const rowsWithAmounts = filteredRows.filter((row) => (
