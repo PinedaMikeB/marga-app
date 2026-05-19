@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v66-call-remarks-detail';
+const CACHE_NAME = 'marga-app-shell-v67-office-call-attribution';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260519-call-remarks-detail-1',
+    '/collections/js/collections.js?v=20260519-office-call-attribution-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',

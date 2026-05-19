@@ -58,6 +58,7 @@ let collectionProfileOverrides = new Map();
 let collectionStatusOptions = [];
 let troubleLookupMap = new Map();
 let employeeLookupMap = new Map();
+let employeeRoleLookupMap = new Map();
 let collectionPositionMap = new Map();
 let collectionAssignableStaff = [];
 let collectionActiveEmployeeEmails = new Set();
@@ -215,10 +216,30 @@ const LEGACY_COLLECTION_SCHEDULE_FIELD_MASK = [
     'assigned_to',
     'field_billing_assigned_staff_id',
     'field_billing_assigned_staff_name',
+    'assigned_role',
+    'employee_id',
+    'employee_name',
+    'collector_name',
+    'followed_up_by',
     'committed_by',
+    'created_by',
+    'created_by_id',
+    'updated_by',
+    'updated_by_id',
+    'encoded_by',
+    'encoded_by_id',
+    'inserted_by',
+    'inserted_by_id',
+    'user_id',
+    'userlog_id',
+    'closedby',
     'collocutor',
     'caller',
     'phone_number',
+    'pcname',
+    'computer_name',
+    'device_name',
+    'ipadd',
     'remarks',
     'customer_request',
     'tl_remarks',
@@ -624,13 +645,15 @@ function compactPersonName(value) {
 function getHistoryActor(entry) {
     if (!entry) return '';
     return compactPersonName(
-        entry.followedUpBy
+        entry.committedBy
+        || entry.followedUpBy
         || entry.collectorName
         || entry.employeeName
         || employeeLookupMap.get(normalizeLookupId(entry.employeeId))
         || entry.createdBy
         || entry.updatedBy
         || entry.encodedBy
+        || entry.insertedBy
     );
 }
 
@@ -719,6 +742,31 @@ function isCollectionAssignableRole(role) {
     return /collection|technician|messenger|driver|service|csr/i.test(roleKey);
 }
 
+function isCollectionFollowupRole(role) {
+    const roleKey = String(role || '').toLowerCase();
+    if (!roleKey) return false;
+    return /collection|collector|csr|accounting|cashier|admin|office|billing/i.test(roleKey)
+        && !/technician|messenger|driver|field|production|service/i.test(roleKey);
+}
+
+function isFieldPickupRole(role) {
+    const roleKey = String(role || '').toLowerCase();
+    if (!roleKey) return false;
+    return /technician|messenger|driver|field|production|service/i.test(roleKey)
+        && !/collection|collector|csr|accounting|cashier|admin|office|billing/i.test(roleKey);
+}
+
+function roleForEmployeeId(employeeId) {
+    return employeeRoleLookupMap.get(normalizeLookupId(employeeId)) || '';
+}
+
+function roleForEmployeeName(name) {
+    const normalizedName = String(name || '').trim().toLowerCase();
+    if (!normalizedName) return '';
+    const match = collectionAssignableStaff.find((staff) => String(staff.name || '').trim().toLowerCase() === normalizedName);
+    return match?.role || '';
+}
+
 function normalizeCollectionEmail(value) {
     return String(value || '').trim().toLowerCase();
 }
@@ -755,10 +803,13 @@ function collectionEmployeeRoleKey(employee) {
 function rebuildCollectionAssignableStaff(employeeDocs = []) {
     const employeeRows = employeeDocs.map((doc) => documentFieldsToPlain(doc));
     employeeLookupMap = new Map();
+    employeeRoleLookupMap = new Map();
     employeeRows.forEach((row) => {
         const id = normalizeLookupId(row.id);
         const name = collectionEmployeeName(row, id);
+        const role = collectionEmployeeRole(row);
         if (id && name) employeeLookupMap.set(id, name);
+        if (id) employeeRoleLookupMap.set(id, role);
     });
 
     if (window.MargaUtils?.filterEmployeeAssignmentOptions) {
@@ -2366,9 +2417,12 @@ function collectionHistoryDocToEntry(doc) {
         followedUpBy: getField(f, ['followed_up_by']),
         collectorName: getField(f, ['collector_name']),
         employeeName: getField(f, ['employee_name']),
+        committedBy: getField(f, ['committed_by']),
         createdBy: getField(f, ['created_by']),
         updatedBy: getField(f, ['updated_by']),
         encodedBy: getField(f, ['encoded_by']),
+        insertedBy: getField(f, ['inserted_by']),
+        computer: getField(f, ['pcname', 'computer_name', 'device_name', 'ipadd']),
         followupDate,
         followupDateRaw,
         followupDateKey: toDateKey(followupDate),
@@ -2514,14 +2568,37 @@ function normalizeLegacyCollectionScheduleEntry(row = {}) {
     const taskDateRaw = row.task_datetime || row.original_sched || row.schedule_date || '';
     const committedDateRaw = row.commitment_date || row.followup_date || taskDateRaw;
     const updatedAt = normalizeDate(row.updated_at || row.created_at || row.timestmp || row.tmestamp || row.date_finished || taskDateRaw);
-    const employeeId = normalizeLookupId(row.assigned_to_id || row.tech_id || row.field_billing_assigned_staff_id || row.user_id || row.closedby || row.userlog_id);
-    const assignedName = String(
-        row.assigned_to
-        || row.field_billing_assigned_staff_name
-        || row.committed_by
-        || employeeLookupMap.get(employeeId)
+    const pickupEmployeeId = normalizeLookupId(row.assigned_to_id || row.tech_id || row.field_billing_assigned_staff_id || '');
+    const followupEmployeeId = normalizeLookupId(
+        row.employee_id
+        || row.followed_up_by_id
+        || row.collector_id
+        || row.created_by_id
+        || row.updated_by_id
+        || row.encoded_by_id
+        || row.inserted_by_id
+        || row.user_id
+        || row.closedby
+        || row.userlog_id
+    );
+    const pickupName = String(row.assigned_to || row.field_billing_assigned_staff_name || employeeLookupMap.get(pickupEmployeeId) || '').trim();
+    const followupName = String(
+        row.committed_by
+        || row.collector_name
+        || row.followed_up_by
+        || row.employee_name
+        || row.created_by
+        || row.updated_by
+        || row.encoded_by
+        || row.inserted_by
+        || employeeLookupMap.get(followupEmployeeId)
         || ''
     ).trim();
+    const pickupRole = String(row.assigned_role || roleForEmployeeId(pickupEmployeeId) || roleForEmployeeName(pickupName) || '').trim();
+    const followupRole = String(roleForEmployeeId(followupEmployeeId) || roleForEmployeeName(followupName) || '').trim();
+    const canUsePickupAsCaller = Boolean(pickupName) && !followupName && isCollectionFollowupRole(pickupRole);
+    const callerName = followupName || (canUsePickupAsCaller ? pickupName : '');
+    const callerEmployeeId = followupEmployeeId || (canUsePickupAsCaller ? pickupEmployeeId : '');
     const remarks = buildAddressText([row.remarks, row.customer_request, row.tl_remarks, row.csr_remarks]);
 
     return {
@@ -2536,9 +2613,21 @@ function normalizeLegacyCollectionScheduleEntry(row = {}) {
         amount: Number(row.balance || row.amount || row.amt_collected || 0) || 0,
         customer: String(row.customer || row.company_name || '').trim(),
         branch: String(row.branch || row.branch_name || '').trim(),
-        assignedTo: assignedName,
-        assignedToId: employeeId,
-        assignedRole: String(row.assigned_role || '').trim(),
+        assignedTo: callerName,
+        assignedToId: callerEmployeeId,
+        assignedRole: followupRole || (canUsePickupAsCaller ? pickupRole : ''),
+        pickupAssignedTo: pickupName,
+        pickupAssignedToId: pickupEmployeeId,
+        pickupAssignedRole: pickupRole,
+        committedBy: String(row.committed_by || '').trim(),
+        collectorName: String(row.collector_name || '').trim(),
+        followedUpBy: String(row.followed_up_by || '').trim(),
+        employeeName: String(row.employee_name || '').trim(),
+        createdBy: String(row.created_by || '').trim(),
+        updatedBy: String(row.updated_by || '').trim(),
+        encodedBy: String(row.encoded_by || '').trim(),
+        insertedBy: String(row.inserted_by || '').trim(),
+        computer: String(row.pcname || row.computer_name || row.device_name || row.ipadd || '').trim(),
         remarks,
         updatedAt,
         callDate: normalizeDate(row.date_finished || row.timestmp || row.tmestamp || row.updated_at || row.created_at || taskDateRaw),
@@ -2682,9 +2771,15 @@ async function loadCollectionHistory() {
             'followed_up_by',
             'collector_name',
             'employee_name',
+            'committed_by',
             'created_by',
             'updated_by',
             'encoded_by',
+            'inserted_by',
+            'pcname',
+            'computer_name',
+            'device_name',
+            'ipadd',
             'timestamp',
             'call_datetime',
             'created_at'
@@ -2766,6 +2861,18 @@ async function loadCollectionScheduleEntries() {
                 'assigned_to',
                 'assigned_to_id',
                 'assigned_role',
+                'committed_by',
+                'collector_name',
+                'followed_up_by',
+                'employee_name',
+                'created_by',
+                'updated_by',
+                'encoded_by',
+                'inserted_by',
+                'pcname',
+                'computer_name',
+                'device_name',
+                'ipadd',
                 'status',
                 'purpose',
                 'remarks',
@@ -2784,37 +2891,95 @@ async function loadCollectionScheduleEntries() {
             return sourceText.includes('collection');
         })
         .filter((row) => String(row.status || 'Active').toLowerCase() !== 'cancelled')
-        .map((row) => ({
-            docId: row._docId || row._docName || '',
-            invoiceKey: String(row.invoice_no || row.invoice_id || '').trim(),
-            scheduleStatus: String(row.schedule_status || row.purpose || '').trim(),
-            scheduleStatusKey: String(row.schedule_status_key || scheduleSlug(row.schedule_status || row.purpose || '')).trim(),
-            purpose: String(row.purpose || '').trim(),
-            scheduleDate: normalizeDate(row.schedule_date || row.followup_date),
-            scheduleDateKey: toDateKey(row.schedule_date || row.followup_date),
-            scheduleTime: normalizeTimeInput(row.schedule_time || row.collection_time || ''),
-            amount: Number(row.balance || row.amount || 0) || 0,
-            customer: String(row.customer || '').trim(),
-            branch: String(row.branch || '').trim(),
-            assignedTo: String(row.assigned_to || '').trim(),
-            assignedToId: normalizeLookupId(row.assigned_to_id || ''),
-            assignedRole: String(row.assigned_role || '').trim(),
-            remarks: String(row.remarks || '').trim(),
-            updatedAt: normalizeDate(row.updated_at || row.created_at)
-        }))
+        .map((row) => {
+            const assigneeId = normalizeLookupId(row.assigned_to_id || '');
+            const assigneeName = String(row.assigned_to || employeeLookupMap.get(assigneeId) || '').trim();
+            const assigneeRole = String(row.assigned_role || roleForEmployeeId(assigneeId) || roleForEmployeeName(assigneeName) || '').trim();
+            const explicitCaller = String(
+                row.committed_by
+                || row.collector_name
+                || row.followed_up_by
+                || row.employee_name
+                || row.created_by
+                || row.updated_by
+                || row.encoded_by
+                || row.inserted_by
+                || ''
+            ).trim();
+            const canUseAssigneeAsCaller = !explicitCaller && assigneeName && isCollectionFollowupRole(assigneeRole);
+            const callerName = explicitCaller || (canUseAssigneeAsCaller ? assigneeName : '');
+            return {
+                docId: row._docId || row._docName || '',
+                invoiceKey: String(row.invoice_no || row.invoice_id || '').trim(),
+                scheduleStatus: String(row.schedule_status || row.purpose || '').trim(),
+                scheduleStatusKey: String(row.schedule_status_key || scheduleSlug(row.schedule_status || row.purpose || '')).trim(),
+                purpose: String(row.purpose || '').trim(),
+                scheduleDate: normalizeDate(row.schedule_date || row.followup_date),
+                scheduleDateKey: toDateKey(row.schedule_date || row.followup_date),
+                scheduleTime: normalizeTimeInput(row.schedule_time || row.collection_time || ''),
+                amount: Number(row.balance || row.amount || 0) || 0,
+                customer: String(row.customer || '').trim(),
+                branch: String(row.branch || '').trim(),
+                assignedTo: callerName,
+                assignedToId: canUseAssigneeAsCaller ? assigneeId : '',
+                assignedRole: canUseAssigneeAsCaller ? assigneeRole : '',
+                pickupAssignedTo: assigneeName,
+                pickupAssignedToId: assigneeId,
+                pickupAssignedRole: assigneeRole,
+                committedBy: String(row.committed_by || '').trim(),
+                collectorName: String(row.collector_name || '').trim(),
+                followedUpBy: String(row.followed_up_by || '').trim(),
+                employeeName: String(row.employee_name || '').trim(),
+                createdBy: String(row.created_by || '').trim(),
+                updatedBy: String(row.updated_by || '').trim(),
+                encodedBy: String(row.encoded_by || '').trim(),
+                insertedBy: String(row.inserted_by || '').trim(),
+                remarks: String(row.remarks || '').trim(),
+                computer: String(row.pcname || row.computer_name || row.device_name || row.ipadd || '').trim(),
+                updatedAt: normalizeDate(row.updated_at || row.created_at)
+            };
+        })
         .filter((row) => row.invoiceKey || row.customer || row.branch);
 
     const byKey = new Map();
     [...mirrorRows, ...legacyRows].forEach((row) => {
-        const key = row.docId
-            ? `doc:${row.docId}`
-            : `${row.invoiceKey || ''}:${row.scheduleDateKey || ''}:${row.customer || ''}:${row.branch || ''}:${row.remarks || ''}`;
-        if (!byKey.has(key)) byKey.set(key, row);
+        const businessKey = [
+            row.invoiceKey || '',
+            row.scheduleDateKey || '',
+            row.customer || '',
+            row.branch || '',
+            row.remarks || ''
+        ].join(':');
+        const key = businessKey.replace(/:+/g, ':').trim() || (row.docId ? `doc:${row.docId}` : '');
+        if (key) byKey.set(key, row);
     });
     collectionScheduleEntries = Array.from(byKey.values());
 }
 
 function normalizeCollectionScheduleEntry(row = {}) {
+    const assigneeId = normalizeLookupId(row.assigned_to_id || row.assignedToId || '');
+    const assigneeName = String(row.assigned_to || row.assignedTo || '').trim();
+    const assigneeRole = String(row.assigned_role || row.assignedRole || roleForEmployeeId(assigneeId) || roleForEmployeeName(assigneeName) || '').trim();
+    const explicitCaller = String(
+        row.committed_by
+        || row.committedBy
+        || row.collector_name
+        || row.collectorName
+        || row.followed_up_by
+        || row.followedUpBy
+        || row.employee_name
+        || row.employeeName
+        || row.created_by
+        || row.createdBy
+        || row.updated_by
+        || row.updatedBy
+        || row.encoded_by
+        || row.encodedBy
+        || row.inserted_by
+        || row.insertedBy
+        || ''
+    ).trim();
+    const canUseAssigneeAsCaller = !explicitCaller && assigneeName && isCollectionFollowupRole(assigneeRole);
     return {
         docId: row._docId || row.docId || row._docName || '',
         invoiceKey: String(row.invoice_no || row.invoice_id || row.invoiceKey || '').trim(),
@@ -2827,10 +2992,22 @@ function normalizeCollectionScheduleEntry(row = {}) {
         amount: Number(row.balance || row.amount || 0) || 0,
         customer: String(row.customer || '').trim(),
         branch: String(row.branch || '').trim(),
-        assignedTo: String(row.assigned_to || row.assignedTo || '').trim(),
-        assignedToId: normalizeLookupId(row.assigned_to_id || row.assignedToId || ''),
-        assignedRole: String(row.assigned_role || row.assignedRole || '').trim(),
+        assignedTo: explicitCaller || (canUseAssigneeAsCaller ? assigneeName : ''),
+        assignedToId: canUseAssigneeAsCaller ? assigneeId : '',
+        assignedRole: canUseAssigneeAsCaller ? assigneeRole : '',
+        pickupAssignedTo: assigneeName,
+        pickupAssignedToId: assigneeId,
+        pickupAssignedRole: assigneeRole,
+        committedBy: String(row.committed_by || row.committedBy || '').trim(),
+        collectorName: String(row.collector_name || row.collectorName || '').trim(),
+        followedUpBy: String(row.followed_up_by || row.followedUpBy || '').trim(),
+        employeeName: String(row.employee_name || row.employeeName || '').trim(),
+        createdBy: String(row.created_by || row.createdBy || '').trim(),
+        updatedBy: String(row.updated_by || row.updatedBy || '').trim(),
+        encodedBy: String(row.encoded_by || row.encodedBy || '').trim(),
+        insertedBy: String(row.inserted_by || row.insertedBy || '').trim(),
         remarks: String(row.remarks || '').trim(),
+        computer: String(row.pcname || row.computer_name || row.device_name || row.ipadd || row.computer || '').trim(),
         updatedAt: normalizeDate(row.updated_at || row.updatedAt || row.created_at)
     };
 }
@@ -8397,12 +8574,16 @@ function buildCollectorScheduleRecord(workspace, options = {}) {
         assigned_messenger_name: /messenger|driver/i.test(assignee.role || '') ? assignee.name : '',
         assigned_technician_id: /technician|production/i.test(assignee.role || '') ? assignee.id : '',
         assigned_technician_name: /technician|production/i.test(assignee.role || '') ? assignee.name : '',
+        committed_by: getCurrentCollectorName(),
+        collector_name: getCurrentCollectorName(),
+        followed_up_by: getCurrentCollectorName(),
         tech_id: assignee.id || '',
         tbl_schedule_id: options.tblScheduleId || previous.tbl_schedule_id || '',
         collection_address: String(document.getElementById('collectorProfileAddress')?.value || workspace.address || branch.address || '').trim(),
         contact_person: String(document.getElementById('collectorLastContact')?.value || document.getElementById('collectorProfileContactPerson')?.value || '').trim(),
         contact_number: String(document.getElementById('collectorContactNumber')?.value || document.getElementById('collectorProfileContactNumber')?.value || '').trim(),
         remarks: String(document.getElementById('collectorRemarks')?.value || previous.remarks || '').trim(),
+        pcname: previous.pcname || 'PWA',
         area_group: previous.area_group || 'Area Group 1 (Unassigned)',
         updated_at: now,
         created_at: previous.created_at || now
@@ -8811,16 +8992,26 @@ function hasMeaningfulRemarks(value) {
 }
 
 function getCollectorEntryStaffName(entry = {}) {
-    const byId = employeeLookupMap.get(normalizeLookupId(entry.employeeId || entry.assignedToId || ''));
-    return String(
-        entry.collectorName
+    const employeeId = normalizeLookupId(entry.employeeId || entry.assignedToId || '');
+    const byId = employeeLookupMap.get(employeeId);
+    const explicitName = String(
+        entry.committedBy
+        || entry.collectorName
         || entry.followedUpBy
         || entry.employeeName
         || byId
         || entry.createdBy
-        || entry.assignedTo
-        || 'Unassigned'
-    ).trim() || 'Unassigned';
+        || entry.updatedBy
+        || entry.encodedBy
+        || entry.insertedBy
+        || ''
+    ).trim();
+    if (explicitName) return explicitName;
+
+    const assignedName = String(entry.assignedTo || '').trim();
+    const assignedRole = String(entry.assignedRole || roleForEmployeeId(entry.assignedToId) || roleForEmployeeName(assignedName) || '').trim();
+    if (assignedName && !isFieldPickupRole(assignedRole)) return assignedName;
+    return 'Unassigned';
 }
 
 function makeCollectorTodayRowFromSchedule(entry = {}, options = {}) {
@@ -8835,6 +9026,7 @@ function makeCollectorTodayRowFromSchedule(entry = {}, options = {}) {
         amount: Number(entry.amount || invoiceRow.amount || 0) || 0,
         remarks: entry.remarks || '',
         contactPerson: entry.assignedTo || '',
+        computer: entry.computer || '',
         date: entry.scheduleDate,
         followupDate: entry.followupDate || entry.scheduleDate,
         invoiceKey: invoiceRow.invoiceKey || entry.invoiceKey || ''
@@ -8865,6 +9057,7 @@ function getCollectorTodayCallRows() {
                 amount: Number(entry.paymentAmount || invoice.amount || 0) || 0,
                 remarks: entry.remarks || '',
                 contactPerson: entry.contactPerson || '',
+                computer: entry.computer || '',
                 date: entry.callDate || entry.followupDate,
                 followupDate: entry.followupDate || '',
                 invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
@@ -8917,6 +9110,7 @@ function getCollectorTodayConfirmedRows() {
                 amount: Number(entry.paymentAmount || invoice.amount || 0) || 0,
                 remarks: entry.remarks || '',
                 contactPerson: entry.contactPerson || '',
+                computer: entry.computer || '',
                 date: entry.followupDate,
                 followupDate: entry.followupDate || '',
                 invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
@@ -9002,6 +9196,7 @@ function renderCollectorTodayStaffDetails(type, staffName) {
                         <th>${type === 'confirmed' ? 'Confirmed Amount' : 'Amount'}</th>
                         <th>${type === 'confirmed' ? 'Collection Date' : 'Call Date'}</th>
                         <th>Next Follow-up</th>
+                        <th>Computer</th>
                         <th>Remarks</th>
                         <th>Open</th>
                     </tr>
@@ -9015,6 +9210,7 @@ function renderCollectorTodayStaffDetails(type, staffName) {
                             <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
                             <td>${escapeHtml(formatDate(row.date))}</td>
                             <td>${escapeHtml(formatDate(row.followupDate))}</td>
+                            <td>${escapeHtml(row.computer || '-')}</td>
                             <td>${escapeHtml(row.remarks || '-')}</td>
                             <td>${row.invoiceKey ? `<button type="button" class="btn btn-secondary btn-sm collector-today-invoice-open" data-invoice-key="${escapeHtml(row.invoiceKey)}">Open</button>` : '-'}</td>
                         </tr>
@@ -9041,6 +9237,7 @@ function renderCollectorTodayAllDetails(type, rows = []) {
                         <th>Invoice</th>
                         <th>Amount</th>
                         <th>Next Follow-up</th>
+                        <th>Computer</th>
                         <th>Remarks</th>
                         <th>Open</th>
                     </tr>
@@ -9054,6 +9251,7 @@ function renderCollectorTodayAllDetails(type, rows = []) {
                             <td>${escapeHtml(row.invoiceNo || '-')}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
                             <td>${escapeHtml(formatDate(row.followupDate))}</td>
+                            <td>${escapeHtml(row.computer || '-')}</td>
                             <td>${escapeHtml(row.remarks || '-')}</td>
                             <td>${row.invoiceKey ? `<button type="button" class="btn btn-secondary btn-sm collector-today-invoice-open" data-invoice-key="${escapeHtml(row.invoiceKey)}">Open</button>` : '-'}</td>
                         </tr>
@@ -9179,7 +9377,7 @@ function getCollectorActivityToday() {
             const token = collectionHistoryToken(entry);
             if (seen.has(token)) return;
             seen.add(token);
-            const collector = String(entry.collectorName || entry.followedUpBy || entry.employeeName || entry.createdBy || 'Unassigned').trim() || 'Unassigned';
+            const collector = getCollectorEntryStaffName(entry);
             if (!byCollector.has(collector)) {
                 byCollector.set(collector, { collector, count: 0, promisedAmount: 0, confirmedAmount: 0 });
             }
