@@ -9,6 +9,7 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
 const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
+const PRODUCTIVITY_REPORT_VERSION = '20260519-printed-today-v2';
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
@@ -54,6 +55,7 @@ function toJson(statusCode, body) {
         statusCode,
         headers: {
             'Content-Type': 'application/json',
+            'Cache-Control': 'no-store, max-age=0',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET,OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-API-Key'
@@ -2448,6 +2450,7 @@ exports.handler = async (event) => {
                 cell_detail_scope: detailScope === 'all' ? 'all_months' : (detailScope === 'none' ? 'none' : 'current_month'),
                 cell_detail_months: Array.from(detailMonthKeys),
                 billing_docs_scanned: cache.billingDocs.length,
+                productivity_report_version: PRODUCTIVITY_REPORT_VERSION,
                 billing_productivity_docs_scanned: cache.productivityBillingDocs.length,
                 schedule_docs_scanned: cache.scheduleDocs.length,
                 machine_reading_docs_scanned: cache.machineReadingDocs.length
