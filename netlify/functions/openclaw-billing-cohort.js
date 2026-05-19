@@ -36,7 +36,8 @@ const BRANCH_METADATA_OVERRIDES = {
     '2378': { company: 'China Bank Savings - Branches', branch: 'Cash Center Bulacan (CBS)' },
     '3396': { company: 'China Bank Savings - Branches', branch: 'Cash Center Laguna (CBS)' },
     '3822': { company: 'China Bank Savings - Branches', branch: 'Cash Center Imus (CBS)' },
-    '3579': { company: 'VANS TURF CONSTRUCTION CORP', branch: 'VANS TURF CONSTRUCTION CORP' }
+    '3579': { company: 'VANS TURF CONSTRUCTION CORP', branch: 'VANS TURF CONSTRUCTION CORP' },
+    '3777': { companyId: '1161', company: 'Diversified Holdings Inc. (DHI)', branch: 'DHI' }
 };
 const CHINABANK_GROUP_COMPANY_ID = '72';
 const CHINABANK_GROUP_BRANCH_IDS = new Set(['2378', '3396', '3822', '3462']);
@@ -495,7 +496,7 @@ async function loadCache(
         cache.branchMap[id] = {
             id,
             name: String(override?.branch || getField(f, ['branchname']) || 'Main').trim() || 'Main',
-            companyId: String(getField(f, ['company_id']) || '').trim(),
+            companyId: String(override?.companyId || getField(f, ['company_id']) || '').trim(),
             companyNameOverride: String(override?.company || '').trim(),
             earliest: Number.isFinite(earliest) ? earliest : null,
             intrvl: Number(getField(f, ['intrvl']) || 0) || 0,
