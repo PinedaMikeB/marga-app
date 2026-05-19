@@ -5313,6 +5313,10 @@ function hasSecondaryRtpRate(profile = {}) {
         || Number(profile.monthly_rate2 || 0) > 0;
 }
 
+function hasSharedBillingGroupQuota(rows = []) {
+    return (Array.isArray(rows) ? rows : []).some((row) => Number(row?.billing_group?.monthly_quota || 0) > 0);
+}
+
 function getRtpSecondaryProfile(profile = {}) {
     const pageRate = Number(profile.page_rate2 || profile.page_rate_xtra2 || 0) || 0;
     return {
@@ -6119,10 +6123,12 @@ function buildBillingCalculationContext(row, monthKey) {
     const targetPresentMeter = targetReadingGroup
         ? Number(targetReadingGroup.present_meter || targetReadingGroup.meter_reading || targetPreviousMeter || 0) || 0
         : targetPreviousMeter;
+    const groupedMachineRows = summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey);
+    const forceGroupedMode = hasVerifiedBillingGroup && groupedMachineRows.length > 1;
 
     return {
         row: workingRow,
-        sourceSummaryRow: canUseVerifiedSummaryGroup ? row : null,
+        sourceSummaryRow: isVerifiedSummaryGroup ? row : null,
         monthKey,
         targetCell,
         targetReadingGroup,
@@ -6135,9 +6141,9 @@ function buildBillingCalculationContext(row, monthKey) {
         spoilageRate: DEFAULT_SPOILAGE_RATE,
         isReading: isReadingPricing(profile),
         isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
-        hasSecondaryRtp: hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2),
-        groupedMachineRows: summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey),
-        forceGroupedMode: hasVerifiedBillingGroup && summaryGroupedRows.length > 1
+        hasSecondaryRtp: !forceGroupedMode && (hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2)),
+        groupedMachineRows,
+        forceGroupedMode
     };
 }
 
@@ -7431,7 +7437,9 @@ async function openBillingCalcModal(rowId, monthKey) {
                 profile: seed.profile || getSharedBillingGroupProfile(groupedRowsForBilling[index], getRowBillingProfile(groupedRowsForBilling[index]) || profile),
                 row: groupedRowsForBilling[index] || row
             }, activeBillingMode, index));
-            const summary = applySharedMultiMeterQuota(lines);
+            const summary = hasSharedBillingGroupQuota(groupedRowsForBilling)
+                ? applySharedMultiMeterQuota(lines)
+                : summarizeBillingLines(lines);
             summary.lineItems.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
             summary.billingMode = activeBillingMode;
             return summary;
