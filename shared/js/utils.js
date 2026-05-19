@@ -22,7 +22,9 @@ const MargaUtils = {
         'tbl_companylist',
         'tbl_pettycash_entries',
         'tbl_pettycash_requests',
-        'tbl_pettycash_settings'
+        'tbl_pettycash_settings',
+        'marga_apd_bills',
+        'marga_apd_checks'
     ]),
 
     /**

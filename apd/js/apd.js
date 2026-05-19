@@ -293,6 +293,7 @@ function onExternalApdStateChange(event) {
     if (!preserveCheckEdit && !document.getElementById('checkIdInput')?.value) {
         clearCheckForm();
     }
+    syncApdSharedState();
 }
 
 function bindTabControls() {
@@ -1231,8 +1232,10 @@ async function syncApdSharedState() {
             ...localChecksToShare.map((check) => saveApdCheckToShared(check))
         ]);
 
-        APD_STATE.bills = mergeById(remoteBills, localBillsToShare).map(normalizeBill);
-        APD_STATE.checks = mergeById(remoteChecks, localChecksToShare).map(normalizeCheck);
+        const mergedBills = mergeById(remoteBills, localBillsToShare);
+        const mergedChecks = mergeById(remoteChecks, localChecksToShare);
+        APD_STATE.bills = (mergedBills.length ? mergedBills : localBills.length ? localBills : cloneData(DEFAULT_BILLS)).map(normalizeBill);
+        APD_STATE.checks = (mergedChecks.length ? mergedChecks : localChecks.length ? localChecks : cloneData(DEFAULT_CHECKS)).map(normalizeCheck);
         persistState();
         syncPettyCashRequestsFromChecks();
         populateSelects();
