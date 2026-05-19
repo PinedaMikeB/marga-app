@@ -181,6 +181,53 @@ const COLLECTION_BILLING_FIELD_MASK = [
     'billing_lines_json',
     'billing_lines_count'
 ];
+const LEGACY_COLLECTION_SCHEDULE_FIELD_MASK = [
+    'id',
+    'source',
+    'source_module',
+    'request_origin',
+    'collection_schedule_source',
+    'collection_schedule_status',
+    'schedule_status',
+    'schedule_status_key',
+    'purpose',
+    'schedule_purpose',
+    'purpose_id',
+    'task_datetime',
+    'original_sched',
+    'commitment_date',
+    'date_finished',
+    'timestmp',
+    'tmestamp',
+    'created_at',
+    'updated_at',
+    'invoice_num',
+    'invoice_id',
+    'amt_collected',
+    'company_id',
+    'branch_id',
+    'company_name',
+    'branch_name',
+    'customer',
+    'branch',
+    'tech_id',
+    'assigned_to_id',
+    'assigned_to',
+    'field_billing_assigned_staff_id',
+    'field_billing_assigned_staff_name',
+    'committed_by',
+    'collocutor',
+    'caller',
+    'phone_number',
+    'remarks',
+    'customer_request',
+    'tl_remarks',
+    'csr_remarks',
+    'status',
+    'iscancel',
+    'iscancelled',
+    'iscancelleddate'
+];
 
 function buildMonthColumns(startValue, endValue) {
     const monthColumns = [];
@@ -2386,6 +2433,23 @@ async function loadCollectionHistoryForKeys(keys = []) {
     docs.forEach((doc) => indexCollectionHistoryEntry(collectionHistoryDocToEntry(doc)));
 }
 
+function firestoreRunRangeQuery(collectionId, fieldPath, startValue, endValue, fieldMask = []) {
+    if (!collectionId || !fieldPath || !startValue || !endValue) return Promise.resolve([]);
+    return firestoreRunQuery({
+        from: [{ collectionId }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    { fieldFilter: { field: { fieldPath }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: startValue } } },
+                    { fieldFilter: { field: { fieldPath }, op: 'LESS_THAN', value: { stringValue: endValue } } }
+                ]
+            }
+        },
+        select: { fields: fieldMask.map((maskPath) => ({ fieldPath: maskPath })) }
+    });
+}
+
 function getHistoryForRecords(records = []) {
     const keys = [];
     records.forEach((record) => {
@@ -2417,6 +2481,109 @@ function getHistoryForCollectorRow(rowId) {
         }
     });
     return mergeHistoryLists(...histories);
+}
+
+function isCancelledLegacySchedule(row = {}) {
+    const statusText = String(row.status || row.master_schedule_status || row.collection_schedule_status || '').trim().toLowerCase();
+    return Number(row.iscancel || 0) === 1
+        || Number(row.iscancelled || 0) === 1
+        || Boolean(String(row.iscancelleddate || '').trim())
+        || statusText === 'cancelled'
+        || statusText === 'canceled';
+}
+
+function isLegacyCollectionSchedule(row = {}) {
+    const purposeId = Number(row.purpose_id || 0);
+    const sourceText = [
+        row.source,
+        row.source_module,
+        row.request_origin,
+        row.collection_schedule_source,
+        row.collection_schedule_status,
+        row.schedule_status,
+        row.schedule_status_key,
+        row.purpose,
+        row.schedule_purpose,
+        row.remarks,
+        row.customer_request
+    ].join(' ').toLowerCase();
+    return purposeId === 2 || /collection|collect|pickup|pick up/.test(sourceText);
+}
+
+function normalizeLegacyCollectionScheduleEntry(row = {}) {
+    const taskDateRaw = row.task_datetime || row.original_sched || row.schedule_date || '';
+    const committedDateRaw = row.commitment_date || row.followup_date || taskDateRaw;
+    const updatedAt = normalizeDate(row.updated_at || row.created_at || row.timestmp || row.tmestamp || row.date_finished || taskDateRaw);
+    const employeeId = normalizeLookupId(row.assigned_to_id || row.tech_id || row.field_billing_assigned_staff_id || row.user_id || row.closedby || row.userlog_id);
+    const assignedName = String(
+        row.assigned_to
+        || row.field_billing_assigned_staff_name
+        || row.committed_by
+        || employeeLookupMap.get(employeeId)
+        || ''
+    ).trim();
+    const remarks = buildAddressText([row.remarks, row.customer_request, row.tl_remarks, row.csr_remarks]);
+
+    return {
+        docId: row._docId || row._docName || String(row.id || '').trim(),
+        invoiceKey: String(row.invoice_no || row.invoice_num || row.invoice_id || '').trim(),
+        scheduleStatus: String(row.collection_schedule_status || row.schedule_status || row.purpose || row.schedule_purpose || 'Confirmed').trim(),
+        scheduleStatusKey: String(row.schedule_status_key || scheduleSlug(row.collection_schedule_status || row.schedule_status || row.purpose || row.schedule_purpose || 'Confirmed')).trim(),
+        purpose: String(row.purpose || row.schedule_purpose || '').trim(),
+        scheduleDate: normalizeDate(taskDateRaw),
+        scheduleDateKey: toDateKey(taskDateRaw),
+        scheduleTime: normalizeTimeInput(taskDateRaw),
+        amount: Number(row.balance || row.amount || row.amt_collected || 0) || 0,
+        customer: String(row.customer || row.company_name || '').trim(),
+        branch: String(row.branch || row.branch_name || '').trim(),
+        assignedTo: assignedName,
+        assignedToId: employeeId,
+        assignedRole: String(row.assigned_role || '').trim(),
+        remarks,
+        updatedAt,
+        callDate: normalizeDate(row.date_finished || row.timestmp || row.tmestamp || row.updated_at || row.created_at || taskDateRaw),
+        callDateKey: toDateKey(row.date_finished || row.timestmp || row.tmestamp || row.updated_at || row.created_at || taskDateRaw),
+        followupDate: normalizeDate(committedDateRaw),
+        followupDateKey: toDateKey(committedDateRaw),
+        source: 'tbl_schedule'
+    };
+}
+
+async function loadLegacyCollectionScheduleEntries() {
+    const todayKey = toDateKey(new Date());
+    const tomorrowKey = getTodayInputValue(1);
+    const afterTomorrowKey = getTodayInputValue(2);
+    const querySpecs = [
+        ['task_datetime', todayKey, afterTomorrowKey],
+        ['original_sched', todayKey, afterTomorrowKey],
+        ['commitment_date', todayKey, afterTomorrowKey],
+        ['date_finished', todayKey, tomorrowKey],
+        ['timestmp', todayKey, tomorrowKey],
+        ['tmestamp', todayKey, tomorrowKey],
+        ['updated_at', todayKey, tomorrowKey],
+        ['created_at', todayKey, tomorrowKey]
+    ];
+
+    const groups = await Promise.all(querySpecs.map(([fieldPath, startValue, endValue]) => (
+        firestoreRunRangeQuery('tbl_schedule', fieldPath, startValue, endValue, LEGACY_COLLECTION_SCHEDULE_FIELD_MASK)
+            .catch((error) => {
+                console.warn(`Unable to load collection tbl_schedule rows by ${fieldPath}:`, error);
+                return [];
+            })
+    )));
+
+    const byDoc = new Map();
+    groups.flat().forEach((doc) => {
+        const key = doc.name || getFirestoreDocumentId(doc);
+        if (key && !byDoc.has(key)) byDoc.set(key, doc);
+    });
+
+    return Array.from(byDoc.values())
+        .map(documentFieldsToPlain)
+        .filter((row) => !isCancelledLegacySchedule(row))
+        .filter(isLegacyCollectionSchedule)
+        .map(normalizeLegacyCollectionScheduleEntry)
+        .filter((row) => row.invoiceKey || row.customer || row.branch || row.remarks);
 }
 
 function mergeHistoryLists(...lists) {
@@ -2578,36 +2745,39 @@ function updateFollowupBadge() {
 }
 
 async function loadCollectionScheduleEntries() {
-    const docs = await safeFirestoreGetAll('marga_master_schedule', null, {
-        fieldMask: [
-            'source',
-            'request_origin',
-            'collection_schedule_source',
-            'invoice_no',
-            'invoice_id',
-            'schedule_status',
-            'schedule_status_key',
-            'schedule_date',
-            'schedule_time',
-            'followup_date',
-            'collection_time',
-            'amount',
-            'balance',
-            'customer',
-            'branch',
-            'assigned_to',
-            'assigned_to_id',
-            'assigned_role',
-            'status',
-            'purpose',
-            'remarks',
-            'updated_at',
-            'created_at'
-        ],
-        maxPages: 320
-    });
+    const [mirrorDocs, legacyRows] = await Promise.all([
+        safeFirestoreGetAll('marga_master_schedule', null, {
+            fieldMask: [
+                'source',
+                'request_origin',
+                'collection_schedule_source',
+                'invoice_no',
+                'invoice_id',
+                'schedule_status',
+                'schedule_status_key',
+                'schedule_date',
+                'schedule_time',
+                'followup_date',
+                'collection_time',
+                'amount',
+                'balance',
+                'customer',
+                'branch',
+                'assigned_to',
+                'assigned_to_id',
+                'assigned_role',
+                'status',
+                'purpose',
+                'remarks',
+                'updated_at',
+                'created_at'
+            ],
+            maxPages: 320
+        }),
+        loadLegacyCollectionScheduleEntries()
+    ]);
 
-    collectionScheduleEntries = docs
+    const mirrorRows = mirrorDocs
         .map(documentFieldsToPlain)
         .filter((row) => {
             const sourceText = `${row.source || ''} ${row.request_origin || ''} ${row.collection_schedule_source || ''}`.toLowerCase();
@@ -2633,6 +2803,15 @@ async function loadCollectionScheduleEntries() {
             updatedAt: normalizeDate(row.updated_at || row.created_at)
         }))
         .filter((row) => row.invoiceKey || row.customer || row.branch);
+
+    const byKey = new Map();
+    [...mirrorRows, ...legacyRows].forEach((row) => {
+        const key = row.docId
+            ? `doc:${row.docId}`
+            : `${row.invoiceKey || ''}:${row.scheduleDateKey || ''}:${row.customer || ''}:${row.branch || ''}:${row.remarks || ''}`;
+        if (!byKey.has(key)) byKey.set(key, row);
+    });
+    collectionScheduleEntries = Array.from(byKey.values());
 }
 
 function normalizeCollectionScheduleEntry(row = {}) {

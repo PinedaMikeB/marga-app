@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v64-field-invoice-table';
+const CACHE_NAME = 'marga-app-shell-v65-collection-summary-tbl-schedule';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260519-receive-payment-columns-1',
+    '/collections/js/collections.js?v=20260519-collection-summary-tbl-schedule-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',
