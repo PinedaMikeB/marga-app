@@ -8644,8 +8644,26 @@ function getCollectorEntryStaffName(entry = {}) {
     ).trim() || 'Unassigned';
 }
 
+function makeCollectorTodayRowFromSchedule(entry = {}, options = {}) {
+    const invoiceRow = invoiceRowFromScheduleEntry(entry, options.fallbackLabel || 'Unlinked collection schedule');
+    const key = invoiceRow.invoiceKey || entry.invoiceKey || entry.docId || `${entry.customer}:${entry.branch}:${entry.scheduleDateKey}`;
+    return {
+        key,
+        staff: getCollectorEntryStaffName(entry),
+        customer: invoiceRow.company || entry.customer || options.fallbackLabel || 'Unlinked collection schedule',
+        branch: invoiceRow.branch || entry.branch || '',
+        invoiceNo: invoiceRow.invoiceNo || entry.invoiceKey || '-',
+        amount: Number(entry.amount || invoiceRow.amount || 0) || 0,
+        remarks: entry.remarks || '',
+        contactPerson: entry.assignedTo || '',
+        date: entry.scheduleDate,
+        invoiceKey: invoiceRow.invoiceKey || entry.invoiceKey || ''
+    };
+}
+
 function getCollectorTodayCallRows() {
     const todayKey = toDateKey(new Date());
+    const tomorrowKey = getTodayInputValue(1);
     const seen = new Set();
     const rows = [];
 
@@ -8670,6 +8688,22 @@ function getCollectorTodayCallRows() {
                 date: entry.callDate || entry.followupDate,
                 invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
             });
+        });
+
+    collectionScheduleEntries
+        .filter((entry) => hasMeaningfulRemarks(entry.remarks))
+        .filter((entry) => {
+            const updatedKey = toDateKey(entry.updatedAt);
+            if (updatedKey === todayKey) return true;
+            if (entry.scheduleDateKey === todayKey) return true;
+            return entry.scheduleDateKey === tomorrowKey && isConfirmedCollectionSchedule(entry);
+        })
+        .forEach((entry) => {
+            const row = makeCollectorTodayRowFromSchedule(entry, { fallbackLabel: 'Unlinked schedule remark' });
+            const token = `schedule:${entry.docId || row.key}:${entry.remarks || ''}`;
+            if (seen.has(token)) return;
+            seen.add(token);
+            rows.push(row);
         });
 
     return rows.sort((a, b) => String(a.staff).localeCompare(String(b.staff)) || Number(b.amount || 0) - Number(a.amount || 0));
@@ -8710,24 +8744,11 @@ function getCollectorTodayConfirmedRows() {
     collectionScheduleEntries
         .filter((entry) => entry.scheduleDateKey === tomorrowKey)
         .filter(isConfirmedCollectionSchedule)
-        .filter((entry) => !entry.updatedAt || toDateKey(entry.updatedAt) === todayKey)
         .forEach((entry) => {
-            const invoiceRow = invoiceRowFromScheduleEntry(entry, 'Unlinked confirmed collection');
-            const key = invoiceRow.invoiceKey || entry.invoiceKey || `${entry.customer}:${entry.branch}:${entry.scheduleDateKey}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            rows.push({
-                key,
-                staff: getCollectorEntryStaffName(entry),
-                customer: invoiceRow.company || entry.customer || 'Unlinked confirmed collection',
-                branch: invoiceRow.branch || entry.branch || '',
-                invoiceNo: invoiceRow.invoiceNo || entry.invoiceKey || '-',
-                amount: Number(entry.amount || invoiceRow.amount || 0) || 0,
-                remarks: entry.remarks || '',
-                contactPerson: entry.assignedTo || '',
-                date: entry.scheduleDate,
-                invoiceKey: invoiceRow.invoiceKey || entry.invoiceKey || ''
-            });
+            const row = makeCollectorTodayRowFromSchedule(entry, { fallbackLabel: 'Unlinked confirmed collection' });
+            if (seen.has(row.key)) return;
+            seen.add(row.key);
+            rows.push(row);
         });
 
     return rows.sort((a, b) => String(a.staff).localeCompare(String(b.staff)) || Number(b.amount || 0) - Number(a.amount || 0));
