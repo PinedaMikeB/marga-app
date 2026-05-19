@@ -881,6 +881,65 @@
             min-width: 180px;
         }
 
+        .collector-today-summary-card {
+            flex: 1 1 340px;
+            min-width: min(420px, 100%);
+            padding: 10px 12px;
+            border: 1px solid rgba(96, 165, 250, 0.28);
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(239, 246, 255, 0.95), rgba(236, 253, 245, 0.88));
+            box-shadow: 0 12px 28px rgba(30, 77, 123, 0.08);
+        }
+
+        .collector-today-summary-title {
+            margin-bottom: 8px;
+            color: #173d63;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .collector-today-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(130px, 1fr));
+            gap: 8px;
+        }
+
+        .collector-summary-stat {
+            width: 100%;
+            min-height: 70px;
+            padding: 9px 10px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #173d63;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .collector-summary-stat:hover {
+            border-color: rgba(37, 99, 235, 0.34);
+            box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
+        }
+
+        .collector-summary-stat span,
+        .collector-summary-stat small {
+            display: block;
+            color: #5c7290;
+            font-size: 10px;
+            font-weight: 800;
+            line-height: 1.25;
+            text-transform: uppercase;
+        }
+
+        .collector-summary-stat strong {
+            display: block;
+            margin: 2px 0;
+            font-size: 22px;
+            line-height: 1;
+        }
+
         .collector-control-block.nav {
             flex: 1 1 100%;
             min-width: 260px;
@@ -3822,6 +3881,21 @@
                                 <option value="rd">RD</option>
                                 <option value="customer">Customer</option>
                             </select>
+                        </div>
+                        <div class="collector-today-summary-card" aria-label="Today collection confirmation and call summary">
+                            <div class="collector-today-summary-title">Today Collection Confirmation</div>
+                            <div class="collector-today-summary-grid">
+                                <button type="button" class="collector-summary-stat" id="collectorTodayConfirmedBtn">
+                                    <span>Confirmed Collections</span>
+                                    <strong id="collectorTodayConfirmedCount">0</strong>
+                                    <small id="collectorTodayConfirmedAmount">Tomorrow collection: ₱0</small>
+                                </button>
+                                <button type="button" class="collector-summary-stat" id="collectorTodayCallsBtn">
+                                    <span>Total Calls</span>
+                                    <strong id="collectorTodayCallCount">0</strong>
+                                    <small>With remarks today</small>
+                                </button>
+                            </div>
                         </div>
                         <div class="collector-control-block nav">
                             <label>Month View</label>

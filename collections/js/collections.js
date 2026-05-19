@@ -5027,6 +5027,7 @@ function renderCollectorDashboardFromData(data) {
         pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
     }
 
+    updateCollectorTodaySummaryCard();
     renderCollectionsCompareScorecard();
     return data;
 }
@@ -8630,6 +8631,267 @@ function hasMeaningfulRemarks(value) {
     return Boolean(text) && text !== 'no remarks' && text !== 'n/a' && text !== 'na' && text !== '-';
 }
 
+function getCollectorEntryStaffName(entry = {}) {
+    const byId = employeeLookupMap.get(normalizeLookupId(entry.employeeId || entry.assignedToId || ''));
+    return String(
+        entry.collectorName
+        || entry.followedUpBy
+        || entry.employeeName
+        || byId
+        || entry.createdBy
+        || entry.assignedTo
+        || 'Unassigned'
+    ).trim() || 'Unassigned';
+}
+
+function getCollectorTodayCallRows() {
+    const todayKey = toDateKey(new Date());
+    const seen = new Set();
+    const rows = [];
+
+    Object.values(collectionHistory)
+        .flat()
+        .forEach((entry) => {
+            if (!entry || entry.callDateKey !== todayKey) return;
+            if (!hasMeaningfulRemarks(entry.remarks)) return;
+            const token = collectionHistoryToken(entry);
+            if (seen.has(token)) return;
+            seen.add(token);
+            const invoice = findInvoiceByKey(entry.invoiceKey || entry.accountRef || entry.accountGroupRef) || {};
+            rows.push({
+                key: token,
+                staff: getCollectorEntryStaffName(entry),
+                customer: invoice.company || 'Unlinked account',
+                branch: invoice.branch || '',
+                invoiceNo: invoice.invoiceNo || entry.invoiceKey || '-',
+                amount: Number(entry.paymentAmount || invoice.amount || 0) || 0,
+                remarks: entry.remarks || '',
+                contactPerson: entry.contactPerson || '',
+                date: entry.callDate || entry.followupDate,
+                invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
+            });
+        });
+
+    return rows.sort((a, b) => String(a.staff).localeCompare(String(b.staff)) || Number(b.amount || 0) - Number(a.amount || 0));
+}
+
+function getCollectorTodayConfirmedRows() {
+    const todayKey = toDateKey(new Date());
+    const tomorrowKey = getTodayInputValue(1);
+    const seen = new Set();
+    const rows = [];
+
+    Object.values(collectionHistory)
+        .flat()
+        .forEach((entry) => {
+            if (!entry || entry.callDateKey !== todayKey || entry.followupDateKey !== tomorrowKey) return;
+            if (!hasMeaningfulRemarks(entry.remarks)) return;
+            const statusLabel = getCollectionStatusLabel(entry.statusId || entry.scheduleStatus);
+            const confirmText = `${entry.remarks || ''} ${statusLabel || ''} ${entry.scheduleStatus || ''}`.toLowerCase();
+            if (!/confirm|pick[\s-]?up|pickup|collect/.test(confirmText) || /promise/.test(confirmText)) return;
+            const invoice = findInvoiceByKey(entry.invoiceKey || entry.accountRef || entry.accountGroupRef) || {};
+            const key = invoice.invoiceKey || entry.invoiceKey || entry.accountRef || entry.accountGroupRef || collectionHistoryToken(entry);
+            if (seen.has(key)) return;
+            seen.add(key);
+            rows.push({
+                key,
+                staff: getCollectorEntryStaffName(entry),
+                customer: invoice.company || 'Unlinked confirmed collection',
+                branch: invoice.branch || '',
+                invoiceNo: invoice.invoiceNo || entry.invoiceKey || '-',
+                amount: Number(entry.paymentAmount || invoice.amount || 0) || 0,
+                remarks: entry.remarks || '',
+                contactPerson: entry.contactPerson || '',
+                date: entry.followupDate,
+                invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
+            });
+        });
+
+    collectionScheduleEntries
+        .filter((entry) => entry.scheduleDateKey === tomorrowKey)
+        .filter(isConfirmedCollectionSchedule)
+        .filter((entry) => !entry.updatedAt || toDateKey(entry.updatedAt) === todayKey)
+        .forEach((entry) => {
+            const invoiceRow = invoiceRowFromScheduleEntry(entry, 'Unlinked confirmed collection');
+            const key = invoiceRow.invoiceKey || entry.invoiceKey || `${entry.customer}:${entry.branch}:${entry.scheduleDateKey}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            rows.push({
+                key,
+                staff: getCollectorEntryStaffName(entry),
+                customer: invoiceRow.company || entry.customer || 'Unlinked confirmed collection',
+                branch: invoiceRow.branch || entry.branch || '',
+                invoiceNo: invoiceRow.invoiceNo || entry.invoiceKey || '-',
+                amount: Number(entry.amount || invoiceRow.amount || 0) || 0,
+                remarks: entry.remarks || '',
+                contactPerson: entry.assignedTo || '',
+                date: entry.scheduleDate,
+                invoiceKey: invoiceRow.invoiceKey || entry.invoiceKey || ''
+            });
+        });
+
+    return rows.sort((a, b) => String(a.staff).localeCompare(String(b.staff)) || Number(b.amount || 0) - Number(a.amount || 0));
+}
+
+function buildCollectorTodayStaffSummary(rows = []) {
+    const byStaff = new Map();
+    rows.forEach((row) => {
+        const staff = String(row.staff || 'Unassigned').trim() || 'Unassigned';
+        if (!byStaff.has(staff)) byStaff.set(staff, { staff, count: 0, amount: 0, rows: [] });
+        const group = byStaff.get(staff);
+        group.count += 1;
+        group.amount += Number(row.amount || 0) || 0;
+        group.rows.push(row);
+    });
+    return Array.from(byStaff.values()).sort((a, b) => b.count - a.count || b.amount - a.amount || a.staff.localeCompare(b.staff));
+}
+
+function getCollectorTodaySummaryRows(type) {
+    return type === 'confirmed' ? getCollectorTodayConfirmedRows() : getCollectorTodayCallRows();
+}
+
+function renderCollectorTodayStaffSummary(type) {
+    const groups = buildCollectorTodayStaffSummary(getCollectorTodaySummaryRows(type));
+    if (!groups.length) {
+        return '<div class="collection-followup-empty">No staff rows found for this summary yet.</div>';
+    }
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table collector-total-detail-table">
+                <thead>
+                    <tr>
+                        <th>Staff</th>
+                        <th>${type === 'confirmed' ? 'Confirmed' : 'Calls'}</th>
+                        <th>Amount</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${groups.map((group) => `
+                        <tr>
+                            <td>${escapeHtml(group.staff)}</td>
+                            <td class="text-right">${escapeHtml(group.count.toLocaleString())}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(group.amount))}</td>
+                            <td><button type="button" class="btn btn-secondary btn-sm collector-today-staff-open" data-summary-type="${escapeHtml(type)}" data-staff="${escapeHtml(group.staff)}">Open</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderCollectorTodayStaffDetails(type, staffName) {
+    const rows = getCollectorTodaySummaryRows(type).filter((row) => String(row.staff || 'Unassigned') === staffName);
+    if (!rows.length) {
+        return '<div class="collection-followup-empty">No detail rows found for this staff member.</div>';
+    }
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table collector-total-detail-table">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Branch / Dept</th>
+                        <th>Invoice</th>
+                        <th>${type === 'confirmed' ? 'Confirmed Amount' : 'Amount'}</th>
+                        <th>${type === 'confirmed' ? 'Collection Date' : 'Call Date'}</th>
+                        <th>Remarks</th>
+                        <th>Open</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td>${escapeHtml(row.customer || '-')}</td>
+                            <td>${escapeHtml(row.branch || '-')}</td>
+                            <td>${escapeHtml(row.invoiceNo || '-')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
+                            <td>${escapeHtml(formatDate(row.date))}</td>
+                            <td>${escapeHtml(row.remarks || '-')}</td>
+                            <td>${row.invoiceKey ? `<button type="button" class="btn btn-secondary btn-sm collector-today-invoice-open" data-invoice-key="${escapeHtml(row.invoiceKey)}">Open</button>` : '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function updateCollectorTodaySummaryCard() {
+    const confirmedRows = getCollectorTodayConfirmedRows();
+    const callRows = getCollectorTodayCallRows();
+    const confirmedAmount = confirmedRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+    const confirmedCountNode = document.getElementById('collectorTodayConfirmedCount');
+    const confirmedAmountNode = document.getElementById('collectorTodayConfirmedAmount');
+    const callCountNode = document.getElementById('collectorTodayCallCount');
+    if (confirmedCountNode) confirmedCountNode.textContent = confirmedRows.length.toLocaleString();
+    if (confirmedAmountNode) confirmedAmountNode.textContent = `Tomorrow collection: ${formatCurrencyShort(confirmedAmount)}`;
+    if (callCountNode) callCountNode.textContent = callRows.length.toLocaleString();
+}
+
+function openCollectorTodaySummary(type = 'confirmed') {
+    const safeType = type === 'calls' ? 'calls' : 'confirmed';
+    const modal = document.getElementById('collectorTotalModal');
+    const title = document.getElementById('collectorTotalTitle');
+    const subtitle = document.getElementById('collectorTotalSubtitle');
+    const content = document.getElementById('collectorTotalContent');
+    if (!modal || !title || !subtitle || !content) return;
+
+    const rows = getCollectorTodaySummaryRows(safeType);
+    const amount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    title.textContent = safeType === 'confirmed' ? 'Today Confirmed Collections' : 'Total Calls Today';
+    subtitle.textContent = safeType === 'confirmed'
+        ? `${rows.length.toLocaleString()} confirmed for tomorrow collection • ${formatCurrency(amount)}`
+        : `${rows.length.toLocaleString()} call(s) with remarks today`;
+    content.innerHTML = renderCollectorTodayStaffSummary(safeType);
+    bindCollectorTodaySummaryButtons(content);
+    modal.classList.remove('hidden');
+}
+
+function openCollectorTodayStaffDetails(type = 'confirmed', staffToken = '') {
+    const safeType = type === 'calls' ? 'calls' : 'confirmed';
+    const staffName = decodeURIComponent(String(staffToken || '')).trim() || 'Unassigned';
+    const modal = document.getElementById('collectorTotalModal');
+    const title = document.getElementById('collectorTotalTitle');
+    const subtitle = document.getElementById('collectorTotalSubtitle');
+    const content = document.getElementById('collectorTotalContent');
+    if (!modal || !title || !subtitle || !content) return;
+
+    const rows = getCollectorTodaySummaryRows(safeType).filter((row) => String(row.staff || 'Unassigned') === staffName);
+    const amount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    title.textContent = staffName;
+    subtitle.textContent = safeType === 'confirmed'
+        ? `${rows.length.toLocaleString()} confirmed collection(s) • ${formatCurrency(amount)}`
+        : `${rows.length.toLocaleString()} call(s) with remarks`;
+    content.innerHTML = renderCollectorTodayStaffDetails(safeType, staffName);
+    bindCollectorTodaySummaryButtons(content);
+    modal.classList.remove('hidden');
+}
+
+function bindCollectorTodaySummaryButtons(root = document) {
+    root.querySelectorAll('.collector-today-staff-open').forEach((button) => {
+        if (button.dataset.bound === '1') return;
+        button.dataset.bound = '1';
+        button.addEventListener('click', () => {
+            openCollectorTodayStaffDetails(button.dataset.summaryType || 'confirmed', encodeURIComponent(button.dataset.staff || 'Unassigned'));
+        });
+    });
+
+    root.querySelectorAll('.collector-today-invoice-open').forEach((button) => {
+        if (button.dataset.bound === '1') return;
+        button.dataset.bound = '1';
+        button.addEventListener('click', () => {
+            const invoiceKey = button.dataset.invoiceKey || '';
+            closeCollectorTotalModal();
+            viewInvoiceDetail(invoiceKey);
+        });
+    });
+}
+
 function getPendingResolutionInvoices() {
     const seen = new Set();
     const rows = [];
@@ -9406,6 +9668,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     document.getElementById('collectorSortInput')?.addEventListener('change', () => {
         if (lastLoadSucceeded) void renderCollectorDashboard();
+    });
+    document.getElementById('collectorTodayConfirmedBtn')?.addEventListener('click', () => {
+        openCollectorTodaySummary('confirmed');
+    });
+    document.getElementById('collectorTodayCallsBtn')?.addEventListener('click', () => {
+        openCollectorTodaySummary('calls');
     });
 
     document.getElementById('search-input')?.addEventListener('keyup', (event) => {
