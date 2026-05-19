@@ -15,6 +15,11 @@ const PETTY_CASH_SYNC_STORAGE_KEYS = {
     entries: 'marga_petty_cash_entries_v1'
 };
 
+const APD_FIRESTORE = {
+    bills: 'marga_apd_bills',
+    checks: 'marga_apd_checks'
+};
+
 const BILL_STATUSES = [
     'Draft',
     'For Approval',
@@ -193,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
     populateSelects();
     showView(VIEW_STATE.activeView);
     renderAll();
+    syncApdSharedState();
 });
 
 window.addEventListener('storage', onExternalApdStateChange);
@@ -991,6 +997,7 @@ function onBillSubmit(event) {
     }
 
     persistState();
+    persistApdSharedState();
     syncPettyCashRequestsFromChecks();
     focusDashboardOnDueDate(base.dueDate);
     clearBillForm();
@@ -1038,6 +1045,7 @@ function onCheckSubmit(event) {
     upsertById(APD_STATE.checks, next);
     syncBillStatusFromCheck(next);
     persistState();
+    persistApdSharedState();
     syncPettyCashRequestsFromChecks();
     populateBillSelect(next.billId);
     fillCheckForm(next);
@@ -1196,6 +1204,149 @@ function persistState() {
     localStorage.setItem(APD_STORAGE_KEYS.accounts, JSON.stringify(APD_STATE.accounts));
     localStorage.setItem(APD_STORAGE_KEYS.bills, JSON.stringify(APD_STATE.bills));
     localStorage.setItem(APD_STORAGE_KEYS.checks, JSON.stringify(APD_STATE.checks));
+}
+
+async function syncApdSharedState() {
+    try {
+        const localBills = cloneData(APD_STATE.bills).map(normalizeBill);
+        const localChecks = cloneData(APD_STATE.checks).map(normalizeCheck);
+        const [remoteBills, remoteChecks] = await Promise.all([
+            fetchApdCollection(APD_FIRESTORE.bills).catch((error) => {
+                console.warn('Unable to load shared APD payables.', error);
+                return [];
+            }),
+            fetchApdCollection(APD_FIRESTORE.checks).catch((error) => {
+                console.warn('Unable to load shared APD checks.', error);
+                return [];
+            })
+        ]);
+
+        const remoteBillIds = new Set(remoteBills.map((bill) => String(bill.id || '').trim()).filter(Boolean));
+        const remoteCheckIds = new Set(remoteChecks.map((check) => String(check.id || '').trim()).filter(Boolean));
+        const localBillsToShare = localBills.filter((bill) => !remoteBillIds.has(bill.id) && shouldShareLocalBill(bill));
+        const localChecksToShare = localChecks.filter((check) => !remoteCheckIds.has(check.id) && shouldShareLocalCheck(check));
+
+        await Promise.all([
+            ...localBillsToShare.map((bill) => saveApdBillToShared(bill)),
+            ...localChecksToShare.map((check) => saveApdCheckToShared(check))
+        ]);
+
+        APD_STATE.bills = mergeById(remoteBills, localBillsToShare).map(normalizeBill);
+        APD_STATE.checks = mergeById(remoteChecks, localChecksToShare).map(normalizeCheck);
+        persistState();
+        syncPettyCashRequestsFromChecks();
+        populateSelects();
+        renderAll();
+    } catch (error) {
+        console.warn('APD shared Margabase sync failed; using local cache for now.', error);
+        MargaUtils.showToast('APD shared data is temporarily unavailable; using this browser cache.', 'info');
+    }
+}
+
+function persistApdSharedState() {
+    const bills = APD_STATE.bills.filter(shouldShareLocalBill);
+    const checks = APD_STATE.checks.filter(shouldShareLocalCheck);
+    Promise.all([
+        ...bills.map((bill) => saveApdBillToShared(bill)),
+        ...checks.map((check) => saveApdCheckToShared(check))
+    ]).catch((error) => {
+        console.warn('Unable to save APD shared Margabase state.', error);
+        MargaUtils.showToast('Saved locally, but shared APD sync is still catching up.', 'info');
+    });
+}
+
+async function fetchApdCollection(collection) {
+    const rows = await MargaUtils.fetchCollection(collection, 500);
+    return rows.filter((row) => Number(row.is_archived || 0) !== 1);
+}
+
+function shouldShareLocalBill(bill) {
+    const defaultIds = new Set(DEFAULT_BILLS.map((item) => item.id));
+    return Boolean(bill?.id && !defaultIds.has(bill.id));
+}
+
+function shouldShareLocalCheck(check) {
+    const defaultIds = new Set(DEFAULT_CHECKS.map((item) => item.id));
+    return Boolean(check?.id && !defaultIds.has(check.id));
+}
+
+function mergeById(primaryRows = [], secondaryRows = []) {
+    const rowsById = new Map();
+    primaryRows.forEach((row) => {
+        const id = String(row.id || row._docId || '').trim();
+        if (id) rowsById.set(id, row);
+    });
+    secondaryRows.forEach((row) => {
+        const id = String(row.id || row._docId || '').trim();
+        if (id && !rowsById.has(id)) rowsById.set(id, row);
+    });
+    return Array.from(rowsById.values());
+}
+
+function withApdAudit(fields) {
+    const user = MargaAuth.getUser?.() || {};
+    const now = isoNow();
+    return {
+        ...fields,
+        updatedAt: now,
+        updatedBy: String(user.name || user.username || 'APD user').trim()
+    };
+}
+
+async function saveApdBillToShared(bill) {
+    const payload = withApdAudit(normalizeBill(bill));
+    return setApdDocument(APD_FIRESTORE.bills, payload.id, payload, {
+        label: `APD payable ${payload.id}`,
+        dedupeKey: `${APD_FIRESTORE.bills}:${payload.id}`
+    });
+}
+
+async function saveApdCheckToShared(check) {
+    const payload = withApdAudit(normalizeCheck(check));
+    return setApdDocument(APD_FIRESTORE.checks, payload.id, payload, {
+        label: `APD check ${payload.id}`,
+        dedupeKey: `${APD_FIRESTORE.checks}:${payload.id}`
+    });
+}
+
+async function setApdDocument(collection, docId, fields, options = {}) {
+    if (window.MargaOfflineSync?.writeFirestoreDoc) {
+        return window.MargaOfflineSync.writeFirestoreDoc({
+            mode: 'set',
+            collection,
+            docId,
+            fields,
+            label: options.label,
+            dedupeKey: options.dedupeKey
+        });
+    }
+    const body = { fields: {} };
+    Object.entries(fields).forEach(([key, value]) => {
+        body.fields[key] = toFirestoreFieldValue(value);
+    });
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(String(docId))}?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Failed to save ${collection}/${docId}`);
+    }
+    return payload;
+}
+
+function toFirestoreFieldValue(value) {
+    if (value === null) return { nullValue: null };
+    if (Array.isArray(value)) {
+        return { arrayValue: { values: value.map((entry) => toFirestoreFieldValue(entry)) } };
+    }
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        if (Number.isInteger(value)) return { integerValue: String(value) };
+        return { doubleValue: value };
+    }
+    return { stringValue: String(value ?? '') };
 }
 
 function readStorage(key, fallback) {
@@ -2140,6 +2291,7 @@ function savePrintedCheckRecord(payload) {
     upsertById(APD_STATE.checks, next);
     syncBillStatusFromCheck(next);
     persistState();
+    persistApdSharedState();
     syncPettyCashRequestsFromChecks();
     renderAll();
 }
