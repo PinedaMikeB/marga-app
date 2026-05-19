@@ -20,6 +20,9 @@ const els = {
     matrixSearchInput: null,
     matrixSortInput: null,
     matrixSearchMeta: null,
+    printedTodayCard: null,
+    printedTodayCount: null,
+    printedTodayAmount: null,
     invoiceSearchInput: null,
     invoiceSearchBtn: null,
     invoiceSearchResults: null,
@@ -1726,6 +1729,8 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     const parsedMonth = parseMonthInput(context?.monthKey);
     const now = new Date();
     const sqlNow = toSqlDateTime(now);
+    const audit = getCurrentUserAudit();
+    const numericAuditId = Number(audit.id);
     const dueDate = period.to ? `${period.to} 00:00:00` : sqlNow;
     const numericInvoice = /^\d+$/.test(snapshot.invoiceNo) ? Number(snapshot.invoiceNo) : null;
     const numericContractId = Number(row?.contractmain_id || 0);
@@ -1753,6 +1758,7 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         invoice_date: sqlNow,
         invdate: sqlNow,
         datex: sqlNow,
+        tmestamp: sqlNow,
         amount: Number(estimate?.amountDue || 0) || 0,
         totalamount: Number(estimate?.amountDue || 0) || 0,
         vatamount: Number(estimate?.vatAmount || 0) || 0,
@@ -1810,6 +1816,11 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         schedule_purpose_key: getBillingSchedulePurposeFromEstimate(estimate).key,
         schedule_assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
         schedule_assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
+        emp_id: Number.isFinite(numericAuditId) && numericAuditId > 0 ? numericAuditId : String(audit.id || '').trim(),
+        printed_by_id: String(audit.id || '').trim(),
+        printed_by: String(audit.name || '').trim(),
+        updated_by_id: String(audit.id || '').trim(),
+        updated_by: String(audit.name || '').trim(),
         actual_spoilage_reason: String(estimate?.actualSpoilageReason || '').trim(),
         actual_spoilage_proof_name: String(estimate?.actualSpoilageProofName || '').trim(),
         actual_spoilage_proof_type: String(estimate?.actualSpoilageProofType || '').trim(),
@@ -5882,6 +5893,182 @@ function buildSummaryBillingRow(row, groupedMachineRows) {
     };
 }
 
+function formatReportDate(ymd) {
+    const match = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return String(ymd || '');
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function renderPrintedTodayCard(payload) {
+    const report = payload?.productivity_report || null;
+    const count = Number(report?.today?.invoice_count || 0);
+    const amount = Number(report?.today?.amount_total || 0);
+    if (els.printedTodayCount) els.printedTodayCount.textContent = formatCount(count);
+    if (els.printedTodayAmount) {
+        els.printedTodayAmount.textContent = count
+            ? `${formatCurrency(amount)} printed today`
+            : 'No invoices printed today';
+    }
+    if (els.printedTodayCard) {
+        els.printedTodayCard.disabled = false;
+        els.printedTodayCard.title = report
+            ? 'Open billing productivity report'
+            : 'Load the dashboard to see printed invoice totals';
+    }
+}
+
+function renderProductivityStaffRows(rows = []) {
+    if (!rows.length) {
+        return '<div class="detail-empty">No printed invoices found for this period.</div>';
+    }
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Encoder</th>
+                        <th class="text-right">Invoices</th>
+                        <th class="text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td>
+                                <strong>${escapeHtml(row.staff_name || 'Unknown encoder')}</strong>
+                                ${row.staff_role ? `<small>${escapeHtml(row.staff_role)}</small>` : ''}
+                            </td>
+                            <td class="text-right">${escapeHtml(formatCount(row.invoice_count || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderProductivityMonthProgress(rows = [], sinceDate = '') {
+    const activeRows = rows.filter((row) => (
+        Number(row.added_today_total || 0) !== 0
+        || Number(row.since_start_total || 0) !== 0
+        || Number(row.current_total || 0) !== 0
+    ));
+    if (!activeRows.length) {
+        return '<div class="detail-empty">No billing month progress is available yet.</div>';
+    }
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Billing Month</th>
+                        <th class="text-right">Before Today</th>
+                        <th class="text-right">Added Today</th>
+                        <th class="text-right">Current Total</th>
+                        <th class="text-right">Since ${escapeHtml(formatReportDate(sinceDate))}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${activeRows.map((row) => `
+                        <tr>
+                            <td><strong>${escapeHtml(row.month_label_short || row.month_label || row.month_key)}</strong></td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.before_today_total || 0))}</td>
+                            <td class="text-right">
+                                <strong>${escapeHtml(formatCurrency(row.added_today_total || 0))}</strong>
+                                <small>${escapeHtml(formatMetricCount(row.added_today_invoice_count || 0, 'invoice'))}</small>
+                            </td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.current_total || 0))}</td>
+                            <td class="text-right">
+                                ${escapeHtml(formatCurrency(row.since_start_total || 0))}
+                                <small>${escapeHtml(formatMetricCount(row.since_start_invoice_count || 0, 'invoice'))}</small>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderProductivityInvoiceRows(rows = []) {
+    if (!rows.length) {
+        return '<div class="detail-empty">No invoice detail rows for today.</div>';
+    }
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Invoice</th>
+                        <th>Customer</th>
+                        <th>Billing Month</th>
+                        <th>Encoder</th>
+                        <th class="text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td><strong>${escapeHtml(row.invoice_no || row.doc_id || 'Invoice')}</strong></td>
+                            <td>
+                                <strong>${escapeHtml(row.company_name || 'Unknown')}</strong>
+                                <small>${escapeHtml(row.branch_name || 'Main')}</small>
+                            </td>
+                            <td>${escapeHtml(row.month_label || formatMonthLabel(row.month_key, row.month_key))}</td>
+                            <td>${escapeHtml(row.staff_name || 'Unknown encoder')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function openPrintedTodayReport() {
+    const report = lastPayload?.productivity_report || null;
+    if (!report) {
+        MargaUtils.showToast('Load the dashboard first to see printed invoice totals.', 'info');
+        return;
+    }
+    const todayLabel = formatReportDate(report.today_date);
+    const sinceLabel = formatReportDate(report.since_date);
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Printed Invoice Productivity';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${todayLabel} • ${formatMetricCount(report.today?.invoice_count || 0, 'invoice')} • ${formatCurrency(report.today?.amount_total || 0)}`;
+    }
+    if (els.billingScorecardContent) {
+        els.billingScorecardContent.innerHTML = `
+            <div class="productivity-summary-grid">
+                <div class="detail-summary-card">
+                    <span class="label">Printed Today</span>
+                    <span class="value">${escapeHtml(formatCount(report.today?.invoice_count || 0))}</span>
+                    <small>${escapeHtml(formatCurrency(report.today?.amount_total || 0))}</small>
+                </div>
+                <div class="detail-summary-card">
+                    <span class="label">Since ${escapeHtml(sinceLabel)}</span>
+                    <span class="value">${escapeHtml(formatCount(report.since_start?.invoice_count || 0))}</span>
+                    <small>${escapeHtml(formatCurrency(report.since_start?.amount_total || 0))}</small>
+                </div>
+                <div class="detail-summary-card">
+                    <span class="label">Billing Staff Today</span>
+                    <span class="value">${escapeHtml(formatCount((report.today?.by_staff || []).length))}</span>
+                    <small>Encoders with printed invoices</small>
+                </div>
+            </div>
+            <div class="detail-section-title">Who printed today</div>
+            ${renderProductivityStaffRows(report.today?.by_staff || [])}
+            <div class="detail-section-title">Billing amount progress by month</div>
+            ${renderProductivityMonthProgress(report.month_progress || [], report.since_date)}
+            <div class="detail-section-title">Today invoice details</div>
+            ${renderProductivityInvoiceRows(report.invoices_today || [])}
+        `;
+    }
+    els.billingScorecardModal?.classList.remove('hidden');
+}
+
 function getBillingExclusionsForContext(row, context) {
     const companyId = String(row?.company_id || context?.row?.company_id || '').trim();
     if (!companyId) return billingExclusionCache.filter(isActiveBillingExclusion);
@@ -8173,6 +8360,8 @@ function renderMatrixTable(payload) {
         return;
     }
 
+    renderPrintedTodayCard(payload);
+
     const matchedRowCount = payloadMatchesCurrentSearch
         ? Number(payload?.summary?.matrix_customers_total || rows.length)
         : rows.length;
@@ -9555,6 +9744,7 @@ function bindEvents() {
         localStorage.setItem(MATRIX_SORT_STORAGE_KEY, getMatrixSortValue());
         if (lastPayload) renderMatrixTable(lastPayload);
     });
+    els.printedTodayCard?.addEventListener('click', openPrintedTodayReport);
     els.invoiceSearchBtn?.addEventListener('click', searchInvoiceNumber);
     els.invoiceSearchInput?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {

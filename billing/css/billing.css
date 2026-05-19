@@ -683,6 +683,76 @@ button.matrix-total-card:focus-visible {
     min-width: 180px;
 }
 
+.printed-today-card {
+    align-self: stretch;
+    min-width: 220px;
+    max-width: 280px;
+    padding: 0.68rem 0.85rem;
+    border: 1px solid #b9d2f2;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #ffffff, #edf6ff);
+    color: var(--bill-ink);
+    cursor: pointer;
+    text-align: left;
+    box-shadow: 0 8px 20px rgba(43, 111, 207, 0.08);
+}
+
+.printed-today-card:hover,
+.printed-today-card:focus-visible {
+    border-color: #74a8e8;
+    outline: 2px solid #90baf4;
+    outline-offset: 2px;
+}
+
+.printed-today-card span {
+    display: block;
+    color: var(--bill-muted);
+    font-size: 0.7rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    line-height: 1.15;
+    text-transform: uppercase;
+}
+
+.printed-today-card strong {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--bill-accent);
+    font-size: 1.2rem;
+    font-weight: 900;
+    line-height: 1.1;
+}
+
+.printed-today-card small {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.productivity-summary-grid {
+    display: grid;
+    gap: 0.8rem;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    margin-bottom: 1rem;
+}
+
+.productivity-summary-grid small,
+.productivity-table small {
+    display: block;
+    margin-top: 0.16rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.productivity-table td {
+    vertical-align: top;
+}
+
 .summary-sheet td.pending-count {
     color: var(--bill-danger);
     font-weight: 800;

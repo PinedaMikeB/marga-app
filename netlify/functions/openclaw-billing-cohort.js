@@ -119,6 +119,47 @@ function normalizeDate(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function normalizeDateTime(value) {
+    if (!value) return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    const sql = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (sql) {
+        const hh = String(sql[4] || '00').padStart(2, '0');
+        const mm = String(sql[5] || '00').padStart(2, '0');
+        const ss = String(sql[6] || '00').padStart(2, '0');
+        const parsed = new Date(`${sql[1]}-${sql[2]}-${sql[3]}T${hh}:${mm}:${ss}+08:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function ymdInManila(value = new Date()) {
+    const date = value instanceof Date ? value : normalizeDateTime(value);
+    if (!date || Number.isNaN(date.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+    const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${map.year}-${map.month}-${map.day}`;
+}
+
+function shiftYmdManila(ymd, days) {
+    const match = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '';
+    const date = new Date(`${ymd}T00:00:00+08:00`);
+    date.setUTCDate(date.getUTCDate() + Number(days || 0));
+    return ymdInManila(date);
+}
+
 function normalizeYear(value) {
     if (value === null || value === undefined || value === '') return null;
     const n = Number(String(value).trim());
@@ -286,6 +327,7 @@ function getCacheState() {
             machDeliveryDateMap: {},
             contractByBranchMachineMap: {},
             contractByMachineMap: {},
+            employeeMap: {},
             machineHistoryLoaded: false,
             billingWindowKey: '',
             billingDocs: [],
@@ -320,7 +362,7 @@ async function loadCache(
         return cache;
     }
 
-    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'amount', 'totalamount', 'vatamount', 'amount2', 'totalamount2', 'vatamount2'];
+    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'tmestamp', 'updated_at', 'amount', 'totalamount', 'vatamount', 'amount2', 'totalamount2', 'vatamount2', 'emp_id', 'printed_by', 'printed_by_id', 'updated_by', 'updated_by_id', 'company_name', 'branch_name'];
     const scheduleFieldMask = [
         'id',
         'company_id',
@@ -356,7 +398,7 @@ async function loadCache(
     const machineReadingWindowStart = machineReadingStartKey ? monthWindowStart(machineReadingStartKey) : '';
     const machineReadingWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, machineHistoryDocs, billingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
@@ -367,6 +409,7 @@ async function loadCache(
         firestoreGetAll('tbl_groupings', { fieldMask: ['id', 'company_id', 'groupname', 'isinactive', 'category_id', 'monthly_quota', 'page_rate', 'page_rate_xtra', 'withvat'], maxPages: 20 }),
         firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial', 'model_id', 'description', 'status_id'], maxPages: 80 }),
         firestoreGetAll('tbl_model', { fieldMask: ['id', 'modelname', 'description'], maxPages: 20 }),
+        firestoreGetAll('tbl_employee', { fieldMask: ['id', 'name', 'firstname', 'lastname', 'nickname', 'username', 'position', 'position_label'], maxPages: 20 }),
         includeMachineHistory
             ? firestoreGetAll('tbl_newmachinehistory', { fieldMask: ['mach_id', 'branch_id', 'status_id', 'datex'], maxPages: 140 })
             : Promise.resolve([]),
@@ -459,6 +502,22 @@ async function loadCache(
         const id = String(getField(doc.fields || {}, ['id']) || '').trim();
         if (!id) return;
         cache.companyMap[id] = String(getField(doc.fields || {}, ['companyname']) || 'Unknown').trim() || 'Unknown';
+    });
+
+    cache.employeeMap = {};
+    employeeDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const id = String(getField(f, ['id']) || doc.name?.split('/').pop() || '').trim();
+        if (!id) return;
+        const name = String(getField(f, ['name']) || '').trim()
+            || `${String(getField(f, ['firstname']) || '').trim()} ${String(getField(f, ['lastname']) || '').trim()}`.trim()
+            || String(getField(f, ['nickname']) || getField(f, ['username']) || '').trim()
+            || `Employee ${id}`;
+        cache.employeeMap[id] = {
+            id,
+            name,
+            role: String(getField(f, ['position_label', 'position']) || '').trim()
+        };
     });
 
     cache.billingGroupByCompanyId = {};
@@ -1275,6 +1334,159 @@ function resolveBranchDisplay(cache, branch) {
     };
 }
 
+function getBillingPrintedDate(fields) {
+    return normalizeDateTime(
+        getField(fields, ['dateprinted', 'date_printed', 'invoice_date', 'invdate', 'datex', 'tmestamp', 'updated_at'])
+    );
+}
+
+function getBillingStaff(cache, fields) {
+    const printedId = String(getField(fields, ['printed_by_id', 'updated_by_id', 'emp_id']) || '').trim();
+    const explicitName = String(getField(fields, ['printed_by', 'updated_by']) || '').trim();
+    const employee = printedId ? cache.employeeMap?.[printedId] : null;
+    return {
+        id: printedId || (explicitName ? `name:${explicitName.toLowerCase()}` : 'unknown'),
+        name: employee?.name || explicitName || (printedId ? `Employee ${printedId}` : 'Unknown encoder'),
+        role: employee?.role || ''
+    };
+}
+
+function getBillingDocMonthKey(fields) {
+    const year = normalizeYear(getField(fields, ['year']));
+    const monthValue = getField(fields, ['month']);
+    let month = normalizeMonth(monthValue);
+    if (!month && monthValue) {
+        const lookup = MONTH_NAMES.findIndex((name) => name.toLowerCase() === String(monthValue).trim().toLowerCase());
+        if (lookup >= 0) month = lookup + 1;
+    }
+    if (year && month) return monthKeyFromYearMonth(year, month);
+    const printedDate = getBillingPrintedDate(fields);
+    return printedDate ? monthKeyFromYearMonth(printedDate.getFullYear(), printedDate.getMonth() + 1) : '';
+}
+
+function buildBillingProductivityReport(cache, months, monthTotals) {
+    const todayYmd = ymdInManila(new Date());
+    const sinceYmd = shiftYmdManila(todayYmd, -1) || todayYmd;
+    const monthTotalMap = new Map((monthTotals || []).map((entry) => [entry.month_key, Number(entry.amount_total || 0) || 0]));
+    const todayByStaff = new Map();
+    const sinceByStaff = new Map();
+    const todayByMonth = new Map();
+    const sinceByMonth = new Map();
+    const todayInvoices = [];
+
+    const addStaff = (target, staff, amount) => {
+        if (!target.has(staff.id)) {
+            target.set(staff.id, {
+                staff_id: staff.id,
+                staff_name: staff.name,
+                staff_role: staff.role,
+                invoice_count: 0,
+                amount_total: 0
+            });
+        }
+        const row = target.get(staff.id);
+        row.invoice_count += 1;
+        row.amount_total += amount;
+    };
+
+    const addMonth = (target, monthKey, amount) => {
+        if (!monthKey) return;
+        if (!target.has(monthKey)) {
+            target.set(monthKey, {
+                month_key: monthKey,
+                month_label: monthLabelFromKey(monthKey),
+                month_label_short: shortMonthLabelFromKey(monthKey),
+                invoice_count: 0,
+                amount_total: 0
+            });
+        }
+        const row = target.get(monthKey);
+        row.invoice_count += 1;
+        row.amount_total += amount;
+    };
+
+    cache.billingDocs.forEach((doc) => {
+        const fields = doc.fields || {};
+        const printedDate = getBillingPrintedDate(fields);
+        if (!printedDate) return;
+        const printedYmd = ymdInManila(printedDate);
+        if (!printedYmd) return;
+
+        const amount = extractBillingAmount(fields);
+        const monthKey = getBillingDocMonthKey(fields);
+        const staff = getBillingStaff(cache, fields);
+        const invoiceNo = String(getField(fields, ['invoice_no', 'invoiceno', 'invoice_id', 'invoiceid']) || '').trim();
+        const contractmainId = String(getField(fields, ['contractmain_id']) || '').trim();
+        const contract = contractmainId ? cache.contractMap?.[contractmainId] : null;
+        const branch = contract ? resolveBillingBranch(cache, contract, fields) : null;
+        const display = branch ? resolveBranchDisplay(cache, branch) : null;
+        const companyName = String(getField(fields, ['company_name']) || display?.companyName || '').trim();
+        const branchName = String(getField(fields, ['branch_name']) || display?.branchName || '').trim();
+
+        if (printedYmd >= sinceYmd && printedYmd <= todayYmd) {
+            addStaff(sinceByStaff, staff, amount);
+            addMonth(sinceByMonth, monthKey, amount);
+        }
+
+        if (printedYmd !== todayYmd) return;
+
+        addStaff(todayByStaff, staff, amount);
+        addMonth(todayByMonth, monthKey, amount);
+        todayInvoices.push({
+            doc_id: String(doc.name || '').split('/').pop() || '',
+            invoice_no: invoiceNo,
+            printed_at: printedDate.toISOString(),
+            staff_id: staff.id,
+            staff_name: staff.name,
+            month_key: monthKey,
+            month_label: monthLabelFromKey(monthKey),
+            company_name: companyName || 'Unknown',
+            branch_name: branchName || 'Main',
+            amount_total: roundCurrency(amount)
+        });
+    });
+
+    const sortStaff = (values) => Array.from(values.values())
+        .map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
+        .sort((a, b) => b.invoice_count - a.invoice_count || b.amount_total - a.amount_total || a.staff_name.localeCompare(b.staff_name));
+    const monthProgress = months.map((monthKey) => {
+        const today = todayByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
+        const since = sinceByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
+        const currentTotal = Number(monthTotalMap.get(monthKey) || 0);
+        return {
+            month_key: monthKey,
+            month_label: monthLabelFromKey(monthKey),
+            month_label_short: shortMonthLabelFromKey(monthKey),
+            current_total: roundCurrency(currentTotal),
+            before_today_total: roundCurrency(currentTotal - Number(today.amount_total || 0)),
+            added_today_total: roundCurrency(today.amount_total || 0),
+            added_today_invoice_count: Number(today.invoice_count || 0),
+            since_start_total: roundCurrency(since.amount_total || 0),
+            since_start_invoice_count: Number(since.invoice_count || 0)
+        };
+    });
+
+    return {
+        today_date: todayYmd,
+        since_date: sinceYmd,
+        today: {
+            invoice_count: todayInvoices.length,
+            amount_total: roundCurrency(todayInvoices.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            by_staff: sortStaff(todayByStaff),
+            by_month: Array.from(todayByMonth.values()).map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
+        },
+        since_start: {
+            invoice_count: Array.from(sinceByStaff.values()).reduce((sum, row) => sum + Number(row.invoice_count || 0), 0),
+            amount_total: roundCurrency(Array.from(sinceByStaff.values()).reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            by_staff: sortStaff(sinceByStaff)
+        },
+        month_progress: monthProgress,
+        invoices_today: todayInvoices
+            .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')))
+            .slice(0, 250)
+    };
+}
+
 function resolveContractStartMonth(cache, contract, startKey) {
     const machId = String(contract?.machId || '').trim();
     const deliveryRaw = machId ? cache.machDeliveryDateMap[machId] : null;
@@ -2051,6 +2263,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         month_label_short: shortMonthLabelFromKey(monthKey),
         amount_total: Number(visibleMatrixRows.reduce((sum, row) => sum + Number(row.months?.[monthKey]?.amount_total || 0), 0).toFixed(2))
     }));
+    const productivityReport = buildBillingProductivityReport(cache, months, monthTotals);
 
     const latestBilledRows = visibleMatrixRows
         .flatMap((row) => months.map((monthKey) => ({
@@ -2103,6 +2316,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         comparisons,
         matrixRows: visibleMatrixRows,
         monthTotals,
+        productivityReport,
         skippedRows,
         receiptGapRows,
         latestBilledRows
@@ -2197,6 +2411,7 @@ exports.handler = async (event) => {
             billing_last_6_months: result.topSummaryRows,
             month_summaries: result.monthSummaries.map((summary) => serializeMonthSummary(summary, includeDebugLists)),
             month_to_month_comparison: result.comparisons,
+            productivity_report: result.productivityReport,
             month_matrix: {
                 months: result.months,
                 month_labels_short: result.months.map(shortMonthLabelFromKey),
