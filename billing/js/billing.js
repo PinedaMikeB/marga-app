@@ -9217,11 +9217,8 @@ function renderUnbilledCustomerRows(groups = []) {
     return `
         <div class="unbilled-detail-list">
             ${groups.map((group) => `
-                <button
+                <article
                     class="unbilled-customer-card"
-                    type="button"
-                    data-unbilled-customer-key="${escapeHtml(group.key)}"
-                    aria-label="Open unbilled months for ${escapeHtml(group.customer)}"
                 >
                     <span>
                         <strong>${escapeHtml(group.customer)}</strong>
@@ -9230,8 +9227,17 @@ function renderUnbilledCustomerRows(groups = []) {
                     <span class="unbilled-card-meta">
                         <strong>${escapeHtml(formatAmount(group.amount))}</strong>
                         <small>${escapeHtml(formatMetricCount(group.months.length, 'month'))} • ${escapeHtml(formatMetricCount(group.rowCount, 'machine row'))}</small>
+                        <span class="unbilled-card-actions">
+                            <button class="btn btn-secondary btn-sm" type="button" data-unbilled-customer-key="${escapeHtml(group.key)}">Review</button>
+                            <button
+                                class="btn btn-danger btn-sm"
+                                type="button"
+                                data-unbilled-inactivate-customer="${escapeHtml(group.key)}"
+                                data-unbilled-inactivate-month="${escapeHtml(activeUnbilledProjectionMonthKey || group.months[0] || '')}"
+                            >Hide</button>
+                        </span>
                     </span>
-                </button>
+                </article>
             `).join('')}
         </div>
     `;
@@ -9310,6 +9316,12 @@ function renderUnbilledCustomerMonths(customerKey) {
                                 data-unbilled-bill-now-row-id="${escapeHtml(actionRow.rowId || '')}"
                                 data-unbilled-bill-now-month="${escapeHtml(monthKey)}"
                             >Bill Now</button>
+                            <button
+                                class="btn btn-danger btn-sm"
+                                type="button"
+                                data-unbilled-inactivate-customer="${escapeHtml(customerKey)}"
+                                data-unbilled-inactivate-month="${escapeHtml(monthKey)}"
+                            >Hide From Billing</button>
                         </div>
                     </article>
                 `;
@@ -9343,6 +9355,59 @@ function openUnbilledBillNow(rowId, monthKey) {
     }
     closeBillingScorecardModal();
     openBillingCalcModalSafely(rowId, monthKey);
+}
+
+function findBillingRowByRowId(rowId) {
+    const key = String(rowId || '').trim();
+    if (!key || !Array.isArray(lastPayload?.month_matrix?.rows)) return null;
+    return lastPayload.month_matrix.rows.find((row) => String(row?.row_id || row?.company_id || '').trim() === key) || null;
+}
+
+async function hideUnbilledProjectionCustomer(customerKey, monthKey, trigger = null) {
+    const safeCustomerKey = String(customerKey || '').trim();
+    const safeMonthKey = String(monthKey || activeUnbilledProjectionMonthKey || '').trim();
+    const details = (unbilledProjectionData?.detailsByCustomer?.get(safeCustomerKey) || [])
+        .filter((detail) => !safeMonthKey || detail.monthKey === safeMonthKey);
+    const rows = [];
+    const seen = new Set();
+    details.forEach((detail) => {
+        const row = findBillingRowByRowId(detail.rowId);
+        const rowKey = String(row?.row_id || row?.contractmain_id || detail.rowId || '').trim();
+        if (!row || !rowKey || seen.has(rowKey)) return;
+        seen.add(rowKey);
+        rows.push(row);
+    });
+    if (!rows.length) {
+        MargaUtils.showToast('No billing rows were found to hide for this unbilled account.', 'error');
+        return;
+    }
+    const customer = details[0]?.customer || rows[0]?.company_name || rows[0]?.account_name || 'this customer';
+    const monthLabel = safeMonthKey ? formatMonthLabel(safeMonthKey, safeMonthKey) : 'the selected month';
+    const confirmed = window.confirm(`Hide ${rows.length} unbilled billing row${rows.length === 1 ? '' : 's'} for ${customer} in ${monthLabel}? This removes them from Billing and Unbilled Projection without deleting customer records.`);
+    if (!confirmed) return;
+    if (trigger) trigger.disabled = true;
+    try {
+        const results = await Promise.allSettled(rows.map((row) => saveBillingExclusion(row, {
+            reason: 'Branch/customer inactive',
+            effectiveDate: formatIsoDate(new Date()),
+            hideFromFuture: true,
+            staffNote: `Hidden from Unbilled Projection for ${monthLabel}.`
+        })));
+        const savedCount = results.filter((result) => result.status === 'fulfilled').length;
+        const failedCount = results.length - savedCount;
+        renderDashboardBillingExclusions();
+        MargaUtils.showToast(
+            failedCount
+                ? `Hidden ${formatCount(savedCount)} row(s); ${formatCount(failedCount)} failed.`
+                : `Hidden ${formatCount(savedCount)} unbilled row(s) from Billing.`,
+            failedCount ? 'warning' : 'success'
+        );
+        await loadDashboard({ forceRefresh: true });
+        if (safeMonthKey) openUnbilledProjectionMonth(safeMonthKey);
+    } catch (error) {
+        MargaUtils.showToast(String(error?.message || 'Unable to hide unbilled account.'), 'error');
+        if (trigger) trigger.disabled = false;
+    }
 }
 
 function buildBillingScorecardPaymentMap(payments) {
@@ -9895,6 +9960,17 @@ function bindEvents() {
         openBillingScorecardTotal(trigger.dataset.metricKey, trigger.dataset.monthKey);
     });
     els.billingScorecardContent?.addEventListener('click', (event) => {
+        const inactivateTrigger = event.target.closest('[data-unbilled-inactivate-customer]');
+        if (inactivateTrigger) {
+            event.preventDefault();
+            event.stopPropagation();
+            hideUnbilledProjectionCustomer(
+                inactivateTrigger.dataset.unbilledInactivateCustomer,
+                inactivateTrigger.dataset.unbilledInactivateMonth,
+                inactivateTrigger
+            );
+            return;
+        }
         const customerTrigger = event.target.closest('[data-unbilled-customer-key]');
         if (customerTrigger) {
             event.preventDefault();

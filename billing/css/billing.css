@@ -626,7 +626,7 @@ button.matrix-total-card:focus-visible {
 }
 
 .unbilled-customer-card {
-    cursor: pointer;
+    cursor: default;
 }
 
 .unbilled-customer-card:hover,
@@ -662,6 +662,15 @@ button.matrix-total-card:focus-visible {
 
 .unbilled-card-meta .btn {
     margin-top: 0.45rem;
+}
+
+.unbilled-card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    margin-top: 0.35rem;
+    flex-wrap: wrap;
 }
 
 .matrix-card .matrix-sheet {
