@@ -330,12 +330,47 @@ function getCacheState() {
             employeeMap: {},
             machineHistoryLoaded: false,
             billingWindowKey: '',
+            billingProductivityDateKey: '',
             billingDocs: [],
+            productivityBillingDocs: [],
             scheduleDocs: [],
             machineReadingDocs: []
         };
     }
     return global.__openclawBillingCohortCache;
+}
+
+async function queryBillingDocsByPrintedDateRange(fieldPath, startValue, endValue, fieldMask, valueType = 'stringValue') {
+    if (!fieldPath || !startValue || !endValue) return [];
+    return firestoreRunQuery({
+        from: [{ collectionId: 'tbl_billing' }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    { fieldFilter: { field: { fieldPath }, op: 'GREATER_THAN_OR_EQUAL', value: { [valueType]: startValue } } },
+                    { fieldFilter: { field: { fieldPath }, op: 'LESS_THAN', value: { [valueType]: endValue } } }
+                ]
+            }
+        },
+        select: { fields: fieldMask.map((maskPath) => ({ fieldPath: maskPath })) }
+    }).catch(() => []);
+}
+
+async function loadBillingProductivityDocs(startYmd, endYmd, fieldMask) {
+    const dateFields = ['dateprinted', 'date_printed', 'invoice_date', 'invdate', 'datex', 'tmestamp', 'updated_at'];
+    const startTimestamp = new Date(`${startYmd}T00:00:00+08:00`).toISOString();
+    const endTimestamp = new Date(`${endYmd}T00:00:00+08:00`).toISOString();
+    const groups = await Promise.all(dateFields.flatMap((fieldPath) => ([
+        queryBillingDocsByPrintedDateRange(fieldPath, startYmd, endYmd, fieldMask, 'stringValue'),
+        queryBillingDocsByPrintedDateRange(fieldPath, startTimestamp, endTimestamp, fieldMask, 'timestampValue')
+    ])));
+    const byName = new Map();
+    groups.flat().forEach((doc) => {
+        const name = String(doc?.name || '').trim();
+        if (name && !byName.has(name)) byName.set(name, doc);
+    });
+    return Array.from(byName.values());
 }
 
 async function loadCache(
@@ -351,11 +386,16 @@ async function loadCache(
     const nextBillingPages = Math.max(10, Math.min(600, Number(billingPages)));
     const nextSchedulePages = Math.max(10, Math.min(600, Number(schedulePages)));
     const nextBillingWindowKey = startKey && endKey ? `${startKey}:${endKey}` : '';
+    const todayYmd = ymdInManila(new Date());
+    const productivityStartYmd = shiftYmdManila(todayYmd, -1) || todayYmd;
+    const productivityEndYmd = shiftYmdManila(todayYmd, 1) || todayYmd;
+    const nextProductivityDateKey = `${productivityStartYmd}:${productivityEndYmd}`;
 
     const sameWindow = Number(cache.billingPages || 0) === nextBillingPages
         && Number(cache.schedulePages || 0) === nextSchedulePages
         && Boolean(cache.machineHistoryLoaded) === Boolean(includeMachineHistory)
         && String(cache.billingWindowKey || '') === nextBillingWindowKey
+        && String(cache.billingProductivityDateKey || '') === nextProductivityDateKey
         && cache.billingGroupByCompanyId;
 
     if (!forceRefresh && sameWindow && cache.stamp && (now - cache.stamp) < CACHE_TTL_MS) {
@@ -398,7 +438,7 @@ async function loadCache(
     const machineReadingWindowStart = machineReadingStartKey ? monthWindowStart(machineReadingStartKey) : '';
     const machineReadingWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, productivityBillingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
@@ -437,6 +477,7 @@ async function loadCache(
                 return Array.from(byName.values());
             })
             : firestoreGetAll('tbl_billing', { fieldMask: billingFieldMask, maxPages: nextBillingPages }),
+        loadBillingProductivityDocs(productivityStartYmd, productivityEndYmd, billingFieldMask),
         billingMonthKeys.length
             ? Promise.all([
                 firestoreRunQuery({
@@ -692,11 +733,13 @@ async function loadCache(
     });
 
     cache.billingDocs = billingDocs;
+    cache.productivityBillingDocs = productivityBillingDocs;
     cache.scheduleDocs = scheduleDocs;
     cache.machineReadingDocs = machineReadingDocs;
     cache.billingPages = nextBillingPages;
     cache.schedulePages = nextSchedulePages;
     cache.billingWindowKey = nextBillingWindowKey;
+    cache.billingProductivityDateKey = nextProductivityDateKey;
     cache.stamp = now;
     return cache;
 }
@@ -1368,6 +1411,11 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     const todayYmd = ymdInManila(new Date());
     const sinceYmd = shiftYmdManila(todayYmd, -1) || todayYmd;
     const monthTotalMap = new Map((monthTotals || []).map((entry) => [entry.month_key, Number(entry.amount_total || 0) || 0]));
+    const productivityDocsByName = new Map();
+    [...(cache.billingDocs || []), ...(cache.productivityBillingDocs || [])].forEach((doc) => {
+        const name = String(doc?.name || '').trim();
+        if (name && !productivityDocsByName.has(name)) productivityDocsByName.set(name, doc);
+    });
     const todayByStaff = new Map();
     const sinceByStaff = new Map();
     const todayByMonth = new Map();
@@ -1405,7 +1453,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         row.amount_total += amount;
     };
 
-    cache.billingDocs.forEach((doc) => {
+    productivityDocsByName.forEach((doc) => {
         const fields = doc.fields || {};
         const printedDate = getBillingPrintedDate(fields);
         if (!printedDate) return;
@@ -1449,7 +1497,12 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     const sortStaff = (values) => Array.from(values.values())
         .map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
         .sort((a, b) => b.invoice_count - a.invoice_count || b.amount_total - a.amount_total || a.staff_name.localeCompare(b.staff_name));
-    const monthProgress = months.map((monthKey) => {
+    const progressMonthKeys = Array.from(new Set([
+        ...(months || []),
+        ...Array.from(todayByMonth.keys()),
+        ...Array.from(sinceByMonth.keys())
+    ])).sort();
+    const monthProgress = progressMonthKeys.map((monthKey) => {
         const today = todayByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
         const since = sinceByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
         const currentTotal = Number(monthTotalMap.get(monthKey) || 0);
@@ -2383,6 +2436,7 @@ exports.handler = async (event) => {
                 cell_detail_scope: detailScope === 'all' ? 'all_months' : (detailScope === 'none' ? 'none' : 'current_month'),
                 cell_detail_months: Array.from(detailMonthKeys),
                 billing_docs_scanned: cache.billingDocs.length,
+                billing_productivity_docs_scanned: cache.productivityBillingDocs.length,
                 schedule_docs_scanned: cache.scheduleDocs.length,
                 machine_reading_docs_scanned: cache.machineReadingDocs.length
             },

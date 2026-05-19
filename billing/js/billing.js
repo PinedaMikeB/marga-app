@@ -5906,9 +5906,7 @@ function renderPrintedTodayCard(payload) {
     const amount = Number(report?.today?.amount_total || 0);
     if (els.printedTodayCount) els.printedTodayCount.textContent = formatCount(count);
     if (els.printedTodayAmount) {
-        els.printedTodayAmount.textContent = count
-            ? `${formatCurrency(amount)} printed today`
-            : 'No invoices printed today';
+        els.printedTodayAmount.textContent = `${formatCurrency(amount)} printed today`;
     }
     if (els.printedTodayCard) {
         els.printedTodayCard.disabled = false;
