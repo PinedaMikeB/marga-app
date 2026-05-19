@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260518-repin-photo-2">
+    <link rel="stylesheet" href="css/field.css?v=20260519-field-invoice-table-1">
 </head>
 <body>
     <main class="field-shell">
@@ -468,14 +468,39 @@
                         <input type="file" id="fieldCollectionCheckImage" accept="image/*" capture="environment">
                         <div class="ops-subtext" id="fieldCollectionCheckHint">No file selected.</div>
                     </label>
-                    <label class="marga-field marga-field-full">
-                        <span>Official Receipt / Invoice Number</span>
-                        <textarea id="fieldCollectionReceiptRefs" rows="2" placeholder="OR number, invoice number, or both"></textarea>
-                    </label>
-                    <label class="marga-field marga-field-full">
-                        <span>Payment For Invoice Number(s)</span>
-                        <textarea id="fieldCollectionInvoiceRefs" rows="2" placeholder="Invoice numbers covered by this payment"></textarea>
-                    </label>
+                    <div class="marga-field marga-field-full field-collection-invoices">
+                        <span>Invoice No To Pay</span>
+                        <div class="field-collection-invoice-search">
+                            <input type="search" id="fieldCollectionInvoiceSearch" placeholder="Search invoice no.">
+                            <button type="button" class="btn btn-secondary btn-sm" id="fieldCollectionInvoiceAddBtn">Add</button>
+                        </div>
+                        <div id="fieldCollectionInvoiceResults" class="field-collection-invoice-results" hidden></div>
+                        <div class="field-collection-invoice-table-wrap">
+                            <table class="field-collection-invoice-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Customer / Branch</th>
+                                        <th>Inv No</th>
+                                        <th class="text-right">Amount</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fieldCollectionInvoiceRows">
+                                    <tr>
+                                        <td colspan="5" class="field-collection-empty">No invoice selected yet.</td>
+                                    </tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="3" class="text-right">Total of Payment</td>
+                                        <td class="text-right" id="fieldCollectionInvoiceTotal">₱0.00</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
                     <label class="marga-field">
                         <span>Check Number</span>
                         <input type="text" id="fieldCollectionCheckNumber" placeholder="Check number">
@@ -595,6 +620,6 @@
     <script src="../shared/js/offline-sync.js?v=20260516-field-permissions-3"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js?v=20260516-field-permissions-3"></script>
-    <script src="js/field.js?v=20260518-field-payment-draft-1"></script>
+    <script src="js/field.js?v=20260519-field-invoice-table-1"></script>
 </body>
 </html>

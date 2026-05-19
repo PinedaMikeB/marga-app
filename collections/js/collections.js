@@ -2841,6 +2841,7 @@ async function loadLookups() {
         const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
         const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
         const invoiceIdKey = invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '';
+        const orNumber = String(getField(f, ['ornum', 'or_number']) || '').trim();
         if (isDraftPayment) {
             draftPaymentEntries.push({
                 docId: getFirestoreDocumentId(doc),
@@ -2883,7 +2884,6 @@ async function loadLookups() {
             paidInvoiceIds.add(invoiceIdKey || invoiceNo);
         }
         if ((amount > 0 || tax2307 > 0 || deductionAmount > 0) && paymentDate) {
-            const orNumber = String(getField(f, ['ornum', 'or_number']) || '').trim();
             const token = [
                 invoiceIdKey,
                 invoiceNo,
@@ -7248,29 +7248,32 @@ function renderReceivePaymentDrafts() {
                         <tr>
                             <th class="receive-payment-checkcell">OK</th>
                             <th>Date</th>
-                            <th>Customer</th>
+                            <th>Customer / Branch</th>
                             <th>Check No</th>
                             <th>Check Date</th>
                             <th>Inv No</th>
                             <th>OR No</th>
-                            <th class="text-right">Net</th>
+                            <th class="text-right">Amount</th>
                             <th class="text-right">2307</th>
+                            <th class="text-right">Net Amount</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${group.payments.map((payment) => {
                             const docId = String(payment.docId || payment.id || '');
+                            const customerBranch = [payment.client, payment.category].filter(Boolean).join(' - ');
                             return `
                                 <tr>
                                     <td class="receive-payment-checkcell"><input type="checkbox" ${receivePaymentState.matchedDraftIds.has(docId) ? 'checked' : ''} onchange="toggleReceivePaymentDraftMatch('${encodeURIComponent(docId)}', this.checked)"></td>
                                     <td>${escapeHtml(formatDate(payment.paymentDate))}</td>
-                                    <td>${escapeHtml(payment.client || '')}</td>
+                                    <td>${escapeHtml(customerBranch || payment.client || '')}</td>
                                     <td>${escapeHtml(payment.checkNumber || '-')}</td>
                                     <td>${escapeHtml(formatDate(payment.checkDate))}</td>
                                     <td>${escapeHtml(payment.invoiceNo || payment.invoiceId || '-')}</td>
                                     <td>${escapeHtml(payment.orNumber || payment.printedOr || '-')}</td>
-                                    <td class="text-right">${escapeHtml(formatCurrency(payment.amount || 0))}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(getDraftTurnoverAmount(payment)))}</td>
                                     <td class="text-right">${escapeHtml(formatCurrency(getPaymentDeductionAmount(payment)))}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(payment.amount || 0))}</td>
                                 </tr>
                             `;
                         }).join('')}

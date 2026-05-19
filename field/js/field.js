@@ -126,6 +126,9 @@ const state = {
     modalSchedtimeDocId: null,
     modalSchedtimeId: null,
     modalPartsNeeded: [],
+    modalCollectionInvoices: [],
+    modalCollectionInvoiceSearchResults: [],
+    modalCollectionInvoiceSearchRequest: '',
     modalReadOnly: false,
     modalBranchLocationPinned: false,
     attendanceDocId: '',
@@ -281,6 +284,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldAfterPhoto').addEventListener('change', () => updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name'));
     document.getElementById('fieldCollectionVoucherImage').addEventListener('change', () => updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name'));
     document.getElementById('fieldCollectionCheckImage').addEventListener('change', () => updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name'));
+    document.getElementById('fieldCollectionInvoiceSearch')?.addEventListener('input', runFieldCollectionInvoiceSearch);
+    document.getElementById('fieldCollectionInvoiceSearch')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addFirstFieldCollectionInvoiceMatch();
+    });
+    document.getElementById('fieldCollectionInvoiceAddBtn')?.addEventListener('click', addFirstFieldCollectionInvoiceMatch);
+    document.getElementById('fieldCollectionInvoiceRows')?.addEventListener('click', (event) => {
+        const button = event.target?.closest?.('[data-remove-collection-invoice]');
+        if (!button) return;
+        removeFieldCollectionInvoice(Number(button.dataset.removeCollectionInvoice || -1));
+    });
     document.getElementById('fieldModal').addEventListener('click', toggleModalSection);
     document.getElementById('fieldModal').addEventListener('input', updateActionButtons);
     document.getElementById('fieldModal').addEventListener('change', updateActionButtons);
@@ -4907,6 +4922,9 @@ function resetModalFields() {
     state.modalSchedtimeDocId = null;
     state.modalSchedtimeId = null;
     state.modalPartsNeeded = [];
+    state.modalCollectionInvoices = [];
+    state.modalCollectionInvoiceSearchResults = [];
+    state.modalCollectionInvoiceSearchRequest = '';
     state.modalReadOnly = false;
     state.modalBranchLocationPinned = false;
 
@@ -4934,8 +4952,9 @@ function resetModalFields() {
     document.getElementById('fieldBillingReceivedBy').value = '';
     document.getElementById('fieldBillingDate').value = '';
     document.getElementById('fieldBillingTime').value = '';
-    document.getElementById('fieldCollectionReceiptRefs').value = '';
-    document.getElementById('fieldCollectionInvoiceRefs').value = '';
+    document.getElementById('fieldCollectionInvoiceSearch').value = '';
+    renderFieldCollectionInvoiceResults();
+    renderFieldCollectionInvoices();
     document.getElementById('fieldCollectionCheckNumber').value = '';
     document.getElementById('fieldCollectionCheckBank').value = '';
     document.getElementById('fieldCollectionCheckDate').value = '';
@@ -5039,8 +5058,8 @@ function setFormDisabled(isReadOnly) {
         'fieldBillingTime',
         'fieldCollectionVoucherImage',
         'fieldCollectionCheckImage',
-        'fieldCollectionReceiptRefs',
-        'fieldCollectionInvoiceRefs',
+        'fieldCollectionInvoiceSearch',
+        'fieldCollectionInvoiceAddBtn',
         'fieldCollectionCheckNumber',
         'fieldCollectionCheckBank',
         'fieldCollectionCheckDate',
@@ -5562,8 +5581,11 @@ async function openModal(scheduleId) {
     document.getElementById('fieldBillingReceivedBy').value = String(row.field_billing_received_by || '').trim();
     document.getElementById('fieldBillingDate').value = String(row.field_billing_date || '').trim();
     document.getElementById('fieldBillingTime').value = String(row.field_billing_time || '').trim();
-    document.getElementById('fieldCollectionReceiptRefs').value = String(row.field_collection_receipt_refs || '').trim();
-    document.getElementById('fieldCollectionInvoiceRefs').value = String(row.field_collection_invoice_refs || '').trim();
+    state.modalCollectionInvoices = parseSavedCollectionInvoices(row);
+    state.modalCollectionInvoiceSearchResults = [];
+    document.getElementById('fieldCollectionInvoiceSearch').value = '';
+    renderFieldCollectionInvoiceResults();
+    renderFieldCollectionInvoices();
     document.getElementById('fieldCollectionCheckNumber').value = String(row.field_collection_check_number || '').trim();
     document.getElementById('fieldCollectionCheckBank').value = String(row.field_collection_check_bank || '').trim();
     document.getElementById('fieldCollectionCheckDate').value = dateOnly(row.field_collection_check_date);
@@ -5686,6 +5708,260 @@ function getCurrentRow() {
     return state.rows.find((row) => Number(row.id || 0) === scheduleId) || null;
 }
 
+function moneyNumber(value) {
+    const numeric = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+}
+
+function collectionInvoiceKey(invoice) {
+    return String(invoice?.invoiceKey || invoice?.invoiceNo || invoice?.invoiceId || invoice?.docId || '').trim().toUpperCase();
+}
+
+function getBillingInvoiceNo(row) {
+    return firstNonBlank(row?.invoiceNo, row?.invoiceno, row?.invoice_no, row?.invoice_num, row?.invoice_number, row?.invoiceId, row?.invoice_id, row?.invoiceid, row?.id);
+}
+
+function getBillingInvoiceDate(row) {
+    return dateOnly(firstNonBlank(row?.date, row?.invoiceDate, row?.dateprinted, row?.date_printed, row?.invoice_date, row?.invdate, row?.datex, row?.billing_date, row?.due_date, row?.tmstmp));
+}
+
+function getBillingInvoiceAmount(row) {
+    return moneyNumber(firstNonBlank(
+        row?.totalamount,
+        row?.total_amount,
+        row?.invoice_amt,
+        row?.invoice_amount,
+        row?.amount,
+        row?.balance_amt,
+        row?.balance,
+        row?.grand_total
+    ));
+}
+
+function mapFieldCollectionInvoice(record, fallbackRow = getCurrentRow()) {
+    const location = scheduleLocationLabel(fallbackRow || {});
+    const invoiceNo = String(getBillingInvoiceNo(record) || '').trim();
+    const branchName = firstNonBlank(
+        record?.branch,
+        record?.branch_name,
+        record?.branchname,
+        record?.customer_branch,
+        record?.category,
+        location.branchName
+    );
+    const customerName = firstNonBlank(
+        record?.customer,
+        record?.client,
+        record?.company,
+        record?.company_name,
+        record?.account_name,
+        record?.mother_company,
+        location.companyName
+    );
+    return {
+        docId: String(record?._docId || record?.docId || record?.id || invoiceNo || '').trim(),
+        invoiceId: String(firstNonBlank(record?.invoiceId, record?.invoice_id, record?.invoiceid, invoiceNo) || '').trim(),
+        invoiceNo,
+        invoiceKey: String(firstNonBlank(record?._docId, record?.invoiceKey, record?.invoiceId, record?.invoice_id, record?.invoiceid, invoiceNo) || '').trim(),
+        date: getBillingInvoiceDate(record),
+        customer: String(customerName || '').trim(),
+        branch: String(branchName || '').trim(),
+        amount: getBillingInvoiceAmount(record),
+        raw: record || {}
+    };
+}
+
+function parseSavedCollectionInvoices(row) {
+    const saved = String(row?.field_collection_invoices_json || '').trim();
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+                return parsed.map((item) => mapFieldCollectionInvoice(item, row)).filter((item) => collectionInvoiceKey(item));
+            }
+        } catch (err) {
+            console.warn('Saved collection invoice allocation could not be parsed.', err);
+        }
+    }
+    const legacyRefs = String(row?.field_collection_invoice_refs || '').trim();
+    if (!legacyRefs) return [];
+    const location = scheduleLocationLabel(row || {});
+    return legacyRefs
+        .split(/[,\n]+/)
+        .map((ref) => String(ref || '').trim())
+        .filter(Boolean)
+        .map((ref) => ({
+            docId: ref,
+            invoiceId: ref,
+            invoiceNo: ref,
+            invoiceKey: ref,
+            date: '',
+            customer: location.companyName || '',
+            branch: location.branchName || '',
+            amount: 0,
+            raw: {}
+        }));
+}
+
+function renderFieldCollectionInvoiceResults() {
+    const results = document.getElementById('fieldCollectionInvoiceResults');
+    if (!results) return;
+    const rows = state.modalCollectionInvoiceSearchResults || [];
+    if (!rows.length) {
+        results.hidden = true;
+        results.innerHTML = '';
+        return;
+    }
+    results.hidden = false;
+    results.innerHTML = rows.map((invoice, index) => {
+        const branch = [invoice.customer, invoice.branch].filter(Boolean).join(' - ');
+        return `
+            <button type="button" class="field-collection-invoice-result" data-collection-invoice-index="${index}">
+                <span>
+                    <strong>${sanitize(invoice.invoiceNo || invoice.invoiceId || '-')}</strong>
+                    <small>${sanitize(branch || 'Customer / branch')} · ${sanitize(invoice.date || 'No date')}</small>
+                </span>
+                <span>${sanitize(formatPesoAmount(invoice.amount) || '₱0.00')}</span>
+            </button>
+        `;
+    }).join('');
+    results.querySelectorAll('[data-collection-invoice-index]').forEach((button) => {
+        button.addEventListener('click', () => {
+            addFieldCollectionInvoice(state.modalCollectionInvoiceSearchResults[Number(button.dataset.collectionInvoiceIndex || 0)]);
+        });
+    });
+}
+
+function renderFieldCollectionInvoices() {
+    const tbody = document.getElementById('fieldCollectionInvoiceRows');
+    const totalNode = document.getElementById('fieldCollectionInvoiceTotal');
+    if (!tbody || !totalNode) return;
+    const invoices = state.modalCollectionInvoices || [];
+    const total = invoices.reduce((sum, invoice) => sum + moneyNumber(invoice.amount), 0);
+    totalNode.textContent = formatPesoAmount(total) || '₱0.00';
+    if (!invoices.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="field-collection-empty">No invoice selected yet.</td></tr>';
+        updateActionButtons();
+        return;
+    }
+    tbody.innerHTML = invoices.map((invoice, index) => {
+        const customerBranch = [invoice.customer, invoice.branch].filter(Boolean).join(' - ');
+        return `
+            <tr>
+                <td>${sanitize(invoice.date || '-')}</td>
+                <td>${sanitize(customerBranch || '-')}</td>
+                <td>${sanitize(invoice.invoiceNo || invoice.invoiceId || '-')}</td>
+                <td class="text-right">${sanitize(formatPesoAmount(invoice.amount) || '₱0.00')}</td>
+                <td class="text-right"><button type="button" class="field-collection-remove-btn" data-remove-collection-invoice="${index}" aria-label="Remove invoice">x</button></td>
+            </tr>
+        `;
+    }).join('');
+    updateActionButtons();
+}
+
+function addFieldCollectionInvoice(invoice) {
+    if (!invoice) return;
+    const normalized = mapFieldCollectionInvoice(invoice.raw || invoice);
+    const key = collectionInvoiceKey(normalized);
+    if (!key) {
+        alert('Select a valid invoice first.');
+        return;
+    }
+    if (state.modalCollectionInvoices.some((item) => collectionInvoiceKey(item) === key)) {
+        alert('That invoice is already in the payment table.');
+        return;
+    }
+    state.modalCollectionInvoices.push(normalized);
+    state.modalCollectionInvoiceSearchResults = [];
+    const search = document.getElementById('fieldCollectionInvoiceSearch');
+    if (search) search.value = '';
+    renderFieldCollectionInvoiceResults();
+    renderFieldCollectionInvoices();
+}
+
+function removeFieldCollectionInvoice(index) {
+    if (state.modalReadOnly) return;
+    if (index < 0) return;
+    state.modalCollectionInvoices.splice(index, 1);
+    renderFieldCollectionInvoices();
+}
+
+async function searchFieldCollectionInvoices(query) {
+    const term = String(query || '').trim();
+    if (!term) return [];
+    const numeric = /^\d+$/.test(term);
+    const queries = [
+        queryEquals('tbl_billing', 'invoiceno', term, 'string', 12),
+        queryEquals('tbl_billing', 'invoice_no', term, 'string', 12),
+        queryEquals('tbl_billing', 'invoice_num', term, 'string', 12),
+        queryEquals('tbl_billing', 'invoice_number', term, 'string', 12)
+    ];
+    if (numeric) {
+        queries.push(
+            queryEquals('tbl_billing', 'invoice_id', term, 'integer', 12),
+            queryEquals('tbl_billing', 'invoiceid', term, 'integer', 12),
+            queryEquals('tbl_billing', 'id', term, 'integer', 12)
+        );
+        queries.push(
+            queryEquals('tbl_billing', 'invoice_id', term, 'string', 12),
+            queryEquals('tbl_billing', 'invoiceid', term, 'string', 12)
+        );
+    }
+    const settled = await Promise.allSettled(queries);
+    const byKey = new Map();
+    settled.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        result.value.forEach((doc) => {
+            const parsed = parseFirestoreDoc(doc);
+            if (!parsed) return;
+            const invoice = mapFieldCollectionInvoice(parsed);
+            const key = collectionInvoiceKey(invoice);
+            if (key && !byKey.has(key)) byKey.set(key, invoice);
+        });
+    });
+    return [...byKey.values()].slice(0, 8);
+}
+
+async function runFieldCollectionInvoiceSearch() {
+    const search = document.getElementById('fieldCollectionInvoiceSearch');
+    const addButton = document.getElementById('fieldCollectionInvoiceAddBtn');
+    const query = String(search?.value || '').trim();
+    if (!query) {
+        state.modalCollectionInvoiceSearchResults = [];
+        renderFieldCollectionInvoiceResults();
+        return;
+    }
+    if (addButton) addButton.disabled = true;
+    const requestKey = `${query}_${Date.now()}`;
+    state.modalCollectionInvoiceSearchRequest = requestKey;
+    try {
+        const rows = await searchFieldCollectionInvoices(query);
+        if (state.modalCollectionInvoiceSearchRequest !== requestKey) return;
+        state.modalCollectionInvoiceSearchResults = rows;
+        renderFieldCollectionInvoiceResults();
+    } catch (err) {
+        console.warn('Invoice search failed.', err);
+        state.modalCollectionInvoiceSearchResults = [];
+        renderFieldCollectionInvoiceResults();
+    } finally {
+        if (addButton) addButton.disabled = state.modalReadOnly;
+    }
+}
+
+async function addFirstFieldCollectionInvoiceMatch() {
+    if (state.modalReadOnly) return;
+    let match = (state.modalCollectionInvoiceSearchResults || [])[0];
+    if (!match) {
+        const search = document.getElementById('fieldCollectionInvoiceSearch');
+        const rows = await searchFieldCollectionInvoices(search?.value || '');
+        state.modalCollectionInvoiceSearchResults = rows;
+        renderFieldCollectionInvoiceResults();
+        match = rows[0];
+    }
+    if (match) addFieldCollectionInvoice(match);
+    else alert('Search a valid invoice number first.');
+}
+
 function getSelectedMachine() {
     const serialInput = (document.getElementById('fieldSerialInput').value || '').trim();
     const selected = resolveMachineFromSerial(serialInput);
@@ -5748,6 +6024,21 @@ function collectModalFormData() {
     const collectionAmount = String(document.getElementById('fieldCollectionAmount').value || '').trim();
     const collectionDeductionAmount = String(document.getElementById('fieldCollectionDeductionAmount')?.value || '').trim();
     const collectionCheckAmount = String(document.getElementById('fieldCollectionCheckAmount')?.value || '').trim();
+    const collectionInvoices = (state.modalCollectionInvoices || []).map((invoice) => ({
+        docId: String(invoice.docId || '').trim(),
+        invoiceId: String(invoice.invoiceId || '').trim(),
+        invoiceNo: String(invoice.invoiceNo || '').trim(),
+        invoiceKey: String(invoice.invoiceKey || '').trim(),
+        date: String(invoice.date || '').trim(),
+        customer: String(invoice.customer || '').trim(),
+        branch: String(invoice.branch || '').trim(),
+        amount: moneyNumber(invoice.amount)
+    }));
+    const collectionInvoiceRefs = collectionInvoices
+        .map((invoice) => invoice.invoiceNo || invoice.invoiceId)
+        .filter(Boolean)
+        .join(', ');
+    const collectionInvoiceTotal = collectionInvoices.reduce((sum, invoice) => sum + moneyNumber(invoice.amount), 0);
 
     return {
         notes: String(document.getElementById('fieldCloseNotes').value || '').trim(),
@@ -5759,8 +6050,10 @@ function collectModalFormData() {
         billingReceivedBy: String(document.getElementById('fieldBillingReceivedBy').value || '').trim(),
         billingDate: String(document.getElementById('fieldBillingDate').value || '').trim(),
         billingTime: String(document.getElementById('fieldBillingTime').value || '').trim(),
-        collectionReceiptRefs: String(document.getElementById('fieldCollectionReceiptRefs').value || '').trim(),
-        collectionInvoiceRefs: String(document.getElementById('fieldCollectionInvoiceRefs').value || '').trim(),
+        collectionReceiptRefs: String(document.getElementById('fieldCollectionOrNumber')?.value || '').trim(),
+        collectionInvoiceRefs,
+        collectionInvoices,
+        collectionInvoiceTotal,
         collectionCheckNumber: String(document.getElementById('fieldCollectionCheckNumber').value || '').trim(),
         collectionCheckBank: String(document.getElementById('fieldCollectionCheckBank')?.value || '').trim(),
         collectionCheckDate: String(document.getElementById('fieldCollectionCheckDate')?.value || '').trim(),
@@ -5831,6 +6124,8 @@ function buildSchedulePayload(row, form, tag) {
         field_billing_time: form.billingTime,
         field_collection_receipt_refs: form.collectionReceiptRefs,
         field_collection_invoice_refs: form.collectionInvoiceRefs,
+        field_collection_invoices_json: jsonString(form.collectionInvoices || [], '[]'),
+        field_collection_invoice_total: Number(form.collectionInvoiceTotal || 0) || 0,
         field_collection_check_number: form.collectionCheckNumber,
         field_collection_check_bank: form.collectionCheckBank,
         field_collection_check_date: form.collectionCheckDate ? `${form.collectionCheckDate} 00:00:00` : ZERO_DATETIME,
@@ -6014,11 +6309,18 @@ function getCloseTaskIssues(row, form) {
         if (!form.collectionPaymentDate) {
             return [closeIssue('Cannot mark finished: select the collection payment date first.', 'fieldCollectionSection', 'fieldCollectionPaymentDate', 'missing_collection_payment_date')];
         }
-        if (!form.collectionInvoiceRefs) {
-            return [closeIssue('Cannot mark finished: enter the invoice number(s) covered by the payment first.', 'fieldCollectionSection', 'fieldCollectionInvoiceRefs', 'missing_collection_invoice_refs')];
+        if (!form.collectionInvoices?.length) {
+            return [closeIssue('Cannot mark finished: add the invoice number(s) covered by the payment first.', 'fieldCollectionSection', 'fieldCollectionInvoiceSearch', 'missing_collection_invoice_refs')];
         }
         if (!form.collectionOrNumber && !form.collectionReceiptRefs) {
             return [closeIssue('Cannot mark finished: enter the OR/receipt reference first.', 'fieldCollectionSection', 'fieldCollectionOrNumber', 'missing_collection_or')];
+        }
+        const declaredTotal = Number(form.collectionAmountNumber || 0) + Number(form.collectionDeductionAmountNumber || 0);
+        if (Number(form.collectionInvoiceTotal || 0) > 0 && Math.abs(Number(form.collectionInvoiceTotal || 0) - declaredTotal) > 0.01) {
+            return [closeIssue('Cannot mark finished: invoice table total must match Amount of Payment plus 2307/deduction.', 'fieldCollectionSection', 'fieldCollectionAmount', 'collection_total_mismatch')];
+        }
+        if (Number(form.collectionDeductionAmountNumber || 0) > 0 && !form.collectionDeductionType) {
+            return [closeIssue('Cannot mark finished: select the deduction type for the deducted amount first.', 'fieldCollectionSection', 'fieldCollectionDeductionType', 'missing_deduction_type')];
         }
         if (form.collectionPaymentType === 'check') {
             if (!form.collectionCheckNumber) {
@@ -6080,88 +6382,131 @@ async function logFinishBlockedAttempt(row, issue, form) {
 
 async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
     if (!isCollectionTicket(row)) return {};
-    const paymentDocId = `field_payment_${Number(row.id || 0) || Date.now()}`;
     const isCheck = form.collectionPaymentType === 'check';
     const deductionType = String(form.collectionDeductionType || '').trim().toLowerCase();
     const deductionAmount = Number(form.collectionDeductionAmountNumber || 0) || 0;
-    const tax2307 = deductionType === '2307' ? deductionAmount : 0;
-    const otherDeductionAmount = deductionType && deductionType !== '2307' ? deductionAmount : 0;
-    const taxFormStatus = tax2307 > 0 ? (form.collection2307Status || 'pending') : '';
-    const taxStatus = tax2307 > 0 ? (taxFormStatus === 'submitted' ? 2 : 1) : 0;
+    const totalPaymentAmount = Number(form.collectionAmountNumber || 0) || 0;
+    const totalGrossAmount = Number(form.collectionInvoiceTotal || 0) || (totalPaymentAmount + deductionAmount);
+    const invoices = (form.collectionInvoices || []).length
+        ? form.collectionInvoices
+        : [{
+            invoiceId: form.collectionInvoiceRefs || String(row.collection_no || row.reference_no || ''),
+            invoiceNo: form.collectionInvoiceRefs || String(row.collection_no || row.reference_no || ''),
+            date: '',
+            customer: '',
+            branch: '',
+            amount: totalGrossAmount
+        }];
     const paymentDateDb = form.collectionPaymentDate ? `${form.collectionPaymentDate} 00:00:00` : ZERO_DATETIME;
     const depositDateDb = form.collectionDepositDate ? `${form.collectionDepositDate} 00:00:00` : paymentDateDb;
     const checkDateDb = form.collectionCheckDate ? `${form.collectionCheckDate} 00:00:00` : ZERO_DATETIME;
-    const checkDocId = isCheck ? `field_checkpayment_${Number(row.id || 0) || Date.now()}` : '';
     const branch = caches.branch.get(String(row.branch_id || 0));
     const company = caches.company.get(String(row.company_id || branch?.company_id || 0));
     const clientName = company?.companyname || row.company_name || '';
     const category = branch?.branchname || row.branch_name || '';
-    const invoiceRef = form.collectionInvoiceRefs || form.collectionReceiptRefs || String(row.collection_no || row.reference_no || '');
-    const paymentPayload = {
-        id: paymentDocId,
-        schedule_id: Number(row.id || 0) || 0,
-        schedule_doc_id: scheduleDocIdForRow(row),
-        branch_id: Number(row.branch_id || 0) || 0,
-        company_id: Number(row.company_id || branch?.company_id || 0) || 0,
-        invoice_id: invoiceRef,
-        invoice_num: invoiceRef,
-        client: clientName,
-        category,
-        invoice_amt: 0,
-        invoice_date: ZERO_DATETIME,
-        printed_or: form.collectionReceiptRefs,
-        assigned: getCurrentStaffName(),
-        payment_amt: Number(form.collectionAmountNumber || 0) || 0,
-        balance_amt: 0,
-        date_deposit: depositDateDb,
-        date_paid: paymentDateDb,
-        ornum: form.collectionOrNumber || form.collectionReceiptRefs,
-        or_number: form.collectionOrNumber || form.collectionReceiptRefs,
-        payment_type: isCheck ? 1 : 0,
-        payment_status: 'Draft Payment',
-        check_number: form.collectionCheckNumber,
-        check_amt: isCheck ? (Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0) : 0,
-        check_date: checkDateDb,
-        account_bank: form.collectionCheckBank,
-        tax_2307: tax2307,
-        tax_date_paid: tax2307 > 0 ? paymentDateDb : ZERO_DATETIME,
-        tax_status: taxStatus,
-        deduction_type: deductionType,
-        deduction_amount: deductionAmount,
-        other_deduction_amount: otherDeductionAmount,
-        tax_form_status: taxFormStatus,
-        tax_form_received_at: tax2307 > 0 && taxFormStatus === 'submitted' ? nowIso : '',
-        tax_form_remarks: form.collectionPaymentRemarks,
-        checkpayment_id: checkDocId || 0,
-        remarks: form.collectionPaymentRemarks,
-        timestamp: nowIso,
-        updated_at: nowIso,
-        source: 'field_app_collection_payment_draft',
-        encoded_by: staffId
-    };
-    await setDocument('tbl_paymentinfo', paymentDocId, paymentPayload);
-    if (isCheck) {
-        await setDocument('tbl_checkpayments', checkDocId, {
-            id: checkDocId,
-            paymentinfo_id: paymentDocId,
+    const groupId = `field_payment_group_${Number(row.id || 0) || Date.now()}_${Date.now()}`;
+    const paymentDocIds = [];
+    const checkDocIds = [];
+    let allocatedPayment = 0;
+    let allocatedDeduction = 0;
+    for (let index = 0; index < invoices.length; index += 1) {
+        const invoice = invoices[index];
+        const grossAmount = moneyNumber(invoice.amount) || (index === 0 ? totalGrossAmount : 0);
+        const ratio = totalGrossAmount > 0 ? grossAmount / totalGrossAmount : (index === 0 ? 1 : 0);
+        const isLast = index === invoices.length - 1;
+        const tax2307 = deductionType === '2307'
+            ? (isLast ? Math.max(0, deductionAmount - allocatedDeduction) : Math.round((deductionAmount * ratio) * 100) / 100)
+            : 0;
+        const otherDeductionAmount = deductionType && deductionType !== '2307'
+            ? (isLast ? Math.max(0, deductionAmount - allocatedDeduction) : Math.round((deductionAmount * ratio) * 100) / 100)
+            : 0;
+        const lineDeduction = tax2307 + otherDeductionAmount;
+        const paymentAmount = isLast
+            ? Math.max(0, totalPaymentAmount - allocatedPayment)
+            : Math.max(0, Math.round((grossAmount - lineDeduction) * 100) / 100);
+        allocatedPayment += paymentAmount;
+        allocatedDeduction += lineDeduction;
+        const taxFormStatus = tax2307 > 0 ? (form.collection2307Status || 'pending') : '';
+        const taxStatus = tax2307 > 0 ? (taxFormStatus === 'submitted' ? 2 : 1) : 0;
+        const invoiceRef = invoice.invoiceNo || invoice.invoiceId || form.collectionInvoiceRefs || form.collectionReceiptRefs || String(row.collection_no || row.reference_no || '');
+        const paymentDocId = `${groupId}_${index + 1}`;
+        const checkDocId = isCheck ? `field_checkpayment_${Number(row.id || 0) || Date.now()}_${index + 1}` : '';
+        paymentDocIds.push(paymentDocId);
+        if (checkDocId) checkDocIds.push(checkDocId);
+        const paymentPayload = {
+            id: paymentDocId,
             schedule_id: Number(row.id || 0) || 0,
+            schedule_doc_id: scheduleDocIdForRow(row),
+            branch_id: Number(row.branch_id || 0) || 0,
+            company_id: Number(row.company_id || branch?.company_id || 0) || 0,
+            invoice_id: invoice.invoiceId || invoiceRef,
+            invoice_num: invoiceRef,
+            client: invoice.customer || clientName,
+            category: invoice.branch || category,
+            invoice_amt: grossAmount,
+            invoice_date: invoice.date ? `${invoice.date} 00:00:00` : ZERO_DATETIME,
+            printed_or: form.collectionOrNumber || form.collectionReceiptRefs,
+            assigned: getCurrentStaffName(),
+            payment_amt: paymentAmount,
+            balance_amt: 0,
+            date_deposit: depositDateDb,
+            date_paid: paymentDateDb,
+            ornum: form.collectionOrNumber || form.collectionReceiptRefs,
+            or_number: form.collectionOrNumber || form.collectionReceiptRefs,
+            payment_type: isCheck ? 1 : 0,
+            payment_status: 'Draft Payment',
             check_number: form.collectionCheckNumber,
-            check_bank: form.collectionCheckBank,
-            account_bank: form.collectionCheckBank,
+            check_amt: isCheck ? paymentAmount : 0,
             check_date: checkDateDb,
-            check_amt: Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0,
-            amount: Number(form.collectionCheckAmountNumber || 0) || Number(form.collectionAmountNumber || 0) || 0,
-            status: 'pending',
+            account_bank: form.collectionCheckBank,
+            tax_2307: tax2307,
+            tax_date_paid: tax2307 > 0 ? paymentDateDb : ZERO_DATETIME,
+            tax_status: taxStatus,
+            deduction_type: deductionType,
+            deduction_amount: lineDeduction,
+            other_deduction_amount: otherDeductionAmount,
+            tax_form_status: taxFormStatus,
+            tax_form_received_at: tax2307 > 0 && taxFormStatus === 'submitted' ? nowIso : '',
+            tax_form_remarks: form.collectionPaymentRemarks,
+            checkpayment_id: checkDocId || 0,
             remarks: form.collectionPaymentRemarks,
             timestamp: nowIso,
             updated_at: nowIso,
             source: 'field_app_collection_payment_draft',
-            encoded_by: staffId
-        });
+            encoded_by: staffId,
+            field_payment_group_id: groupId,
+            field_payment_group_total: totalGrossAmount,
+            field_payment_line_index: index + 1,
+            field_payment_line_count: invoices.length
+        };
+        await setDocument('tbl_paymentinfo', paymentDocId, paymentPayload);
+        if (isCheck) {
+            await setDocument('tbl_checkpayments', checkDocId, {
+                id: checkDocId,
+                paymentinfo_id: paymentDocId,
+                schedule_id: Number(row.id || 0) || 0,
+                check_number: form.collectionCheckNumber,
+                check_bank: form.collectionCheckBank,
+                account_bank: form.collectionCheckBank,
+                check_date: checkDateDb,
+                check_amt: paymentAmount,
+                amount: paymentAmount,
+                status: 'pending',
+                remarks: form.collectionPaymentRemarks,
+                timestamp: nowIso,
+                updated_at: nowIso,
+                source: 'field_app_collection_payment_draft',
+                encoded_by: staffId,
+                field_payment_group_id: groupId
+            });
+        }
     }
     return {
-        field_collection_payment_doc_id: paymentDocId,
-        field_collection_check_doc_id: checkDocId,
+        field_collection_payment_doc_id: paymentDocIds[0] || '',
+        field_collection_payment_doc_ids: paymentDocIds.join(','),
+        field_collection_check_doc_id: checkDocIds[0] || '',
+        field_collection_check_doc_ids: checkDocIds.join(','),
+        field_collection_payment_group_id: groupId,
         field_collection_payment_recorded_at: nowIso,
         field_collection_payment_recorded_by: staffId
     };
@@ -6613,6 +6958,8 @@ function buildReopenPayload(row, form = null) {
         field_billing_time: '',
         field_collection_receipt_refs: '',
         field_collection_invoice_refs: '',
+        field_collection_invoices_json: '[]',
+        field_collection_invoice_total: 0,
         field_collection_check_number: '',
         field_collection_check_bank: '',
         field_collection_check_date: ZERO_DATETIME,

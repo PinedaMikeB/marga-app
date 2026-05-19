@@ -1607,6 +1607,128 @@
     grid-column: 1 / -1;
 }
 
+.field-collection-invoices {
+    gap: 0.5rem;
+}
+
+.field-collection-invoice-search {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    align-items: center;
+}
+
+.field-collection-invoice-search .btn {
+    min-height: 44px;
+    padding-inline: 1rem;
+}
+
+.field-collection-invoice-results {
+    border: 1px solid rgba(187, 212, 237, 0.9);
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 14px 28px rgba(37, 99, 235, 0.1);
+}
+
+.field-collection-invoice-result {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+    padding: 0.72rem 0.85rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.7rem;
+    align-items: center;
+    text-align: left;
+    color: #1f3657;
+    background: transparent;
+    cursor: pointer;
+}
+
+.field-collection-invoice-result:last-child {
+    border-bottom: 0;
+}
+
+.field-collection-invoice-result:hover {
+    background: rgba(219, 234, 254, 0.56);
+}
+
+.field-collection-invoice-result strong {
+    display: block;
+    color: #153867;
+    font-size: 0.92rem;
+}
+
+.field-collection-invoice-result small {
+    display: block;
+    margin-top: 0.14rem;
+    color: #5a6f88;
+    font-size: 0.76rem;
+}
+
+.field-collection-invoice-table-wrap {
+    overflow-x: auto;
+    border: 1px solid rgba(187, 212, 237, 0.9);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.field-collection-invoice-table {
+    width: 100%;
+    min-width: 620px;
+    border-collapse: collapse;
+    color: #1f3657;
+    font-size: 0.86rem;
+}
+
+.field-collection-invoice-table th,
+.field-collection-invoice-table td {
+    border-bottom: 1px solid rgba(203, 213, 225, 0.82);
+    padding: 0.66rem 0.72rem;
+    vertical-align: middle;
+}
+
+.field-collection-invoice-table th {
+    background: rgba(239, 246, 255, 0.92);
+    color: #24496f;
+    font-weight: 850;
+}
+
+.field-collection-invoice-table tfoot td {
+    border-bottom: 0;
+    background: rgba(239, 246, 255, 0.82);
+    font-weight: 850;
+}
+
+.field-collection-invoice-table .text-right {
+    text-align: right;
+}
+
+.field-collection-empty {
+    color: #64748b;
+    font-weight: 750;
+}
+
+.field-collection-remove-btn {
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 999px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    background: #fff;
+    cursor: pointer;
+}
+
+.field-collection-remove-btn:hover {
+    color: #991b1b;
+    border-color: rgba(248, 113, 113, 0.72);
+    background: rgba(254, 242, 242, 0.96);
+}
+
 .marga-modal-footer {
     padding: 0.9rem 1.1rem;
     border-top: 1px solid rgba(226, 232, 240, 0.65);
