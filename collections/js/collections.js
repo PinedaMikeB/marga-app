@@ -8836,6 +8836,7 @@ function makeCollectorTodayRowFromSchedule(entry = {}, options = {}) {
         remarks: entry.remarks || '',
         contactPerson: entry.assignedTo || '',
         date: entry.scheduleDate,
+        followupDate: entry.followupDate || entry.scheduleDate,
         invoiceKey: invoiceRow.invoiceKey || entry.invoiceKey || ''
     };
 }
@@ -8865,6 +8866,7 @@ function getCollectorTodayCallRows() {
                 remarks: entry.remarks || '',
                 contactPerson: entry.contactPerson || '',
                 date: entry.callDate || entry.followupDate,
+                followupDate: entry.followupDate || '',
                 invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
             });
         });
@@ -8916,6 +8918,7 @@ function getCollectorTodayConfirmedRows() {
                 remarks: entry.remarks || '',
                 contactPerson: entry.contactPerson || '',
                 date: entry.followupDate,
+                followupDate: entry.followupDate || '',
                 invoiceKey: invoice.invoiceKey || entry.invoiceKey || ''
             });
         });
@@ -8998,6 +9001,7 @@ function renderCollectorTodayStaffDetails(type, staffName) {
                         <th>Invoice</th>
                         <th>${type === 'confirmed' ? 'Confirmed Amount' : 'Amount'}</th>
                         <th>${type === 'confirmed' ? 'Collection Date' : 'Call Date'}</th>
+                        <th>Next Follow-up</th>
                         <th>Remarks</th>
                         <th>Open</th>
                     </tr>
@@ -9010,6 +9014,7 @@ function renderCollectorTodayStaffDetails(type, staffName) {
                             <td>${escapeHtml(row.invoiceNo || '-')}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
                             <td>${escapeHtml(formatDate(row.date))}</td>
+                            <td>${escapeHtml(formatDate(row.followupDate))}</td>
                             <td>${escapeHtml(row.remarks || '-')}</td>
                             <td>${row.invoiceKey ? `<button type="button" class="btn btn-secondary btn-sm collector-today-invoice-open" data-invoice-key="${escapeHtml(row.invoiceKey)}">Open</button>` : '-'}</td>
                         </tr>
@@ -9017,6 +9022,56 @@ function renderCollectorTodayStaffDetails(type, staffName) {
                 </tbody>
             </table>
         </div>
+    `;
+}
+
+function renderCollectorTodayAllDetails(type, rows = []) {
+    if (!rows.length) {
+        return '<div class="collection-followup-empty">No call detail rows found.</div>';
+    }
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table collector-total-detail-table">
+                <thead>
+                    <tr>
+                        <th>Staff</th>
+                        <th>Customer</th>
+                        <th>Branch / Dept</th>
+                        <th>Invoice</th>
+                        <th>Amount</th>
+                        <th>Next Follow-up</th>
+                        <th>Remarks</th>
+                        <th>Open</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td>${escapeHtml(row.staff || 'Unassigned')}</td>
+                            <td>${escapeHtml(row.customer || '-')}</td>
+                            <td>${escapeHtml(row.branch || '-')}</td>
+                            <td>${escapeHtml(row.invoiceNo || '-')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
+                            <td>${escapeHtml(formatDate(row.followupDate))}</td>
+                            <td>${escapeHtml(row.remarks || '-')}</td>
+                            <td>${row.invoiceKey ? `<button type="button" class="btn btn-secondary btn-sm collector-today-invoice-open" data-invoice-key="${escapeHtml(row.invoiceKey)}">Open</button>` : '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderCollectorTodaySummaryModalContent(type, rows = []) {
+    const summaryTitle = type === 'confirmed' ? 'Staff Confirmed Collections' : 'Staff Call Counts';
+    const detailTitle = type === 'confirmed' ? 'Confirmed Collection Details' : 'Call Remarks Details';
+    return `
+        <div class="collection-followup-panel-title">${escapeHtml(summaryTitle)}</div>
+        ${renderCollectorTodayStaffSummary(type)}
+        <div class="collection-followup-panel-title" style="margin-top:16px;">${escapeHtml(detailTitle)}</div>
+        ${renderCollectorTodayAllDetails(type, rows)}
     `;
 }
 
@@ -9047,7 +9102,7 @@ function openCollectorTodaySummary(type = 'confirmed') {
     subtitle.textContent = safeType === 'confirmed'
         ? `${rows.length.toLocaleString()} confirmed for tomorrow collection • ${formatCurrency(amount)}`
         : `${rows.length.toLocaleString()} call(s) with remarks today`;
-    content.innerHTML = renderCollectorTodayStaffSummary(safeType);
+    content.innerHTML = renderCollectorTodaySummaryModalContent(safeType, rows);
     bindCollectorTodaySummaryButtons(content);
     modal.classList.remove('hidden');
 }
