@@ -28,6 +28,7 @@ const SERIAL_CORRECTION_COLLECTION = 'tbl_serial_corrections';
 const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
+const FIELD_LOCATION_REQUEST_COLLECTION = 'tbl_field_location_requests';
 const FIELD_CALL_COLLECTION = 'tbl_field_call_requests';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
@@ -137,6 +138,8 @@ const state = {
     activeCallRoomUrl: '',
     activeCallDomain: FIELD_CALL_DOMAIN,
     activeCallMode: 'voice',
+    locationRequestPollTimer: null,
+    handledLocationRequestIds: new Set(),
     jitsiScriptPromise: null,
     ringTone: null,
     priorityGate: {
@@ -303,6 +306,13 @@ document.addEventListener('DOMContentLoaded', () => {
     populateWorkMachineStatusOptions();
     renderAttendanceCard();
     startFieldCallPolling();
+    startLocationRequestPoll();
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        handlePendingLocationRefreshRequest().catch((error) => {
+            console.warn('Location refresh request check failed:', error);
+        });
+    });
 
     loadMySchedule();
 });
@@ -4137,6 +4147,9 @@ async function loadMySchedule(options = {}) {
         }
         updatePriorityGate(workloadRows());
         renderActiveView();
+        handlePendingLocationRefreshRequest().catch((error) => {
+            console.warn('Location refresh request check failed:', error);
+        });
     } catch (err) {
         console.error('Field load failed:', err);
         if (state.todayRows.length) {
@@ -7057,6 +7070,101 @@ async function markTimeInNow() {
         document.getElementById('fieldTimeIn').value = toLocalInputDateTime(normalizeLegacyDateTime(row.field_time_in));
     } finally {
         button.disabled = false;
+    }
+}
+
+function locationRequestDocId(staffId, date) {
+    return `${Number(staffId || 0) || 0}_${String(date || '').replace(/[^0-9]/g, '')}`;
+}
+
+function startLocationRequestPoll() {
+    if (state.locationRequestPollTimer) return;
+    state.locationRequestPollTimer = window.setInterval(() => {
+        if (document.hidden) return;
+        handlePendingLocationRefreshRequest().catch((error) => {
+            console.warn('Location refresh request check failed:', error);
+        });
+    }, 60000);
+}
+
+function nearestWorkloadRowForLocation(latitude, longitude) {
+    let best = null;
+    workloadRows().forEach((row) => {
+        const branch = caches.branch.get(String(row.branch_id || 0));
+        const coords = branchCoordinates(branch);
+        if (!coords) return;
+        const distance = distanceMeters(latitude, longitude, coords.latitude, coords.longitude);
+        if (!best || distance < best.distance) {
+            best = { row, branch, distance };
+        }
+    });
+    return best;
+}
+
+async function handlePendingLocationRefreshRequest() {
+    const staffId = Number(state.staffId || 0) || 0;
+    const date = document.getElementById('fieldDate')?.value || localDateYmd();
+    if (!staffId || !date) return;
+
+    const docId = locationRequestDocId(staffId, date);
+    const request = await fetchDoc(FIELD_LOCATION_REQUEST_COLLECTION, docId).catch(() => null);
+    if (!request || String(request.status || 'pending').toLowerCase() !== 'pending') return;
+
+    const requestedAt = String(request.requested_at || '');
+    if (!requestedAt) return;
+    const requestToken = `${docId}:${requestedAt}`;
+    if (state.handledLocationRequestIds.has(requestToken)) return;
+    state.handledLocationRequestIds.add(requestToken);
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    try {
+        const position = await requestCurrentLocation();
+        const latitude = Number(position.coords.latitude);
+        const longitude = Number(position.coords.longitude);
+        const accuracy = Number(position.coords.accuracy || 0);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            throw new Error('GPS returned an invalid location.');
+        }
+        const nearest = nearestWorkloadRowForLocation(latitude, longitude);
+        const row = nearest?.row || null;
+        const branch = nearest?.branch || null;
+        const eventId = `${staffId}_${Date.now()}_service_refresh`;
+        const company = row ? caches.company.get(String(row.company_id || branch?.company_id || 0)) : null;
+        await setDocument(FIELD_VISIT_EVENT_COLLECTION, eventId, {
+            id: eventId,
+            schedule_id: Number(row?.id || 0) || 0,
+            staff_id: staffId,
+            branch_id: Number(row?.branch_id || 0) || 0,
+            company_id: Number(row?.company_id || branch?.company_id || 0) || 0,
+            action: 'service_progress_location_refresh',
+            status_label: 'Location Refresh',
+            occurred_at: nowIso,
+            local_date: localDateYmd(now),
+            local_time: now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+            latitude: latitude.toFixed(7),
+            longitude: longitude.toFixed(7),
+            accuracy_meters: Math.round(accuracy),
+            nearest_schedule_id: Number(row?.id || 0) || 0,
+            nearest_distance_meters: nearest ? Math.round(nearest.distance) : 0,
+            company_name: company?.companyname || row?.company_name || '',
+            branch_name: branch?.branchname || row?.branch_name || '',
+            source: 'field_app_service_progress_refresh'
+        });
+        await patchDocument(FIELD_LOCATION_REQUEST_COLLECTION, docId, {
+            status: 'completed',
+            responded_at: nowIso,
+            response_event_id: eventId,
+            latitude: latitude.toFixed(7),
+            longitude: longitude.toFixed(7),
+            accuracy_meters: Math.round(accuracy)
+        });
+    } catch (error) {
+        await patchDocument(FIELD_LOCATION_REQUEST_COLLECTION, docId, {
+            status: 'failed',
+            responded_at: nowIso,
+            error: clampText(error?.message || error, 180)
+        }).catch(() => null);
     }
 }
 

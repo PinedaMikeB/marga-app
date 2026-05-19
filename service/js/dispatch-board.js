@@ -7,6 +7,8 @@ const OPS_QUERY_LIMIT = 5000;
 const OPS_CARRYOVER_DAYS = 14;
 const SERVICE_PROGRESS_EVENT_COLLECTION = 'tbl_field_visit_events';
 const SERVICE_PROGRESS_EVENT_FALLBACK_COLLECTION = 'marga_field_visit_events';
+const SERVICE_PROGRESS_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
+const SERVICE_PROGRESS_LOCATION_REQUEST_COLLECTION = 'tbl_field_location_requests';
 const SERVICE_PROGRESS_STALE_MINUTES = 120;
 const SERVICE_PROGRESS_OFFICE = {
     name: 'MARGA Office - Havila, Antipolo',
@@ -100,6 +102,7 @@ const opsState = {
     selectedRows: [],
     schedtimeRows: [],
     visitEventRows: [],
+    attendanceRows: [],
     logsBySchedule: new Map(),
     logsByStaff: new Map(),
     serviceProgressMap: null,
@@ -108,6 +111,7 @@ const opsState = {
     serviceProgressCircle: null,
     serviceProgressOfficeMarker: null,
     serviceProgressResizeObserver: null,
+    serviceProgressView: 'all',
     panelStaffId: null,
     purposeFilter: 'all',
     statusFilter: 'all',
@@ -178,7 +182,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('opsServiceProgressBtn').addEventListener('click', () => openServiceProgressMap());
     document.getElementById('serviceProgressCloseBtn').addEventListener('click', () => closeServiceProgressMap());
     document.getElementById('serviceProgressOverlay').addEventListener('click', () => closeServiceProgressMap());
+    document.querySelectorAll('[data-service-progress-view]').forEach((button) => {
+        button.addEventListener('click', () => {
+            opsState.serviceProgressView = button.dataset.serviceProgressView || 'all';
+            document.querySelectorAll('[data-service-progress-view]').forEach((candidate) => {
+                candidate.classList.toggle('active', candidate === button);
+            });
+            renderServiceProgressMap();
+        });
+    });
     document.getElementById('serviceProgressRefreshBtn').addEventListener('click', async () => {
+        await requestServiceProgressLocationRefresh();
         await loadOperationsBoard();
         renderServiceProgressMap();
     });
@@ -3148,14 +3162,17 @@ function getProgressTimestamp(event) {
 
 function parseProgressDate(value) {
     const text = String(value || '').trim();
+    if (LEGACY_EMPTY_DATETIME_VALUES.has(text.toLowerCase())) return null;
     if (!text) return null;
     const parsed = new Date(text.includes('T') ? text : text.replace(' ', 'T'));
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function formatProgressTime(value) {
+    const text = String(value || '').trim();
+    if (!text || LEGACY_EMPTY_DATETIME_VALUES.has(text.toLowerCase())) return 'No update';
     const parsed = parseProgressDate(value);
-    if (!parsed) return value ? String(value) : 'No update';
+    if (!parsed) return text;
     return parsed.toLocaleString('en-PH', {
         month: 'short',
         day: '2-digit',
@@ -3187,7 +3204,7 @@ function getProgressStatusClass(item) {
     if (item.actionKey === 'completed' || item.actionKey === 'finish') return 'is-completed';
     if (item.actionKey === 'arrived') return 'is-arrived';
     if (item.actionKey === 'on_the_way') return 'is-moving';
-    return item.hasGpsEvent ? 'is-active' : 'is-scheduled';
+    return item.hasStaffLocation ? 'is-gps' : 'is-scheduled';
 }
 
 function getLatestVisitEventByStaff() {
@@ -3207,6 +3224,89 @@ function getLatestVisitEventByStaff() {
     return latest;
 }
 
+function getAttendanceByStaff() {
+    const latest = new Map();
+    opsState.attendanceRows.forEach((row) => {
+        const staffId = Number(row.staff_id || row.tech_id || row.employee_id || 0);
+        if (staffId <= 0) return;
+        const current = latest.get(staffId);
+        const rowTime = getProgressTimestamp({
+            occurred_at: row.time_in,
+            updated_at: row.updated_at,
+            created_at: row.created_at
+        });
+        const currentTime = current ? getProgressTimestamp({
+            occurred_at: current.time_in,
+            updated_at: current.updated_at,
+            created_at: current.created_at
+        }) : '';
+        if (!current || rowTime.localeCompare(currentTime) >= 0) {
+            latest.set(staffId, row);
+        }
+    });
+    return latest;
+}
+
+function getAttendanceCoordinates(attendance) {
+    if (!attendance) return null;
+    const latitude = parseCoordinate(attendance.time_in_latitude ?? attendance.latitude ?? attendance.lat);
+    const longitude = parseCoordinate(attendance.time_in_longitude ?? attendance.longitude ?? attendance.lng ?? attendance.lon);
+    if (latitude === null || longitude === null) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+}
+
+function getScheduleStaffCoordinates(row) {
+    if (!row) return null;
+    const candidates = [
+        {
+            latitude: row.field_last_latitude,
+            longitude: row.field_last_longitude,
+            source: 'Latest Field Update',
+            action: row.field_last_action || row.field_tracking_status || 'field_update',
+            timestamp: row.field_last_update_at || row.field_updated_at || row.bridge_updated_at || ''
+        },
+        {
+            latitude: row.field_time_in_latitude,
+            longitude: row.field_time_in_longitude,
+            source: 'Customer Check In',
+            action: 'customer_checked_in',
+            timestamp: row.field_time_in_location_checked_at || row.field_time_in || ''
+        },
+        {
+            latitude: row.field_customer_location_latitude,
+            longitude: row.field_customer_location_longitude,
+            source: 'Customer Location Pinned',
+            action: row.field_customer_location_repin ? 'customer_location_repinned' : 'customer_location_pinned',
+            timestamp: row.field_customer_location_pinned_at || row.field_updated_at || ''
+        }
+    ];
+
+    for (const candidate of candidates) {
+        const latitude = parseCoordinate(candidate.latitude);
+        const longitude = parseCoordinate(candidate.longitude);
+        if (latitude === null || longitude === null) continue;
+        if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
+        return { ...candidate, latitude, longitude };
+    }
+    return null;
+}
+
+function getLatestScheduleLocationByStaff() {
+    const latest = new Map();
+    opsState.selectedRows.forEach((row) => {
+        const staffId = getAssignedStaffId(row);
+        if (staffId <= 0) return;
+        const location = getScheduleStaffCoordinates(row);
+        if (!location) return;
+        const current = latest.get(staffId);
+        if (!current || String(location.timestamp || '').localeCompare(String(current.timestamp || '')) >= 0) {
+            latest.set(staffId, { row, ...location });
+        }
+    });
+    return latest;
+}
+
 function getPrimaryStaffRow(rows) {
     const withBranchCoordinates = rows.find((row) => {
         const branch = opsCache.branches.get(String(row.branch_id || 0));
@@ -3218,6 +3318,8 @@ function getPrimaryStaffRow(rows) {
 function buildServiceProgressItems() {
     const grouped = new Map();
     const latestEventByStaff = getLatestVisitEventByStaff();
+    const latestScheduleLocationByStaff = getLatestScheduleLocationByStaff();
+    const attendanceByStaff = getAttendanceByStaff();
 
     opsState.selectedRows.forEach((row) => {
         const staffId = getAssignedStaffId(row);
@@ -3229,23 +3331,31 @@ function buildServiceProgressItems() {
     latestEventByStaff.forEach((event, staffId) => {
         if (!grouped.has(staffId)) grouped.set(staffId, []);
     });
+    attendanceByStaff.forEach((attendance, staffId) => {
+        if (!grouped.has(staffId)) grouped.set(staffId, []);
+    });
 
     return [...grouped.entries()]
         .map(([staffId, rows]) => {
             const employee = opsCache.employees.get(String(staffId)) || null;
             const position = employee ? opsCache.positions.get(String(employee.position_id || 0)) : null;
             const event = latestEventByStaff.get(staffId) || null;
+            const scheduleLocation = latestScheduleLocationByStaff.get(staffId) || null;
+            const attendance = attendanceByStaff.get(staffId) || null;
             const primaryRow = getPrimaryStaffRow(rows);
             const eventCoords = getEventCoordinates(event);
+            const scheduleCoords = scheduleLocation ? { latitude: scheduleLocation.latitude, longitude: scheduleLocation.longitude } : null;
+            const attendanceCoords = getAttendanceCoordinates(attendance);
             const branch = primaryRow ? opsCache.branches.get(String(primaryRow.branch_id || 0)) : null;
             const branchCoords = getBranchCoordinates(branch);
-            const coords = eventCoords || branchCoords;
+            const coords = eventCoords || scheduleCoords || attendanceCoords || branchCoords;
             const company = branch ? opsCache.companies.get(String(branch.company_id || primaryRow?.company_id || 0)) : null;
-            const timestamp = getProgressTimestamp(event);
+            const timestamp = getProgressTimestamp(event) || scheduleLocation?.timestamp || attendance?.time_in || '';
             const staleMinutes = minutesSince(timestamp);
-            const actionKey = String(event?.action || event?.status || '').trim().toLowerCase();
-            const actionLabel = getProgressActionLabel(event?.status_label || event?.action || event?.status);
+            const actionKey = String(event?.action || event?.status || scheduleLocation?.action || (attendanceCoords ? 'attendance_time_in' : '')).trim().toLowerCase();
+            const actionLabel = getProgressActionLabel(event?.status_label || event?.action || event?.status || scheduleLocation?.action || (attendanceCoords ? 'Attendance Time In' : 'No GPS Update'));
             const hasGpsEvent = Boolean(eventCoords);
+            const hasStaffLocation = Boolean(eventCoords || scheduleCoords || attendanceCoords);
             const distanceFromOfficeMeters = coords ? distanceMetersBetween(
                 { latitude: SERVICE_PROGRESS_OFFICE.latitude, longitude: SERVICE_PROGRESS_OFFICE.longitude },
                 coords
@@ -3263,15 +3373,19 @@ function buildServiceProgressItems() {
                 staleMinutes,
                 isStale: staleMinutes !== null && staleMinutes >= SERVICE_PROGRESS_STALE_MINUTES,
                 hasGpsEvent,
+                hasStaffLocation,
                 hasCoordinates: Boolean(coords),
                 latitude: coords?.latitude || null,
                 longitude: coords?.longitude || null,
                 distanceFromOfficeMeters,
                 isInsideOfficeRadius: distanceFromOfficeMeters === null ? false : distanceFromOfficeMeters <= SERVICE_PROGRESS_RADIUS_METERS,
-                coordinateSource: eventCoords ? 'Staff GPS' : (branchCoords ? 'Scheduled Client' : 'No Map Pin'),
-                companyName: company?.companyname || event?.company_name || '-',
-                branchName: branch?.branchname || event?.branch_name || '-',
-                scheduleId: Number(event?.schedule_id || primaryRow?.id || 0) || 0
+                coordinateSource: eventCoords ? 'Staff GPS' : (scheduleCoords ? scheduleLocation.source : (attendanceCoords ? 'Attendance Time In' : (branchCoords ? 'Scheduled Client' : 'No Map Pin'))),
+                companyName: company?.companyname || event?.company_name || scheduleLocation?.row?.company_name || attendance?.time_in_company_name || '-',
+                branchName: branch?.branchname || event?.branch_name || scheduleLocation?.row?.branch_name || attendance?.time_in_branch_name || '-',
+                scheduleId: Number(event?.schedule_id || scheduleLocation?.row?.id || attendance?.time_in_schedule_id || primaryRow?.id || 0) || 0,
+                attendanceTimeIn: attendance?.time_in || '',
+                attendanceTimeOut: attendance?.time_out || '',
+                attendanceLocationLabel: [attendance?.time_in_company_name, attendance?.time_in_branch_name].filter(Boolean).join(' / ')
             };
         })
         .sort((a, b) => {
@@ -3284,7 +3398,7 @@ function buildServiceProgressItems() {
 function getVisibleServiceProgressItems() {
     return buildServiceProgressItems().filter((item) => {
         if (!item.hasCoordinates) return false;
-        return item.isInsideOfficeRadius;
+        return true;
     });
 }
 
@@ -3304,6 +3418,36 @@ function closeServiceProgressMap() {
     panel?.classList.remove('open');
     overlay?.classList.remove('open');
     panel?.setAttribute('aria-hidden', 'true');
+}
+
+async function requestServiceProgressLocationRefresh() {
+    const selectedDate = opsState.selectedDate || document.getElementById('opsDateInput')?.value || formatDateYmd(new Date());
+    const staffIds = [...new Set(
+        (opsState.selectedRows || [])
+            .map((row) => getAssignedStaffId(row))
+            .filter((staffId) => staffId > 0)
+    )];
+    if (!staffIds.length) return;
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const requester = MargaAuth.getUser();
+    await Promise.all(staffIds.map((staffId) => {
+        const docId = `${staffId}_${selectedDate.replace(/[^0-9]/g, '')}`;
+        return setDocument(SERVICE_PROGRESS_LOCATION_REQUEST_COLLECTION, docId, {
+            id: docId,
+            staff_id: staffId,
+            request_date: selectedDate,
+            requested_at: nowIso,
+            requested_by: Number(requester?.staff_id || requester?.id || 0) || 0,
+            requested_by_name: requester?.name || requester?.username || '',
+            status: 'pending',
+            source: 'service_progress_refresh'
+        }).catch((error) => {
+            console.warn('Unable to request field location refresh:', staffId, error);
+            return null;
+        });
+    }));
 }
 
 function resetServiceProgressMap() {
@@ -3431,11 +3575,6 @@ function buildServiceProgressCustomerPins() {
         const branch = opsCache.branches.get(String(row.branch_id || 0));
         const coords = getBranchCoordinates(branch);
         if (!coords) return;
-        const distanceFromOfficeMeters = distanceMetersBetween(
-            { latitude: SERVICE_PROGRESS_OFFICE.latitude, longitude: SERVICE_PROGRESS_OFFICE.longitude },
-            coords
-        );
-        if (distanceFromOfficeMeters === null || distanceFromOfficeMeters > SERVICE_PROGRESS_RADIUS_METERS) return;
         const key = `${row.company_id || branch?.company_id || 0}:${row.branch_id || 0}`;
         const label = customerMarkerLabel(row);
         const current = unique.get(key);
@@ -3482,6 +3621,12 @@ function renderServiceProgressRoster(items) {
     roster.innerHTML = items.map((item) => {
         const statusClass = getProgressStatusClass(item);
         const staleText = item.isStale ? `No update for ${Math.floor((item.staleMinutes || 0) / 60)} hr ${String((item.staleMinutes || 0) % 60).padStart(2, '0')} min` : item.lastUpdateLabel;
+        const attendanceText = item.attendanceTimeIn
+            ? `Time in ${formatProgressTime(item.attendanceTimeIn)}${item.attendanceLocationLabel ? ` · ${item.attendanceLocationLabel}` : ''}`
+            : 'No attendance time in';
+        const locationText = item.hasStaffLocation
+            ? `${item.coordinateSource} · ${staleText}`
+            : `${item.coordinateSource}`;
         return `
             <button type="button" class="service-progress-person ${statusClass}" data-staff-id="${item.staffId}">
                 <span class="service-progress-person-pin"></span>
@@ -3489,10 +3634,11 @@ function renderServiceProgressRoster(items) {
                     <strong>${sanitize(item.staffName)}</strong>
                     <small>${sanitize(item.role)} · ${sanitize(item.actionLabel)}</small>
                     <em>${sanitize(item.companyName)} / ${sanitize(item.branchName)}</em>
+                    <span>${sanitize(attendanceText)}</span>
                 </span>
                 <span class="service-progress-person-side">
-                    <b>${sanitize(staleText)}</b>
-                    <small>${sanitize(item.coordinateSource)}</small>
+                    <b>${sanitize(item.hasStaffLocation ? 'GPS saved' : 'Scheduled only')}</b>
+                    <small>${sanitize(locationText)}</small>
                 </span>
             </button>
         `;
@@ -3511,8 +3657,11 @@ function renderServiceProgressRoster(items) {
 function renderServiceProgressMap() {
     const allItems = buildServiceProgressItems();
     const items = getVisibleServiceProgressItems();
-    const mappedItems = items.filter((item) => item.hasCoordinates && item.hasGpsEvent);
-    const customerPins = buildServiceProgressCustomerPins();
+    const view = opsState.serviceProgressView || 'all';
+    const showStaffPins = view === 'all' || view === 'staff';
+    const showCustomerPins = view === 'all' || view === 'customers';
+    const mappedItems = showStaffPins ? items.filter((item) => item.hasCoordinates) : [];
+    const customerPins = showCustomerPins ? buildServiceProgressCustomerPins() : [];
     const hiddenOutsideRadius = allItems.filter((item) => item.hasCoordinates && !item.isInsideOfficeRadius).length;
     const hiddenUnmapped = allItems.filter((item) => !item.hasCoordinates).length;
     const subtitle = document.getElementById('serviceProgressSubtitle');
@@ -3521,8 +3670,9 @@ function renderServiceProgressMap() {
     renderServiceProgressRoster(items);
 
     if (subtitle) {
-        const gpsCount = items.filter((item) => item.hasGpsEvent).length;
-        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${items.length} staff inside ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius, ${gpsCount} with live GPS. ${customerPins.length} customer pin${customerPins.length === 1 ? '' : 's'} shown. ${hiddenOutsideRadius} outside radius, ${hiddenUnmapped} no pin.`;
+        const gpsCount = allItems.filter((item) => item.hasStaffLocation).length;
+        const scheduledOnlyCount = allItems.filter((item) => item.hasCoordinates && !item.hasStaffLocation).length;
+        subtitle.textContent = `${opsState.selectedDate || formatDateYmd(new Date())}: ${allItems.length} scheduled staff, ${gpsCount} with saved GPS/current field location, ${scheduledOnlyCount} scheduled-client fallback. ${customerPins.length} customer pin${customerPins.length === 1 ? '' : 's'} shown. ${hiddenOutsideRadius} outside radius, ${hiddenUnmapped} no pin.`;
     }
 
     if (!window.L) {
@@ -3544,7 +3694,9 @@ function renderServiceProgressMap() {
         map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
         if (empty) {
             empty.hidden = false;
-            empty.textContent = `No live staff GPS inside the ${SERVICE_PROGRESS_RADIUS_MILES}-mile office radius yet.`;
+            empty.textContent = view === 'customers'
+                ? 'No customer pins for the selected schedules yet.'
+                : 'No mapped staff or saved GPS location for the selected schedules yet.';
         }
         requestAnimationFrame(() => {
             map.invalidateSize(true);
@@ -3592,7 +3744,8 @@ function renderServiceProgressMap() {
                 <strong>${sanitize(item.staffName)}</strong>
                 <span>${sanitize(item.actionLabel)} · ${sanitize(item.lastUpdateLabel)}</span>
                 <small>${sanitize(item.companyName)} / ${sanitize(item.branchName)}</small>
-                <small>Staff GPS${item.scheduleId ? ` · Task #${sanitize(item.scheduleId)}` : ''}</small>
+                <small>${sanitize(item.coordinateSource)}${item.scheduleId ? ` · Task #${sanitize(item.scheduleId)}` : ''}</small>
+                <small>${sanitize(item.attendanceTimeIn ? `Attendance time in ${formatProgressTime(item.attendanceTimeIn)}` : 'No attendance time in')}</small>
             </div>
         `);
         opsState.serviceProgressMarkers.push(marker);
@@ -3600,7 +3753,16 @@ function renderServiceProgressMap() {
 
     requestAnimationFrame(() => {
         map.invalidateSize(true);
-        map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
+        const boundsPoints = [
+            [SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude],
+            ...mappedItems.map((item) => [item.latitude, item.longitude]),
+            ...customerPins.map((item) => [item.latitude, item.longitude])
+        ];
+        if (boundsPoints.length > 1) {
+            map.fitBounds(boundsPoints, { padding: [42, 42], maxZoom: 14, animate: false });
+        } else {
+            map.setView([SERVICE_PROGRESS_OFFICE.latitude, SERVICE_PROGRESS_OFFICE.longitude], SERVICE_PROGRESS_START_ZOOM, { animate: false });
+        }
     });
 }
 
@@ -3699,11 +3861,15 @@ async function loadOperationsBoard() {
         const start = `${selectedDate} 00:00:00`;
         const end = `${selectedDate} 23:59:59`;
 
-        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs, visitEventDocs, fallbackVisitEventDocs] = await Promise.all([
+        const [scheduleDocs, printedDocs, savedDocs, schedtimeDocs, attendanceDocs, visitEventDocs, fallbackVisitEventDocs] = await Promise.all([
             queryByDateRange('tbl_schedule', 'task_datetime', { start, end }),
             queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', { start, end }).catch(() => []),
             queryByDateRange('tbl_schedtime', 'schedule_date', { start, end }),
+            queryByDateRange(SERVICE_PROGRESS_ATTENDANCE_COLLECTION, 'attendance_date', {
+                start: selectedDate,
+                end: selectedDate
+            }).catch(() => []),
             queryByDateRange(SERVICE_PROGRESS_EVENT_COLLECTION, 'local_date', {
                 start: selectedDate,
                 end: selectedDate
@@ -3729,6 +3895,7 @@ async function loadOperationsBoard() {
             });
 
         const schedtimeRows = schedtimeDocs.map(parseFirestoreDoc).filter(Boolean);
+        const attendanceRows = attendanceDocs.map(parseFirestoreDoc).filter(Boolean);
         const visitEventRows = [
             ...visitEventDocs.map(parseFirestoreDoc).filter(Boolean),
             ...fallbackVisitEventDocs.map(parseFirestoreDoc).filter(Boolean)
@@ -3737,6 +3904,7 @@ async function loadOperationsBoard() {
         opsState.selectedDate = selectedDate;
         opsState.allRows = sortedRows;
         opsState.schedtimeRows = schedtimeRows;
+        opsState.attendanceRows = attendanceRows;
         opsState.visitEventRows = visitEventRows;
         opsState.purposeFilter = purposeFilter;
         opsState.assigneeRoleFilter = assigneeRoleFilter;

@@ -817,6 +817,34 @@
     display: inline-flex;
     align-items: center;
     gap: 0.6rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.service-progress-view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    padding: 0.18rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.34);
+}
+
+.service-progress-view-toggle button {
+    border: 0;
+    border-radius: 8px;
+    padding: 0.42rem 0.62rem;
+    background: transparent;
+    color: rgba(248, 250, 252, 0.78);
+    font-size: 0.76rem;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.service-progress-view-toggle button.active {
+    background: #f8fafc;
+    color: #0f172a;
 }
 
 .service-progress-header .panel-close {
@@ -882,12 +910,18 @@
 
 .service-progress-person-main small,
 .service-progress-person-main em,
+.service-progress-person-main span,
 .service-progress-person-side small {
     color: #64748b;
     font-size: 0.74rem;
     line-height: 1.25;
     font-style: normal;
     overflow-wrap: anywhere;
+}
+
+.service-progress-person-main span {
+    color: #475569;
+    font-weight: 800;
 }
 
 .service-progress-person-side {
@@ -912,8 +946,10 @@
 
 .service-progress-person.is-arrived .service-progress-person-pin,
 .service-progress-person.is-active .service-progress-person-pin,
+.service-progress-person.is-gps .service-progress-person-pin,
 .service-progress-pin.is-arrived,
-.service-progress-pin.is-active {
+.service-progress-pin.is-active,
+.service-progress-pin.is-gps {
     background: #059669;
 }
 
@@ -1432,6 +1468,14 @@
 
     .service-progress-header-actions {
         flex-shrink: 0;
+    }
+
+    .service-progress-view-toggle {
+        width: 100%;
+    }
+
+    .service-progress-view-toggle button {
+        flex: 1;
     }
 
     .service-progress-person-side {

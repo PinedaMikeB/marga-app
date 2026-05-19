@@ -588,6 +588,11 @@
                 <p id="serviceProgressSubtitle">Live map of staff movement and latest field updates.</p>
             </div>
             <div class="service-progress-header-actions">
+                <div class="service-progress-view-toggle" role="group" aria-label="Service progress map view">
+                    <button type="button" class="active" data-service-progress-view="all">All</button>
+                    <button type="button" data-service-progress-view="staff">Field Staff</button>
+                    <button type="button" data-service-progress-view="customers">Customers</button>
+                </div>
                 <button type="button" class="btn btn-secondary btn-sm" id="serviceProgressRefreshBtn">Refresh</button>
                 <button type="button" class="panel-close" id="serviceProgressCloseBtn" aria-label="Close service progress map">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
