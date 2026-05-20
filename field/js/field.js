@@ -6284,8 +6284,8 @@ function getCloseTaskIssues(row, form) {
         return [closeIssue('Cannot mark Finished yet: this customer is not detected because the branch has no saved GPS pin. Tap Pin Customer Location while you are at the customer site. If the saved pin is wrong, take a new frontage/building photo and tap Repin Customer Location, then try Mark Finished again.', 'fieldLocationSection', 'fieldPinLocationBtn', 'missing_customer_pin')];
     }
 
-    if ((isBillingTicket(row) || isReadingTicket(row)) && !Number.isFinite(form.presentMeter)) {
-        return [closeIssue(`Cannot mark finished: complete the ${isReadingTicket(row) ? 'bill meter reading' : 'billing meter reading'} first.`, 'fieldMeterSection', 'fieldPresentMeter', 'missing_billing_meter')];
+    if (isReadingTicket(row) && !Number.isFinite(form.presentMeter)) {
+        return [closeIssue('Cannot mark finished: complete the bill meter reading first.', 'fieldMeterSection', 'fieldPresentMeter', 'missing_billing_meter')];
     }
 
     if (isBillingTicket(row)) {
