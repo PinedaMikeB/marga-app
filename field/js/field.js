@@ -6543,6 +6543,22 @@ function getPurposeRequirementLabel(row) {
     return PURPOSE_LABELS[normalizeTicketPurpose(row)] || `Purpose ${normalizeTicketPurpose(row) || '-'}`;
 }
 
+function hasCollectionCompletionDetails(form = {}) {
+    return Boolean(
+        form.collectionPaymentType
+        || isValidMoney(form.collectionAmountNumber)
+        || isValidMoney(form.collectionDeductionAmountNumber)
+        || (Array.isArray(form.collectionInvoices) && form.collectionInvoices.length > 0)
+        || form.collectionOrNumber
+        || form.collectionReceiptRefs
+        || form.collectionCheckNumber
+        || form.collectionCheckBank
+        || form.collectionDeductionType
+        || form.collection2307Status
+        || form.collectionPaymentRemarks
+    );
+}
+
 function getCloseTaskIssues(row, form) {
     if (isFutureScheduleForClose(row)) {
         return [closeIssue('This schedule is for a future date. It can only be marked Finished on the scheduled day.', '', '', 'future_schedule')];
@@ -6565,7 +6581,9 @@ function getCloseTaskIssues(row, form) {
         return [closeIssue('Cannot mark finished: complete the bill meter reading first.', 'fieldMeterSection', 'fieldPresentMeter', 'missing_billing_meter')];
     }
 
-    if (isBillingTicket(row)) {
+    const hasCollectionDetails = hasCollectionCompletionDetails(form);
+
+    if (isBillingTicket(row) && !hasCollectionDetails) {
         if (!form.billingReceivedBy) {
             return [closeIssue('Cannot mark finished: enter who received the billing first.', 'fieldBillingSection', 'fieldBillingReceivedBy', 'missing_billing_receiver')];
         }
@@ -6598,7 +6616,7 @@ function getCloseTaskIssues(row, form) {
         }
     }
 
-    if (isCollectionTicket(row)) {
+    if (isCollectionTicket(row) || hasCollectionDetails) {
         if (!form.collectionPaymentType) {
             return [closeIssue('Cannot mark finished: select the collection payment type first.', 'fieldCollectionSection', 'fieldCollectionPaymentType', 'missing_collection_payment_type')];
         }
