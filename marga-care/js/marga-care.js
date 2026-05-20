@@ -4,6 +4,8 @@
         summary: null,
         generatedAt: '',
         apiBase: '/api/marga-care',
+        writeEnabled: true,
+        readOnlyFallback: false,
         template: [
             'Subject: Welcome to Marga Managed Care - Your Service Access Is Ready',
             '',
@@ -57,7 +59,7 @@
     });
 
     function bindEvents() {
-        document.getElementById('refreshCareBtn')?.addEventListener('click', loadCareRows);
+        document.getElementById('refreshCareBtn')?.addEventListener('click', refreshCareRows);
         document.getElementById('companySearch')?.addEventListener('input', debounce(renderRows, 160));
         document.getElementById('typeFilter')?.addEventListener('change', renderRows);
         document.getElementById('toggleTemplateBtn')?.addEventListener('click', toggleTemplate);
@@ -90,17 +92,29 @@
             state.rows = data.rows || [];
             state.summary = data.summary || {};
             state.generatedAt = data.generated_at || '';
-            setBackendStatus('online', 'Backend + database connected');
+            setBackendStatus(
+                state.writeEnabled ? 'online' : 'offline',
+                state.writeEnabled ? 'Backend + database connected' : 'Read-only fallback - saves disabled'
+            );
             renderRows();
         } catch (error) {
             if (state.apiBase === '/api/marga-care') {
                 state.apiBase = '/.netlify/functions/marga-care';
+                state.writeEnabled = false;
+                state.readOnlyFallback = true;
                 return loadCareRows();
             }
             setBackendStatus('offline', 'Backend disconnected');
             tbody.innerHTML = `<tr><td colspan="11"><div class="care-alert">${escapeHtml(error.message || 'Unable to load Marga Care rows.')}</div></td></tr>`;
             document.getElementById('companyListMeta').textContent = 'Unable to load active clients';
         }
+    }
+
+    function refreshCareRows() {
+        state.apiBase = '/api/marga-care';
+        state.writeEnabled = true;
+        state.readOnlyFallback = false;
+        return loadCareRows();
     }
 
     function filteredRows() {
@@ -220,7 +234,19 @@
     }
 
     function saveRow(rowId) {
-        pulseRow(rowId, 'Saved');
+        const row = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (!row) return Promise.resolve();
+        return saveRowPatch(rowId, {
+            main_contact: row.main_contact || '',
+            email: row.email || '',
+            admin_password: row.admin_password || '',
+            branch_contact: row.branch_contact || '',
+            branch_password: row.branch_password || '',
+            status: row.status || 'Preparing',
+            type_code: row.type_code || 'individual'
+        })
+            .then(() => pulseRow(rowId, 'Saved'))
+            .catch(showSaveError);
     }
 
     function editRow(row) {
@@ -243,9 +269,15 @@
 
     function updateRowOverride(rowId, patch, rerender) {
         const row = state.rows.find((item) => String(item.row_id) === String(rowId));
+        const previous = {};
+        if (row) {
+            Object.keys(patch).forEach((key) => { previous[key] = row[key]; });
+        }
         if (row) Object.assign(row, patch);
         saveRowPatch(rowId, patch).catch((error) => {
-            window.alert(error.message || 'Unable to save row to Margabase.');
+            if (row) Object.assign(row, previous);
+            renderRows();
+            showSaveError(error);
         });
         if (rerender) renderRows();
     }
@@ -255,6 +287,9 @@
     }
 
     async function saveRowPatch(rowId, patch) {
+        if (!state.writeEnabled) {
+            throw new Error('Margabase save route is not connected. Restart the local Margabase proxy or route /api/marga-care to Margabase.');
+        }
         const user = MargaAuth.getUser?.() || {};
         const response = await fetch(state.apiBase, {
             method: 'POST',
@@ -267,8 +302,15 @@
             })
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || data.ok === false) throw new Error(data.message || `Save failed: ${response.status}`);
+        if (response.status === 405) {
+            throw new Error('Save reached a read-only route. /api/marga-care must be served by the Margabase local proxy.');
+        }
+        if (!response.ok || data.ok === false) throw new Error(data.message || data.error || `Save failed: ${response.status}`);
         return data;
+    }
+
+    function showSaveError(error) {
+        window.alert(error.message || 'Unable to save row to Margabase.');
     }
 
     function pulseRow(rowId, text) {

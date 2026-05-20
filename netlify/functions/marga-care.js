@@ -1,8 +1,8 @@
 const crypto = require('crypto');
 
-const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M';
+const MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || process.env.FIREBASE_API_KEY || 'margabase-local';
 const BASE_URL = process.env.FIRESTORE_BASE_URL || 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents';
-const PASSWORD_SEED = process.env.MARGA_CARE_PASSWORD_SEED || process.env.OPENCLAW_API_KEY || FIREBASE_API_KEY || 'marga-care-onboarding';
+const PASSWORD_SEED = process.env.MARGA_CARE_PASSWORD_SEED || process.env.OPENCLAW_API_KEY || MARGABASE_API_KEY || 'marga-care-onboarding';
 const DEFAULT_PAGE_SIZE = Number(process.env.MARGA_CARE_PAGE_SIZE || 300);
 const OVERRIDE_COLLECTION = 'marga_care_onboarding_overrides';
 
@@ -78,7 +78,7 @@ function passwordFor(scope, id) {
 async function firestoreGet(collection, options = {}) {
     const params = new URLSearchParams();
     params.set('pageSize', String(options.pageSize || DEFAULT_PAGE_SIZE));
-    params.set('key', FIREBASE_API_KEY);
+    params.set('key', MARGABASE_API_KEY);
     if (options.pageToken) params.set('pageToken', options.pageToken);
     (options.fieldMask || []).forEach((field) => params.append('mask.fieldPaths', field));
     const response = await fetch(`${BASE_URL}/${collection}?${params.toString()}`);
@@ -103,7 +103,7 @@ async function firestoreGetAll(collection, options = {}) {
 
 async function firestorePatch(collection, docId, fields) {
     const params = new URLSearchParams();
-    params.set('key', FIREBASE_API_KEY);
+    params.set('key', MARGABASE_API_KEY);
     Object.keys(fields || {}).forEach((field) => params.append('updateMask.fieldPaths', field));
     const response = await fetch(`${BASE_URL}/${collection}/${docId}?${params.toString()}`, {
         method: 'PATCH',

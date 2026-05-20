@@ -105,9 +105,11 @@ async function runLocalNetlifyFunction(req, res, url) {
     }
 
     const previousBaseUrl = process.env.FIRESTORE_BASE_URL;
-    const previousApiKey = process.env.FIREBASE_API_KEY;
+    const previousMargabaseApiKey = process.env.MARGABASE_API_KEY;
+    const previousLegacyApiKey = process.env.FIREBASE_API_KEY;
     process.env.FIRESTORE_BASE_URL = MARGABASE_FIRESTORE_BASE_URL;
-    process.env.FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'margabase-local';
+    process.env.MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || 'margabase-local';
+    process.env.FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || process.env.MARGABASE_API_KEY;
 
     const bodyBuffer = req.method === 'GET' || req.method === 'HEAD' ? Buffer.alloc(0) : await readRequestBody(req);
     const handlerModule = require(functionPath);
@@ -131,8 +133,10 @@ async function runLocalNetlifyFunction(req, res, url) {
 
     if (previousBaseUrl === undefined) delete process.env.FIRESTORE_BASE_URL;
     else process.env.FIRESTORE_BASE_URL = previousBaseUrl;
-    if (previousApiKey === undefined) delete process.env.FIREBASE_API_KEY;
-    else process.env.FIREBASE_API_KEY = previousApiKey;
+    if (previousMargabaseApiKey === undefined) delete process.env.MARGABASE_API_KEY;
+    else process.env.MARGABASE_API_KEY = previousMargabaseApiKey;
+    if (previousLegacyApiKey === undefined) delete process.env.FIREBASE_API_KEY;
+    else process.env.FIREBASE_API_KEY = previousLegacyApiKey;
 
     const responseBody = result?.isBase64Encoded
         ? Buffer.from(result.body || '', 'base64')
