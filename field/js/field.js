@@ -5859,17 +5859,17 @@ function renderFieldCollectionInvoices() {
     updateActionButtons();
 }
 
-function addFieldCollectionInvoice(invoice) {
-    if (!invoice) return;
+function addFieldCollectionInvoice(invoice, { showAlerts = true } = {}) {
+    if (!invoice) return false;
     const normalized = mapFieldCollectionInvoice(invoice.raw || invoice);
     const key = collectionInvoiceKey(normalized);
     if (!key) {
-        alert('Select a valid invoice first.');
-        return;
+        if (showAlerts) alert('Select a valid invoice first.');
+        return false;
     }
     if (state.modalCollectionInvoices.some((item) => collectionInvoiceKey(item) === key)) {
-        alert('That invoice is already in the payment table.');
-        return;
+        if (showAlerts) alert('That invoice is already in the payment table.');
+        return true;
     }
     state.modalCollectionInvoices.push(normalized);
     state.modalCollectionInvoiceSearchResults = [];
@@ -5877,6 +5877,7 @@ function addFieldCollectionInvoice(invoice) {
     if (search) search.value = '';
     renderFieldCollectionInvoiceResults();
     renderFieldCollectionInvoices();
+    return true;
 }
 
 function removeFieldCollectionInvoice(index) {
@@ -5960,6 +5961,27 @@ async function addFirstFieldCollectionInvoiceMatch() {
     }
     if (match) addFieldCollectionInvoice(match);
     else alert('Search a valid invoice number first.');
+}
+
+async function ensureTypedCollectionInvoiceIsSelected() {
+    if ((state.modalCollectionInvoices || []).length) return true;
+    const search = document.getElementById('fieldCollectionInvoiceSearch');
+    const query = String(search?.value || '').trim();
+    if (!query) return false;
+    let rows = state.modalCollectionInvoiceSearchResults || [];
+    if (!rows.length) {
+        rows = await searchFieldCollectionInvoices(query);
+        state.modalCollectionInvoiceSearchResults = rows;
+        renderFieldCollectionInvoiceResults();
+    }
+    const normalizedQuery = query.toUpperCase();
+    const exactMatch = rows.find((invoice) => {
+        const invoiceNo = String(invoice.invoiceNo || '').trim().toUpperCase();
+        const invoiceId = String(invoice.invoiceId || '').trim().toUpperCase();
+        return invoiceNo === normalizedQuery || invoiceId === normalizedQuery;
+    });
+    const match = exactMatch || (rows.length === 1 ? rows[0] : null);
+    return match ? addFieldCollectionInvoice(match, { showAlerts: false }) : false;
 }
 
 function getSelectedMachine() {
@@ -6780,6 +6802,7 @@ function routeCollectionForRow(row) {
 async function closeTask() {
     const row = getCurrentRow();
     if (!row) return;
+    await ensureTypedCollectionInvoiceIsSelected();
     const form = collectModalFormData();
     const closeIssues = getCloseTaskIssues(row, form);
     const expectedPin = String(state.modalExpectedPin || '').trim();
