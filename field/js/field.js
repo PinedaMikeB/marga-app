@@ -4895,6 +4895,13 @@ function isDeliveryTicket(row) {
     return DELIVERY_PURPOSE_IDS.has(normalizeTicketPurpose(row));
 }
 
+function syncPurposeSpecificSections(row = getCurrentRow()) {
+    const billMeterSection = document.getElementById('fieldMeterSection');
+    if (billMeterSection) {
+        billMeterSection.hidden = !isReadingTicket(row);
+    }
+}
+
 function isPendingReplacementState(row, form = null) {
     const pendingReason = String(row?.pending_reason || '').trim().toLowerCase();
     const hasLocalParts = Array.isArray(form?.partsNeeded) && form.partsNeeded.length > 0;
@@ -5113,6 +5120,8 @@ function updateModalFooterState() {
 }
 
 function applyModalWorkflowState() {
+    syncPurposeSpecificSections();
+
     const machineSection = document.getElementById('fieldMachineSection');
     const machineToggle = machineSection?.querySelector('.field-section-toggle');
     if (machineSection) machineSection.classList.add('is-disabled');
