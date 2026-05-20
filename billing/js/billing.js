@@ -6117,7 +6117,8 @@ function buildBillingCalculationContext(row, monthKey) {
     const summaryGroupedRows = hasVerifiedBillingGroup ? getGroupedMachineRows(row, monthKey) : [];
     const workingRow = isVerifiedSummaryGroup ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
     const baseProfile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
-    const profile = hasVerifiedBillingGroup ? getSharedBillingGroupProfile(row, baseProfile) : baseProfile;
+    const groupProfile = hasVerifiedBillingGroup ? getSharedBillingGroupProfile(row, baseProfile) : null;
+    const profile = isVerifiedSummaryGroup && groupProfile ? groupProfile : baseProfile;
     if (!profile) return null;
 
     const targetCell = workingRow.months?.[monthKey] || {};
@@ -6134,7 +6135,7 @@ function buildBillingCalculationContext(row, monthKey) {
         ? Number(targetReadingGroup.present_meter || targetReadingGroup.meter_reading || targetPreviousMeter || 0) || 0
         : targetPreviousMeter;
     const groupedMachineRows = summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey);
-    const forceGroupedMode = hasVerifiedBillingGroup && groupedMachineRows.length > 1;
+    const forceGroupedMode = isVerifiedSummaryGroup && groupedMachineRows.length > 1;
 
     return {
         row: workingRow,
@@ -6144,6 +6145,8 @@ function buildBillingCalculationContext(row, monthKey) {
         targetReadingGroup,
         monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
         profile,
+        contractProfile: baseProfile,
+        groupProfile,
         latestPriorGroup,
         latestInvoice,
         previousMeter: targetPreviousMeter,
