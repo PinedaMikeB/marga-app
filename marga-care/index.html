@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/marga-care.css?v=20260520-care-1">
+    <link rel="stylesheet" href="css/marga-care.css?v=20260520-onboarding-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -134,7 +134,7 @@
             </button>
             <div class="header-title">
                 <h1>Marga Care</h1>
-                <p>Company portal access, representative credentials, and managed machine overview.</p>
+                <p>Credential review for active clients before staff confirmation and email release.</p>
             </div>
             <div class="header-actions">
                 <button type="button" class="btn btn-secondary btn-sm" id="refreshCareBtn">Refresh</button>
@@ -152,31 +152,56 @@
                     <strong id="statRepresentatives">0</strong>
                 </article>
                 <article class="care-stat">
-                    <span>Group Machines</span>
+                    <span>Group Machine Rows</span>
                     <strong id="statGroupMachines">0</strong>
                 </article>
                 <article class="care-stat">
-                    <span>Individual Machines</span>
+                    <span>Individual Machine Rows</span>
                     <strong id="statIndividualMachines">0</strong>
                 </article>
             </section>
 
-            <section class="care-workspace">
-                <div class="care-companies-panel">
+            <section class="care-workbook">
+                <div class="care-companies-panel care-toolbar-card">
                     <div class="care-panel-heading">
                         <div>
-                            <h2>Companies</h2>
+                            <h2>Active Client Credential Workbook</h2>
                             <p id="companyListMeta">Loading active customer data...</p>
                         </div>
-                        <input id="companySearch" class="care-search" type="search" placeholder="Search company">
+                        <div class="care-toolbar">
+                            <input id="companySearch" class="care-search" type="search" placeholder="Search company, branch, serial, email">
+                            <select id="typeFilter" class="care-search" aria-label="Filter account type">
+                                <option value="all">All Types</option>
+                                <option value="group">Group Machine</option>
+                                <option value="individual">Individual Machine</option>
+                                <option value="needs-email">Needs Email</option>
+                            </select>
+                        </div>
                     </div>
-                    <div id="companyList" class="care-company-list"></div>
-                </div>
-
-                <div class="care-detail-panel" id="careDetail">
-                    <div class="care-empty">
-                        <strong>Select a company</strong>
-                        <span>Choose an active customer to set portal type, representative details, and credentials.</span>
+                    <div class="care-workbook-note">
+                        Passwords are generated now and stay stable for review. Staff should confirm emails before using the send flow tomorrow.
+                    </div>
+                    <div class="care-table-wrap">
+                        <table class="care-table">
+                            <thead>
+                                <tr>
+                                    <th>Company</th>
+                                    <th>Branch / Department</th>
+                                    <th>Serial</th>
+                                    <th>Type</th>
+                                    <th>Main Contact</th>
+                                    <th>Email</th>
+                                    <th>Admin Password</th>
+                                    <th>Branch Contact</th>
+                                    <th>Branch Password</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="careRows">
+                                <tr><td colspan="11">Loading active clients...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -188,6 +213,6 @@
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/marga-care.js?v=20260520-care-1"></script>
+    <script src="js/marga-care.js?v=20260520-onboarding-1"></script>
 </body>
 </html>

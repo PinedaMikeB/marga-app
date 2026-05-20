@@ -58,6 +58,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/marga-care"
+  to = "/.netlify/functions/marga-care"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/master-schedule-write"
   to = "/.netlify/functions/master-schedule-write"
   status = 200

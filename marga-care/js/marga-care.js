@@ -1,28 +1,21 @@
 (function () {
     const state = {
-        companies: [],
-        selectedCompanyId: null,
-        selectedCompany: null,
-        lastPassword: ''
-    };
-
-    const portalTypeLabels = {
-        mixed: 'Group + Individual',
-        group_only: 'Group Machines Only',
-        individual_only: 'Individual Machines Only',
-        single_machine: 'Single Machine'
+        rows: [],
+        summary: null,
+        generatedAt: ''
     };
 
     document.addEventListener('DOMContentLoaded', () => {
         if (!MargaAuth.requireAccess('marga-care')) return;
         renderUser();
         bindEvents();
-        loadCompanies();
+        loadCareRows();
     });
 
     function bindEvents() {
-        document.getElementById('refreshCareBtn')?.addEventListener('click', loadCompanies);
-        document.getElementById('companySearch')?.addEventListener('input', debounce(loadCompanies, 250));
+        document.getElementById('refreshCareBtn')?.addEventListener('click', loadCareRows);
+        document.getElementById('companySearch')?.addEventListener('input', debounce(renderRows, 160));
+        document.getElementById('typeFilter')?.addEventListener('change', renderRows);
     }
 
     function renderUser() {
@@ -37,302 +30,92 @@
         document.getElementById('sidebar')?.classList.toggle('open');
     };
 
-    async function api(path, options = {}) {
-        const response = await fetch(path, {
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(options.headers || {})
-            },
-            ...options
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || data.ok === false) {
-            throw new Error(data.message || `Request failed: ${response.status}`);
-        }
-        return data;
-    }
-
-    async function loadCompanies() {
-        const search = document.getElementById('companySearch')?.value || '';
-        setListLoading();
+    async function loadCareRows() {
+        const tbody = document.getElementById('careRows');
+        tbody.innerHTML = '<tr><td colspan="11">Loading active clients and generating credentials...</td></tr>';
         try {
-            const data = await api(`/portal-api/admin/care/companies?q=${encodeURIComponent(search)}`);
-            state.companies = data.companies || [];
+            const response = await fetch('/api/marga-care?refresh_cache=true', { credentials: 'include' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.ok === false) throw new Error(data.message || `Request failed: ${response.status}`);
+            state.rows = data.rows || [];
+            state.summary = data.summary || {};
+            state.generatedAt = data.generated_at || '';
             renderStats();
-            renderCompanyList();
-            if (state.selectedCompanyId && state.companies.some((company) => String(company.id) === String(state.selectedCompanyId))) {
-                await selectCompany(state.selectedCompanyId, false);
-            }
+            renderRows();
         } catch (error) {
-            renderApiError(error);
+            tbody.innerHTML = `<tr><td colspan="11"><div class="care-alert">${escapeHtml(error.message || 'Unable to load Marga Care rows.')}</div></td></tr>`;
+            document.getElementById('companyListMeta').textContent = 'Unable to load active clients';
         }
-    }
-
-    function setListLoading() {
-        const list = document.getElementById('companyList');
-        if (list) list.innerHTML = '<div class="care-empty"><strong>Loading</strong><span>Reading active customer records...</span></div>';
-    }
-
-    function renderApiError(error) {
-        document.getElementById('companyList').innerHTML = '';
-        document.getElementById('companyListMeta').textContent = 'Backend unavailable';
-        document.getElementById('careDetail').innerHTML = `
-            <div class="care-detail-inner">
-                <div class="care-alert">${escapeHtml(error.message || 'Marga Care backend is not available on this host yet.')}</div>
-            </div>
-        `;
     }
 
     function renderStats() {
-        const companies = state.companies;
-        const reps = companies.filter((company) => company.representativeAccount).length;
-        const groupMachines = companies.reduce((sum, company) => sum + Number(company.activeGroupMachines || 0), 0);
-        const individualMachines = companies.reduce((sum, company) => sum + Number(company.activeIndividualMachines || 0), 0);
-        document.getElementById('statCompanies').textContent = formatNumber(companies.length);
-        document.getElementById('statRepresentatives').textContent = formatNumber(reps);
-        document.getElementById('statGroupMachines').textContent = formatNumber(groupMachines);
-        document.getElementById('statIndividualMachines').textContent = formatNumber(individualMachines);
-        document.getElementById('companyListMeta').textContent = `${formatNumber(companies.length)} active customer records`;
+        const summary = state.summary || {};
+        document.getElementById('statCompanies').textContent = formatNumber(summary.portal_companies || 0);
+        document.getElementById('statRepresentatives').textContent = formatNumber(summary.representative_logins || 0);
+        document.getElementById('statGroupMachines').textContent = formatNumber(summary.group_machines || 0);
+        document.getElementById('statIndividualMachines').textContent = formatNumber(summary.individual_machines || 0);
     }
 
-    function renderCompanyList() {
-        const list = document.getElementById('companyList');
-        if (!state.companies.length) {
-            list.innerHTML = '<div class="care-empty"><strong>No companies found</strong><span>Try another search term.</span></div>';
-            return;
-        }
-        list.innerHTML = state.companies.map((company) => `
-            <button type="button" class="care-company-button ${String(company.id) === String(state.selectedCompanyId) ? 'active' : ''}" data-company-id="${company.id}">
-                <span class="care-company-name">${escapeHtml(company.name)}</span>
-                <span class="care-company-sub">
-                    <span>${escapeHtml(portalTypeLabels[company.portalType] || company.portalType)}</span>
-                    <span>${formatNumber(company.activeDevices)} machines</span>
-                    ${company.representativeAccount ? '<span>login ready</span>' : '<span>no login</span>'}
-                </span>
-            </button>
-        `).join('');
-        list.querySelectorAll('[data-company-id]').forEach((button) => {
-            button.addEventListener('click', () => selectCompany(button.dataset.companyId));
+    function filteredRows() {
+        const q = String(document.getElementById('companySearch')?.value || '').trim().toLowerCase();
+        const type = document.getElementById('typeFilter')?.value || 'all';
+        return state.rows.filter((row) => {
+            const haystack = [
+                row.company_name,
+                row.branch_department,
+                row.serial_number,
+                row.type,
+                row.main_contact,
+                row.email,
+                row.branch_contact,
+                row.status
+            ].join(' ').toLowerCase();
+            const matchesSearch = !q || haystack.includes(q);
+            const matchesType = type === 'all'
+                || row.type_code === type
+                || (type === 'needs-email' && !row.email);
+            return matchesSearch && matchesType;
         });
     }
 
-    async function selectCompany(companyId, showLoading = true) {
-        state.selectedCompanyId = companyId;
-        state.lastPassword = '';
-        renderCompanyList();
-        if (showLoading) {
-            document.getElementById('careDetail').innerHTML = '<div class="care-empty"><strong>Loading</strong><span>Opening company profile...</span></div>';
+    function renderRows() {
+        const rows = filteredRows();
+        const tbody = document.getElementById('careRows');
+        const generated = state.generatedAt ? new Date(state.generatedAt).toLocaleString() : 'now';
+        document.getElementById('companyListMeta').textContent = `${formatNumber(rows.length)} shown of ${formatNumber(state.rows.length)} active machine rows · generated ${generated}`;
+
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="11">No rows match the current filter.</td></tr>';
+            return;
         }
-        try {
-            const data = await api(`/portal-api/admin/care/companies/${companyId}`);
-            state.selectedCompany = data.company;
-            renderCompanyDetail();
-        } catch (error) {
-            document.getElementById('careDetail').innerHTML = `<div class="care-detail-inner"><div class="care-alert">${escapeHtml(error.message)}</div></div>`;
-        }
-    }
 
-    function renderCompanyDetail() {
-        const company = state.selectedCompany;
-        if (!company) return;
-        const repName = company.representativeName || company.defaults?.representativeName || '';
-        const repEmail = company.representativeEmail || company.defaults?.representativeEmail || '';
-        const repPhone = company.representativePhone || company.defaults?.representativePhone || '';
-        const representativeAccount = company.accounts?.find((account) => account.role === 'company_representative') || company.accounts?.[0] || null;
-        document.getElementById('careDetail').innerHTML = `
-            <div class="care-detail-inner">
-                <div class="care-detail-title">
-                    <div>
-                        <h2>${escapeHtml(company.name)}</h2>
-                        <p>${escapeHtml(portalTypeLabels[company.portalType] || company.portalType)} portal setup</p>
-                    </div>
-                    <span class="care-pill">${company.active ? 'Active' : 'Inactive'}</span>
-                </div>
-
-                <div class="care-overview-grid">
-                    <div class="care-overview-card"><span>Active Group Machines</span><strong>${formatNumber(company.activeGroupMachines)}</strong></div>
-                    <div class="care-overview-card"><span>Active Individual Machines</span><strong>${formatNumber(company.activeIndividualMachines)}</strong></div>
-                    <div class="care-overview-card"><span>Branches</span><strong>${formatNumber(company.activeBranches)}</strong></div>
-                </div>
-
-                <div class="care-form-grid">
-                    <label class="care-field">
-                        <span>Portal Type</span>
-                        <select id="portalTypeInput">
-                            ${Object.entries(portalTypeLabels).map(([value, label]) => `<option value="${value}" ${company.portalType === value ? 'selected' : ''}>${label}</option>`).join('')}
-                        </select>
-                    </label>
-                    <label class="care-field">
-                        <span>Representative Email</span>
-                        <input id="repEmailInput" type="email" value="${escapeAttr(repEmail)}" placeholder="representative@company.com">
-                    </label>
-                    <label class="care-field">
-                        <span>Representative Name</span>
-                        <input id="repNameInput" value="${escapeAttr(repName)}" placeholder="Main contact person">
-                    </label>
-                    <label class="care-field">
-                        <span>Representative Number</span>
-                        <input id="repPhoneInput" value="${escapeAttr(repPhone)}" placeholder="Mobile or landline">
-                    </label>
-                    <label class="care-field care-field-full">
-                        <span>Internal Notes</span>
-                        <textarea id="careNotesInput" rows="3" placeholder="Access instructions, branch rules, billing setup">${escapeHtml(company.notes || '')}</textarea>
-                    </label>
-                </div>
-
-                <div class="care-actions">
-                    <button type="button" class="btn btn-primary" id="saveProfileBtn">Save Profile</button>
-                    <button type="button" class="btn btn-secondary" id="createRepBtn">Create/Update Representative + 6-Digit Password</button>
-                    ${representativeAccount ? `<button type="button" class="btn btn-secondary" id="generatePasswordBtn" data-account-id="${representativeAccount.id}">Generate New Password</button>` : ''}
-                    ${representativeAccount ? `<button type="button" class="btn btn-secondary" id="emailPreviewBtn" data-account-id="${representativeAccount.id}">Preview Credential Email</button>` : ''}
-                    ${representativeAccount ? `<button type="button" class="btn btn-primary" id="sendEmailBtn" data-account-id="${representativeAccount.id}">Send Credential Email</button>` : ''}
-                </div>
-
-                <div id="credentialOutput"></div>
-
-                <div>
-                    <h3 class="care-section-title">Portal Accounts</h3>
-                    <div class="care-account-list">${renderAccounts(company.accounts || [])}</div>
-                </div>
-
-                <div>
-                    <h3 class="care-section-title">Machine Sample</h3>
-                    <div class="care-device-list">${renderDevices((company.devices || []).slice(0, 8))}</div>
-                </div>
-            </div>
-        `;
-        document.getElementById('saveProfileBtn')?.addEventListener('click', saveProfile);
-        document.getElementById('createRepBtn')?.addEventListener('click', createRepresentative);
-        document.getElementById('generatePasswordBtn')?.addEventListener('click', generatePassword);
-        document.getElementById('emailPreviewBtn')?.addEventListener('click', emailPreview);
-        document.getElementById('sendEmailBtn')?.addEventListener('click', sendEmail);
-    }
-
-    function renderAccounts(accounts) {
-        if (!accounts.length) return '<div class="care-muted">No portal accounts yet.</div>';
-        return accounts.map((account) => `
-            <div class="care-row">
-                <div>
-                    <strong>${escapeHtml(account.displayName || account.login)}</strong>
-                    <div class="care-account-meta">${escapeHtml(account.login)} · ${escapeHtml(account.role)} · ${account.active ? 'active' : 'inactive'}</div>
-                </div>
-                <span class="care-pill">${account.lastPasswordGeneratedAt ? 'password generated' : 'needs password'}</span>
-            </div>
+        tbody.innerHTML = rows.map((row) => `
+            <tr>
+                <td>
+                    <strong>${escapeHtml(row.company_name)}</strong>
+                    <span class="care-table-sub">Company ID ${escapeHtml(row.company_id)}</span>
+                </td>
+                <td>
+                    ${escapeHtml(row.branch_department || row.branch_name)}
+                    ${row.billing_group ? `<span class="care-table-sub">${escapeHtml(row.billing_group)}</span>` : ''}
+                </td>
+                <td>${escapeHtml(row.serial_number || 'N/A')}</td>
+                <td>
+                    <span class="care-type-pill ${row.type_code === 'group' ? 'is-group' : 'is-individual'}">${escapeHtml(row.type)}</span>
+                    <span class="care-table-sub">${escapeHtml(row.classification_reason)}</span>
+                </td>
+                <td>${escapeHtml(row.main_contact || 'For confirmation')}</td>
+                <td class="${row.email ? '' : 'care-missing'}">${escapeHtml(row.email || 'Needs email')}</td>
+                <td><code>${escapeHtml(row.admin_password)}</code></td>
+                <td>
+                    ${escapeHtml(row.branch_contact || 'For confirmation')}
+                    ${row.branch_phone ? `<span class="care-table-sub">${escapeHtml(row.branch_phone)}</span>` : ''}
+                </td>
+                <td><code>${escapeHtml(row.branch_password)}</code></td>
+                <td><span class="care-status ${row.email ? 'is-preparing' : 'is-missing'}">${escapeHtml(row.status)}</span></td>
+                <td>${escapeHtml(row.action)}</td>
+            </tr>
         `).join('');
-    }
-
-    function renderDevices(devices) {
-        if (!devices.length) return '<div class="care-muted">No active machines found for this company.</div>';
-        return devices.map((device) => `
-            <div class="care-row">
-                <div>
-                    <strong>${escapeHtml(device.serial || device.legacy_id || device.id)}</strong>
-                    <div class="care-device-meta">${escapeHtml(device.branchName || 'No branch assigned')} · ${escapeHtml(device.model || 'Machine')}</div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    function profilePayload() {
-        return {
-            companyId: state.selectedCompanyId,
-            portalType: document.getElementById('portalTypeInput')?.value || 'mixed',
-            representativeName: document.getElementById('repNameInput')?.value || '',
-            representativeEmail: document.getElementById('repEmailInput')?.value || '',
-            representativePhone: document.getElementById('repPhoneInput')?.value || '',
-            notes: document.getElementById('careNotesInput')?.value || '',
-            active: true
-        };
-    }
-
-    async function saveProfile() {
-        try {
-            await api('/portal-api/admin/care/company-profile', {
-                method: 'POST',
-                body: JSON.stringify(profilePayload())
-            });
-            await selectCompany(state.selectedCompanyId);
-        } catch (error) {
-            showCredentialOutput(`<div class="care-alert">${escapeHtml(error.message)}</div>`);
-        }
-    }
-
-    async function createRepresentative() {
-        try {
-            const payload = profilePayload();
-            const data = await api('/portal-api/admin/care/representative', {
-                method: 'POST',
-                body: JSON.stringify({
-                    companyId: payload.companyId,
-                    portalType: payload.portalType,
-                    name: payload.representativeName,
-                    email: payload.representativeEmail,
-                    phone: payload.representativePhone,
-                    notes: payload.notes,
-                    generatePassword: true
-                })
-            });
-            state.lastPassword = data.password || '';
-            showPassword(data.account, state.lastPassword);
-            await loadCompanies();
-            await selectCompany(state.selectedCompanyId, false);
-            showPassword(data.account, state.lastPassword);
-        } catch (error) {
-            showCredentialOutput(`<div class="care-alert">${escapeHtml(error.message)}</div>`);
-        }
-    }
-
-    async function generatePassword(event) {
-        try {
-            const accountId = event.currentTarget.dataset.accountId;
-            const data = await api(`/portal-api/admin/care/accounts/${accountId}/generate-password`, { method: 'POST', body: '{}' });
-            state.lastPassword = data.password || '';
-            showPassword(data.account, state.lastPassword);
-        } catch (error) {
-            showCredentialOutput(`<div class="care-alert">${escapeHtml(error.message)}</div>`);
-        }
-    }
-
-    async function emailPreview(event) {
-        return emailCredential(event, false);
-    }
-
-    async function sendEmail(event) {
-        return emailCredential(event, true);
-    }
-
-    async function emailCredential(event, send) {
-        try {
-            const accountId = event.currentTarget.dataset.accountId;
-            const data = await api(`/portal-api/admin/care/accounts/${accountId}/email-preview`, {
-                method: 'POST',
-                body: JSON.stringify({ password: state.lastPassword, send })
-            });
-            showCredentialOutput(`
-                <div class="care-email-preview">
-                    <div class="care-account-meta">${escapeHtml(data.message || 'Email preview ready.')}</div>
-                    <pre>${escapeHtml(`To: ${data.preview.to}\nSubject: ${data.preview.subject}\n\n${data.preview.body}`)}</pre>
-                </div>
-            `);
-        } catch (error) {
-            showCredentialOutput(`<div class="care-alert">${escapeHtml(error.message)}</div>`);
-        }
-    }
-
-    function showPassword(account, password) {
-        showCredentialOutput(`
-            <div class="care-password-output">
-                <div class="care-account-meta">${escapeHtml(account.login)} temporary password</div>
-                <div class="care-password-code">${escapeHtml(password)}</div>
-                <div class="care-account-meta">This password is visible only now. Preview or send the credential email before leaving this company.</div>
-            </div>
-        `);
-    }
-
-    function showCredentialOutput(html) {
-        const output = document.getElementById('credentialOutput');
-        if (output) output.innerHTML = html;
     }
 
     function debounce(fn, delay) {
@@ -355,9 +138,5 @@
             '"': '&quot;',
             "'": '&#39;'
         }[char]));
-    }
-
-    function escapeAttr(value) {
-        return escapeHtml(value).replace(/`/g, '&#96;');
     }
 }());
