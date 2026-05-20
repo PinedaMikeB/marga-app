@@ -2,13 +2,50 @@
     const state = {
         rows: [],
         summary: null,
-        generatedAt: ''
+        generatedAt: '',
+        template: [
+            'Subject: Welcome to Marga Care - your service portal is ready',
+            '',
+            'Hi {{main_contact}},',
+            '',
+            'Good news: Marga has improved the way we support your machines. Your company now has access to Marga Care, a dedicated service portal for faster requests, clearer machine visibility, and easier coordination with our team.',
+            '',
+            'What you can do in Marga Care:',
+            '- View your active machines and assigned branches/departments.',
+            '- Send toner/ink requests without waiting for a manual follow-up.',
+            '- Create repair/service requests and monitor open tickets.',
+            '- Use 24/7 chat support for urgent concerns.',
+            '- Start an audio call through secure WebRTC when real-time assistance is needed.',
+            '- Help your branches submit requests using their assigned branch credentials.',
+            '',
+            'Portal: https://care.marga.biz',
+            'Company: {{company_name}}',
+            'Admin email: {{email}}',
+            'Admin temporary password: {{admin_password}}',
+            '',
+            'Branch / Department: {{branch_department}}',
+            'Machine Serial: {{serial_number}}',
+            'Branch temporary password: {{branch_password}}',
+            '',
+            'Instructions:',
+            '1. Open https://care.marga.biz.',
+            '2. Sign in using the admin email and temporary password above.',
+            '3. Review your company, branch, and machine details.',
+            '4. Share the branch password only with authorized branch or department users.',
+            '5. Use Marga Care for toner/ink, repair requests, chat, and audio support.',
+            '',
+            'This portal is part of our service improvement program so your team can reach us faster and track requests more clearly.',
+            '',
+            'Thank you,',
+            'Marga Care Team'
+        ].join('\\n')
     };
 
     document.addEventListener('DOMContentLoaded', () => {
         if (!MargaAuth.requireAccess('marga-care')) return;
         renderUser();
         bindEvents();
+        renderTemplate();
         loadCareRows();
     });
 
@@ -16,6 +53,10 @@
         document.getElementById('refreshCareBtn')?.addEventListener('click', loadCareRows);
         document.getElementById('companySearch')?.addEventListener('input', debounce(renderRows, 160));
         document.getElementById('typeFilter')?.addEventListener('change', renderRows);
+        document.getElementById('copyTemplateBtn')?.addEventListener('click', copyTemplate);
+        document.getElementById('closePreviewBtn')?.addEventListener('click', () => {
+            document.getElementById('emailPreviewPanel').hidden = true;
+        });
     }
 
     function renderUser() {
@@ -34,7 +75,7 @@
         const tbody = document.getElementById('careRows');
         tbody.innerHTML = '<tr><td colspan="11">Loading active clients and generating credentials...</td></tr>';
         try {
-            const response = await fetch('/api/marga-care?refresh_cache=true', { credentials: 'include' });
+            const response = await fetch('/.netlify/functions/marga-care?refresh_cache=true', { credentials: 'include' });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || data.ok === false) throw new Error(data.message || `Request failed: ${response.status}`);
             state.rows = data.rows || [];
@@ -113,9 +154,53 @@
                 </td>
                 <td><code>${escapeHtml(row.branch_password)}</code></td>
                 <td><span class="care-status ${row.email ? 'is-preparing' : 'is-missing'}">${escapeHtml(row.status)}</span></td>
-                <td>${escapeHtml(row.action)}</td>
+                <td>
+                    <button type="button" class="care-send-btn" data-row-id="${escapeAttr(row.row_id)}" ${row.email ? '' : 'disabled'}>
+                        Send Email
+                    </button>
+                    <span class="care-table-sub">${escapeHtml(row.email ? 'Preview first, send after approval' : 'Email required')}</span>
+                </td>
             </tr>
         `).join('');
+        tbody.querySelectorAll('.care-send-btn').forEach((button) => {
+            button.addEventListener('click', () => previewRowEmail(button.dataset.rowId));
+        });
+    }
+
+    function renderTemplate() {
+        const target = document.getElementById('emailTemplateText');
+        if (target) target.value = state.template;
+    }
+
+    async function copyTemplate() {
+        try {
+            await navigator.clipboard.writeText(state.template);
+            const button = document.getElementById('copyTemplateBtn');
+            if (!button) return;
+            const oldText = button.textContent;
+            button.textContent = 'Copied';
+            window.setTimeout(() => { button.textContent = oldText; }, 1400);
+        } catch {
+            window.alert('Unable to copy template from this browser.');
+        }
+    }
+
+    function previewRowEmail(rowId) {
+        const row = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (!row) return;
+        const preview = fillTemplate(row);
+        document.getElementById('emailPreviewPanel').hidden = false;
+        document.getElementById('emailPreviewTitle').textContent = `Email Preview - ${row.company_name}`;
+        document.getElementById('emailPreviewMeta').textContent = `To: ${row.email}`;
+        document.getElementById('emailPreviewText').textContent = preview;
+        document.getElementById('emailPreviewPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function fillTemplate(row) {
+        return state.template.replace(/\{\{([a-z_]+)\}\}/g, (_, key) => {
+            const value = row[key];
+            return value === null || value === undefined || value === '' ? 'For confirmation' : String(value);
+        });
     }
 
     function debounce(fn, delay) {
@@ -138,5 +223,9 @@
             '"': '&quot;',
             "'": '&#39;'
         }[char]));
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value).replace(/`/g, '&#96;');
     }
 }());

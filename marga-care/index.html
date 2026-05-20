@@ -181,6 +181,26 @@
                     <div class="care-workbook-note">
                         Passwords are generated now and stay stable for review. Staff should confirm emails before using the send flow tomorrow.
                     </div>
+                    <div class="care-template-panel">
+                        <div class="care-template-heading">
+                            <div>
+                                <h3>Standard Onboarding Email Template</h3>
+                                <p>Review and approve this copy before staff starts sending customer credentials.</p>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" id="copyTemplateBtn">Copy Template</button>
+                        </div>
+                        <textarea id="emailTemplateText" class="care-template-text" rows="12" readonly></textarea>
+                    </div>
+                    <div class="care-template-panel care-preview-panel" id="emailPreviewPanel" hidden>
+                        <div class="care-template-heading">
+                            <div>
+                                <h3 id="emailPreviewTitle">Email Preview</h3>
+                                <p id="emailPreviewMeta">Select a row action to preview the exact customer email.</p>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" id="closePreviewBtn">Close</button>
+                        </div>
+                        <pre id="emailPreviewText" class="care-template-preview"></pre>
+                    </div>
                     <div class="care-table-wrap">
                         <table class="care-table">
                             <thead>

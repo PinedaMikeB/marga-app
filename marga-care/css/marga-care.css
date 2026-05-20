@@ -112,9 +112,56 @@
     font-weight: 700;
 }
 
+.care-template-panel {
+    margin: 1rem 1.25rem 0;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.78);
+    overflow: hidden;
+}
+
+.care-template-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.care-template-heading h3 {
+    color: #1f2430;
+    font-size: 0.96rem;
+    font-weight: 900;
+    letter-spacing: 0;
+}
+
+.care-template-heading p {
+    margin-top: 0.15rem;
+    color: #718096;
+    font-size: 0.78rem;
+}
+
+.care-template-text,
+.care-template-preview {
+    width: 100%;
+    border: 0;
+    resize: vertical;
+    background: rgba(248, 250, 255, 0.76);
+    color: #263044;
+    padding: 1rem;
+    font: 600 0.82rem/1.55 'Plus Jakarta Sans', sans-serif;
+    outline: none;
+}
+
+.care-template-preview {
+    white-space: pre-wrap;
+    margin: 0;
+}
+
 .care-table-wrap {
     overflow: auto;
-    max-height: calc(100vh - 395px);
+    max-height: calc(100vh - 560px);
     padding: 1.25rem;
 }
 
@@ -213,6 +260,23 @@
     background: rgba(239, 68, 68, 0.1);
 }
 
+.care-send-btn {
+    border: 0;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #9aaadd, #dbe4f8);
+    color: #1f2b50;
+    cursor: pointer;
+    font: 900 0.74rem/1 'Plus Jakarta Sans', sans-serif;
+    min-height: 30px;
+    padding: 0 0.8rem;
+    white-space: nowrap;
+}
+
+.care-send-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
 .care-alert {
     border-radius: 14px;
     background: rgba(239, 68, 68, 0.08);
@@ -243,5 +307,6 @@
 
     .care-table-wrap {
         padding: 0.85rem;
+        max-height: none;
     }
 }
