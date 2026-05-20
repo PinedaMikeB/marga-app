@@ -1,8 +1,10 @@
 (function () {
     const INSTALL_QUERY = 'install';
     const WELCOME_KEY = 'marga_pwa_welcome_shown_v1';
+    const UPDATE_DISMISSED_KEY = 'marga_pwa_update_notice_dismissed_cache';
     const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
     let updateReloading = false;
+    let updateNoticeDismissedThisSession = false;
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).then((registration) => {
@@ -30,7 +32,7 @@
 
         navigator.serviceWorker.addEventListener('message', (event) => {
             if (event.data?.type === 'MARGA_APP_UPDATED') {
-                showUpdateNotice();
+                showUpdateNotice(event.data);
             }
         });
     }
@@ -214,6 +216,7 @@
             #margaUpdateNotice span {
                 line-height: 1.45;
                 font-weight: 700;
+                padding-right: 28px;
             }
             #margaUpdateRefresh {
                 min-height: 40px;
@@ -226,6 +229,26 @@
                 font-weight: 800;
                 cursor: pointer;
                 white-space: nowrap;
+            }
+            #margaUpdateDismiss {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                width: 28px;
+                height: 28px;
+                border: 0;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.16);
+                color: #fff;
+                font: inherit;
+                font-size: 1.35rem;
+                line-height: 1;
+                cursor: pointer;
+            }
+            #margaUpdateDismiss:hover,
+            #margaUpdateDismiss:focus-visible {
+                background: rgba(255, 255, 255, 0.26);
+                outline: none;
             }
             .marga-install-footer {
                 margin-top: 18px;
@@ -254,8 +277,31 @@
         });
     }
 
-    function showUpdateNotice() {
+    function getDismissedUpdateCacheName() {
+        try {
+            return localStorage.getItem(UPDATE_DISMISSED_KEY) || '';
+        } catch {
+            return '';
+        }
+    }
+
+    function setDismissedUpdateCacheName(cacheName) {
+        try {
+            localStorage.setItem(UPDATE_DISMISSED_KEY, cacheName || 'dismissed');
+        } catch {
+            // Ignore storage failures; the close button should still hide the current notice.
+        }
+    }
+
+    function currentUpdateCacheName(data) {
+        return String(data?.cacheName || 'unknown-update').trim() || 'unknown-update';
+    }
+
+    function showUpdateNotice(data = null) {
         if (document.getElementById('margaUpdateNotice')) return;
+        if (updateNoticeDismissedThisSession) return;
+        const cacheName = currentUpdateCacheName(data);
+        if (getDismissedUpdateCacheName() === cacheName) return;
         ensureStyles();
 
         const notice = document.createElement('div');
@@ -263,10 +309,16 @@
         notice.setAttribute('role', 'status');
         notice.innerHTML = `
             <span>New MARGA update ready</span>
+            <button type="button" id="margaUpdateDismiss" aria-label="Dismiss update notice">&times;</button>
             <button type="button" id="margaUpdateRefresh">Refresh</button>
         `;
 
         document.body.appendChild(notice);
+        notice.querySelector('#margaUpdateDismiss').addEventListener('click', () => {
+            updateNoticeDismissedThisSession = true;
+            setDismissedUpdateCacheName(cacheName);
+            notice.remove();
+        });
         notice.querySelector('#margaUpdateRefresh').addEventListener('click', () => {
             window.location.reload();
         });

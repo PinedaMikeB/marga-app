@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v69-today-history-range';
+const CACHE_NAME = 'marga-app-shell-v70-update-dismiss';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -70,7 +70,7 @@ const SHELL_ASSETS = [
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
     '/shared/js/offline-sync.js?v=20260516-field-permissions-3',
-    '/shared/js/pwa-install.js?v=20260516-field-permissions-3'
+    '/shared/js/pwa-install.js?v=20260520-update-dismiss-1'
 ];
 
 self.addEventListener('install', (event) => {
