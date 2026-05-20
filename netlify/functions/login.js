@@ -5,7 +5,7 @@ const FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spir
 const tokenCache = new Map();
 
 const PERMISSIONS = {
-  admin: ["customers", "ai-product-consultant", "billing", "schedule", "master-schedule", "apd", "accounting", "collections", "service", "general-production", "releasing", "receiving", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
+  admin: ["customers", "ai-product-consultant", "billing", "schedule", "master-schedule", "apd", "accounting", "collections", "service", "marga-care", "general-production", "releasing", "receiving", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
   "ai-consultant-admin": ["ai-product-consultant"],
   billing: ["customers", "billing", "schedule", "apd", "accounting", "pettycash", "reports"],
   cashier: ["customers", "billing", "collections", "schedule", "apd", "accounting", "pettycash", "reports"],

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f6df2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="MARGA">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon-16.png">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png">
+    <title>MARGA - Marga Care</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
+    <link rel="stylesheet" href="css/marga-care.css?v=20260520-care-1">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Main Menu</div>
+                <a href="../dashboard.html" class="nav-item" data-module="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../customers.html" class="nav-item" data-module="customers">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                    </svg>
+                    <span>Customers</span>
+                </a>
+                <a href="../billing/" class="nav-item" data-module="billing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+                    </svg>
+                    <span>Billing</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    <span>Service</span>
+                </a>
+                <a href="../collections.html" class="nav-item" data-module="collections">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2"/>
+                        <path d="M1 10h22"/>
+                    </svg>
+                    <span>Collections</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Portal</div>
+                <a href="index.html" class="nav-item active" data-module="marga-care">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 5h16v14H4z"/>
+                        <path d="M8 9h8M8 13h5"/>
+                        <path d="M17 17l3 3"/>
+                    </svg>
+                    <span>Marga Care</span>
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+                <a href="../field/index.html" class="nav-item" data-module="field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z"/>
+                        <path d="M9 12l2 2 4-4"/>
+                    </svg>
+                    <span>Field App</span>
+                </a>
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content care-shell">
+        <header class="main-header care-header">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+            </button>
+            <div class="header-title">
+                <h1>Marga Care</h1>
+                <p>Company portal access, representative credentials, and managed machine overview.</p>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="refreshCareBtn">Refresh</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content care-content">
+            <section class="care-stats">
+                <article class="care-stat">
+                    <span>Portal Companies</span>
+                    <strong id="statCompanies">0</strong>
+                </article>
+                <article class="care-stat">
+                    <span>Representative Logins</span>
+                    <strong id="statRepresentatives">0</strong>
+                </article>
+                <article class="care-stat">
+                    <span>Group Machines</span>
+                    <strong id="statGroupMachines">0</strong>
+                </article>
+                <article class="care-stat">
+                    <span>Individual Machines</span>
+                    <strong id="statIndividualMachines">0</strong>
+                </article>
+            </section>
+
+            <section class="care-workspace">
+                <div class="care-companies-panel">
+                    <div class="care-panel-heading">
+                        <div>
+                            <h2>Companies</h2>
+                            <p id="companyListMeta">Loading active customer data...</p>
+                        </div>
+                        <input id="companySearch" class="care-search" type="search" placeholder="Search company">
+                    </div>
+                    <div id="companyList" class="care-company-list"></div>
+                </div>
+
+                <div class="care-detail-panel" id="careDetail">
+                    <div class="care-empty">
+                        <strong>Select a company</strong>
+                        <span>Choose an active customer to set portal type, representative details, and credentials.</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="../shared/js/firebase-config.js?v=20260518-margabase-locked-1"></script>
+    <script src="../shared/js/auth.js?v=20260520-marga-care-1"></script>
+    <script src="../shared/js/utils.js"></script>
+    <script src="../shared/js/offline-sync.js"></script>
+    <script src="/shared/js/pwa-install.js"></script>
+    <script src="js/marga-care.js?v=20260520-care-1"></script>
+</body>
+</html>
