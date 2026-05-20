@@ -3,42 +3,48 @@
         rows: [],
         summary: null,
         generatedAt: '',
-        overrides: loadOverrides(),
+        apiBase: '/api/marga-care',
         template: [
-            'Subject: Welcome to Marga Care - your service portal is ready',
+            'Subject: Welcome to Marga Managed Care - Your Service Access Is Ready',
             '',
             'Hi {{main_contact}},',
             '',
-            'Good news: Marga has improved the way we support your machines. Your company now has access to Marga Care, a dedicated service portal for faster requests, clearer machine visibility, and easier coordination with our team.',
+            'In view of our continuous improvement in serving our customers, we are pleased to inform you that your company now has access to Marga Managed Care, our dedicated customer care system designed to make service requests faster, machine monitoring clearer, and communication with our team easier.',
             '',
-            'What you can do in Marga Care:',
-            '- View your active machines and assigned branches/departments.',
-            '- Send toner/ink requests without waiting for a manual follow-up.',
-            '- Create repair/service requests and monitor open tickets.',
-            '- Use 24/7 chat support for urgent concerns.',
-            '- Start an audio call through secure WebRTC when real-time assistance is needed.',
-            '- Help your branches submit requests using their assigned branch credentials.',
+            'Through Marga Managed Care, your team can:',
             '',
-            'Portal: https://care.marga.biz',
+            'View your active machines and assigned branches or departments.',
+            'Submit toner or ink requests without waiting for manual follow-up.',
+            'Create repair and service requests.',
+            'Monitor open tickets and request status.',
+            'Use 24/7 chat support for urgent concerns.',
+            'Start a secure audio call when real-time assistance is needed.',
+            'Allow authorized branches or departments to submit requests using their assigned credentials.',
+            '',
+            'Access Link: https://care.marga.biz',
             'Company: {{company_name}}',
-            'Admin email: {{email}}',
-            'Admin temporary password: {{admin_password}}',
+            'Admin Email: {{email}}',
+            'Admin Temporary Password: {{admin_password}}',
             '',
             'Branch / Department: {{branch_department}}',
             'Machine Serial: {{serial_number}}',
-            'Branch temporary password: {{branch_password}}',
+            'Branch Temporary Password: {{branch_password}}',
             '',
-            'Instructions:',
-            '1. Open https://care.marga.biz.',
-            '2. Sign in using the admin email and temporary password above.',
-            '3. Review your company, branch, and machine details.',
-            '4. Share the branch password only with authorized branch or department users.',
-            '5. Use Marga Care for toner/ink, repair requests, chat, and audio support.',
+            'To get started:',
             '',
-            'This portal is part of our service improvement program so your team can reach us faster and track requests more clearly.',
+            'Open https://care.marga.biz.',
+            'Sign in using the admin email and temporary password above.',
+            'Review your company, branch, and machine details.',
+            'Share the branch password only with authorized branch or department users.',
+            'Use Marga Managed Care for toner, ink, repair requests, chat support, and audio assistance.',
             '',
-            'Thank you,',
-            'Marga Care Team'
+            'This is part of our ongoing service improvement program to help your team reach us faster, reduce delays, and track requests more clearly.',
+            '',
+            'Thank you for trusting Marga Enterprises. We look forward to serving you better through Marga Managed Care.',
+            '',
+            'Best regards,',
+            'Marga Managed Care Team',
+            'Marga Enterprises'
         ].join('\n')
     };
 
@@ -77,7 +83,7 @@
         tbody.innerHTML = '<tr><td colspan="11">Loading active clients and generating credentials...</td></tr>';
         setBackendStatus('checking', 'Checking backend');
         try {
-            const response = await fetch('/.netlify/functions/marga-care?refresh_cache=true', { credentials: 'include' });
+            const response = await fetch(`${state.apiBase}?refresh_cache=true`, { credentials: 'include' });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || data.ok === false) throw new Error(data.message || `Request failed: ${response.status}`);
             state.rows = data.rows || [];
@@ -87,6 +93,10 @@
             renderStats();
             renderRows();
         } catch (error) {
+            if (state.apiBase === '/api/marga-care') {
+                state.apiBase = '/.netlify/functions/marga-care';
+                return loadCareRows();
+            }
             setBackendStatus('offline', 'Backend disconnected');
             tbody.innerHTML = `<tr><td colspan="11"><div class="care-alert">${escapeHtml(error.message || 'Unable to load Marga Care rows.')}</div></td></tr>`;
             document.getElementById('companyListMeta').textContent = 'Unable to load active clients';
@@ -105,7 +115,7 @@
         const q = String(document.getElementById('companySearch')?.value || '').trim().toLowerCase();
         const type = document.getElementById('typeFilter')?.value || 'all';
         return state.rows.filter((rawRow) => {
-            const row = rowView(rawRow);
+            const row = rawRow;
             const haystack = [
                 row.company_name,
                 row.branch_department,
@@ -124,17 +134,6 @@
         });
     }
 
-    function rowView(row) {
-        const override = state.overrides[row.row_id] || {};
-        return {
-            ...row,
-            ...override,
-            status: override.status || row.status || 'Preparing',
-            admin_password: override.admin_password || row.admin_password,
-            branch_password: override.branch_password || row.branch_password
-        };
-    }
-
     function renderRows() {
         const rows = filteredRows();
         const tbody = document.getElementById('careRows');
@@ -147,7 +146,7 @@
         }
 
         tbody.innerHTML = rows.map((rawRow) => {
-            const row = rowView(rawRow);
+            const row = rawRow;
             return `
             <tr>
                 <td>
@@ -201,9 +200,8 @@
     }
 
     function handleAction(action, rowId) {
-        const rawRow = state.rows.find((item) => String(item.row_id) === String(rowId));
-        if (!rawRow) return;
-        const row = rowView(rawRow);
+        const row = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (!row) return;
         if (action === 'save') return saveRow(rowId);
         if (action === 'edit') return editRow(row);
         if (action === 'main-pw') return generatePassword(rowId, 'admin_password');
@@ -212,7 +210,6 @@
     }
 
     function saveRow(rowId) {
-        persistOverrides();
         pulseRow(rowId, 'Saved');
     }
 
@@ -235,11 +232,11 @@
     }
 
     function updateRowOverride(rowId, patch, rerender) {
-        state.overrides[rowId] = {
-            ...(state.overrides[rowId] || {}),
-            ...patch
-        };
-        persistOverrides();
+        const row = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (row) Object.assign(row, patch);
+        saveRowPatch(rowId, patch).catch((error) => {
+            window.alert(error.message || 'Unable to save row to Margabase.');
+        });
         if (rerender) renderRows();
     }
 
@@ -247,16 +244,21 @@
         return String(Math.floor(100000 + Math.random() * 900000));
     }
 
-    function loadOverrides() {
-        try {
-            return JSON.parse(localStorage.getItem('marga_care_row_overrides') || '{}') || {};
-        } catch {
-            return {};
-        }
-    }
-
-    function persistOverrides() {
-        localStorage.setItem('marga_care_row_overrides', JSON.stringify(state.overrides));
+    async function saveRowPatch(rowId, patch) {
+        const user = MargaAuth.getUser?.() || {};
+        const response = await fetch(state.apiBase, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                row_id: rowId,
+                updated_by: user.name || user.email || 'Marga Staff',
+                ...patch
+            })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok === false) throw new Error(data.message || `Save failed: ${response.status}`);
+        return data;
     }
 
     function pulseRow(rowId, text) {
@@ -287,9 +289,8 @@
     }
 
     function previewRowEmail(rowId) {
-        const rawRow = state.rows.find((item) => String(item.row_id) === String(rowId));
-        if (!rawRow) return;
-        const row = rowView(rawRow);
+        const row = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (!row) return;
         const preview = fillTemplate(row);
         document.getElementById('emailPreviewPanel').hidden = false;
         document.getElementById('emailPreviewTitle').textContent = `Email Preview - ${row.company_name}`;

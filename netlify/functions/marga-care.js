@@ -4,6 +4,7 @@ const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyCgPJs1Neq2bRMAOv
 const BASE_URL = process.env.FIRESTORE_BASE_URL || 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents';
 const PASSWORD_SEED = process.env.MARGA_CARE_PASSWORD_SEED || process.env.OPENCLAW_API_KEY || FIREBASE_API_KEY || 'marga-care-onboarding';
 const DEFAULT_PAGE_SIZE = Number(process.env.MARGA_CARE_PAGE_SIZE || 300);
+const OVERRIDE_COLLECTION = 'marga_care_onboarding_overrides';
 
 function toJson(statusCode, body) {
     return {
@@ -12,11 +13,26 @@ function toJson(statusCode, body) {
             'Content-Type': 'application/json',
             'Cache-Control': 'no-store, max-age=0',
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET,OPTIONS',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-API-Key'
         },
         body: JSON.stringify(body)
     };
+}
+
+function firestoreValue(value) {
+    if (value === null || value === undefined) return { nullValue: null };
+    if (typeof value === 'boolean') return { booleanValue: value };
+    if (typeof value === 'number' && Number.isFinite(value)) return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    return { stringValue: String(value) };
+}
+
+function firestoreFields(object) {
+    return Object.fromEntries(Object.entries(object || {}).map(([key, value]) => [key, firestoreValue(value)]));
+}
+
+function docIdForRow(rowId) {
+    return crypto.createHash('sha1').update(String(rowId || '')).digest('hex');
 }
 
 function getValue(field) {
@@ -83,6 +99,22 @@ async function firestoreGetAll(collection, options = {}) {
         pageToken = data.nextPageToken;
     }
     return docs;
+}
+
+async function firestorePatch(collection, docId, fields) {
+    const params = new URLSearchParams();
+    params.set('key', FIREBASE_API_KEY);
+    Object.keys(fields || {}).forEach((field) => params.append('updateMask.fieldPaths', field));
+    const response = await fetch(`${BASE_URL}/${collection}/${docId}?${params.toString()}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: firestoreFields(fields) })
+    });
+    if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error?.message || `Failed to save ${collection}: ${response.status}`);
+    }
+    return response.json();
 }
 
 function buildMap(docs, idKeys = ['id']) {
@@ -295,11 +327,84 @@ async function buildCareRows() {
     };
 }
 
+async function loadOverrides() {
+    const docs = await firestoreGetAll(OVERRIDE_COLLECTION, {
+        fieldMask: [
+            'row_id', 'status', 'main_contact', 'email', 'branch_contact',
+            'admin_password', 'branch_password', 'updated_at', 'updated_by',
+            'email_approved', 'email_sent_at'
+        ],
+        maxPages: 40
+    }).catch(() => []);
+    const map = new Map();
+    docs.forEach((doc) => {
+        const f = doc.fields || {};
+        const rowId = clean(getField(f, ['row_id']));
+        if (!rowId) return;
+        map.set(rowId, {
+            status: clean(getField(f, ['status'])),
+            main_contact: clean(getField(f, ['main_contact'])),
+            email: clean(getField(f, ['email'])),
+            branch_contact: clean(getField(f, ['branch_contact'])),
+            admin_password: clean(getField(f, ['admin_password'])),
+            branch_password: clean(getField(f, ['branch_password'])),
+            updated_at: clean(getField(f, ['updated_at'])),
+            updated_by: clean(getField(f, ['updated_by'])),
+            email_approved: Boolean(getField(f, ['email_approved']) || false),
+            email_sent_at: clean(getField(f, ['email_sent_at']))
+        });
+    });
+    return map;
+}
+
+function mergeOverride(row, override) {
+    if (!override) return row;
+    const merged = { ...row };
+    ['status', 'main_contact', 'email', 'branch_contact', 'admin_password', 'branch_password', 'email_approved', 'email_sent_at'].forEach((key) => {
+        if (override[key] !== undefined && override[key] !== null && override[key] !== '') merged[key] = override[key];
+    });
+    merged.updated_at = override.updated_at || row.updated_at || '';
+    merged.updated_by = override.updated_by || row.updated_by || '';
+    return merged;
+}
+
+async function saveOverride(event) {
+    const body = JSON.parse(event.body || '{}');
+    const rowId = clean(body.row_id);
+    if (!rowId) return toJson(400, { ok: false, message: 'row_id is required.' });
+    const allowedStatuses = new Set(['Preparing', 'Onboarding', 'Connected', 'Needs Email Confirmation']);
+    const patch = {
+        row_id: rowId,
+        updated_at: new Date().toISOString(),
+        updated_by: clean(body.updated_by || body.user || 'Marga Staff')
+    };
+    ['main_contact', 'email', 'branch_contact', 'admin_password', 'branch_password'].forEach((key) => {
+        if (body[key] !== undefined) patch[key] = clean(body[key]);
+    });
+    if (body.status !== undefined) {
+        const status = clean(body.status);
+        patch.status = allowedStatuses.has(status) ? status : 'Preparing';
+    }
+    if (body.email_approved !== undefined) patch.email_approved = Boolean(body.email_approved);
+    if (body.email_sent_at !== undefined) patch.email_sent_at = clean(body.email_sent_at);
+    await firestorePatch(OVERRIDE_COLLECTION, docIdForRow(rowId), patch);
+    return toJson(200, { ok: true, override: patch });
+}
+
 exports.handler = async (event) => {
     if (event.httpMethod === 'OPTIONS') return toJson(200, { ok: true });
+    if (event.httpMethod === 'POST') {
+        try {
+            return await saveOverride(event);
+        } catch (error) {
+            return toJson(500, { ok: false, message: error.message || 'Unable to save Marga Care row.' });
+        }
+    }
     if (event.httpMethod !== 'GET') return toJson(405, { ok: false, message: 'Method not allowed' });
     try {
         const result = await buildCareRows();
+        const overrides = await loadOverrides();
+        result.rows = result.rows.map((row) => mergeOverride(row, overrides.get(row.row_id)));
         const params = new URLSearchParams(event.queryStringParameters || {});
         const q = clean(params.get('q')).toLowerCase();
         const rows = q
