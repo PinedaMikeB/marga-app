@@ -6,6 +6,46 @@
     border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.care-backend-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 34px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: #64748b;
+    padding: 0 0.8rem;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.care-backend-status span {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #94a3b8;
+}
+
+.care-backend-status[data-status="online"] {
+    color: #15803d;
+    background: rgba(220, 252, 231, 0.8);
+}
+
+.care-backend-status[data-status="online"] span {
+    background: #22c55e;
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+}
+
+.care-backend-status[data-status="offline"] {
+    color: #991b1b;
+    background: rgba(254, 226, 226, 0.78);
+}
+
+.care-backend-status[data-status="offline"] span {
+    background: #ef4444;
+}
+
 .care-content {
     display: grid;
     gap: 1.25rem;
@@ -260,19 +300,52 @@
     background: rgba(239, 68, 68, 0.1);
 }
 
-.care-send-btn {
-    border: 0;
+.care-status-select {
+    min-width: 128px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 999px;
-    background: linear-gradient(135deg, #9aaadd, #dbe4f8);
-    color: #1f2b50;
-    cursor: pointer;
+    background: rgba(255, 255, 255, 0.94);
+    color: #4a5573;
     font: 900 0.74rem/1 'Plus Jakarta Sans', sans-serif;
     min-height: 30px;
-    padding: 0 0.8rem;
+    padding: 0 0.65rem;
+    outline: none;
+}
+
+.care-action-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.38rem;
+    min-width: 320px;
+}
+
+.care-action-btn {
+    border: 0;
+    border-radius: 999px;
+    background: rgba(232, 237, 250, 0.95);
+    color: #1f2b50;
+    cursor: pointer;
+    font: 900 0.7rem/1 'Plus Jakarta Sans', sans-serif;
+    min-height: 30px;
+    padding: 0 0.62rem;
     white-space: nowrap;
 }
 
-.care-send-btn:disabled {
+.care-action-btn:hover:not(:disabled) {
+    background: rgba(210, 219, 247, 0.98);
+}
+
+.care-action-btn.is-save {
+    background: rgba(220, 252, 231, 0.86);
+    color: #166534;
+}
+
+.care-action-btn.is-send {
+    background: linear-gradient(135deg, #9aaadd, #dbe4f8);
+    color: #1f2b50;
+}
+
+.care-action-btn:disabled {
     cursor: not-allowed;
     opacity: 0.45;
 }

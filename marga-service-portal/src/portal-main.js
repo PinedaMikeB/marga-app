@@ -916,6 +916,30 @@ function bindGlobalActions() {
   });
 }
 
+async function refreshBackendStatus() {
+  if (!navigator.onLine) {
+    syncBadge.textContent = 'Offline';
+    syncBadge.className = 'status-badge warn';
+    syncBadge.title = 'Browser is offline.';
+    return;
+  }
+  syncBadge.textContent = 'Checking';
+  syncBadge.className = 'status-badge neutral';
+  syncBadge.title = 'Checking Marga Care backend and database connection...';
+  try {
+    const response = await fetch('/health', { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok !== true) throw new Error('Backend health check failed.');
+    syncBadge.textContent = 'Online';
+    syncBadge.className = 'status-badge neutral';
+    syncBadge.title = 'Connected to Marga Care backend and database.';
+  } catch {
+    syncBadge.textContent = 'Backend Offline';
+    syncBadge.className = 'status-badge warn';
+    syncBadge.title = 'Cannot reach Marga Care backend/database.';
+  }
+}
+
 async function init() {
   await service.init();
 
@@ -930,10 +954,17 @@ async function init() {
   setupPwa({
     installButton: null,
     onConnectivityChange: (isOnline) => {
-      syncBadge.textContent = isOnline ? 'Online' : 'Offline';
-      syncBadge.className = `status-badge ${isOnline ? 'neutral' : 'warn'}`;
+      if (!isOnline) {
+        syncBadge.textContent = 'Offline';
+        syncBadge.className = 'status-badge warn';
+        syncBadge.title = 'Browser is offline.';
+        return;
+      }
+      refreshBackendStatus();
     }
   });
+  await refreshBackendStatus();
+  window.setInterval(refreshBackendStatus, 60000);
 
   if (service.usingDemo) {
     setTopMessage('Demo mode active. Try admin@acme-demo.com / demo1234.', 'info');

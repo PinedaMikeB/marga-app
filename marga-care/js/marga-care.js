@@ -3,6 +3,7 @@
         rows: [],
         summary: null,
         generatedAt: '',
+        overrides: loadOverrides(),
         template: [
             'Subject: Welcome to Marga Care - your service portal is ready',
             '',
@@ -38,7 +39,7 @@
             '',
             'Thank you,',
             'Marga Care Team'
-        ].join('\\n')
+        ].join('\n')
     };
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -74,6 +75,7 @@
     async function loadCareRows() {
         const tbody = document.getElementById('careRows');
         tbody.innerHTML = '<tr><td colspan="11">Loading active clients and generating credentials...</td></tr>';
+        setBackendStatus('checking', 'Checking backend');
         try {
             const response = await fetch('/.netlify/functions/marga-care?refresh_cache=true', { credentials: 'include' });
             const data = await response.json().catch(() => ({}));
@@ -81,9 +83,11 @@
             state.rows = data.rows || [];
             state.summary = data.summary || {};
             state.generatedAt = data.generated_at || '';
+            setBackendStatus('online', 'Backend + database connected');
             renderStats();
             renderRows();
         } catch (error) {
+            setBackendStatus('offline', 'Backend disconnected');
             tbody.innerHTML = `<tr><td colspan="11"><div class="care-alert">${escapeHtml(error.message || 'Unable to load Marga Care rows.')}</div></td></tr>`;
             document.getElementById('companyListMeta').textContent = 'Unable to load active clients';
         }
@@ -100,7 +104,8 @@
     function filteredRows() {
         const q = String(document.getElementById('companySearch')?.value || '').trim().toLowerCase();
         const type = document.getElementById('typeFilter')?.value || 'all';
-        return state.rows.filter((row) => {
+        return state.rows.filter((rawRow) => {
+            const row = rowView(rawRow);
             const haystack = [
                 row.company_name,
                 row.branch_department,
@@ -119,6 +124,17 @@
         });
     }
 
+    function rowView(row) {
+        const override = state.overrides[row.row_id] || {};
+        return {
+            ...row,
+            ...override,
+            status: override.status || row.status || 'Preparing',
+            admin_password: override.admin_password || row.admin_password,
+            branch_password: override.branch_password || row.branch_password
+        };
+    }
+
     function renderRows() {
         const rows = filteredRows();
         const tbody = document.getElementById('careRows');
@@ -130,7 +146,9 @@
             return;
         }
 
-        tbody.innerHTML = rows.map((row) => `
+        tbody.innerHTML = rows.map((rawRow) => {
+            const row = rowView(rawRow);
+            return `
             <tr>
                 <td>
                     <strong>${escapeHtml(row.company_name)}</strong>
@@ -153,18 +171,101 @@
                     ${row.branch_phone ? `<span class="care-table-sub">${escapeHtml(row.branch_phone)}</span>` : ''}
                 </td>
                 <td><code>${escapeHtml(row.branch_password)}</code></td>
-                <td><span class="care-status ${row.email ? 'is-preparing' : 'is-missing'}">${escapeHtml(row.status)}</span></td>
                 <td>
-                    <button type="button" class="care-send-btn" data-row-id="${escapeAttr(row.row_id)}" ${row.email ? '' : 'disabled'}>
-                        Send Email
-                    </button>
-                    <span class="care-table-sub">${escapeHtml(row.email ? 'Preview first, send after approval' : 'Email required')}</span>
+                    <select class="care-status-select" data-row-id="${escapeAttr(row.row_id)}">
+                        ${['Preparing', 'Onboarding', 'Connected'].map((status) => `<option value="${status}" ${row.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+                    </select>
                 </td>
+                <td>${renderActionButtons(row)}</td>
             </tr>
-        `).join('');
-        tbody.querySelectorAll('.care-send-btn').forEach((button) => {
-            button.addEventListener('click', () => previewRowEmail(button.dataset.rowId));
+        `;
+        }).join('');
+        tbody.querySelectorAll('.care-status-select').forEach((select) => {
+            select.addEventListener('change', () => updateRowOverride(select.dataset.rowId, { status: select.value }, false));
         });
+        tbody.querySelectorAll('[data-action]').forEach((button) => {
+            button.addEventListener('click', () => handleAction(button.dataset.action, button.dataset.rowId));
+        });
+    }
+
+    function renderActionButtons(row) {
+        return `
+            <div class="care-action-stack">
+                <button type="button" class="care-action-btn is-save" data-action="save" data-row-id="${escapeAttr(row.row_id)}">Save</button>
+                <button type="button" class="care-action-btn" data-action="edit" data-row-id="${escapeAttr(row.row_id)}">Edit</button>
+                <button type="button" class="care-action-btn" data-action="main-pw" data-row-id="${escapeAttr(row.row_id)}">Generate PW Main</button>
+                <button type="button" class="care-action-btn" data-action="branch-pw" data-row-id="${escapeAttr(row.row_id)}">Generate PW Branch</button>
+                <button type="button" class="care-action-btn is-send" data-action="send" data-row-id="${escapeAttr(row.row_id)}" ${row.email ? '' : 'disabled'}>Send Email</button>
+            </div>
+        `;
+    }
+
+    function handleAction(action, rowId) {
+        const rawRow = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (!rawRow) return;
+        const row = rowView(rawRow);
+        if (action === 'save') return saveRow(rowId);
+        if (action === 'edit') return editRow(row);
+        if (action === 'main-pw') return generatePassword(rowId, 'admin_password');
+        if (action === 'branch-pw') return generatePassword(rowId, 'branch_password');
+        if (action === 'send') return previewRowEmail(rowId);
+    }
+
+    function saveRow(rowId) {
+        persistOverrides();
+        pulseRow(rowId, 'Saved');
+    }
+
+    function editRow(row) {
+        const mainContact = window.prompt('Main contact', row.main_contact || '');
+        if (mainContact === null) return;
+        const email = window.prompt('Email', row.email || '');
+        if (email === null) return;
+        const branchContact = window.prompt('Branch contact', row.branch_contact || '');
+        if (branchContact === null) return;
+        updateRowOverride(row.row_id, {
+            main_contact: mainContact.trim(),
+            email: email.trim(),
+            branch_contact: branchContact.trim()
+        }, true);
+    }
+
+    function generatePassword(rowId, field) {
+        updateRowOverride(rowId, { [field]: randomPassword() }, true);
+    }
+
+    function updateRowOverride(rowId, patch, rerender) {
+        state.overrides[rowId] = {
+            ...(state.overrides[rowId] || {}),
+            ...patch
+        };
+        persistOverrides();
+        if (rerender) renderRows();
+    }
+
+    function randomPassword() {
+        return String(Math.floor(100000 + Math.random() * 900000));
+    }
+
+    function loadOverrides() {
+        try {
+            return JSON.parse(localStorage.getItem('marga_care_row_overrides') || '{}') || {};
+        } catch {
+            return {};
+        }
+    }
+
+    function persistOverrides() {
+        localStorage.setItem('marga_care_row_overrides', JSON.stringify(state.overrides));
+    }
+
+    function pulseRow(rowId, text) {
+        const button = Array.from(document.querySelectorAll('[data-action="save"]'))
+            .find((item) => String(item.dataset.rowId) === String(rowId));
+        if (!button) return;
+        const oldText = button.textContent;
+        button.textContent = text;
+        window.setTimeout(() => { button.textContent = oldText; }, 1200);
     }
 
     function renderTemplate() {
@@ -186,8 +287,9 @@
     }
 
     function previewRowEmail(rowId) {
-        const row = state.rows.find((item) => String(item.row_id) === String(rowId));
-        if (!row) return;
+        const rawRow = state.rows.find((item) => String(item.row_id) === String(rowId));
+        if (!rawRow) return;
+        const row = rowView(rawRow);
         const preview = fillTemplate(row);
         document.getElementById('emailPreviewPanel').hidden = false;
         document.getElementById('emailPreviewTitle').textContent = `Email Preview - ${row.company_name}`;
@@ -227,5 +329,12 @@
 
     function escapeAttr(value) {
         return escapeHtml(value).replace(/`/g, '&#96;');
+    }
+
+    function setBackendStatus(status, label) {
+        const el = document.getElementById('careBackendStatus');
+        if (!el) return;
+        el.dataset.status = status;
+        el.querySelector('strong').textContent = label;
     }
 }());
