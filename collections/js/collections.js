@@ -249,6 +249,54 @@ const LEGACY_COLLECTION_SCHEDULE_FIELD_MASK = [
     'iscancelled',
     'iscancelleddate'
 ];
+const COLLECTION_HISTORY_FIELD_MASK = [
+    'invoice_num',
+    'invoice_id',
+    'invoice_no',
+    'invoiceno',
+    'followup_datetime',
+    'followup_date',
+    'next_followup',
+    'schedule_status',
+    'status_id',
+    'location_id',
+    'location_label',
+    'ischecksigned',
+    'check_number',
+    'payment_amount',
+    'collection_id',
+    'employee_id',
+    'remarks',
+    'contact_person',
+    'contact_number',
+    'account_ref',
+    'account_group_ref',
+    'branch_id',
+    'company_id',
+    'contractmain_id',
+    'machine_id',
+    'month_key',
+    'followed_up_by',
+    'collector_name',
+    'employee_name',
+    'committed_by',
+    'created_by',
+    'updated_by',
+    'encoded_by',
+    'inserted_by',
+    'pcname',
+    'computer_name',
+    'device_name',
+    'ipadd',
+    'timestamp',
+    'call_datetime',
+    'created_at',
+    'updated_at',
+    'timestmp',
+    'tmestamp',
+    'datex',
+    'date_created'
+];
 
 function buildMonthColumns(startValue, endValue) {
     const monthColumns = [];
@@ -2388,7 +2436,7 @@ function collectionHistoryDocToEntry(doc) {
     if (!invoiceKey && !accountRef && !accountGroupRef) return null;
 
     const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup']);
-    const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at']) || followupDateRaw;
+    const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at', 'updated_at', 'timestmp', 'tmestamp', 'datex', 'date_created']) || followupDateRaw;
     const followupDate = normalizeDate(followupDateRaw);
     const callDate = normalizeDate(callDateRaw);
 
@@ -2474,6 +2522,7 @@ async function loadCollectionHistoryForKeys(keys = []) {
                             value: { stringValue: key }
                         }
                     },
+                    select: { fields: COLLECTION_HISTORY_FIELD_MASK.map((fieldPath) => ({ fieldPath })) },
                     limit: 40
                 }).catch((error) => {
                     console.warn(`Collection history lookup failed for ${fieldPath}=${key}:`, error);
@@ -2737,62 +2786,59 @@ async function loadCollectionEmployeeLookup() {
     rebuildCollectionAssignableStaff(employeeDocs);
 }
 
+async function loadTodayCollectionHistoryDocs() {
+    const todayKey = toDateKey(new Date());
+    const tomorrowKey = getTodayInputValue(1);
+    const querySpecs = [
+        ['timestamp', todayKey, tomorrowKey],
+        ['updated_at', todayKey, tomorrowKey],
+        ['tmestamp', todayKey, tomorrowKey],
+        ['datex', todayKey, tomorrowKey],
+        ['date_created', todayKey, tomorrowKey],
+        ['followup_datetime', todayKey, tomorrowKey],
+        ['followup_date', todayKey, tomorrowKey],
+        ['next_followup', todayKey, tomorrowKey]
+    ];
+
+    const groups = await Promise.all(querySpecs.map(([fieldPath, startValue, endValue]) => (
+        firestoreRunRangeQuery('tbl_collectionhistory', fieldPath, startValue, endValue, COLLECTION_HISTORY_FIELD_MASK)
+            .catch((error) => {
+                console.warn(`Unable to load today's collection history rows by ${fieldPath}:`, error);
+                return [];
+            })
+    )));
+
+    const byDoc = new Map();
+    groups.flat().forEach((doc) => {
+        const key = doc.name || getFirestoreDocumentId(doc);
+        if (key && !byDoc.has(key)) byDoc.set(key, doc);
+    });
+    return Array.from(byDoc.values());
+}
+
 async function loadCollectionHistory() {
     await loadCollectionEmployeeLookup();
 
-    const historyDocs = await firestoreGetAll('tbl_collectionhistory', null, {
-        fieldMask: [
-            'invoice_num',
-            'invoice_id',
-            'invoice_no',
-            'invoiceno',
-            'followup_datetime',
-            'followup_date',
-            'next_followup',
-            'schedule_status',
-            'status_id',
-            'location_id',
-            'location_label',
-            'ischecksigned',
-            'check_number',
-            'payment_amount',
-            'collection_id',
-            'employee_id',
-            'remarks',
-            'contact_person',
-            'contact_number',
-            'account_ref',
-            'account_group_ref',
-            'branch_id',
-            'company_id',
-            'contractmain_id',
-            'machine_id',
-            'month_key',
-            'followed_up_by',
-            'collector_name',
-            'employee_name',
-            'committed_by',
-            'created_by',
-            'updated_by',
-            'encoded_by',
-            'inserted_by',
-            'pcname',
-            'computer_name',
-            'device_name',
-            'ipadd',
-            'timestamp',
-            'call_datetime',
-            'created_at'
-        ],
-        maxPages: 320
-    });
+    const [historyDocs, todayHistoryDocs] = await Promise.all([
+        firestoreGetAll('tbl_collectionhistory', null, {
+            fieldMask: COLLECTION_HISTORY_FIELD_MASK,
+            maxPages: 320
+        }),
+        loadTodayCollectionHistoryDocs()
+    ]);
 
     collectionHistory = {};
     todayFollowups = [];
 
     const todayKey = toDateKey(new Date());
 
-    historyDocs.forEach((doc) => {
+    const docsByKey = new Map();
+    [...historyDocs, ...todayHistoryDocs].forEach((doc) => {
+        const key = doc.name || getFirestoreDocumentId(doc);
+        if (key) docsByKey.set(key, doc);
+    });
+
+    docsByKey.forEach((doc) => {
         const entry = collectionHistoryDocToEntry(doc);
         if (!entry) return;
 
