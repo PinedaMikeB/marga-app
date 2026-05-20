@@ -26,6 +26,7 @@ const els = {
     invoiceSearchInput: null,
     invoiceSearchBtn: null,
     invoiceSearchResults: null,
+    billingExclusionsToggleBtn: null,
     billingExclusionsRefreshBtn: null,
     billingExclusionsList: null,
     rawJson: null,
@@ -6316,6 +6317,11 @@ function renderSavedBillingExclusions(exclusions = []) {
 function renderDashboardBillingExclusions() {
     if (!els.billingExclusionsList) return;
     const activeExclusions = billingExclusionCache.filter(isActiveBillingExclusion);
+    if (els.billingExclusionsToggleBtn) {
+        els.billingExclusionsToggleBtn.textContent = els.billingExclusionsList.hidden
+            ? `View Saved Billing Exclusions (${formatCount(activeExclusions.length)})`
+            : 'Hide Saved Billing Exclusions';
+    }
     if (!activeExclusions.length) {
         els.billingExclusionsList.innerHTML = '<div class="detail-empty">No hidden billing accounts saved.</div>';
         return;
@@ -9869,6 +9875,11 @@ function bindEvents() {
             event.preventDefault();
             searchInvoiceNumber();
         }
+    });
+    els.billingExclusionsToggleBtn?.addEventListener('click', () => {
+        if (!els.billingExclusionsList) return;
+        els.billingExclusionsList.hidden = !els.billingExclusionsList.hidden;
+        renderDashboardBillingExclusions();
     });
     els.billingExclusionsRefreshBtn?.addEventListener('click', async () => {
         els.billingExclusionsRefreshBtn.disabled = true;

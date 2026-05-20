@@ -9,7 +9,7 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
 const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
-const PRODUCTIVITY_REPORT_VERSION = '20260519-printed-today-v2';
+const PRODUCTIVITY_REPORT_VERSION = '20260520-printed-schedule-v4';
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
@@ -335,6 +335,7 @@ function getCacheState() {
             billingProductivityDateKey: '',
             billingDocs: [],
             productivityBillingDocs: [],
+            productivityScheduleDocs: [],
             scheduleDocs: [],
             machineReadingDocs: []
         };
@@ -375,6 +376,24 @@ async function loadBillingProductivityDocs(startYmd, endYmd, fieldMask) {
     return Array.from(byName.values());
 }
 
+async function loadBillingProductivityScheduleDocs(startYmd, endYmd, fieldMask) {
+    if (!startYmd || !endYmd) return [];
+    return firestoreRunQuery({
+        from: [{ collectionId: 'tbl_schedule' }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    { fieldFilter: { field: { fieldPath: 'purpose_id' }, op: 'EQUAL', value: { integerValue: BILLING_PURPOSE_ID } } },
+                    { fieldFilter: { field: { fieldPath: 'task_datetime' }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: `${startYmd} 00:00:00` } } },
+                    { fieldFilter: { field: { fieldPath: 'task_datetime' }, op: 'LESS_THAN', value: { stringValue: `${endYmd} 00:00:00` } } }
+                ]
+            }
+        },
+        select: { fields: fieldMask.map((fieldPath) => ({ fieldPath })) }
+    }).catch(() => []);
+}
+
 async function loadCache(
     forceRefresh = false,
     billingPages = DEFAULT_BILLING_MAX_PAGES,
@@ -413,11 +432,17 @@ async function loadCache(
         'task_datetime',
         'invoice_num',
         'serial',
+        'assigned',
+        'assigned_to',
+        'assigned_to_id',
+        'assigned_staff_name',
+        'schedule_assigned_staff_name',
+        'schedule_assigned_staff_id',
+        'field_billing_received_by',
         'meter_reading',
         'field_previous_meter',
         'field_present_meter',
         'field_total_consumed',
-        'field_billing_received_by',
         'field_billing_date',
         'field_billing_time'
     ];
@@ -440,7 +465,7 @@ async function loadCache(
     const machineReadingWindowStart = machineReadingStartKey ? monthWindowStart(machineReadingStartKey) : '';
     const machineReadingWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, productivityBillingDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, productivityBillingDocs, productivityScheduleDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
@@ -480,6 +505,7 @@ async function loadCache(
             })
             : firestoreGetAll('tbl_billing', { fieldMask: billingFieldMask, maxPages: nextBillingPages }),
         loadBillingProductivityDocs(productivityStartYmd, productivityEndYmd, billingFieldMask),
+        loadBillingProductivityScheduleDocs(productivityStartYmd, productivityEndYmd, scheduleFieldMask),
         billingMonthKeys.length
             ? Promise.all([
                 firestoreRunQuery({
@@ -736,6 +762,7 @@ async function loadCache(
 
     cache.billingDocs = billingDocs;
     cache.productivityBillingDocs = productivityBillingDocs;
+    cache.productivityScheduleDocs = productivityScheduleDocs;
     cache.scheduleDocs = scheduleDocs;
     cache.machineReadingDocs = machineReadingDocs;
     cache.billingPages = nextBillingPages;
@@ -1409,6 +1436,46 @@ function getBillingDocMonthKey(fields) {
     return printedDate ? monthKeyFromYearMonth(printedDate.getFullYear(), printedDate.getMonth() + 1) : '';
 }
 
+function invoiceKeyFromFields(fields) {
+    return String(getField(fields, ['invoice_no', 'invoiceno', 'invoice_num', 'invoice_id', 'invoiceid', 'id']) || '').trim();
+}
+
+function buildBillingInvoiceLookup(docs = []) {
+    const lookup = new Map();
+    docs.forEach((doc) => {
+        const fields = doc.fields || {};
+        const key = invoiceKeyFromFields(fields);
+        if (!key || lookup.has(key)) return;
+        lookup.set(key, doc);
+    });
+    return lookup;
+}
+
+function getScheduleStaff(cache, fields) {
+    const staffId = String(getField(fields, ['schedule_assigned_staff_id', 'assigned_to_id']) || '').trim();
+    const explicitName = String(getField(fields, ['schedule_assigned_staff_name', 'assigned_staff_name', 'assigned_to', 'assigned', 'field_billing_received_by']) || '').trim();
+    const employee = staffId ? cache.employeeMap?.[staffId] : null;
+    return {
+        id: staffId || (explicitName ? `name:${explicitName.toLowerCase()}` : 'scheduled'),
+        name: employee?.name || explicitName || 'Scheduled billing',
+        role: employee?.role || ''
+    };
+}
+
+function getScheduleInvoiceNo(fields, doc = null) {
+    const explicit = String(getField(fields, ['invoice_num', 'invoice_no', 'invoiceno', 'invoice_number']) || '').trim();
+    if (explicit) return explicit;
+    const docId = String(doc?.name || '').split('/').pop() || '';
+    const match = docId.match(/billing_invoice_(\d+)_/);
+    return match ? match[1] : '';
+}
+
+function getScheduleBillingMonthKey(fields, doc = null) {
+    const docId = String(doc?.name || '').split('/').pop() || '';
+    const match = docId.match(/billing_invoice_\d+_(\d{4}-\d{2})_/);
+    return match ? match[1] : (extractScheduleMonthKey(fields) || '');
+}
+
 function buildBillingProductivityReport(cache, months, monthTotals) {
     const todayYmd = ymdInManila(new Date());
     const sinceYmd = shiftYmdManila(todayYmd, -1) || todayYmd;
@@ -1423,6 +1490,8 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     const todayByMonth = new Map();
     const sinceByMonth = new Map();
     const todayInvoices = [];
+    const todayInvoiceKeys = new Set();
+    const billingByInvoice = buildBillingInvoiceLookup([...(cache.billingDocs || []), ...(cache.productivityBillingDocs || [])]);
 
     const addStaff = (target, staff, amount) => {
         if (!target.has(staff.id)) {
@@ -1482,6 +1551,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
 
         addStaff(todayByStaff, staff, amount);
         addMonth(todayByMonth, monthKey, amount);
+        if (invoiceNo) todayInvoiceKeys.add(invoiceNo);
         todayInvoices.push({
             doc_id: String(doc.name || '').split('/').pop() || '',
             invoice_no: invoiceNo,
@@ -1492,6 +1562,47 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             month_label: monthLabelFromKey(monthKey),
             company_name: companyName || 'Unknown',
             branch_name: branchName || 'Main',
+            amount_total: roundCurrency(amount)
+        });
+    });
+
+    const productivitySchedulesByName = new Map();
+    [...(cache.scheduleDocs || []), ...(cache.productivityScheduleDocs || [])].forEach((doc) => {
+        const name = String(doc?.name || '').trim();
+        if (name && !productivitySchedulesByName.has(name)) productivitySchedulesByName.set(name, doc);
+    });
+
+    productivitySchedulesByName.forEach((doc) => {
+        const fields = doc.fields || {};
+        const purposeId = Number(getField(fields, ['purpose_id']) || 0);
+        if (purposeId !== BILLING_PURPOSE_ID) return;
+        const taskDate = normalizeDateTime(getField(fields, ['task_datetime']));
+        if (ymdInManila(taskDate) !== todayYmd) return;
+        const invoiceNo = getScheduleInvoiceNo(fields, doc);
+        if (!invoiceNo || todayInvoiceKeys.has(invoiceNo)) return;
+
+        const billingDoc = billingByInvoice.get(invoiceNo);
+        const billingFields = billingDoc?.fields || {};
+        const amount = extractBillingAmount(billingFields);
+        const monthKey = getBillingDocMonthKey(billingFields) || getScheduleBillingMonthKey(fields, doc);
+        const staff = billingDoc ? getBillingStaff(cache, billingFields) : getScheduleStaff(cache, fields);
+        const branchId = String(getField(fields, ['branch_id']) || '').trim();
+        const branch = branchId ? cache.branchMap?.[branchId] : null;
+        const display = branch ? resolveBranchDisplay(cache, branch) : null;
+
+        todayInvoiceKeys.add(invoiceNo);
+        addStaff(todayByStaff, staff, amount);
+        addMonth(todayByMonth, monthKey, amount);
+        todayInvoices.push({
+            doc_id: String(doc.name || '').split('/').pop() || '',
+            invoice_no: invoiceNo,
+            printed_at: taskDate ? taskDate.toISOString() : new Date().toISOString(),
+            staff_id: staff.id,
+            staff_name: staff.name,
+            month_key: monthKey,
+            month_label: monthLabelFromKey(monthKey),
+            company_name: String(getField(billingFields, ['company_name']) || display?.companyName || '').trim() || 'Unknown',
+            branch_name: String(getField(billingFields, ['branch_name']) || display?.branchName || '').trim() || 'Main',
             amount_total: roundCurrency(amount)
         });
     });
@@ -2462,6 +2573,7 @@ exports.handler = async (event) => {
                 billing_docs_scanned: cache.billingDocs.length,
                 productivity_report_version: PRODUCTIVITY_REPORT_VERSION,
                 billing_productivity_docs_scanned: cache.productivityBillingDocs.length,
+                billing_productivity_schedule_docs_scanned: cache.productivityScheduleDocs.length,
                 schedule_docs_scanned: cache.scheduleDocs.length,
                 machine_reading_docs_scanned: cache.machineReadingDocs.length
             },
