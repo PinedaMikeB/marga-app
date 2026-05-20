@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import http from 'node:http';
 import crypto from 'node:crypto';
+import tls from 'node:tls';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +16,11 @@ const platformRequire = createRequire('/Volumes/Wotg Drive Mike/GitHub/marga-pla
 const { Pool } = platformRequire('pg');
 const DATABASE_URL = process.env.MARGABASE_DATABASE_URL || 'postgresql://margabase_admin@127.0.0.1:5432/margabase';
 const SESSION_SECRET = process.env.MARGA_SESSION_SECRET || 'marga-local-session-secret-change-me';
+const CARE_SMTP_HOST = process.env.MARGA_CARE_SMTP_HOST || 'smtp.hostinger.com';
+const CARE_SMTP_PORT = Number(process.env.MARGA_CARE_SMTP_PORT || 465);
+const CARE_SMTP_USER = process.env.MARGA_CARE_SMTP_USER || 'solutions@marga.biz';
+const CARE_SMTP_FROM = process.env.MARGA_CARE_SMTP_FROM || CARE_SMTP_USER;
+const CARE_SMTP_PASSWORD = process.env.MARGA_CARE_SMTP_PASSWORD || process.env.HOSTINGER_SMTP_PASSWORD || '';
 const pool = new Pool({ connectionString: DATABASE_URL });
 const loginAttempts = new Map();
 
@@ -945,6 +951,99 @@ function credentialEmail(account, password = '######') {
   };
 }
 
+function smtpEscape(value) {
+  return String(value || '').replace(/\r?\n/g, '\r\n');
+}
+
+function mailAddress(value) {
+  return String(value || '').trim().replace(/[<>\r\n]/g, '');
+}
+
+function smtpSendCommand(socket, command, expectedCodes) {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    const expected = new Set(expectedCodes);
+    const cleanup = () => {
+      socket.off('data', onData);
+      socket.off('error', onError);
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onData = (chunk) => {
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split(/\r?\n/).filter(Boolean);
+      const last = lines[lines.length - 1] || '';
+      if (!/^\d{3} /.test(last)) return;
+      const code = Number(last.slice(0, 3));
+      cleanup();
+      if (expected.has(code)) resolve(buffer);
+      else reject(new Error(`SMTP ${code}: ${buffer.trim()}`));
+    };
+    socket.on('data', onData);
+    socket.on('error', onError);
+    if (command) socket.write(`${command}\r\n`);
+  });
+}
+
+async function sendHostingerEmail(message) {
+  if (!CARE_SMTP_PASSWORD) {
+    return {
+      sent: false,
+      needsHostingerSmtp: true,
+      message: 'Hostinger SMTP password is not configured. Set MARGA_CARE_SMTP_PASSWORD on the server.'
+    };
+  }
+
+  const from = mailAddress(CARE_SMTP_FROM);
+  const to = mailAddress(message.to);
+  if (!to) {
+    const error = new Error('Target email is required before sending credentials.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const socket = tls.connect({
+    host: CARE_SMTP_HOST,
+    port: CARE_SMTP_PORT,
+    servername: CARE_SMTP_HOST,
+    timeout: 15000
+  });
+
+  await new Promise((resolve, reject) => {
+    socket.once('secureConnect', resolve);
+    socket.once('timeout', () => reject(new Error('SMTP connection timed out.')));
+    socket.once('error', reject);
+  });
+
+  try {
+    await smtpSendCommand(socket, '', [220]);
+    await smtpSendCommand(socket, `EHLO ${CARE_SMTP_HOST}`, [250]);
+    await smtpSendCommand(socket, 'AUTH LOGIN', [334]);
+    await smtpSendCommand(socket, Buffer.from(CARE_SMTP_USER).toString('base64'), [334]);
+    await smtpSendCommand(socket, Buffer.from(CARE_SMTP_PASSWORD).toString('base64'), [235]);
+    await smtpSendCommand(socket, `MAIL FROM:<${from}>`, [250]);
+    await smtpSendCommand(socket, `RCPT TO:<${to}>`, [250, 251]);
+    await smtpSendCommand(socket, 'DATA', [354]);
+    const payload = [
+      `From: Marga Care <${from}>`,
+      `To: ${to}`,
+      `Subject: ${smtpEscape(message.subject)}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      smtpEscape(message.body),
+      '.'
+    ].join('\r\n');
+    await smtpSendCommand(socket, payload, [250]);
+    await smtpSendCommand(socket, 'QUIT', [221]);
+    return { sent: true, needsHostingerSmtp: false, message: 'Credential email sent.' };
+  } finally {
+    socket.destroy();
+  }
+}
+
 async function emailCredentialPreview(user, accountId, body, req) {
   requireInternalUser(user);
   const { rows } = await pool.query(
@@ -959,12 +1058,38 @@ async function emailCredentialPreview(user, accountId, body, req) {
     error.statusCode = 404;
     throw error;
   }
-  const preview = credentialEmail(rows[0], cleanText(body.password) || 'recent generated password');
-  await auditLog({ userId: user.id, action: 'marga_care_credential_email_previewed', entityType: 'portal_account', entityId: String(accountId), req });
-  return {
+  const passwordText = cleanText(body.password);
+  if (body.send === true && !passwordText) {
+    const error = new Error('Generate a fresh password first, then send the credential email.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const preview = credentialEmail(rows[0], passwordText || 'recent generated password');
+  const delivery = body.send === true ? await sendHostingerEmail(preview) : {
     sent: false,
-    needsHostingerSmtp: true,
-    message: 'Email preview is ready. Real sending needs Hostinger SMTP settings.',
+    needsHostingerSmtp: !CARE_SMTP_PASSWORD,
+    message: CARE_SMTP_PASSWORD ? 'Email preview is ready.' : 'Email preview is ready. Real sending needs MARGA_CARE_SMTP_PASSWORD.'
+  };
+  if (delivery.sent) {
+    await pool.query(
+      `update marga.portal_accounts
+       set last_credentials_sent_at = now(),
+           credential_delivery_email = $2,
+           updated_at = now()
+       where id = $1`,
+      [Number(accountId), preview.to]
+    );
+  }
+  await auditLog({
+    userId: user.id,
+    action: delivery.sent ? 'marga_care_credential_email_sent' : 'marga_care_credential_email_previewed',
+    entityType: 'portal_account',
+    entityId: String(accountId),
+    req,
+    metadata: { to: preview.to, sent: delivery.sent }
+  });
+  return {
+    ...delivery,
     preview
   };
 }

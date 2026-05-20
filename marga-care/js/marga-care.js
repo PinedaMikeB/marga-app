@@ -185,7 +185,8 @@
                     <button type="button" class="btn btn-primary" id="saveProfileBtn">Save Profile</button>
                     <button type="button" class="btn btn-secondary" id="createRepBtn">Create/Update Representative + 6-Digit Password</button>
                     ${representativeAccount ? `<button type="button" class="btn btn-secondary" id="generatePasswordBtn" data-account-id="${representativeAccount.id}">Generate New Password</button>` : ''}
-                    ${representativeAccount ? `<button type="button" class="btn btn-secondary" id="emailPreviewBtn" data-account-id="${representativeAccount.id}">Email Credential Preview</button>` : ''}
+                    ${representativeAccount ? `<button type="button" class="btn btn-secondary" id="emailPreviewBtn" data-account-id="${representativeAccount.id}">Preview Credential Email</button>` : ''}
+                    ${representativeAccount ? `<button type="button" class="btn btn-primary" id="sendEmailBtn" data-account-id="${representativeAccount.id}">Send Credential Email</button>` : ''}
                 </div>
 
                 <div id="credentialOutput"></div>
@@ -205,6 +206,7 @@
         document.getElementById('createRepBtn')?.addEventListener('click', createRepresentative);
         document.getElementById('generatePasswordBtn')?.addEventListener('click', generatePassword);
         document.getElementById('emailPreviewBtn')?.addEventListener('click', emailPreview);
+        document.getElementById('sendEmailBtn')?.addEventListener('click', sendEmail);
     }
 
     function renderAccounts(accounts) {
@@ -293,11 +295,19 @@
     }
 
     async function emailPreview(event) {
+        return emailCredential(event, false);
+    }
+
+    async function sendEmail(event) {
+        return emailCredential(event, true);
+    }
+
+    async function emailCredential(event, send) {
         try {
             const accountId = event.currentTarget.dataset.accountId;
             const data = await api(`/portal-api/admin/care/accounts/${accountId}/email-preview`, {
                 method: 'POST',
-                body: JSON.stringify({ password: state.lastPassword })
+                body: JSON.stringify({ password: state.lastPassword, send })
             });
             showCredentialOutput(`
                 <div class="care-email-preview">
@@ -315,7 +325,7 @@
             <div class="care-password-output">
                 <div class="care-account-meta">${escapeHtml(account.login)} temporary password</div>
                 <div class="care-password-code">${escapeHtml(password)}</div>
-                <div class="care-account-meta">This password is visible only now. Use Email Credential Preview before leaving this company.</div>
+                <div class="care-account-meta">This password is visible only now. Preview or send the credential email before leaving this company.</div>
             </div>
         `);
     }
