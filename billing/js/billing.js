@@ -151,14 +151,24 @@ function getPayloadSearchTerm(payload) {
 function textMatchesSearch(searchTerm, values = []) {
     const needle = String(searchTerm || '').trim().toLowerCase();
     if (!needle) return true;
-    const haystack = values
+    const textValues = values
         .filter(Boolean)
+        .map((value) => String(value || '').toLowerCase());
+    const haystack = textValues
         .join(' ')
         .toLowerCase();
-    if (haystack.includes(needle)) return true;
     const compactNeedle = needle.replace(/[^a-z0-9]/g, '');
     if (!compactNeedle) return false;
-    return haystack.replace(/[^a-z0-9]/g, '').includes(compactNeedle);
+    if (compactNeedle.length <= 3) {
+        return textValues
+            .flatMap((value) => value.split(/[^a-z0-9]+/g))
+            .filter(Boolean)
+            .some((token) => token.startsWith(compactNeedle));
+    }
+    if (haystack.includes(needle)) return true;
+    return textValues
+        .map((value) => value.replace(/[^a-z0-9]/g, ''))
+        .some((value) => value.includes(compactNeedle));
 }
 
 function restoreMatrixSortValue() {
