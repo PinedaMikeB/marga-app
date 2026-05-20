@@ -5,6 +5,8 @@ const BASE_URL = process.env.FIRESTORE_BASE_URL || 'https://firestore.googleapis
 const PASSWORD_SEED = process.env.MARGA_CARE_PASSWORD_SEED || process.env.OPENCLAW_API_KEY || MARGABASE_API_KEY || 'marga-care-onboarding';
 const DEFAULT_PAGE_SIZE = Number(process.env.MARGA_CARE_PAGE_SIZE || 300);
 const OVERRIDE_COLLECTION = 'marga_care_onboarding_overrides';
+const PORTAL_ACCOUNTS_COLLECTION = 'marga_care_portal_accounts';
+const PORTAL_ACCESS_COLLECTION = 'marga_care_portal_access';
 
 function toJson(statusCode, body) {
     return {
@@ -75,6 +77,39 @@ function passwordFor(scope, id) {
     return String(100000 + numeric);
 }
 
+function randomId(prefix, seed) {
+    return `${prefix}_${crypto.createHash('sha1').update(String(seed || '')).digest('hex')}`;
+}
+
+function argon2idHash(password) {
+    if (typeof crypto.argon2Sync !== 'function') {
+        const error = new Error('Argon2id hashing is not available in this Node runtime. Use Node 25+ for Marga Care credential writes.');
+        error.statusCode = 500;
+        throw error;
+    }
+    const salt = crypto.randomBytes(16);
+    const params = {
+        memory: Number(process.env.MARGA_CARE_ARGON2_MEMORY || 65536),
+        passes: Number(process.env.MARGA_CARE_ARGON2_PASSES || 3),
+        parallelism: Number(process.env.MARGA_CARE_ARGON2_PARALLELISM || 1),
+        tagLength: Number(process.env.MARGA_CARE_ARGON2_TAG_LENGTH || 32)
+    };
+    const hash = crypto.argon2Sync('argon2id', {
+        message: String(password || ''),
+        nonce: salt,
+        ...params
+    });
+    return {
+        password_hash: hash.toString('base64'),
+        password_salt: salt.toString('base64'),
+        password_algorithm: 'argon2id',
+        password_memory: params.memory,
+        password_passes: params.passes,
+        password_parallelism: params.parallelism,
+        password_tag_length: params.tagLength
+    };
+}
+
 async function firestoreGet(collection, options = {}) {
     const params = new URLSearchParams();
     params.set('pageSize', String(options.pageSize || DEFAULT_PAGE_SIZE));
@@ -115,6 +150,71 @@ async function firestorePatch(collection, docId, fields) {
         throw new Error(payload?.error?.message || `Failed to save ${collection}: ${response.status}`);
     }
     return response.json();
+}
+
+async function upsertPortalAccount(account) {
+    const now = new Date().toISOString();
+    const docId = clean(account.account_id);
+    if (!docId) return null;
+    await firestorePatch(PORTAL_ACCOUNTS_COLLECTION, docId, {
+        account_id: docId,
+        login: clean(account.login).toLowerCase(),
+        display_name: clean(account.display_name),
+        phone: clean(account.phone),
+        role: clean(account.role),
+        status: clean(account.status || 'Preparing'),
+        company_id: clean(account.company_id),
+        branch_id: clean(account.branch_id),
+        customer_id: clean(account.customer_id),
+        machine_id: clean(account.machine_id),
+        serial_number: clean(account.serial_number),
+        credential_delivery_email: clean(account.credential_delivery_email).toLowerCase(),
+        password_hash: clean(account.password_hash),
+        password_salt: clean(account.password_salt),
+        password_algorithm: clean(account.password_algorithm),
+        password_memory: Number(account.password_memory || 0),
+        password_passes: Number(account.password_passes || 0),
+        password_parallelism: Number(account.password_parallelism || 0),
+        password_tag_length: Number(account.password_tag_length || 0),
+        must_change_password: true,
+        active: account.active !== false,
+        updated_at: now,
+        last_password_generated_at: now,
+        last_plain_password_visible: false
+    });
+    return docId;
+}
+
+async function upsertPortalAccess(access) {
+    const now = new Date().toISOString();
+    const accountId = clean(access.account_id);
+    if (!accountId) return null;
+    const docId = randomId('access', [
+        accountId,
+        access.access_scope,
+        access.company_id,
+        access.branch_id,
+        access.customer_id,
+        access.machine_id,
+        access.serial_number
+    ].join(':'));
+    await firestorePatch(PORTAL_ACCESS_COLLECTION, docId, {
+        access_id: docId,
+        account_id: accountId,
+        access_scope: clean(access.access_scope),
+        company_id: clean(access.company_id),
+        branch_id: clean(access.branch_id),
+        customer_id: clean(access.customer_id),
+        machine_id: clean(access.machine_id),
+        serial_number: clean(access.serial_number),
+        can_view_billing: access.can_view_billing !== false,
+        can_request_service: access.can_request_service !== false,
+        can_request_toner: access.can_request_toner !== false,
+        can_manage_branch_credentials: Boolean(access.can_manage_branch_credentials),
+        active: access.active !== false,
+        updated_at: now
+    });
+    return docId;
 }
 
 function buildMap(docs, idKeys = ['id']) {
@@ -383,6 +483,100 @@ function mergeOverride(row, override) {
     return merged;
 }
 
+async function rowAfterPatch(rowId, patch) {
+    const result = await buildCareRows();
+    const overrides = await loadOverrides();
+    const baseRow = result.rows.find((row) => String(row.row_id) === String(rowId));
+    if (!baseRow) return null;
+    return mergeOverride(baseRow, {
+        ...(overrides.get(rowId) || {}),
+        ...(patch || {})
+    });
+}
+
+async function syncPortalAccessForRow(row) {
+    if (!row) return { accounts: [], access: [] };
+    const status = clean(row.status || 'Preparing');
+    const accounts = [];
+    const access = [];
+    const companyId = clean(row.company_id);
+    const branchId = clean(row.branch_id);
+    const customerId = clean(row.customer_id || row.company_id);
+    const machineId = clean(row.machine_id);
+    const serialNumber = clean(row.serial_number);
+
+    if (isValidEmail(row.email) && clean(row.admin_password)) {
+        const accountId = randomId('admin', companyId);
+        const hash = argon2idHash(row.admin_password);
+        accounts.push(await upsertPortalAccount({
+            account_id: accountId,
+            login: row.email,
+            display_name: row.main_contact || row.company_name,
+            phone: '',
+            role: 'company_admin',
+            status,
+            company_id: companyId,
+            branch_id: '',
+            customer_id: customerId,
+            machine_id: '',
+            serial_number: '',
+            credential_delivery_email: row.email,
+            ...hash
+        }));
+        access.push(await upsertPortalAccess({
+            account_id: accountId,
+            access_scope: 'company',
+            company_id: companyId,
+            branch_id: '',
+            customer_id: customerId,
+            machine_id: '',
+            serial_number: '',
+            can_view_billing: true,
+            can_request_service: true,
+            can_request_toner: true,
+            can_manage_branch_credentials: true
+        }));
+    }
+
+    if (serialNumber && serialNumber.toLowerCase() !== 'n/a' && clean(row.branch_password)) {
+        const accountId = randomId('branch', `${companyId}:${branchId}:${machineId}:${serialNumber}`);
+        const hash = argon2idHash(row.branch_password);
+        accounts.push(await upsertPortalAccount({
+            account_id: accountId,
+            login: serialNumber,
+            display_name: row.branch_contact || row.branch_department || row.company_name,
+            phone: row.branch_phone || '',
+            role: 'branch_user',
+            status,
+            company_id: companyId,
+            branch_id: branchId,
+            customer_id: customerId,
+            machine_id: machineId,
+            serial_number: serialNumber,
+            credential_delivery_email: row.email,
+            ...hash
+        }));
+        access.push(await upsertPortalAccess({
+            account_id: accountId,
+            access_scope: 'machine',
+            company_id: companyId,
+            branch_id: branchId,
+            customer_id: customerId,
+            machine_id: machineId,
+            serial_number: serialNumber,
+            can_view_billing: false,
+            can_request_service: true,
+            can_request_toner: true,
+            can_manage_branch_credentials: false
+        }));
+    }
+
+    return {
+        accounts: accounts.filter(Boolean),
+        access: access.filter(Boolean)
+    };
+}
+
 async function saveOverride(event) {
     const body = JSON.parse(event.body || '{}');
     const rowId = clean(body.row_id);
@@ -404,7 +598,8 @@ async function saveOverride(event) {
     if (body.email_approved !== undefined) patch.email_approved = Boolean(body.email_approved);
     if (body.email_sent_at !== undefined) patch.email_sent_at = clean(body.email_sent_at);
     await firestorePatch(OVERRIDE_COLLECTION, docIdForRow(rowId), patch);
-    return toJson(200, { ok: true, override: patch });
+    const synced = await syncPortalAccessForRow(await rowAfterPatch(rowId, patch));
+    return toJson(200, { ok: true, override: patch, portal: synced });
 }
 
 exports.handler = async (event) => {
