@@ -149,6 +149,16 @@ function billingType({ hasActiveGroup, activeBranchCount, departmentName }) {
     };
 }
 
+function typeLabel(typeCode) {
+    return typeCode === 'group' ? 'Group Machine' : 'Individual Machine';
+}
+
+function typeReason(typeCode, fallback = '') {
+    if (typeCode === 'group') return 'One invoice covering multiple branches / machines';
+    if (typeCode === 'individual') return 'Single company, branch, or department account billed separately';
+    return fallback || '';
+}
+
 function archivedBranchName(name) {
     const value = clean(name).toLowerCase();
     return value.startsWith('~xx') || value.startsWith('xx ') || value.includes('pull-out');
@@ -330,7 +340,7 @@ async function buildCareRows() {
 async function loadOverrides() {
     const docs = await firestoreGetAll(OVERRIDE_COLLECTION, {
         fieldMask: [
-            'row_id', 'status', 'main_contact', 'email', 'branch_contact',
+            'row_id', 'status', 'type_code', 'main_contact', 'email', 'branch_contact',
             'admin_password', 'branch_password', 'updated_at', 'updated_by',
             'email_approved', 'email_sent_at'
         ],
@@ -343,6 +353,7 @@ async function loadOverrides() {
         if (!rowId) return;
         map.set(rowId, {
             status: clean(getField(f, ['status'])),
+            type_code: clean(getField(f, ['type_code'])),
             main_contact: clean(getField(f, ['main_contact'])),
             email: clean(getField(f, ['email'])),
             branch_contact: clean(getField(f, ['branch_contact'])),
@@ -360,9 +371,13 @@ async function loadOverrides() {
 function mergeOverride(row, override) {
     if (!override) return row;
     const merged = { ...row };
-    ['status', 'main_contact', 'email', 'branch_contact', 'admin_password', 'branch_password', 'email_approved', 'email_sent_at'].forEach((key) => {
+    ['status', 'main_contact', 'email', 'branch_contact', 'admin_password', 'branch_password', 'type_code', 'email_approved', 'email_sent_at'].forEach((key) => {
         if (override[key] !== undefined && override[key] !== null && override[key] !== '') merged[key] = override[key];
     });
+    if (override.type_code) {
+        merged.type = typeLabel(override.type_code);
+        merged.classification_reason = typeReason(override.type_code, merged.classification_reason);
+    }
     merged.updated_at = override.updated_at || row.updated_at || '';
     merged.updated_by = override.updated_by || row.updated_by || '';
     return merged;
@@ -378,9 +393,10 @@ async function saveOverride(event) {
         updated_at: new Date().toISOString(),
         updated_by: clean(body.updated_by || body.user || 'Marga Staff')
     };
-    ['main_contact', 'email', 'branch_contact', 'admin_password', 'branch_password'].forEach((key) => {
+    ['main_contact', 'email', 'branch_contact', 'admin_password', 'branch_password', 'type_code'].forEach((key) => {
         if (body[key] !== undefined) patch[key] = clean(body[key]);
     });
+    if (patch.type_code && !['group', 'individual'].includes(patch.type_code)) patch.type_code = 'individual';
     if (body.status !== undefined) {
         const status = clean(body.status);
         patch.status = allowedStatuses.has(status) ? status : 'Preparing';

@@ -146,25 +146,6 @@
         </header>
 
         <div class="dashboard-content care-content">
-            <section class="care-stats">
-                <article class="care-stat">
-                    <span>Portal Companies</span>
-                    <strong id="statCompanies">0</strong>
-                </article>
-                <article class="care-stat">
-                    <span>Representative Logins</span>
-                    <strong id="statRepresentatives">0</strong>
-                </article>
-                <article class="care-stat">
-                    <span>Group Machine Rows</span>
-                    <strong id="statGroupMachines">0</strong>
-                </article>
-                <article class="care-stat">
-                    <span>Individual Machine Rows</span>
-                    <strong id="statIndividualMachines">0</strong>
-                </article>
-            </section>
-
             <section class="care-workbook">
                 <div class="care-companies-panel care-toolbar-card">
                     <div class="care-panel-heading">
@@ -183,15 +164,18 @@
                         </div>
                     </div>
                     <div class="care-workbook-note">
-                        Passwords are generated now and stay stable for review. Staff should confirm emails before using the send flow tomorrow.
+                        Rows come from active Margabase customer, branch, billing contact, contract, department, grouping, and machine records. Company, branch, and serial stay read-only; staff can edit contact details, email, passwords, type, and onboarding status.
                     </div>
-                    <div class="care-template-panel">
+                    <div class="care-template-panel is-collapsed" id="templatePanel">
                         <div class="care-template-heading">
                             <div>
                                 <h3>Standard Onboarding Email Template</h3>
-                                <p>Review and approve this copy before staff starts sending customer credentials.</p>
+                                <p>Collapsed by default to keep the customer list large. Open only when reviewing copy.</p>
                             </div>
-                            <button type="button" class="btn btn-secondary btn-sm" id="copyTemplateBtn">Copy Template</button>
+                            <div class="care-template-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" id="toggleTemplateBtn">Show Template</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="copyTemplateBtn">Copy Template</button>
+                            </div>
                         </div>
                         <textarea id="emailTemplateText" class="care-template-text" rows="12" readonly></textarea>
                     </div>
@@ -237,6 +221,6 @@
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/offline-sync.js"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/marga-care.js?v=20260520-actions-1"></script>
+    <script src="js/marga-care.js?v=20260520-workbook-1"></script>
 </body>
 </html>

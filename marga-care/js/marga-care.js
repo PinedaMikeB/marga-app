@@ -60,6 +60,7 @@
         document.getElementById('refreshCareBtn')?.addEventListener('click', loadCareRows);
         document.getElementById('companySearch')?.addEventListener('input', debounce(renderRows, 160));
         document.getElementById('typeFilter')?.addEventListener('change', renderRows);
+        document.getElementById('toggleTemplateBtn')?.addEventListener('click', toggleTemplate);
         document.getElementById('copyTemplateBtn')?.addEventListener('click', copyTemplate);
         document.getElementById('closePreviewBtn')?.addEventListener('click', () => {
             document.getElementById('emailPreviewPanel').hidden = true;
@@ -90,7 +91,6 @@
             state.summary = data.summary || {};
             state.generatedAt = data.generated_at || '';
             setBackendStatus('online', 'Backend + database connected');
-            renderStats();
             renderRows();
         } catch (error) {
             if (state.apiBase === '/api/marga-care') {
@@ -101,14 +101,6 @@
             tbody.innerHTML = `<tr><td colspan="11"><div class="care-alert">${escapeHtml(error.message || 'Unable to load Marga Care rows.')}</div></td></tr>`;
             document.getElementById('companyListMeta').textContent = 'Unable to load active clients';
         }
-    }
-
-    function renderStats() {
-        const summary = state.summary || {};
-        document.getElementById('statCompanies').textContent = formatNumber(summary.portal_companies || 0);
-        document.getElementById('statRepresentatives').textContent = formatNumber(summary.representative_logins || 0);
-        document.getElementById('statGroupMachines').textContent = formatNumber(summary.group_machines || 0);
-        document.getElementById('statIndividualMachines').textContent = formatNumber(summary.individual_machines || 0);
     }
 
     function filteredRows() {
@@ -159,17 +151,20 @@
                 </td>
                 <td>${escapeHtml(row.serial_number || 'N/A')}</td>
                 <td>
-                    <span class="care-type-pill ${row.type_code === 'group' ? 'is-group' : 'is-individual'}">${escapeHtml(row.type)}</span>
+                    <select class="care-type-select ${row.type_code === 'group' ? 'is-group' : 'is-individual'}" data-row-id="${escapeAttr(row.row_id)}">
+                        <option value="group" ${row.type_code === 'group' ? 'selected' : ''}>Group Machine</option>
+                        <option value="individual" ${row.type_code === 'individual' ? 'selected' : ''}>Individual Machine</option>
+                    </select>
                     <span class="care-table-sub">${escapeHtml(row.classification_reason)}</span>
                 </td>
-                <td>${escapeHtml(row.main_contact || 'For confirmation')}</td>
-                <td class="${row.email ? '' : 'care-missing'}">${escapeHtml(row.email || 'Needs email')}</td>
-                <td><code>${escapeHtml(row.admin_password)}</code></td>
+                <td><input class="care-cell-input" data-field="main_contact" data-row-id="${escapeAttr(row.row_id)}" value="${escapeAttr(row.main_contact || '')}" placeholder="For confirmation"></td>
+                <td><input class="care-cell-input ${row.email ? '' : 'care-missing-input'}" data-field="email" data-row-id="${escapeAttr(row.row_id)}" value="${escapeAttr(row.email || '')}" placeholder="Needs email"></td>
+                <td><input class="care-cell-input is-password" data-field="admin_password" data-row-id="${escapeAttr(row.row_id)}" value="${escapeAttr(row.admin_password || '')}"></td>
                 <td>
-                    ${escapeHtml(row.branch_contact || 'For confirmation')}
+                    <input class="care-cell-input" data-field="branch_contact" data-row-id="${escapeAttr(row.row_id)}" value="${escapeAttr(row.branch_contact || '')}" placeholder="For confirmation">
                     ${row.branch_phone ? `<span class="care-table-sub">${escapeHtml(row.branch_phone)}</span>` : ''}
                 </td>
-                <td><code>${escapeHtml(row.branch_password)}</code></td>
+                <td><input class="care-cell-input is-password" data-field="branch_password" data-row-id="${escapeAttr(row.row_id)}" value="${escapeAttr(row.branch_password || '')}"></td>
                 <td>
                     <select class="care-status-select" data-row-id="${escapeAttr(row.row_id)}">
                         ${['Preparing', 'Onboarding', 'Connected'].map((status) => `<option value="${status}" ${row.status === status ? 'selected' : ''}>${status}</option>`).join('')}
@@ -181,6 +176,21 @@
         }).join('');
         tbody.querySelectorAll('.care-status-select').forEach((select) => {
             select.addEventListener('change', () => updateRowOverride(select.dataset.rowId, { status: select.value }, false));
+        });
+        tbody.querySelectorAll('.care-type-select').forEach((select) => {
+            select.addEventListener('change', () => {
+                const typeCode = select.value;
+                updateRowOverride(select.dataset.rowId, {
+                    type_code: typeCode,
+                    type: typeCode === 'group' ? 'Group Machine' : 'Individual Machine',
+                    classification_reason: typeCode === 'group'
+                        ? 'One invoice covering multiple branches / machines'
+                        : 'Single company, branch, or department account billed separately'
+                }, true);
+            });
+        });
+        tbody.querySelectorAll('.care-cell-input').forEach((input) => {
+            input.addEventListener('change', () => updateRowOverride(input.dataset.rowId, { [input.dataset.field]: input.value.trim() }, false));
         });
         tbody.querySelectorAll('[data-action]').forEach((button) => {
             button.addEventListener('click', () => handleAction(button.dataset.action, button.dataset.rowId));
@@ -273,6 +283,14 @@
     function renderTemplate() {
         const target = document.getElementById('emailTemplateText');
         if (target) target.value = state.template;
+    }
+
+    function toggleTemplate() {
+        const panel = document.getElementById('templatePanel');
+        const button = document.getElementById('toggleTemplateBtn');
+        if (!panel || !button) return;
+        const collapsed = panel.classList.toggle('is-collapsed');
+        button.textContent = collapsed ? 'Show Template' : 'Hide Template';
     }
 
     async function copyTemplate() {

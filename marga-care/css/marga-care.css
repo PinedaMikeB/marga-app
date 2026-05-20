@@ -48,44 +48,7 @@
 
 .care-content {
     display: grid;
-    gap: 1.25rem;
-}
-
-.care-stats {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1rem;
-}
-
-.care-stat,
-.care-companies-panel {
-    background: rgba(255, 255, 255, 0.86);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    box-shadow: 0 18px 50px rgba(30, 58, 95, 0.08);
-    backdrop-filter: blur(18px);
-}
-
-.care-stat {
-    min-height: 118px;
-    border-radius: 18px;
-    padding: 1.2rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.care-stat span {
-    color: #8090a9;
-    font-size: 0.82rem;
-    font-weight: 800;
-}
-
-.care-stat strong {
-    color: #0f172a;
-    font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
-    font-size: clamp(1.9rem, 4vw, 3rem);
-    letter-spacing: 0;
-    line-height: 1;
+    gap: 0.8rem;
 }
 
 .care-workbook {
@@ -94,6 +57,10 @@
 }
 
 .care-companies-panel {
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: 0 18px 50px rgba(30, 58, 95, 0.08);
+    backdrop-filter: blur(18px);
     border-radius: 22px;
     overflow: hidden;
 }
@@ -169,6 +136,13 @@
     border-bottom: 1px solid rgba(148, 163, 184, 0.14);
 }
 
+.care-template-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    justify-content: flex-end;
+}
+
 .care-template-heading h3 {
     color: #1f2430;
     font-size: 0.96rem;
@@ -199,9 +173,13 @@
     margin: 0;
 }
 
+.care-template-panel.is-collapsed .care-template-text {
+    display: none;
+}
+
 .care-table-wrap {
     overflow: auto;
-    max-height: calc(100vh - 560px);
+    max-height: calc(100vh - 355px);
     padding: 1.25rem;
 }
 
@@ -248,15 +226,30 @@
     font-weight: 900;
 }
 
-.care-table code {
-    display: inline-flex;
-    justify-content: center;
-    min-width: 74px;
+.care-cell-input {
+    width: 100%;
+    min-width: 150px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 10px;
-    padding: 0.32rem 0.5rem;
+    background: rgba(255, 255, 255, 0.88);
+    color: #1f2937;
+    font: 700 0.82rem/1.2 'Plus Jakarta Sans', sans-serif;
+    padding: 0.42rem 0.55rem;
+    outline: none;
+}
+
+.care-cell-input:focus {
+    border-color: rgba(153, 169, 223, 0.86);
+    box-shadow: 0 0 0 3px rgba(153, 169, 223, 0.14);
+}
+
+.care-cell-input.is-password {
+    display: inline-flex;
+    max-width: 95px;
     background: rgba(153, 169, 223, 0.16);
     font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
     letter-spacing: 0.06em;
+    font-weight: 900;
 }
 
 .care-table-sub {
@@ -265,7 +258,7 @@
     line-height: 1.35;
 }
 
-.care-type-pill,
+.care-type-select,
 .care-status {
     display: inline-flex;
     align-items: center;
@@ -276,12 +269,17 @@
     font-weight: 900;
 }
 
-.care-type-pill.is-group {
+.care-type-select {
+    border: 0;
+    outline: none;
+}
+
+.care-type-select.is-group {
     background: rgba(54, 130, 207, 0.13);
     color: #235b91;
 }
 
-.care-type-pill.is-individual {
+.care-type-select.is-individual {
     background: rgba(120, 201, 142, 0.16);
     color: #2e7550;
 }
@@ -293,6 +291,11 @@
 
 .care-status.is-missing,
 .care-missing {
+    color: #a31522;
+}
+
+.care-missing-input {
+    border-color: rgba(239, 68, 68, 0.26);
     color: #a31522;
 }
 
@@ -360,10 +363,6 @@
 }
 
 @media (max-width: 1180px) {
-    .care-stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .care-panel-heading {
         display: grid;
     }
@@ -374,10 +373,6 @@
 }
 
 @media (max-width: 720px) {
-    .care-stats {
-        grid-template-columns: 1fr;
-    }
-
     .care-table-wrap {
         padding: 0.85rem;
         max-height: none;
