@@ -4,6 +4,7 @@
     const UPDATE_DISMISSED_KEY = 'marga_pwa_update_notice_dismissed_cache';
     const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
     let updateReloading = false;
+    let pendingUpdateWorker = null;
     let updateNoticeDismissedThisSession = false;
 
     if ('serviceWorker' in navigator) {
@@ -270,7 +271,7 @@
 
             worker.addEventListener('statechange', () => {
                 if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-                    worker.postMessage({ type: 'MARGA_SKIP_WAITING' });
+                    pendingUpdateWorker = worker;
                     showUpdateNotice();
                 }
             });
@@ -320,6 +321,10 @@
             notice.remove();
         });
         notice.querySelector('#margaUpdateRefresh').addEventListener('click', () => {
+            if (pendingUpdateWorker) {
+                pendingUpdateWorker.postMessage({ type: 'MARGA_SKIP_WAITING' });
+                return;
+            }
             window.location.reload();
         });
     }

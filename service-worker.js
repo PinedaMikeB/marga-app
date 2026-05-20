@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v70-update-dismiss';
+const CACHE_NAME = 'marga-app-shell-v71-field-modal-draft-persist';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -33,7 +33,7 @@ const SHELL_ASSETS = [
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',
-    '/field/js/field.js?v=20260520-field-invoice-auto-add-1',
+    '/field/js/field.js?v=20260520-modal-draft-persist-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
@@ -70,7 +70,7 @@ const SHELL_ASSETS = [
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
     '/shared/js/offline-sync.js?v=20260516-field-permissions-3',
-    '/shared/js/pwa-install.js?v=20260520-update-dismiss-1'
+    '/shared/js/pwa-install.js?v=20260520-update-waits-1'
 ];
 
 self.addEventListener('install', (event) => {
@@ -87,7 +87,6 @@ self.addEventListener('install', (event) => {
             );
         })
     );
-    self.skipWaiting();
 });
 
 self.addEventListener('message', (event) => {

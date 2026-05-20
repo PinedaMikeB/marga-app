@@ -69,6 +69,56 @@ const FIELD_CALL_ALLOW_PUBLIC_FALLBACK = false;
 const FIELD_CALL_POLL_MS = 7000;
 const FIELD_CALL_RING_TIMEOUT_MS = 120000;
 const FIELD_CALL_SCRIPT_TIMEOUT_MS = 4500;
+const FIELD_MODAL_DRAFT_KEY_PREFIX = 'marga_field_modal_draft_v1';
+const FIELD_MODAL_DRAFT_INPUT_IDS = [
+    'fieldCloseNotes',
+    'fieldSolutionNotes',
+    'fieldWorkMachineStatus',
+    'fieldClosePin',
+    'fieldSerialInput',
+    'fieldSerialMissingCheck',
+    'fieldMissingSerialInput',
+    'fieldPartInput',
+    'fieldPartQty',
+    'fieldDeliveryDetails',
+    'fieldEmptyPickupDetails',
+    'fieldDeliveryPreviousMeter',
+    'fieldDeliveryPresentMeter',
+    'fieldCustomerSigner',
+    'fieldCustomerContact',
+    'fieldFinalSummary',
+    'fieldBillingReceivedBy',
+    'fieldBillingDate',
+    'fieldBillingTime',
+    'fieldCollectionInvoiceSearch',
+    'fieldCollectionCheckNumber',
+    'fieldCollectionCheckBank',
+    'fieldCollectionCheckDate',
+    'fieldCollectionCheckAmount',
+    'fieldCollectionAmount',
+    'fieldCollectionPaymentDate',
+    'fieldCollectionDepositDate',
+    'fieldCollectionOrNumber',
+    'fieldCollectionPaymentType',
+    'fieldCollectionPaymentStatus',
+    'fieldCollectionDeductionType',
+    'fieldCollectionDeductionAmount',
+    'fieldCollection2307Status',
+    'fieldCollectionPaymentRemarks',
+    'fieldPreviousMeter',
+    'fieldPresentMeter',
+    'fieldMaintenancePreviousMeter',
+    'fieldMaintenancePresentMeter',
+    'fieldTimeIn',
+    'fieldTimeOut'
+];
+const FIELD_MODAL_DRAFT_FILE_IDS = [
+    'fieldBeforePhoto',
+    'fieldAfterPhoto',
+    'fieldCollectionVoucherImage',
+    'fieldCollectionCheckImage',
+    'fieldLocationPhoto'
+];
 
 const FALLBACK_MACHINE_STATUSES = [
     { id: 1, label: 'Running / Print OK' },
@@ -131,6 +181,9 @@ const state = {
     modalCollectionInvoiceSearchRequest: '',
     modalReadOnly: false,
     modalBranchLocationPinned: false,
+    modalDraftRestored: false,
+    modalDraftRestoreInProgress: false,
+    suppressModalDraftSave: false,
     attendanceDocId: '',
     attendance: null,
     attendanceLocationCheckScheduleId: null,
@@ -178,6 +231,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const dateInput = document.getElementById('fieldDate');
     dateInput.value = formatDateYmd(new Date());
+    const pendingModalDraft = getStoredFieldModalDraft();
+    if (pendingModalDraft?.selectedDate) {
+        dateInput.value = pendingModalDraft.selectedDate;
+        state.activeView = 'tasks';
+        state.activeTab = pendingModalDraft.activeTab || 'today';
+        state.statusFilter = pendingModalDraft.statusFilter || 'all';
+    }
 
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
     document.getElementById('fieldAttendanceTimeInBtn')?.addEventListener('click', () => markAttendanceTime('in'));
@@ -280,10 +340,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('fieldPartsList').addEventListener('click', removePartEntry);
 
-    document.getElementById('fieldBeforePhoto').addEventListener('change', () => updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name'));
-    document.getElementById('fieldAfterPhoto').addEventListener('change', () => updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name'));
-    document.getElementById('fieldCollectionVoucherImage').addEventListener('change', () => updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name'));
-    document.getElementById('fieldCollectionCheckImage').addEventListener('change', () => updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name'));
+    document.getElementById('fieldBeforePhoto').addEventListener('change', () => {
+        updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name');
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldAfterPhoto').addEventListener('change', () => {
+        updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name');
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldCollectionVoucherImage').addEventListener('change', () => {
+        updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name');
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldCollectionCheckImage').addEventListener('change', () => {
+        updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
+        queueFieldModalDraftSave();
+    });
     document.getElementById('fieldCollectionInvoiceSearch')?.addEventListener('input', runFieldCollectionInvoiceSearch);
     document.getElementById('fieldCollectionInvoiceSearch')?.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter') return;
@@ -297,8 +369,14 @@ document.addEventListener('DOMContentLoaded', () => {
         removeFieldCollectionInvoice(Number(button.dataset.removeCollectionInvoice || -1));
     });
     document.getElementById('fieldModal').addEventListener('click', toggleModalSection);
-    document.getElementById('fieldModal').addEventListener('input', updateActionButtons);
-    document.getElementById('fieldModal').addEventListener('change', updateActionButtons);
+    document.getElementById('fieldModal').addEventListener('input', () => {
+        updateActionButtons();
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldModal').addEventListener('change', () => {
+        updateActionButtons();
+        queueFieldModalDraftSave();
+    });
 
     document.getElementById('fieldPresentMeter').addEventListener('input', recomputeTotalConsumed);
     document.getElementById('fieldPreviousMeter').addEventListener('input', recomputeTotalConsumed);
@@ -476,9 +554,176 @@ function toggleModalSection(event) {
     if (willExpand) {
         collapseOtherSections(section);
         setSectionCollapsed(section, false);
+        queueFieldModalDraftSave();
         return;
     }
     setSectionCollapsed(section, true);
+    queueFieldModalDraftSave();
+}
+
+function fieldModalDraftKey() {
+    return `${FIELD_MODAL_DRAFT_KEY_PREFIX}:${state.staffId || 'staff'}`;
+}
+
+function safeReadJsonStorage(key) {
+    try {
+        return JSON.parse(localStorage.getItem(key) || 'null');
+    } catch {
+        return null;
+    }
+}
+
+function safeWriteJsonStorage(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch (error) {
+        console.warn('Unable to save local field draft.', error);
+        return false;
+    }
+}
+
+function getStoredFieldModalDraft() {
+    const draft = safeReadJsonStorage(fieldModalDraftKey());
+    if (!draft || !draft.scheduleId) return null;
+    return draft;
+}
+
+function clearFieldModalDraft(scheduleId = null) {
+    const draft = getStoredFieldModalDraft();
+    if (scheduleId && draft && Number(draft.scheduleId || 0) !== Number(scheduleId || 0)) return;
+    try {
+        localStorage.removeItem(fieldModalDraftKey());
+    } catch {
+        // Ignore storage failures.
+    }
+}
+
+let fieldModalDraftTimer = null;
+
+function getExpandedModalSectionIds() {
+    return Array.from(document.querySelectorAll('.field-collapsible-section:not(.is-collapsed)'))
+        .map((section) => section.id)
+        .filter(Boolean);
+}
+
+function restoreExpandedModalSectionIds(sectionIds = []) {
+    const wanted = new Set((sectionIds || []).map((id) => String(id || '').trim()).filter(Boolean));
+    if (!wanted.size) return;
+    document.querySelectorAll('.field-collapsible-section').forEach((section) => {
+        if (!section.id) return;
+        setSectionCollapsed(section, !wanted.has(section.id));
+    });
+}
+
+function readFieldModalInputValue(id) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    if (el.type === 'checkbox') return Boolean(el.checked);
+    return String(el.value || '');
+}
+
+function writeFieldModalInputValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') {
+        el.checked = Boolean(value);
+        return;
+    }
+    el.value = value === null || value === undefined ? '' : String(value);
+}
+
+function captureFieldModalDraft() {
+    if (!state.modalScheduleId || state.modalReadOnly) return null;
+    const values = {};
+    FIELD_MODAL_DRAFT_INPUT_IDS.forEach((id) => {
+        values[id] = readFieldModalInputValue(id);
+    });
+    const files = {};
+    FIELD_MODAL_DRAFT_FILE_IDS.forEach((id) => {
+        const input = document.getElementById(id);
+        const file = input?.files?.[0] || null;
+        files[id] = file
+            ? { name: String(file.name || ''), size: Number(file.size || 0) || 0, type: String(file.type || '') }
+            : (input?.dataset?.draftName ? { name: input.dataset.draftName, size: 0, type: '' } : null);
+    });
+    return {
+        version: 1,
+        scheduleId: Number(state.modalScheduleId || 0) || state.modalScheduleId,
+        selectedDate: state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd(),
+        activeTab: state.activeTab || 'today',
+        activeView: 'tasks',
+        statusFilter: state.statusFilter || 'all',
+        savedAt: new Date().toISOString(),
+        values,
+        files,
+        expandedSectionIds: getExpandedModalSectionIds(),
+        partsNeeded: state.modalPartsNeeded || [],
+        collectionInvoices: state.modalCollectionInvoices || []
+    };
+}
+
+function saveFieldModalDraftNow() {
+    if (state.suppressModalDraftSave || state.modalDraftRestoreInProgress) return;
+    const draft = captureFieldModalDraft();
+    if (!draft) return;
+    safeWriteJsonStorage(fieldModalDraftKey(), draft);
+}
+
+function queueFieldModalDraftSave() {
+    if (state.suppressModalDraftSave || state.modalDraftRestoreInProgress) return;
+    if (!state.modalScheduleId || state.modalReadOnly) return;
+    window.clearTimeout(fieldModalDraftTimer);
+    fieldModalDraftTimer = window.setTimeout(saveFieldModalDraftNow, 250);
+}
+
+function applyFieldModalDraft(draft) {
+    if (!draft || Number(draft.scheduleId || 0) !== Number(state.modalScheduleId || 0)) return false;
+    state.modalDraftRestoreInProgress = true;
+    try {
+        Object.entries(draft.values || {}).forEach(([id, value]) => writeFieldModalInputValue(id, value));
+        state.modalPartsNeeded = Array.isArray(draft.partsNeeded) ? draft.partsNeeded : [];
+        state.modalCollectionInvoices = Array.isArray(draft.collectionInvoices)
+            ? draft.collectionInvoices.map((invoice) => mapFieldCollectionInvoice(invoice)).filter((invoice) => collectionInvoiceKey(invoice))
+            : [];
+        FIELD_MODAL_DRAFT_FILE_IDS.forEach((id) => {
+            const input = document.getElementById(id);
+            const meta = draft.files?.[id] || null;
+            if (input && meta?.name) input.dataset.draftName = meta.name;
+        });
+        renderPartsList();
+        renderFieldCollectionInvoices();
+        restoreExpandedModalSectionIds(draft.expandedSectionIds || []);
+        toggleMissingSerialMode();
+        recomputeTotalConsumed();
+        recomputeMaintenanceTotalConsumed();
+        syncDeliveryMetersFromMaintenance();
+        updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name');
+        updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name');
+        updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name');
+        updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
+        updateActionButtons();
+        return true;
+    } finally {
+        state.modalDraftRestoreInProgress = false;
+    }
+}
+
+async function restorePendingFieldModalDraft() {
+    if (state.modalDraftRestored) return;
+    const draft = getStoredFieldModalDraft();
+    if (!draft?.scheduleId) return;
+    const scheduleId = Number(draft.scheduleId || 0);
+    const row = state.rows.find((item) => Number(item.id || 0) === scheduleId);
+    if (!row || isFinishedOrCancelled(row)) return;
+    state.modalDraftRestored = true;
+    state.activeView = 'tasks';
+    state.activeTab = state.carryoverRows.some((item) => Number(item.id || 0) === scheduleId) ? 'carryover' : (draft.activeTab || 'today');
+    state.statusFilter = draft.statusFilter || 'all';
+    const statusFilter = document.getElementById('fieldStatusFilter');
+    if (statusFilter) statusFilter.value = state.statusFilter;
+    renderActiveView();
+    await openModal(scheduleId);
 }
 
 function sanitize(text) {
@@ -4162,6 +4407,7 @@ async function loadMySchedule(options = {}) {
         }
         updatePriorityGate(workloadRows());
         renderActiveView();
+        await restorePendingFieldModalDraft();
         handlePendingLocationRefreshRequest().catch((error) => {
             console.warn('Location refresh request check failed:', error);
         });
@@ -4556,6 +4802,7 @@ function addPartEntry() {
     qtyInput.value = '1';
     renderPartsList();
     updateActionButtons();
+    queueFieldModalDraftSave();
 }
 
 function removePartEntry(event) {
@@ -4566,6 +4813,7 @@ function removePartEntry(event) {
     state.modalPartsNeeded.splice(index, 1);
     renderPartsList();
     updateActionButtons();
+    queueFieldModalDraftSave();
 }
 
 function updatePhotoHint(inputId, hintId, fallbackField = '') {
@@ -4579,6 +4827,11 @@ function updatePhotoHint(inputId, hintId, fallbackField = '') {
     const saved = input.dataset.savedName || '';
     if (saved && fallbackField) {
         hint.textContent = `Saved: ${saved}`;
+        return;
+    }
+    const draft = input.dataset.draftName || '';
+    if (draft) {
+        hint.textContent = `Draft remembered: ${draft}. Please reselect this file before submitting.`;
         return;
     }
     hint.textContent = 'No file selected.';
@@ -5006,6 +5259,11 @@ function resetModalFields() {
     after.dataset.savedName = '';
     collectionVoucher.dataset.savedName = '';
     collectionCheck.dataset.savedName = '';
+    before.dataset.draftName = '';
+    after.dataset.draftName = '';
+    collectionVoucher.dataset.draftName = '';
+    collectionCheck.dataset.draftName = '';
+    document.getElementById('fieldLocationPhoto').dataset.draftName = '';
     document.getElementById('fieldBeforePhotoHint').textContent = 'No file selected.';
     document.getElementById('fieldAfterPhotoHint').textContent = 'No file selected.';
     document.getElementById('fieldCollectionVoucherHint').textContent = 'No file selected.';
@@ -5703,12 +5961,18 @@ async function openModal(scheduleId) {
         pinHint.textContent = 'No branch PIN configured yet. Finish is allowed without PIN for now.';
     }
 
+    const restoredDraft = applyFieldModalDraft(getStoredFieldModalDraft());
+
     const isReadOnly = state.modalStatusKey === 'closed' || state.modalStatusKey === 'cancelled';
     setFormDisabled(isReadOnly);
     setLocationPinUi(row);
     updateActionButtons();
 
     setModalOpen(true);
+    if (restoredDraft) {
+        const status = document.getElementById('fieldModalSubtitle');
+        if (status && !status.textContent.includes('Draft restored')) status.textContent = `${status.textContent} · Draft restored`;
+    }
 }
 
 function getCurrentRow() {
@@ -5886,6 +6150,7 @@ function addFieldCollectionInvoice(invoice, { showAlerts = true } = {}) {
     if (search) search.value = '';
     renderFieldCollectionInvoiceResults();
     renderFieldCollectionInvoices();
+    queueFieldModalDraftSave();
     return true;
 }
 
@@ -5894,6 +6159,7 @@ function removeFieldCollectionInvoice(index) {
     if (index < 0) return;
     state.modalCollectionInvoices.splice(index, 1);
     renderFieldCollectionInvoices();
+    queueFieldModalDraftSave();
 }
 
 async function searchFieldCollectionInvoices(query) {
@@ -6704,6 +6970,7 @@ async function saveDraftUpdate() {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, payload);
+        clearFieldModalDraft(row.id);
         renderList();
         alert('Draft update saved.');
     } catch (err) {
@@ -6792,6 +7059,7 @@ async function markPendingTask() {
         }
 
         applyRowPatch(row.id, payload);
+        clearFieldModalDraft(row.id);
         closeModal();
         await loadMySchedule();
         alert('Marked as Pending (Parts Needed).');
@@ -6954,6 +7222,7 @@ async function closeTask() {
             combinedClosed += 1;
         }
         closeModal();
+        clearFieldModalDraft(row.id);
         await loadMySchedule();
         alert(combinedClosed ? `Task marked as Finished. ${combinedClosed} combined schedule${combinedClosed === 1 ? '' : 's'} also closed.` : 'Task marked as Finished.');
     } catch (err) {
@@ -7422,6 +7691,7 @@ async function markTimeInNow() {
 
     const nowLocal = toLocalInputDateTime(new Date().toISOString());
     document.getElementById('fieldTimeIn').value = nowLocal;
+    queueFieldModalDraftSave();
 
     const form = collectModalFormData();
     const nowIso = new Date().toISOString();
@@ -7765,6 +8035,7 @@ async function markTimeOutNow() {
 
     const nowLocal = toLocalInputDateTime(new Date().toISOString());
     document.getElementById('fieldTimeOut').value = nowLocal;
+    queueFieldModalDraftSave();
 
     const form = collectModalFormData();
     const patch = {
