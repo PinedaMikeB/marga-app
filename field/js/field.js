@@ -5726,6 +5726,29 @@ function collectionInvoiceKey(invoice) {
     return String(invoice?.invoiceKey || invoice?.invoiceNo || invoice?.invoiceId || invoice?.docId || '').trim().toUpperCase();
 }
 
+function extractInvoiceTokens(value) {
+    return Array.from(new Set(
+        String(value || '')
+            .match(/\b\d{5,}\b/g) || []
+    ));
+}
+
+function makeManualFieldCollectionInvoice(invoiceNo, fallbackRow = getCurrentRow()) {
+    const location = scheduleLocationLabel(fallbackRow || {});
+    const ref = String(invoiceNo || '').trim();
+    return {
+        docId: ref,
+        invoiceId: ref,
+        invoiceNo: ref,
+        invoiceKey: ref,
+        date: '',
+        customer: location.companyName || '',
+        branch: location.branchName || '',
+        amount: 0,
+        raw: { invoice_no: ref, manual_field_entry: true }
+    };
+}
+
 function getBillingInvoiceNo(row) {
     return firstNonBlank(row?.invoiceNo, row?.invoiceno, row?.invoice_no, row?.invoice_num, row?.invoice_number, row?.invoiceId, row?.invoice_id, row?.invoiceid, row?.id);
 }
@@ -5960,23 +5983,36 @@ async function runFieldCollectionInvoiceSearch() {
 
 async function addFirstFieldCollectionInvoiceMatch() {
     if (state.modalReadOnly) return;
+    const search = document.getElementById('fieldCollectionInvoiceSearch');
+    const query = String(search?.value || '').trim();
+    const tokens = extractInvoiceTokens(query);
+    if (tokens.length > 1) {
+        tokens.forEach((token) => addFieldCollectionInvoice(makeManualFieldCollectionInvoice(token), { showAlerts: false }));
+        return;
+    }
     let match = (state.modalCollectionInvoiceSearchResults || [])[0];
     if (!match) {
-        const search = document.getElementById('fieldCollectionInvoiceSearch');
-        const rows = await searchFieldCollectionInvoices(search?.value || '');
+        const rows = await searchFieldCollectionInvoices(query);
         state.modalCollectionInvoiceSearchResults = rows;
         renderFieldCollectionInvoiceResults();
         match = rows[0];
     }
     if (match) addFieldCollectionInvoice(match);
-    else alert('Search a valid invoice number first.');
+    else if (tokens.length === 1) addFieldCollectionInvoice(makeManualFieldCollectionInvoice(tokens[0]));
+    else alert('Search or type a valid invoice number first.');
 }
 
 async function ensureTypedCollectionInvoiceIsSelected() {
     if ((state.modalCollectionInvoices || []).length) return true;
     const search = document.getElementById('fieldCollectionInvoiceSearch');
-    const query = String(search?.value || '').trim();
+    const remarks = document.getElementById('fieldCollectionPaymentRemarks');
+    const query = [search?.value, remarks?.value].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
     if (!query) return false;
+    const tokens = extractInvoiceTokens(query);
+    if (tokens.length > 1) {
+        tokens.forEach((token) => addFieldCollectionInvoice(makeManualFieldCollectionInvoice(token), { showAlerts: false }));
+        return true;
+    }
     let rows = state.modalCollectionInvoiceSearchResults || [];
     if (!rows.length) {
         rows = await searchFieldCollectionInvoices(query);
@@ -5990,7 +6026,9 @@ async function ensureTypedCollectionInvoiceIsSelected() {
         return invoiceNo === normalizedQuery || invoiceId === normalizedQuery;
     });
     const match = exactMatch || (rows.length === 1 ? rows[0] : null);
-    return match ? addFieldCollectionInvoice(match, { showAlerts: false }) : false;
+    if (match) return addFieldCollectionInvoice(match, { showAlerts: false });
+    if (tokens.length === 1) return addFieldCollectionInvoice(makeManualFieldCollectionInvoice(tokens[0]), { showAlerts: false });
+    return false;
 }
 
 function getSelectedMachine() {
