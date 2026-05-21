@@ -142,6 +142,28 @@ const FIELD_REIMBURSEMENT_CATEGORIES = [
     'Other'
 ];
 
+const FIELD_REIMBURSEMENT_ITEM_GROUPS = [
+    { id: 'fuel', label: 'Fuel / Gasoline', accountId: 'fuel_expense_motorcycle', category: 'Gasoline / fuel' },
+    { id: 'meal', label: 'Meal Allowance', accountId: 'meal_allowance_expense_field_operations', category: 'Meal allowance' },
+    { id: 'toll', label: 'Toll', accountId: 'commute_fare_expense', category: 'Toll' },
+    { id: 'parking', label: 'Parking', accountId: 'parking_expense', category: 'Parking' },
+    { id: 'fare', label: 'Transportation / Fare', accountId: 'commute_fare_expense', category: 'Transportation / fare' },
+    { id: 'parts', label: 'Emergency Parts / Supplies', accountId: 'printer_repair_parts_field_expense', category: 'Parts / supplies' },
+    { id: 'delivery', label: 'Delivery / Courier', accountId: 'commute_fare_expense', category: 'Delivery / courier' },
+    { id: 'emergency', label: 'Emergency Purchase', accountId: 'other_materials_expense', category: 'Emergency purchase' },
+    { id: 'other', label: 'Other Field Expense', accountId: 'other_materials_expense', category: 'Other' }
+];
+
+const FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS = [
+    { id: 'fuel_expense_motorcycle', label: 'Fuel Expense - Motorcycle' },
+    { id: 'fuel_expense_delivery_van', label: 'Fuel Expense - Delivery Van' },
+    { id: 'meal_allowance_expense_field_operations', label: 'Meal Allowance Expense - Field Operations' },
+    { id: 'parking_expense', label: 'Parking Expense' },
+    { id: 'commute_fare_expense', label: 'Transportation / Fare / Toll' },
+    { id: 'printer_repair_parts_field_expense', label: 'Printer Repair Parts Expense - Field Service' },
+    { id: 'other_materials_expense', label: 'Other Materials / Emergency Purchase' }
+];
+
 const FIELD_REIMBURSEMENT_TABS = [
     { id: 'Draft', label: 'Draft', statuses: ['Draft'] },
     { id: 'Submitted', label: 'Submitted', statuses: ['Submitted', 'For Completeness Check', 'Verified by Petty Cash Handler', 'For Approval', 'Included in Payout Batch', 'Funded'] },
@@ -243,6 +265,8 @@ const state = {
     reimbursementLoaded: false,
     reimbursementActiveTab: 'Draft',
     editingReimbursementId: '',
+    reimbursementMode: 'Reimbursement',
+    reimbursementItems: [],
     customerReviews: [],
     skillHistoryRows: [],
     modelErrorGuides: [],
@@ -312,13 +336,16 @@ document.addEventListener('DOMContentLoaded', () => {
         renderReimbursementRequests();
     });
     document.getElementById('fieldReimbursementList')?.addEventListener('click', handleReimbursementListAction);
-    document.getElementById('fieldReimbursementType')?.addEventListener('change', syncReimbursementConditionalFields);
-    document.getElementById('fieldReimbursementCategory')?.addEventListener('change', syncReimbursementConditionalFields);
-    document.getElementById('fieldReimbursementAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
+    document.querySelectorAll('[data-reimbursement-mode]').forEach((button) => {
+        button.addEventListener('click', () => setReimbursementMode(button.dataset.reimbursementMode || 'Reimbursement'));
+    });
+    document.getElementById('fieldReimbursementAddItemBtn')?.addEventListener('click', () => addReimbursementItemRow());
+    document.getElementById('fieldReimbursementAddSupplierBtn')?.addEventListener('click', focusFirstReimbursementSupplier);
+    document.getElementById('fieldReimbursementItemList')?.addEventListener('input', handleReimbursementItemsInput);
+    document.getElementById('fieldReimbursementItemList')?.addEventListener('change', handleReimbursementItemsChange);
+    document.getElementById('fieldReimbursementItemList')?.addEventListener('click', handleReimbursementItemsClick);
+    document.getElementById('fieldReimbursementVisitedToggle')?.addEventListener('click', toggleReimbursementVisitedDetails);
     document.getElementById('fieldReimbursementAdvanceAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
-    document.getElementById('fieldReimbursementLiquidatedAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
-    document.getElementById('fieldReimbursementReceiptImage')?.addEventListener('change', () => previewReimbursementImage('fieldReimbursementReceiptImage', 'fieldReimbursementReceiptPreview', 'fieldReimbursementReceiptHint'));
-    document.getElementById('fieldReimbursementAdditionalImage')?.addEventListener('change', () => previewReimbursementImage('fieldReimbursementAdditionalImage', 'fieldReimbursementAdditionalPreview', 'fieldReimbursementAdditionalHint'));
     document.getElementById('fieldGuideRefresh')?.addEventListener('click', () => loadModelErrorGuides({ force: true }));
     document.getElementById('fieldSolutionRequestsRefresh')?.addEventListener('click', () => loadSolutionRequests({ force: true }));
     document.getElementById('fieldSolutionRequestsList')?.addEventListener('click', handleSolutionRequestAction);
@@ -868,6 +895,14 @@ function toFirestoreFieldValue(value) {
     if (typeof value === 'number' && Number.isFinite(value)) {
         if (Number.isInteger(value)) return { integerValue: String(value) };
         return { doubleValue: value };
+    }
+    if (value && typeof value === 'object') {
+        const fields = {};
+        Object.entries(value).forEach(([key, child]) => {
+            if (child === undefined || typeof child === 'function') return;
+            fields[key] = toFirestoreFieldValue(child);
+        });
+        return { mapValue: { fields } };
     }
     return { stringValue: String(value ?? '') };
 }
@@ -1963,16 +1998,8 @@ function renderActiveView() {
 function populateReimbursementSelects() {
     const typeSelect = document.getElementById('fieldReimbursementType');
     const categorySelect = document.getElementById('fieldReimbursementCategory');
-    if (typeSelect && !typeSelect.options.length) {
-        typeSelect.innerHTML = FIELD_REIMBURSEMENT_REQUEST_TYPES
-            .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
-            .join('');
-    }
-    if (categorySelect && !categorySelect.options.length) {
-        categorySelect.innerHTML = FIELD_REIMBURSEMENT_CATEGORIES
-            .map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
-            .join('');
-    }
+    if (typeSelect && !typeSelect.value) typeSelect.value = state.reimbursementMode || 'Reimbursement';
+    if (categorySelect && !categorySelect.value) categorySelect.value = FIELD_REIMBURSEMENT_CATEGORIES[0];
 }
 
 async function loadReimbursementRequests(options = {}) {
@@ -2103,14 +2130,15 @@ function resetReimbursementForm() {
     const form = document.getElementById('fieldReimbursementForm');
     if (!form) return;
     form.reset();
+    state.reimbursementMode = 'Reimbursement';
+    state.reimbursementItems = [createReimbursementItem()];
     document.getElementById('fieldReimbursementId').value = '';
     document.getElementById('fieldReimbursementReceiptUrl').value = '';
     document.getElementById('fieldReimbursementAdditionalUrl').value = '';
     document.getElementById('fieldReimbursementExpenseDate').value = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
-    document.getElementById('fieldReimbursementReceiptPreview').hidden = true;
-    document.getElementById('fieldReimbursementAdditionalPreview').hidden = true;
-    document.getElementById('fieldReimbursementReceiptHint').textContent = 'Camera or gallery upload';
-    document.getElementById('fieldReimbursementAdditionalHint').textContent = 'Optional supporting image';
+    setReimbursementMode('Reimbursement');
+    renderReimbursementItemRows();
+    renderReimbursementVisitedCard();
     syncReimbursementLiquidationMath();
 }
 
@@ -2119,45 +2147,19 @@ function fillReimbursementForm(request) {
     setFieldValue('fieldReimbursementId', request.id);
     setFieldValue('fieldReimbursementReceiptUrl', request.receiptImageUrl);
     setFieldValue('fieldReimbursementAdditionalUrl', request.additionalImageUrl);
-    setFieldValue('fieldReimbursementType', request.requestType);
-    setFieldValue('fieldReimbursementAmount', request.amount);
+    setReimbursementMode(request.requestType === 'Cash Advance' ? 'Cash Advance' : 'Reimbursement');
     setFieldValue('fieldReimbursementExpenseDate', request.dateOfExpense || request.reportDate);
-    setFieldValue('fieldReimbursementCategory', request.expenseCategory);
     setFieldValue('fieldReimbursementDescription', request.description);
-    setFieldValue('fieldReimbursementSupplier', request.supplierStoreName);
-    setFieldValue('fieldReimbursementReceiptNumber', request.receiptNumber);
-    setFieldValue('fieldReimbursementOrSi', request.orSiNumber);
-    setFieldValue('fieldReimbursementReceiptDate', request.receiptDate);
-    setFieldValue('fieldReimbursementReceiptAmount', request.receiptAmount);
-    setFieldValue('fieldReimbursementClient', request.clientCompanyVisited);
-    setFieldValue('fieldReimbursementBranch', request.branchLocation);
-    setFieldValue('fieldReimbursementServiceTicket', request.serviceTicketId);
-    setFieldValue('fieldReimbursementSerial', request.machineSerialNumber);
-    setFieldValue('fieldReimbursementJobOrder', request.jobOrderReferenceNumber);
-    setFieldValue('fieldReimbursementVehicle', request.vehicleUsed);
-    setFieldValue('fieldReimbursementPlate', request.plateNumber);
-    setFieldValue('fieldReimbursementOdoStart', request.startingOdometer);
-    setFieldValue('fieldReimbursementOdoEnd', request.endingOdometer);
-    setFieldValue('fieldReimbursementLiters', request.liters);
-    setFieldValue('fieldReimbursementFuelStation', request.fuelStation);
-    setFieldValue('fieldReimbursementRoute', request.routeDestination);
     setFieldValue('fieldReimbursementAdvanceAmount', request.cashAdvanceAmountRequested);
-    setFieldValue('fieldReimbursementExpectedLiquidation', request.expectedLiquidationDate);
-    setFieldValue('fieldReimbursementLiquidatedAmount', request.amountLiquidated);
-    setFieldValue('fieldReimbursementAdvancePurpose', request.purposeOfAdvance);
     setFieldValue('fieldReimbursementPaymentMethod', request.paymentMethodRequested || 'GCash');
     setFieldValue('fieldReimbursementGcash', request.staffGcashNumber);
     setFieldValue('fieldReimbursementBankName', request.staffBankName);
     setFieldValue('fieldReimbursementBankAccountName', request.staffBankAccountName);
     setFieldValue('fieldReimbursementBankAccountNumber', request.staffBankAccountNumber);
-    setFieldValue('fieldReimbursementBackupMethod', request.backupPayoutMethod);
     setFieldValue('fieldReimbursementNotes', request.notes);
-    document.getElementById('fieldReimbursementReceiptException').checked = request.receiptException === true;
-    setFieldValue('fieldReimbursementReceiptExceptionReason', request.receiptExceptionReason);
-    document.getElementById('fieldReimbursementOriginalSubmitted').checked = request.originalReceiptSubmitted === true;
-    setFieldValue('fieldReimbursementOriginalDate', request.originalReceiptSubmittedDate);
-    setImagePreviewFromUrl('fieldReimbursementReceiptPreview', 'fieldReimbursementReceiptHint', request.receiptImageUrl);
-    setImagePreviewFromUrl('fieldReimbursementAdditionalPreview', 'fieldReimbursementAdditionalHint', request.additionalImageUrl);
+    state.reimbursementItems = normalizeReimbursementItems(request.lineItems || request.items || [buildLegacyReimbursementItem(request)]);
+    renderReimbursementItemRows();
+    renderReimbursementVisitedCard();
     syncReimbursementLiquidationMath();
 }
 
@@ -2177,22 +2179,235 @@ function setImagePreviewFromUrl(previewId, hintId, url) {
 }
 
 function syncReimbursementConditionalFields() {
-    const type = String(document.getElementById('fieldReimbursementType')?.value || '').trim();
-    const category = String(document.getElementById('fieldReimbursementCategory')?.value || '').trim().toLowerCase();
-    const gasolinePanel = document.getElementById('fieldReimbursementGasolineFields');
-    const advancePanel = document.getElementById('fieldReimbursementAdvanceFields');
-    if (gasolinePanel) gasolinePanel.hidden = !category.includes('gasoline') && !category.includes('fuel');
-    if (advancePanel) advancePanel.hidden = !['Cash Advance', 'Liquidation', 'Return of Excess Cash'].includes(type);
+    const isAdvance = state.reimbursementMode === 'Cash Advance';
+    document.getElementById('fieldReimbursementAdvanceCard')?.classList.toggle('is-compact', !isAdvance);
     syncReimbursementLiquidationMath();
 }
 
 function syncReimbursementLiquidationMath() {
-    const advance = Number(document.getElementById('fieldReimbursementAdvanceAmount')?.value || document.getElementById('fieldReimbursementAmount')?.value || 0);
-    const liquidated = Number(document.getElementById('fieldReimbursementLiquidatedAmount')?.value || 0);
-    const unused = Math.max(advance - liquidated, 0);
-    const additional = Math.max(liquidated - advance, 0);
+    const rowsTotal = getReimbursementItemsTotal();
+    const advance = Number(document.getElementById('fieldReimbursementAdvanceAmount')?.value || 0);
+    const effectiveAdvance = state.reimbursementMode === 'Cash Advance' ? advance : 0;
+    const unused = Math.max(effectiveAdvance - rowsTotal, 0);
+    const additional = state.reimbursementMode === 'Cash Advance' ? Math.max(rowsTotal - effectiveAdvance, 0) : rowsTotal;
+    setFieldValue('fieldReimbursementAmount', state.reimbursementMode === 'Cash Advance' ? effectiveAdvance : rowsTotal);
+    setFieldValue('fieldReimbursementLiquidatedAmount', rowsTotal);
     setFieldValue('fieldReimbursementUnusedReturned', unused ? unused.toFixed(2) : '');
     setFieldValue('fieldReimbursementAdditionalDue', additional ? additional.toFixed(2) : '');
+    const totalEl = document.getElementById('fieldReimbursementRowsTotal');
+    const changeEl = document.getElementById('fieldReimbursementReturnChange');
+    const addEl = document.getElementById('fieldReimbursementAdditionalReimbursement');
+    if (totalEl) totalEl.textContent = formatPeso(rowsTotal);
+    if (changeEl) changeEl.textContent = formatPeso(unused);
+    if (addEl) addEl.textContent = formatPeso(additional);
+}
+
+function setReimbursementMode(mode) {
+    state.reimbursementMode = mode === 'Cash Advance' ? 'Cash Advance' : 'Reimbursement';
+    setFieldValue('fieldReimbursementType', state.reimbursementMode);
+    document.querySelectorAll('[data-reimbursement-mode]').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.reimbursementMode === state.reimbursementMode);
+    });
+    syncReimbursementConditionalFields();
+}
+
+function createReimbursementItem(item = {}) {
+    const groupId = String(item.groupId || item.expenseGroup || 'fuel').trim();
+    const group = getReimbursementGroup(groupId) || FIELD_REIMBURSEMENT_ITEM_GROUPS[0];
+    return {
+        id: String(item.id || item.lineId || `line-${Date.now()}-${Math.floor(Math.random() * 1000)}`).trim(),
+        groupId: group.id,
+        expenseGroup: group.id,
+        expenseCategory: String(item.expenseCategory || group.category || '').trim(),
+        accountId: String(item.accountId || group.accountId || '').trim(),
+        itemNote: String(item.itemNote || item.description || '').trim(),
+        supplierStoreName: String(item.supplierStoreName || item.supplier || '').trim(),
+        amount: Number(item.amount || 0),
+        receiptNumber: String(item.receiptNumber || '').trim(),
+        receiptImageUrl: String(item.receiptImageUrl || item.receiptUrl || '').trim(),
+        receiptImagePath: String(item.receiptImagePath || '').trim(),
+        receiptImageName: String(item.receiptImageName || '').trim(),
+        receiptFile: item.receiptFile || null
+    };
+}
+
+function normalizeReimbursementItems(items = []) {
+    const rows = Array.isArray(items) ? items.map((item) => createReimbursementItem(item)) : [];
+    return rows.length ? rows : [createReimbursementItem()];
+}
+
+function buildLegacyReimbursementItem(request = {}) {
+    const group = FIELD_REIMBURSEMENT_ITEM_GROUPS.find((item) => item.category === request.expenseCategory) || FIELD_REIMBURSEMENT_ITEM_GROUPS[0];
+    return createReimbursementItem({
+        id: `${request.id || 'request'}-line-1`,
+        groupId: group.id,
+        expenseCategory: request.expenseCategory || group.category,
+        accountId: request.accountId || group.accountId,
+        itemNote: request.description,
+        supplierStoreName: request.supplierStoreName,
+        amount: request.amountLiquidated || request.receiptAmount || request.amount,
+        receiptNumber: request.receiptNumber,
+        receiptImageUrl: request.receiptImageUrl,
+        receiptImagePath: request.receiptImagePath,
+        receiptImageName: request.receiptImageName
+    });
+}
+
+function getReimbursementGroup(groupId) {
+    return FIELD_REIMBURSEMENT_ITEM_GROUPS.find((group) => group.id === groupId) || null;
+}
+
+function renderReimbursementItemRows() {
+    const list = document.getElementById('fieldReimbursementItemList');
+    if (!list) return;
+    list.innerHTML = state.reimbursementItems.map((item, index) => renderReimbursementItemRow(item, index)).join('');
+    syncReimbursementLiquidationMath();
+}
+
+function renderReimbursementItemRow(item, index) {
+    return `
+        <article class="field-reimbursement-item" data-index="${index}">
+            <div class="field-reimbursement-item-fields">
+                <label><span>Item Group</span><select data-reimbursement-field="groupId">${FIELD_REIMBURSEMENT_ITEM_GROUPS.map((group) => `<option value="${escapeHtml(group.id)}"${group.id === item.groupId ? ' selected' : ''}>${escapeHtml(group.label)}</option>`).join('')}</select></label>
+                <label><span>Chart Of Account</span><select data-reimbursement-field="accountId">${FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS.map((account) => `<option value="${escapeHtml(account.id)}"${account.id === item.accountId ? ' selected' : ''}>${escapeHtml(account.label)}</option>`).join('')}</select></label>
+                <label><span>Item / Part Note</span><input type="text" data-reimbursement-field="itemNote" placeholder="Type item, part, route, or purpose" value="${escapeHtml(item.itemNote)}"></label>
+                <label><span>Supplier / Store</span><input type="text" data-reimbursement-field="supplierStoreName" placeholder="Type or select supplier/store" value="${escapeHtml(item.supplierStoreName)}"></label>
+                <label><span>Amount</span><input type="number" data-reimbursement-field="amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(item.amount.toFixed(2)) : ''}"></label>
+                <label><span>Receipt No.</span><input type="text" data-reimbursement-field="receiptNumber" placeholder="OR/SI/receipt no." value="${escapeHtml(item.receiptNumber)}"></label>
+                <div class="field-reimbursement-row-actions"><span>Action</span><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-remove="${index}">Remove</button></div>
+            </div>
+            <label class="field-reimbursement-row-receipt">
+                <span>Receipt Image</span>
+                <input type="file" accept="image/*" capture="environment" data-reimbursement-receipt="${index}">
+                ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
+                <small>${escapeHtml(item.receiptImageName || (item.receiptImageUrl ? 'Existing uploaded receipt' : 'Required. Take photo or upload from gallery.'))}</small>
+            </label>
+        </article>
+    `;
+}
+
+function addReimbursementItemRow(item = {}) {
+    state.reimbursementItems.push(createReimbursementItem(item));
+    renderReimbursementItemRows();
+}
+
+function focusFirstReimbursementSupplier() {
+    const supplierInput = document.querySelector('[data-reimbursement-field="supplierStoreName"]');
+    if (supplierInput) supplierInput.focus();
+}
+
+function handleReimbursementItemsInput(event) {
+    const field = event.target?.dataset?.reimbursementField;
+    if (!field) return;
+    updateReimbursementItemFromInput(event.target);
+}
+
+function handleReimbursementItemsChange(event) {
+    const receiptIndex = event.target?.dataset?.reimbursementReceipt;
+    if (receiptIndex !== undefined) {
+        const index = Number(receiptIndex);
+        const item = state.reimbursementItems[index];
+        const file = event.target.files?.[0] || null;
+        if (!item || !file) return;
+        item.receiptFile = file;
+        item.receiptImageName = file.name || 'Selected receipt';
+        item.receiptImageUrl = URL.createObjectURL(file);
+        renderReimbursementItemRows();
+        return;
+    }
+    const field = event.target?.dataset?.reimbursementField;
+    if (!field) return;
+    updateReimbursementItemFromInput(event.target);
+    if (field === 'groupId') {
+        const row = event.target.closest('[data-index]');
+        const index = Number(row?.dataset.index || -1);
+        const item = state.reimbursementItems[index];
+        const group = getReimbursementGroup(item?.groupId);
+        if (item && group) {
+            item.expenseGroup = group.id;
+            item.expenseCategory = group.category;
+            item.accountId = group.accountId;
+            renderReimbursementItemRows();
+        }
+    }
+}
+
+function handleReimbursementItemsClick(event) {
+    const button = event.target.closest('[data-reimbursement-remove]');
+    if (!button) return;
+    const index = Number(button.dataset.reimbursementRemove || -1);
+    state.reimbursementItems = state.reimbursementItems.filter((_, itemIndex) => itemIndex !== index);
+    if (!state.reimbursementItems.length) state.reimbursementItems = [createReimbursementItem()];
+    renderReimbursementItemRows();
+}
+
+function updateReimbursementItemFromInput(input) {
+    const row = input.closest('[data-index]');
+    const index = Number(row?.dataset.index || -1);
+    const field = input.dataset.reimbursementField;
+    const item = state.reimbursementItems[index];
+    if (!item || !field) return;
+    item[field] = field === 'amount' ? Number(input.value || 0) : String(input.value || '').trim();
+    if (field === 'accountId') item.accountId = String(input.value || '').trim();
+    syncReimbursementLiquidationMath();
+}
+
+function getReimbursementItemsTotal() {
+    return state.reimbursementItems.reduce((total, item) => total + Number(item.amount || 0), 0);
+}
+
+function sumReimbursementItems(items = []) {
+    return items.reduce((total, item) => total + Number(item.amount || 0), 0);
+}
+
+function serializeReimbursementItem(item = {}) {
+    return {
+        id: String(item.id || '').trim(),
+        groupId: String(item.groupId || '').trim(),
+        expenseGroup: String(item.expenseGroup || item.groupId || '').trim(),
+        expenseCategory: String(item.expenseCategory || '').trim(),
+        accountId: String(item.accountId || '').trim(),
+        itemNote: String(item.itemNote || '').trim(),
+        supplierStoreName: String(item.supplierStoreName || '').trim(),
+        amount: Number(item.amount || 0),
+        receiptNumber: String(item.receiptNumber || '').trim(),
+        receiptImageUrl: String(item.receiptImageUrl || '').trim(),
+        receiptImagePath: String(item.receiptImagePath || '').trim(),
+        receiptImageName: String(item.receiptImageName || '').trim()
+    };
+}
+
+function renderReimbursementVisitedCard() {
+    const countEl = document.getElementById('fieldReimbursementVisitedCount');
+    const details = document.getElementById('fieldReimbursementVisitedDetails');
+    if (!countEl || !details) return;
+    const rows = getClosedRowsForReimbursement();
+    countEl.textContent = String(rows.length);
+    details.innerHTML = rows.length
+        ? rows.map((row) => `<button type="button" data-reimbursement-visit-id="${escapeHtml(row.id)}">${escapeHtml(getFieldRowCustomerLabel(row))}<small>${escapeHtml(getFieldRowReferenceLabel(row))}</small></button>`).join('')
+        : '<div class="empty-state">No closed customer visits found for this date.</div>';
+}
+
+function toggleReimbursementVisitedDetails() {
+    const details = document.getElementById('fieldReimbursementVisitedDetails');
+    if (!details) return;
+    details.hidden = !details.hidden;
+}
+
+function getClosedRowsForReimbursement() {
+    return state.rows.filter(isClosedOnSelectedDate);
+}
+
+function getFieldRowCustomerLabel(row = {}) {
+    return String(row.customer_name || row.companyname || row.company_name || row.customer || row.branch_customer_name || row.assigned_customer || row.client || 'Customer').trim();
+}
+
+function getFieldRowReferenceLabel(row = {}) {
+    return [
+        row.branchname || row.branch_name || row.location || '',
+        row.purpose_label || PURPOSE_LABELS[Number(row.purpose || row.purpose_id || 0)] || '',
+        row.id ? `#${row.id}` : ''
+    ].filter(Boolean).join(' · ');
 }
 
 function previewReimbursementImage(inputId, previewId, hintId) {
@@ -2252,10 +2467,16 @@ function readReimbursementForm(targetStatus, existing = null) {
     const id = String(document.getElementById('fieldReimbursementId')?.value || existing?.id || createFieldReimbursementId()).trim();
     const requestType = existing?.status === 'For Liquidation' || existing?.status === 'Partially Liquidated'
         ? String(existing.requestType || 'Cash Advance').trim()
-        : String(document.getElementById('fieldReimbursementType')?.value || '').trim();
-    const amount = Number(document.getElementById('fieldReimbursementAmount')?.value || 0);
+        : String(state.reimbursementMode || document.getElementById('fieldReimbursementType')?.value || '').trim();
+    const items = normalizeReimbursementItems(state.reimbursementItems).filter((item) => item.groupId || item.accountId || item.itemNote || item.supplierStoreName || item.amount > 0 || item.receiptImageUrl || item.receiptFile);
+    const rowsTotal = sumReimbursementItems(items);
+    const amount = requestType === 'Cash Advance'
+        ? Number(document.getElementById('fieldReimbursementAdvanceAmount')?.value || 0)
+        : rowsTotal;
     const advanceAmount = Number(document.getElementById('fieldReimbursementAdvanceAmount')?.value || 0);
-    const liquidatedAmount = Number(document.getElementById('fieldReimbursementLiquidatedAmount')?.value || 0);
+    const liquidatedAmount = rowsTotal;
+    const primaryItem = items[0] || createReimbursementItem();
+    const visitedRows = getClosedRowsForReimbursement();
     return {
         ...(existing || {}),
         id,
@@ -2271,10 +2492,10 @@ function readReimbursementForm(targetStatus, existing = null) {
         dateOfExpense: document.getElementById('fieldReimbursementExpenseDate')?.value || localDateYmd(now),
         dateSubmitted: targetStatus === 'Submitted' ? now.toISOString() : String(existing?.dateSubmitted || ''),
         amount,
-        expenseCategory: document.getElementById('fieldReimbursementCategory')?.value || '',
+        expenseCategory: primaryItem.expenseCategory || '',
         description: document.getElementById('fieldReimbursementDescription')?.value || '',
-        clientCompanyVisited: document.getElementById('fieldReimbursementClient')?.value || '',
-        branchLocation: document.getElementById('fieldReimbursementBranch')?.value || '',
+        clientCompanyVisited: visitedRows.map(getFieldRowCustomerLabel).filter(Boolean).join(', ').slice(0, 500),
+        branchLocation: visitedRows.map((row) => row.branchname || row.branch_name || row.location || '').filter(Boolean).join(', ').slice(0, 500),
         serviceTicketId: document.getElementById('fieldReimbursementServiceTicket')?.value || '',
         machineSerialNumber: document.getElementById('fieldReimbursementSerial')?.value || '',
         jobOrderReferenceNumber: document.getElementById('fieldReimbursementJobOrder')?.value || '',
@@ -2292,14 +2513,14 @@ function readReimbursementForm(targetStatus, existing = null) {
         liters: Number(document.getElementById('fieldReimbursementLiters')?.value || 0),
         fuelStation: document.getElementById('fieldReimbursementFuelStation')?.value || '',
         routeDestination: document.getElementById('fieldReimbursementRoute')?.value || '',
-        receiptImageUrl: document.getElementById('fieldReimbursementReceiptUrl')?.value || existing?.receiptImageUrl || '',
-        additionalImageUrl: document.getElementById('fieldReimbursementAdditionalUrl')?.value || existing?.additionalImageUrl || '',
-        receiptNumber: document.getElementById('fieldReimbursementReceiptNumber')?.value || '',
+        receiptImageUrl: primaryItem.receiptImageUrl || existing?.receiptImageUrl || '',
+        additionalImageUrl: items[1]?.receiptImageUrl || existing?.additionalImageUrl || '',
+        receiptNumber: primaryItem.receiptNumber || '',
         orSiNumber: document.getElementById('fieldReimbursementOrSi')?.value || '',
-        supplierStoreName: document.getElementById('fieldReimbursementSupplier')?.value || '',
+        supplierStoreName: primaryItem.supplierStoreName || '',
         receiptDate: document.getElementById('fieldReimbursementReceiptDate')?.value || '',
-        receiptAmount: Number(document.getElementById('fieldReimbursementReceiptAmount')?.value || 0),
-        receiptException: document.getElementById('fieldReimbursementReceiptException')?.checked === true,
+        receiptAmount: primaryItem.amount || 0,
+        receiptException: false,
         receiptExceptionReason: document.getElementById('fieldReimbursementReceiptExceptionReason')?.value || '',
         originalReceiptSubmitted: document.getElementById('fieldReimbursementOriginalSubmitted')?.checked === true,
         originalReceiptSubmittedDate: document.getElementById('fieldReimbursementOriginalDate')?.value || '',
@@ -2315,6 +2536,14 @@ function readReimbursementForm(targetStatus, existing = null) {
         liquidationStatus: requestType === 'Liquidation' ? 'Submitted' : String(existing?.liquidationStatus || ''),
         approvedAmount: Number(existing?.approvedAmount || 0),
         paymentStatus: String(existing?.paymentStatus || ''),
+        lineItems: items.map(serializeReimbursementItem),
+        closedVisitCount: visitedRows.length,
+        closedVisitDetails: visitedRows.map((row) => ({
+            scheduleId: String(row.id || ''),
+            customer: getFieldRowCustomerLabel(row),
+            reference: getFieldRowReferenceLabel(row),
+            closedAt: String(row.date_finished || row.closed_at || row.field_time_out || '')
+        })),
         status: resolveReimbursementNextStatus(targetStatus, existing),
         createdAt: String(existing?.createdAt || now.toISOString()),
         updatedAt: now.toISOString()
@@ -2336,19 +2565,21 @@ function validateReimbursementRequest(request, existing = null) {
         return { ok: false, message: 'This request can no longer be edited after approval/review.' };
     }
     if (!request.requestType) return { ok: false, message: 'Request type is required.' };
-    if (request.amount <= 0) return { ok: false, message: 'Amount is required.' };
+    if (request.requestType === 'Cash Advance' && request.amount <= 0) return { ok: false, message: 'Cash advance amount is required.' };
     if (!request.expenseCategory) return { ok: false, message: 'Expense category is required.' };
     if (!request.description) return { ok: false, message: 'Description / purpose is required.' };
-    const isSubmit = request.status === 'Submitted';
-    const receiptFile = document.getElementById('fieldReimbursementReceiptImage')?.files?.[0];
-    if (isSubmit && request.requestType === 'Reimbursement' && !request.receiptException && !request.receiptImageUrl && !receiptFile) {
-        return { ok: false, message: 'Receipt image is required for reimbursement unless an exception reason is provided.' };
+    const isSubmit = !['Draft', 'Incomplete / Needs Correction'].includes(request.status);
+    const items = normalizeReimbursementItems(state.reimbursementItems).filter((item) => item.groupId || item.accountId || item.itemNote || item.supplierStoreName || item.amount > 0 || item.receiptImageUrl || item.receiptFile);
+    if (!items.length || !items.some((item) => Number(item.amount || 0) > 0)) {
+        return { ok: false, message: 'Add at least one item row with amount.' };
     }
-    if (isSubmit && request.receiptException && !request.receiptExceptionReason) {
-        return { ok: false, message: 'Receipt exception reason is required.' };
+    const missingReceipt = items.find((item) => !item.receiptImageUrl && !item.receiptFile);
+    if (isSubmit && missingReceipt) {
+        return { ok: false, message: 'Receipt image is mandatory for every item row.' };
     }
-    if (isSubmit && /gasoline|fuel/i.test(request.expenseCategory) && !request.routeDestination) {
-        return { ok: false, message: 'Route / destination is required for gasoline or fuel requests.' };
+    const invalidRow = items.find((item) => !item.groupId || !item.accountId || !item.supplierStoreName || Number(item.amount || 0) <= 0);
+    if (invalidRow) {
+        return { ok: false, message: 'Each item row needs item group, chart account, supplier/store, amount, and receipt.' };
     }
     if (isSubmit && request.requestType === 'Cash Advance') {
         const openAdvance = state.reimbursementRequests.find((item) => (
@@ -2365,22 +2596,24 @@ function validateReimbursementRequest(request, existing = null) {
 }
 
 async function attachReimbursementUploads(request) {
-    const receiptFile = document.getElementById('fieldReimbursementReceiptImage')?.files?.[0];
-    const additionalFile = document.getElementById('fieldReimbursementAdditionalImage')?.files?.[0];
-    if (receiptFile) {
-        const upload = await prepareReimbursementImageUpload(receiptFile, request.id, 'receipt');
-        request.receiptImageUrl = upload.url;
-        request.receiptImagePath = upload.path;
-        request.receiptImageName = receiptFile.name;
-        request.receiptImageSize = upload.size;
+    const nextItems = [];
+    for (const item of normalizeReimbursementItems(state.reimbursementItems)) {
+        const nextItem = { ...item };
+        if (nextItem.receiptFile) {
+            const upload = await prepareReimbursementImageUpload(nextItem.receiptFile, request.id, nextItem.id || 'receipt');
+            nextItem.receiptImageUrl = upload.url;
+            nextItem.receiptImagePath = upload.path;
+            nextItem.receiptImageName = nextItem.receiptFile.name || nextItem.receiptImageName || 'Receipt image';
+        }
+        nextItems.push(nextItem);
     }
-    if (additionalFile) {
-        const upload = await prepareReimbursementImageUpload(additionalFile, request.id, 'additional');
-        request.additionalImageUrl = upload.url;
-        request.additionalImagePath = upload.path;
-        request.additionalImageName = additionalFile.name;
-        request.additionalImageSize = upload.size;
-    }
+    state.reimbursementItems = nextItems;
+    request.lineItems = nextItems.map(serializeReimbursementItem);
+    const first = request.lineItems[0] || null;
+    request.receiptImageUrl = first?.receiptImageUrl || request.receiptImageUrl || '';
+    request.receiptImagePath = first?.receiptImagePath || request.receiptImagePath || '';
+    request.receiptImageName = first?.receiptImageName || request.receiptImageName || '';
+    request.additionalImageUrl = request.lineItems[1]?.receiptImageUrl || request.additionalImageUrl || '';
 }
 
 async function prepareReimbursementImageUpload(file, requestId, kind) {

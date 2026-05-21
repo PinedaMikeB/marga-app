@@ -1434,8 +1434,7 @@ function renderFieldRequestDetailPanel() {
             ${fieldRequestDetailItem('Unliquidated Advances', unliquidated.length ? `${unliquidated.length} open / ${MargaUtils.formatCurrency(sumAmounts(unliquidated.map((item) => item.approvedAmount || item.amount)))}` : 'None found')}
         </div>
         <div class="field-request-image-grid">
-            ${renderFieldRequestImage(request.receiptImageUrl, 'Receipt Image')}
-            ${renderFieldRequestImage(request.additionalImageUrl, 'Additional Image')}
+            ${renderFieldRequestLineItems(request)}
             ${renderFieldRequestImage(request.proofOfTransferImageUrl, 'Payment Proof')}
         </div>
         <div class="field-request-notes">
@@ -1445,6 +1444,25 @@ function renderFieldRequestDetailPanel() {
             <p>${escapeHtml([request.handlerRemarks, request.approvalRemarks, request.rejectionReason, request.correctionReason].filter(Boolean).join(' | ') || '-')}</p>
         </div>
     `;
+}
+
+function renderFieldRequestLineItems(request) {
+    const items = Array.isArray(request.lineItems) && request.lineItems.length
+        ? request.lineItems
+        : [{
+            itemNote: request.description,
+            supplierStoreName: request.supplierStoreName,
+            amount: request.receiptAmount || request.amount,
+            receiptNumber: request.receiptNumber,
+            receiptImageUrl: request.receiptImageUrl
+        }];
+    return items.map((item, index) => `
+        <article class="field-request-image-card">
+            <span>${escapeHtml(item.itemNote || item.expenseCategory || `Receipt ${index + 1}`)}</span>
+            <small>${escapeHtml([item.supplierStoreName, item.receiptNumber, MargaUtils.formatCurrency(item.amount || 0)].filter(Boolean).join(' · '))}</small>
+            ${item.receiptImageUrl ? `<a href="${escapeHtml(item.receiptImageUrl)}" target="_blank" rel="noopener"><img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt ${index + 1}"></a>` : '<small>No receipt image uploaded</small>'}
+        </article>
+    `).join('');
 }
 
 function fieldRequestDetailItem(label, value) {
@@ -3641,6 +3659,14 @@ function toFirestoreFieldValue(value) {
     if (typeof value === 'number' && Number.isFinite(value)) {
         if (Number.isInteger(value)) return { integerValue: String(value) };
         return { doubleValue: value };
+    }
+    if (value && typeof value === 'object') {
+        const fields = {};
+        Object.entries(value).forEach(([key, child]) => {
+            if (child === undefined || typeof child === 'function') return;
+            fields[key] = toFirestoreFieldValue(child);
+        });
+        return { mapValue: { fields } };
     }
     return { stringValue: String(value ?? '') };
 }

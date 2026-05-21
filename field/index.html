@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260521-reimbursement-1">
+    <link rel="stylesheet" href="css/field.css?v=20260521-reimbursement-simple-1">
 </head>
 <body>
     <main class="field-shell">
@@ -164,152 +164,87 @@
             <div class="field-reimbursement-warning" id="fieldReimbursementWarning" hidden></div>
             <form id="fieldReimbursementForm" class="field-reimbursement-form" hidden>
                 <input type="hidden" id="fieldReimbursementId">
+                <input type="hidden" id="fieldReimbursementType" value="Reimbursement">
+                <input type="hidden" id="fieldReimbursementCategory">
+                <input type="hidden" id="fieldReimbursementAmount">
+                <input type="hidden" id="fieldReimbursementLiquidatedAmount">
+                <input type="hidden" id="fieldReimbursementUnusedReturned">
+                <input type="hidden" id="fieldReimbursementAdditionalDue">
                 <input type="hidden" id="fieldReimbursementReceiptUrl">
                 <input type="hidden" id="fieldReimbursementAdditionalUrl">
-                <div class="field-reimbursement-step">
-                    <span>Step 1</span>
-                    <strong>Request type and amount</strong>
-                    <div class="marga-form-grid">
-                        <label class="marga-field">
-                            <span>Request Type</span>
-                            <select id="fieldReimbursementType" required></select>
-                        </label>
-                        <label class="marga-field">
-                            <span>Amount</span>
-                            <input type="number" id="fieldReimbursementAmount" min="0" step="0.01" required>
-                        </label>
-                        <label class="marga-field">
-                            <span>Date Of Expense</span>
-                            <input type="date" id="fieldReimbursementExpenseDate" required>
-                        </label>
-                        <label class="marga-field">
-                            <span>Expense Category</span>
-                            <select id="fieldReimbursementCategory" required></select>
-                        </label>
+                <input type="hidden" id="fieldReimbursementSupplier">
+                <input type="hidden" id="fieldReimbursementReceiptNumber">
+                <input type="hidden" id="fieldReimbursementOrSi">
+                <input type="hidden" id="fieldReimbursementReceiptDate">
+                <input type="hidden" id="fieldReimbursementReceiptAmount">
+                <input type="hidden" id="fieldReimbursementClient">
+                <input type="hidden" id="fieldReimbursementBranch">
+                <input type="hidden" id="fieldReimbursementServiceTicket">
+                <input type="hidden" id="fieldReimbursementSerial">
+                <input type="hidden" id="fieldReimbursementJobOrder">
+                <input type="hidden" id="fieldReimbursementVehicle">
+                <input type="hidden" id="fieldReimbursementPlate">
+                <input type="hidden" id="fieldReimbursementOdoStart">
+                <input type="hidden" id="fieldReimbursementOdoEnd">
+                <input type="hidden" id="fieldReimbursementLiters">
+                <input type="hidden" id="fieldReimbursementFuelStation">
+                <input type="hidden" id="fieldReimbursementRoute">
+                <input type="hidden" id="fieldReimbursementExpectedLiquidation">
+                <input type="hidden" id="fieldReimbursementAdvancePurpose">
+                <input type="hidden" id="fieldReimbursementBackupMethod">
+                <input type="checkbox" id="fieldReimbursementReceiptException" hidden>
+                <input type="hidden" id="fieldReimbursementReceiptExceptionReason">
+                <input type="checkbox" id="fieldReimbursementOriginalSubmitted" hidden>
+                <input type="hidden" id="fieldReimbursementOriginalDate">
+
+                <section class="field-reimbursement-simple-head">
+                    <div class="field-reimbursement-toggle" role="group" aria-label="Request mode">
+                        <button type="button" class="is-active" data-reimbursement-mode="Reimbursement">Reimbursement</button>
+                        <button type="button" data-reimbursement-mode="Cash Advance">Cash Advance</button>
                     </div>
-                </div>
-                <div class="field-reimbursement-step">
-                    <span>Step 2</span>
-                    <strong>Expense details</strong>
-                    <div class="marga-form-grid">
-                        <label class="marga-field marga-field-full">
-                            <span>Description / Purpose</span>
-                            <textarea id="fieldReimbursementDescription" rows="3" required></textarea>
+                    <label class="marga-field field-date-compact">
+                        <span>Date</span>
+                        <input type="date" id="fieldReimbursementExpenseDate" required>
+                    </label>
+                </section>
+
+                <section class="field-reimbursement-simple-toolbar">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldReimbursementAddSupplierBtn">Add Supplier</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="fieldReimbursementAddItemBtn">Add Item Row</button>
+                    <article class="field-advance-card" id="fieldReimbursementAdvanceCard">
+                        <label>
+                            <span>Cash Advance</span>
+                            <input type="number" id="fieldReimbursementAdvanceAmount" min="0" step="0.01" placeholder="0.00">
                         </label>
-                        <label class="marga-field">
-                            <span>Supplier / Store Name</span>
-                            <input type="text" id="fieldReimbursementSupplier">
-                        </label>
-                        <label class="marga-field">
-                            <span>Receipt Number</span>
-                            <input type="text" id="fieldReimbursementReceiptNumber">
-                        </label>
-                        <label class="marga-field">
-                            <span>OR/SI Number</span>
-                            <input type="text" id="fieldReimbursementOrSi">
-                        </label>
-                        <label class="marga-field">
-                            <span>Receipt Date</span>
-                            <input type="date" id="fieldReimbursementReceiptDate">
-                        </label>
-                        <label class="marga-field">
-                            <span>Receipt Amount</span>
-                            <input type="number" id="fieldReimbursementReceiptAmount" min="0" step="0.01">
-                        </label>
-                    </div>
-                </div>
-                <div class="field-reimbursement-step">
-                    <span>Step 3</span>
-                    <strong>Client / service reference</strong>
-                    <div class="marga-form-grid">
-                        <label class="marga-field">
-                            <span>Client / Company Visited</span>
-                            <input type="text" id="fieldReimbursementClient">
-                        </label>
-                        <label class="marga-field">
-                            <span>Branch / Location</span>
-                            <input type="text" id="fieldReimbursementBranch">
-                        </label>
-                        <label class="marga-field">
-                            <span>Service Ticket ID</span>
-                            <input type="text" id="fieldReimbursementServiceTicket">
-                        </label>
-                        <label class="marga-field">
-                            <span>Machine Serial Number</span>
-                            <input type="text" id="fieldReimbursementSerial">
-                        </label>
-                        <label class="marga-field">
-                            <span>Job Order / Reference No.</span>
-                            <input type="text" id="fieldReimbursementJobOrder">
-                        </label>
-                    </div>
-                </div>
-                <div class="field-reimbursement-step" id="fieldReimbursementGasolineFields" hidden>
-                    <span>Optional</span>
-                    <strong>Gasoline details</strong>
-                    <div class="marga-form-grid">
-                        <label class="marga-field"><span>Vehicle Used</span><input type="text" id="fieldReimbursementVehicle"></label>
-                        <label class="marga-field"><span>Plate Number</span><input type="text" id="fieldReimbursementPlate"></label>
-                        <label class="marga-field"><span>Starting Odometer</span><input type="number" id="fieldReimbursementOdoStart" min="0" step="1"></label>
-                        <label class="marga-field"><span>Ending Odometer</span><input type="number" id="fieldReimbursementOdoEnd" min="0" step="1"></label>
-                        <label class="marga-field"><span>Liters</span><input type="number" id="fieldReimbursementLiters" min="0" step="0.001"></label>
-                        <label class="marga-field"><span>Fuel Station</span><input type="text" id="fieldReimbursementFuelStation"></label>
-                        <label class="marga-field marga-field-full"><span>Route / Destination</span><input type="text" id="fieldReimbursementRoute"></label>
-                    </div>
-                </div>
-                <div class="field-reimbursement-step" id="fieldReimbursementAdvanceFields" hidden>
-                    <span>Cash advance</span>
-                    <strong>Advance / liquidation details</strong>
-                    <div class="marga-form-grid">
-                        <label class="marga-field"><span>Cash Advance Amount Requested</span><input type="number" id="fieldReimbursementAdvanceAmount" min="0" step="0.01"></label>
-                        <label class="marga-field"><span>Expected Liquidation Date</span><input type="date" id="fieldReimbursementExpectedLiquidation"></label>
-                        <label class="marga-field"><span>Amount Liquidated</span><input type="number" id="fieldReimbursementLiquidatedAmount" min="0" step="0.01"></label>
-                        <label class="marga-field"><span>Unused Amount Returned</span><input type="number" id="fieldReimbursementUnusedReturned" min="0" step="0.01" readonly></label>
-                        <label class="marga-field"><span>Additional Reimbursement Due</span><input type="number" id="fieldReimbursementAdditionalDue" min="0" step="0.01" readonly></label>
-                        <label class="marga-field marga-field-full"><span>Purpose Of Advance / Liquidation Notes</span><textarea id="fieldReimbursementAdvancePurpose" rows="2"></textarea></label>
-                    </div>
-                </div>
-                <div class="field-reimbursement-step">
-                    <span>Step 4</span>
-                    <strong>Receipt upload</strong>
-                    <div class="field-upload-grid">
-                        <label class="field-upload-box">
-                            <span>Receipt Image</span>
-                            <input type="file" id="fieldReimbursementReceiptImage" accept="image/*" capture="environment">
-                            <img id="fieldReimbursementReceiptPreview" alt="" hidden>
-                            <small id="fieldReimbursementReceiptHint">Camera or gallery upload</small>
-                        </label>
-                        <label class="field-upload-box">
-                            <span>Additional Image</span>
-                            <input type="file" id="fieldReimbursementAdditionalImage" accept="image/*" capture="environment">
-                            <img id="fieldReimbursementAdditionalPreview" alt="" hidden>
-                            <small id="fieldReimbursementAdditionalHint">Optional supporting image</small>
-                        </label>
-                        <label class="field-checkbox-card">
-                            <input type="checkbox" id="fieldReimbursementReceiptException">
-                            <span>Receipt exception</span>
-                            <textarea id="fieldReimbursementReceiptExceptionReason" rows="2" placeholder="Reason if receipt image is unavailable"></textarea>
-                        </label>
-                        <label class="field-checkbox-card">
-                            <input type="checkbox" id="fieldReimbursementOriginalSubmitted">
-                            <span>Original receipt submitted</span>
-                            <input type="date" id="fieldReimbursementOriginalDate">
-                        </label>
-                    </div>
-                </div>
-                <div class="field-reimbursement-step">
-                    <span>Step 5</span>
-                    <strong>Payout method</strong>
-                    <div class="marga-form-grid">
-                        <label class="marga-field"><span>Payment Method Requested</span><select id="fieldReimbursementPaymentMethod"><option value="GCash">GCash</option><option value="Bank Transfer">Bank Transfer</option><option value="Cash">Cash</option></select></label>
-                        <label class="marga-field"><span>Staff GCash Number</span><input type="tel" id="fieldReimbursementGcash"></label>
-                        <label class="marga-field"><span>Staff Bank Name</span><input type="text" id="fieldReimbursementBankName"></label>
-                        <label class="marga-field"><span>Staff Bank Account Name</span><input type="text" id="fieldReimbursementBankAccountName"></label>
-                        <label class="marga-field"><span>Staff Bank Account Number</span><input type="text" id="fieldReimbursementBankAccountNumber"></label>
-                        <label class="marga-field"><span>Backup Payout Method</span><input type="text" id="fieldReimbursementBackupMethod"></label>
-                        <label class="marga-field marga-field-full"><span>Notes</span><textarea id="fieldReimbursementNotes" rows="2"></textarea></label>
-                    </div>
-                </div>
+                        <div><span>Rows Total</span><strong id="fieldReimbursementRowsTotal">PHP 0.00</strong></div>
+                        <div><span>Return Change</span><strong id="fieldReimbursementReturnChange">PHP 0.00</strong></div>
+                        <div><span>Add Reimbursement</span><strong id="fieldReimbursementAdditionalReimbursement">PHP 0.00</strong></div>
+                    </article>
+                </section>
+
+                <section class="field-reimbursement-item-list" id="fieldReimbursementItemList"></section>
+
+                <section class="field-reimbursement-visited" id="fieldReimbursementVisitedCard">
+                    <button type="button" id="fieldReimbursementVisitedToggle">
+                        <span>Customers visited today</span>
+                        <strong id="fieldReimbursementVisitedCount">0</strong>
+                    </button>
+                    <div id="fieldReimbursementVisitedDetails" hidden></div>
+                </section>
+
+                <label class="marga-field marga-field-full">
+                    <span>Description / Remarks</span>
+                    <textarea id="fieldReimbursementDescription" rows="3" placeholder="Short overall note for the request, purpose, or liquidation remarks." required></textarea>
+                </label>
+
+                <section class="field-reimbursement-payout-grid">
+                    <label class="marga-field"><span>Payment Method</span><select id="fieldReimbursementPaymentMethod"><option value="GCash">GCash</option><option value="Bank Transfer">Bank Transfer</option><option value="Cash">Cash</option></select></label>
+                    <label class="marga-field"><span>GCash Number</span><input type="tel" id="fieldReimbursementGcash"></label>
+                    <label class="marga-field"><span>Bank Name</span><input type="text" id="fieldReimbursementBankName"></label>
+                    <label class="marga-field"><span>Bank Account Name</span><input type="text" id="fieldReimbursementBankAccountName"></label>
+                    <label class="marga-field"><span>Bank Account Number</span><input type="text" id="fieldReimbursementBankAccountNumber"></label>
+                    <label class="marga-field"><span>Notes</span><input type="text" id="fieldReimbursementNotes"></label>
+                </section>
                 <div class="field-reimbursement-form-actions">
                     <button type="button" class="btn btn-secondary btn-sm" id="fieldReimbursementSaveDraft">Save Draft</button>
                     <button type="submit" class="btn btn-primary btn-sm" id="fieldReimbursementSubmit">Submit Request</button>
@@ -791,6 +726,6 @@
     <script src="../shared/js/offline-sync.js?v=20260516-field-permissions-3"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js?v=20260520-update-waits-1"></script>
-    <script src="js/field.js?v=20260521-reimbursement-1"></script>
+    <script src="js/field.js?v=20260521-reimbursement-simple-1"></script>
 </body>
 </html>
