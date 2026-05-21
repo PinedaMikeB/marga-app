@@ -5,6 +5,9 @@ Read first for any Codex/agent work in this repo:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 3. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/AGENTS.md`
 
+For database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths, also read:
+`/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md`
+
 ## Core Purpose
 Codex is responsible for protecting the owner from unnecessary cost and repeated work.
 
@@ -13,6 +16,8 @@ Before doing a task, choose the cheapest safe path that preserves business truth
 ## Reuse And Memory
 - Check `HANDOFF.md`, `MASTERPLAN.md`, existing scripts, reports, and previous utilities before re-solving a problem.
 - If a solution will be needed again, save it as documentation, a script, an automation, or a skill.
+- Keep reusable MARGA skills under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills`; link broadly useful skills into `/Users/mike/.codex/skills` so future sessions can discover them.
+- Treat every real production mistake or repeated prompt as a learning event. After fixing it, actively decide whether the resolution should become a reusable skill, script, checklist, or doc rule so future Codex sessions prevent the same class of error.
 - If a command or report worked once for a real incident, make it repeatable and record when to use it.
 - Prefer local backups and saved reports before live paid backend reads.
 

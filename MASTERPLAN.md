@@ -6,6 +6,7 @@ Canonical Status: Single source of truth for product strategy, guardrails, and m
 Read first in every new Marga-App thread:
 1. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md`
+3. For database migration/backend cutover work, `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md`
 
 ## Purpose
 MARGA is the web-based operating system that is replacing the legacy VB.NET desktop workflow used for copier/printer rental operations.
@@ -36,6 +37,8 @@ This file exists to protect the project across new chats by recording:
 - Cost-protection purpose: Codex must protect the owner from unnecessary spending. Before any task, choose the cheapest safe path that preserves operational truth, avoids recurring SaaS/API/database charges, avoids broad paid reads/writes, and prevents repeated manual work. If a proven fix, query, report, UI pattern, or workflow will likely be reused, save it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, or a skill so it is not rediscovered and reprompted later.
 - Waste-prevention design rule: when building any module, anticipate where staff will make mistakes or ask again. Prefer searchable dropdowns over free text for real records, tables/grids for line-item entry, explicit audit reports for financial changes, reusable helper functions over copy-paste logic, and database-side validation where it prevents bad or duplicate operational records.
 - Build-once rule: if a task solved a real business problem before, check the handoff/masterplan/scripts before reimplementing. Promote repeated procedures into scripts, docs, automation, or skills when they save future time or cost.
+- Skill reuse rule: repeated migration, design, cost-protection, and continuous-improvement lessons should become reusable skills under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills` and, when broadly useful, be linked into `/Users/mike/.codex/skills`.
+- Continuous improvement rule: every resolved production error should be converted into reusable protection when it has future value. Codex must actively ask whether the fix belongs in a skill, script, checklist, validation, searchable UI, database rule, or handoff note so the app and the working process improve every day.
 - Production backend protection: `app.marga.biz` is the production app path and must use Margabase/Postgres. Do not allow production staff to write new operational records to Firebase.
 - Firebase cost/data protection: after the 2026-05-18 rescue, do not restart live Firebase sync, admin catch-up, or broad Firebase parity readers unless the user explicitly approves a targeted rescue/check. Prefer local backups, saved rescue reports, and Margabase tables first.
 - Migration completion rule for MARGA and future webapps: migration is not complete when data is copied. Migration is complete only when old backend secrets/config are removed, old domains are blocked, service worker cache is reset, all write paths are proven against the new database through the same production URL staff use, and stale writes from the old database are reconciled with an auditable report.

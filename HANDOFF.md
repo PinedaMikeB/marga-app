@@ -6,11 +6,13 @@ Canonical Status: Single source of truth for current operational handoff
 Start every new Marga-App thread by reading:
 1. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md`
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
+3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
 ## Current Focus
 - Standing Codex purpose from the owner:
   - Protect the owner from unnecessary cost. Before acting, prefer the cheapest safe path that keeps business data accurate and avoids repeated paid reads/writes, recurring services, wasteful scans, duplicate manual work, and repeated prompts for problems already solved.
   - If a workflow, report, query, UI pattern, rescue command, or business rule will likely be reused, preserve it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, an automation, or a skill so future work starts from the proven method instead of rediscovering it.
+  - Error-resolution learning rule: every real bug, migration miss, costly mistake, repeated prompt, or staff data-entry failure must be treated as a reusable lesson. After resolving it, Codex should actively decide whether to create or update a skill under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills`, link it into `/Users/mike/.codex/skills` when broadly useful, and reference it here/masterplan/agents so the same mistake is prevented next time.
   - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
   - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
 - 2026-05-21 Firebase/Margabase reconciliation incident:
@@ -24,6 +26,7 @@ Start every new Marga-App thread by reading:
   - Fix applied in `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/margabase-firestore-api.mjs`: simple `orderBy` fields are pushed into SQL before `limit`, then rows are sorted again for compatibility. Verified after restart that `tbl_schedule orderBy id DESC limit 1` returns `999202606093` and `tbl_newfordr orderBy id DESC limit 1` returns `223838`.
   - Scan note: Service and Collections use this ID-allocation pattern for `tbl_schedule`; the API fix protects those paths. Petty Cash entry vouchers use their own PCV IDs and Hener's May 21 entries were present in Margabase, but supplier creation should still fetch the current highest supplier ID instead of trusting a capped browser list.
   - Future rule: every migrated write path must have an allocator smoke test through `app.marga.biz`/Margabase that creates or simulates the next ID against the real highest row. Never declare a module migrated because reads look correct; prove writes, IDs, updates, deletes, and audit/report rows.
+  - This lesson is now preserved as a reusable global skill: `/Users/mike/.codex/skills/marga-database-migration` symlinks to `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration`.
 - 2026-05-18 Production backend protection checkpoint:
   - Current production app domain is `app.marga.biz`; it must use Margabase/Postgres, not Firebase.
   - Latest pushed protection commit: `ac93600` `Lock production backend to Margabase`.
