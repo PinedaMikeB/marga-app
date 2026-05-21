@@ -72,6 +72,7 @@ const FIELD_CALL_POLL_MS = 7000;
 const FIELD_CALL_RING_TIMEOUT_MS = 120000;
 const FIELD_CALL_SCRIPT_TIMEOUT_MS = 4500;
 const FIELD_MODAL_DRAFT_KEY_PREFIX = 'marga_field_modal_draft_v1';
+const FIELD_REIMBURSEMENT_DRAFT_KEY_PREFIX = 'marga_field_reimbursement_draft_v1';
 const FIELD_MODAL_DRAFT_INPUT_IDS = [
     'fieldCloseNotes',
     'fieldSolutionNotes',
@@ -128,6 +129,19 @@ const FIELD_REIMBURSEMENT_REQUEST_TYPES = [
     'Liquidation',
     'Return of Excess Cash',
     'Correction / Additional Receipt'
+];
+
+const FIELD_REIMBURSEMENT_PERSISTED_INPUT_IDS = [
+    'fieldReimbursementId',
+    'fieldReimbursementExpenseDate',
+    'fieldReimbursementAdvanceAmount',
+    'fieldReimbursementDescription',
+    'fieldReimbursementPaymentMethod',
+    'fieldReimbursementGcash',
+    'fieldReimbursementBankName',
+    'fieldReimbursementBankAccountName',
+    'fieldReimbursementBankAccountNumber',
+    'fieldReimbursementNotes'
 ];
 
 const FIELD_REIMBURSEMENT_CATEGORIES = [
@@ -330,6 +344,8 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         saveReimbursementRequest('Submitted');
     });
+    document.getElementById('fieldReimbursementForm')?.addEventListener('input', queueReimbursementDraftSave);
+    document.getElementById('fieldReimbursementForm')?.addEventListener('change', queueReimbursementDraftSave);
     document.getElementById('fieldReimbursementStatusTabs')?.addEventListener('click', (event) => {
         const tab = event.target.closest('[data-reimbursement-tab]');
         if (!tab) return;
@@ -338,12 +354,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('fieldReimbursementList')?.addEventListener('click', handleReimbursementListAction);
     document.querySelectorAll('[data-reimbursement-mode]').forEach((button) => {
-        button.addEventListener('click', () => setReimbursementMode(button.dataset.reimbursementMode || 'Reimbursement'));
+        button.addEventListener('click', () => {
+            setReimbursementMode(button.dataset.reimbursementMode || 'Reimbursement');
+            queueReimbursementDraftSave();
+        });
     });
     document.getElementById('fieldReimbursementAddItemBtn')?.addEventListener('click', () => addReimbursementItemRow());
     document.getElementById('fieldReimbursementItemEntry')?.addEventListener('input', handleReimbursementDraftInput);
     document.getElementById('fieldReimbursementItemEntry')?.addEventListener('change', handleReimbursementDraftChange);
     document.getElementById('fieldReimbursementItemEntry')?.addEventListener('click', handleReimbursementDraftClick);
+    document.getElementById('fieldReimbursementItemList')?.addEventListener('change', handleReimbursementItemsChange);
     document.getElementById('fieldReimbursementItemList')?.addEventListener('click', handleReimbursementItemsClick);
     document.getElementById('fieldReimbursementVisitedToggle')?.addEventListener('click', toggleReimbursementVisitedDetails);
     document.getElementById('fieldReimbursementAdvanceAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
@@ -499,6 +519,10 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMySchedule();
 });
 
+window.addEventListener('beforeunload', () => {
+    saveReimbursementLocalDraft();
+});
+
 function isFieldTechTeamLeader() {
     return MargaAuth.hasRole('admin')
         || MargaAuth.hasRole('team-leader-field-technicians')
@@ -652,6 +676,10 @@ function toggleModalSection(event) {
 
 function fieldModalDraftKey() {
     return `${FIELD_MODAL_DRAFT_KEY_PREFIX}:${state.staffId || 'staff'}`;
+}
+
+function fieldReimbursementDraftKey() {
+    return `${FIELD_REIMBURSEMENT_DRAFT_KEY_PREFIX}:${state.staffId || 'staff'}`;
 }
 
 function safeReadJsonStorage(key) {
@@ -2116,6 +2144,7 @@ function openReimbursementForm(request = null) {
     form.hidden = false;
     resetReimbursementForm();
     if (request) fillReimbursementForm(request);
+    else restoreReimbursementLocalDraft();
     syncReimbursementConditionalFields();
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -2124,7 +2153,77 @@ function closeReimbursementForm() {
     const form = document.getElementById('fieldReimbursementForm');
     if (form) form.hidden = true;
     state.editingReimbursementId = '';
+    clearStoredReimbursementDraft();
     resetReimbursementForm();
+}
+
+function clearStoredReimbursementDraft() {
+    try {
+        localStorage.removeItem(fieldReimbursementDraftKey());
+    } catch {
+        // Ignore storage failures.
+    }
+}
+
+let reimbursementDraftTimer = null;
+
+function queueReimbursementDraftSave() {
+    clearTimeout(reimbursementDraftTimer);
+    reimbursementDraftTimer = setTimeout(saveReimbursementLocalDraft, 180);
+}
+
+function captureReimbursementLocalDraft() {
+    const form = document.getElementById('fieldReimbursementForm');
+    if (!form || form.hidden) return null;
+    const values = {};
+    FIELD_REIMBURSEMENT_PERSISTED_INPUT_IDS.forEach((id) => {
+        values[id] = document.getElementById(id)?.value || '';
+    });
+    return {
+        savedAt: new Date().toISOString(),
+        editingId: state.editingReimbursementId || '',
+        reimbursementMode: state.reimbursementMode || 'Reimbursement',
+        values,
+        draftItem: serializeReimbursementLocalItem(state.reimbursementDraftItem || createReimbursementItem()),
+        items: state.reimbursementItems.map(serializeReimbursementLocalItem)
+    };
+}
+
+function serializeReimbursementLocalItem(item = {}) {
+    return {
+        ...serializeReimbursementItem(item),
+        receiptImageUrl: item.receiptFile ? '' : String(item.receiptImageUrl || '').trim(),
+        receiptImageName: String(item.receiptImageName || '').trim(),
+        receiptNeedsReselect: Boolean(item.receiptFile || item.receiptNeedsReselect)
+    };
+}
+
+function saveReimbursementLocalDraft() {
+    const draft = captureReimbursementLocalDraft();
+    if (!draft) return;
+    safeWriteJsonStorage(fieldReimbursementDraftKey(), draft);
+}
+
+function restoreReimbursementLocalDraft() {
+    const draft = safeReadJsonStorage(fieldReimbursementDraftKey());
+    if (!draft || !draft.values) return false;
+    state.editingReimbursementId = String(draft.editingId || '');
+    setReimbursementMode(draft.reimbursementMode === 'Cash Advance' ? 'Cash Advance' : 'Reimbursement');
+    Object.entries(draft.values).forEach(([id, value]) => setFieldValue(id, value));
+    state.reimbursementDraftItem = createReimbursementItem(draft.draftItem || {});
+    state.reimbursementDraftItem.receiptNeedsReselect = draft.draftItem?.receiptNeedsReselect === true;
+    state.reimbursementItems = Array.isArray(draft.items)
+        ? draft.items.map((item) => {
+            const row = createReimbursementItem(item);
+            row.receiptNeedsReselect = item?.receiptNeedsReselect === true;
+            return row;
+        })
+        : [];
+    renderReimbursementItemEntry();
+    renderReimbursementItemRows();
+    renderReimbursementVisitedCard();
+    syncReimbursementLiquidationMath();
+    return true;
 }
 
 function resetReimbursementForm() {
@@ -2232,7 +2331,8 @@ function createReimbursementItem(item = {}) {
         receiptImageUrl: String(item.receiptImageUrl || item.receiptUrl || '').trim(),
         receiptImagePath: String(item.receiptImagePath || '').trim(),
         receiptImageName: String(item.receiptImageName || '').trim(),
-        receiptFile: item.receiptFile || null
+        receiptFile: item.receiptFile || null,
+        receiptNeedsReselect: item.receiptNeedsReselect === true
     };
 }
 
@@ -2289,7 +2389,7 @@ function renderReimbursementItemEntry() {
             <span>Receipt Image <strong>Required</strong></span>
             <input type="file" accept="image/*" capture="environment" data-reimbursement-draft-receipt>
             ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
-            <small>${escapeHtml(item.receiptImageName || 'Take photo or upload from gallery before adding this item row.')}</small>
+            <small>${escapeHtml(item.receiptNeedsReselect ? `${item.receiptImageName || 'Receipt'} remembered. Please reselect before adding this row.` : (item.receiptImageName || 'Take photo or upload from gallery before adding this item row.'))}</small>
         </label>
     `;
 }
@@ -2336,7 +2436,8 @@ function renderReimbursementItemRow(item, index) {
             <td data-label="Receipt">
                 <div class="field-reimbursement-table-receipt">
                     ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
-                    <span>${escapeHtml(item.receiptNumber || item.receiptImageName || 'Receipt attached')}</span>
+                    <span>${escapeHtml(item.receiptNeedsReselect ? `${item.receiptImageName || 'Receipt'} remembered. Reselect required.` : (item.receiptNumber || item.receiptImageName || 'Receipt attached'))}</span>
+                    ${item.receiptNeedsReselect || (!item.receiptImageUrl && !item.receiptFile) ? `<input type="file" accept="image/*" capture="environment" data-reimbursement-row-receipt="${index}">` : ''}
                 </div>
             </td>
             <td data-label="Action"><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-remove="${index}">Remove</button></td>
@@ -2367,16 +2468,19 @@ function addReimbursementItemRow() {
         alert('Receipt image is mandatory before adding the row.');
         return;
     }
+    item.receiptNeedsReselect = false;
     state.reimbursementItems.push(item);
     resetReimbursementDraftItem();
     renderReimbursementItemEntry();
     renderReimbursementItemRows();
+    queueReimbursementDraftSave();
 }
 
 function handleReimbursementDraftInput(event) {
     const field = event.target?.dataset?.reimbursementDraftField;
     if (!field) return;
     updateReimbursementDraftFromInput(event.target);
+    queueReimbursementDraftSave();
 }
 
 function handleReimbursementDraftChange(event) {
@@ -2387,7 +2491,9 @@ function handleReimbursementDraftChange(event) {
         state.reimbursementDraftItem.receiptFile = file;
         state.reimbursementDraftItem.receiptImageName = file.name || 'Selected receipt';
         state.reimbursementDraftItem.receiptImageUrl = URL.createObjectURL(file);
+        state.reimbursementDraftItem.receiptNeedsReselect = false;
         renderReimbursementItemEntry();
+        queueReimbursementDraftSave();
         return;
     }
     const field = event.target?.dataset?.reimbursementDraftField;
@@ -2402,12 +2508,29 @@ function handleReimbursementDraftChange(event) {
             renderReimbursementItemEntry();
         }
     }
+    queueReimbursementDraftSave();
 }
 
 function handleReimbursementDraftClick(event) {
     if (!event.target.closest('[data-reimbursement-draft-clear]')) return;
     resetReimbursementDraftItem();
     renderReimbursementItemEntry();
+    queueReimbursementDraftSave();
+}
+
+function handleReimbursementItemsChange(event) {
+    const receiptIndex = event.target?.dataset?.reimbursementRowReceipt;
+    if (receiptIndex === undefined) return;
+    const index = Number(receiptIndex);
+    const item = state.reimbursementItems[index];
+    const file = event.target.files?.[0] || null;
+    if (!item || !file) return;
+    item.receiptFile = file;
+    item.receiptImageName = file.name || 'Selected receipt';
+    item.receiptImageUrl = URL.createObjectURL(file);
+    item.receiptNeedsReselect = false;
+    renderReimbursementItemRows();
+    queueReimbursementDraftSave();
 }
 
 function handleReimbursementItemsClick(event) {
@@ -2416,6 +2539,7 @@ function handleReimbursementItemsClick(event) {
     const index = Number(button.dataset.reimbursementRemove || -1);
     state.reimbursementItems = state.reimbursementItems.filter((_, itemIndex) => itemIndex !== index);
     renderReimbursementItemRows();
+    queueReimbursementDraftSave();
 }
 
 function updateReimbursementDraftFromInput(input) {
@@ -2521,6 +2645,7 @@ async function saveReimbursementRequest(targetStatus) {
         else state.reimbursementRequests.unshift(normalizeFieldReimbursementRequest(next));
         state.reimbursementLoaded = true;
         state.reimbursementActiveTab = targetStatus === 'Draft' ? 'Draft' : 'Submitted';
+        clearStoredReimbursementDraft();
         closeReimbursementForm();
         renderReimbursementRequests();
         alert(targetStatus === 'Draft' ? 'Draft saved.' : 'Request submitted to Petty Cash.');
@@ -2647,7 +2772,7 @@ function validateReimbursementRequest(request, existing = null) {
     if (!items.length || !items.some((item) => Number(item.amount || 0) > 0)) {
         return { ok: false, message: 'Add at least one item row with amount.' };
     }
-    const missingReceipt = items.find((item) => !item.receiptImageUrl && !item.receiptFile);
+    const missingReceipt = items.find((item) => item.receiptNeedsReselect || (!item.receiptImageUrl && !item.receiptFile));
     if (isSubmit && missingReceipt) {
         return { ok: false, message: 'Receipt image is mandatory for every item row.' };
     }

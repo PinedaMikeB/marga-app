@@ -45,6 +45,10 @@ Start every new Marga-App thread by reading:
   - Because MARGA invoice numbers, OR numbers, and DR numbers are manually entered from physical booklets, the app may allow offline finalization/draft saves for invoices, OR/payment records, and delivery receipts.
   - Offline saves must carry unique local operation IDs and sync status; when internet returns, Margabase validates uniqueness, required fields, and conflicts before accepting them as server truth.
   - Conflicts such as duplicate invoice/OR/DR numbers or stale invoice balances should go into a clear `Needs Review` queue instead of silently overwriting data.
+- Form persistence rule:
+  - New sections/forms must preserve in-progress work locally while the user is typing, especially on mobile Field App workflows. Refreshes, app restarts, accidental navigation, or sudden connection loss must not reset filled fields to zero.
+  - Persist safe text/select/number/date values, added line rows, selected staff/status filters, and local draft IDs. File inputs cannot be silently restored by browsers after restart; store the filename/status and make the UI ask the user to reselect the image before final submit.
+  - Clear the local in-progress draft only after a successful save/submit or an explicit clear/cancel action.
 - Important billing lesson from 2026-05-11:
   - Google Cloud/Firebase billing showed the large charge under `App Engine`, but the operational failure was Firestore returning `429 Quota exceeded`.
   - Treat this as Firestore/Datastore read-write/query billing pressure, even when Google Billing labels the service as App Engine.

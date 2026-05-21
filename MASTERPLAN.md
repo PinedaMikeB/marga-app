@@ -99,6 +99,10 @@ This file exists to protect the project across new chats by recording:
   - MARGA's final invoice numbers, OR numbers, and DR numbers are manually entered from physical booklets, so offline invoice/payment/DR finalization can be allowed as local pending records.
   - When the device reconnects, Margabase must validate duplicate booklet numbers, stale invoice balances, required fields, and conflicting edits before promoting pending records to server truth.
   - Any conflict must be surfaced in a `Needs Review` workflow for office/admin correction, not silently merged or overwritten.
+- Persistent form rule:
+  - All new operational sections and mobile forms must autosave in-progress entries locally. A browser refresh, app restart, tab switch, or temporary crash should restore filled fields and added rows instead of starting from zero.
+  - This applies especially to Field App technician workflows, Petty Cash vouchers, reimbursement/liquidation requests, collections, billing, and service close forms.
+  - Browser security does not allow file inputs to be restored automatically after restart, so forms with photos/receipts must remember the filename/status and clearly require reselecting the image before final submission.
 
 ### Phase 3A: Active Margabase Test Checkpoint - 2026-05-11 Night
 - Current intent:

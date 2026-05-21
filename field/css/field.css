@@ -1356,6 +1356,7 @@
     align-items: center;
     gap: 0.5rem;
     min-width: 150px;
+    flex-wrap: wrap;
 }
 
 .field-reimbursement-table-receipt img {
@@ -1364,6 +1365,14 @@
     object-fit: cover;
     border-radius: 7px;
     background: #e2e8f0;
+}
+
+.field-reimbursement-table-receipt input[type="file"] {
+    width: 100%;
+    border: 1px solid #c7d7e7;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 0.42rem;
 }
 
 .field-reimbursement-visited {
