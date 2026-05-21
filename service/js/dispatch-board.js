@@ -3850,7 +3850,7 @@ async function loadOperationsBoard() {
 
     const purposeLabel = purposeFilter === 'all' ? 'All Tasks' : getPurposeLabel(Number(purposeFilter));
     subtitle.textContent = `Loading ${purposeLabel} schedules for ${selectedDate}...`;
-    meta.textContent = 'Querying Firestore schedules, route tables, and execution logs...';
+    meta.textContent = 'Querying Margabase schedules, route tables, and execution logs...';
 
     document.querySelector('#opsStaffTable tbody').innerHTML =
         '<tr><td colspan="6" class="loading-cell">Loading...</td></tr>';

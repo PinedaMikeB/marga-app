@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v73-invoice-search-fallback';
+const CACHE_NAME = 'marga-app-shell-v74-margabase-refresh';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -33,7 +33,7 @@ const SHELL_ASSETS = [
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',
-    '/field/js/field.js?v=20260521-invoice-search-fallback-1',
+    '/field/js/field.js?v=20260521-margabase-refresh-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
@@ -53,7 +53,7 @@ const SHELL_ASSETS = [
     '/service/',
     '/service/index.html',
     '/service/css/service.css?v=20260505-delivery-history-status-1',
-    '/service/js/dispatch-board.js?v=20260511-active-staff-1',
+    '/service/js/dispatch-board.js?v=20260521-margabase-refresh-1',
     '/service/js/service.js',
     '/settings/',
     '/settings/index.html',
@@ -65,7 +65,7 @@ const SHELL_ASSETS = [
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
-    '/shared/js/firebase-config.js?v=20260518-login-permissions-2',
+    '/shared/js/firebase-config.js?v=20260521-margabase-documents-1',
     '/shared/js/auth.js?v=20260518-login-permissions-2',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
@@ -114,6 +114,7 @@ self.addEventListener('fetch', (event) => {
     const isSameOrigin = requestUrl.origin === self.location.origin;
     const isNavigate = event.request.mode === 'navigate';
     const isFunctionRequest = isSameOrigin && requestUrl.pathname.startsWith('/.netlify/functions/');
+    const isMargabaseRequest = isSameOrigin && requestUrl.pathname.startsWith('/margabase-api/');
     const isFreshFirstAsset = isSameOrigin && (
         requestUrl.pathname.endsWith('.html')
         || requestUrl.pathname.endsWith('.js')
@@ -149,7 +150,7 @@ self.addEventListener('fetch', (event) => {
                 return fetch(event.request);
             }
 
-            if (isFunctionRequest) {
+            if (isFunctionRequest || isMargabaseRequest) {
                 try {
                     return await fetch(event.request, { cache: 'no-store' });
                 } catch (error) {
