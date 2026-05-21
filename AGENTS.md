@@ -1,0 +1,37 @@
+# MARGA Agent Rules
+
+Read first for any Codex/agent work in this repo:
+1. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/HANDOFF.md`
+2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
+3. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/AGENTS.md`
+
+## Core Purpose
+Codex is responsible for protecting the owner from unnecessary cost and repeated work.
+
+Before doing a task, choose the cheapest safe path that preserves business truth. Avoid broad paid reads/writes, unnecessary SaaS services, repeated Firebase/API scans, duplicate manual work, and recurring costs that can be eliminated with local scripts, cached reports, Postgres views, or reusable tooling.
+
+## Reuse And Memory
+- Check `HANDOFF.md`, `MASTERPLAN.md`, existing scripts, reports, and previous utilities before re-solving a problem.
+- If a solution will be needed again, save it as documentation, a script, an automation, or a skill.
+- If a command or report worked once for a real incident, make it repeatable and record when to use it.
+- Prefer local backups and saved reports before live paid backend reads.
+
+## Product Design Guardrails
+- Anticipate user and staff mistakes before they happen.
+- Use searchable dropdowns for real entities such as customers, invoices, branches, machines, employees, OR numbers, and accounts.
+- Use tables/grids for multi-line financial or operational data instead of free-text remarks when accuracy matters.
+- Add validation and audit trails for billing, collections, payments, schedules, petty cash, DR/releasing, and status changes.
+- Prefer reusable helpers and database-side rules over copy-paste browser logic that can drift between modules.
+
+## Migration Guardrail
+Migration is not complete when data is copied. Migration is complete only when old backend secrets/config are removed, old domains are blocked, service worker cache is reset, all write paths are proven against the new database through the production URL staff use, and stale writes from the old database are reconciled with an auditable report.
+
+For migrated modules, prove writes as well as reads. Create/update/delete paths, numeric ID allocation, invoice/OR/DR uniqueness, schedule creation, release-item creation, payment posting, petty cash voucher lines, and audit rows must be checked through the same production Margabase route staff use.
+
+## Default Question
+For every change, ask:
+- What can create cost?
+- What can create repeated manual work?
+- What can break data accuracy?
+- What can staff type incorrectly?
+- What should be saved so this does not need to be prompted again?

@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-05-18
+Last Updated: 2026-05-21
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -33,8 +33,13 @@ This file exists to protect the project across new chats by recording:
 - Keep Marga App implementation in the `Marga-App` repo/thread. If the active thread or cwd is `marga-biz`, stop and redirect before editing app code.
 - User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
 - Default release behavior for new Codex threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
+- Cost-protection purpose: Codex must protect the owner from unnecessary spending. Before any task, choose the cheapest safe path that preserves operational truth, avoids recurring SaaS/API/database charges, avoids broad paid reads/writes, and prevents repeated manual work. If a proven fix, query, report, UI pattern, or workflow will likely be reused, save it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, or a skill so it is not rediscovered and reprompted later.
+- Waste-prevention design rule: when building any module, anticipate where staff will make mistakes or ask again. Prefer searchable dropdowns over free text for real records, tables/grids for line-item entry, explicit audit reports for financial changes, reusable helper functions over copy-paste logic, and database-side validation where it prevents bad or duplicate operational records.
+- Build-once rule: if a task solved a real business problem before, check the handoff/masterplan/scripts before reimplementing. Promote repeated procedures into scripts, docs, automation, or skills when they save future time or cost.
 - Production backend protection: `app.marga.biz` is the production app path and must use Margabase/Postgres. Do not allow production staff to write new operational records to Firebase.
 - Firebase cost/data protection: after the 2026-05-18 rescue, do not restart live Firebase sync, admin catch-up, or broad Firebase parity readers unless the user explicitly approves a targeted rescue/check. Prefer local backups, saved rescue reports, and Margabase tables first.
+- Migration completion rule for MARGA and future webapps: migration is not complete when data is copied. Migration is complete only when old backend secrets/config are removed, old domains are blocked, service worker cache is reset, all write paths are proven against the new database through the same production URL staff use, and stale writes from the old database are reconciled with an auditable report.
+- Write-path proof rule: each migrated module must prove create/update/delete behavior against Margabase, not only load data. ID allocators that depend on `orderBy id DESC limit 1`, invoice/OR/DR uniqueness, schedule creation, release item creation, payment posting, petty cash voucher lines, and audit rows must be smoke-tested through `app.marga.biz` before users rely on the module.
 - Do not rewrite history on `main` for rollback work. Use forward commits.
 - Do not revert unrelated dirty files in the repo.
 - Treat Billing, Collections, Service, Customers, APD, Petty Cash, and Sync as separate risk zones.
@@ -78,6 +83,7 @@ This file exists to protect the project across new chats by recording:
   - Settings must not offer Firebase as a selectable production backend.
   - Do not run continuous Firebase readers/writers in the background once catch-up is complete. A one-time catch-up is allowed only for a named rescue window or named missing record, and should be stopped immediately after verification.
   - Old deployed app paths that still point to Firebase must be blocked or forced to Margabase before staff can use them.
+  - Emergency rescue order: when staff need current-day operations, sync and verify today first across all transaction collections, then work backward one day at a time. For the 2026-05-21 incident, the order is May 21, then May 20, then May 19. Do not start older-day reconciliation until the current-day report is complete enough for Field, Service, Billing, Collections, and Petty Cash to operate.
 - Database efficiency rule:
   - Margabase must not simply recreate Firestore's document-by-document loading pattern.
   - Preserve raw Firebase documents in an import/mirror layer, then derive normalized relational tables and app-facing views.

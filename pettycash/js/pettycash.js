@@ -3622,6 +3622,22 @@ function getNextSupplierId() {
     return PETTY_CASH_STATE.supplierRecords.reduce((maxId, supplier) => Math.max(maxId, Number(supplier.id || 0)), 0) + 1;
 }
 
+async function allocateNextSupplierId() {
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: 'tbl_supplier' }],
+            orderBy: [{ field: { fieldPath: 'id' }, direction: 'DESCENDING' }],
+            limit: 1
+        });
+        const latest = docs.map((doc) => MargaAuth.parseFirestoreDoc(doc)).filter(Boolean)[0] || null;
+        const nextId = Number(latest?.id || 0) + 1;
+        if (Number.isFinite(nextId) && nextId > 0) return nextId;
+    } catch (error) {
+        console.warn('Unable to allocate supplier id from Margabase; falling back to loaded supplier list.', error);
+    }
+    return getNextSupplierId();
+}
+
 function ensureEmployeeOption(name) {
     const normalized = String(name || '').trim();
     if (!normalized) return;
@@ -3742,7 +3758,7 @@ async function onQuickSupplierSave() {
                 MargaUtils.showToast('Supplier already exists in the master list.', 'info');
             }
         } else {
-            const nextId = getNextSupplierId();
+            const nextId = await allocateNextSupplierId();
             const targetDocId = String(nextId);
             const newPayload = {
                 id: nextId,

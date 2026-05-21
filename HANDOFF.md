@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-05-18
+Last Updated: 2026-05-21
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,6 +8,22 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 
 ## Current Focus
+- Standing Codex purpose from the owner:
+  - Protect the owner from unnecessary cost. Before acting, prefer the cheapest safe path that keeps business data accurate and avoids repeated paid reads/writes, recurring services, wasteful scans, duplicate manual work, and repeated prompts for problems already solved.
+  - If a workflow, report, query, UI pattern, rescue command, or business rule will likely be reused, preserve it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, an automation, or a skill so future work starts from the proven method instead of rediscovering it.
+  - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
+  - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
+- 2026-05-21 Firebase/Margabase reconciliation incident:
+  - User-approved emergency order is: rescue all May 21 transactions from Firebase into Margabase first, verify the report, then rescue May 20, then May 19.
+  - Use `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/rescue-firebase-day-to-margabase.mjs --app=margabase --day=YYYY-MM-DD` for day-specific rescue. It scans operational Firebase collections and upserts any document whose Firebase update time or business date fields match the target day. It writes JSON reports under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/reports/`.
+  - This is an explicit, temporary rescue/check approved by the user because technicians need the current schedules and transactions. Do not leave continuous Firebase sync running afterward.
+  - Migration lesson for MARGA and future webapps: migration is not complete when data is copied. Migration is complete only when old backend secrets/config are removed, old domains are blocked, service worker cache is reset, all write paths are proven against the new database through the production URL, and stale writes from the old database are reconciled with an auditable report.
+- 2026-05-21 Margabase compatibility API write-path incident:
+  - Service request encoding appeared to save but delivery/toner requests such as Complete Solution and Brenton were missing from the schedule because the Margabase Firestore-compatible `:runQuery` endpoint applied `limit 1` before honoring `orderBy id DESC`.
+  - Browser modules that allocated IDs with `orderBy id DESC limit 1` saw the first low document instead of the real latest row, then reused IDs such as `tbl_schedule/2` and `tbl_newfordr/2`. Later writes overwrote earlier requests at the same document ID.
+  - Fix applied in `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/margabase-firestore-api.mjs`: simple `orderBy` fields are pushed into SQL before `limit`, then rows are sorted again for compatibility. Verified after restart that `tbl_schedule orderBy id DESC limit 1` returns `999202606093` and `tbl_newfordr orderBy id DESC limit 1` returns `223838`.
+  - Scan note: Service and Collections use this ID-allocation pattern for `tbl_schedule`; the API fix protects those paths. Petty Cash entry vouchers use their own PCV IDs and Hener's May 21 entries were present in Margabase, but supplier creation should still fetch the current highest supplier ID instead of trusting a capped browser list.
+  - Future rule: every migrated write path must have an allocator smoke test through `app.marga.biz`/Margabase that creates or simulates the next ID against the real highest row. Never declare a module migrated because reads look correct; prove writes, IDs, updates, deletes, and audit/report rows.
 - 2026-05-18 Production backend protection checkpoint:
   - Current production app domain is `app.marga.biz`; it must use Margabase/Postgres, not Firebase.
   - Latest pushed protection commit: `ac93600` `Lock production backend to Margabase`.
