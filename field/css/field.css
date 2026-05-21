@@ -1144,8 +1144,7 @@
     color: #991b1b;
 }
 
-.field-reimbursement-simple-head,
-.field-reimbursement-simple-toolbar {
+.field-reimbursement-simple-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.75rem;
@@ -1177,14 +1176,86 @@
     min-width: 170px;
 }
 
+.field-reimbursement-entry-card {
+    border: 1px solid #dbe5ee;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.86);
+    padding: 0.95rem;
+    display: grid;
+    gap: 0.85rem;
+}
+
+.field-reimbursement-entry-grid {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 0.62rem 1rem;
+    align-items: center;
+}
+
+.field-reimbursement-entry-grid label,
+.field-reimbursement-entry-action {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-column: 1 / -1;
+    align-items: center;
+}
+
+.field-reimbursement-entry-grid span,
+.field-reimbursement-entry-receipt > span {
+    color: #52685f;
+    font-size: 0.78rem;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.field-reimbursement-entry-grid input,
+.field-reimbursement-entry-grid select {
+    width: 100%;
+    border: 1px solid #9ca3af;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #0f172a;
+    padding: 0.42rem 0.48rem;
+}
+
+.field-reimbursement-entry-receipt {
+    border: 1px dashed #aab8c7;
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 0.75rem;
+    display: grid;
+    gap: 0.48rem;
+}
+
+.field-reimbursement-entry-receipt strong {
+    color: #b91c1c;
+    font-size: 0.72rem;
+}
+
+.field-reimbursement-entry-receipt img {
+    width: 100%;
+    max-height: 260px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: #e2e8f0;
+}
+
+.field-reimbursement-add-row {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .field-advance-card {
-    min-width: 260px;
+    width: 100%;
     border: 1px solid #dbe5ee;
     border-radius: 12px;
     padding: 0.75rem;
     background: #f8fafc;
     display: grid;
+    grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, auto));
     gap: 0.5rem;
+    align-items: end;
 }
 
 .field-advance-card label,
@@ -1220,59 +1291,61 @@
     gap: 0.75rem;
 }
 
-.field-reimbursement-item {
-    border: 1px solid #dbe5ee;
-    border-radius: 14px;
-    background: #ffffff;
+.field-reimbursement-empty-table {
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #64748b;
+    font-weight: 750;
     padding: 0.85rem;
-    display: grid;
-    gap: 0.75rem;
 }
 
-.field-reimbursement-item-fields {
-    display: grid;
-    grid-template-columns: minmax(145px, 0.8fr) minmax(185px, 1fr) minmax(170px, 1fr) minmax(150px, 0.9fr) minmax(105px, 0.55fr) minmax(120px, 0.7fr) auto;
-    gap: 0.55rem;
-    align-items: end;
+.field-reimbursement-table-wrap {
+    border: 1px solid #dbe5ee;
+    border-radius: 12px;
+    background: #ffffff;
+    overflow-x: auto;
 }
 
-.field-reimbursement-item-fields label,
-.field-reimbursement-row-actions {
-    display: grid;
-    gap: 0.28rem;
+.field-reimbursement-items-table {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
 }
 
-.field-reimbursement-item-fields span,
-.field-reimbursement-row-receipt span {
+.field-reimbursement-items-table th,
+.field-reimbursement-items-table td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.65rem 0.7rem;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.field-reimbursement-items-table th {
     color: #52685f;
-    font-size: 0.76rem;
+    font-size: 0.72rem;
     font-weight: 850;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-}
-
-.field-reimbursement-item-fields input,
-.field-reimbursement-item-fields select {
-    width: 100%;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    padding: 0.5rem 0.58rem;
-}
-
-.field-reimbursement-row-receipt {
-    border: 1px dashed #cbd5e1;
-    border-radius: 12px;
-    padding: 0.75rem;
     background: #f8fafc;
-    display: grid;
-    gap: 0.45rem;
 }
 
-.field-reimbursement-row-receipt img {
-    width: 100%;
-    max-height: 220px;
-    object-fit: contain;
-    border-radius: 8px;
+.field-reimbursement-items-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.field-reimbursement-table-receipt {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 150px;
+}
+
+.field-reimbursement-table-receipt img {
+    width: 46px;
+    height: 46px;
+    object-fit: cover;
+    border-radius: 7px;
     background: #e2e8f0;
 }
 
@@ -2316,15 +2389,18 @@
     }
 
     .field-reimbursement-simple-head,
-    .field-reimbursement-simple-toolbar,
-    .field-reimbursement-item-fields,
     .field-reimbursement-payout-grid {
         grid-template-columns: 1fr;
     }
 
+    .field-reimbursement-entry-grid,
+    .field-reimbursement-entry-grid label,
+    .field-reimbursement-entry-action {
+        grid-template-columns: 1fr;
+    }
+
     .field-advance-card {
-        min-width: 0;
-        width: 100%;
+        grid-template-columns: 1fr;
     }
 
     .field-endofday-stats {

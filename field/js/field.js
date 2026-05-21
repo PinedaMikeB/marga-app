@@ -267,6 +267,7 @@ const state = {
     editingReimbursementId: '',
     reimbursementMode: 'Reimbursement',
     reimbursementItems: [],
+    reimbursementDraftItem: null,
     customerReviews: [],
     skillHistoryRows: [],
     modelErrorGuides: [],
@@ -340,9 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
         button.addEventListener('click', () => setReimbursementMode(button.dataset.reimbursementMode || 'Reimbursement'));
     });
     document.getElementById('fieldReimbursementAddItemBtn')?.addEventListener('click', () => addReimbursementItemRow());
-    document.getElementById('fieldReimbursementAddSupplierBtn')?.addEventListener('click', focusFirstReimbursementSupplier);
-    document.getElementById('fieldReimbursementItemList')?.addEventListener('input', handleReimbursementItemsInput);
-    document.getElementById('fieldReimbursementItemList')?.addEventListener('change', handleReimbursementItemsChange);
+    document.getElementById('fieldReimbursementItemEntry')?.addEventListener('input', handleReimbursementDraftInput);
+    document.getElementById('fieldReimbursementItemEntry')?.addEventListener('change', handleReimbursementDraftChange);
+    document.getElementById('fieldReimbursementItemEntry')?.addEventListener('click', handleReimbursementDraftClick);
     document.getElementById('fieldReimbursementItemList')?.addEventListener('click', handleReimbursementItemsClick);
     document.getElementById('fieldReimbursementVisitedToggle')?.addEventListener('click', toggleReimbursementVisitedDetails);
     document.getElementById('fieldReimbursementAdvanceAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
@@ -2131,12 +2132,14 @@ function resetReimbursementForm() {
     if (!form) return;
     form.reset();
     state.reimbursementMode = 'Reimbursement';
-    state.reimbursementItems = [createReimbursementItem()];
+    state.reimbursementItems = [];
+    resetReimbursementDraftItem();
     document.getElementById('fieldReimbursementId').value = '';
     document.getElementById('fieldReimbursementReceiptUrl').value = '';
     document.getElementById('fieldReimbursementAdditionalUrl').value = '';
     document.getElementById('fieldReimbursementExpenseDate').value = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
     setReimbursementMode('Reimbursement');
+    renderReimbursementItemEntry();
     renderReimbursementItemRows();
     renderReimbursementVisitedCard();
     syncReimbursementLiquidationMath();
@@ -2158,6 +2161,8 @@ function fillReimbursementForm(request) {
     setFieldValue('fieldReimbursementBankAccountNumber', request.staffBankAccountNumber);
     setFieldValue('fieldReimbursementNotes', request.notes);
     state.reimbursementItems = normalizeReimbursementItems(request.lineItems || request.items || [buildLegacyReimbursementItem(request)]);
+    resetReimbursementDraftItem();
+    renderReimbursementItemEntry();
     renderReimbursementItemRows();
     renderReimbursementVisitedCard();
     syncReimbursementLiquidationMath();
@@ -2233,7 +2238,7 @@ function createReimbursementItem(item = {}) {
 
 function normalizeReimbursementItems(items = []) {
     const rows = Array.isArray(items) ? items.map((item) => createReimbursementItem(item)) : [];
-    return rows.length ? rows : [createReimbursementItem()];
+    return rows;
 }
 
 function buildLegacyReimbursementItem(request = {}) {
@@ -2257,79 +2262,152 @@ function getReimbursementGroup(groupId) {
     return FIELD_REIMBURSEMENT_ITEM_GROUPS.find((group) => group.id === groupId) || null;
 }
 
+function getReimbursementAccount(accountId) {
+    return FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS.find((account) => account.id === accountId) || null;
+}
+
+function resetReimbursementDraftItem() {
+    state.reimbursementDraftItem = createReimbursementItem();
+}
+
+function renderReimbursementItemEntry() {
+    const entry = document.getElementById('fieldReimbursementItemEntry');
+    if (!entry) return;
+    if (!state.reimbursementDraftItem) resetReimbursementDraftItem();
+    const item = state.reimbursementDraftItem;
+    entry.innerHTML = `
+        <div class="field-reimbursement-entry-grid">
+            <label><span>Item Group</span><select data-reimbursement-draft-field="groupId">${FIELD_REIMBURSEMENT_ITEM_GROUPS.map((group) => `<option value="${escapeHtml(group.id)}"${group.id === item.groupId ? ' selected' : ''}>${escapeHtml(group.label)}</option>`).join('')}</select></label>
+            <label><span>Chart Of Account</span><select data-reimbursement-draft-field="accountId">${FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS.map((account) => `<option value="${escapeHtml(account.id)}"${account.id === item.accountId ? ' selected' : ''}>${escapeHtml(account.label)}</option>`).join('')}</select></label>
+            <label><span>Item / Part Note</span><input type="text" data-reimbursement-draft-field="itemNote" placeholder="Select item or choose manual" value="${escapeHtml(item.itemNote)}"></label>
+            <label><span>Supplier / Store</span><input type="text" data-reimbursement-draft-field="supplierStoreName" placeholder="Type or select supplier/store" value="${escapeHtml(item.supplierStoreName)}"></label>
+            <label><span>Amount</span><input type="number" data-reimbursement-draft-field="amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(item.amount.toFixed(2)) : ''}"></label>
+            <label><span>Receipt No.</span><input type="text" data-reimbursement-draft-field="receiptNumber" placeholder="OR/SI/receipt no." value="${escapeHtml(item.receiptNumber)}"></label>
+            <div class="field-reimbursement-entry-action"><span>Action</span><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-draft-clear>Remove</button></div>
+        </div>
+        <label class="field-reimbursement-entry-receipt">
+            <span>Receipt Image <strong>Required</strong></span>
+            <input type="file" accept="image/*" capture="environment" data-reimbursement-draft-receipt>
+            ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
+            <small>${escapeHtml(item.receiptImageName || 'Take photo or upload from gallery before adding this item row.')}</small>
+        </label>
+    `;
+}
+
 function renderReimbursementItemRows() {
     const list = document.getElementById('fieldReimbursementItemList');
     if (!list) return;
-    list.innerHTML = state.reimbursementItems.map((item, index) => renderReimbursementItemRow(item, index)).join('');
+    if (!state.reimbursementItems.length) {
+        list.innerHTML = '<div class="field-reimbursement-empty-table">No item rows added yet.</div>';
+        syncReimbursementLiquidationMath();
+        return;
+    }
+    list.innerHTML = `
+        <div class="field-reimbursement-table-wrap">
+            <table class="field-reimbursement-items-table">
+                <thead>
+                    <tr>
+                        <th>Item Group</th>
+                        <th>Chart Of Account</th>
+                        <th>Item / Part Note</th>
+                        <th>Supplier / Store</th>
+                        <th>Amount</th>
+                        <th>Receipt</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>${state.reimbursementItems.map((item, index) => renderReimbursementItemRow(item, index)).join('')}</tbody>
+            </table>
+        </div>
+    `;
     syncReimbursementLiquidationMath();
 }
 
 function renderReimbursementItemRow(item, index) {
+    const group = getReimbursementGroup(item.groupId);
+    const account = getReimbursementAccount(item.accountId);
     return `
-        <article class="field-reimbursement-item" data-index="${index}">
-            <div class="field-reimbursement-item-fields">
-                <label><span>Item Group</span><select data-reimbursement-field="groupId">${FIELD_REIMBURSEMENT_ITEM_GROUPS.map((group) => `<option value="${escapeHtml(group.id)}"${group.id === item.groupId ? ' selected' : ''}>${escapeHtml(group.label)}</option>`).join('')}</select></label>
-                <label><span>Chart Of Account</span><select data-reimbursement-field="accountId">${FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS.map((account) => `<option value="${escapeHtml(account.id)}"${account.id === item.accountId ? ' selected' : ''}>${escapeHtml(account.label)}</option>`).join('')}</select></label>
-                <label><span>Item / Part Note</span><input type="text" data-reimbursement-field="itemNote" placeholder="Type item, part, route, or purpose" value="${escapeHtml(item.itemNote)}"></label>
-                <label><span>Supplier / Store</span><input type="text" data-reimbursement-field="supplierStoreName" placeholder="Type or select supplier/store" value="${escapeHtml(item.supplierStoreName)}"></label>
-                <label><span>Amount</span><input type="number" data-reimbursement-field="amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(item.amount.toFixed(2)) : ''}"></label>
-                <label><span>Receipt No.</span><input type="text" data-reimbursement-field="receiptNumber" placeholder="OR/SI/receipt no." value="${escapeHtml(item.receiptNumber)}"></label>
-                <div class="field-reimbursement-row-actions"><span>Action</span><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-remove="${index}">Remove</button></div>
-            </div>
-            <label class="field-reimbursement-row-receipt">
-                <span>Receipt Image</span>
-                <input type="file" accept="image/*" capture="environment" data-reimbursement-receipt="${index}">
-                ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
-                <small>${escapeHtml(item.receiptImageName || (item.receiptImageUrl ? 'Existing uploaded receipt' : 'Required. Take photo or upload from gallery.'))}</small>
-            </label>
-        </article>
+        <tr data-index="${index}">
+            <td>${escapeHtml(group?.label || item.expenseGroup || item.groupId || '-')}</td>
+            <td>${escapeHtml(account?.label || item.accountId || '-')}</td>
+            <td>${escapeHtml(item.itemNote || '-')}</td>
+            <td>${escapeHtml(item.supplierStoreName || '-')}</td>
+            <td>${escapeHtml(formatPeso(item.amount || 0))}</td>
+            <td>
+                <div class="field-reimbursement-table-receipt">
+                    ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
+                    <span>${escapeHtml(item.receiptNumber || item.receiptImageName || 'Receipt attached')}</span>
+                </div>
+            </td>
+            <td><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-remove="${index}">Remove</button></td>
+        </tr>
     `;
 }
 
-function addReimbursementItemRow(item = {}) {
-    state.reimbursementItems.push(createReimbursementItem(item));
+function addReimbursementItemRow() {
+    if (!state.reimbursementDraftItem) resetReimbursementDraftItem();
+    const item = createReimbursementItem(state.reimbursementDraftItem);
+    if (!item.groupId || !item.accountId) {
+        alert('Select item group and chart of account first.');
+        return;
+    }
+    if (!item.itemNote) {
+        alert('Enter the item / part note.');
+        return;
+    }
+    if (!item.supplierStoreName) {
+        alert('Enter supplier / store.');
+        return;
+    }
+    if (Number(item.amount || 0) <= 0) {
+        alert('Enter amount before adding the row.');
+        return;
+    }
+    if (!item.receiptImageUrl && !item.receiptFile) {
+        alert('Receipt image is mandatory before adding the row.');
+        return;
+    }
+    state.reimbursementItems.push(item);
+    resetReimbursementDraftItem();
+    renderReimbursementItemEntry();
     renderReimbursementItemRows();
 }
 
-function focusFirstReimbursementSupplier() {
-    const supplierInput = document.querySelector('[data-reimbursement-field="supplierStoreName"]');
-    if (supplierInput) supplierInput.focus();
-}
-
-function handleReimbursementItemsInput(event) {
-    const field = event.target?.dataset?.reimbursementField;
+function handleReimbursementDraftInput(event) {
+    const field = event.target?.dataset?.reimbursementDraftField;
     if (!field) return;
-    updateReimbursementItemFromInput(event.target);
+    updateReimbursementDraftFromInput(event.target);
 }
 
-function handleReimbursementItemsChange(event) {
-    const receiptIndex = event.target?.dataset?.reimbursementReceipt;
-    if (receiptIndex !== undefined) {
-        const index = Number(receiptIndex);
-        const item = state.reimbursementItems[index];
+function handleReimbursementDraftChange(event) {
+    if (event.target?.matches('[data-reimbursement-draft-receipt]')) {
+        if (!state.reimbursementDraftItem) resetReimbursementDraftItem();
         const file = event.target.files?.[0] || null;
-        if (!item || !file) return;
-        item.receiptFile = file;
-        item.receiptImageName = file.name || 'Selected receipt';
-        item.receiptImageUrl = URL.createObjectURL(file);
-        renderReimbursementItemRows();
+        if (!file) return;
+        state.reimbursementDraftItem.receiptFile = file;
+        state.reimbursementDraftItem.receiptImageName = file.name || 'Selected receipt';
+        state.reimbursementDraftItem.receiptImageUrl = URL.createObjectURL(file);
+        renderReimbursementItemEntry();
         return;
     }
-    const field = event.target?.dataset?.reimbursementField;
+    const field = event.target?.dataset?.reimbursementDraftField;
     if (!field) return;
-    updateReimbursementItemFromInput(event.target);
+    updateReimbursementDraftFromInput(event.target);
     if (field === 'groupId') {
-        const row = event.target.closest('[data-index]');
-        const index = Number(row?.dataset.index || -1);
-        const item = state.reimbursementItems[index];
-        const group = getReimbursementGroup(item?.groupId);
-        if (item && group) {
-            item.expenseGroup = group.id;
-            item.expenseCategory = group.category;
-            item.accountId = group.accountId;
-            renderReimbursementItemRows();
+        const group = getReimbursementGroup(state.reimbursementDraftItem?.groupId);
+        if (state.reimbursementDraftItem && group) {
+            state.reimbursementDraftItem.expenseGroup = group.id;
+            state.reimbursementDraftItem.expenseCategory = group.category;
+            state.reimbursementDraftItem.accountId = group.accountId;
+            renderReimbursementItemEntry();
         }
     }
+}
+
+function handleReimbursementDraftClick(event) {
+    if (!event.target.closest('[data-reimbursement-draft-clear]')) return;
+    resetReimbursementDraftItem();
+    renderReimbursementItemEntry();
 }
 
 function handleReimbursementItemsClick(event) {
@@ -2337,19 +2415,15 @@ function handleReimbursementItemsClick(event) {
     if (!button) return;
     const index = Number(button.dataset.reimbursementRemove || -1);
     state.reimbursementItems = state.reimbursementItems.filter((_, itemIndex) => itemIndex !== index);
-    if (!state.reimbursementItems.length) state.reimbursementItems = [createReimbursementItem()];
     renderReimbursementItemRows();
 }
 
-function updateReimbursementItemFromInput(input) {
-    const row = input.closest('[data-index]');
-    const index = Number(row?.dataset.index || -1);
-    const field = input.dataset.reimbursementField;
-    const item = state.reimbursementItems[index];
-    if (!item || !field) return;
-    item[field] = field === 'amount' ? Number(input.value || 0) : String(input.value || '').trim();
-    if (field === 'accountId') item.accountId = String(input.value || '').trim();
-    syncReimbursementLiquidationMath();
+function updateReimbursementDraftFromInput(input) {
+    if (!state.reimbursementDraftItem) resetReimbursementDraftItem();
+    const field = input.dataset.reimbursementDraftField;
+    if (!field) return;
+    state.reimbursementDraftItem[field] = field === 'amount' ? Number(input.value || 0) : String(input.value || '').trim();
+    if (field === 'accountId') state.reimbursementDraftItem.accountId = String(input.value || '').trim();
 }
 
 function getReimbursementItemsTotal() {
