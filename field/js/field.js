@@ -7115,6 +7115,31 @@ function mapFieldCollectionInvoice(record, fallbackRow = getCurrentRow()) {
     };
 }
 
+function createManualFieldCollectionInvoice(invoiceRef, fallbackRow = getCurrentRow()) {
+    const ref = String(invoiceRef || '').trim();
+    if (!ref) return null;
+    const location = scheduleLocationLabel(fallbackRow || {});
+    return {
+        docId: ref,
+        invoiceId: ref,
+        invoiceNo: ref,
+        invoiceKey: ref,
+        date: '',
+        customer: location.companyName || '',
+        branch: location.branchName || '',
+        amount: 0,
+        raw: {
+            _docId: ref,
+            invoice_id: ref,
+            invoice_no: ref,
+            customer: location.companyName || '',
+            branch: location.branchName || '',
+            amount: 0,
+            source: 'manual_field_collection_invoice_reference'
+        }
+    };
+}
+
 function parseSavedCollectionInvoices(row) {
     const saved = String(row?.field_collection_invoices_json || '').trim();
     if (saved) {
@@ -7254,7 +7279,11 @@ async function searchFieldCollectionInvoices(query) {
             queryEquals('tbl_billing', 'invoiceid', term, 'string', 12)
         );
     }
-    const settled = await Promise.allSettled(queries);
+    const timeoutMs = 9000;
+    const settled = await Promise.allSettled(queries.map((promise) => Promise.race([
+        promise,
+        new Promise((resolve) => window.setTimeout(() => resolve([]), timeoutMs))
+    ])));
     const byKey = new Map();
     settled.forEach((result) => {
         if (result.status !== 'fulfilled') return;
@@ -7307,7 +7336,14 @@ async function addFirstFieldCollectionInvoiceMatch() {
         match = rows[0];
     }
     if (match) addFieldCollectionInvoice(match);
-    else alert('No matching invoice record found. Search the invoice first, then add it from the result.');
+    else {
+        const manualInvoice = createManualFieldCollectionInvoice(query);
+        if (manualInvoice && addFieldCollectionInvoice(manualInvoice, { showAlerts: false })) {
+            alert('Invoice was not found in billing search, so it was added as an invoice reference for this collection.');
+            return;
+        }
+        alert('No matching invoice record found. Search the invoice first, then add it from the result.');
+    }
 }
 
 async function ensureTypedCollectionInvoiceIsSelected() {
@@ -7329,7 +7365,7 @@ async function ensureTypedCollectionInvoiceIsSelected() {
     });
     const match = exactMatch || (rows.length === 1 ? rows[0] : null);
     if (match) return addFieldCollectionInvoice(match, { showAlerts: false });
-    return false;
+    return addFieldCollectionInvoice(createManualFieldCollectionInvoice(query), { showAlerts: false });
 }
 
 function getSelectedMachine() {

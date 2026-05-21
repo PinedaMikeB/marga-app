@@ -40,6 +40,7 @@ let paymentEntries = [];
 let billingEntriesForDuration = [];
 let billingMetaByInvoiceKey = new Map();
 let collectorBillingRecords = [];
+let collectorBillingRecordKeys = new Set();
 let collectorCellMap = new Map();
 let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
@@ -49,6 +50,10 @@ let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
 let collectorDashboardRenderSeq = 0;
+let collectorInvoiceSearchSupplementTimer = null;
+let collectorInvoiceSearchSupplementTerm = '';
+let collectorInvoiceSearchSupplementPromise = null;
+const collectorInvoiceSearchSupplementedTerms = new Set();
 let collectorReturnBookmark = null;
 let collectorMatrixTotalDetailMap = new Map();
 let collectionWorkspaceLookupsLoaded = false;
@@ -146,6 +151,8 @@ const COLLECTION_BILLING_FIELD_MASK = [
     'invoiceid',
     'invoiceno',
     'invoice_no',
+    'invoice_num',
+    'invoice_number',
     'contractmain_id',
     'month',
     'year',
@@ -3493,7 +3500,7 @@ function processInvoice(doc) {
     const f = doc.fields || {};
 
     const invoiceId = getField(f, ['invoice_id', 'invoiceid']);
-    const invoiceNo = getField(f, ['invoiceno', 'invoice_no', 'invoice_id', 'id']);
+    const invoiceNo = getField(f, ['invoiceno', 'invoice_no', 'invoice_num', 'invoice_number', 'invoice_id', 'id']);
 
     const invoiceIdKey = invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '';
     const invoiceNoKey = invoiceNo !== null && invoiceNo !== undefined ? String(invoiceNo).trim() : '';
@@ -3611,6 +3618,189 @@ function mergeFirestoreDocsByName(docGroups = []) {
     return Array.from(byName.values());
 }
 
+function collectionBillingDocKey(doc) {
+    const f = doc?.fields || {};
+    const docId = String(doc?.name || getFirestoreDocumentId(doc) || '').trim();
+    const invoiceNo = String(getField(f, ['invoiceno', 'invoice_no', 'invoice_num', 'invoice_number']) || '').trim();
+    const invoiceId = String(getField(f, ['invoice_id', 'invoiceid', 'id']) || '').trim();
+    return docId || invoiceNo || invoiceId;
+}
+
+function buildCollectorBillingRecordFromDoc(doc) {
+    const f = doc?.fields || {};
+    const invoiceIdRaw = getField(f, ['invoice_id', 'invoiceid']);
+    const invoiceId = invoiceIdRaw !== null && invoiceIdRaw !== undefined ? String(invoiceIdRaw).trim() : '';
+    const invoiceNoRaw = getField(f, ['invoiceno', 'invoice_no', 'invoice_num', 'invoice_number', 'invoice_id', 'id']);
+    const invoiceNo = invoiceNoRaw !== null && invoiceNoRaw !== undefined ? String(invoiceNoRaw).trim() : '';
+    const billingMonth = getField(f, ['month']);
+    const billingYear = getField(f, ['year']);
+    const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
+    const dueDate = normalizeDate(getField(f, ['due_date']));
+    const billingPeriodMonthKey = getBillingPeriodMonthKey(billingMonth, billingYear, invoiceDate);
+    const dateReceived = normalizeDate(getField(f, ['date_received']));
+    const receivedBy = String(getField(f, ['receivedby']) || '').trim();
+    const amount = Number(getField(f, ['totalamount', 'amount']) || 0);
+    const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
+    const location = getBillingLocationFromFields(f, contractmainId);
+    const billingMeta = {
+        company: location.companyName,
+        branch: location.branchName,
+        accountLabel: location.accountLabel,
+        invoiceDate,
+        dueDate,
+        month: billingMonth,
+        year: billingYear
+    };
+
+    const record = invoiceDate && amount > 0 ? {
+        docKey: collectionBillingDocKey(doc),
+        invoiceId,
+        invoiceNo: invoiceNo || invoiceId,
+        invoiceKey: invoiceNo || invoiceId,
+        company: location.companyName,
+        branch: location.branchName,
+        accountLabel: location.accountLabel,
+        companyId: location.companyId,
+        branchId: location.branchId,
+        machineId: location.machineId,
+        contractmainId: location.contractmainId,
+        serialNumber: location.serialNumber,
+        modelName: location.modelName,
+        machineLabel: location.machineLabel,
+        invoiceDate,
+        dueDate,
+        dateReceived,
+        receivedBy,
+        billingStatus: getField(f, ['status']),
+        billingLocation: getField(f, ['location']),
+        billingRemarks: getField(f, ['remarks']),
+        amount,
+        rd: invoiceDate.getDate(),
+        monthKey: billingPeriodMonthKey
+    } : null;
+
+    return {
+        invoiceId,
+        invoiceNo,
+        billingMeta,
+        billingMonth,
+        billingYear,
+        invoiceDate,
+        amount,
+        record
+    };
+}
+
+function ingestCollectorBillingRecord(record) {
+    if (!record) return false;
+    const key = [
+        record.docKey,
+        record.invoiceNo,
+        record.invoiceId,
+        record.contractmainId,
+        record.machineId,
+        record.monthKey,
+        record.amount
+    ].filter(Boolean).join('|');
+    if (!key || collectorBillingRecordKeys.has(key)) return false;
+    collectorBillingRecordKeys.add(key);
+    collectorBillingRecords.push(record);
+    billingEntriesForDuration.push({
+        invoiceDate: record.invoiceDate,
+        amount: record.amount,
+        isPaid: record.invoiceId ? paidInvoiceIds.has(record.invoiceId) : false
+    });
+    return true;
+}
+
+async function queryCollectionBillingDocsByInvoice(invoiceNo) {
+    const normalizedInvoice = normalizeCollectorInvoiceSearchValue(invoiceNo);
+    if (!normalizedInvoice) return [];
+
+    const queryPairs = [
+        ['invoice_no', normalizedInvoice],
+        ['invoiceno', normalizedInvoice],
+        ['invoice_num', normalizedInvoice],
+        ['invoice_number', normalizedInvoice],
+        ['invoice_id', normalizedInvoice],
+        ['invoiceid', normalizedInvoice],
+        ['id', normalizedInvoice]
+    ];
+
+    if (/^\d+$/.test(normalizedInvoice)) {
+        const numericInvoice = Number(normalizedInvoice);
+        queryPairs.push(
+            ['invoice_id', numericInvoice],
+            ['invoiceid', numericInvoice],
+            ['id', numericInvoice]
+        );
+    }
+
+    const byKey = new Map();
+    const settled = await Promise.allSettled(queryPairs.map(([fieldPath, value]) => (
+        firestoreQueryEquals('tbl_billing', fieldPath, value, {
+            fieldMask: COLLECTION_BILLING_FIELD_MASK,
+            limit: 24
+        })
+    )));
+    settled.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        result.value.forEach((doc) => {
+            const key = collectionBillingDocKey(doc);
+            if (key) byKey.set(key, doc);
+        });
+    });
+    return Array.from(byKey.values());
+}
+
+async function ensureCollectorInvoiceSearchSupplement() {
+    const term = getCollectorInvoiceSearchTerm();
+    const normalizedTerm = normalizeCollectorInvoiceSearchValue(term);
+    if (!lastLoadSucceeded || !normalizedTerm || normalizedTerm.length < 3) return;
+    if (collectorInvoiceSearchSupplementedTerms.has(normalizedTerm)) return;
+    if (collectorInvoiceSearchSupplementPromise && collectorInvoiceSearchSupplementTerm === normalizedTerm) {
+        await collectorInvoiceSearchSupplementPromise;
+        return;
+    }
+
+    collectorInvoiceSearchSupplementTerm = normalizedTerm;
+    collectorInvoiceSearchSupplementPromise = (async () => {
+        const docs = await queryCollectionBillingDocsByInvoice(normalizedTerm);
+        let changed = false;
+        docs.forEach((doc) => {
+            const detail = buildCollectorBillingRecordFromDoc(doc);
+            if (detail.invoiceId) billingMetaByInvoiceKey.set(detail.invoiceId, detail.billingMeta);
+            if (detail.invoiceNo) billingMetaByInvoiceKey.set(detail.invoiceNo, detail.billingMeta);
+            changed = ingestCollectorBillingRecord(detail.record) || changed;
+
+            const invoice = processInvoice(doc);
+            if (invoice && !allInvoices.some((item) => item.invoiceKey === invoice.invoiceKey || item.invoiceNo === invoice.invoiceNo)) {
+                allInvoices.push(invoice);
+                changed = true;
+            }
+        });
+        collectorInvoiceSearchSupplementedTerms.add(normalizedTerm);
+        if (changed) {
+            rebuildInvoiceIndex();
+            collectorDashboardData = null;
+            await renderCollectorDashboard({ recompute: true });
+        }
+    })().catch((error) => {
+        console.warn(`Unable to supplement collection invoice search for ${normalizedTerm}.`, error);
+    }).finally(() => {
+        collectorInvoiceSearchSupplementPromise = null;
+    });
+
+    await collectorInvoiceSearchSupplementPromise;
+}
+
+function queueCollectorInvoiceSearchSupplement() {
+    window.clearTimeout(collectorInvoiceSearchSupplementTimer);
+    collectorInvoiceSearchSupplementTimer = window.setTimeout(() => {
+        void ensureCollectorInvoiceSearchSupplement();
+    }, 300);
+}
+
 async function loadCollectionBillingDocs(statusCallback = null) {
     const baseDocs = await firestoreGetAll('tbl_billing', statusCallback, {
         fieldMask: COLLECTION_BILLING_FIELD_MASK,
@@ -3656,71 +3846,16 @@ async function loadInvoices(mode) {
         billingEntriesForDuration = [];
         billingMetaByInvoiceKey = new Map();
         collectorBillingRecords = [];
+        collectorBillingRecordKeys = new Set();
+        collectorInvoiceSearchSupplementedTerms.clear();
         const years = new Set();
 
         billingDocs.forEach((doc) => {
-            const f = doc.fields || {};
-            const invoiceIdRaw = getField(f, ['invoice_id', 'invoiceid']);
-            const invoiceId = invoiceIdRaw !== null && invoiceIdRaw !== undefined ? String(invoiceIdRaw).trim() : '';
-            const invoiceNoRaw = getField(f, ['invoiceno', 'invoice_no', 'invoice_id', 'id']);
-            const invoiceNo = invoiceNoRaw !== null && invoiceNoRaw !== undefined ? String(invoiceNoRaw).trim() : '';
-            const billingMonth = getField(f, ['month']);
-            const billingYear = getField(f, ['year']);
-            const invoiceDate = normalizeDate(getField(f, ['dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'due_date']));
-            const dueDate = normalizeDate(getField(f, ['due_date']));
-            const billingPeriodMonthKey = getBillingPeriodMonthKey(billingMonth, billingYear, invoiceDate);
-            const dateReceived = normalizeDate(getField(f, ['date_received']));
-            const receivedBy = String(getField(f, ['receivedby']) || '').trim();
-            const matrixAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
-            const amount = matrixAmount;
-            const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
-            const location = getBillingLocationFromFields(f, contractmainId);
-            const billingMeta = {
-                company: location.companyName,
-                branch: location.branchName,
-                accountLabel: location.accountLabel,
-                invoiceDate,
-                dueDate,
-                month: billingMonth,
-                year: billingYear
-            };
+            const detail = buildCollectorBillingRecordFromDoc(doc);
 
-            if (invoiceId) billingMetaByInvoiceKey.set(invoiceId, billingMeta);
-            if (invoiceNo) billingMetaByInvoiceKey.set(invoiceNo, billingMeta);
-
-            if (invoiceDate && matrixAmount > 0) {
-                collectorBillingRecords.push({
-                    invoiceId,
-                    invoiceNo: invoiceNo || invoiceId,
-                    invoiceKey: invoiceNo || invoiceId,
-                    company: location.companyName,
-                    branch: location.branchName,
-                    accountLabel: location.accountLabel,
-                    companyId: location.companyId,
-                    branchId: location.branchId,
-                    machineId: location.machineId,
-                    contractmainId: location.contractmainId,
-                    serialNumber: location.serialNumber,
-                    modelName: location.modelName,
-                    machineLabel: location.machineLabel,
-                    invoiceDate,
-                    dueDate,
-                    dateReceived,
-                    receivedBy,
-                    billingStatus: getField(f, ['status']),
-                    billingLocation: getField(f, ['location']),
-                    billingRemarks: getField(f, ['remarks']),
-                    amount,
-                    rd: invoiceDate.getDate(),
-                    monthKey: billingPeriodMonthKey
-                });
-
-                billingEntriesForDuration.push({
-                    invoiceDate,
-                    amount,
-                    isPaid: invoiceId ? paidInvoiceIds.has(invoiceId) : false
-                });
-            }
+            if (detail.invoiceId) billingMetaByInvoiceKey.set(detail.invoiceId, detail.billingMeta);
+            if (detail.invoiceNo) billingMetaByInvoiceKey.set(detail.invoiceNo, detail.billingMeta);
+            ingestCollectorBillingRecord(detail.record);
 
             const invoice = processInvoice(doc);
             if (!invoice) return;
@@ -10163,7 +10298,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (lastLoadSucceeded) void renderCollectorDashboard();
     });
     document.getElementById('collectorInvoiceSearchInput')?.addEventListener('input', () => {
-        if (lastLoadSucceeded) void renderCollectorDashboard();
+        if (lastLoadSucceeded) {
+            void renderCollectorDashboard();
+            queueCollectorInvoiceSearchSupplement();
+        }
     });
     document.getElementById('collectorSortInput')?.addEventListener('change', () => {
         if (lastLoadSucceeded) void renderCollectorDashboard();
