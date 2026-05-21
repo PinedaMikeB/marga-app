@@ -33,6 +33,8 @@ const FIELD_CALL_COLLECTION = 'tbl_field_call_requests';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
+const PETTY_CASH_REQUEST_COLLECTION = 'tbl_pettycash_requests';
+const PETTY_CASH_AUDIT_COLLECTION = 'tbl_pettycash_audit_logs';
 const MODEL_ERROR_GUIDE_COLLECTION = 'marga_model_error_guides';
 const SOLUTION_REQUEST_COLLECTION = 'tbl_field_solution_requests';
 const CUSTOMER_REVIEW_COLLECTION = 'marga_care_customer_reviews';
@@ -120,6 +122,39 @@ const FIELD_MODAL_DRAFT_FILE_IDS = [
     'fieldLocationPhoto'
 ];
 
+const FIELD_REIMBURSEMENT_REQUEST_TYPES = [
+    'Reimbursement',
+    'Cash Advance',
+    'Liquidation',
+    'Return of Excess Cash',
+    'Correction / Additional Receipt'
+];
+
+const FIELD_REIMBURSEMENT_CATEGORIES = [
+    'Gasoline / fuel',
+    'Meal allowance',
+    'Toll',
+    'Parking',
+    'Transportation / fare',
+    'Parts / supplies',
+    'Delivery / courier',
+    'Emergency purchase',
+    'Other'
+];
+
+const FIELD_REIMBURSEMENT_TABS = [
+    { id: 'Draft', label: 'Draft', statuses: ['Draft'] },
+    { id: 'Submitted', label: 'Submitted', statuses: ['Submitted', 'For Completeness Check', 'Verified by Petty Cash Handler', 'For Approval', 'Included in Payout Batch', 'Funded'] },
+    { id: 'For Correction', label: 'For Correction', statuses: ['Incomplete / Needs Correction'] },
+    { id: 'Approved', label: 'Approved', statuses: ['Approved'] },
+    { id: 'Paid', label: 'Paid', statuses: ['Paid / Released'] },
+    { id: 'For Liquidation', label: 'For Liquidation', statuses: ['For Liquidation', 'Partially Liquidated'] },
+    { id: 'Liquidated', label: 'Liquidated', statuses: ['Liquidated', 'Closed'] },
+    { id: 'Rejected', label: 'Rejected', statuses: ['Rejected', 'Failed Payment'] }
+];
+
+const FIELD_REIMBURSEMENT_EDITABLE_STATUSES = new Set(['Draft', 'Incomplete / Needs Correction', 'For Liquidation', 'Partially Liquidated']);
+
 const FALLBACK_MACHINE_STATUSES = [
     { id: 1, label: 'Running / Print OK' },
     { id: 2, label: 'Running / Print Problem' },
@@ -204,6 +239,10 @@ const state = {
         ready: true
     },
     pettyCashEntries: [],
+    reimbursementRequests: [],
+    reimbursementLoaded: false,
+    reimbursementActiveTab: 'Draft',
+    editingReimbursementId: '',
     customerReviews: [],
     skillHistoryRows: [],
     modelErrorGuides: [],
@@ -258,6 +297,28 @@ document.addEventListener('DOMContentLoaded', () => {
         button.addEventListener('click', () => setActiveView(button.dataset.view || 'home'));
     });
     document.getElementById('fieldAnalyticsRefresh')?.addEventListener('click', () => loadFieldAnalytics());
+    document.getElementById('fieldReimbursementRefresh')?.addEventListener('click', () => loadReimbursementRequests({ force: true }));
+    document.getElementById('fieldNewReimbursementBtn')?.addEventListener('click', () => openReimbursementForm());
+    document.getElementById('fieldReimbursementCancel')?.addEventListener('click', closeReimbursementForm);
+    document.getElementById('fieldReimbursementSaveDraft')?.addEventListener('click', () => saveReimbursementRequest('Draft'));
+    document.getElementById('fieldReimbursementForm')?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        saveReimbursementRequest('Submitted');
+    });
+    document.getElementById('fieldReimbursementStatusTabs')?.addEventListener('click', (event) => {
+        const tab = event.target.closest('[data-reimbursement-tab]');
+        if (!tab) return;
+        state.reimbursementActiveTab = tab.dataset.reimbursementTab || 'Draft';
+        renderReimbursementRequests();
+    });
+    document.getElementById('fieldReimbursementList')?.addEventListener('click', handleReimbursementListAction);
+    document.getElementById('fieldReimbursementType')?.addEventListener('change', syncReimbursementConditionalFields);
+    document.getElementById('fieldReimbursementCategory')?.addEventListener('change', syncReimbursementConditionalFields);
+    document.getElementById('fieldReimbursementAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
+    document.getElementById('fieldReimbursementAdvanceAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
+    document.getElementById('fieldReimbursementLiquidatedAmount')?.addEventListener('input', syncReimbursementLiquidationMath);
+    document.getElementById('fieldReimbursementReceiptImage')?.addEventListener('change', () => previewReimbursementImage('fieldReimbursementReceiptImage', 'fieldReimbursementReceiptPreview', 'fieldReimbursementReceiptHint'));
+    document.getElementById('fieldReimbursementAdditionalImage')?.addEventListener('change', () => previewReimbursementImage('fieldReimbursementAdditionalImage', 'fieldReimbursementAdditionalPreview', 'fieldReimbursementAdditionalHint'));
     document.getElementById('fieldGuideRefresh')?.addEventListener('click', () => loadModelErrorGuides({ force: true }));
     document.getElementById('fieldSolutionRequestsRefresh')?.addEventListener('click', () => loadSolutionRequests({ force: true }));
     document.getElementById('fieldSolutionRequestsList')?.addEventListener('click', handleSolutionRequestAction);
@@ -730,6 +791,30 @@ function sanitize(text) {
     return MargaUtils.escapeHtml(String(text ?? ''));
 }
 
+function escapeHtml(value) {
+    return sanitize(value);
+}
+
+function slugify(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'unknown';
+}
+
+function formatLongDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const ymd = raw.slice(0, 10);
+    const [year, month, day] = ymd.split('-').map((part) => Number(part));
+    if (!year || !month || !day) return raw;
+    return new Date(year, month - 1, day).toLocaleDateString('en-PH', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric'
+    });
+}
+
 function formatDateYmd(date) {
     const year = date.getFullYear();
     const month = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -778,8 +863,12 @@ function parseFirestoreDoc(doc) {
 
 function toFirestoreFieldValue(value) {
     if (value === null) return { nullValue: null };
+    if (Array.isArray(value)) return { arrayValue: { values: value.map((entry) => toFirestoreFieldValue(entry)) } };
     if (typeof value === 'boolean') return { booleanValue: value };
-    if (typeof value === 'number' && Number.isFinite(value)) return { integerValue: String(Math.trunc(value)) };
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        if (Number.isInteger(value)) return { integerValue: String(value) };
+        return { doubleValue: value };
+    }
     return { stringValue: String(value ?? '') };
 }
 
@@ -1811,7 +1900,10 @@ function setActiveTab(tab) {
 }
 
 function setActiveView(view) {
-    state.activeView = ['home', 'tasks', 'analytics', 'troubleshooting', 'solution-requests'].includes(view) ? view : 'home';
+    state.activeView = ['home', 'tasks', 'reimbursement', 'analytics', 'troubleshooting', 'solution-requests'].includes(view) ? view : 'home';
+    if (state.activeView === 'reimbursement') {
+        void loadReimbursementRequests();
+    }
     if (state.activeView === 'troubleshooting') {
         void loadModelErrorGuides();
     }
@@ -1862,9 +1954,556 @@ function renderActiveView() {
     renderEndOfDayReview();
     renderList();
     renderAnalytics();
+    renderReimbursementRequests();
     renderTroubleshootingGuide();
     renderSolutionRequests();
     updateSubtitle();
+}
+
+function populateReimbursementSelects() {
+    const typeSelect = document.getElementById('fieldReimbursementType');
+    const categorySelect = document.getElementById('fieldReimbursementCategory');
+    if (typeSelect && !typeSelect.options.length) {
+        typeSelect.innerHTML = FIELD_REIMBURSEMENT_REQUEST_TYPES
+            .map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
+            .join('');
+    }
+    if (categorySelect && !categorySelect.options.length) {
+        categorySelect.innerHTML = FIELD_REIMBURSEMENT_CATEGORIES
+            .map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
+            .join('');
+    }
+}
+
+async function loadReimbursementRequests(options = {}) {
+    if (state.reimbursementLoaded && options.force !== true) {
+        renderReimbursementRequests();
+        return;
+    }
+    populateReimbursementSelects();
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: PETTY_CASH_REQUEST_COLLECTION }],
+            where: {
+                fieldFilter: {
+                    field: { fieldPath: 'staffId' },
+                    op: 'EQUAL',
+                    value: { integerValue: String(Number(state.staffId || 0)) }
+                }
+            },
+            limit: 500
+        });
+        state.reimbursementRequests = docs
+            .map((doc) => normalizeFieldReimbursementRequest(parseFirestoreDoc(doc)))
+            .filter((request) => request.sourceModule === 'field_app')
+            .sort((left, right) => `${right.dateSubmitted || right.createdAt || ''} ${right.id}`.localeCompare(`${left.dateSubmitted || left.createdAt || ''} ${left.id}`));
+        state.reimbursementLoaded = true;
+    } catch (error) {
+        console.warn('Unable to load reimbursement requests:', error);
+        const list = document.getElementById('fieldReimbursementList');
+        if (list) list.innerHTML = '<div class="empty-state">Unable to load reimbursement requests. Please refresh when the connection is stable.</div>';
+        return;
+    }
+    renderReimbursementRequests();
+}
+
+function renderReimbursementRequests() {
+    const tabHolder = document.getElementById('fieldReimbursementStatusTabs');
+    const list = document.getElementById('fieldReimbursementList');
+    if (!tabHolder || !list) return;
+    populateReimbursementSelects();
+    const counts = new Map();
+    FIELD_REIMBURSEMENT_TABS.forEach((tab) => counts.set(tab.id, 0));
+    state.reimbursementRequests.forEach((request) => {
+        const tab = FIELD_REIMBURSEMENT_TABS.find((item) => item.statuses.includes(request.status));
+        if (tab) counts.set(tab.id, (counts.get(tab.id) || 0) + 1);
+    });
+    tabHolder.innerHTML = FIELD_REIMBURSEMENT_TABS.map((tab) => `
+        <button type="button" class="field-reimbursement-tab${state.reimbursementActiveTab === tab.id ? ' is-active' : ''}" data-reimbursement-tab="${escapeHtml(tab.id)}" role="tab" aria-selected="${state.reimbursementActiveTab === tab.id ? 'true' : 'false'}">
+            ${escapeHtml(tab.label)} <span>${counts.get(tab.id) || 0}</span>
+        </button>
+    `).join('');
+
+    renderUnliquidatedAdvanceWarning();
+
+    const activeTab = FIELD_REIMBURSEMENT_TABS.find((tab) => tab.id === state.reimbursementActiveTab) || FIELD_REIMBURSEMENT_TABS[0];
+    const rows = state.reimbursementRequests.filter((request) => activeTab.statuses.includes(request.status));
+    if (!rows.length) {
+        list.innerHTML = '<div class="empty-state">No request in this tab.</div>';
+        return;
+    }
+    list.innerHTML = rows.map((request) => {
+        const canEdit = FIELD_REIMBURSEMENT_EDITABLE_STATUSES.has(request.status);
+        const correction = request.correctionReason || request.rejectionReason || request.handlerRemarks || request.approvalRemarks || '';
+        return `
+            <article class="field-reimbursement-card">
+                <div class="field-reimbursement-card-head">
+                    <div>
+                        <strong>${escapeHtml(request.id)}</strong>
+                        <span>${escapeHtml(request.requestType)} · ${escapeHtml(request.expenseCategory || 'No category')}</span>
+                    </div>
+                    <span class="field-reimbursement-status ${slugify(request.status)}">${escapeHtml(request.status)}</span>
+                </div>
+                <div class="field-reimbursement-meta">
+                    <span>${escapeHtml(formatLongDate(request.dateOfExpense || request.reportDate || request.requestDate))}</span>
+                    <span>${formatPeso(request.amount)}</span>
+                    <span>${escapeHtml(request.clientCompanyVisited || request.branchLocation || request.serviceTicketId || 'No client reference')}</span>
+                </div>
+                <p>${escapeHtml(request.description || request.notes || '-')}</p>
+                ${correction ? `<div class="field-reimbursement-note">${escapeHtml(correction)}</div>` : ''}
+                <div class="field-reimbursement-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" data-reimbursement-action="view" data-id="${escapeHtml(request.id)}">View</button>
+                    ${canEdit ? `<button type="button" class="btn btn-primary btn-sm" data-reimbursement-action="edit" data-id="${escapeHtml(request.id)}">Edit</button>` : ''}
+                    ${request.status === 'For Liquidation' || request.status === 'Partially Liquidated' ? `<button type="button" class="btn btn-primary btn-sm" data-reimbursement-action="liquidate" data-id="${escapeHtml(request.id)}">Submit Liquidation</button>` : ''}
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function renderUnliquidatedAdvanceWarning() {
+    const warning = document.getElementById('fieldReimbursementWarning');
+    if (!warning) return;
+    const openAdvances = state.reimbursementRequests.filter((request) => (
+        request.requestType === 'Cash Advance'
+        && ['Approved', 'Paid / Released', 'For Liquidation', 'Partially Liquidated'].includes(request.status)
+        && !['Liquidated', 'Closed'].includes(request.liquidationStatus)
+    ));
+    if (!openAdvances.length) {
+        warning.hidden = true;
+        warning.textContent = '';
+        return;
+    }
+    const overdue = openAdvances.filter((request) => request.expectedLiquidationDate && request.expectedLiquidationDate < formatDateYmd(new Date()));
+    warning.hidden = false;
+    warning.textContent = overdue.length
+        ? `You have ${overdue.length} overdue cash advance liquidation(s). New cash advances are blocked unless Owner/Admin overrides.`
+        : `You have ${openAdvances.length} unliquidated cash advance(s). New cash advances are blocked unless Owner/Admin overrides.`;
+}
+
+function openReimbursementForm(request = null) {
+    populateReimbursementSelects();
+    const form = document.getElementById('fieldReimbursementForm');
+    if (!form) return;
+    form.hidden = false;
+    resetReimbursementForm();
+    if (request) fillReimbursementForm(request);
+    syncReimbursementConditionalFields();
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeReimbursementForm() {
+    const form = document.getElementById('fieldReimbursementForm');
+    if (form) form.hidden = true;
+    state.editingReimbursementId = '';
+    resetReimbursementForm();
+}
+
+function resetReimbursementForm() {
+    const form = document.getElementById('fieldReimbursementForm');
+    if (!form) return;
+    form.reset();
+    document.getElementById('fieldReimbursementId').value = '';
+    document.getElementById('fieldReimbursementReceiptUrl').value = '';
+    document.getElementById('fieldReimbursementAdditionalUrl').value = '';
+    document.getElementById('fieldReimbursementExpenseDate').value = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
+    document.getElementById('fieldReimbursementReceiptPreview').hidden = true;
+    document.getElementById('fieldReimbursementAdditionalPreview').hidden = true;
+    document.getElementById('fieldReimbursementReceiptHint').textContent = 'Camera or gallery upload';
+    document.getElementById('fieldReimbursementAdditionalHint').textContent = 'Optional supporting image';
+    syncReimbursementLiquidationMath();
+}
+
+function fillReimbursementForm(request) {
+    state.editingReimbursementId = request.id;
+    setFieldValue('fieldReimbursementId', request.id);
+    setFieldValue('fieldReimbursementReceiptUrl', request.receiptImageUrl);
+    setFieldValue('fieldReimbursementAdditionalUrl', request.additionalImageUrl);
+    setFieldValue('fieldReimbursementType', request.requestType);
+    setFieldValue('fieldReimbursementAmount', request.amount);
+    setFieldValue('fieldReimbursementExpenseDate', request.dateOfExpense || request.reportDate);
+    setFieldValue('fieldReimbursementCategory', request.expenseCategory);
+    setFieldValue('fieldReimbursementDescription', request.description);
+    setFieldValue('fieldReimbursementSupplier', request.supplierStoreName);
+    setFieldValue('fieldReimbursementReceiptNumber', request.receiptNumber);
+    setFieldValue('fieldReimbursementOrSi', request.orSiNumber);
+    setFieldValue('fieldReimbursementReceiptDate', request.receiptDate);
+    setFieldValue('fieldReimbursementReceiptAmount', request.receiptAmount);
+    setFieldValue('fieldReimbursementClient', request.clientCompanyVisited);
+    setFieldValue('fieldReimbursementBranch', request.branchLocation);
+    setFieldValue('fieldReimbursementServiceTicket', request.serviceTicketId);
+    setFieldValue('fieldReimbursementSerial', request.machineSerialNumber);
+    setFieldValue('fieldReimbursementJobOrder', request.jobOrderReferenceNumber);
+    setFieldValue('fieldReimbursementVehicle', request.vehicleUsed);
+    setFieldValue('fieldReimbursementPlate', request.plateNumber);
+    setFieldValue('fieldReimbursementOdoStart', request.startingOdometer);
+    setFieldValue('fieldReimbursementOdoEnd', request.endingOdometer);
+    setFieldValue('fieldReimbursementLiters', request.liters);
+    setFieldValue('fieldReimbursementFuelStation', request.fuelStation);
+    setFieldValue('fieldReimbursementRoute', request.routeDestination);
+    setFieldValue('fieldReimbursementAdvanceAmount', request.cashAdvanceAmountRequested);
+    setFieldValue('fieldReimbursementExpectedLiquidation', request.expectedLiquidationDate);
+    setFieldValue('fieldReimbursementLiquidatedAmount', request.amountLiquidated);
+    setFieldValue('fieldReimbursementAdvancePurpose', request.purposeOfAdvance);
+    setFieldValue('fieldReimbursementPaymentMethod', request.paymentMethodRequested || 'GCash');
+    setFieldValue('fieldReimbursementGcash', request.staffGcashNumber);
+    setFieldValue('fieldReimbursementBankName', request.staffBankName);
+    setFieldValue('fieldReimbursementBankAccountName', request.staffBankAccountName);
+    setFieldValue('fieldReimbursementBankAccountNumber', request.staffBankAccountNumber);
+    setFieldValue('fieldReimbursementBackupMethod', request.backupPayoutMethod);
+    setFieldValue('fieldReimbursementNotes', request.notes);
+    document.getElementById('fieldReimbursementReceiptException').checked = request.receiptException === true;
+    setFieldValue('fieldReimbursementReceiptExceptionReason', request.receiptExceptionReason);
+    document.getElementById('fieldReimbursementOriginalSubmitted').checked = request.originalReceiptSubmitted === true;
+    setFieldValue('fieldReimbursementOriginalDate', request.originalReceiptSubmittedDate);
+    setImagePreviewFromUrl('fieldReimbursementReceiptPreview', 'fieldReimbursementReceiptHint', request.receiptImageUrl);
+    setImagePreviewFromUrl('fieldReimbursementAdditionalPreview', 'fieldReimbursementAdditionalHint', request.additionalImageUrl);
+    syncReimbursementLiquidationMath();
+}
+
+function setFieldValue(id, value) {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.value = value == null ? '' : String(value);
+}
+
+function setImagePreviewFromUrl(previewId, hintId, url) {
+    const preview = document.getElementById(previewId);
+    const hint = document.getElementById(hintId);
+    if (!preview || !hint || !url) return;
+    preview.src = url;
+    preview.hidden = false;
+    hint.textContent = 'Existing uploaded image';
+}
+
+function syncReimbursementConditionalFields() {
+    const type = String(document.getElementById('fieldReimbursementType')?.value || '').trim();
+    const category = String(document.getElementById('fieldReimbursementCategory')?.value || '').trim().toLowerCase();
+    const gasolinePanel = document.getElementById('fieldReimbursementGasolineFields');
+    const advancePanel = document.getElementById('fieldReimbursementAdvanceFields');
+    if (gasolinePanel) gasolinePanel.hidden = !category.includes('gasoline') && !category.includes('fuel');
+    if (advancePanel) advancePanel.hidden = !['Cash Advance', 'Liquidation', 'Return of Excess Cash'].includes(type);
+    syncReimbursementLiquidationMath();
+}
+
+function syncReimbursementLiquidationMath() {
+    const advance = Number(document.getElementById('fieldReimbursementAdvanceAmount')?.value || document.getElementById('fieldReimbursementAmount')?.value || 0);
+    const liquidated = Number(document.getElementById('fieldReimbursementLiquidatedAmount')?.value || 0);
+    const unused = Math.max(advance - liquidated, 0);
+    const additional = Math.max(liquidated - advance, 0);
+    setFieldValue('fieldReimbursementUnusedReturned', unused ? unused.toFixed(2) : '');
+    setFieldValue('fieldReimbursementAdditionalDue', additional ? additional.toFixed(2) : '');
+}
+
+function previewReimbursementImage(inputId, previewId, hintId) {
+    const file = document.getElementById(inputId)?.files?.[0];
+    const preview = document.getElementById(previewId);
+    const hint = document.getElementById(hintId);
+    if (!file || !preview || !hint) return;
+    preview.src = URL.createObjectURL(file);
+    preview.onload = () => URL.revokeObjectURL(preview.src);
+    preview.hidden = false;
+    hint.textContent = `${file.name} (${Math.round(file.size / 1024)} KB)`;
+}
+
+async function saveReimbursementRequest(targetStatus) {
+    const form = document.getElementById('fieldReimbursementForm');
+    if (!form) return;
+    const existing = state.reimbursementRequests.find((request) => request.id === state.editingReimbursementId) || null;
+    const next = readReimbursementForm(targetStatus, existing);
+    const validation = validateReimbursementRequest(next, existing);
+    if (!validation.ok) {
+        alert(validation.message);
+        return;
+    }
+    const submitButton = targetStatus === 'Draft'
+        ? document.getElementById('fieldReimbursementSaveDraft')
+        : document.getElementById('fieldReimbursementSubmit');
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = targetStatus === 'Draft' ? 'Saving...' : 'Submitting...';
+    }
+    try {
+        await attachReimbursementUploads(next);
+        await setDocument(PETTY_CASH_REQUEST_COLLECTION, next.id, next);
+        await writeReimbursementAudit(next.id, existing ? (targetStatus === 'Draft' ? 'Edited request' : 'Submitted request') : (targetStatus === 'Draft' ? 'Created request' : 'Submitted request'), existing, next);
+        const index = state.reimbursementRequests.findIndex((request) => request.id === next.id);
+        if (index >= 0) state.reimbursementRequests[index] = normalizeFieldReimbursementRequest(next);
+        else state.reimbursementRequests.unshift(normalizeFieldReimbursementRequest(next));
+        state.reimbursementLoaded = true;
+        state.reimbursementActiveTab = targetStatus === 'Draft' ? 'Draft' : 'Submitted';
+        closeReimbursementForm();
+        renderReimbursementRequests();
+        alert(targetStatus === 'Draft' ? 'Draft saved.' : 'Request submitted to Petty Cash.');
+    } catch (error) {
+        console.error('Failed to save reimbursement request:', error);
+        alert(error.message || 'Unable to save reimbursement request.');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = targetStatus === 'Draft' ? 'Save Draft' : 'Submit Request';
+        }
+    }
+}
+
+function readReimbursementForm(targetStatus, existing = null) {
+    const user = MargaAuth.getUser();
+    const now = new Date();
+    const id = String(document.getElementById('fieldReimbursementId')?.value || existing?.id || createFieldReimbursementId()).trim();
+    const requestType = existing?.status === 'For Liquidation' || existing?.status === 'Partially Liquidated'
+        ? String(existing.requestType || 'Cash Advance').trim()
+        : String(document.getElementById('fieldReimbursementType')?.value || '').trim();
+    const amount = Number(document.getElementById('fieldReimbursementAmount')?.value || 0);
+    const advanceAmount = Number(document.getElementById('fieldReimbursementAdvanceAmount')?.value || 0);
+    const liquidatedAmount = Number(document.getElementById('fieldReimbursementLiquidatedAmount')?.value || 0);
+    return {
+        ...(existing || {}),
+        id,
+        requestId: id,
+        expenseId: id,
+        sourceModule: 'field_app',
+        requestType,
+        staffId: Number(state.staffId || user?.staff_id || 0) || 0,
+        staffName: currentFieldDisplayName(),
+        departmentTeam: String(user?.department || user?.department_name || user?.team || '').trim(),
+        requestDate: existing?.requestDate || localDateYmd(now),
+        reportDate: document.getElementById('fieldReimbursementExpenseDate')?.value || localDateYmd(now),
+        dateOfExpense: document.getElementById('fieldReimbursementExpenseDate')?.value || localDateYmd(now),
+        dateSubmitted: targetStatus === 'Submitted' ? now.toISOString() : String(existing?.dateSubmitted || ''),
+        amount,
+        expenseCategory: document.getElementById('fieldReimbursementCategory')?.value || '',
+        description: document.getElementById('fieldReimbursementDescription')?.value || '',
+        clientCompanyVisited: document.getElementById('fieldReimbursementClient')?.value || '',
+        branchLocation: document.getElementById('fieldReimbursementBranch')?.value || '',
+        serviceTicketId: document.getElementById('fieldReimbursementServiceTicket')?.value || '',
+        machineSerialNumber: document.getElementById('fieldReimbursementSerial')?.value || '',
+        jobOrderReferenceNumber: document.getElementById('fieldReimbursementJobOrder')?.value || '',
+        paymentMethodRequested: document.getElementById('fieldReimbursementPaymentMethod')?.value || '',
+        staffGcashNumber: document.getElementById('fieldReimbursementGcash')?.value || '',
+        staffBankName: document.getElementById('fieldReimbursementBankName')?.value || '',
+        staffBankAccountName: document.getElementById('fieldReimbursementBankAccountName')?.value || '',
+        staffBankAccountNumber: document.getElementById('fieldReimbursementBankAccountNumber')?.value || '',
+        backupPayoutMethod: document.getElementById('fieldReimbursementBackupMethod')?.value || '',
+        notes: document.getElementById('fieldReimbursementNotes')?.value || '',
+        vehicleUsed: document.getElementById('fieldReimbursementVehicle')?.value || '',
+        plateNumber: document.getElementById('fieldReimbursementPlate')?.value || '',
+        startingOdometer: Number(document.getElementById('fieldReimbursementOdoStart')?.value || 0),
+        endingOdometer: Number(document.getElementById('fieldReimbursementOdoEnd')?.value || 0),
+        liters: Number(document.getElementById('fieldReimbursementLiters')?.value || 0),
+        fuelStation: document.getElementById('fieldReimbursementFuelStation')?.value || '',
+        routeDestination: document.getElementById('fieldReimbursementRoute')?.value || '',
+        receiptImageUrl: document.getElementById('fieldReimbursementReceiptUrl')?.value || existing?.receiptImageUrl || '',
+        additionalImageUrl: document.getElementById('fieldReimbursementAdditionalUrl')?.value || existing?.additionalImageUrl || '',
+        receiptNumber: document.getElementById('fieldReimbursementReceiptNumber')?.value || '',
+        orSiNumber: document.getElementById('fieldReimbursementOrSi')?.value || '',
+        supplierStoreName: document.getElementById('fieldReimbursementSupplier')?.value || '',
+        receiptDate: document.getElementById('fieldReimbursementReceiptDate')?.value || '',
+        receiptAmount: Number(document.getElementById('fieldReimbursementReceiptAmount')?.value || 0),
+        receiptException: document.getElementById('fieldReimbursementReceiptException')?.checked === true,
+        receiptExceptionReason: document.getElementById('fieldReimbursementReceiptExceptionReason')?.value || '',
+        originalReceiptSubmitted: document.getElementById('fieldReimbursementOriginalSubmitted')?.checked === true,
+        originalReceiptSubmittedDate: document.getElementById('fieldReimbursementOriginalDate')?.value || '',
+        receiptVerificationStatus: String(existing?.receiptVerificationStatus || 'Pending Review'),
+        receiptVerifiedBy: String(existing?.receiptVerifiedBy || ''),
+        cashAdvanceAmountRequested: advanceAmount,
+        purposeOfAdvance: document.getElementById('fieldReimbursementAdvancePurpose')?.value || '',
+        expectedLiquidationDate: document.getElementById('fieldReimbursementExpectedLiquidation')?.value || '',
+        relatedServiceTicketClient: document.getElementById('fieldReimbursementServiceTicket')?.value || document.getElementById('fieldReimbursementClient')?.value || '',
+        amountLiquidated: liquidatedAmount,
+        unusedAmountReturned: Math.max((advanceAmount || amount) - liquidatedAmount, 0),
+        additionalAmountForReimbursement: Math.max(liquidatedAmount - (advanceAmount || amount), 0),
+        liquidationStatus: requestType === 'Liquidation' ? 'Submitted' : String(existing?.liquidationStatus || ''),
+        approvedAmount: Number(existing?.approvedAmount || 0),
+        paymentStatus: String(existing?.paymentStatus || ''),
+        status: resolveReimbursementNextStatus(targetStatus, existing),
+        createdAt: String(existing?.createdAt || now.toISOString()),
+        updatedAt: now.toISOString()
+    };
+}
+
+function resolveReimbursementNextStatus(targetStatus, existing = null) {
+    if (targetStatus !== 'Submitted') {
+        return existing?.status === 'Incomplete / Needs Correction' ? 'Incomplete / Needs Correction' : 'Draft';
+    }
+    if (existing?.status === 'For Liquidation' || existing?.status === 'Partially Liquidated') {
+        return 'Partially Liquidated';
+    }
+    return 'Submitted';
+}
+
+function validateReimbursementRequest(request, existing = null) {
+    if (existing && !FIELD_REIMBURSEMENT_EDITABLE_STATUSES.has(existing.status)) {
+        return { ok: false, message: 'This request can no longer be edited after approval/review.' };
+    }
+    if (!request.requestType) return { ok: false, message: 'Request type is required.' };
+    if (request.amount <= 0) return { ok: false, message: 'Amount is required.' };
+    if (!request.expenseCategory) return { ok: false, message: 'Expense category is required.' };
+    if (!request.description) return { ok: false, message: 'Description / purpose is required.' };
+    const isSubmit = request.status === 'Submitted';
+    const receiptFile = document.getElementById('fieldReimbursementReceiptImage')?.files?.[0];
+    if (isSubmit && request.requestType === 'Reimbursement' && !request.receiptException && !request.receiptImageUrl && !receiptFile) {
+        return { ok: false, message: 'Receipt image is required for reimbursement unless an exception reason is provided.' };
+    }
+    if (isSubmit && request.receiptException && !request.receiptExceptionReason) {
+        return { ok: false, message: 'Receipt exception reason is required.' };
+    }
+    if (isSubmit && /gasoline|fuel/i.test(request.expenseCategory) && !request.routeDestination) {
+        return { ok: false, message: 'Route / destination is required for gasoline or fuel requests.' };
+    }
+    if (isSubmit && request.requestType === 'Cash Advance') {
+        const openAdvance = state.reimbursementRequests.find((item) => (
+            item.id !== request.id
+            && item.requestType === 'Cash Advance'
+            && ['Approved', 'Paid / Released', 'For Liquidation', 'Partially Liquidated'].includes(item.status)
+            && !['Liquidated', 'Closed'].includes(item.liquidationStatus)
+        ));
+        if (openAdvance) {
+            return { ok: false, message: `Existing unliquidated cash advance ${openAdvance.id} must be liquidated before creating a new cash advance.` };
+        }
+    }
+    return { ok: true };
+}
+
+async function attachReimbursementUploads(request) {
+    const receiptFile = document.getElementById('fieldReimbursementReceiptImage')?.files?.[0];
+    const additionalFile = document.getElementById('fieldReimbursementAdditionalImage')?.files?.[0];
+    if (receiptFile) {
+        const upload = await prepareReimbursementImageUpload(receiptFile, request.id, 'receipt');
+        request.receiptImageUrl = upload.url;
+        request.receiptImagePath = upload.path;
+        request.receiptImageName = receiptFile.name;
+        request.receiptImageSize = upload.size;
+    }
+    if (additionalFile) {
+        const upload = await prepareReimbursementImageUpload(additionalFile, request.id, 'additional');
+        request.additionalImageUrl = upload.url;
+        request.additionalImagePath = upload.path;
+        request.additionalImageName = additionalFile.name;
+        request.additionalImageSize = upload.size;
+    }
+}
+
+async function prepareReimbursementImageUpload(file, requestId, kind) {
+    const blob = await compressImageFile(file, { maxDimension: 1400, quality: 0.74 });
+    return uploadReimbursementImageToStorage(blob, { requestId, kind });
+}
+
+async function uploadReimbursementImageToStorage(blob, { requestId, kind }) {
+    const bucket = String(FIREBASE_CONFIG.storageBucket || '').trim();
+    if (!bucket) throw new Error('Firebase Storage bucket is not configured.');
+    const token = randomToken();
+    const path = [
+        'pettycash-field-requests',
+        localDateYmd(new Date()),
+        safeStorageSegment(requestId),
+        `${safeStorageSegment(kind)}-${Date.now()}.jpg`
+    ].join('/');
+    const boundary = `marga-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const metadata = {
+        name: path,
+        contentType: 'image/jpeg',
+        metadata: { firebaseStorageDownloadTokens: token }
+    };
+    const body = new Blob([
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+        JSON.stringify(metadata),
+        `\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
+        blob,
+        `\r\n--${boundary}--`
+    ], { type: `multipart/related; boundary=${boundary}` });
+    const response = await fetch(
+        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=multipart&key=${encodeURIComponent(FIREBASE_CONFIG.apiKey)}`,
+        { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body }
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || 'Receipt image upload failed.');
+    return {
+        path,
+        url: `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(path)}?alt=media&token=${encodeURIComponent(token)}`,
+        size: Number(blob.size || 0) || 0
+    };
+}
+
+async function writeReimbursementAudit(requestId, action, previous, next, remarks = '') {
+    const user = MargaAuth.getUser();
+    const now = new Date().toISOString();
+    const docId = `${requestId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    await setDocument(PETTY_CASH_AUDIT_COLLECTION, docId, {
+        id: docId,
+        requestId,
+        action,
+        userId: String(user?.staff_id || user?.id || state.staffId || ''),
+        userName: currentFieldDisplayName(),
+        role: currentFieldRoles().join(', '),
+        timestamp: now,
+        previousValue: previous ? JSON.stringify(previous).slice(0, 3000) : '',
+        newValue: next ? JSON.stringify(next).slice(0, 3000) : '',
+        remarks
+    });
+}
+
+function handleReimbursementListAction(event) {
+    const button = event.target.closest('[data-reimbursement-action][data-id]');
+    if (!button) return;
+    const request = state.reimbursementRequests.find((item) => item.id === button.dataset.id);
+    if (!request) return;
+    const action = button.dataset.reimbursementAction;
+    if (action === 'view') {
+        alert(buildReimbursementViewText(request));
+        return;
+    }
+    if (action === 'edit') {
+        openReimbursementForm(request);
+        return;
+    }
+    if (action === 'liquidate') {
+        openReimbursementForm(request);
+    }
+}
+
+function buildReimbursementViewText(request) {
+    return [
+        `${request.id} - ${request.status}`,
+        `${request.requestType} / ${request.expenseCategory}`,
+        `Amount: ${formatPeso(request.amount)}`,
+        `Approved: ${request.approvedAmount ? formatPeso(request.approvedAmount) : '-'}`,
+        `Payment: ${request.paymentStatus || '-'}`,
+        `Client/Ref: ${request.clientCompanyVisited || request.serviceTicketId || '-'}`,
+        `Receipt: ${request.receiptNumber || request.orSiNumber || '-'}`,
+        request.rejectionReason ? `Rejected: ${request.rejectionReason}` : '',
+        request.correctionReason ? `Correction: ${request.correctionReason}` : '',
+        request.handlerRemarks ? `Petty Cash: ${request.handlerRemarks}` : '',
+        request.approvalRemarks ? `Approval: ${request.approvalRemarks}` : ''
+    ].filter(Boolean).join('\n');
+}
+
+function normalizeFieldReimbursementRequest(row = {}) {
+    return {
+        ...row,
+        id: String(row.id || row.requestId || '').trim(),
+        sourceModule: String(row.sourceModule || '').trim(),
+        requestType: String(row.requestType || row.type || '').trim(),
+        staffId: Number(row.staffId || 0),
+        staffName: String(row.staffName || '').trim(),
+        status: String(row.status || 'Draft').trim(),
+        amount: Number(row.amount || 0),
+        approvedAmount: Number(row.approvedAmount || 0),
+        receiptAmount: Number(row.receiptAmount || 0),
+        cashAdvanceAmountRequested: Number(row.cashAdvanceAmountRequested || 0),
+        amountLiquidated: Number(row.amountLiquidated || 0),
+        unusedAmountReturned: Number(row.unusedAmountReturned || 0),
+        additionalAmountForReimbursement: Number(row.additionalAmountForReimbursement || 0),
+        receiptException: row.receiptException === true || row.receiptException === 'true',
+        originalReceiptSubmitted: row.originalReceiptSubmitted === true || row.originalReceiptSubmitted === 'true'
+    };
+}
+
+function createFieldReimbursementId() {
+    return `FR-${formatDateYmd(new Date()).replace(/-/g, '')}-${state.staffId || '0'}-${Date.now().toString().slice(-6)}`;
+}
+
+function formatPeso(value) {
+    return `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatTaskDateTime(value) {

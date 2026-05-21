@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/pettycash.css">
+    <link rel="stylesheet" href="css/pettycash.css?v=20260521-field-requests-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -522,6 +522,41 @@
                 <div id="requestBreakdownPanel" class="request-breakdown-panel hidden" aria-live="polite"></div>
             </section>
 
+            <section class="content-card history-card animate-in" style="animation-delay: 0.32s">
+                <div class="card-header table-header">
+                    <div>
+                        <h3>Field Staff Requests</h3>
+                        <p class="card-subtext" id="fieldRequestSummaryMeta">Submitted reimbursement, cash advance, and liquidation requests from the Field App appear here for completeness review, approval, payout, and reporting.</p>
+                    </div>
+                    <div class="table-controls register-controls">
+                        <input type="search" id="fieldRequestStaffFilter" class="search-input" placeholder="Search staff, request, client, ticket">
+                        <select id="fieldRequestStatusFilter" class="form-select compact-select"></select>
+                        <select id="fieldRequestTypeFilter" class="form-select compact-select"></select>
+                        <button type="button" class="btn btn-secondary btn-sm" id="fieldRequestExportBtn">Export CSV</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="fieldRequestBatchBtn">Create Payout Batch</button>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Request</th>
+                                <th>Staff</th>
+                                <th>Type</th>
+                                <th>Category</th>
+                                <th>Client / Ref</th>
+                                <th>Requested</th>
+                                <th>Approved</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fieldRequestsTableBody"></tbody>
+                    </table>
+                </div>
+                <div id="fieldRequestDetailPanel" class="request-breakdown-panel hidden" aria-live="polite"></div>
+            </section>
+
             <section class="content-card reference-card animate-in" style="animation-delay: 0.35s">
                 <div class="card-header reference-header">
                     <div>
@@ -550,6 +585,6 @@
     <script src="../shared/js/offline-sync.js"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/pettycash.js"></script>
+    <script src="js/pettycash.js?v=20260521-field-requests-1"></script>
 </body>
 </html>

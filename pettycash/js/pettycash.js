@@ -40,6 +40,50 @@ const REQUEST_STATUSES = [
     'Received'
 ];
 
+const FIELD_REQUEST_STATUSES = [
+    'Draft',
+    'Submitted',
+    'For Completeness Check',
+    'Incomplete / Needs Correction',
+    'Verified by Petty Cash Handler',
+    'For Approval',
+    'Approved',
+    'Rejected',
+    'Included in Payout Batch',
+    'Funded',
+    'Paid / Released',
+    'Failed Payment',
+    'For Liquidation',
+    'Partially Liquidated',
+    'Liquidated',
+    'Closed'
+];
+
+const FIELD_REQUEST_TYPES = [
+    'Reimbursement',
+    'Cash Advance',
+    'Liquidation',
+    'Return of Excess Cash',
+    'Correction / Additional Receipt'
+];
+
+const FIELD_REQUEST_CATEGORIES = [
+    'Gasoline / fuel',
+    'Meal allowance',
+    'Toll',
+    'Parking',
+    'Transportation / fare',
+    'Parts / supplies',
+    'Delivery / courier',
+    'Emergency purchase',
+    'Other'
+];
+
+const FIELD_REQUEST_AUDIT_COLLECTION = 'tbl_pettycash_audit_logs';
+const FIELD_REQUEST_EDITABLE_BY_STAFF = new Set(['Draft', 'Incomplete / Needs Correction']);
+const FIELD_REQUEST_HANDLER_ROLES = new Set(['admin', 'billing', 'cashier', 'accounting', 'petty-cash-handler', 'pettycash-handler']);
+const FIELD_REQUEST_ADMIN_ROLES = new Set(['admin', 'owner', 'manager']);
+
 const EXPENSE_GROUPS = [
     { id: 'field_parts', label: 'Printer Parts - Field Repair', accountId: 'printer_repair_parts_field_expense' },
     { id: 'workshop_parts', label: 'Printer Parts - Workshop Repair', accountId: 'printer_repair_parts_workshop_expense' },
@@ -180,6 +224,7 @@ let pettyCashCloudSyncPromise = null;
 let pettyCashCloudSyncQueued = false;
 let lastFocusedSupplierInput = null;
 let selectedRequestBreakdownId = '';
+let selectedFieldRequestId = '';
 let pettyCashDeletePassRequested = false;
 let pettyCashHasSharedBaseline = false;
 
@@ -318,6 +363,13 @@ function bindControls() {
     document.getElementById('entriesTableBody').addEventListener('click', onEntriesTableAction);
     document.getElementById('requestsTableBody').addEventListener('click', onRequestsTableAction);
     document.getElementById('requestBreakdownPanel').addEventListener('click', onRequestsTableAction);
+    document.getElementById('fieldRequestsTableBody')?.addEventListener('click', onFieldRequestsTableAction);
+    document.getElementById('fieldRequestDetailPanel')?.addEventListener('click', onFieldRequestsTableAction);
+    document.getElementById('fieldRequestStatusFilter')?.addEventListener('change', renderFieldRequestsTable);
+    document.getElementById('fieldRequestTypeFilter')?.addEventListener('change', renderFieldRequestsTable);
+    document.getElementById('fieldRequestStaffFilter')?.addEventListener('input', renderFieldRequestsTable);
+    document.getElementById('fieldRequestBatchBtn')?.addEventListener('click', createPayoutBatchFromApprovedFieldRequests);
+    document.getElementById('fieldRequestExportBtn')?.addEventListener('click', exportFieldRequestsCsv);
     document.getElementById('printDailyReportBtn').addEventListener('click', printDailyReport);
     document.getElementById('printReplenishmentBtn').addEventListener('click', printReplenishmentRequest);
     document.getElementById('resetTrialEntriesBtn').addEventListener('click', resetTrialEntries);
@@ -387,6 +439,14 @@ function populateSelects() {
     document.getElementById('entryStatusInput').innerHTML = getEntryStatusOptionsHtml();
     document.getElementById('entryStatusFilter').innerHTML = '<option value="all">All Entry Statuses</option>' + ENTRY_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     document.getElementById('requestStatusInput').innerHTML = REQUEST_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
+    const fieldStatusFilter = document.getElementById('fieldRequestStatusFilter');
+    if (fieldStatusFilter) {
+        fieldStatusFilter.innerHTML = '<option value="all">All Field Request Statuses</option>' + FIELD_REQUEST_STATUSES.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('');
+    }
+    const fieldTypeFilter = document.getElementById('fieldRequestTypeFilter');
+    if (fieldTypeFilter) {
+        fieldTypeFilter.innerHTML = '<option value="all">All Request Types</option>' + FIELD_REQUEST_TYPES.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('');
+    }
 }
 
 function getEntryStatusOptionsHtml(selectedValue = '') {
@@ -874,6 +934,8 @@ function renderAll() {
     renderSupplierSummary();
     renderRequestsTable();
     renderRequestBreakdownPanel();
+    renderFieldRequestsTable();
+    renderFieldRequestDetailPanel();
     renderAccountCards();
     renderRequestPreview();
 }
@@ -910,7 +972,7 @@ function renderFundSnapshot() {
     const selectedDate = getSelectedDateValue();
     const selectedEntries = getEntriesByDate(selectedDate).filter((entry) => entry.status !== 'Cancelled');
     const selectedBundles = buildVoucherGroups(selectedEntries);
-    const linkedRequests = PETTY_CASH_STATE.requests.filter((request) => request.reportDate === selectedDate);
+    const linkedRequests = PETTY_CASH_STATE.requests.filter((request) => !isFieldStaffRequest(request) && request.reportDate === selectedDate);
     const snapshot = [
         {
             label: 'Custodian',
@@ -948,7 +1010,7 @@ function renderDailySummary() {
     const dayOpening = calculateDayOpeningBalance(selectedDate);
     const dayEntries = getEntriesByDate(selectedDate).filter((entry) => entry.status !== 'Cancelled');
     const dayBundles = buildVoucherGroups(dayEntries);
-    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received' && request.requestDate === selectedDate);
+    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => !isFieldStaffRequest(request) && request.status === 'Received' && request.requestDate === selectedDate);
     const spentToday = sumAmounts(dayEntries.map((entry) => entry.amount));
     const releasedAmount = sumAmounts(releasedToday.map((request) => request.amount));
     const closingBalance = Math.max(dayOpening + releasedAmount - spentToday, 0);
@@ -1114,6 +1176,7 @@ function renderSupplierSummary() {
 function renderRequestsTable() {
     const tbody = document.getElementById('requestsTableBody');
     const rows = PETTY_CASH_STATE.requests
+        .filter((request) => !isFieldStaffRequest(request))
         .slice()
         .sort((left, right) => {
             const leftDate = `${left.requestDate} ${left.id}`;
@@ -1157,6 +1220,77 @@ function renderRequestsTable() {
                         <button type="button" class="row-btn" data-action="edit-request" data-id="${request.id}">Edit Status</button>
                         <button type="button" class="row-btn" data-action="print-request" data-id="${request.id}">Print</button>
                         <button type="button" class="row-btn" data-action="delete-request" data-id="${request.id}">Delete</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderFieldRequestsTable() {
+    const tbody = document.getElementById('fieldRequestsTableBody');
+    if (!tbody) return;
+    const statusFilter = String(document.getElementById('fieldRequestStatusFilter')?.value || 'all');
+    const typeFilter = String(document.getElementById('fieldRequestTypeFilter')?.value || 'all');
+    const staffFilter = String(document.getElementById('fieldRequestStaffFilter')?.value || '').trim().toLowerCase();
+    const rows = getFieldStaffRequests()
+        .filter((request) => statusFilter === 'all' || request.status === statusFilter)
+        .filter((request) => typeFilter === 'all' || request.requestType === typeFilter)
+        .filter((request) => {
+            if (!staffFilter) return true;
+            return [request.staffName, request.staffId, request.id, request.clientCompanyVisited, request.serviceTicketId]
+                .join(' ')
+                .toLowerCase()
+                .includes(staffFilter);
+        })
+        .sort((left, right) => `${right.dateSubmitted || right.requestDate || right.createdAt} ${right.id}`.localeCompare(`${left.dateSubmitted || left.requestDate || left.createdAt} ${left.id}`));
+
+    document.getElementById('fieldRequestSummaryMeta').textContent = buildFieldRequestSummaryText(rows);
+
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No Field App request matches the current filters.</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map((request) => {
+        const warning = buildFieldRequestWarning(request);
+        return `
+            <tr class="${request.id === selectedFieldRequestId ? 'selected-request-row' : ''}">
+                <td>
+                    <div class="ref-cell">
+                        <button type="button" class="link-btn ref-primary" data-action="view-field-request" data-id="${escapeHtml(request.id)}">${escapeHtml(request.id)}</button>
+                        <span class="ref-secondary">${escapeHtml(formatLongDate(request.dateOfExpense || request.requestDate))}</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="ref-cell">
+                        <span>${escapeHtml(request.staffName || `Staff #${request.staffId || '-'}`)}</span>
+                        <span class="ref-secondary">${escapeHtml(request.departmentTeam || '-')}</span>
+                    </div>
+                </td>
+                <td>${escapeHtml(request.requestType || '-')}</td>
+                <td>${escapeHtml(request.expenseCategory || '-')}</td>
+                <td>
+                    <div class="ref-cell">
+                        <span>${escapeHtml(request.clientCompanyVisited || request.branchLocation || '-')}</span>
+                        <span class="ref-secondary">${escapeHtml(request.serviceTicketId || request.machineSerialNumber || request.jobOrderReferenceNumber || '-')}</span>
+                    </div>
+                </td>
+                <td>${MargaUtils.formatCurrency(request.amount)}</td>
+                <td>${MargaUtils.formatCurrency(request.approvedAmount || request.amount)}</td>
+                <td>
+                    <span class="status-badge ${slugify(request.status)}">${escapeHtml(request.status)}</span>
+                    ${warning ? `<div class="field-request-warning">${escapeHtml(warning)}</div>` : ''}
+                </td>
+                <td>
+                    <div class="row-actions">
+                        <button type="button" class="row-btn" data-action="view-field-request" data-id="${escapeHtml(request.id)}">${request.id === selectedFieldRequestId ? 'Hide' : 'Review'}</button>
+                        <button type="button" class="row-btn" data-action="field-complete" data-id="${escapeHtml(request.id)}">Complete</button>
+                        <button type="button" class="row-btn" data-action="field-incomplete" data-id="${escapeHtml(request.id)}">Correction</button>
+                        <button type="button" class="row-btn" data-action="field-approve" data-id="${escapeHtml(request.id)}">Approve</button>
+                        <button type="button" class="row-btn" data-action="field-reject" data-id="${escapeHtml(request.id)}">Reject</button>
+                        <button type="button" class="row-btn" data-action="field-paid" data-id="${escapeHtml(request.id)}">Mark Paid</button>
+                        <button type="button" class="row-btn" data-action="field-liquidated" data-id="${escapeHtml(request.id)}">Liquidated</button>
                     </div>
                 </td>
             </tr>
@@ -1261,6 +1395,310 @@ function renderRequestBreakdownPanel() {
         </div>
         <div class="request-voucher-list">${voucherRows}</div>
     `;
+}
+
+function renderFieldRequestDetailPanel() {
+    const panel = document.getElementById('fieldRequestDetailPanel');
+    if (!panel) return;
+    const request = getRequestById(selectedFieldRequestId);
+    if (!request || !isFieldStaffRequest(request)) {
+        selectedFieldRequestId = '';
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        return;
+    }
+
+    const unliquidated = getUnliquidatedAdvancesForStaff(request.staffId, request.id);
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+        <div class="request-breakdown-head">
+            <div>
+                <span class="setup-chip">Field Staff Request</span>
+                <h4>${escapeHtml(request.id)}</h4>
+                <p class="card-subtext">${escapeHtml(request.staffName || '-')} • ${escapeHtml(request.requestType || '-')} • ${escapeHtml(request.expenseCategory || '-')}</p>
+            </div>
+            <div class="request-breakdown-actions">
+                <span class="status-badge ${slugify(request.status)}">${escapeHtml(request.status)}</span>
+                <strong>${MargaUtils.formatCurrency(request.amount)}</strong>
+            </div>
+        </div>
+        <div class="field-request-detail-grid">
+            ${fieldRequestDetailItem('Amount Requested', MargaUtils.formatCurrency(request.amount))}
+            ${fieldRequestDetailItem('Approved Amount', request.approvedAmount ? MargaUtils.formatCurrency(request.approvedAmount) : '-')}
+            ${fieldRequestDetailItem('Client / Ticket', [request.clientCompanyVisited, request.serviceTicketId].filter(Boolean).join(' / ') || '-')}
+            ${fieldRequestDetailItem('Machine / Job Ref', [request.machineSerialNumber, request.jobOrderReferenceNumber].filter(Boolean).join(' / ') || '-')}
+            ${fieldRequestDetailItem('Receipt', [request.receiptNumber, request.orSiNumber, request.supplierStoreName].filter(Boolean).join(' / ') || '-')}
+            ${fieldRequestDetailItem('Original Receipt', request.originalReceiptSubmitted ? `Submitted ${request.originalReceiptSubmittedDate || ''}` : 'Not submitted')}
+            ${fieldRequestDetailItem('Completeness', request.completenessStatus || request.receiptVerificationStatus || '-')}
+            ${fieldRequestDetailItem('Unliquidated Advances', unliquidated.length ? `${unliquidated.length} open / ${MargaUtils.formatCurrency(sumAmounts(unliquidated.map((item) => item.approvedAmount || item.amount)))}` : 'None found')}
+        </div>
+        <div class="field-request-image-grid">
+            ${renderFieldRequestImage(request.receiptImageUrl, 'Receipt Image')}
+            ${renderFieldRequestImage(request.additionalImageUrl, 'Additional Image')}
+            ${renderFieldRequestImage(request.proofOfTransferImageUrl, 'Payment Proof')}
+        </div>
+        <div class="field-request-notes">
+            <strong>Description / Purpose</strong>
+            <p>${escapeHtml(request.description || request.notes || '-')}</p>
+            <strong>Petty Cash / Approval Remarks</strong>
+            <p>${escapeHtml([request.handlerRemarks, request.approvalRemarks, request.rejectionReason, request.correctionReason].filter(Boolean).join(' | ') || '-')}</p>
+        </div>
+    `;
+}
+
+function fieldRequestDetailItem(label, value) {
+    return `
+        <article class="preview-breakdown-card">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+        </article>
+    `;
+}
+
+function renderFieldRequestImage(url, label) {
+    if (!url) {
+        return `
+            <article class="field-request-image-card empty">
+                <span>${escapeHtml(label)}</span>
+                <small>No image uploaded</small>
+            </article>
+        `;
+    }
+    return `
+        <a class="field-request-image-card" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+            <span>${escapeHtml(label)}</span>
+            <img src="${escapeHtml(url)}" alt="${escapeHtml(label)}">
+        </a>
+    `;
+}
+
+async function onFieldRequestsTableAction(event) {
+    const button = event.target.closest('[data-action][data-id]');
+    if (!button) return;
+    const request = getRequestById(button.dataset.id);
+    if (!request || !isFieldStaffRequest(request)) return;
+
+    const action = button.dataset.action;
+    if (action === 'view-field-request') {
+        selectedFieldRequestId = selectedFieldRequestId === request.id ? '' : request.id;
+        renderFieldRequestsTable();
+        renderFieldRequestDetailPanel();
+        return;
+    }
+    if (action === 'field-complete') {
+        await updateFieldRequestStatus(request, {
+            status: 'Verified by Petty Cash Handler',
+            completenessStatus: 'Complete',
+            receiptVerificationStatus: 'Verified',
+            receiptVerifiedBy: MargaAuth.getUser()?.name || '',
+            handlerRemarks: prompt('Completeness remarks (optional):', request.handlerRemarks || '') || request.handlerRemarks || ''
+        }, 'Verified complete');
+        return;
+    }
+    if (action === 'field-incomplete') {
+        const reason = prompt('Reason / correction needed:');
+        if (!reason) {
+            MargaUtils.showToast('Correction reason is required.', 'error');
+            return;
+        }
+        await updateFieldRequestStatus(request, {
+            status: 'Incomplete / Needs Correction',
+            completenessStatus: 'Incomplete',
+            correctionReason: reason,
+            handlerRemarks: reason
+        }, 'Marked incomplete', reason);
+        return;
+    }
+    if (action === 'field-approve') {
+        if (!canApproveFieldRequests()) {
+            MargaUtils.showToast('Only Owner/Admin can approve Field Staff requests.', 'error');
+            return;
+        }
+        const approvedAmountRaw = prompt('Approved amount:', String(request.approvedAmount || request.amount || 0));
+        if (approvedAmountRaw === null) return;
+        const approvedAmount = Number(approvedAmountRaw || 0);
+        if (approvedAmount <= 0) {
+            MargaUtils.showToast('Approved amount is required.', 'error');
+            return;
+        }
+        let adjustmentReason = request.approvalRemarks || '';
+        if (Math.abs(approvedAmount - Number(request.amount || 0)) > 0.005) {
+            adjustmentReason = prompt('Reason for approved amount adjustment:') || '';
+            if (!adjustmentReason) {
+                MargaUtils.showToast('Adjustment reason is required.', 'error');
+                return;
+            }
+        }
+        await updateFieldRequestStatus(request, {
+            status: request.requestType === 'Cash Advance' ? 'Approved' : 'Approved',
+            approvedAmount,
+            approvalRemarks: adjustmentReason,
+            approvedBy: MargaAuth.getUser()?.name || '',
+            approvedAt: isoNow(),
+            paymentStatus: 'Approved'
+        }, 'Approved', adjustmentReason);
+        return;
+    }
+    if (action === 'field-reject') {
+        if (!canApproveFieldRequests()) {
+            MargaUtils.showToast('Only Owner/Admin can reject Field Staff requests.', 'error');
+            return;
+        }
+        const reason = prompt('Reason for rejection:');
+        if (!reason) {
+            MargaUtils.showToast('Rejection reason is required.', 'error');
+            return;
+        }
+        await updateFieldRequestStatus(request, {
+            status: 'Rejected',
+            rejectionReason: reason,
+            approvalRemarks: reason,
+            rejectedBy: MargaAuth.getUser()?.name || '',
+            rejectedAt: isoNow()
+        }, 'Rejected', reason);
+        return;
+    }
+    if (action === 'field-paid') {
+        const reference = prompt('Payment reference number:', request.paymentReferenceNumber || '');
+        if (!reference) {
+            MargaUtils.showToast('Payment reference is required before marking paid.', 'error');
+            return;
+        }
+        if (request.status !== 'Approved' && request.status !== 'Funded' && request.status !== 'Included in Payout Batch') {
+            MargaUtils.showToast('Only approved/funded requests can be marked paid.', 'error');
+            return;
+        }
+        await updateFieldRequestStatus(request, {
+            status: request.requestType === 'Cash Advance' ? 'For Liquidation' : 'Paid / Released',
+            paymentStatus: 'Paid / Released',
+            paymentReferenceNumber: reference,
+            paidBy: MargaAuth.getUser()?.name || '',
+            paidDateTime: isoNow()
+        }, 'Paid', reference);
+        return;
+    }
+    if (action === 'field-liquidated') {
+        if (!['Partially Liquidated', 'For Liquidation'].includes(request.status)) {
+            MargaUtils.showToast('Only cash advances for liquidation can be marked liquidated.', 'error');
+            return;
+        }
+        const remarks = prompt('Liquidation approval / closing remarks:', request.approvalRemarks || request.handlerRemarks || '');
+        if (remarks === null) return;
+        await updateFieldRequestStatus(request, {
+            status: 'Liquidated',
+            liquidationStatus: 'Liquidated',
+            approvalRemarks: remarks,
+            liquidatedBy: MargaAuth.getUser()?.name || '',
+            liquidatedAt: isoNow()
+        }, 'Liquidated', remarks);
+    }
+}
+
+async function updateFieldRequestStatus(request, patch, action, remarks = '') {
+    const previous = cloneData(request);
+    const next = normalizeRequest({
+        ...request,
+        ...patch,
+        updatedAt: isoNow()
+    });
+    Object.assign(request, next);
+    persistState({ deleteRemoved: false, silent: true });
+    await writeFieldRequestAudit(request.id, action, previous, next, remarks);
+    renderAll();
+    MargaUtils.showToast(`Field request ${request.id} updated.`, 'success');
+}
+
+async function writeFieldRequestAudit(requestId, action, previous, next, remarks = '') {
+    const user = MargaAuth.getUser();
+    const id = `${requestId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    try {
+        await setDocument(FIELD_REQUEST_AUDIT_COLLECTION, id, {
+            id,
+            requestId,
+            action,
+            userId: String(user?.staff_id || user?.id || user?.email || ''),
+            userName: String(user?.name || user?.email || '').trim(),
+            role: MargaAuth.getDisplayRoles(user),
+            timestamp: isoNow(),
+            previousValue: previous ? JSON.stringify(previous).slice(0, 3000) : '',
+            newValue: next ? JSON.stringify(next).slice(0, 3000) : '',
+            remarks
+        }, {
+            label: `Audit ${action} ${requestId}`,
+            dedupeKey: `${FIELD_REQUEST_AUDIT_COLLECTION}:${id}`
+        });
+    } catch (error) {
+        console.warn('Unable to write petty cash audit log:', error);
+    }
+}
+
+async function createPayoutBatchFromApprovedFieldRequests() {
+    const approved = getFieldStaffRequests().filter((request) => request.status === 'Approved' && !request.payoutBatchId);
+    if (!approved.length) {
+        MargaUtils.showToast('No approved Field App request is ready for payout batch.', 'info');
+        return;
+    }
+    const batchId = `PCBATCH-${toDateInputValue(new Date()).replace(/-/g, '')}-${Date.now().toString().slice(-5)}`;
+    const totalAmount = sumAmounts(approved.map((request) => request.approvedAmount || request.amount));
+    const ok = confirm(`Create payout batch ${batchId} for ${approved.length} approved request(s), total ${MargaUtils.formatCurrency(totalAmount)}?`);
+    if (!ok) return;
+    for (const request of approved) {
+        const live = getRequestById(request.id);
+        if (!live) continue;
+        await updateFieldRequestStatus(live, {
+            payoutBatchId: batchId,
+            status: 'Included in Payout Batch',
+            paymentStatus: 'Included in Payout Batch',
+            batchDate: getSelectedDateValue(),
+            batchCreatedBy: MargaAuth.getUser()?.name || ''
+        }, 'Included in payout batch', batchId);
+    }
+    MargaUtils.showToast(`Payout batch ${batchId} created.`, 'success');
+}
+
+function exportFieldRequestsCsv() {
+    const rows = getFieldStaffRequests();
+    if (!rows.length) {
+        MargaUtils.showToast('No Field App requests to export.', 'info');
+        return;
+    }
+    const headers = [
+        'id',
+        'requestType',
+        'staffId',
+        'staffName',
+        'dateOfExpense',
+        'dateSubmitted',
+        'amount',
+        'approvedAmount',
+        'expenseCategory',
+        'clientCompanyVisited',
+        'branchLocation',
+        'serviceTicketId',
+        'machineSerialNumber',
+        'receiptNumber',
+        'supplierStoreName',
+        'status',
+        'paymentStatus',
+        'liquidationStatus',
+        'payoutBatchId'
+    ];
+    const csv = [
+        headers.join(','),
+        ...rows.map((row) => headers.map((key) => csvCell(row[key])).join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `field-pettycash-requests-${getSelectedDateValue()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function csvCell(value) {
+    const text = String(value ?? '');
+    return `"${text.replace(/"/g, '""')}"`;
 }
 
 function renderAccountCards() {
@@ -1517,7 +1955,7 @@ function printDailyDocument(reportDate, entries) {
 
     const breakdown = buildAccountBreakdown(entries);
     const dayOpening = calculateDayOpeningBalance(reportDate);
-    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received' && request.requestDate === reportDate);
+    const releasedToday = PETTY_CASH_STATE.requests.filter((request) => !isFieldStaffRequest(request) && request.status === 'Received' && request.requestDate === reportDate);
     const spentToday = sumAmounts(entries.map((entry) => entry.amount));
     const releasedAmount = sumAmounts(releasedToday.map((request) => request.amount));
     const dayClosing = Math.max(dayOpening + releasedAmount - spentToday, 0);
@@ -1999,6 +2437,7 @@ function saveCurrentRequestFromForm(options = {}) {
 
 function syncRequestWithApd(request) {
     if (!request) return null;
+    if (isFieldStaffRequest(request)) return request;
 
     const bills = readArrayStorage(APD_SYNC_STORAGE_KEYS.bills, []);
     const checks = readArrayStorage(APD_SYNC_STORAGE_KEYS.checks, []);
@@ -2139,6 +2578,7 @@ function syncRequestsFromApd() {
     let changed = false;
 
     PETTY_CASH_STATE.requests.forEach((request) => {
+        if (isFieldStaffRequest(request)) return;
         const bill = findLinkedApdBillForRequest(request, bills);
         const receivedCheck = bill ? getLatestReceivedApdCheck(bill.id, checks) : null;
         const nextStatus = receivedCheck
@@ -2204,6 +2644,7 @@ function mapApdBillStatusToRequestStatus(billStatus) {
 
 function reconcileRequests() {
     PETTY_CASH_STATE.requests.forEach((request) => {
+        if (isFieldStaffRequest(request)) return;
         const linkedEntries = getEligibleEntriesForRequest(request.reportDate, request.id);
         syncEntriesForRequest(request, linkedEntries);
         request.entryIds = linkedEntries.map((entry) => entry.id);
@@ -2270,6 +2711,8 @@ function calculateCashOnHandByDate(reportDate, excludeRequestId = '') {
         isOnOrBeforeDate(entry.date, reportDate) && entry.status !== 'Cancelled'
     ));
     const releasedRequests = PETTY_CASH_STATE.requests.filter((request) => (
+        !isFieldStaffRequest(request)
+        &&
         request.status === 'Received'
         && request.id !== excludeRequestId
         && isOnOrBeforeDate(request.requestDate, reportDate)
@@ -2290,7 +2733,7 @@ function calculatePendingLiquidationByDate(reportDate) {
 
 function calculateDayOpeningBalance(reportDate) {
     const priorEntries = PETTY_CASH_STATE.entries.filter((entry) => entry.date < reportDate && entry.status !== 'Cancelled');
-    const priorReleased = PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received' && request.requestDate < reportDate);
+    const priorReleased = PETTY_CASH_STATE.requests.filter((request) => !isFieldStaffRequest(request) && request.status === 'Received' && request.requestDate < reportDate);
     return Math.max(
         PETTY_CASH_STATE.settings.openingBalance
         + sumAmounts(priorReleased.map((request) => request.amount))
@@ -2361,7 +2804,7 @@ function getEntriesByDate(dateValue) {
 }
 
 function getReceivedRequests() {
-    return PETTY_CASH_STATE.requests.filter((request) => request.status === 'Received');
+    return PETTY_CASH_STATE.requests.filter((request) => !isFieldStaffRequest(request) && request.status === 'Received');
 }
 
 function getEntriesByRequestId(requestId) {
@@ -2398,6 +2841,71 @@ function getExistingEntryById(entryId) {
 
 function getRequestById(requestId) {
     return PETTY_CASH_STATE.requests.find((request) => request.id === requestId) || null;
+}
+
+function isFieldStaffRequest(request) {
+    return String(request?.sourceModule || '').trim() === 'field_app'
+        || String(request?.requestId || '').startsWith('FR-')
+        || String(request?.id || '').startsWith('FR-');
+}
+
+function getFieldStaffRequests() {
+    return PETTY_CASH_STATE.requests.filter(isFieldStaffRequest).map(normalizeFieldStaffRequest);
+}
+
+function getUnliquidatedAdvancesForStaff(staffId, excludeRequestId = '') {
+    const numericStaffId = Number(staffId || 0);
+    if (!numericStaffId) return [];
+    return getFieldStaffRequests().filter((request) => (
+        request.id !== excludeRequestId
+        && request.staffId === numericStaffId
+        && request.requestType === 'Cash Advance'
+        && ['Approved', 'Paid / Released', 'For Liquidation', 'Partially Liquidated'].includes(request.status)
+        && !['Liquidated', 'Closed'].includes(request.liquidationStatus)
+    ));
+}
+
+function canApproveFieldRequests() {
+    return MargaAuth.getRoles(MargaAuth.getUser()).some((role) => FIELD_REQUEST_ADMIN_ROLES.has(role));
+}
+
+function buildFieldRequestWarning(request) {
+    if (request.requestType === 'Cash Advance' && request.expectedLiquidationDate && request.expectedLiquidationDate < getSelectedDateValue() && !['Liquidated', 'Closed'].includes(request.status)) {
+        return 'Overdue liquidation';
+    }
+    if (request.receiptNumber && findDuplicateFieldReceipt(request)) {
+        return 'Possible duplicate receipt';
+    }
+    if (getUnliquidatedAdvancesForStaff(request.staffId, request.id).length) {
+        return 'Staff has unliquidated advance';
+    }
+    return '';
+}
+
+function findDuplicateFieldReceipt(request) {
+    const receiptKey = [
+        request.supplierStoreName,
+        request.receiptNumber,
+        request.receiptDate,
+        Number(request.receiptAmount || request.amount || 0).toFixed(2)
+    ].map((value) => String(value || '').trim().toLowerCase()).join('|');
+    if (!receiptKey.replace(/\|/g, '')) return null;
+    return getFieldStaffRequests().find((item) => {
+        if (item.id === request.id) return false;
+        const key = [
+            item.supplierStoreName,
+            item.receiptNumber,
+            item.receiptDate,
+            Number(item.receiptAmount || item.amount || 0).toFixed(2)
+        ].map((value) => String(value || '').trim().toLowerCase()).join('|');
+        return key === receiptKey;
+    }) || null;
+}
+
+function buildFieldRequestSummaryText(rows) {
+    const total = sumAmounts(rows.map((request) => request.approvedAmount || request.amount));
+    const approvedToday = getFieldStaffRequests().filter((request) => request.status === 'Approved');
+    return `${rows.length.toLocaleString()} field request(s) shown. Approved waiting payout: ${approvedToday.length.toLocaleString()} / ${MargaUtils.formatCurrency(sumAmounts(approvedToday.map((request) => request.approvedAmount || request.amount)))}. Filter total: ${MargaUtils.formatCurrency(total)}.`;
 }
 
 function getAccountById(accountId) {
@@ -2511,6 +3019,7 @@ function normalizeEntry(entry) {
 }
 
 function normalizeRequest(request) {
+    if (isFieldStaffRequest(request)) return normalizeFieldStaffRequest(request);
     const legacyStatus = String(request.status || '').trim();
     const normalizedStatus = legacyStatus === 'Released' ? 'Received' : legacyStatus;
     return {
@@ -2528,6 +3037,94 @@ function normalizeRequest(request) {
         apdCheckNumber: String(request.apdCheckNumber || '').trim(),
         receivedDate: String(request.receivedDate || '').trim(),
         createdAt: String(request.createdAt || isoNow())
+    };
+}
+
+function normalizeFieldStaffRequest(request = {}) {
+    const id = String(request.id || request.requestId || createFieldStaffRequestId()).trim();
+    const status = String(request.status || 'Draft').trim();
+    const requestType = String(request.requestType || request.type || 'Reimbursement').trim();
+    const amount = Number(request.amount || 0);
+    const approvedAmount = Number(request.approvedAmount || 0);
+    const amountLiquidated = Number(request.amountLiquidated || 0);
+    const advanceAmount = Number(request.cashAdvanceAmountRequested || (requestType === 'Cash Advance' ? amount : 0));
+    return {
+        ...request,
+        id,
+        requestId: String(request.requestId || id).trim(),
+        expenseId: String(request.expenseId || id).trim(),
+        sourceModule: 'field_app',
+        requestType,
+        staffId: Number(request.staffId || 0),
+        staffName: String(request.staffName || request.requestedBy || '').trim(),
+        requestedBy: String(request.requestedBy || request.staffName || '').trim(),
+        departmentTeam: String(request.departmentTeam || '').trim(),
+        requestDate: String(request.requestDate || request.dateOfExpense || getSelectedDateValue()).trim(),
+        reportDate: String(request.reportDate || request.dateOfExpense || request.requestDate || getSelectedDateValue()).trim(),
+        dateOfExpense: String(request.dateOfExpense || request.reportDate || request.requestDate || getSelectedDateValue()).trim(),
+        dateSubmitted: String(request.dateSubmitted || '').trim(),
+        amount,
+        expenseCategory: String(request.expenseCategory || '').trim(),
+        description: String(request.description || '').trim(),
+        notes: String(request.notes || '').trim(),
+        clientCompanyVisited: String(request.clientCompanyVisited || '').trim(),
+        branchLocation: String(request.branchLocation || '').trim(),
+        serviceTicketId: String(request.serviceTicketId || '').trim(),
+        machineSerialNumber: String(request.machineSerialNumber || '').trim(),
+        jobOrderReferenceNumber: String(request.jobOrderReferenceNumber || '').trim(),
+        paymentMethodRequested: String(request.paymentMethodRequested || '').trim(),
+        staffGcashNumber: String(request.staffGcashNumber || '').trim(),
+        staffBankName: String(request.staffBankName || '').trim(),
+        staffBankAccountName: String(request.staffBankAccountName || '').trim(),
+        staffBankAccountNumber: String(request.staffBankAccountNumber || '').trim(),
+        backupPayoutMethod: String(request.backupPayoutMethod || '').trim(),
+        vehicleUsed: String(request.vehicleUsed || '').trim(),
+        plateNumber: String(request.plateNumber || '').trim(),
+        startingOdometer: Number(request.startingOdometer || 0),
+        endingOdometer: Number(request.endingOdometer || 0),
+        liters: Number(request.liters || 0),
+        fuelStation: String(request.fuelStation || '').trim(),
+        routeDestination: String(request.routeDestination || '').trim(),
+        receiptImageUrl: String(request.receiptImageUrl || '').trim(),
+        additionalImageUrl: String(request.additionalImageUrl || '').trim(),
+        receiptNumber: String(request.receiptNumber || '').trim(),
+        orSiNumber: String(request.orSiNumber || '').trim(),
+        supplierStoreName: String(request.supplierStoreName || request.supplier || '').trim(),
+        receiptDate: String(request.receiptDate || '').trim(),
+        receiptAmount: Number(request.receiptAmount || 0),
+        receiptException: request.receiptException === true || request.receiptException === 'true',
+        receiptExceptionReason: String(request.receiptExceptionReason || '').trim(),
+        originalReceiptSubmitted: request.originalReceiptSubmitted === true || request.originalReceiptSubmitted === 'true',
+        originalReceiptSubmittedDate: String(request.originalReceiptSubmittedDate || '').trim(),
+        receiptVerifiedBy: String(request.receiptVerifiedBy || '').trim(),
+        receiptVerificationStatus: String(request.receiptVerificationStatus || 'Pending Review').trim(),
+        cashAdvanceAmountRequested: advanceAmount,
+        purposeOfAdvance: String(request.purposeOfAdvance || '').trim(),
+        expectedLiquidationDate: String(request.expectedLiquidationDate || '').trim(),
+        relatedServiceTicketClient: String(request.relatedServiceTicketClient || '').trim(),
+        amountLiquidated,
+        unusedAmountReturned: Number(request.unusedAmountReturned || Math.max(advanceAmount - amountLiquidated, 0)),
+        additionalAmountForReimbursement: Number(request.additionalAmountForReimbursement || Math.max(amountLiquidated - advanceAmount, 0)),
+        liquidationStatus: String(request.liquidationStatus || '').trim(),
+        approvedAmount,
+        paymentMethodUsed: String(request.paymentMethodUsed || '').trim(),
+        paidBy: String(request.paidBy || '').trim(),
+        paidDateTime: String(request.paidDateTime || '').trim(),
+        paymentReferenceNumber: String(request.paymentReferenceNumber || '').trim(),
+        proofOfTransferImageUrl: String(request.proofOfTransferImageUrl || '').trim(),
+        payoutBatchId: String(request.payoutBatchId || '').trim(),
+        transferFee: Number(request.transferFee || 0),
+        paymentStatus: String(request.paymentStatus || '').trim(),
+        completenessStatus: String(request.completenessStatus || '').trim(),
+        handlerRemarks: String(request.handlerRemarks || '').trim(),
+        approvalRemarks: String(request.approvalRemarks || '').trim(),
+        correctionReason: String(request.correctionReason || '').trim(),
+        rejectionReason: String(request.rejectionReason || '').trim(),
+        approvedBy: String(request.approvedBy || '').trim(),
+        approvedAt: String(request.approvedAt || '').trim(),
+        status: FIELD_REQUEST_STATUSES.includes(status) ? status : 'Draft',
+        createdAt: String(request.createdAt || isoNow()),
+        updatedAt: String(request.updatedAt || isoNow())
     };
 }
 
@@ -3370,6 +3967,10 @@ function createRequestId() {
         return Math.max(max, value);
     }, 3000);
     return `REQ-${highest + 1}`;
+}
+
+function createFieldStaffRequestId() {
+    return `FR-${toDateInputValue(new Date()).replace(/-/g, '')}-${Date.now().toString().slice(-6)}`;
 }
 
 function getSelectedDateValue() {
