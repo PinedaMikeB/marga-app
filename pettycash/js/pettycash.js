@@ -11,6 +11,7 @@ const PETTY_CASH_STORAGE_KEYS = {
 const PETTY_CASH_FIRESTORE = {
     entries: 'tbl_pettycash_entries',
     requests: 'tbl_pettycash_requests',
+    payoutBatches: 'tbl_pettycash_payout_batches',
     settings: 'tbl_pettycash_settings',
     settingsDocId: 'main'
 };
@@ -1642,6 +1643,29 @@ async function createPayoutBatchFromApprovedFieldRequests() {
     const totalAmount = sumAmounts(approved.map((request) => request.approvedAmount || request.amount));
     const ok = confirm(`Create payout batch ${batchId} for ${approved.length} approved request(s), total ${MargaUtils.formatCurrency(totalAmount)}?`);
     if (!ok) return;
+    const user = MargaAuth.getUser();
+    const batchDoc = {
+        id: batchId,
+        batchId,
+        batchDate: getSelectedDateValue(),
+        createdBy: user?.name || '',
+        approvedFundedBy: '',
+        totalNumberOfRequests: approved.length,
+        totalAmountApproved: totalAmount,
+        totalTransferFees: 0,
+        totalFundedAmount: totalAmount,
+        fundingSource: '',
+        payoutWalletAccountUsed: '',
+        status: 'Draft',
+        requestIds: approved.map((request) => request.id),
+        sourceModule: 'pettycash_field_requests',
+        createdAt: isoNow(),
+        updatedAt: isoNow()
+    };
+    await setDocument(PETTY_CASH_FIRESTORE.payoutBatches, batchId, batchDoc, {
+        label: `Petty cash payout batch ${batchId}`,
+        dedupeKey: `${PETTY_CASH_FIRESTORE.payoutBatches}:${batchId}`
+    });
     for (const request of approved) {
         const live = getRequestById(request.id);
         if (!live) continue;
@@ -1649,8 +1673,8 @@ async function createPayoutBatchFromApprovedFieldRequests() {
             payoutBatchId: batchId,
             status: 'Included in Payout Batch',
             paymentStatus: 'Included in Payout Batch',
-            batchDate: getSelectedDateValue(),
-            batchCreatedBy: MargaAuth.getUser()?.name || ''
+            batchDate: batchDoc.batchDate,
+            batchCreatedBy: batchDoc.createdBy
         }, 'Included in payout batch', batchId);
     }
     MargaUtils.showToast(`Payout batch ${batchId} created.`, 'success');
