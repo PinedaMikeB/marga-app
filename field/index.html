@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260521-reimbursement-simple-1">
+    <link rel="stylesheet" href="css/field.css?v=20260521-reimbursement-simple-2">
 </head>
 <body>
     <main class="field-shell">
@@ -208,7 +208,22 @@
                     </label>
                 </section>
 
-                <section class="field-reimbursement-entry-card" id="fieldReimbursementItemEntry"></section>
+                <section class="field-reimbursement-entry-card" id="fieldReimbursementItemEntry">
+                    <div class="field-reimbursement-entry-grid">
+                        <label><span>Item Group</span><select data-reimbursement-draft-field="groupId"><option value="fuel">Fuel / Gasoline</option><option value="meal">Meal Allowance</option><option value="toll">Toll</option><option value="parking">Parking</option><option value="fare">Transportation / Fare</option><option value="parts">Emergency Parts / Supplies</option><option value="delivery">Delivery / Courier</option><option value="emergency">Emergency Purchase</option><option value="other">Other Field Expense</option></select></label>
+                        <label><span>Chart Of Account</span><select data-reimbursement-draft-field="accountId"><option value="fuel_expense_motorcycle">Fuel Expense - Motorcycle</option><option value="fuel_expense_delivery_van">Fuel Expense - Delivery Van</option><option value="meal_allowance_expense_field_operations">Meal Allowance Expense - Field Operations</option><option value="parking_expense">Parking Expense</option><option value="commute_fare_expense">Transportation / Fare / Toll</option><option value="printer_repair_parts_field_expense">Printer Repair Parts Expense - Field Service</option><option value="other_materials_expense">Other Materials / Emergency Purchase</option></select></label>
+                        <label><span>Item / Part Note</span><input type="text" data-reimbursement-draft-field="itemNote" placeholder="Select item or choose manual"></label>
+                        <label><span>Supplier / Store</span><input type="text" data-reimbursement-draft-field="supplierStoreName" placeholder="Type or select supplier/store"></label>
+                        <label><span>Amount</span><input type="number" data-reimbursement-draft-field="amount" min="0" step="0.01" placeholder="0.00"></label>
+                        <label><span>Receipt No.</span><input type="text" data-reimbursement-draft-field="receiptNumber" placeholder="OR/SI/receipt no."></label>
+                        <div class="field-reimbursement-entry-action"><span>Action</span><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-draft-clear>Remove</button></div>
+                    </div>
+                    <label class="field-reimbursement-entry-receipt">
+                        <span>Receipt Image <strong>Required</strong></span>
+                        <input type="file" accept="image/*" capture="environment" data-reimbursement-draft-receipt>
+                        <small>Take photo or upload from gallery before adding this item row.</small>
+                    </label>
+                </section>
                 <div class="field-reimbursement-add-row">
                     <button type="button" class="btn btn-secondary btn-sm" id="fieldReimbursementAddItemBtn">Add Item Row</button>
                 </div>
@@ -726,6 +741,6 @@
     <script src="../shared/js/offline-sync.js?v=20260516-field-permissions-3"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js?v=20260520-update-waits-1"></script>
-    <script src="js/field.js?v=20260521-reimbursement-simple-1"></script>
+    <script src="js/field.js?v=20260521-reimbursement-simple-2"></script>
 </body>
 </html>

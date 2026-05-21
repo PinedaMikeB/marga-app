@@ -2328,18 +2328,18 @@ function renderReimbursementItemRow(item, index) {
     const account = getReimbursementAccount(item.accountId);
     return `
         <tr data-index="${index}">
-            <td>${escapeHtml(group?.label || item.expenseGroup || item.groupId || '-')}</td>
-            <td>${escapeHtml(account?.label || item.accountId || '-')}</td>
-            <td>${escapeHtml(item.itemNote || '-')}</td>
-            <td>${escapeHtml(item.supplierStoreName || '-')}</td>
-            <td>${escapeHtml(formatPeso(item.amount || 0))}</td>
-            <td>
+            <td data-label="Item Group">${escapeHtml(group?.label || item.expenseGroup || item.groupId || '-')}</td>
+            <td data-label="Chart Of Account">${escapeHtml(account?.label || item.accountId || '-')}</td>
+            <td data-label="Item / Part Note">${escapeHtml(item.itemNote || '-')}</td>
+            <td data-label="Supplier / Store">${escapeHtml(item.supplierStoreName || '-')}</td>
+            <td data-label="Amount">${escapeHtml(formatPeso(item.amount || 0))}</td>
+            <td data-label="Receipt">
                 <div class="field-reimbursement-table-receipt">
                     ${item.receiptImageUrl ? `<img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt preview">` : ''}
                     <span>${escapeHtml(item.receiptNumber || item.receiptImageName || 'Receipt attached')}</span>
                 </div>
             </td>
-            <td><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-remove="${index}">Remove</button></td>
+            <td data-label="Action"><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-remove="${index}">Remove</button></td>
         </tr>
     `;
 }
