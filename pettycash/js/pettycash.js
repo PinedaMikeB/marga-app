@@ -57,7 +57,8 @@ const FIELD_REQUEST_STATUSES = [
     'For Liquidation',
     'Partially Liquidated',
     'Liquidated',
-    'Closed'
+    'Closed',
+    'Cancelled / Deleted'
 ];
 
 const FIELD_REQUEST_TYPES = [
@@ -1235,6 +1236,7 @@ function renderFieldRequestsTable() {
     const typeFilter = String(document.getElementById('fieldRequestTypeFilter')?.value || 'all');
     const staffFilter = String(document.getElementById('fieldRequestStaffFilter')?.value || '').trim().toLowerCase();
     const rows = getFieldStaffRequests()
+        .filter((request) => statusFilter === 'Cancelled / Deleted' || request.status !== 'Cancelled / Deleted')
         .filter((request) => statusFilter === 'all' || request.status === statusFilter)
         .filter((request) => typeFilter === 'all' || request.requestType === typeFilter)
         .filter((request) => {
@@ -1253,50 +1255,92 @@ function renderFieldRequestsTable() {
         return;
     }
 
-    tbody.innerHTML = rows.map((request) => {
-        const warning = buildFieldRequestWarning(request);
+    tbody.innerHTML = buildGroupedFieldRequestRows(rows);
+}
+
+function buildGroupedFieldRequestRows(rows) {
+    return groupFieldRequestsByStaff(rows).map((group) => {
+        const requestedTotal = sumAmounts(group.requests.map((request) => request.amount));
+        const approvedTotal = sumAmounts(group.requests.map((request) => request.approvedAmount || request.amount));
+        const verifyCount = group.requests.filter((request) => ['Submitted', 'For Completeness Check', 'Incomplete / Needs Correction'].includes(request.status)).length;
+        const approvableCount = group.requests.filter((request) => ['Verified by Petty Cash Handler', 'For Approval'].includes(request.status)).length;
+        const requestRows = group.requests.map(renderGroupedFieldRequestRow).join('');
         return `
-            <tr class="${request.id === selectedFieldRequestId ? 'selected-request-row' : ''}">
-                <td>
-                    <div class="ref-cell">
-                        <button type="button" class="link-btn ref-primary" data-action="view-field-request" data-id="${escapeHtml(request.id)}">${escapeHtml(request.id)}</button>
-                        <span class="ref-secondary">${escapeHtml(formatLongDate(request.dateOfExpense || request.requestDate))}</span>
+            <tr class="field-request-group-row">
+                <td colspan="9">
+                    <div class="field-request-group-head">
+                        <div>
+                            <strong>${escapeHtml(group.staffName)}</strong>
+                            <span>${escapeHtml(group.departmentTeam || 'Field staff / messenger')} · ${group.requests.length.toLocaleString()} request(s)</span>
+                        </div>
+                        <div>
+                            <span>Requested ${MargaUtils.formatCurrency(requestedTotal)}</span>
+                            <strong>For approval ${MargaUtils.formatCurrency(approvedTotal)}</strong>
+                        </div>
                     </div>
                 </td>
-                <td>
-                    <div class="ref-cell">
-                        <span>${escapeHtml(request.staffName || `Staff #${request.staffId || '-'}`)}</span>
-                        <span class="ref-secondary">${escapeHtml(request.departmentTeam || '-')}</span>
-                    </div>
-                </td>
-                <td>${escapeHtml(request.requestType || '-')}</td>
-                <td>${escapeHtml(request.expenseCategory || '-')}</td>
-                <td>
-                    <div class="ref-cell">
-                        <span>${escapeHtml(request.clientCompanyVisited || request.branchLocation || '-')}</span>
-                        <span class="ref-secondary">${escapeHtml(request.serviceTicketId || request.machineSerialNumber || request.jobOrderReferenceNumber || '-')}</span>
-                    </div>
-                </td>
-                <td>${MargaUtils.formatCurrency(request.amount)}</td>
-                <td>${MargaUtils.formatCurrency(request.approvedAmount || request.amount)}</td>
-                <td>
-                    <span class="status-badge ${slugify(request.status)}">${escapeHtml(request.status)}</span>
-                    ${warning ? `<div class="field-request-warning">${escapeHtml(warning)}</div>` : ''}
-                </td>
+            </tr>
+            ${requestRows}
+            <tr class="field-request-group-total-row">
+                <td colspan="5"><strong>${escapeHtml(group.staffName)} total</strong></td>
+                <td>${MargaUtils.formatCurrency(requestedTotal)}</td>
+                <td>${MargaUtils.formatCurrency(approvedTotal)}</td>
+                <td>${verifyCount ? `${verifyCount} for verification` : approvableCount ? `${approvableCount} for owner approval` : 'No pending group action'}</td>
                 <td>
                     <div class="row-actions">
-                        <button type="button" class="row-btn" data-action="view-field-request" data-id="${escapeHtml(request.id)}">${request.id === selectedFieldRequestId ? 'Hide' : 'Review'}</button>
-                        <button type="button" class="row-btn" data-action="field-complete" data-id="${escapeHtml(request.id)}">Complete</button>
-                        <button type="button" class="row-btn" data-action="field-incomplete" data-id="${escapeHtml(request.id)}">Correction</button>
-                        <button type="button" class="row-btn" data-action="field-approve" data-id="${escapeHtml(request.id)}">Approve</button>
-                        <button type="button" class="row-btn" data-action="field-reject" data-id="${escapeHtml(request.id)}">Reject</button>
-                        <button type="button" class="row-btn" data-action="field-paid" data-id="${escapeHtml(request.id)}">Mark Paid</button>
-                        <button type="button" class="row-btn" data-action="field-liquidated" data-id="${escapeHtml(request.id)}">Liquidated</button>
+                        <button type="button" class="row-btn" data-action="field-verify-group" data-staff-key="${escapeHtml(group.key)}"${verifyCount ? '' : ' disabled'}>Verify Group</button>
+                        <button type="button" class="row-btn" data-action="field-approve-group" data-staff-key="${escapeHtml(group.key)}"${approvableCount ? '' : ' disabled'}>Approve Verified</button>
                     </div>
                 </td>
             </tr>
         `;
     }).join('');
+}
+
+function renderGroupedFieldRequestRow(request) {
+    const warning = buildFieldRequestWarning(request);
+    return `
+        <tr class="${request.id === selectedFieldRequestId ? 'selected-request-row' : ''}">
+            <td>
+                <div class="ref-cell">
+                    <button type="button" class="link-btn ref-primary" data-action="view-field-request" data-id="${escapeHtml(request.id)}">${escapeHtml(request.id)}</button>
+                    <span class="ref-secondary">${escapeHtml(formatLongDate(request.dateOfExpense || request.requestDate))}</span>
+                </div>
+            </td>
+            <td>
+                <div class="ref-cell">
+                    <span>${escapeHtml(request.staffName || `Staff #${request.staffId || '-'}`)}</span>
+                    <span class="ref-secondary">${escapeHtml(request.departmentTeam || '-')}</span>
+                </div>
+            </td>
+            <td>${escapeHtml(request.requestType || '-')}</td>
+            <td>${escapeHtml(request.expenseCategory || '-')}</td>
+            <td>
+                <div class="ref-cell">
+                    <span>${escapeHtml(request.clientCompanyVisited || request.branchLocation || '-')}</span>
+                    <span class="ref-secondary">${escapeHtml(request.serviceTicketId || request.machineSerialNumber || request.jobOrderReferenceNumber || '-')}</span>
+                </div>
+            </td>
+            <td>${MargaUtils.formatCurrency(request.amount)}</td>
+            <td>${MargaUtils.formatCurrency(request.approvedAmount || request.amount)}</td>
+            <td>
+                <span class="status-badge ${slugify(request.status)}">${escapeHtml(request.status)}</span>
+                ${warning ? `<div class="field-request-warning">${escapeHtml(warning)}</div>` : ''}
+            </td>
+            <td>
+                <div class="row-actions">
+                    <button type="button" class="row-btn" data-action="view-field-request" data-id="${escapeHtml(request.id)}">${request.id === selectedFieldRequestId ? 'Hide' : 'View'}</button>
+                    <button type="button" class="row-btn" data-action="field-complete" data-id="${escapeHtml(request.id)}">Verify</button>
+                    <button type="button" class="row-btn" data-action="field-incomplete" data-id="${escapeHtml(request.id)}">Correction</button>
+                    <button type="button" class="row-btn" data-action="field-delete" data-id="${escapeHtml(request.id)}">Delete</button>
+                    <button type="button" class="row-btn" data-action="field-approve" data-id="${escapeHtml(request.id)}">Approve</button>
+                    <button type="button" class="row-btn" data-action="field-reject" data-id="${escapeHtml(request.id)}">Reject</button>
+                    <button type="button" class="row-btn" data-action="field-paid" data-id="${escapeHtml(request.id)}">Mark Paid</button>
+                    <button type="button" class="row-btn" data-action="field-liquidated" data-id="${escapeHtml(request.id)}">Liquidated</button>
+                </div>
+            </td>
+        </tr>
+    `;
 }
 
 function renderRequestBreakdownPanel() {
@@ -1493,7 +1537,12 @@ function renderFieldRequestImage(url, label) {
 
 async function onFieldRequestsTableAction(event) {
     const button = event.target.closest('[data-action][data-id]');
-    if (!button) return;
+    const groupButton = event.target.closest('[data-action][data-staff-key]');
+    if (!button && !groupButton) return;
+    if (groupButton) {
+        await onFieldRequestGroupAction(groupButton);
+        return;
+    }
     const request = getRequestById(button.dataset.id);
     if (!request || !isFieldStaffRequest(request)) return;
 
@@ -1507,11 +1556,27 @@ async function onFieldRequestsTableAction(event) {
     if (action === 'field-complete') {
         await updateFieldRequestStatus(request, {
             status: 'Verified by Petty Cash Handler',
+            approvedAmount: Number(request.approvedAmount || request.amount || 0),
             completenessStatus: 'Complete',
             receiptVerificationStatus: 'Verified',
             receiptVerifiedBy: MargaAuth.getUser()?.name || '',
             handlerRemarks: prompt('Completeness remarks (optional):', request.handlerRemarks || '') || request.handlerRemarks || ''
         }, 'Verified complete');
+        return;
+    }
+    if (action === 'field-delete') {
+        const reason = prompt(`Reason for deleting/cancelling ${request.id}:`, request.correctionReason || '');
+        if (!reason) {
+            MargaUtils.showToast('Delete reason is required. The record will be kept for audit.', 'error');
+            return;
+        }
+        await updateFieldRequestStatus(request, {
+            status: 'Cancelled / Deleted',
+            deletedAt: isoNow(),
+            deletedBy: MargaAuth.getUser()?.name || '',
+            deletionReason: reason,
+            handlerRemarks: reason
+        }, 'Soft deleted', reason);
         return;
     }
     if (action === 'field-incomplete') {
@@ -1613,7 +1678,58 @@ async function onFieldRequestsTableAction(event) {
     }
 }
 
-async function updateFieldRequestStatus(request, patch, action, remarks = '') {
+async function onFieldRequestGroupAction(button) {
+    const staffKey = String(button.dataset.staffKey || '').trim();
+    const action = button.dataset.action;
+    const requests = getFieldRequestsForStaffKey(staffKey);
+    if (!requests.length) return;
+    if (action === 'field-verify-group') {
+        const eligible = requests.filter((request) => ['Submitted', 'For Completeness Check', 'Incomplete / Needs Correction'].includes(request.status));
+        if (!eligible.length) return;
+        const ok = confirm(`Verify ${eligible.length} request(s) for ${requests[0].staffName || 'this staff'}? Receipts should be reviewed first.`);
+        if (!ok) return;
+        const remarks = prompt('Verification remarks (optional):', '') || '';
+        for (const request of eligible) {
+            await updateFieldRequestStatus(request, {
+                status: 'Verified by Petty Cash Handler',
+                approvedAmount: Number(request.approvedAmount || request.amount || 0),
+                completenessStatus: 'Complete',
+                receiptVerificationStatus: 'Verified',
+                receiptVerifiedBy: MargaAuth.getUser()?.name || '',
+                handlerRemarks: remarks
+            }, 'Verified complete', remarks, { render: false });
+        }
+        renderAll();
+        MargaUtils.showToast(`${eligible.length} field request(s) verified.`, 'success');
+        return;
+    }
+    if (action === 'field-approve-group') {
+        if (!canApproveFieldRequests()) {
+            MargaUtils.showToast('Only Owner/Admin can approve Field Staff requests.', 'error');
+            return;
+        }
+        const eligible = requests.filter((request) => ['Verified by Petty Cash Handler', 'For Approval'].includes(request.status));
+        if (!eligible.length) return;
+        const total = sumAmounts(eligible.map((request) => request.approvedAmount || request.amount));
+        const ok = confirm(`Approve ${eligible.length} verified request(s) for ${requests[0].staffName || 'this staff'}, total ${MargaUtils.formatCurrency(total)}?`);
+        if (!ok) return;
+        const remarks = prompt('Approval remarks (optional):', '') || '';
+        for (const request of eligible) {
+            await updateFieldRequestStatus(request, {
+                status: 'Approved',
+                approvedAmount: Number(request.approvedAmount || request.amount || 0),
+                approvalRemarks: remarks,
+                approvedBy: MargaAuth.getUser()?.name || '',
+                approvedAt: isoNow(),
+                paymentStatus: 'Approved'
+            }, 'Approved', remarks, { render: false });
+        }
+        renderAll();
+        MargaUtils.showToast(`${eligible.length} field request(s) approved.`, 'success');
+    }
+}
+
+async function updateFieldRequestStatus(request, patch, action, remarks = '', options = {}) {
     const previous = cloneData(request);
     const next = normalizeRequest({
         ...request,
@@ -1623,8 +1739,10 @@ async function updateFieldRequestStatus(request, patch, action, remarks = '') {
     Object.assign(request, next);
     persistState({ deleteRemoved: false, silent: true });
     await writeFieldRequestAudit(request.id, action, previous, next, remarks);
-    renderAll();
-    MargaUtils.showToast(`Field request ${request.id} updated.`, 'success');
+    if (options.render !== false) {
+        renderAll();
+        MargaUtils.showToast(`Field request ${request.id} updated.`, 'success');
+    }
 }
 
 async function writeFieldRequestAudit(requestId, action, previous, next, remarks = '') {
@@ -2895,6 +3013,37 @@ function getFieldStaffRequests() {
     return PETTY_CASH_STATE.requests.filter(isFieldStaffRequest).map(normalizeFieldStaffRequest);
 }
 
+function groupFieldRequestsByStaff(requests = []) {
+    const groups = new Map();
+    requests.forEach((request) => {
+        const key = fieldRequestStaffGroupKey(request);
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                staffId: request.staffId,
+                staffName: request.staffName || `Staff #${request.staffId || '-'}`,
+                departmentTeam: request.departmentTeam || '',
+                requests: []
+            });
+        }
+        groups.get(key).requests.push(request);
+    });
+    return [...groups.values()]
+        .map((group) => ({
+            ...group,
+            requests: group.requests.sort((left, right) => `${right.dateSubmitted || right.requestDate || right.createdAt} ${right.id}`.localeCompare(`${left.dateSubmitted || left.requestDate || left.createdAt} ${left.id}`))
+        }))
+        .sort((left, right) => left.staffName.localeCompare(right.staffName));
+}
+
+function fieldRequestStaffGroupKey(request = {}) {
+    return request.staffId ? `staff-${request.staffId}` : `name-${slugify(request.staffName || request.requestedBy || 'unknown')}`;
+}
+
+function getFieldRequestsForStaffKey(staffKey) {
+    return getFieldStaffRequests().filter((request) => fieldRequestStaffGroupKey(request) === staffKey && request.status !== 'Cancelled / Deleted');
+}
+
 function getUnliquidatedAdvancesForStaff(staffId, excludeRequestId = '') {
     const numericStaffId = Number(staffId || 0);
     if (!numericStaffId) return [];
@@ -3925,6 +4074,7 @@ async function syncPettyCashStateToCloud({ deleteRemoved = true } = {}) {
 
         for (const remoteRequest of remoteRequests) {
             const remoteId = String(remoteRequest._docId || remoteRequest.id || '').trim();
+            if (isFieldStaffRequest(remoteRequest)) continue;
             if (remoteId && !requestIds.has(remoteId)) {
                 await deleteDocument(PETTY_CASH_FIRESTORE.requests, remoteId, { label: `Delete petty cash request ${remoteId}` });
             }
