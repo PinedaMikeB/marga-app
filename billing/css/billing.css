@@ -452,10 +452,11 @@
 .matrix-scroll {
     width: 100%;
     max-width: 100%;
-    min-height: clamp(460px, calc(100vh - 440px), 760px);
+    min-height: 0;
     max-height: none;
-    overflow: auto;
-    overscroll-behavior: contain;
+    overflow-x: auto;
+    overflow-y: visible;
+    overscroll-behavior: auto;
     scrollbar-gutter: stable both-edges;
     -webkit-overflow-scrolling: touch;
 }
@@ -503,7 +504,7 @@
 }
 
 .matrix-card .matrix-scroll {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
 }
 
 .raw-card[hidden] {
