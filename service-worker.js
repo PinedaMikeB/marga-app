@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v74-margabase-refresh';
+const CACHE_NAME = 'marga-app-shell-v76-billing-group-draft-rate-refresh';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,7 +22,7 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js?v=20260516-no-function-cache-1',
+    '/billing/js/billing.js?v=20260522-group-draft-rate-refresh-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',

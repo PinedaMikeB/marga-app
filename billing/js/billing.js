@@ -6768,12 +6768,19 @@ async function openBillingCalcModal(rowId, monthKey) {
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
         const draft = billingDraftsByLine.get(getBillingDraftLineKey(machineRow)) || null;
         const baseProfile = getSharedBillingGroupProfile(machineRow, getRowBillingProfile(machineRow) || profile);
+        const hasVerifiedGroupRatePlan = Boolean(machineRow?.billing_group);
         const machineProfile = draft
             ? {
                 ...baseProfile,
-                monthly_quota: Number(draft.monthly_quota ?? baseProfile.monthly_quota ?? 0) || 0,
-                page_rate: Number(draft.page_rate ?? baseProfile.page_rate ?? 0) || 0,
-                succeeding_page_rate: Number(draft.succeeding_rate ?? baseProfile.succeeding_page_rate ?? baseProfile.page_rate_xtra ?? baseProfile.page_rate ?? 0) || 0
+                monthly_quota: hasVerifiedGroupRatePlan
+                    ? Number(baseProfile.monthly_quota || 0) || 0
+                    : Number(draft.monthly_quota ?? baseProfile.monthly_quota ?? 0) || 0,
+                page_rate: hasVerifiedGroupRatePlan
+                    ? Number(baseProfile.page_rate || 0) || 0
+                    : Number(draft.page_rate ?? baseProfile.page_rate ?? 0) || 0,
+                succeeding_page_rate: hasVerifiedGroupRatePlan
+                    ? Number(baseProfile.succeeding_page_rate ?? baseProfile.page_rate_xtra ?? baseProfile.page_rate ?? 0) || 0
+                    : Number(draft.succeeding_rate ?? baseProfile.succeeding_page_rate ?? baseProfile.page_rate_xtra ?? baseProfile.page_rate ?? 0) || 0
             }
             : baseProfile;
         const group = getPrimaryTargetReadingGroup(machineRow, monthKey);
