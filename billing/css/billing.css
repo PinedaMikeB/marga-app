@@ -20,6 +20,7 @@
     display: grid;
     gap: 1rem;
     min-width: 0;
+    align-content: start;
 }
 
 .status-pill {
@@ -451,8 +452,8 @@
 .matrix-scroll {
     width: 100%;
     max-width: 100%;
-    min-height: 220px;
-    max-height: clamp(240px, calc(100vh - 360px), 820px);
+    min-height: clamp(460px, calc(100vh - 440px), 760px);
+    max-height: none;
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable both-edges;
@@ -492,8 +493,8 @@
 .matrix-card {
     display: flex;
     flex-direction: column;
-    min-height: 0;
-    max-height: calc(100vh - 96px);
+    min-height: calc(100vh - 128px);
+    max-height: none;
 }
 
 .matrix-card .matrix-header {
@@ -503,6 +504,10 @@
 
 .matrix-card .matrix-scroll {
     flex: 1 1 auto;
+}
+
+.raw-card[hidden] {
+    display: none !important;
 }
 
 .matrix-total-strip {
