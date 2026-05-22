@@ -486,8 +486,8 @@
 
 .matrix-sheet thead th {
     position: sticky;
-    top: 0;
-    z-index: 12;
+    top: var(--billing-sticky-top);
+    z-index: 34;
     box-shadow: 0 1px 0 rgba(214, 225, 238, 0.95);
 }
 
@@ -496,6 +496,7 @@
     flex-direction: column;
     min-height: calc(100vh - 128px);
     max-height: none;
+    overflow: visible;
 }
 
 .matrix-card .matrix-header {
@@ -804,7 +805,7 @@ button.matrix-total-card:focus-visible {
 }
 
 .matrix-sheet thead .branch-col {
-    z-index: 24;
+    z-index: 36;
     background: var(--bill-header);
 }
 
