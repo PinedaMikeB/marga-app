@@ -23,6 +23,12 @@ const els = {
     printedTodayCard: null,
     printedTodayCount: null,
     printedTodayAmount: null,
+    savedToPrintCard: null,
+    savedToPrintCount: null,
+    savedToPrintAmount: null,
+    printedMonthCard: null,
+    printedMonthCount: null,
+    printedMonthAmount: null,
     invoiceSearchInput: null,
     invoiceSearchBtn: null,
     invoiceSearchResults: null,
@@ -1863,6 +1869,18 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         schedule_assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
         schedule_assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
         emp_id: Number.isFinite(numericAuditId) && numericAuditId > 0 ? numericAuditId : String(audit.id || '').trim(),
+        saved_at: now.toISOString(),
+        prepared_at: now.toISOString(),
+        prepared_by_id: String(audit.id || '').trim(),
+        prepared_by: String(audit.name || '').trim(),
+        saved_by_id: String(audit.id || '').trim(),
+        saved_by: String(audit.name || '').trim(),
+        billing_printed_at: '',
+        billing_printed_date: '',
+        billing_printed_by_id: '',
+        billing_printed_by: '',
+        billing_print_channel: '',
+        billing_print_count: 0,
         printed_by_id: String(audit.id || '').trim(),
         printed_by: String(audit.name || '').trim(),
         updated_by_id: String(audit.id || '').trim(),
@@ -2710,6 +2728,54 @@ function setRtpPrintPayload(payload) {
     if (els.billingCalcMeterFormBtn) els.billingCalcMeterFormBtn.textContent = 'Print Meter Reading Form';
 }
 
+async function recordBillingPrintEvent(preview, channel = 'browser_print') {
+    const invoiceNo = normalizeInvoiceNumber(preview?.invoiceNo || '');
+    let docIds = Array.isArray(preview?.billingDocIds)
+        ? preview.billingDocIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : [];
+    if (!docIds.length && invoiceNo) {
+        const docs = await queryBillingDocsByInvoice(invoiceNo).catch((error) => {
+            console.warn('Unable to find billing docs for print audit.', error);
+            return [];
+        });
+        docIds = docs.map((doc) => String(doc?._docId || '').trim()).filter(Boolean);
+    }
+    docIds = Array.from(new Set(docIds));
+    if (!docIds.length) return { ok: false, updated: 0 };
+
+    const audit = getCurrentUserAudit();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowSql = toSqlDateTime(now);
+    const updates = await Promise.allSettled(docIds.map((docId) => setFirestoreDocument('tbl_billing', docId, {
+        billing_printed_at: nowIso,
+        billing_printed_date: nowSql,
+        billing_printed_by_id: String(audit.id || '').trim(),
+        billing_printed_by: String(audit.name || '').trim(),
+        billing_print_channel: channel,
+        billing_print_count: Number(preview?.billingPrintCount || 0) + 1,
+        updated_at: nowIso
+    }, {
+        mode: 'patch',
+        label: `Print audit ${invoiceNo || docId}`,
+        dedupeKey: `tbl_billing:${docId}:printed:${nowIso}`
+    })));
+    const updated = updates.filter((entry) => entry.status === 'fulfilled').length;
+    if (updated) {
+        currentRtpPrintPayload = {
+            ...preview,
+            billingDocIds: docIds,
+            billingPrintedAt: nowIso,
+            billingPrintedBy: audit.name,
+            billingPrintCount: Number(preview?.billingPrintCount || 0) + 1
+        };
+    }
+    if (updated !== docIds.length) {
+        console.warn('Some billing print audit rows were not saved.', updates);
+    }
+    return { ok: updated === docIds.length, updated };
+}
+
 function isPrintableContractCode(code) {
     return ['RTP', 'RTF', 'MAP'].includes(String(code || '').trim().toUpperCase());
 }
@@ -2885,11 +2951,16 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
     const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row });
     const groupedRows = isGroupedPrint ? getGroupedMachineRows(row, monthKey) : [];
     const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
+    const primaryInvoiceGroup = Array.isArray(cell?.invoice_groups) ? cell.invoice_groups[0] : null;
+    const invoiceNo = String(primaryInvoiceGroup?.invoice_no || primaryInvoiceGroup?.invoice_ref || '').trim();
+    const billingDocIds = Array.isArray(primaryInvoiceGroup?.doc_ids) ? primaryInvoiceGroup.doc_ids.map((id) => String(id || '').trim()).filter(Boolean) : [];
     const address = isGroupedPrint
         ? (getCompanyAddress(company) || 'N/A')
         : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
 
     return {
+        invoiceNo,
+        billingDocIds,
         customerName: accountName || 'Unknown Customer',
         baseCustomerName: accountName || 'Unknown Customer',
         branchName: String(row?.branch_name || branch?.branchname || branch?.branch_name || '').trim(),
@@ -2952,11 +3023,14 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row, context, estimate });
     const groupedRows = isGroupedPrint && Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
     const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
+    const snapshotInvoiceNo = normalizeInvoiceNumber(context?.savedSnapshot?.invoiceNo || estimate?.invoiceNo || '');
     const address = isGroupedPrint
         ? (getGroupedBillingAddress(references, groupedRows, company) || 'N/A')
         : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
 
     return {
+        invoiceNo: snapshotInvoiceNo,
+        billingDocIds: [],
         customerName: accountName || 'Unknown Customer',
         baseCustomerName: accountName || 'Unknown Customer',
         branchName: String(row?.branch_name || branch?.branchname || branch?.branch_name || '').trim(),
@@ -3788,7 +3862,16 @@ function printCurrentRtpInvoice() {
         return;
     }
 
-    printHtmlDocument(buildRtpPrintDocument(decorateRtpPrintPayload(currentRtpPrintPayload)), 'marga_invoice_print');
+    const preview = decorateRtpPrintPayload(currentRtpPrintPayload);
+    printHtmlDocument(buildRtpPrintDocument(preview), 'marga_invoice_print');
+    recordBillingPrintEvent(preview, 'browser_print')
+        .then((result) => {
+            if (result?.updated) loadDashboard({ forceRefresh: true }).catch(() => {});
+        })
+        .catch((error) => {
+            console.warn('Billing print audit failed.', error);
+            MargaUtils.showToast('Invoice opened for print, but print audit was not saved. Refresh and try again if this count matters.', 'error');
+        });
 }
 
 function sanitizeDotMatrixText(value) {
@@ -3928,10 +4011,16 @@ function printCurrentDotMatrixInvoice() {
         return;
     }
 
-    sendDotMatrixInvoiceToLocalBridge(decorateRtpPrintPayload(currentRtpPrintPayload))
+    const preview = decorateRtpPrintPayload(currentRtpPrintPayload);
+    sendDotMatrixInvoiceToLocalBridge(preview)
         .then((result) => {
             const printerLabel = result?.printerName ? ` to ${result.printerName}` : '';
             MargaUtils.showToast(`Dot-matrix invoice sent${printerLabel}.`, 'success');
+            recordBillingPrintEvent(preview, 'dot_matrix').catch((error) => {
+                console.warn('Billing dot-matrix print audit failed.', error);
+            }).then((result) => {
+                if (result?.updated) loadDashboard({ forceRefresh: true }).catch(() => {});
+            });
         })
         .catch((error) => {
             console.error('Dot matrix raw print failed:', error);
@@ -5954,15 +6043,43 @@ function renderPrintedTodayCard(payload) {
     const report = payload?.productivity_report || null;
     const count = Number(report?.today?.invoice_count || 0);
     const amount = Number(report?.today?.amount_total || 0);
+    const savedCount = Number(report?.saved_to_print?.invoice_count || 0);
+    const savedAmount = Number(report?.saved_to_print?.amount_total || 0);
+    const monthCount = Number(report?.current_month_printed?.invoice_count || 0);
+    const monthAmount = Number(report?.current_month_printed?.amount_total || 0);
+    const receivedCount = Number(report?.current_month_printed?.received_count || 0);
+    const pendingReceivedCount = Number(report?.current_month_printed?.pending_received_count || 0);
     if (els.printedTodayCount) els.printedTodayCount.textContent = formatCount(count);
     if (els.printedTodayAmount) {
         els.printedTodayAmount.textContent = `${formatCurrency(amount)} printed today`;
+    }
+    if (els.savedToPrintCount) els.savedToPrintCount.textContent = formatCount(savedCount);
+    if (els.savedToPrintAmount) {
+        els.savedToPrintAmount.textContent = savedCount
+            ? `${formatCurrency(savedAmount)} waiting`
+            : 'No saved invoices waiting';
+    }
+    if (els.printedMonthCount) els.printedMonthCount.textContent = formatCount(monthCount);
+    if (els.printedMonthAmount) {
+        els.printedMonthAmount.textContent = `${formatCurrency(monthAmount)} • ${formatCount(receivedCount)} received / ${formatCount(pendingReceivedCount)} pending`;
     }
     if (els.printedTodayCard) {
         els.printedTodayCard.disabled = false;
         els.printedTodayCard.title = report
             ? 'Open billing productivity report'
             : 'Load the dashboard to see printed invoice totals';
+    }
+    if (els.savedToPrintCard) {
+        els.savedToPrintCard.disabled = false;
+        els.savedToPrintCard.title = report
+            ? 'Open saved invoices waiting for print'
+            : 'Load the dashboard to see saved invoice queue';
+    }
+    if (els.printedMonthCard) {
+        els.printedMonthCard.disabled = false;
+        els.printedMonthCard.title = report
+            ? 'Open monthly printed and received status'
+            : 'Load the dashboard to see monthly printed invoice totals';
     }
 }
 
@@ -6075,6 +6192,114 @@ function renderProductivityInvoiceRows(rows = []) {
     `;
 }
 
+function formatReportDateTime(value) {
+    const date = asValidDate(value);
+    if (!date) return '';
+    return date.toLocaleString('en-PH', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function formatInvoiceAge(value) {
+    const date = asValidDate(value);
+    if (!date) return '-';
+    const hours = Math.max(0, Math.floor((Date.now() - date.getTime()) / 36e5));
+    if (hours < 24) return `${formatCount(hours)} hr${hours === 1 ? '' : 's'}`;
+    const days = Math.floor(hours / 24);
+    return `${formatCount(days)} day${days === 1 ? '' : 's'}`;
+}
+
+function renderSavedToPrintRows(rows = []) {
+    if (!rows.length) {
+        return '<div class="detail-empty">No saved invoices are waiting for print.</div>';
+    }
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>Serial</th>
+                        <th>Branch</th>
+                        <th>Invoice #</th>
+                        <th>Prepared By</th>
+                        <th class="text-right">Amount</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td><strong>${escapeHtml(row.company_name || 'Unknown')}</strong></td>
+                            <td>${escapeHtml((row.serial_numbers || []).join(', ') || row.machine_label || '-')}</td>
+                            <td>${escapeHtml(row.branch_name || 'Main')}</td>
+                            <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
+                            <td>
+                                ${escapeHtml(row.prepared_by || 'Unknown preparer')}
+                                ${row.saved_at ? `<small>${escapeHtml(formatReportDateTime(row.saved_at))}</small>` : ''}
+                            </td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                            <td><button class="btn btn-secondary" type="button" data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}">View</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderMonthlyPrintedRows(rows = []) {
+    if (!rows.length) {
+        return '<div class="detail-empty">No actual print records found for this billing month yet.</div>';
+    }
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Customer</th>
+                        <th>Branch</th>
+                        <th>Printed By</th>
+                        <th>Received</th>
+                        <th>Assigned / Age</th>
+                        <th class="text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => {
+                        const received = row.receipt_status === 'received';
+                        return `
+                            <tr>
+                                <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
+                                <td><strong>${escapeHtml(row.company_name || 'Unknown')}</strong></td>
+                                <td>${escapeHtml(row.branch_name || 'Main')}</td>
+                                <td>
+                                    ${escapeHtml(row.printed_by || 'Unknown printer')}
+                                    ${row.printed_at ? `<small>${escapeHtml(formatReportDateTime(row.printed_at))}</small>` : ''}
+                                </td>
+                                <td>
+                                    <strong>${received ? 'Received' : 'Pending received'}</strong>
+                                    ${received ? `<small>${escapeHtml(row.received_by || '-')} ${escapeHtml(row.received_at ? formatReportDateTime(row.received_at) : '')}</small>` : ''}
+                                </td>
+                                <td>
+                                    ${escapeHtml(row.assigned_staff_name || 'Unassigned')}
+                                    <small>${escapeHtml(received ? 'Delivered' : `${formatInvoiceAge(row.printed_at)} since print`)}</small>
+                                </td>
+                                <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
 function openPrintedTodayReport() {
     const report = lastPayload?.productivity_report || null;
     if (!report) {
@@ -6112,6 +6337,62 @@ function openPrintedTodayReport() {
             ${renderProductivityMonthProgress(report.month_progress || [], report.since_date)}
             <div class="detail-section-title">Today invoice details</div>
             ${renderProductivityInvoiceRows(report.invoices_today || [])}
+        `;
+    }
+    els.billingScorecardModal?.classList.remove('hidden');
+}
+
+function openSavedToPrintReport() {
+    const report = lastPayload?.productivity_report || null;
+    if (!report) {
+        MargaUtils.showToast('Load the dashboard first to see saved invoices waiting for print.', 'info');
+        return;
+    }
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Saved Invoice To Print';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${formatMetricCount(report.saved_to_print?.invoice_count || 0, 'invoice')} • ${formatCurrency(report.saved_to_print?.amount_total || 0)} waiting`;
+    }
+    if (els.billingScorecardContent) {
+        els.billingScorecardContent.innerHTML = `
+            <div class="detail-section-title">Ready for printing</div>
+            ${renderSavedToPrintRows(report.saved_to_print?.invoices || [])}
+        `;
+    }
+    els.billingScorecardModal?.classList.remove('hidden');
+}
+
+function openPrintedMonthReport() {
+    const report = lastPayload?.productivity_report || null;
+    if (!report) {
+        MargaUtils.showToast('Load the dashboard first to see monthly printed invoice totals.', 'info');
+        return;
+    }
+    const month = report.current_month_label || formatMonthLabel(report.current_month_key, report.current_month_key || '');
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Printed Invoice This Month';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${month} • ${formatMetricCount(report.current_month_printed?.invoice_count || 0, 'invoice')} • ${formatCount(report.current_month_printed?.received_count || 0)} received / ${formatCount(report.current_month_printed?.pending_received_count || 0)} pending`;
+    }
+    if (els.billingScorecardContent) {
+        els.billingScorecardContent.innerHTML = `
+            <div class="productivity-summary-grid">
+                <div class="detail-summary-card">
+                    <span class="label">Total Printed Billing</span>
+                    <span class="value">${escapeHtml(formatCount(report.current_month_printed?.invoice_count || 0))}</span>
+                    <small>${escapeHtml(formatCurrency(report.current_month_printed?.amount_total || 0))}</small>
+                </div>
+                <div class="detail-summary-card">
+                    <span class="label">Received</span>
+                    <span class="value">${escapeHtml(formatCount(report.current_month_printed?.received_count || 0))}</span>
+                    <small>Customer acknowledged</small>
+                </div>
+                <div class="detail-summary-card">
+                    <span class="label">Pending Received</span>
+                    <span class="value">${escapeHtml(formatCount(report.current_month_printed?.pending_received_count || 0))}</span>
+                    <small>Assigned but not yet received</small>
+                </div>
+            </div>
+            <div class="detail-section-title">Printed invoice status</div>
+            ${renderMonthlyPrintedRows(report.current_month_printed?.invoices || [])}
         `;
     }
     els.billingScorecardModal?.classList.remove('hidden');
@@ -8305,6 +8586,16 @@ async function openBillingCalcModal(rowId, monthKey) {
                 }];
             }
             savedBillingDocId = result.docId || savedBillingDocId;
+            if (currentRtpPrintPayload) {
+                const docIds = Array.isArray(result.docs) && result.docs.length
+                    ? result.docs.map((entry) => String(entry.docId || '').trim()).filter(Boolean)
+                    : [savedBillingDocId].filter(Boolean);
+                setRtpPrintPayload({
+                    ...currentRtpPrintPayload,
+                    invoiceNo: currentSnapshot.invoiceNo,
+                    billingDocIds: Array.from(new Set(docIds))
+                });
+            }
             if (activeBillingMode === 'multi_machine_rtp') {
                 markBillingDraftGroupSaved(row, context.monthKey, activeBillingMode, currentSnapshot.invoiceNo).catch((error) => {
                     console.warn('Unable to mark billing draft lines as saved.', error);
@@ -9894,6 +10185,8 @@ function bindEvents() {
         if (lastPayload) renderMatrixTable(lastPayload);
     });
     els.printedTodayCard?.addEventListener('click', openPrintedTodayReport);
+    els.savedToPrintCard?.addEventListener('click', openSavedToPrintReport);
+    els.printedMonthCard?.addEventListener('click', openPrintedMonthReport);
     els.invoiceSearchBtn?.addEventListener('click', searchInvoiceNumber);
     els.invoiceSearchInput?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
@@ -10009,6 +10302,17 @@ function bindEvents() {
         openBillingScorecardTotal(trigger.dataset.metricKey, trigger.dataset.monthKey);
     });
     els.billingScorecardContent?.addEventListener('click', (event) => {
+        const productivityInvoiceTrigger = event.target.closest('[data-productivity-view-invoice]');
+        if (productivityInvoiceTrigger) {
+            event.preventDefault();
+            const invoiceNo = String(productivityInvoiceTrigger.dataset.productivityViewInvoice || '').trim();
+            closeBillingScorecardModal();
+            if (invoiceNo && els.invoiceSearchInput) {
+                els.invoiceSearchInput.value = invoiceNo;
+                searchInvoiceNumber();
+            }
+            return;
+        }
         const inactivateTrigger = event.target.closest('[data-unbilled-inactivate-customer]');
         if (inactivateTrigger) {
             event.preventDefault();

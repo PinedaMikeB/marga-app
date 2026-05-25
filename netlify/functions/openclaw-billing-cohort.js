@@ -9,7 +9,7 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
 const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
-const PRODUCTIVITY_REPORT_VERSION = '20260520-printed-schedule-v4';
+const PRODUCTIVITY_REPORT_VERSION = '20260525-print-event-v1';
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
@@ -423,7 +423,7 @@ async function loadCache(
         return cache;
     }
 
-    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'tmestamp', 'updated_at', 'amount', 'totalamount', 'vatamount', 'amount2', 'totalamount2', 'vatamount2', 'emp_id', 'printed_by', 'printed_by_id', 'updated_by', 'updated_by_id', 'company_name', 'branch_name'];
+    const billingFieldMask = ['id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex', 'tmestamp', 'updated_at', 'saved_at', 'prepared_at', 'prepared_by', 'prepared_by_id', 'saved_by', 'saved_by_id', 'billing_printed_at', 'billing_printed_by', 'billing_printed_by_id', 'billing_print_count', 'amount', 'totalamount', 'vatamount', 'amount2', 'totalamount2', 'vatamount2', 'emp_id', 'printed_by', 'printed_by_id', 'updated_by', 'updated_by_id', 'company_name', 'branch_name', 'serial_number', 'machine_label', 'schedule_assigned_staff_name', 'schedule_assigned_staff_id'];
     const scheduleFieldMask = [
         'id',
         'company_id',
@@ -1100,6 +1100,7 @@ function serializeInvoiceGroups(groups) {
                 billing_line_count: group.billing_line_count,
                 machine_count: machineIds.length,
                 contract_count: contractIds.length,
+                doc_ids: sortedUnique(Array.from(group.doc_ids || [])).slice(0, DETAIL_ID_PREVIEW_LIMIT),
                 contractmain_ids: contractIds.slice(0, DETAIL_ID_PREVIEW_LIMIT),
                 contractmain_ids_truncated: contractIds.length > DETAIL_ID_PREVIEW_LIMIT,
                 machine_ids: machineIds.slice(0, DETAIL_ID_PREVIEW_LIMIT),
@@ -1412,15 +1413,44 @@ function getBillingPrintedDate(fields) {
     );
 }
 
-function getBillingStaff(cache, fields) {
+function getBillingSavedDate(fields) {
+    return normalizeDateTime(
+        getField(fields, ['saved_at', 'prepared_at', 'dateprinted', 'date_printed', 'invoice_date', 'invdate', 'datex', 'tmestamp', 'updated_at'])
+    );
+}
+
+function getBillingActualPrintedDate(fields) {
+    return normalizeDateTime(
+        getField(fields, ['billing_printed_at', 'actual_printed_at', 'printed_at'])
+    );
+}
+
+function getPreparedBillingStaff(cache, fields) {
     const printedId = String(getField(fields, ['printed_by_id', 'updated_by_id', 'emp_id']) || '').trim();
-    const explicitName = String(getField(fields, ['printed_by', 'updated_by']) || '').trim();
+    const preparedId = String(getField(fields, ['prepared_by_id', 'saved_by_id']) || '').trim();
+    const explicitName = String(getField(fields, ['prepared_by', 'saved_by', 'printed_by', 'updated_by']) || '').trim();
+    const staffId = preparedId || printedId;
+    const employee = staffId ? cache.employeeMap?.[staffId] : null;
+    return {
+        id: staffId || (explicitName ? `name:${explicitName.toLowerCase()}` : 'unknown'),
+        name: employee?.name || explicitName || (staffId ? `Employee ${staffId}` : 'Unknown preparer'),
+        role: employee?.role || ''
+    };
+}
+
+function getActualPrintStaff(cache, fields) {
+    const printedId = String(getField(fields, ['billing_printed_by_id', 'actual_printed_by_id', 'print_by_id']) || '').trim();
+    const explicitName = String(getField(fields, ['billing_printed_by', 'actual_printed_by', 'print_by']) || '').trim();
     const employee = printedId ? cache.employeeMap?.[printedId] : null;
     return {
         id: printedId || (explicitName ? `name:${explicitName.toLowerCase()}` : 'unknown'),
-        name: employee?.name || explicitName || (printedId ? `Employee ${printedId}` : 'Unknown encoder'),
+        name: employee?.name || explicitName || (printedId ? `Employee ${printedId}` : 'Unknown printer'),
         role: employee?.role || ''
     };
+}
+
+function getBillingStaff(cache, fields) {
+    return getPreparedBillingStaff(cache, fields);
 }
 
 function getBillingDocMonthKey(fields) {
@@ -1485,13 +1515,46 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         const name = String(doc?.name || '').trim();
         if (name && !productivityDocsByName.has(name)) productivityDocsByName.set(name, doc);
     });
-    const todayByStaff = new Map();
-    const sinceByStaff = new Map();
-    const todayByMonth = new Map();
-    const sinceByMonth = new Map();
-    const todayInvoices = [];
-    const todayInvoiceKeys = new Set();
-    const billingByInvoice = buildBillingInvoiceLookup([...(cache.billingDocs || []), ...(cache.productivityBillingDocs || [])]);
+    const printedTodayByStaff = new Map();
+    const printedMonthByStaff = new Map();
+    const printedSinceByStaff = new Map();
+    const printedTodayByMonth = new Map();
+    const printedSinceByMonth = new Map();
+    const savedToPrintByStaff = new Map();
+    const savedInvoiceGroups = new Map();
+    const printedInvoiceGroups = new Map();
+    const currentMonthKey = months?.[months.length - 1] || monthKeyFromYearMonth(new Date().getFullYear(), new Date().getMonth() + 1);
+    const receiptByInvoice = new Map();
+
+    [...(cache.scheduleDocs || []), ...(cache.productivityScheduleDocs || [])].forEach((doc) => {
+        const fields = doc.fields || {};
+        const purposeId = Number(getField(fields, ['purpose_id']) || 0);
+        if (purposeId !== BILLING_PURPOSE_ID) return;
+        const invoiceNo = getScheduleInvoiceNo(fields, doc);
+        if (!invoiceNo) return;
+        const receiver = String(getField(fields, ['field_billing_received_by']) || '').trim();
+        const receivedDate = normalizeDateTime(getField(fields, ['field_billing_date']));
+        const receivedTime = String(getField(fields, ['field_billing_time']) || '').trim();
+        const staff = getScheduleStaff(cache, fields);
+        const current = receiptByInvoice.get(invoiceNo) || {
+            invoice_no: invoiceNo,
+            status: 'pending_received',
+            received_by: '',
+            received_at: '',
+            assigned_staff_id: staff.id,
+            assigned_staff_name: staff.name
+        };
+        if (staff.name && current.assigned_staff_name === 'Scheduled billing') {
+            current.assigned_staff_id = staff.id;
+            current.assigned_staff_name = staff.name;
+        }
+        if (receiver) {
+            current.status = 'received';
+            current.received_by = receiver;
+            current.received_at = receivedDate ? receivedDate.toISOString() : [String(getField(fields, ['field_billing_date']) || '').trim(), receivedTime].filter(Boolean).join(' ');
+        }
+        receiptByInvoice.set(invoiceNo, current);
+    });
 
     const addStaff = (target, staff, amount) => {
         if (!target.has(staff.id)) {
@@ -1524,100 +1587,139 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         row.amount_total += amount;
     };
 
+    const addInvoiceGroup = (target, key, detail, amount) => {
+        if (!target.has(key)) {
+            target.set(key, {
+                ...detail,
+                amount_total: 0,
+                row_count: 0,
+                serial_numbers: new Set(),
+                doc_ids: new Set()
+            });
+        }
+        const group = target.get(key);
+        group.amount_total += amount;
+        group.row_count += 1;
+        if (detail.serial_number) group.serial_numbers.add(detail.serial_number);
+        if (detail.doc_id) group.doc_ids.add(detail.doc_id);
+        if (!group.company_name && detail.company_name) group.company_name = detail.company_name;
+        if (!group.branch_name && detail.branch_name) group.branch_name = detail.branch_name;
+        if (!group.machine_label && detail.machine_label) group.machine_label = detail.machine_label;
+        if (!group.prepared_by && detail.prepared_by) group.prepared_by = detail.prepared_by;
+        if (!group.printed_by && detail.printed_by) group.printed_by = detail.printed_by;
+        if (!group.assigned_staff_name && detail.assigned_staff_name) group.assigned_staff_name = detail.assigned_staff_name;
+        return group;
+    };
+
     productivityDocsByName.forEach((doc) => {
         const fields = doc.fields || {};
-        const printedDate = getBillingPrintedDate(fields);
-        if (!printedDate) return;
-        const printedYmd = ymdInManila(printedDate);
-        if (!printedYmd) return;
-
+        const savedDate = getBillingSavedDate(fields);
+        const actualPrintedDate = getBillingActualPrintedDate(fields);
         const amount = extractBillingAmount(fields);
         const monthKey = getBillingDocMonthKey(fields);
-        const staff = getBillingStaff(cache, fields);
         const invoiceNo = String(getField(fields, ['invoice_no', 'invoiceno', 'invoice_id', 'invoiceid']) || '').trim();
+        if (!invoiceNo) return;
+        const docId = String(doc.name || '').split('/').pop() || '';
         const contractmainId = String(getField(fields, ['contractmain_id']) || '').trim();
         const contract = contractmainId ? cache.contractMap?.[contractmainId] : null;
         const branch = contract ? resolveBillingBranch(cache, contract, fields) : null;
         const display = branch ? resolveBranchDisplay(cache, branch) : null;
         const companyName = String(getField(fields, ['company_name']) || display?.companyName || '').trim();
         const branchName = String(getField(fields, ['branch_name']) || display?.branchName || '').trim();
-
-        if (printedYmd >= sinceYmd && printedYmd <= todayYmd) {
-            addStaff(sinceByStaff, staff, amount);
-            addMonth(sinceByMonth, monthKey, amount);
-        }
-
-        if (printedYmd !== todayYmd) return;
-
-        addStaff(todayByStaff, staff, amount);
-        addMonth(todayByMonth, monthKey, amount);
-        if (invoiceNo) todayInvoiceKeys.add(invoiceNo);
-        todayInvoices.push({
-            doc_id: String(doc.name || '').split('/').pop() || '',
+        const preparedStaff = getPreparedBillingStaff(cache, fields);
+        const printStaff = getActualPrintStaff(cache, fields);
+        const receipt = receiptByInvoice.get(invoiceNo) || {};
+        const detail = {
+            doc_id: docId,
             invoice_no: invoiceNo,
-            printed_at: printedDate.toISOString(),
-            staff_id: staff.id,
-            staff_name: staff.name,
             month_key: monthKey,
             month_label: monthLabelFromKey(monthKey),
             company_name: companyName || 'Unknown',
             branch_name: branchName || 'Main',
-            amount_total: roundCurrency(amount)
-        });
+            serial_number: String(getField(fields, ['serial_number']) || '').trim(),
+            machine_label: String(getField(fields, ['machine_label']) || '').trim(),
+            saved_at: savedDate ? savedDate.toISOString() : '',
+            printed_at: actualPrintedDate ? actualPrintedDate.toISOString() : '',
+            prepared_by: preparedStaff.name,
+            prepared_by_id: preparedStaff.id,
+            printed_by: printStaff.name,
+            printed_by_id: printStaff.id,
+            assigned_staff_id: String(getField(fields, ['schedule_assigned_staff_id']) || receipt.assigned_staff_id || '').trim(),
+            assigned_staff_name: String(getField(fields, ['schedule_assigned_staff_name']) || receipt.assigned_staff_name || '').trim(),
+            receipt_status: receipt.status || 'pending_received',
+            received_by: receipt.received_by || '',
+            received_at: receipt.received_at || ''
+        };
+        const groupKey = `${invoiceNo}:${monthKey || ''}`;
+
+        const savedYmd = ymdInManila(savedDate);
+        if (!actualPrintedDate && savedYmd === todayYmd && amount > 0) {
+            const group = addInvoiceGroup(savedInvoiceGroups, groupKey, detail, amount);
+            group.saved_at = group.saved_at || detail.saved_at;
+            group.prepared_by = group.prepared_by || preparedStaff.name;
+            group.prepared_by_id = group.prepared_by_id || preparedStaff.id;
+            return;
+        }
+
+        if (!actualPrintedDate) return;
+
+        const printedGroup = addInvoiceGroup(printedInvoiceGroups, groupKey, detail, amount);
+        printedGroup.printed_at = printedGroup.printed_at || actualPrintedDate.toISOString();
+        printedGroup.printed_by = printedGroup.printed_by || printStaff.name;
+        printedGroup.printed_by_id = printedGroup.printed_by_id || printStaff.id;
     });
 
-    const productivitySchedulesByName = new Map();
-    [...(cache.scheduleDocs || []), ...(cache.productivityScheduleDocs || [])].forEach((doc) => {
-        const name = String(doc?.name || '').trim();
-        if (name && !productivitySchedulesByName.has(name)) productivitySchedulesByName.set(name, doc);
-    });
+    savedInvoiceGroups.forEach((group) => addStaff(savedToPrintByStaff, {
+        id: group.prepared_by_id || 'unknown',
+        name: group.prepared_by || 'Unknown preparer',
+        role: ''
+    }, group.amount_total));
 
-    productivitySchedulesByName.forEach((doc) => {
-        const fields = doc.fields || {};
-        const purposeId = Number(getField(fields, ['purpose_id']) || 0);
-        if (purposeId !== BILLING_PURPOSE_ID) return;
-        const taskDate = normalizeDateTime(getField(fields, ['task_datetime']));
-        if (ymdInManila(taskDate) !== todayYmd) return;
-        const invoiceNo = getScheduleInvoiceNo(fields, doc);
-        if (!invoiceNo || todayInvoiceKeys.has(invoiceNo)) return;
-
-        const billingDoc = billingByInvoice.get(invoiceNo);
-        const billingFields = billingDoc?.fields || {};
-        const amount = extractBillingAmount(billingFields);
-        const monthKey = getBillingDocMonthKey(billingFields) || getScheduleBillingMonthKey(fields, doc);
-        const staff = billingDoc ? getBillingStaff(cache, billingFields) : getScheduleStaff(cache, fields);
-        const branchId = String(getField(fields, ['branch_id']) || '').trim();
-        const branch = branchId ? cache.branchMap?.[branchId] : null;
-        const display = branch ? resolveBranchDisplay(cache, branch) : null;
-
-        todayInvoiceKeys.add(invoiceNo);
-        addStaff(todayByStaff, staff, amount);
-        addMonth(todayByMonth, monthKey, amount);
-        todayInvoices.push({
-            doc_id: String(doc.name || '').split('/').pop() || '',
-            invoice_no: invoiceNo,
-            printed_at: taskDate ? taskDate.toISOString() : new Date().toISOString(),
-            staff_id: staff.id,
-            staff_name: staff.name,
-            month_key: monthKey,
-            month_label: monthLabelFromKey(monthKey),
-            company_name: String(getField(billingFields, ['company_name']) || display?.companyName || '').trim() || 'Unknown',
-            branch_name: String(getField(billingFields, ['branch_name']) || display?.branchName || '').trim() || 'Main',
-            amount_total: roundCurrency(amount)
-        });
+    printedInvoiceGroups.forEach((group) => {
+        const printedDate = normalizeDateTime(group.printed_at);
+        const printedYmd = ymdInManila(printedDate);
+        if (!printedYmd) return;
+        const staff = { id: group.printed_by_id || 'unknown', name: group.printed_by || 'Unknown printer', role: '' };
+        if (printedYmd >= sinceYmd && printedYmd <= todayYmd) {
+            addStaff(printedSinceByStaff, staff, group.amount_total);
+            addMonth(printedSinceByMonth, group.month_key, group.amount_total);
+        }
+        if (group.month_key === currentMonthKey) {
+            addStaff(printedMonthByStaff, staff, group.amount_total);
+        }
+        if (printedYmd === todayYmd) {
+            addStaff(printedTodayByStaff, staff, group.amount_total);
+            addMonth(printedTodayByMonth, group.month_key, group.amount_total);
+        }
     });
 
     const sortStaff = (values) => Array.from(values.values())
         .map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
         .sort((a, b) => b.invoice_count - a.invoice_count || b.amount_total - a.amount_total || a.staff_name.localeCompare(b.staff_name));
+    const serializeGroups = (groups) => Array.from(groups.values())
+        .map((group) => ({
+            ...group,
+            amount_total: roundCurrency(group.amount_total),
+            serial_numbers: Array.from(group.serial_numbers || []).filter(Boolean).slice(0, 8),
+            doc_ids: Array.from(group.doc_ids || []).filter(Boolean),
+            row_count: Number(group.row_count || 0) || 0
+        }));
+    const printedGroups = serializeGroups(printedInvoiceGroups);
+    const savedGroups = serializeGroups(savedInvoiceGroups);
+    const todayInvoices = printedGroups
+        .filter((row) => ymdInManila(normalizeDateTime(row.printed_at)) === todayYmd)
+        .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')));
+    const monthInvoices = printedGroups
+        .filter((row) => row.month_key === currentMonthKey)
+        .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')));
     const progressMonthKeys = Array.from(new Set([
         ...(months || []),
-        ...Array.from(todayByMonth.keys()),
-        ...Array.from(sinceByMonth.keys())
+        ...Array.from(printedTodayByMonth.keys()),
+        ...Array.from(printedSinceByMonth.keys())
     ])).sort();
     const monthProgress = progressMonthKeys.map((monthKey) => {
-        const today = todayByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
-        const since = sinceByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
+        const today = printedTodayByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
+        const since = printedSinceByMonth.get(monthKey) || { invoice_count: 0, amount_total: 0 };
         const currentTotal = Number(monthTotalMap.get(monthKey) || 0);
         return {
             month_key: monthKey,
@@ -1635,21 +1737,37 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     return {
         today_date: todayYmd,
         since_date: sinceYmd,
+        current_month_key: currentMonthKey,
+        current_month_label: monthLabelFromKey(currentMonthKey),
         today: {
             invoice_count: todayInvoices.length,
             amount_total: roundCurrency(todayInvoices.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
-            by_staff: sortStaff(todayByStaff),
-            by_month: Array.from(todayByMonth.values()).map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
+            by_staff: sortStaff(printedTodayByStaff),
+            by_month: Array.from(printedTodayByMonth.values()).map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
+        },
+        saved_to_print: {
+            invoice_count: savedGroups.length,
+            amount_total: roundCurrency(savedGroups.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            by_staff: sortStaff(savedToPrintByStaff),
+            invoices: savedGroups
+                .sort((a, b) => String(b.saved_at || '').localeCompare(String(a.saved_at || '')))
+                .slice(0, 500)
+        },
+        current_month_printed: {
+            invoice_count: monthInvoices.length,
+            amount_total: roundCurrency(monthInvoices.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            received_count: monthInvoices.filter((row) => row.receipt_status === 'received').length,
+            pending_received_count: monthInvoices.filter((row) => row.receipt_status !== 'received').length,
+            by_staff: sortStaff(printedMonthByStaff),
+            invoices: monthInvoices.slice(0, 500)
         },
         since_start: {
-            invoice_count: Array.from(sinceByStaff.values()).reduce((sum, row) => sum + Number(row.invoice_count || 0), 0),
-            amount_total: roundCurrency(Array.from(sinceByStaff.values()).reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
-            by_staff: sortStaff(sinceByStaff)
+            invoice_count: Array.from(printedSinceByStaff.values()).reduce((sum, row) => sum + Number(row.invoice_count || 0), 0),
+            amount_total: roundCurrency(Array.from(printedSinceByStaff.values()).reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            by_staff: sortStaff(printedSinceByStaff)
         },
         month_progress: monthProgress,
-        invoices_today: todayInvoices
-            .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')))
-            .slice(0, 250)
+        invoices_today: todayInvoices.slice(0, 250)
     };
 }
 
@@ -1893,6 +2011,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 invoice_id: invoiceId,
                 amount_total: 0,
                 billing_line_count: 0,
+                doc_ids: new Set(),
                 contractmain_ids: new Set(),
                 machine_ids: new Set()
             });
@@ -1900,6 +2019,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const invoiceGroup = cell.invoice_groups.get(invoiceRef);
         invoiceGroup.amount_total += amount;
         invoiceGroup.billing_line_count += 1;
+        invoiceGroup.doc_ids.add(String(doc.name || '').split('/').pop() || '');
         invoiceGroup.contractmain_ids.add(contractmainId);
         if (machId) invoiceGroup.machine_ids.add(machId);
 
@@ -1953,6 +2073,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 invoice_id: invoiceId,
                 amount_total: 0,
                 billing_line_count: 0,
+                doc_ids: new Set(),
                 contractmain_ids: new Set(),
                 machine_ids: new Set()
             });
@@ -1960,6 +2081,7 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
         const machineInvoiceGroup = machineCell.invoice_groups.get(invoiceRef);
         machineInvoiceGroup.amount_total += amount;
         machineInvoiceGroup.billing_line_count += 1;
+        machineInvoiceGroup.doc_ids.add(String(doc.name || '').split('/').pop() || '');
         machineInvoiceGroup.contractmain_ids.add(contractmainId);
         if (machId) machineInvoiceGroup.machine_ids.add(machId);
 

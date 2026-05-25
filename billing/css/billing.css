@@ -747,6 +747,24 @@ button.matrix-total-card:focus-visible {
     line-height: 1.25;
 }
 
+.saved-to-print-card {
+    border-color: #c8b7f5;
+    background: linear-gradient(180deg, #ffffff, #f4efff);
+}
+
+.saved-to-print-card strong {
+    color: #6d28d9;
+}
+
+.printed-month-card {
+    border-color: #a7d7bd;
+    background: linear-gradient(180deg, #ffffff, #effaf4);
+}
+
+.printed-month-card strong {
+    color: #15803d;
+}
+
 .productivity-summary-grid {
     display: grid;
     gap: 0.8rem;
