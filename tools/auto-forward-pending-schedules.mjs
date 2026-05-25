@@ -2,8 +2,9 @@
 import fs from "node:fs/promises";
 import process from "node:process";
 
-const DEFAULT_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents";
-const DEFAULT_FIREBASE_API_KEY = "AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M";
+const DEFAULT_BASE_URL = "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents";
+const DEFAULT_MARGABASE_API_KEY = "margabase-local";
+const LEGACY_FIRESTORE_HOST = "firestore.googleapis.com";
 const ZERO_DATETIME = "0000-00-00 00:00:00";
 const ROUTE_COLLECTION = "tbl_savedscheds";
 const PRINTED_ROUTE_COLLECTION = "tbl_printedscheds";
@@ -131,8 +132,14 @@ function firestoreValue(value) {
 
 class FirestoreClient {
   constructor() {
-    this.baseUrl = process.env.FIRESTORE_BASE_URL || DEFAULT_BASE_URL;
-    this.apiKey = process.env.FIREBASE_API_KEY || DEFAULT_FIREBASE_API_KEY;
+    this.baseUrl = process.env.MARGABASE_DOCUMENTS_BASE_URL
+      || process.env.MARGABASE_FIRESTORE_BASE_URL
+      || process.env.FIRESTORE_BASE_URL
+      || DEFAULT_BASE_URL;
+    this.apiKey = process.env.MARGABASE_API_KEY || process.env.FIREBASE_API_KEY || DEFAULT_MARGABASE_API_KEY;
+    if (this.baseUrl.includes(LEGACY_FIRESTORE_HOST) && process.env.ALLOW_LEGACY_FIREBASE_WRITES !== "1") {
+      throw new Error("Blocked legacy Firebase backend. Set ALLOW_LEGACY_FIREBASE_WRITES=1 only for an explicitly approved rescue.");
+    }
   }
 
   async query(structuredQuery) {

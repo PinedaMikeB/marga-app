@@ -200,6 +200,14 @@ Start every new Marga-App thread by reading:
   - Complete permanent Cloudflare named tunnel only after nameserver propagation is done for `marga.biz`.
 - Cloudflare/domain checkpoint:
   - User added `marga.biz` to Cloudflare Free plan.
+
+## Local Scheduled Jobs
+- Pending schedule carry-over now runs on the owner-controlled local stack, not Codex or Netlify.
+- LaunchAgent: `/Users/mike/Library/LaunchAgents/com.marga.auto-forward-pending-schedules.plist`
+- Launcher: `/Users/mike/Library/Application Support/Marga/run-auto-forward-pending-schedules-local.sh`
+- Tracked runner source: `/Volumes/Wotg Drive Mike/GitHub/Marga-App/scripts/run-auto-forward-pending-schedules-local.sh`
+- Schedule: daily at 18:00 local machine time; the runner skips Sunday using Asia/Manila weekday checks.
+- Backend: local Margabase API at `http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents` with `MARGABASE_API_KEY=margabase-local`.
   - Hostinger nameservers were changed to `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
   - At the last checkpoint, propagation was not fully complete; Cloudflare Tunnel authorization showed `marga.biz` as invalid nameservers.
   - Temporary quick tunnel works now, but permanent `api.marga.biz` needs named tunnel setup after Cloudflare recognizes the zone.
