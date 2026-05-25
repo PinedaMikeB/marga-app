@@ -453,10 +453,9 @@
     width: 100%;
     max-width: 100%;
     min-height: 0;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: visible;
-    overscroll-behavior: auto;
+    max-height: max(420px, calc(100vh - 180px));
+    overflow: auto;
+    overscroll-behavior: contain;
     scrollbar-gutter: stable both-edges;
     -webkit-overflow-scrolling: touch;
 }
@@ -486,7 +485,7 @@
 
 .matrix-sheet thead th {
     position: sticky;
-    top: var(--billing-sticky-top);
+    top: 0;
     z-index: 34;
     box-shadow: 0 1px 0 rgba(214, 225, 238, 0.95);
 }
@@ -496,7 +495,7 @@
     flex-direction: column;
     min-height: calc(100vh - 128px);
     max-height: none;
-    overflow: visible;
+    overflow: hidden;
 }
 
 .matrix-card .matrix-header {
@@ -505,7 +504,7 @@
 }
 
 .matrix-card .matrix-scroll {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
 }
 
 .raw-card[hidden] {
