@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v76-billing-group-draft-rate-refresh';
+const CACHE_NAME = 'marga-app-shell-v77-collection-payment-receipt-date';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260521-invoice-search-supplement-1',
+    '/collections/js/collections.js?v=20260525-payment-month-receipt-date-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',

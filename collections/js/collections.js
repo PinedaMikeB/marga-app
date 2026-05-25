@@ -189,6 +189,48 @@ const COLLECTION_BILLING_FIELD_MASK = [
     'billing_lines_json',
     'billing_lines_count'
 ];
+const COLLECTION_PAYMENT_FIELD_MASK = [
+    'id',
+    'invoice_id',
+    'invoice_num',
+    'client',
+    'category',
+    'invoice_amt',
+    'invoice_date',
+    'printed_or',
+    'assigned',
+    'payment_amt',
+    'balance_amt',
+    'date_deposit',
+    'date_paid',
+    'tax_date_paid',
+    'ornum',
+    'or_number',
+    'payment_type',
+    'payment_status',
+    'tax_2307',
+    'tax_status',
+    'deduction_type',
+    'deduction_amount',
+    'other_deduction_amount',
+    'tax_form_status',
+    'tax_form_received_at',
+    'tax_form_remarks',
+    'checkpayment_id',
+    'check_number',
+    'check_amt',
+    'check_date',
+    'account_bank',
+    'remarks',
+    'iscancel',
+    'cancelled_at',
+    'cancelled_by',
+    'source',
+    'schedule_id',
+    'schedule_doc_id',
+    'field_confirmed_at',
+    'field_confirmed_by'
+];
 const LEGACY_COLLECTION_SCHEDULE_FIELD_MASK = [
     'id',
     'source',
@@ -1468,7 +1510,7 @@ function getCollectorPendingBillingProjection(billingCell, billingRow) {
 }
 
 function getCollectorPaymentTotalDate(payment) {
-    return normalizeDate(payment?.datePaid || payment?.paymentDate);
+    return normalizeDate(payment?.datePaid || payment?.taxDatePaid || payment?.paymentDate || payment?.dateDeposit);
 }
 
 function makeCollectorPaymentMonthDetail(payment, column, amount) {
@@ -2220,22 +2262,45 @@ async function firestoreRunOrderedQuery(collectionId, limit = 1) {
 }
 
 async function loadSupplementalCollectionPaymentDocs() {
-    try {
-        return await firestoreRunQuery({
-            from: [{ collectionId: 'tbl_paymentinfo' }],
-            where: {
-                fieldFilter: {
-                    field: { fieldPath: 'source' },
-                    op: 'EQUAL',
-                    value: { stringValue: 'collections_web_payment' }
-                }
-            },
-            limit: 1000
-        });
-    } catch (error) {
+    const today = new Date();
+    const startKey = toDateKey(COLLECTOR_DASHBOARD_START);
+    const endKey = toDateKey(addMonths(new Date(today.getFullYear(), 11, 1), 1));
+    const fieldMask = COLLECTION_PAYMENT_FIELD_MASK;
+    const querySpecs = [
+        ['date_paid', startKey, endKey],
+        ['tax_date_paid', startKey, endKey],
+        ['date_deposit', startKey, endKey]
+    ];
+    const rangeQueries = querySpecs.map(([fieldPath, startValue, endValue]) => (
+        firestoreRunRangeQuery('tbl_paymentinfo', fieldPath, startValue, endValue, fieldMask)
+            .catch((error) => {
+                console.warn(`Unable to load supplemental payment rows by ${fieldPath}:`, error);
+                return [];
+            })
+    ));
+    const sourceQuery = firestoreRunQuery({
+        from: [{ collectionId: 'tbl_paymentinfo' }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath: 'source' },
+                op: 'EQUAL',
+                value: { stringValue: 'collections_web_payment' }
+            }
+        },
+        select: { fields: fieldMask.map((fieldPath) => ({ fieldPath })) },
+        limit: 1000
+    }).catch((error) => {
         console.warn('Unable to load supplemental web payment records:', error);
         return [];
-    }
+    });
+
+    const docsByKey = new Map();
+    const groups = await Promise.all([...rangeQueries, sourceQuery]);
+    groups.flat().forEach((doc) => {
+        const key = getFirestoreDocumentId(doc) || doc.name;
+        if (key) docsByKey.set(key, doc);
+    });
+    return Array.from(docsByKey.values());
 }
 
 async function allocateNextNumericId(collection) {
@@ -3215,7 +3280,7 @@ async function loadLookups() {
 
     updateLoadingStatus('Loading payment records...');
     const paymentDocs = await firestoreGetAll('tbl_paymentinfo', updateLoadingStatus, {
-        fieldMask: ['id', 'invoice_id', 'invoice_num', 'client', 'category', 'invoice_amt', 'invoice_date', 'printed_or', 'assigned', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid', 'tax_date_paid', 'ornum', 'or_number', 'payment_type', 'payment_status', 'tax_2307', 'tax_status', 'deduction_type', 'deduction_amount', 'other_deduction_amount', 'tax_form_status', 'tax_form_received_at', 'tax_form_remarks', 'checkpayment_id', 'check_number', 'check_amt', 'check_date', 'account_bank', 'remarks', 'iscancel', 'cancelled_at', 'cancelled_by', 'source', 'schedule_id', 'schedule_doc_id', 'field_confirmed_at', 'field_confirmed_by'],
+        fieldMask: COLLECTION_PAYMENT_FIELD_MASK,
         maxPages: 260
     });
     const supplementalPaymentDocs = await loadSupplementalCollectionPaymentDocs();
@@ -3248,7 +3313,10 @@ async function loadLookups() {
         const taxFormStatus = String(getField(f, ['tax_form_status']) || '').trim().toLowerCase();
         const balanceAmountRaw = getField(f, ['balance_amt']);
         const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
-        const paymentDate = normalizeDate(getField(f, ['date_deposit', 'date_paid', 'tax_date_paid']));
+        const datePaid = normalizeDate(getField(f, ['date_paid']));
+        const dateDeposit = normalizeDate(getField(f, ['date_deposit']));
+        const taxDatePaid = normalizeDate(getField(f, ['tax_date_paid']));
+        const paymentDate = datePaid || taxDatePaid || dateDeposit;
         const invoiceIdKey = invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '';
         const orNumber = String(getField(f, ['ornum', 'or_number']) || '').trim();
         if (isDraftPayment) {
@@ -3269,8 +3337,9 @@ async function loadLookups() {
                 deductionAmount,
                 otherDeductionAmount,
                 paymentDate,
-                datePaid: normalizeDate(getField(f, ['date_paid'])),
-                dateDeposit: normalizeDate(getField(f, ['date_deposit'])),
+                datePaid,
+                dateDeposit,
+                taxDatePaid,
                 orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
                 paymentStatus,
@@ -3322,9 +3391,9 @@ async function loadLookups() {
                 deductionAmount,
                 otherDeductionAmount,
                 paymentDate,
-                datePaid: normalizeDate(getField(f, ['date_paid'])),
-                dateDeposit: normalizeDate(getField(f, ['date_deposit'])),
-                taxDatePaid: normalizeDate(getField(f, ['tax_date_paid'])),
+                datePaid,
+                dateDeposit,
+                taxDatePaid,
                 orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
                 paymentStatus,
@@ -4297,7 +4366,7 @@ function updateDurationSummary() {
     let totalCollections = 0;
     let totalCollectionsCount = 0;
     paymentEntries.forEach((entry) => {
-        if (!isDateWithinRange(entry.paymentDate, fromDate, toDate)) return;
+        if (!isDateWithinRange(getCollectorPaymentTotalDate(entry), fromDate, toDate)) return;
         totalCollections += entry.amount;
         totalCollectionsCount += 1;
     });
@@ -4371,7 +4440,7 @@ function computeMonthlyTrendData() {
     });
 
     paymentEntries.forEach((entry) => {
-        const paymentDate = normalizeDate(entry.paymentDate);
+        const paymentDate = getCollectorPaymentTotalDate(entry);
         const amount = Number(entry.amount || 0);
         if (!paymentDate || amount <= 0) return;
         if (paymentDate < windowStart || paymentDate > windowEnd) return;
@@ -4618,7 +4687,7 @@ function buildCustomerCollectionComparison(trendData) {
     });
 
     paymentEntries.forEach((entry) => {
-        const paymentMonthKey = getMonthKey(entry.paymentDate);
+        const paymentMonthKey = getMonthKey(getCollectorPaymentTotalDate(entry));
         if (!paymentMonthKey || !monthTotals.hasOwnProperty(paymentMonthKey)) return;
 
         const billingMeta = billingMetaByInvoiceKey.get(String(entry.invoiceId || '').trim()) || {};
@@ -4824,7 +4893,7 @@ async function computeCollectorDashboardData() {
         }
         paymentKeys.forEach((key) => paymentMap.set(key, summary));
 
-        const paymentDate = normalizeDate(entry.paymentDate);
+        const paymentDate = getCollectorPaymentTotalDate(entry);
         summary.amount += Number(entry.amount || 0);
         if (entry.balanceAmount !== null && entry.balanceAmount !== undefined && Number.isFinite(Number(entry.balanceAmount))) {
             summary.latestBalanceAmount = Number(entry.balanceAmount);
@@ -4885,7 +4954,7 @@ async function computeCollectorDashboardData() {
     });
 
     paymentEntries.forEach((entry) => {
-        const paymentMonthKey = getMonthKey(entry.paymentDate);
+        const paymentMonthKey = getMonthKey(getCollectorPaymentTotalDate(entry));
         if (!paymentMonthKey || !Object.prototype.hasOwnProperty.call(paymentMonthTotals, paymentMonthKey)) return;
         paymentMonthTotals[paymentMonthKey] += Number(entry.amount || 0);
     });
@@ -5551,7 +5620,7 @@ function renderCollectorDashboardFromData(data) {
             : invoiceSearchTerm
                 ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
-        noteNode.textContent = `${filterText} Cell colors use Billing invoice month plus Collection payment balance. Scorecard rows are by billing month except Payments Dated This Month, which follows the payment/OR date. Pending billing counts only rows with a contract or meter-reading peso estimate.`;
+        noteNode.textContent = `${filterText} Collected Against Billed follows the invoice billing month. Payments Dated This Month follows the payment/OR date for bank reconciliation, regardless of what billing month the invoice belongs to. Pending billing counts only rows with a contract or meter-reading peso estimate.`;
     }
 
     const rangeNode = document.getElementById('collector-dashboard-range');
@@ -6488,7 +6557,7 @@ function buildCollectorSoaRows(workspace, fromDate, toDate) {
 
     let finalBalance = 0;
     const rows = matchedInvoices.map((invoice) => {
-        const payments = getPaymentsForInvoiceKeys(invoice).filter((payment) => isDateWithinRange(payment.paymentDate, fromDate, toDate));
+        const payments = getPaymentsForInvoiceKeys(invoice).filter((payment) => isDateWithinRange(getCollectorPaymentTotalDate(payment), fromDate, toDate));
         const paymentAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + getPaymentDeductionAmount(payment), 0);
         const latestBalance = payments
             .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
