@@ -75,7 +75,7 @@ Start every new Marga-App thread by reading:
 - Next chat focus: continue **Billing** work.
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
 - Billing print/productivity rule from 2026-05-25: `Saved Invoice To Print` opens the actual billing calculation by row/month, while printed-today/month reports count only explicit `billing_printed_at` audit events from the print buttons. Do not fall back to old save/date fields as "printed" because that recreated false counts.
-- Billing grouped-invoice rule from 2026-05-25: do not hardcode one customer correction when a shared-invoice account is wrong. Use authoritative grouping membership (`tbl_groupings` + `tbl_groupsum.contract_main_id`) first. If a grouping has explicit `tbl_groupsum` members, only those contracts share the invoice/quota; other same-company departments stay separate. If a grouping has no membership rows, fall back to the existing company-level group behavior. This protects future customers with the same error without adding one-off patches.
+- Billing grouped-invoice exception from 2026-05-25: Metalcast Corporation's verified one-invoice group applies only to Packaging Dept. (`branch_id 1086`) and Centralized Unit Dept. (`branch_id 1088`) with shared 15,000-page quota at 0.50. Accounting, Logistics, Documentation, Import/Export, Warehouse, and other Metalcast departments must stay separate unless explicitly approved.
 - Releasing is now live and materially implemented; only parity/tuning work should remain there, not a rebuild.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.
@@ -200,10 +200,6 @@ Start every new Marga-App thread by reading:
   - Complete permanent Cloudflare named tunnel only after nameserver propagation is done for `marga.biz`.
 - Cloudflare/domain checkpoint:
   - User added `marga.biz` to Cloudflare Free plan.
-
-## Scheduled Jobs (Netlify)
-- `/.netlify/functions/auto-forward-pending-schedules-background` runs `0 10 * * 1-6` (10:00 UTC == 18:00 Asia/Manila, Mon-Sat) to auto-carry over open schedules to tomorrow, preserving assigned staff and skipping already-routed items.
-- Netlify env is set for the existing Cloudflare/Margabase route: `MARGABASE_DOCUMENTS_BASE_URL=https://app.marga.biz/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents` and `MARGABASE_API_KEY=margabase-local`.
   - Hostinger nameservers were changed to `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
   - At the last checkpoint, propagation was not fully complete; Cloudflare Tunnel authorization showed `marga.biz` as invalid nameservers.
   - Temporary quick tunnel works now, but permanent `api.marga.biz` needs named tunnel setup after Cloudflare recognizes the zone.
