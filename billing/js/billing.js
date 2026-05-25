@@ -2741,7 +2741,9 @@ async function recordBillingPrintEvent(preview, channel = 'browser_print') {
         docIds = docs.map((doc) => String(doc?._docId || '').trim()).filter(Boolean);
     }
     docIds = Array.from(new Set(docIds));
-    if (!docIds.length) return { ok: false, updated: 0 };
+    if (!docIds.length) {
+        throw new Error(`No saved billing document found for invoice ${invoiceNo || '(missing invoice number)'}.`);
+    }
 
     const audit = getCurrentUserAudit();
     const now = new Date();
@@ -3856,22 +3858,24 @@ function buildRtpPrintDocument(preview) {
 </html>`;
 }
 
-function printCurrentRtpInvoice() {
+async function printCurrentRtpInvoice() {
     if (!currentRtpPrintPayload) {
         MargaUtils.showToast('Open a printable invoice first.', 'error');
         return;
     }
 
     const preview = decorateRtpPrintPayload(currentRtpPrintPayload);
+    try {
+        const result = await recordBillingPrintEvent(preview, 'browser_print');
+        if (result?.updated) {
+            await loadDashboard({ forceRefresh: true }).catch(() => {});
+        }
+    } catch (error) {
+        console.warn('Billing print audit failed.', error);
+        MargaUtils.showToast('Print audit was not saved, so the invoice was not opened for print. Refresh the billing and try again.', 'error');
+        return;
+    }
     printHtmlDocument(buildRtpPrintDocument(preview), 'marga_invoice_print');
-    recordBillingPrintEvent(preview, 'browser_print')
-        .then((result) => {
-            if (result?.updated) loadDashboard({ forceRefresh: true }).catch(() => {});
-        })
-        .catch((error) => {
-            console.warn('Billing print audit failed.', error);
-            MargaUtils.showToast('Invoice opened for print, but print audit was not saved. Refresh and try again if this count matters.', 'error');
-        });
 }
 
 function sanitizeDotMatrixText(value) {
@@ -4005,27 +4009,23 @@ function buildDotMatrixInvoicePrintDocument(preview) {
 </html>`;
 }
 
-function printCurrentDotMatrixInvoice() {
+async function printCurrentDotMatrixInvoice() {
     if (!currentRtpPrintPayload) {
         MargaUtils.showToast('Open a printable invoice first.', 'error');
         return;
     }
 
     const preview = decorateRtpPrintPayload(currentRtpPrintPayload);
-    sendDotMatrixInvoiceToLocalBridge(preview)
-        .then((result) => {
-            const printerLabel = result?.printerName ? ` to ${result.printerName}` : '';
-            MargaUtils.showToast(`Dot-matrix invoice sent${printerLabel}.`, 'success');
-            recordBillingPrintEvent(preview, 'dot_matrix').catch((error) => {
-                console.warn('Billing dot-matrix print audit failed.', error);
-            }).then((result) => {
-                if (result?.updated) loadDashboard({ forceRefresh: true }).catch(() => {});
-            });
-        })
-        .catch((error) => {
-            console.error('Dot matrix raw print failed:', error);
-            MargaUtils.showToast('Start the Marga Dot Matrix Print Bridge on this Windows PC, then click Dot Matrix Print again.', 'error');
-        });
+    try {
+        const result = await sendDotMatrixInvoiceToLocalBridge(preview);
+        const printerLabel = result?.printerName ? ` to ${result.printerName}` : '';
+        await recordBillingPrintEvent(preview, 'dot_matrix');
+        await loadDashboard({ forceRefresh: true }).catch(() => {});
+        MargaUtils.showToast(`Dot-matrix invoice sent${printerLabel}.`, 'success');
+    } catch (error) {
+        console.error('Dot matrix raw print failed:', error);
+        MargaUtils.showToast('Dot-matrix print or print audit failed. Check the print bridge, then try again so the billing count stays accurate.', 'error');
+    }
 }
 
 function printCurrentMeterReadingForm() {
@@ -4514,6 +4514,7 @@ function buildRequestContext(options = {}) {
     params.set('include_active_rows', 'true');
     const forceRefresh = Boolean(options.forceRefresh);
     params.set('refresh_cache', String(forceRefresh || Boolean(els.refreshCacheInput.checked)));
+    params.set('_ts', String(Date.now()));
     const search = String(els.matrixSearchInput?.value || '').trim();
     if (search.length >= 2) {
         params.set('search', search);
@@ -5912,6 +5913,7 @@ function applySharedMultiMeterQuota(lineItems = []) {
         const sharedComputation = `${groupLabel}: ${formatCount(totalRawPages)} raw - ${formatCount(totalSpoilagePages)} spoilage = ${formatCount(totalNetPages)} net. ${formatCount(quotaPages)} shared quota pages x ${formatAmount(pageRate)} plus ${formatCount(succeedingPages)} succeeding pages x ${formatAmount(succeedingRate)} = ${formatAmount(amountDue)}.`;
 
         usableLines.forEach(({ line, index }, shareIndex) => {
+            const lineShareComputation = `${line.label || groupLabel}: ${formatCount(line.netPages || 0)} net pages share of ${formatCount(totalNetPages)} group net pages. Allocated ${formatAmount(amountShares[shareIndex] || 0)} from the shared invoice total using ${formatCount(monthlyQuota || quotaPages)} shared quota pages.`;
             resultLines[index] = {
                 ...line,
                 amountDue: amountShares[shareIndex] || 0,
@@ -5934,6 +5936,8 @@ function applySharedMultiMeterQuota(lineItems = []) {
                 sharedGroupSucceedingPages: succeedingPages,
                 sharedGroupAmountDue: amountDue,
                 sharedGroupComputation: sharedComputation,
+                sharedLineComputation: lineShareComputation,
+                sharedQuotaGroup: true,
                 quotaVariance: monthlyQuota > 0 ? totalNetPages - monthlyQuota : null,
                 quotaBypassed
             };
@@ -6655,6 +6659,10 @@ function renderDashboardBillingExclusions() {
 function renderMeterLineCard(line, mode, index) {
     const prefix = `${mode}-${index}`;
     const canHideLine = mode === 'multi_machine_rtp';
+    const quotaLabel = line.sharedQuotaGroup ? 'Shared Quota' : 'Quota';
+    const quotaHelp = line.sharedQuotaGroup
+        ? '<small>One quota is shared by all machines in this invoice group.</small>'
+        : '';
     return `
         <article class="calc-meter-line" data-calc-line-card="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}">
             <div class="calc-meter-line-head">
@@ -6686,8 +6694,9 @@ function renderMeterLineCard(line, mode, index) {
                     <input type="number" min="0" step="0.01" value="${escapeHtml(String(line.spoilagePercent ?? (DEFAULT_SPOILAGE_RATE * 100)))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="spoilagePercent">
                 </div>
                 <div class="calc-field">
-                    <label>Quota</label>
+                    <label>${escapeHtml(quotaLabel)}</label>
                     <input type="number" min="0" step="1" value="${escapeHtml(String(line.monthlyQuota || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="monthlyQuota">
+                    ${quotaHelp}
                 </div>
                 <div class="calc-field">
                     <label>Page Rate</label>
@@ -6742,7 +6751,7 @@ function formatLineComputation(line) {
         return line.warning || 'Present reading is lower than previous reading. Please check the present meter before billing this line.';
     }
     if (String(line.formula || '').startsWith('shared_quota_')) {
-        return line.sharedGroupComputation || formatBillingComputationFlow(line);
+        return line.sharedLineComputation || line.sharedGroupComputation || formatBillingComputationFlow(line);
     }
     return formatBillingComputationFlow(line);
 }
@@ -7114,6 +7123,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         });
         return {
             ...line,
+            sharedQuotaGroup: hasVerifiedGroupRatePlan,
             previousReadingDate
         };
     });
@@ -7701,6 +7711,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         return {
             ...line,
             profile: lineProfile,
+            sharedQuotaGroup: Boolean(seed.sharedQuotaGroup),
             previousReadingDate: seed.previousReadingDate || line.previousReadingDate || ''
         };
     };
@@ -8058,10 +8069,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         setElementDisplayValue(modeTotalAmountValue, formatAmount(next.amountDue || 0));
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
-            quotaValue.textContent = next.quotaVariance === null
-                ? (next.sharedMeterGroups?.length
-                    ? next.sharedMeterGroups.map((group) => `${group.label}: ${formatCount(group.quotaPages)} quota / ${formatCount(group.netPages)} net`).join(' • ')
-                    : (next.lineItems?.length > 1 ? `${formatCount(next.lineItems.length)} billing lines summed.` : 'No quota saved on this contract.'))
+            quotaValue.textContent = next.sharedMeterGroups?.length
+                ? next.sharedMeterGroups.map((group) => `${group.label}: ${formatCount(group.quotaPages)} shared quota / ${formatCount(group.netPages)} net`).join(' • ')
+                : next.quotaVariance === null
+                ? (next.lineItems?.length > 1 ? `${formatCount(next.lineItems.length)} billing lines summed.` : 'No quota saved on this contract.')
                 : `${formatCount(profile.monthly_quota || 0)} quota floor • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs net pages`;
         }
         if (flowValue) {
@@ -8384,6 +8395,17 @@ async function openBillingCalcModal(rowId, monthKey) {
             return;
         }
         let staffName = staffOption?.name || staffId;
+        if (window.MargaScheduleConsolidation?.validateRequiredAssignment) {
+            const assignment = MargaScheduleConsolidation.validateRequiredAssignment({
+                staffId,
+                staffName,
+                activeStaffIds: scheduleStaffOptions.map((staff) => String(staff.id || '').trim()).filter(Boolean)
+            });
+            if (!assignment.ok) {
+                MargaUtils.showToast(assignment.reason, 'error');
+                return;
+            }
+        }
         if (window.MargaScheduleConsolidation) {
             const taskDateTime = `${scheduleDate} ${scheduleTime || '08:00'}${scheduleTime && scheduleTime.length === 5 ? ':00' : ''}`;
             const purposeId = schedulePurpose.key === 'reading' ? 8 : 1;
@@ -10133,7 +10155,7 @@ async function loadDashboard(options = {}) {
         const headers = {};
         if (apiKey) headers['x-api-key'] = apiKey;
 
-        const response = await fetch(url, { headers, signal: dashboardAbortController.signal });
+        const response = await fetch(url, { headers, signal: dashboardAbortController.signal, cache: 'no-store' });
         const payload = await response.json();
         if (requestToken !== dashboardRequestToken) return;
         if (!response.ok || !payload.ok) {

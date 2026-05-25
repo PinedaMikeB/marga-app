@@ -291,7 +291,10 @@ Billing print rules:
 - Printed-today/month productivity counts must use explicit print audit fields such as `billing_printed_at` and printer identity; legacy saved/date fields must not be treated as printed because that produces false counts.
 
 Billing grouped-invoice rules:
-- Metalcast Corporation's verified Centralized invoice is branch-specific: only Packaging Dept. (`branch_id 1086`) and Centralized Unit Dept. (`branch_id 1088`) share the one invoice and 15,000-page quota. Other Metalcast departments stay separate unless the owner approves a new grouping.
+- Grouped invoice behavior must come from data, not hardcoded customer names. Use `tbl_groupings` for the shared rate/quota and `tbl_groupsum.contract_main_id` for explicit contract membership.
+- If a grouping has explicit `tbl_groupsum` members, only those contract-main rows share the invoice/quota; other departments under the same company remain separate.
+- If a grouping has no explicit membership rows, preserve the current company-level grouped behavior.
+- Shared quota UI must make clear that the quota is for the whole invoice group, not per machine.
 
 Billing protection rule:
 - Do not break the live Billing dashboard presentation while fixing other modules.

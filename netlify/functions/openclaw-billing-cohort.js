@@ -1,5 +1,5 @@
-const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M';
-const BASE_URL = process.env.FIRESTORE_BASE_URL || 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+const MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || 'margabase-local';
+const BASE_URL = process.env.MARGABASE_DOCUMENTS_BASE_URL || process.env.MARGABASE_FIRESTORE_BASE_URL || 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
 const OPENCLAW_API_KEY = process.env.OPENCLAW_API_KEY || '';
 
 const CACHE_TTL_MS = Number(process.env.OPENCLAW_BILLING_COHORT_CACHE_TTL_MS || 5 * 60 * 1000);
@@ -44,8 +44,6 @@ const CHINABANK_GROUP_COMPANY_ID = '72';
 const CHINABANK_GROUP_BRANCH_IDS = new Set(['2378', '3396', '3822', '3462']);
 const SICCION_GROUP_COMPANY_ID = '610';
 const SICCION_GROUP_BRANCH_IDS = new Set(['1237', '2819']);
-const METALCAST_GROUP_COMPANY_ID = '553';
-const METALCAST_CENTRALIZED_GROUP_BRANCH_IDS = new Set(['1086', '1088']);
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -264,7 +262,7 @@ function extractBillingAmount(fields) {
 async function firestoreGet(collection, pageSize = DEFAULT_PAGE_SIZE, pageToken = null, fieldMask = null) {
     const params = new URLSearchParams();
     params.set('pageSize', String(pageSize));
-    params.set('key', FIREBASE_API_KEY);
+    params.set('key', MARGABASE_API_KEY);
     if (pageToken) params.set('pageToken', pageToken);
 
     if (Array.isArray(fieldMask)) {
@@ -302,7 +300,7 @@ async function firestoreGetAll(collection, options = {}) {
 
 async function firestoreRunQuery(structuredQuery) {
     const params = new URLSearchParams();
-    params.set('key', FIREBASE_API_KEY);
+    params.set('key', MARGABASE_API_KEY);
     const response = await fetch(`${BASE_URL}:runQuery?${params.toString()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,7 +318,10 @@ function getCacheState() {
             billingPages: 0,
             schedulePages: 0,
             companyMap: {},
+            billingGroupById: {},
             billingGroupByCompanyId: {},
+            billingGroupsByCompanyId: {},
+            billingGroupMembershipByContractId: {},
             branchMap: {},
             contractMap: {},
             contractDepMap: {},
@@ -467,7 +468,7 @@ async function loadCache(
     const machineReadingWindowStart = machineReadingStartKey ? monthWindowStart(machineReadingStartKey) : '';
     const machineReadingWindowEnd = billingMonthKeys.length ? monthWindowStart(shiftMonthKey(endKey, 1)) : '';
 
-    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, productivityBillingDocs, productivityScheduleDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
+    const [companyDocs, branchDocs, contractDocs, contractDepDocs, groupDocs, groupMembershipDocs, machineDocs, modelDocs, employeeDocs, machineHistoryDocs, billingDocs, productivityBillingDocs, productivityScheduleDocs, scheduleDocs, machineReadingDocs] = await Promise.all([
         firestoreGetAll('tbl_companylist', { fieldMask: ['id', 'companyname'], maxPages: 30 }),
         firestoreGetAll('tbl_branchinfo', { fieldMask: ['id', 'company_id', 'branchname', 'earliest', 'intrvl', 'inactive'], maxPages: 50 }),
         firestoreGetAll('tbl_contractmain', {
@@ -476,6 +477,7 @@ async function loadCache(
         }),
         firestoreGetAll('tbl_contractdep', { fieldMask: ['id', 'branch_id', 'departmentname'], maxPages: 60 }),
         firestoreGetAll('tbl_groupings', { fieldMask: ['id', 'company_id', 'groupname', 'isinactive', 'category_id', 'monthly_quota', 'page_rate', 'page_rate_xtra', 'withvat'], maxPages: 20 }),
+        firestoreGetAll('tbl_groupsum', { fieldMask: ['id', 'groupings_id', 'contract_main_id'], maxPages: 20 }),
         firestoreGetAll('tbl_machine', { fieldMask: ['id', 'serial', 'model_id', 'description', 'status_id'], maxPages: 80 }),
         firestoreGetAll('tbl_model', { fieldMask: ['id', 'modelname', 'description'], maxPages: 20 }),
         firestoreGetAll('tbl_employee', { fieldMask: ['id', 'name', 'firstname', 'lastname', 'nickname', 'username', 'position', 'position_label'], maxPages: 20 }),
@@ -591,7 +593,9 @@ async function loadCache(
         };
     });
 
+    cache.billingGroupById = {};
     cache.billingGroupByCompanyId = {};
+    cache.billingGroupsByCompanyId = {};
     groupDocs.forEach((doc) => {
         const f = doc.fields || {};
         const companyId = String(getField(f, ['company_id']) || '').trim();
@@ -601,7 +605,7 @@ async function loadCache(
         const rawName = String(getField(f, ['groupname']) || '').trim();
         const companyName = cache.companyMap[companyId] || '';
         const displayName = rawName && !/^group$/i.test(rawName) ? rawName : (companyName || rawName || `Group ${id}`);
-        cache.billingGroupByCompanyId[companyId] = {
+        const group = {
             id,
             company_id: companyId,
             group_name: rawName || displayName,
@@ -613,6 +617,28 @@ async function loadCache(
             page_rate: Number(getField(f, ['page_rate']) || 0) || 0,
             page_rate_xtra: Number(getField(f, ['page_rate_xtra']) || 0) || 0
         };
+        cache.billingGroupById[id] = group;
+        if (!cache.billingGroupsByCompanyId[companyId]) cache.billingGroupsByCompanyId[companyId] = [];
+        cache.billingGroupsByCompanyId[companyId].push(group);
+        if (!cache.billingGroupByCompanyId[companyId]) cache.billingGroupByCompanyId[companyId] = group;
+    });
+
+    cache.billingGroupMembershipByContractId = {};
+    Object.values(cache.billingGroupsByCompanyId || {}).flat().forEach((group) => {
+        if (!group) return;
+        group.member_contract_ids = new Set();
+        group.has_explicit_members = false;
+    });
+    groupMembershipDocs.forEach((doc) => {
+        const f = doc.fields || {};
+        const groupId = String(getField(f, ['groupings_id']) || '').trim();
+        const contractMainId = String(getField(f, ['contract_main_id']) || '').trim();
+        if (!groupId || !contractMainId || groupId === '0' || contractMainId === '0') return;
+        const group = cache.billingGroupById[groupId];
+        if (!group) return;
+        group.member_contract_ids.add(contractMainId);
+        group.has_explicit_members = true;
+        cache.billingGroupMembershipByContractId[contractMainId] = group;
     });
 
     cache.branchMap = {};
@@ -1218,14 +1244,37 @@ function resolveSerialLabel(cache, contract) {
     return machId ? `Machine ${machId}` : 'N/A';
 }
 
-function getCompanyBillingGroup(cache, companyId) {
-    const key = String(companyId || '').trim();
-    return key ? (cache?.billingGroupByCompanyId?.[key] || null) : null;
+function serializeBillingGroup(group) {
+    if (!group) return null;
+    const { member_contract_ids, has_explicit_members, ...rest } = group;
+    return {
+        ...rest,
+        has_explicit_members: Boolean(has_explicit_members)
+    };
 }
 
-function getRowBillingGroup(cache, companyId, branchId) {
+function getCompanyBillingGroups(cache, companyId) {
+    const key = String(companyId || '').trim();
+    return key ? (cache?.billingGroupsByCompanyId?.[key] || []) : [];
+}
+
+function getCompanyBillingGroup(cache, companyId) {
+    const groups = getCompanyBillingGroups(cache, companyId);
+    if (!groups.length) return null;
+    return groups[0] || null;
+}
+
+function getRowBillingGroup(cache, companyId, branchId, contract = null) {
     const normalizedBranchId = String(branchId || '').trim();
     const normalizedCompanyId = String(companyId || '').trim();
+    const contractMainId = String(contract?.id || contract?.contractmain_id || contract?.contractMainId || '').trim();
+    if (contractMainId && cache?.billingGroupMembershipByContractId?.[contractMainId]) {
+        return cache.billingGroupMembershipByContractId[contractMainId];
+    }
+    const companyGroups = getCompanyBillingGroups(cache, companyId);
+    if (companyGroups.some((group) => Boolean(group?.has_explicit_members))) {
+        return null;
+    }
     if (CHINABANK_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
         return getCompanyBillingGroup(cache, CHINABANK_GROUP_COMPANY_ID)
             || getCompanyBillingGroup(cache, companyId);
@@ -1233,13 +1282,10 @@ function getRowBillingGroup(cache, companyId, branchId) {
     if (normalizedCompanyId === SICCION_GROUP_COMPANY_ID && !SICCION_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
         return null;
     }
-    if (normalizedCompanyId === METALCAST_GROUP_COMPANY_ID && !METALCAST_CENTRALIZED_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
-        return null;
-    }
     return getCompanyBillingGroup(cache, companyId);
 }
 
-function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, serialNumber, months, cache = null) {
+function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, branchName, machineId, contractmainId, serialNumber, months, cache = null, contract = null) {
     let row = machineRows.get(rowId);
     if (!row) {
         const monthMap = {};
@@ -1268,12 +1314,12 @@ function ensureMachineRow(machineRows, rowId, companyId, companyName, branchId, 
             reading_day: null,
             reading_day_source: null,
             expected_start_month: null,
-            billing_group: getRowBillingGroup(cache, companyId, branchId),
+            billing_group: getRowBillingGroup(cache, companyId, branchId, contract),
             billing_profile: null
         };
         machineRows.set(rowId, row);
     } else if (!row.billing_group) {
-        row.billing_group = getRowBillingGroup(cache, companyId, branchId);
+        row.billing_group = getRowBillingGroup(cache, companyId, branchId, contract);
     }
     return row;
 }
@@ -1966,7 +2012,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             contract.id,
             serialNumber,
             months,
-            cache
+            cache,
+            contract
         );
         applyContractProfile(machineRow, contract);
         const expectedStartMonth = resolveContractStartMonth(cache, contract, startKey);
@@ -2057,7 +2104,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             contractmainId,
             serialNumber,
             months,
-            cache
+            cache,
+            contract
         );
         applyContractProfile(machineRow, contract);
         if (contract.readingDay) {
@@ -2170,7 +2218,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 matchedContract.id,
                 serialNumber,
                 months,
-                cache
+                cache,
+                matchedContract
             );
             applyContractProfile(machineRow, matchedContract);
             const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
@@ -2273,7 +2322,8 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 matchedContract.id,
                 serialNumber,
                 months,
-                cache
+                cache,
+                matchedContract
             );
             applyContractProfile(machineRow, matchedContract);
             const expectedStartMonth = resolveContractStartMonth(cache, matchedContract, startKey);
@@ -2549,7 +2599,10 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
             confirmed_received_months_count: row.confirmed_received_months_count,
             unconfirmed_billed_months_count: row.unconfirmed_billed_months_count,
             latest_billed_month: row.latest_billed_month,
-            billing_group: row.billing_group || getRowBillingGroup(cache, row.company_id, row.branch_id),
+            billing_group: serializeBillingGroup(row.billing_group || getRowBillingGroup(cache, row.company_id, row.branch_id, {
+                id: row.contractmain_id,
+                contractmain_id: row.contractmain_id
+            })),
             billing_profile: row.billing_profile || null,
             months: serializedMonths
         });

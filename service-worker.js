@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v78-billing-print-queue-metalcast';
+const CACHE_NAME = 'marga-app-shell-v79-billing-shared-group-audit';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,7 +22,7 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js?v=20260525-print-queue-view-metalcast-1',
+    '/billing/js/billing.js?v=20260525-shared-group-audit-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',
@@ -69,7 +69,7 @@ const SHELL_ASSETS = [
     '/shared/js/auth.js?v=20260518-login-permissions-2',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
-    '/shared/js/offline-sync.js?v=20260516-field-permissions-3',
+    '/shared/js/offline-sync.js?v=20260521-margabase-cache-guard-1',
     '/shared/js/pwa-install.js?v=20260520-update-waits-1'
 ];
 
