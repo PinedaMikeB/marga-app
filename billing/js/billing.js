@@ -6243,7 +6243,15 @@ function renderSavedToPrintRows(rows = []) {
                                 ${row.saved_at ? `<small>${escapeHtml(formatReportDateTime(row.saved_at))}</small>` : ''}
                             </td>
                             <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
-                            <td><button class="btn btn-secondary" type="button" data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}">View</button></td>
+                            <td>
+                                <button
+                                    class="btn btn-secondary"
+                                    type="button"
+                                    data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}"
+                                    data-productivity-row-id="${escapeHtml(row.row_id || '')}"
+                                    data-productivity-month-key="${escapeHtml(row.month_key || '')}"
+                                >View</button>
+                            </td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -10306,7 +10314,13 @@ function bindEvents() {
         if (productivityInvoiceTrigger) {
             event.preventDefault();
             const invoiceNo = String(productivityInvoiceTrigger.dataset.productivityViewInvoice || '').trim();
+            const rowId = String(productivityInvoiceTrigger.dataset.productivityRowId || '').trim();
+            const monthKey = String(productivityInvoiceTrigger.dataset.productivityMonthKey || '').trim();
             closeBillingScorecardModal();
+            if (rowId && monthKey) {
+                openBillingCalcModalSafely(rowId, monthKey);
+                return;
+            }
             if (invoiceNo && els.invoiceSearchInput) {
                 els.invoiceSearchInput.value = invoiceNo;
                 searchInvoiceNumber();

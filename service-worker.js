@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v77-collection-payment-receipt-date';
+const CACHE_NAME = 'marga-app-shell-v78-billing-print-queue-metalcast';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,7 +22,7 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js?v=20260522-group-draft-rate-refresh-1',
+    '/billing/js/billing.js?v=20260525-print-queue-view-metalcast-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',

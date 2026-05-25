@@ -9,7 +9,7 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
 const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
-const PRODUCTIVITY_REPORT_VERSION = '20260525-print-event-v1';
+const PRODUCTIVITY_REPORT_VERSION = '20260525-print-queue-view-v2';
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
@@ -44,6 +44,8 @@ const CHINABANK_GROUP_COMPANY_ID = '72';
 const CHINABANK_GROUP_BRANCH_IDS = new Set(['2378', '3396', '3822', '3462']);
 const SICCION_GROUP_COMPANY_ID = '610';
 const SICCION_GROUP_BRANCH_IDS = new Set(['1237', '2819']);
+const METALCAST_GROUP_COMPANY_ID = '553';
+const METALCAST_CENTRALIZED_GROUP_BRANCH_IDS = new Set(['1086', '1088']);
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -1223,11 +1225,15 @@ function getCompanyBillingGroup(cache, companyId) {
 
 function getRowBillingGroup(cache, companyId, branchId) {
     const normalizedBranchId = String(branchId || '').trim();
+    const normalizedCompanyId = String(companyId || '').trim();
     if (CHINABANK_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
         return getCompanyBillingGroup(cache, CHINABANK_GROUP_COMPANY_ID)
             || getCompanyBillingGroup(cache, companyId);
     }
-    if (String(companyId || '').trim() === SICCION_GROUP_COMPANY_ID && !SICCION_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
+    if (normalizedCompanyId === SICCION_GROUP_COMPANY_ID && !SICCION_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
+        return null;
+    }
+    if (normalizedCompanyId === METALCAST_GROUP_COMPANY_ID && !METALCAST_CENTRALIZED_GROUP_BRANCH_IDS.has(normalizedBranchId)) {
         return null;
     }
     return getCompanyBillingGroup(cache, companyId);
@@ -1622,6 +1628,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         const docId = String(doc.name || '').split('/').pop() || '';
         const contractmainId = String(getField(fields, ['contractmain_id']) || '').trim();
         const contract = contractmainId ? cache.contractMap?.[contractmainId] : null;
+        const machineId = String(contract?.machId || getField(fields, ['machine_id', 'mach_id']) || '').trim();
         const branch = contract ? resolveBillingBranch(cache, contract, fields) : null;
         const display = branch ? resolveBranchDisplay(cache, branch) : null;
         const companyName = String(getField(fields, ['company_name']) || display?.companyName || '').trim();
@@ -1634,6 +1641,11 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             invoice_no: invoiceNo,
             month_key: monthKey,
             month_label: monthLabelFromKey(monthKey),
+            row_id: contractmainId ? buildMachineRowKey(machineId, contractmainId) : '',
+            contractmain_id: contractmainId,
+            machine_id: machineId,
+            branch_id: String(branch?.id || display?.branchId || '').trim(),
+            company_id: String(display?.companyId || '').trim(),
             company_name: companyName || 'Unknown',
             branch_name: branchName || 'Main',
             serial_number: String(getField(fields, ['serial_number']) || '').trim(),
