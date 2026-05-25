@@ -1758,6 +1758,21 @@ function rowMatchesSearch(searchTerm, values) {
         .some((value) => value.includes(compactNeedle));
 }
 
+function isSpecificMachineSearch(searchTerm) {
+    const compactNeedle = String(searchTerm || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return compactNeedle.length >= 4 && /\d/.test(compactNeedle);
+}
+
+function rowMatchesMachineIdentitySearch(row, searchTerm) {
+    return rowMatchesSearch(searchTerm, [
+        row?.serial_number,
+        row?.machine_label,
+        row?.machine_id,
+        row?.contractmain_id,
+        row?.row_id
+    ]);
+}
+
 function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}) {
     const includeActiveRows = Boolean(options.includeActiveRows);
     const searchTerm = String(options.searchTerm || '').trim();
@@ -2416,8 +2431,11 @@ function analyzeDashboard(cache, startKey, endKey, latestListLimit, options = {}
                 row.serial_number,
                 row.machine_label,
                 row.machine_id,
+                row.contractmain_id,
                 row.reading_day
             ]));
+            const identityMatches = directMatches.filter((row) => rowMatchesMachineIdentitySearch(row, searchTerm));
+            if (isSpecificMachineSearch(searchTerm) && identityMatches.length) return identityMatches;
             const matchedGroupIds = new Set(directMatches
                 .map((row) => String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim())
                 .filter(Boolean));

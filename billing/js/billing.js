@@ -172,6 +172,21 @@ function textMatchesSearch(searchTerm, values = []) {
         .some((value) => value.includes(compactNeedle));
 }
 
+function isSpecificMachineSearch(searchTerm) {
+    const compactNeedle = String(searchTerm || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return compactNeedle.length >= 4 && /\d/.test(compactNeedle);
+}
+
+function rowMatchesMachineIdentitySearch(row, searchTerm) {
+    return textMatchesSearch(searchTerm, [
+        row?.serial_number,
+        row?.machine_label,
+        row?.machine_id,
+        row?.contractmain_id,
+        row?.row_id
+    ]);
+}
+
 function restoreMatrixSortValue() {
     if (!els.matrixSortInput) return;
     const saved = String(localStorage.getItem(MATRIX_SORT_STORAGE_KEY) || '').trim().toLowerCase();
@@ -8429,8 +8444,11 @@ function renderMatrixTable(payload) {
                 row.branch_name,
                 row.machine_label,
                 row.machine_id,
+                row.contractmain_id,
                 row.reading_day
             ]));
+            const identityMatches = directMatches.filter((row) => rowMatchesMachineIdentitySearch(row, searchTerm));
+            if (isSpecificMachineSearch(searchTerm) && identityMatches.length) return identityMatches;
             const matchedGroupIds = new Set(directMatches
                 .map((row) => String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim())
                 .filter(Boolean));
