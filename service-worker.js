@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v85-billing-statement-unpaid-default';
+const CACHE_NAME = 'marga-app-shell-v86-billing-statement-zero-balance';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -21,8 +21,8 @@ const SHELL_ASSETS = [
     '/assets/icons/icon-512.png',
     '/billing/',
     '/billing/index.html',
-    '/billing/css/billing.css?v=20260526-customer-statement-3',
-    '/billing/js/billing.js?v=20260526-customer-statement-3',
+    '/billing/css/billing.css?v=20260526-customer-statement-4',
+    '/billing/js/billing.js?v=20260526-customer-statement-4',
     '/customers/',
     '/customers/index.html',
     '/customers.html',

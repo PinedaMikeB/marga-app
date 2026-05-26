@@ -9464,6 +9464,13 @@ function getScorecardPaymentValue(payment, keys) {
     return null;
 }
 
+function getNullableScorecardNumber(payment, keys) {
+    const value = getScorecardPaymentValue(payment, keys);
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
 async function fetchFirestoreCollectionRows(collection, { pageSize = 1000, maxPages = 260, fieldMask = [] } = {}) {
     const rows = [];
     let pageToken = null;
@@ -9522,7 +9529,7 @@ async function loadBillingScorecardPayments() {
                 invoiceAmount: Number(getScorecardPaymentValue(doc, ['invoice_amt', 'invoiceAmount']) || 0) || 0,
                 invoiceDate: asValidDate(getScorecardPaymentValue(doc, ['invoice_date', 'invoiceDate'])),
                 amount,
-                balanceAmount: Number(getScorecardPaymentValue(doc, ['balance_amt', 'balanceAmount']) || 0) || null,
+                balanceAmount: getNullableScorecardNumber(doc, ['balance_amt', 'balanceAmount']),
                 paymentDate,
                 datePaid: asValidDate(getScorecardPaymentValue(doc, ['date_paid', 'datePaid'])) || paymentDate,
                 orNumber,
@@ -9887,12 +9894,15 @@ function buildBillingScorecardPaymentMap(payments) {
         const safeKey = String(key || '').trim();
         if (!safeKey) return;
         if (!map.has(safeKey)) {
-            map.set(safeKey, { amount: 0, latestBalanceAmount: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] });
+            map.set(safeKey, { amount: 0, latestBalanceAmount: null, latestBalanceDate: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] });
         }
         const summary = map.get(safeKey);
         summary.amount += Number(payment.amount || 0);
         if (payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount))) {
-            summary.latestBalanceAmount = Number(payment.balanceAmount || 0);
+            if (!summary.latestBalanceDate || !payment.paymentDate || payment.paymentDate >= summary.latestBalanceDate) {
+                summary.latestBalanceAmount = Number(payment.balanceAmount);
+                summary.latestBalanceDate = payment.paymentDate || summary.latestBalanceDate;
+            }
         }
         if (!summary.firstPaymentDate || payment.paymentDate < summary.firstPaymentDate) summary.firstPaymentDate = payment.paymentDate;
         if (!summary.lastPaymentDate || payment.paymentDate > summary.lastPaymentDate) summary.lastPaymentDate = payment.paymentDate;
@@ -9908,7 +9918,7 @@ function buildBillingScorecardPaymentMap(payments) {
 
 function getBillingScorecardPaymentSummary(paymentMap, ...keys) {
     const summary = keys.map((key) => paymentMap.get(String(key || '').trim())).find(Boolean);
-    return summary || { amount: 0, latestBalanceAmount: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] };
+    return summary || { amount: 0, latestBalanceAmount: null, latestBalanceDate: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] };
 }
 
 function computeVatSplit(amount) {
@@ -10098,7 +10108,7 @@ function mapStatementPaymentDocs(docs = []) {
             invoiceId,
             invoiceNo,
             amount,
-            balanceAmount: Number(getScorecardPaymentValue(doc, ['balance_amt', 'balanceAmount']) || 0) || null,
+            balanceAmount: getNullableScorecardNumber(doc, ['balance_amt', 'balanceAmount']),
             paymentDate,
             orNumber,
             printedOr: String(getScorecardPaymentValue(doc, ['printed_or', 'printedOr']) || '').trim(),
