@@ -1422,9 +1422,6 @@ function getCollectorRecordOutstandingBalance(record) {
     if (!record) return 0;
     const billed = Number(record.billedAmount || record.amount || 0);
     if (billed <= 0) return 0;
-    if (record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined && Number.isFinite(Number(record.latestBalanceAmount))) {
-        return Math.min(Math.max(0, Number(record.latestBalanceAmount || 0)), billed);
-    }
     return Math.max(0, billed - Number(record.collectedAmount || 0));
 }
 
@@ -1540,13 +1537,7 @@ function getInvoiceOutstandingFromPaymentSummary(invoiceAmount, paymentSummary) 
     if (paymentSummary?.isSettled) return 0;
 
     const paidAgainstInvoice = Math.min(Number(paymentSummary?.amount || 0), billedAmount);
-    const computedOutstanding = Math.max(0, billedAmount - paidAgainstInvoice);
-    if (paymentSummary?.latestBalanceAmount !== null
-        && paymentSummary?.latestBalanceAmount !== undefined
-        && Number.isFinite(Number(paymentSummary.latestBalanceAmount))) {
-        return Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), computedOutstanding);
-    }
-    return computedOutstanding;
+    return Math.max(0, billedAmount - paidAgainstInvoice);
 }
 
 function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
