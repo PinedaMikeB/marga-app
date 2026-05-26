@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v80-collection-unpaid-arithmetic';
+const CACHE_NAME = 'marga-app-shell-v81-collection-official-receipt-payments';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260526-unpaid-receivable-arithmetic-1',
+    '/collections/js/collections.js?v=20260526-official-receipt-payments-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',

@@ -1510,6 +1510,10 @@ function getCollectorPaymentTotalDate(payment) {
     return normalizeDate(payment?.datePaid || payment?.taxDatePaid || payment?.paymentDate || payment?.dateDeposit);
 }
 
+function hasCollectorPaymentOfficialReceipt(payment) {
+    return Boolean(String(payment?.orNumber || payment?.printedOr || '').trim());
+}
+
 function makeCollectorPaymentMonthDetail(payment, column, amount) {
     const invoiceKey = String(payment.invoiceId || payment.invoiceNo || '').trim();
     const meta = billingMetaByInvoiceKey.get(String(payment.invoiceId || '').trim())
@@ -1559,6 +1563,7 @@ function buildCollectorMatrixTotalRows(monthColumns, customerRows) {
     });
 
     paymentEntries.forEach((payment) => {
+        if (!hasCollectorPaymentOfficialReceipt(payment)) return;
         const paymentDate = getCollectorPaymentTotalDate(payment);
         const paymentMonthKey = getMonthKey(paymentDate);
         const column = monthColumns.find((item) => item.key === paymentMonthKey);
@@ -4357,6 +4362,7 @@ function updateDurationSummary() {
     let totalCollections = 0;
     let totalCollectionsCount = 0;
     paymentEntries.forEach((entry) => {
+        if (!hasCollectorPaymentOfficialReceipt(entry)) return;
         if (!isDateWithinRange(getCollectorPaymentTotalDate(entry), fromDate, toDate)) return;
         totalCollections += entry.amount;
         totalCollectionsCount += 1;
@@ -4431,6 +4437,7 @@ function computeMonthlyTrendData() {
     });
 
     paymentEntries.forEach((entry) => {
+        if (!hasCollectorPaymentOfficialReceipt(entry)) return;
         const paymentDate = getCollectorPaymentTotalDate(entry);
         const amount = Number(entry.amount || 0);
         if (!paymentDate || amount <= 0) return;
@@ -4678,6 +4685,7 @@ function buildCustomerCollectionComparison(trendData) {
     });
 
     paymentEntries.forEach((entry) => {
+        if (!hasCollectorPaymentOfficialReceipt(entry)) return;
         const paymentMonthKey = getMonthKey(getCollectorPaymentTotalDate(entry));
         if (!paymentMonthKey || !monthTotals.hasOwnProperty(paymentMonthKey)) return;
 
@@ -4864,6 +4872,7 @@ async function computeCollectorDashboardData() {
     const monthMetaMap = new Map(monthColumns.map((column) => [column.key, column]));
     const paymentMap = new Map();
     paymentEntries.forEach((entry) => {
+        if (!hasCollectorPaymentOfficialReceipt(entry)) return;
         const paymentKeys = Array.from(new Set([
             entry.invoiceId,
             entry.invoiceNo
@@ -4945,6 +4954,7 @@ async function computeCollectorDashboardData() {
     });
 
     paymentEntries.forEach((entry) => {
+        if (!hasCollectorPaymentOfficialReceipt(entry)) return;
         const paymentMonthKey = getMonthKey(getCollectorPaymentTotalDate(entry));
         if (!paymentMonthKey || !Object.prototype.hasOwnProperty.call(paymentMonthTotals, paymentMonthKey)) return;
         paymentMonthTotals[paymentMonthKey] += Number(entry.amount || 0);
