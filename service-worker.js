@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v81-collection-official-receipt-payments';
+const CACHE_NAME = 'marga-app-shell-v82-billing-print-audit-fallback';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -22,7 +22,7 @@ const SHELL_ASSETS = [
     '/billing/',
     '/billing/index.html',
     '/billing/css/billing.css',
-    '/billing/js/billing.js?v=20260525-shared-group-audit-1',
+    '/billing/js/billing.js?v=20260526-print-audit-invoice-fallback-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',

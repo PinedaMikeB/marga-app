@@ -2729,7 +2729,7 @@ function setRtpPrintPayload(payload) {
 }
 
 async function recordBillingPrintEvent(preview, channel = 'browser_print') {
-    const invoiceNo = normalizeInvoiceNumber(preview?.invoiceNo || '');
+    const invoiceNo = normalizeInvoiceNumber(preview?.invoiceNo || document.getElementById('calcInvoiceInput')?.value || '');
     let docIds = Array.isArray(preview?.billingDocIds)
         ? preview.billingDocIds.map((id) => String(id || '').trim()).filter(Boolean)
         : [];
@@ -7986,8 +7986,17 @@ async function openBillingCalcModal(rowId, monthKey) {
                 syncCalcWorkflowState();
                 return;
             }
-            setRtpPrintPayload(preview);
-            previewMount.innerHTML = buildRtpCalibratedPreviewHtml(decorateRtpPrintPayload(preview));
+            const savedInvoiceNo = normalizeInvoiceNumber(savedSnapshot?.invoiceNo || invoiceInput?.value || preview.invoiceNo || '');
+            const savedDocIds = Array.from(new Set((existingBillingDocs || [])
+                .map((doc) => String(doc?._docId || doc?.docId || '').trim())
+                .filter(Boolean)));
+            const printablePreview = {
+                ...preview,
+                invoiceNo: savedInvoiceNo || preview.invoiceNo || '',
+                billingDocIds: savedDocIds.length ? savedDocIds : (Array.isArray(preview.billingDocIds) ? preview.billingDocIds : [])
+            };
+            setRtpPrintPayload(printablePreview);
+            previewMount.innerHTML = buildRtpCalibratedPreviewHtml(decorateRtpPrintPayload(printablePreview));
             currentRtpMeterFormEstimate = nextEstimate;
             previewReady = true;
             syncCalcWorkflowState();
