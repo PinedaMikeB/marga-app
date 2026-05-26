@@ -49,6 +49,59 @@
     color: #5a6f88;
 }
 
+.field-load-progress {
+    width: min(420px, 100%);
+    margin-top: 0.52rem;
+    padding: 0.5rem 0.62rem;
+    border: 1px solid rgba(147, 197, 253, 0.66);
+    border-radius: 12px;
+    background: rgba(239, 246, 255, 0.74);
+}
+
+.field-load-progress[hidden] {
+    display: none;
+}
+
+.field-load-progress-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: #31577e;
+    font-size: 0.72rem;
+    font-weight: 850;
+}
+
+.field-load-progress-row strong {
+    color: #1d4ed8;
+    font-size: 0.72rem;
+}
+
+.field-load-progress-track {
+    height: 0.42rem;
+    margin-top: 0.38rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+}
+
+.field-load-progress-track span {
+    display: block;
+    width: var(--field-load-progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #2563eb, #38bdf8);
+    transition: width 0.28s ease;
+}
+
+.field-load-progress.is-complete .field-load-progress-track span {
+    background: linear-gradient(90deg, #15803d, #22c55e);
+}
+
+.field-load-progress.is-error .field-load-progress-track span {
+    background: linear-gradient(90deg, #b45309, #f59e0b);
+}
+
 .field-actions {
     display: flex;
     align-items: center;

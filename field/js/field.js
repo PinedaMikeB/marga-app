@@ -233,6 +233,12 @@ const state = {
     guideAutoFilled: false,
     staffId: null,
     routeSourceLabel: 'Printed',
+    routeLoad: {
+        active: false,
+        label: 'Loading route...',
+        percent: 0,
+        status: 'loading'
+    },
     todayRows: [],
     carryoverRows: [],
     rows: [],
@@ -2016,6 +2022,27 @@ function updateSubtitle() {
     const closedToday = closedRowsForSelectedDate().length;
     const total = newToday + pastPending;
     subtitle.textContent = `${total} open workload task(s) for ${date}: ${newToday} new + ${pastPending} past pending, ${closedToday} closed.`;
+}
+
+function setRouteLoadProgress(percent, label, status = 'loading') {
+    const progress = Math.max(0, Math.min(100, Number(percent || 0)));
+    state.routeLoad = {
+        active: status !== 'idle',
+        label: String(label || ''),
+        percent: progress,
+        status
+    };
+    const wrapper = document.getElementById('fieldLoadProgress');
+    const labelEl = document.getElementById('fieldLoadProgressLabel');
+    const percentEl = document.getElementById('fieldLoadProgressPercent');
+    const bar = document.getElementById('fieldLoadProgressBar');
+    if (!wrapper || !labelEl || !percentEl || !bar) return;
+    wrapper.hidden = !state.routeLoad.active;
+    wrapper.classList.toggle('is-complete', status === 'complete');
+    wrapper.classList.toggle('is-error', status === 'error');
+    labelEl.textContent = state.routeLoad.label;
+    percentEl.textContent = `${Math.round(progress)}%`;
+    bar.style.setProperty('--field-load-progress', `${progress}%`);
 }
 
 function renderActiveView() {
@@ -5393,6 +5420,7 @@ async function loadMySchedule(options = {}) {
     setAttendanceLocationCheckUi();
     const subtitle = document.getElementById('fieldSubtitle');
     subtitle.textContent = 'Loading printed route...';
+    setRouteLoadProgress(8, 'Loading attendance record...');
     await loadAttendanceForSelectedDate().catch((error) => {
         console.warn('Attendance load failed:', error);
         const status = document.getElementById('fieldAttendanceStatus');
@@ -5402,6 +5430,7 @@ async function loadMySchedule(options = {}) {
     document.getElementById('fieldList').innerHTML = '<div class="loading-cell">Loading...</div>';
 
     try {
+        setRouteLoadProgress(22, 'Loading today route...');
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
         const historyStart = `${addDaysYmd(date, -30)} 00:00:00`;
@@ -5416,6 +5445,7 @@ async function loadMySchedule(options = {}) {
             queryByDateRange('tbl_schedule', 'task_datetime', historyStart, dayEnd).catch(() => [])
         ]);
 
+        setRouteLoadProgress(45, 'Matching route rows to schedules...');
         const printedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_PRIMARY, printedDocs.map(parseFirestoreDoc).filter(Boolean));
         const savedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_FALLBACK, savedDocs.map(parseFirestoreDoc).filter(Boolean));
         const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
@@ -5462,6 +5492,7 @@ async function loadMySchedule(options = {}) {
         state.carryoverRows = forwardedPastPendingRows;
         state.rows = [...todayRows, ...forwardedPastPendingRows];
         updatePriorityGate(workloadRows());
+        setRouteLoadProgress(62, 'Preparing customer and machine details...');
         await hydrateLookups(state.rows);
         renderAttendanceLocationSummary();
         renderActiveView();
@@ -5469,6 +5500,7 @@ async function loadMySchedule(options = {}) {
         const carryoverCount = document.getElementById('fieldCarryoverCount');
         if (carryoverCount) carryoverCount.textContent = '...';
         try {
+            setRouteLoadProgress(78, 'Checking past pending routes...');
             const carryoverRows = await buildCarryoverRows({ date, printedRows, savedRows, todayRows });
             const knownCarryoverIds = new Set(forwardedPastPendingRows.map((row) => Number(row.id || 0)).filter(Boolean));
             state.carryoverRows = [
@@ -5477,13 +5509,16 @@ async function loadMySchedule(options = {}) {
             ];
             state.rows = [...todayRows, ...carryoverRows];
             state.rows = [...todayRows, ...state.carryoverRows];
+            setRouteLoadProgress(92, 'Finalizing past pending details...');
             await hydrateLookups(state.carryoverRows);
             renderAttendanceLocationSummary();
+            setRouteLoadProgress(100, 'Route loaded.', 'complete');
         } catch (carryoverError) {
             console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
             state.carryoverRows = forwardedPastPendingRows;
             state.rows = [...todayRows, ...forwardedPastPendingRows];
             renderAttendanceLocationSummary();
+            setRouteLoadProgress(100, 'Route loaded; past pending check needs refresh.', 'error');
         }
         updatePriorityGate(workloadRows());
         renderActiveView();
@@ -5495,10 +5530,12 @@ async function loadMySchedule(options = {}) {
         console.error('Field load failed:', err);
         if (state.todayRows.length) {
             subtitle.textContent = `${state.todayRows.length} current task(s) loaded. Carry-over may need refresh.`;
+            setRouteLoadProgress(100, 'Route partially loaded; tap Refresh to retry.', 'error');
             renderActiveView();
             return;
         }
         subtitle.textContent = 'Failed to load tasks.';
+        setRouteLoadProgress(100, 'Route failed to load. Tap Refresh.', 'error');
         document.getElementById('fieldList').innerHTML = `<div class="loading-cell">Error: ${sanitize(err.message || err)}</div>`;
     }
 }
