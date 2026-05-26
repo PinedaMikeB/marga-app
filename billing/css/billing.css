@@ -350,6 +350,14 @@
     color: var(--bill-ink);
 }
 
+.invoice-search-evidence {
+    margin-top: 1rem;
+}
+
+.detail-empty.error {
+    color: var(--bill-danger);
+}
+
 .matrix-search-meta {
     color: var(--bill-muted);
     font-size: 0.82rem;

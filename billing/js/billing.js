@@ -2423,6 +2423,59 @@ function renderInvoiceDeepSearchResults(report, invoiceText = '') {
     `;
 }
 
+async function fetchInvoiceDeepSearch(invoices = []) {
+    const cleanInvoices = Array.from(new Set((Array.isArray(invoices) ? invoices : [invoices])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)));
+    if (!cleanInvoices.length) return null;
+    const response = await fetch('/.netlify/functions/billing-invoice-deep-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoices: cleanInvoices })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+        throw new Error(payload?.error || `Deep Search failed (${response.status})`);
+    }
+    return payload;
+}
+
+function renderInvoiceEvidenceDetail(row = {}) {
+    const receipt = row.receipt || {};
+    const receivedLine = receipt.date_received || receipt.received_by
+        ? `${receipt.date_received || '-'}${receipt.received_time ? ` ${receipt.received_time}` : ''} • ${receipt.received_by || '-'}`
+        : 'No received date/person found';
+    const notes = Array.isArray(row.collection_history) ? row.collection_history : [];
+    const schedules = Array.isArray(row.schedules) ? row.schedules : [];
+    return `
+        <div class="detail-section-title">Receipt And Follow-Up Evidence</div>
+        <div class="invoice-deep-grid">
+            <div><span>Received</span><strong>${escapeHtml(receivedLine)}</strong></div>
+            <div><span>Receipt source</span><strong>${escapeHtml(receipt.source || '-')}</strong></div>
+            <div><span>Payments</span><strong>${escapeHtml(formatCount((row.payments || []).length))}</strong></div>
+            <div><span>Collection notes</span><strong>${escapeHtml(formatCount(notes.length))}</strong></div>
+        </div>
+        ${schedules.length ? `
+            <div class="detail-section-title">Billing Delivery Schedule</div>
+            <div class="invoice-deep-note">
+                <strong>${escapeHtml(schedules[0].date_finished || schedules[0].schedule_date || 'Schedule evidence')}</strong>
+                <span>${escapeHtml([schedules[0].assigned_to, schedules[0].status, schedules[0].remarks].filter(Boolean).join(' • ') || '-')}</span>
+            </div>
+        ` : ''}
+        <div class="detail-section-title">Collection Follow-Up Remarks</div>
+        ${
+            notes.length
+                ? notes.map((note) => `
+                    <div class="invoice-deep-note">
+                        <strong>${escapeHtml(note.date || note.status || 'Collection note')}</strong>
+                        <span>${escapeHtml(note.remarks || '-')}</span>
+                    </div>
+                `).join('')
+                : '<div class="detail-empty">No collection follow-up remarks found for this invoice.</div>'
+        }
+    `;
+}
+
 async function deepSearchInvoiceNumbers() {
     const invoiceText = String(els.invoiceSearchInput?.value || '').trim();
     const invoices = invoiceText
@@ -2438,15 +2491,7 @@ async function deepSearchInvoiceNumbers() {
         els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">Deep searching ${escapeHtml(formatCount(invoices.length))} invoice number${invoices.length === 1 ? '' : 's'} in Margabase...</div>`;
     }
     try {
-        const response = await fetch('/.netlify/functions/billing-invoice-deep-search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ invoices })
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) {
-            throw new Error(payload?.error || `Deep Search failed (${response.status})`);
-        }
+        const payload = await fetchInvoiceDeepSearch(invoices);
         renderInvoiceDeepSearchResults(payload, invoiceText);
     } catch (error) {
         console.error('Unable to deep search invoices.', error);
@@ -2670,11 +2715,14 @@ function openInvoiceSearchGroupDetail(groupKey) {
 
     const lines = group.displayDocs || [];
     const ignored = group.suppressedDocs || [];
+    const printableRowId = String(group.primaryRow?.row_id || group.primaryRow?.company_id || '').trim();
+    const canOpenCalculation = Boolean(printableRowId && group.monthKey && group.monthKey !== 'unknown');
     els.invoiceDetailTitle.textContent = `Invoice ${group.invoiceRef || ''}`;
     els.invoiceDetailSubtitle.textContent = `${formatMonthLabel(group.monthKey, group.monthKey || 'No month')} • ${formatCount(lines.length)} computed branch line${lines.length === 1 ? '' : 's'} • ${formatAmount(group.amountTotal || 0)}`;
     setRtpPrintPayload(null);
     els.invoiceDetailContent.innerHTML = `
         <div class="detail-action-row">
+            ${canOpenCalculation ? `<button class="btn btn-primary" type="button" id="invoiceSearchOpenCalcBtn">Open Billing Calculation</button>` : ''}
             <button class="btn btn-secondary" type="button" id="invoiceSearchPrintBreakdownBtn">Print Breakdown</button>
             <button class="btn btn-danger" type="button" id="invoiceSearchCancelGroupBtn">Cancel / Replace Invoice</button>
         </div>
@@ -2758,9 +2806,17 @@ function openInvoiceSearchGroupDetail(groupKey) {
                 `
                 : ''
         }
+        <div class="invoice-search-evidence" id="invoiceSearchEvidencePanel">
+            <div class="detail-section-title">Receipt And Follow-Up Evidence</div>
+            <div class="detail-empty">Loading receipt, delivery, and collection remarks from Margabase...</div>
+        </div>
     `;
 
     els.invoiceDetailModal.classList.remove('hidden');
+    document.getElementById('invoiceSearchOpenCalcBtn')?.addEventListener('click', () => {
+        closeInvoiceDetailModal();
+        openBillingCalcModalSafely(printableRowId, group.monthKey);
+    });
     document.getElementById('invoiceSearchPrintBreakdownBtn')?.addEventListener('click', () => printInvoiceSearchGroupBreakdown(group.key));
     document.getElementById('invoiceSearchCancelGroupBtn')?.addEventListener('click', async () => {
         const confirmed = window.confirm(`Cancel invoice ${group.invoiceRef || 'for this billing month'} for replacement? This removes all saved branch rows for this invoice/month.`);
@@ -2785,6 +2841,23 @@ function openInvoiceSearchGroupDetail(groupKey) {
             MargaUtils.showToast(String(error?.message || 'Unable to cancel invoice.'), 'error');
         }
     });
+
+    const evidencePanel = document.getElementById('invoiceSearchEvidencePanel');
+    fetchInvoiceDeepSearch([group.invoiceRef])
+        .then((report) => {
+            const match = (report?.results || [])[0] || null;
+            if (evidencePanel) {
+                evidencePanel.innerHTML = match
+                    ? renderInvoiceEvidenceDetail(match)
+                    : '<div class="detail-empty">No receipt or collection evidence found for this invoice.</div>';
+            }
+        })
+        .catch((error) => {
+            console.warn('Unable to load invoice deep evidence.', error);
+            if (evidencePanel) {
+                evidencePanel.innerHTML = `<div class="detail-empty error">Unable to load receipt and follow-up evidence. ${escapeHtml(error.message || '')}</div>`;
+            }
+        });
 }
 
 function showBillingSaveResult({ type = 'info', title = '', message = '' } = {}) {

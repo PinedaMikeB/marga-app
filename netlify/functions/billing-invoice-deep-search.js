@@ -33,6 +33,7 @@ const PAYMENT_FIELDS = [
 ];
 
 const CONTRACT_FIELDS = ['id', 'contract_id', 'machine_id', 'mach_id'];
+const CONTRACT_DEP_FIELDS = ['id', 'branch_id', 'departmentname'];
 const MACHINE_FIELDS = ['id', 'client_id', 'description', 'serial', 'model_id'];
 const BRANCH_FIELDS = ['id', 'company_id', 'branchname', 'branch_address'];
 const COMPANY_FIELDS = ['id', 'companyname', 'business_style'];
@@ -220,6 +221,23 @@ async function resolveBillingLabel(billingRows = []) {
     for (const row of billingRows) {
         const contractMainId = firstValue(row, ['contractmain_id']);
         const contractMain = await getById('tbl_contractmain', contractMainId, CONTRACT_FIELDS);
+        const contractDep = await getById('tbl_contractdep', firstValue(contractMain, ['contract_id']), CONTRACT_DEP_FIELDS);
+        const contractBranch = await getById('tbl_branchinfo', firstValue(contractDep, ['branch_id']) || firstValue(contractMain, ['contract_id']), BRANCH_FIELDS);
+        const contractCompany = await getById('tbl_companylist', firstValue(contractBranch, ['company_id']), COMPANY_FIELDS);
+        if (contractCompany || contractBranch) {
+            const baseBranchName = firstValue(contractBranch, ['branchname']);
+            const departmentName = firstValue(contractDep, ['departmentname']);
+            const branchName = departmentName && baseBranchName && !baseBranchName.toLowerCase().includes(String(departmentName).toLowerCase())
+                ? `${baseBranchName} - ${departmentName}`
+                : baseBranchName;
+            return {
+                customer: firstValue(contractCompany, ['companyname', 'business_style']),
+                branch: branchName,
+                serial_number: firstValue(row, ['serial_number']),
+                machine: firstValue(row, ['machine_label'])
+            };
+        }
+
         const machineId = firstValue(row, ['machine_id']) || firstValue(contractMain, ['machine_id', 'mach_id']);
         const machine = await getById('tbl_machine', machineId, MACHINE_FIELDS);
         const branch = await getById('tbl_branchinfo', firstValue(machine, ['client_id']), BRANCH_FIELDS);
