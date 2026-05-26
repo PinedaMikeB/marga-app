@@ -9,7 +9,7 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
 const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
-const PRODUCTIVITY_REPORT_VERSION = '20260525-print-queue-view-v2';
+const PRODUCTIVITY_REPORT_VERSION = '20260526-print-calendar-month-v1';
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
@@ -127,6 +127,11 @@ function normalizeDateTime(value) {
 
     const raw = String(value).trim();
     if (!raw) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(raw)) {
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
 
     const sql = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
     if (sql) {
@@ -364,7 +369,7 @@ async function queryBillingDocsByPrintedDateRange(fieldPath, startValue, endValu
 }
 
 async function loadBillingProductivityDocs(startYmd, endYmd, fieldMask) {
-    const dateFields = ['dateprinted', 'date_printed', 'invoice_date', 'invdate', 'datex', 'tmestamp', 'updated_at'];
+    const dateFields = ['billing_printed_at', 'billing_printed_date', 'actual_printed_at', 'printed_at', 'dateprinted', 'date_printed', 'invoice_date', 'invdate', 'datex', 'tmestamp', 'updated_at'];
     const startTimestamp = new Date(`${startYmd}T00:00:00+08:00`).toISOString();
     const endTimestamp = new Date(`${endYmd}T00:00:00+08:00`).toISOString();
     const groups = await Promise.all(dateFields.flatMap((fieldPath) => ([
@@ -411,7 +416,7 @@ async function loadCache(
     const nextSchedulePages = Math.max(10, Math.min(600, Number(schedulePages)));
     const nextBillingWindowKey = startKey && endKey ? `${startKey}:${endKey}` : '';
     const todayYmd = ymdInManila(new Date());
-    const productivityStartYmd = shiftYmdManila(todayYmd, -1) || todayYmd;
+    const productivityStartYmd = `${todayYmd.slice(0, 8)}01`;
     const productivityEndYmd = shiftYmdManila(todayYmd, 1) || todayYmd;
     const nextProductivityDateKey = `${productivityStartYmd}:${productivityEndYmd}`;
 
@@ -1576,6 +1581,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     const savedInvoiceGroups = new Map();
     const printedInvoiceGroups = new Map();
     const currentMonthKey = months?.[months.length - 1] || monthKeyFromYearMonth(new Date().getFullYear(), new Date().getMonth() + 1);
+    const currentPrintMonthStartYmd = `${todayYmd.slice(0, 8)}01`;
     const receiptByInvoice = new Map();
 
     [...(cache.scheduleDocs || []), ...(cache.productivityScheduleDocs || [])].forEach((doc) => {
@@ -1667,6 +1673,8 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         const fields = doc.fields || {};
         const savedDate = getBillingSavedDate(fields);
         const actualPrintedDate = getBillingActualPrintedDate(fields);
+        const savedYmd = ymdInManila(savedDate);
+        const operationalPrintedDate = actualPrintedDate || (savedDate && savedYmd && savedYmd < todayYmd ? savedDate : null);
         const amount = extractBillingAmount(fields);
         const monthKey = getBillingDocMonthKey(fields);
         const invoiceNo = String(getField(fields, ['invoice_no', 'invoiceno', 'invoice_id', 'invoiceid']) || '').trim();
@@ -1681,6 +1689,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         const branchName = String(getField(fields, ['branch_name']) || display?.branchName || '').trim();
         const preparedStaff = getPreparedBillingStaff(cache, fields);
         const printStaff = getActualPrintStaff(cache, fields);
+        const operationalPrintStaff = actualPrintedDate ? printStaff : preparedStaff;
         const receipt = receiptByInvoice.get(invoiceNo) || {};
         const detail = {
             doc_id: docId,
@@ -1697,11 +1706,12 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             serial_number: String(getField(fields, ['serial_number']) || '').trim(),
             machine_label: String(getField(fields, ['machine_label']) || '').trim(),
             saved_at: savedDate ? savedDate.toISOString() : '',
-            printed_at: actualPrintedDate ? actualPrintedDate.toISOString() : '',
+            printed_at: operationalPrintedDate ? operationalPrintedDate.toISOString() : '',
+            print_source: actualPrintedDate ? 'print_audit' : (operationalPrintedDate ? 'saved_prior_day' : ''),
             prepared_by: preparedStaff.name,
             prepared_by_id: preparedStaff.id,
-            printed_by: printStaff.name,
-            printed_by_id: printStaff.id,
+            printed_by: operationalPrintStaff.name,
+            printed_by_id: operationalPrintStaff.id,
             assigned_staff_id: String(getField(fields, ['schedule_assigned_staff_id']) || receipt.assigned_staff_id || '').trim(),
             assigned_staff_name: String(getField(fields, ['schedule_assigned_staff_name']) || receipt.assigned_staff_name || '').trim(),
             receipt_status: receipt.status || 'pending_received',
@@ -1710,7 +1720,6 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         };
         const groupKey = `${invoiceNo}:${monthKey || ''}`;
 
-        const savedYmd = ymdInManila(savedDate);
         if (!actualPrintedDate && savedYmd === todayYmd && amount > 0) {
             const group = addInvoiceGroup(savedInvoiceGroups, groupKey, detail, amount);
             group.saved_at = group.saved_at || detail.saved_at;
@@ -1719,12 +1728,13 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             return;
         }
 
-        if (!actualPrintedDate) return;
+        if (!operationalPrintedDate) return;
 
         const printedGroup = addInvoiceGroup(printedInvoiceGroups, groupKey, detail, amount);
-        printedGroup.printed_at = printedGroup.printed_at || actualPrintedDate.toISOString();
-        printedGroup.printed_by = printedGroup.printed_by || printStaff.name;
-        printedGroup.printed_by_id = printedGroup.printed_by_id || printStaff.id;
+        printedGroup.printed_at = printedGroup.printed_at || operationalPrintedDate.toISOString();
+        printedGroup.print_source = printedGroup.print_source || detail.print_source;
+        printedGroup.printed_by = printedGroup.printed_by || operationalPrintStaff.name;
+        printedGroup.printed_by_id = printedGroup.printed_by_id || operationalPrintStaff.id;
     });
 
     savedInvoiceGroups.forEach((group) => addStaff(savedToPrintByStaff, {
@@ -1742,7 +1752,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             addStaff(printedSinceByStaff, staff, group.amount_total);
             addMonth(printedSinceByMonth, group.month_key, group.amount_total);
         }
-        if (group.month_key === currentMonthKey) {
+        if (printedYmd >= currentPrintMonthStartYmd && printedYmd <= todayYmd) {
             addStaff(printedMonthByStaff, staff, group.amount_total);
         }
         if (printedYmd === todayYmd) {
@@ -1768,7 +1778,10 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         .filter((row) => ymdInManila(normalizeDateTime(row.printed_at)) === todayYmd)
         .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')));
     const monthInvoices = printedGroups
-        .filter((row) => row.month_key === currentMonthKey)
+        .filter((row) => {
+            const printedYmd = ymdInManila(normalizeDateTime(row.printed_at));
+            return printedYmd >= currentPrintMonthStartYmd && printedYmd <= todayYmd;
+        })
         .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')));
     const progressMonthKeys = Array.from(new Set([
         ...(months || []),
