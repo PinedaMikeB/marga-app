@@ -17,6 +17,7 @@ const els = {
     billingScorecardWrap: null,
     matrixTableWrap: null,
     matrixTotalsWrap: null,
+    customerStatementBar: null,
     matrixSearchInput: null,
     matrixSortInput: null,
     matrixSearchMeta: null,
@@ -4481,6 +4482,97 @@ function compareBillingRows(left, right, sortValue) {
         || leftSerial.localeCompare(rightSerial);
 }
 
+function statementCustomerKey(row) {
+    return String(row?.company_id || row?.company_name || row?.account_name || '').trim().toLowerCase();
+}
+
+function statementBranchKey(row) {
+    return [
+        statementCustomerKey(row),
+        String(row?.branch_id || row?.branch_name || '').trim().toLowerCase()
+    ].join(':');
+}
+
+function getStatementSourceRows() {
+    return (Array.isArray(lastPayload?.month_matrix?.rows) ? lastPayload.month_matrix.rows : [])
+        .filter((row) => row && !row.is_summary_row && !row.isGroupedChild);
+}
+
+function getCustomerStatementContext(rows = []) {
+    const contexts = getCustomerStatementContexts(rows);
+    return contexts.length === 1 ? contexts[0] : null;
+}
+
+function getCustomerStatementContexts(rows = []) {
+    const sourceRows = rows.filter((row) => row && !row.is_summary_row && !row.isGroupedChild);
+    if (!sourceRows.length) return [];
+    const groups = new Map();
+    sourceRows.forEach((row) => {
+        const key = statementCustomerKey(row);
+        if (!key) return;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                key,
+                companyId: String(row.company_id || '').trim(),
+                customer: row.company_name || row.account_name || 'Customer',
+                rows: []
+            });
+        }
+        groups.get(key).rows.push(row);
+    });
+    const months = Array.isArray(lastPayload?.month_matrix?.months) ? lastPayload.month_matrix.months : [];
+    return Array.from(groups.values()).map((context) => {
+        let billedAmount = 0;
+        let billedInvoices = 0;
+        const branches = new Set();
+        context.rows.forEach((row) => {
+            if (row.branch_name) branches.add(row.branch_name);
+            months.forEach((monthKey) => {
+                const cell = row.months?.[monthKey] || {};
+                billedAmount += Number(cell.amount_total || 0);
+                billedInvoices += Number(cell.invoice_count || 0);
+            });
+        });
+        return {
+            ...context,
+            branchCount: branches.size,
+            billedAmount,
+            billedInvoices
+        };
+    }).sort((left, right) => (
+        right.rows.length - left.rows.length
+        || Number(right.billedAmount || 0) - Number(left.billedAmount || 0)
+        || String(left.customer || '').localeCompare(String(right.customer || ''))
+    ));
+}
+
+function renderCustomerStatementBar(filteredRows = []) {
+    if (!els.customerStatementBar) return;
+    const searchTerm = getMatrixSearchTerm();
+    const contexts = searchTerm ? getCustomerStatementContexts(filteredRows).filter((context) => context.rows.length > 1 || Number(context.billedAmount || 0) > 0) : [];
+    if (!contexts.length) {
+        els.customerStatementBar.classList.add('hidden');
+        els.customerStatementBar.innerHTML = '';
+        return;
+    }
+    els.customerStatementBar.classList.remove('hidden');
+    els.customerStatementBar.innerHTML = `
+        ${contexts.slice(0, 4).map((context) => `
+            <div class="customer-statement-group">
+                <div class="customer-statement-main">
+                    <span class="customer-statement-label">Customer Statement</span>
+                    <strong>${escapeHtml(context.customer)}</strong>
+                    <small>${escapeHtml(formatMetricCount(context.rows.length, 'machine row'))} / ${escapeHtml(formatMetricCount(context.branchCount, 'branch'))} / ${escapeHtml(formatCurrency(context.billedAmount))} loaded billed total</small>
+                </div>
+                <div class="customer-statement-actions">
+                    <button class="btn btn-primary btn-sm" type="button" data-customer-statement-key="${escapeHtml(context.key)}" data-statement-unpaid="false">Customer Billing Statement</button>
+                    <button class="btn btn-secondary btn-sm" type="button" data-customer-statement-key="${escapeHtml(context.key)}" data-statement-unpaid="true">Unpaid Statement</button>
+                </div>
+            </div>
+        `).join('')}
+    `;
+}
+
 function applyUserContext() {
     if (!MargaAuth.requireAccess('billing')) return false;
 
@@ -8749,6 +8841,7 @@ function renderMatrixTable(payload) {
 
     if (payloadIsStaleSearch) {
         renderedMatrixRows = [];
+        renderCustomerStatementBar([]);
         if (els.matrixSearchMeta) {
             els.matrixSearchMeta.textContent = searchTerm
                 ? `Loading full search results for "${els.matrixSearchInput.value.trim()}".`
@@ -8799,6 +8892,7 @@ function renderMatrixTable(payload) {
 
     const displayRows = searchTerm ? buildCompanySummaryRows(sortedRows, months) : sortedRows;
     renderedMatrixRows = displayRows;
+    renderCustomerStatementBar(filteredRows);
 
     if (els.matrixSearchMeta) {
         if (!rows.length) {
@@ -8825,6 +8919,7 @@ function renderMatrixTable(payload) {
     }
 
     if (!months.length || !rows.length) {
+        renderCustomerStatementBar([]);
         if (els.matrixTotalsWrap) els.matrixTotalsWrap.innerHTML = '<div class="empty-panel">No billed totals returned.</div>';
         els.matrixTableWrap.innerHTML = '<div class="empty-panel">No month-to-month billing rows returned.</div>';
         return;
@@ -9200,6 +9295,10 @@ async function openInvoiceDetailModal(rowId, monthKey) {
 
     els.invoiceDetailContent.innerHTML = `
         ${rtpPreviewBlock}
+        <div class="detail-action-row">
+            <button class="btn btn-primary" type="button" data-branch-billing-statement-row-id="${escapeHtml(String(rowId))}" data-statement-unpaid="false">Branch Billing Statement</button>
+            <button class="btn btn-secondary" type="button" data-branch-billing-statement-row-id="${escapeHtml(String(rowId))}" data-statement-unpaid="true">Unpaid Statement</button>
+        </div>
         ${
             canManageBilling
                 ? `
@@ -9814,6 +9913,353 @@ function getBillingScorecardPaymentSummary(paymentMap, ...keys) {
     return summary || { amount: 0, latestBalanceAmount: null, firstPaymentDate: null, lastPaymentDate: null, orNumbers: new Set(), payments: [] };
 }
 
+function computeVatSplit(amount) {
+    const total = Number(amount || 0);
+    const net = total / 1.12;
+    return {
+        net: Number(net.toFixed(2)),
+        vat: Number((total - net).toFixed(2))
+    };
+}
+
+function getBillingStatementRows(sourceRows = [], paymentMap = new Map(), unpaidOnly = false) {
+    const months = Array.isArray(lastPayload?.month_matrix?.months) ? lastPayload.month_matrix.months : [];
+    const rowsByInvoice = new Map();
+    sourceRows.forEach((row) => {
+        months.forEach((monthKey) => {
+            const cell = row.months?.[monthKey] || {};
+            const amountTotal = Number(cell.amount_total || 0);
+            if (amountTotal <= 0) return;
+            const invoiceGroups = Array.isArray(cell.invoice_groups) && cell.invoice_groups.length
+                ? cell.invoice_groups
+                : [{ invoice_no: '-', amount_total: amountTotal, machine_count: cell.machine_count || 1 }];
+            invoiceGroups.forEach((group, index) => {
+                const amount = Number(group.amount_total || amountTotal || 0);
+                if (amount <= 0) return;
+                const invoiceNo = String(group.invoice_no || group.invoice_ref || group.invoice_id || '').trim();
+                const key = [invoiceNo || `${row.row_id}:${index}`, monthKey, group.invoice_id || ''].join('|');
+                if (rowsByInvoice.has(key)) return;
+                const paymentSummary = getBillingScorecardPaymentSummary(paymentMap, group.invoice_id, group.invoice_no, group.invoice_ref, invoiceNo);
+                const latestBalance = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
+                    ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), amount)
+                    : null;
+                const paidFallback = Math.min(Number(paymentSummary.amount || 0), amount);
+                const balance = latestBalance !== null ? latestBalance : Math.max(0, amount - paidFallback);
+                if (unpaidOnly && balance <= 0.01) return;
+                const paid = Math.max(0, amount - balance);
+                const vat = computeVatSplit(amount);
+                rowsByInvoice.set(key, {
+                    monthKey,
+                    monthLabel: formatMonthLabel(monthKey, monthKey),
+                    customer: row.company_name || row.account_name || 'Customer',
+                    branch: row.branch_name || 'Main',
+                    machine: row.machine_label || row.serial_number || row.machine_id || '-',
+                    serial: row.serial_number || '-',
+                    invoiceId: String(group.invoice_id || '').trim(),
+                    invoiceNo: invoiceNo || '-',
+                    invoiceDate: group.invoice_date || cell.latest_invoice_date || '',
+                    amount,
+                    net: vat.net,
+                    vat: vat.vat,
+                    paid,
+                    balance,
+                    orNumbers: Array.from(paymentSummary.orNumbers || []).filter(Boolean).join(', ')
+                });
+            });
+        });
+    });
+    return Array.from(rowsByInvoice.values()).sort((left, right) => (
+        String(left.branch || '').localeCompare(String(right.branch || ''))
+        || String(left.monthKey || '').localeCompare(String(right.monthKey || ''))
+        || String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''))
+    ));
+}
+
+function summarizeStatementRows(rows = []) {
+    return rows.reduce((summary, row) => {
+        summary.amount += Number(row.amount || 0);
+        summary.net += Number(row.net || 0);
+        summary.vat += Number(row.vat || 0);
+        summary.paid += Number(row.paid || 0);
+        summary.balance += Number(row.balance || 0);
+        return summary;
+    }, { amount: 0, net: 0, vat: 0, paid: 0, balance: 0 });
+}
+
+function mapStatementPaymentDocs(docs = []) {
+    const seen = new Set();
+    return docs.map((doc) => {
+        const amount = Number(getScorecardPaymentValue(doc, ['payment_amt', 'paymentAmount', 'amount']) || 0) || 0;
+        const paymentStatus = String(getScorecardPaymentValue(doc, ['payment_status', 'paymentStatus']) || '').trim();
+        const isCancelled = Boolean(Number(getScorecardPaymentValue(doc, ['iscancel', 'isCancel']) || 0)) || /^cancel/i.test(paymentStatus);
+        const paymentDate = asValidDate(getScorecardPaymentValue(doc, ['date_deposit', 'dateDeposit', 'date_paid', 'datePaid', 'tax_date_paid', 'taxDatePaid']));
+        if (isCancelled || amount <= 0 || !paymentDate) return null;
+        const invoiceId = String(getScorecardPaymentValue(doc, ['invoice_id', 'invoiceId']) || '').trim();
+        const invoiceNo = String(getScorecardPaymentValue(doc, ['invoice_num', 'invoiceNo']) || '').trim();
+        const orNumber = String(getScorecardPaymentValue(doc, ['ornum', 'or_number', 'orNumber', 'printed_or', 'printedOr']) || '').trim();
+        const token = [invoiceId, invoiceNo, amount.toFixed(2), formatIsoDate(paymentDate), orNumber].join('|');
+        if (seen.has(token)) return null;
+        seen.add(token);
+        return {
+            docId: doc._docId || '',
+            invoiceId,
+            invoiceNo,
+            amount,
+            balanceAmount: Number(getScorecardPaymentValue(doc, ['balance_amt', 'balanceAmount']) || 0) || null,
+            paymentDate,
+            orNumber,
+            printedOr: String(getScorecardPaymentValue(doc, ['printed_or', 'printedOr']) || '').trim(),
+            paymentStatus
+        };
+    }).filter(Boolean);
+}
+
+async function loadBillingStatementPaymentsForRows(statementRows = []) {
+    const fieldMask = [
+        'id', 'invoice_id', 'invoice_num', 'payment_amt', 'balance_amt', 'date_deposit', 'date_paid',
+        'tax_date_paid', 'ornum', 'or_number', 'printed_or', 'payment_status', 'iscancel'
+    ];
+    const invoiceNos = uniqueNonBlankValues(statementRows.map((row) => row.invoiceNo).filter((value) => value && value !== '-'));
+    const invoiceIds = uniqueNonBlankValues(statementRows.flatMap((row) => {
+        const raw = String(row.invoiceId || '').trim();
+        if (!raw) return [];
+        const values = [raw];
+        if (/^\d+$/.test(raw)) values.push(Number(raw));
+        return values;
+    }));
+    const [byInvoiceNo, byInvoiceId] = await Promise.all([
+        invoiceNos.length ? queryFirestoreIn('tbl_paymentinfo', 'invoice_num', invoiceNos, { select: fieldMask }) : Promise.resolve([]),
+        invoiceIds.length ? queryFirestoreIn('tbl_paymentinfo', 'invoice_id', invoiceIds, { select: fieldMask }) : Promise.resolve([])
+    ]);
+    const byDocId = new Map();
+    [...byInvoiceNo, ...byInvoiceId].forEach((doc) => {
+        const key = String(doc?._docId || '').trim();
+        if (key && !byDocId.has(key)) byDocId.set(key, doc);
+    });
+    return mapStatementPaymentDocs(Array.from(byDocId.values()));
+}
+
+function buildStatementPreviewRows(rows = []) {
+    if (!rows.length) return '<div class="detail-empty">No invoice rows found for this statement.</div>';
+    return `
+        <div class="billing-scorecard-detail-wrap statement-preview-wrap">
+            <table class="billing-sheet billing-scorecard-detail-table statement-preview-table">
+                <thead>
+                    <tr>
+                        <th>Branch / Dept</th>
+                        <th>Machine / Serial</th>
+                        <th>Invoice #</th>
+                        <th>Billing Period</th>
+                        <th class="text-right">Amount</th>
+                        <th class="text-right">Net of VAT</th>
+                        <th class="text-right">VAT</th>
+                        <th class="text-right">Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td>${escapeHtml(row.branch || 'Main')}</td>
+                            <td>
+                                <strong>${escapeHtml(row.machine || '-')}</strong>
+                                <small>${escapeHtml(row.serial || '-')}</small>
+                            </td>
+                            <td><strong>${escapeHtml(row.invoiceNo || '-')}</strong></td>
+                            <td>${escapeHtml(row.monthLabel || row.monthKey || '-')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.net || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.vat || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.balance || 0))}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function buildBillingStatementPrintDocument(statement) {
+    const rows = Array.isArray(statement?.rows) ? statement.rows : [];
+    const totals = summarizeStatementRows(rows);
+    const title = statement?.title || 'Customer Billing Statement';
+    const scopeLabel = statement?.scopeLabel || '';
+    const generatedAt = new Date().toLocaleString('en-PH', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${escapeHtml(title)}</title>
+    <style>
+        @page { size: A4 landscape; margin: 9mm; }
+        body { font-family: Arial, sans-serif; color: #111827; font-size: 10px; }
+        h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: 0.02em; text-transform: uppercase; }
+        .head { display: flex; justify-content: space-between; gap: 18px; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 10px; }
+        .muted { color: #4b5563; font-weight: 700; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #9ca3af; padding: 4px 5px; vertical-align: top; }
+        th { background: #eef2f7; text-align: left; font-size: 9px; text-transform: uppercase; }
+        .num { text-align: right; white-space: nowrap; }
+        .totals { margin-left: auto; margin-top: 10px; width: 360px; }
+        .totals td { font-weight: 700; }
+        .receive { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-top: 18px; font-size: 10px; }
+        .line { border-top: 1px solid #111827; padding-top: 4px; text-align: center; min-height: 22px; }
+        .small { display: block; color: #4b5563; font-size: 9px; }
+    </style>
+</head>
+<body>
+    <div class="head">
+        <div>
+            <h1>${escapeHtml(title)}</h1>
+            <div class="muted">Marga Enterprises</div>
+            <div>${escapeHtml(scopeLabel)}</div>
+        </div>
+        <div>
+            <div><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
+            <div><strong>Rows:</strong> ${escapeHtml(formatCount(rows.length))}</div>
+            <div><strong>Mode:</strong> ${escapeHtml(statement?.unpaidOnly ? 'Unpaid invoices only' : 'All loaded invoices')}</div>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Branch / Dept</th>
+                <th>Machine / Serial</th>
+                <th>Invoice #</th>
+                <th>Billing Period</th>
+                <th class="num">Amount</th>
+                <th class="num">Net of VAT</th>
+                <th class="num">VAT</th>
+                <th class="num">Paid</th>
+                <th class="num">Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${rows.map((row) => `
+                <tr>
+                    <td>${escapeHtml(row.branch || 'Main')}</td>
+                    <td>${escapeHtml(row.machine || '-')}<span class="small">${escapeHtml(row.serial || '-')}</span></td>
+                    <td>${escapeHtml(row.invoiceNo || '-')}</td>
+                    <td>${escapeHtml(row.monthLabel || row.monthKey || '-')}</td>
+                    <td class="num">${escapeHtml(formatFixedAmount(row.amount || 0))}</td>
+                    <td class="num">${escapeHtml(formatFixedAmount(row.net || 0))}</td>
+                    <td class="num">${escapeHtml(formatFixedAmount(row.vat || 0))}</td>
+                    <td class="num">${escapeHtml(formatFixedAmount(row.paid || 0))}</td>
+                    <td class="num">${escapeHtml(formatFixedAmount(row.balance || 0))}</td>
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>
+    <table class="totals">
+        <tbody>
+            <tr><td>Total Invoice Amount</td><td class="num">${escapeHtml(formatFixedAmount(totals.amount))}</td></tr>
+            <tr><td>Total Net of VAT</td><td class="num">${escapeHtml(formatFixedAmount(totals.net))}</td></tr>
+            <tr><td>Total VAT</td><td class="num">${escapeHtml(formatFixedAmount(totals.vat))}</td></tr>
+            <tr><td>Total Paid</td><td class="num">${escapeHtml(formatFixedAmount(totals.paid))}</td></tr>
+            <tr><td>Total Balance</td><td class="num">${escapeHtml(formatFixedAmount(totals.balance))}</td></tr>
+        </tbody>
+    </table>
+    <div class="receive">
+        <div class="line">Prepared By</div>
+        <div class="line">Checked By</div>
+        <div class="line">Received By / Date</div>
+    </div>
+</body>
+</html>`;
+}
+
+async function openBillingStatement(options = {}) {
+    const scope = String(options.scope || 'customer');
+    const unpaidOnly = Boolean(options.unpaidOnly);
+    let sourceRows = [];
+    let title = scope === 'branch' ? 'Branch Billing Statement' : 'Customer Billing Statement';
+    let scopeLabel = '';
+
+    if (scope === 'branch') {
+        const base = findBillingRowByRowId(options.rowId);
+        if (!base) {
+            MargaUtils.showToast('Branch statement row is no longer loaded.', 'error');
+            return;
+        }
+        const branchKey = statementBranchKey(base);
+        sourceRows = getStatementSourceRows().filter((row) => statementBranchKey(row) === branchKey);
+        scopeLabel = `${base.company_name || base.account_name || 'Customer'} - ${base.branch_name || 'Main'}`;
+    } else {
+        const key = String(options.customerKey || '').trim().toLowerCase();
+        sourceRows = getStatementSourceRows().filter((row) => statementCustomerKey(row) === key);
+        const context = getCustomerStatementContext(sourceRows);
+        scopeLabel = context?.customer || sourceRows[0]?.company_name || sourceRows[0]?.account_name || 'Customer';
+    }
+
+    if (!sourceRows.length) {
+        MargaUtils.showToast('No billing rows are loaded for this statement.', 'error');
+        return;
+    }
+
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = title;
+    if (els.billingScorecardSubtitle) els.billingScorecardSubtitle.textContent = `${scopeLabel} - loading invoice balances...`;
+    if (els.billingScorecardContent) els.billingScorecardContent.innerHTML = '<div class="detail-empty">Preparing billing statement...</div>';
+    els.billingScorecardModal?.classList.remove('hidden');
+
+    const preliminaryRows = getBillingStatementRows(sourceRows, new Map(), false);
+    let payments = [];
+    try {
+        payments = await loadBillingStatementPaymentsForRows(preliminaryRows);
+    } catch (error) {
+        console.warn('Unable to load payments for billing statement.', error);
+        MargaUtils.showToast('Payment balances could not load. Statement will show invoice totals only.', 'warning');
+    }
+    const paymentMap = buildBillingScorecardPaymentMap(payments);
+    const rows = getBillingStatementRows(sourceRows, paymentMap, unpaidOnly);
+    const totals = summarizeStatementRows(rows);
+    const statement = { title, scopeLabel, unpaidOnly, rows };
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = title;
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${scopeLabel} - ${formatMetricCount(rows.length, 'invoice')} - ${formatCurrency(unpaidOnly ? totals.balance : totals.amount)}`;
+    }
+    if (els.billingScorecardContent) {
+        els.billingScorecardContent.innerHTML = `
+            <div class="statement-toolbar">
+                <div>
+                    <strong>${escapeHtml(scopeLabel)}</strong>
+                    <small>${escapeHtml(unpaidOnly ? 'Unpaid invoice balances only' : 'All loaded billed invoices')}</small>
+                </div>
+                <button class="btn btn-primary" type="button" data-print-billing-statement>Print ${escapeHtml(title)}</button>
+            </div>
+            <div class="detail-summary-grid">
+                <article class="detail-summary-card">
+                    <span class="label">Invoices</span>
+                    <span class="value">${escapeHtml(formatCount(rows.length))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Invoice Amount</span>
+                    <span class="value">${escapeHtml(formatCurrency(totals.amount))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Net of VAT</span>
+                    <span class="value">${escapeHtml(formatCurrency(totals.net))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">VAT</span>
+                    <span class="value">${escapeHtml(formatCurrency(totals.vat))}</span>
+                </article>
+                <article class="detail-summary-card">
+                    <span class="label">Balance</span>
+                    <span class="value">${escapeHtml(formatCurrency(totals.balance))}</span>
+                </article>
+            </div>
+            ${buildStatementPreviewRows(rows)}
+        `;
+        const printButton = els.billingScorecardContent.querySelector('[data-print-billing-statement]');
+        printButton?.addEventListener('click', () => printHtmlDocument(buildBillingStatementPrintDocument(statement), 'marga_billing_statement_print'));
+    }
+}
+
 function makeBillingScorecardDetail({ metricKey, monthKey, row, cell, amount, status, invoiceGroup = null, payment = null, collectedAmount = 0, remainingBalance = 0 }) {
     return {
         metricKey,
@@ -10131,6 +10577,10 @@ function renderError(message) {
     els.selectionCard.classList.add('hidden');
     els.summaryTableWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
     if (els.billingScorecardWrap) els.billingScorecardWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
+    if (els.customerStatementBar) {
+        els.customerStatementBar.classList.add('hidden');
+        els.customerStatementBar.innerHTML = '';
+    }
     els.matrixTableWrap.innerHTML = '<div class="empty-panel">Request failed. Check API payload below.</div>';
     els.rawJson.textContent = String(message || 'Unknown error');
 }
@@ -10274,6 +10724,16 @@ function bindEvents() {
         event.preventDefault();
         openUnbilledProjectionMonth(trigger.dataset.unbilledMonthKey);
     });
+    els.customerStatementBar?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-customer-statement-key]');
+        if (!trigger) return;
+        event.preventDefault();
+        openBillingStatement({
+            scope: 'customer',
+            customerKey: trigger.dataset.customerStatementKey,
+            unpaidOnly: String(trigger.dataset.statementUnpaid || '') === 'true'
+        });
+    });
     els.invoiceSearchResults?.addEventListener('click', async (event) => {
         const actionButton = event.target.closest('[data-invoice-search-action]');
         if (!actionButton) return;
@@ -10403,6 +10863,16 @@ function bindEvents() {
     els.rtpInvoiceDotMatrixBtn?.addEventListener('click', printCurrentDotMatrixInvoice);
     els.invoiceDetailModal?.addEventListener('click', (event) => {
         if (event.target === els.invoiceDetailModal) closeInvoiceDetailModal();
+    });
+    els.invoiceDetailContent?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-branch-billing-statement-row-id]');
+        if (!trigger) return;
+        event.preventDefault();
+        openBillingStatement({
+            scope: 'branch',
+            rowId: trigger.dataset.branchBillingStatementRowId,
+            unpaidOnly: String(trigger.dataset.statementUnpaid || '') === 'true'
+        });
     });
     els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
     els.billingCalcPrintBtn?.addEventListener('click', printCurrentRtpInvoice);
