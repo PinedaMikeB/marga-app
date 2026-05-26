@@ -276,6 +276,80 @@
     color: var(--bill-danger);
 }
 
+.invoice-deep-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.invoice-deep-card {
+    padding: 0.85rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.invoice-deep-card.not-found {
+    border-color: #fecaca;
+    background: #fff7f7;
+}
+
+.invoice-deep-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.invoice-deep-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.55rem;
+    margin-top: 0.8rem;
+}
+
+.invoice-deep-grid div {
+    min-width: 0;
+    padding: 0.58rem 0.65rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.invoice-deep-grid span {
+    display: block;
+    color: var(--bill-muted);
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.invoice-deep-grid strong {
+    display: block;
+    margin-top: 0.18rem;
+    color: var(--bill-ink);
+    font-size: 0.82rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.invoice-deep-notes {
+    margin-top: 0.85rem;
+}
+
+.invoice-deep-note {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.55rem 0;
+    border-top: 1px dashed var(--bill-line);
+    color: var(--bill-muted);
+    font-weight: 700;
+}
+
+.invoice-deep-note strong {
+    color: var(--bill-ink);
+}
+
 .matrix-search-meta {
     color: var(--bill-muted);
     font-size: 0.82rem;

@@ -32,6 +32,7 @@ const els = {
     printedMonthAmount: null,
     invoiceSearchInput: null,
     invoiceSearchBtn: null,
+    invoiceDeepSearchBtn: null,
     invoiceSearchResults: null,
     billingExclusionsToggleBtn: null,
     billingExclusionsRefreshBtn: null,
@@ -2283,12 +2284,12 @@ function buildInvoiceSearchGroups(docs = [], invoiceNo = '') {
 function renderInvoiceSearchResults(docs = [], invoiceNo = '') {
     if (!els.invoiceSearchResults) return;
     if (!invoiceNo) {
-        els.invoiceSearchResults.innerHTML = 'Search an invoice number to trace or delete a billing transaction.';
+        els.invoiceSearchResults.innerHTML = 'Search an invoice number to trace, print, or inspect receipt and collection evidence.';
         invoiceSearchGroupCache = new Map();
         return;
     }
     if (!docs.length) {
-        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">No Firebase billing transaction found for invoice ${escapeHtml(invoiceNo)}.</div>`;
+        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">No Margabase billing transaction found for invoice ${escapeHtml(invoiceNo)}.</div>`;
         invoiceSearchGroupCache = new Map();
         return;
     }
@@ -2347,7 +2348,7 @@ async function searchInvoiceNumber() {
     }
     if (els.invoiceSearchBtn) els.invoiceSearchBtn.disabled = true;
     if (els.invoiceSearchResults) {
-        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">Searching Firebase for invoice ${escapeHtml(invoiceNo)}...</div>`;
+        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">Searching Margabase for invoice ${escapeHtml(invoiceNo)}...</div>`;
     }
     try {
         const docs = await queryBillingDocsByInvoice(invoiceNo);
@@ -2359,6 +2360,101 @@ async function searchInvoiceNumber() {
         }
     } finally {
         if (els.invoiceSearchBtn) els.invoiceSearchBtn.disabled = false;
+    }
+}
+
+function renderInvoiceDeepSearchResults(report, invoiceText = '') {
+    if (!els.invoiceSearchResults) return;
+    const results = Array.isArray(report?.results) ? report.results : [];
+    if (!results.length) {
+        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">No deep-search results for ${escapeHtml(invoiceText)}.</div>`;
+        return;
+    }
+    const foundCount = results.filter((row) => row.found).length;
+    els.invoiceSearchResults.innerHTML = `
+        <div class="invoice-search-count">Deep Search found ${escapeHtml(formatCount(foundCount))} of ${escapeHtml(formatCount(results.length))} invoice number${results.length === 1 ? '' : 's'} in Margabase.</div>
+        <div class="invoice-deep-list">
+            ${results.map((row) => {
+                const receipt = row.receipt || {};
+                const receiptLabel = receipt.date_received || receipt.received_by
+                    ? `${receipt.date_received || '-'}${receipt.received_time ? ` ${receipt.received_time}` : ''} • ${receipt.received_by || '-'}`
+                    : 'No received date/person found';
+                const amount = Number(row.amount || 0) || 0;
+                const paidAmount = Number(row.paid_amount || 0) || 0;
+                const balance = Number(row.balance_hint || 0) || 0;
+                const latestHistory = (row.collection_history || []).slice(0, 3);
+                return `
+                    <article class="invoice-deep-card ${row.found ? '' : 'not-found'}">
+                        <div class="invoice-deep-head">
+                            <div>
+                                <div class="invoice-search-ref">Invoice ${escapeHtml(row.invoice_no || '')}</div>
+                                <div class="invoice-search-customer">${escapeHtml(row.customer || 'No customer found')}${row.branch ? ` • ${escapeHtml(row.branch)}` : ''}</div>
+                            </div>
+                            <div class="invoice-search-amount">
+                                <div>${escapeHtml(formatAmount(amount))}</div>
+                                <span>${escapeHtml(row.billing_month || 'No billing month')}</span>
+                            </div>
+                        </div>
+                        <div class="invoice-deep-grid">
+                            <div><span>Received</span><strong>${escapeHtml(receiptLabel)}</strong></div>
+                            <div><span>Receipt source</span><strong>${escapeHtml(receipt.source || '-')}</strong></div>
+                            <div><span>Paid</span><strong>${escapeHtml(formatCurrency(paidAmount))}</strong></div>
+                            <div><span>Balance hint</span><strong>${escapeHtml(formatCurrency(balance))}</strong></div>
+                            <div><span>Billing rows</span><strong>${escapeHtml(formatCount((row.billing_rows || []).length))}</strong></div>
+                            <div><span>Schedules</span><strong>${escapeHtml(formatCount((row.schedules || []).length))}</strong></div>
+                            <div><span>Collection notes</span><strong>${escapeHtml(formatCount((row.collection_history || []).length))}</strong></div>
+                            <div><span>Payments</span><strong>${escapeHtml(formatCount((row.payments || []).length))}</strong></div>
+                        </div>
+                        ${latestHistory.length ? `
+                            <div class="invoice-deep-notes">
+                                <div class="detail-section-title">Latest Collection Notes</div>
+                                ${latestHistory.map((note) => `
+                                    <div class="invoice-deep-note">
+                                        <strong>${escapeHtml(note.date || note.status || 'Collection note')}</strong>
+                                        <span>${escapeHtml(note.remarks || '-')}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+async function deepSearchInvoiceNumbers() {
+    const invoiceText = String(els.invoiceSearchInput?.value || '').trim();
+    const invoices = invoiceText
+        .split(/[^0-9A-Za-z_-]+/g)
+        .map((value) => value.trim())
+        .filter(Boolean);
+    if (!invoices.length) {
+        MargaUtils.showToast('Enter one or more invoice numbers to deep search.', 'error');
+        return;
+    }
+    if (els.invoiceDeepSearchBtn) els.invoiceDeepSearchBtn.disabled = true;
+    if (els.invoiceSearchResults) {
+        els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty">Deep searching ${escapeHtml(formatCount(invoices.length))} invoice number${invoices.length === 1 ? '' : 's'} in Margabase...</div>`;
+    }
+    try {
+        const response = await fetch('/.netlify/functions/billing-invoice-deep-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoices })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload?.error || `Deep Search failed (${response.status})`);
+        }
+        renderInvoiceDeepSearchResults(payload, invoiceText);
+    } catch (error) {
+        console.error('Unable to deep search invoices.', error);
+        if (els.invoiceSearchResults) {
+            els.invoiceSearchResults.innerHTML = `<div class="invoice-search-empty error">Unable to deep search invoices. ${escapeHtml(error.message || '')}</div>`;
+        }
+    } finally {
+        if (els.invoiceDeepSearchBtn) els.invoiceDeepSearchBtn.disabled = false;
     }
 }
 
@@ -10775,6 +10871,7 @@ function bindEvents() {
     els.savedToPrintCard?.addEventListener('click', openSavedToPrintReport);
     els.printedMonthCard?.addEventListener('click', openPrintedMonthReport);
     els.invoiceSearchBtn?.addEventListener('click', searchInvoiceNumber);
+    els.invoiceDeepSearchBtn?.addEventListener('click', deepSearchInvoiceNumbers);
     els.invoiceSearchInput?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
