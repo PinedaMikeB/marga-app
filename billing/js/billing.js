@@ -9975,15 +9975,110 @@ function getBillingStatementRows(sourceRows = [], paymentMap = new Map(), unpaid
     ));
 }
 
+async function loadBillingStatementDocsForSourceRows(sourceRows = []) {
+    const months = new Set(Array.isArray(lastPayload?.month_matrix?.months) ? lastPayload.month_matrix.months : []);
+    const fieldMask = [
+        'id', 'invoice_id', 'invoiceid', 'invoiceno', 'invoice_no', 'contractmain_id', 'machine_id', 'mach_id',
+        'month', 'year', 'due_date', 'dateprinted', 'date_printed', 'invdate', 'invoice_date', 'datex',
+        'amount', 'totalamount', 'vatamount', 'amount2', 'totalamount2', 'vatamount2', 'netamount',
+        'company_name', 'branch_name', 'serial_number', 'machine_label', 'printer_model'
+    ];
+    const contractValues = uniqueNonBlankValues(sourceRows.flatMap((row) => {
+        const raw = String(row.contractmain_id || '').trim();
+        if (!raw) return [];
+        const values = [raw];
+        if (/^\d+$/.test(raw)) values.push(Number(raw));
+        return values;
+    }));
+    const customerNames = uniqueNonBlankValues(sourceRows.flatMap((row) => [
+        row.company_name,
+        row.account_name
+    ]));
+    const [byContract, byCompany] = await Promise.all([
+        contractValues.length ? queryFirestoreIn('tbl_billing', 'contractmain_id', contractValues, { select: fieldMask }) : Promise.resolve([]),
+        customerNames.length ? queryFirestoreIn('tbl_billing', 'company_name', customerNames, { select: fieldMask }) : Promise.resolve([])
+    ]);
+    const byDocId = new Map();
+    [...byContract, ...byCompany].forEach((doc) => {
+        const key = String(doc?._docId || '').trim();
+        const invoiceRef = getBillingDocInvoiceRef(doc);
+        const monthKey = getBillingDocMonthKey(doc);
+        if (!key || !invoiceRef || (months.size && !months.has(monthKey))) return;
+        if (!byDocId.has(key)) byDocId.set(key, doc);
+    });
+    return Array.from(byDocId.values());
+}
+
+function findStatementSourceRowForDoc(doc, sourceRows = []) {
+    const contractId = String(doc?.contractmain_id || '').trim();
+    if (contractId) {
+        const contractMatch = sourceRows.find((row) => String(row.contractmain_id || '').trim() === contractId);
+        if (contractMatch) return contractMatch;
+    }
+    const machineId = String(doc?.machine_id || doc?.mach_id || '').trim();
+    if (machineId) {
+        const machineMatch = sourceRows.find((row) => String(row.machine_id || '').trim() === machineId);
+        if (machineMatch) return machineMatch;
+    }
+    const branchName = String(doc?.branch_name || '').trim().toLowerCase();
+    if (branchName) {
+        const branchMatch = sourceRows.find((row) => String(row.branch_name || '').trim().toLowerCase() === branchName);
+        if (branchMatch) return branchMatch;
+    }
+    return sourceRows[0] || null;
+}
+
+function getBillingStatementRowsFromDocs(docs = [], sourceRows = [], paymentMap = new Map(), unpaidOnly = false) {
+    const rowsByInvoice = new Map();
+    docs.forEach((doc) => {
+        const invoiceNo = getBillingDocInvoiceRef(doc);
+        if (!invoiceNo) return;
+        const amount = getBillingDocAmount(doc);
+        if (amount <= 0) return;
+        const monthKey = getBillingDocMonthKey(doc);
+        const sourceRow = findStatementSourceRowForDoc(doc, sourceRows) || {};
+        const paymentSummary = getBillingScorecardPaymentSummary(paymentMap, doc.invoice_id, doc.invoiceid, invoiceNo);
+        const latestBalance = paymentSummary.latestBalanceAmount !== null && paymentSummary.latestBalanceAmount !== undefined
+            ? Math.min(Math.max(0, Number(paymentSummary.latestBalanceAmount || 0)), amount)
+            : null;
+        const paidFallback = Math.min(Number(paymentSummary.amount || 0), amount);
+        const balance = latestBalance !== null ? latestBalance : Math.max(0, amount - paidFallback);
+        if (unpaidOnly && balance <= 0.01) return;
+        const vatSplit = getBillingDocNetVat(doc, sourceRow?.billing_profile || {});
+        const key = [invoiceNo, monthKey, doc._docId || ''].join('|');
+        if (rowsByInvoice.has(key)) return;
+        rowsByInvoice.set(key, {
+            monthKey,
+            monthLabel: formatMonthLabel(monthKey, monthKey),
+            customer: doc.company_name || sourceRow.company_name || sourceRow.account_name || 'Customer',
+            branch: doc.branch_name || sourceRow.branch_name || 'Main',
+            machine: doc.machine_label || doc.printer_model || sourceRow.machine_label || doc.serial_number || sourceRow.serial_number || doc.machine_id || sourceRow.machine_id || '-',
+            serial: doc.serial_number || sourceRow.serial_number || '-',
+            invoiceId: String(doc.invoice_id || doc.invoiceid || '').trim(),
+            invoiceNo,
+            invoiceDate: doc.invoice_date || doc.invdate || doc.dateprinted || doc.date_printed || doc.datex || '',
+            amount,
+            net: Number(vatSplit.netAmount || 0),
+            vat: Number(vatSplit.vatAmount || 0),
+            paid: Math.max(0, amount - balance),
+            balance,
+            orNumbers: Array.from(paymentSummary.orNumbers || []).filter(Boolean).join(', ')
+        });
+    });
+    return Array.from(rowsByInvoice.values()).sort((left, right) => (
+        String(left.branch || '').localeCompare(String(right.branch || ''))
+        || String(left.monthKey || '').localeCompare(String(right.monthKey || ''))
+        || String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''))
+    ));
+}
+
 function summarizeStatementRows(rows = []) {
     return rows.reduce((summary, row) => {
         summary.amount += Number(row.amount || 0);
         summary.net += Number(row.net || 0);
         summary.vat += Number(row.vat || 0);
-        summary.paid += Number(row.paid || 0);
-        summary.balance += Number(row.balance || 0);
         return summary;
-    }, { amount: 0, net: 0, vat: 0, paid: 0, balance: 0 });
+    }, { amount: 0, net: 0, vat: 0 });
 }
 
 function mapStatementPaymentDocs(docs = []) {
@@ -10053,7 +10148,6 @@ function buildStatementPreviewRows(rows = []) {
                         <th class="text-right">Amount</th>
                         <th class="text-right">Net of VAT</th>
                         <th class="text-right">VAT</th>
-                        <th class="text-right">Balance</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -10069,7 +10163,6 @@ function buildStatementPreviewRows(rows = []) {
                             <td class="text-right">${escapeHtml(formatCurrency(row.amount || 0))}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(row.net || 0))}</td>
                             <td class="text-right">${escapeHtml(formatCurrency(row.vat || 0))}</td>
-                            <td class="text-right">${escapeHtml(formatCurrency(row.balance || 0))}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -10135,8 +10228,6 @@ function buildBillingStatementPrintDocument(statement) {
                 <th class="num">Amount</th>
                 <th class="num">Net of VAT</th>
                 <th class="num">VAT</th>
-                <th class="num">Paid</th>
-                <th class="num">Balance</th>
             </tr>
         </thead>
         <tbody>
@@ -10149,8 +10240,6 @@ function buildBillingStatementPrintDocument(statement) {
                     <td class="num">${escapeHtml(formatFixedAmount(row.amount || 0))}</td>
                     <td class="num">${escapeHtml(formatFixedAmount(row.net || 0))}</td>
                     <td class="num">${escapeHtml(formatFixedAmount(row.vat || 0))}</td>
-                    <td class="num">${escapeHtml(formatFixedAmount(row.paid || 0))}</td>
-                    <td class="num">${escapeHtml(formatFixedAmount(row.balance || 0))}</td>
                 </tr>
             `).join('')}
         </tbody>
@@ -10160,8 +10249,6 @@ function buildBillingStatementPrintDocument(statement) {
             <tr><td>Total Invoice Amount</td><td class="num">${escapeHtml(formatFixedAmount(totals.amount))}</td></tr>
             <tr><td>Total Net of VAT</td><td class="num">${escapeHtml(formatFixedAmount(totals.net))}</td></tr>
             <tr><td>Total VAT</td><td class="num">${escapeHtml(formatFixedAmount(totals.vat))}</td></tr>
-            <tr><td>Total Paid</td><td class="num">${escapeHtml(formatFixedAmount(totals.paid))}</td></tr>
-            <tr><td>Total Balance</td><td class="num">${escapeHtml(formatFixedAmount(totals.balance))}</td></tr>
         </tbody>
     </table>
     <div class="receive">
@@ -10202,25 +10289,36 @@ async function openBillingStatement(options = {}) {
     }
 
     if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = title;
-    if (els.billingScorecardSubtitle) els.billingScorecardSubtitle.textContent = `${scopeLabel} - loading invoice balances...`;
+    if (els.billingScorecardSubtitle) els.billingScorecardSubtitle.textContent = `${scopeLabel} - loading saved invoice rows...`;
     if (els.billingScorecardContent) els.billingScorecardContent.innerHTML = '<div class="detail-empty">Preparing billing statement...</div>';
     els.billingScorecardModal?.classList.remove('hidden');
 
-    const preliminaryRows = getBillingStatementRows(sourceRows, new Map(), false);
+    let billingDocs = [];
+    try {
+        billingDocs = await loadBillingStatementDocsForSourceRows(sourceRows);
+    } catch (error) {
+        console.warn('Unable to load saved billing docs for statement.', error);
+        MargaUtils.showToast('Saved invoice rows could not load completely. Using loaded matrix rows only.', 'warning');
+    }
+    const preliminaryRows = billingDocs.length
+        ? getBillingStatementRowsFromDocs(billingDocs, sourceRows, new Map(), false)
+        : getBillingStatementRows(sourceRows, new Map(), false).filter((row) => row.invoiceNo && row.invoiceNo !== '-');
     let payments = [];
     try {
         payments = await loadBillingStatementPaymentsForRows(preliminaryRows);
     } catch (error) {
         console.warn('Unable to load payments for billing statement.', error);
-        MargaUtils.showToast('Payment balances could not load. Statement will show invoice totals only.', 'warning');
+        MargaUtils.showToast('Payment records could not load. Unpaid filtering may be incomplete.', 'warning');
     }
     const paymentMap = buildBillingScorecardPaymentMap(payments);
-    const rows = getBillingStatementRows(sourceRows, paymentMap, unpaidOnly);
+    const rows = billingDocs.length
+        ? getBillingStatementRowsFromDocs(billingDocs, sourceRows, paymentMap, unpaidOnly)
+        : getBillingStatementRows(sourceRows, paymentMap, unpaidOnly).filter((row) => row.invoiceNo && row.invoiceNo !== '-');
     const totals = summarizeStatementRows(rows);
     const statement = { title, scopeLabel, unpaidOnly, rows };
     if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = title;
     if (els.billingScorecardSubtitle) {
-        els.billingScorecardSubtitle.textContent = `${scopeLabel} - ${formatMetricCount(rows.length, 'invoice')} - ${formatCurrency(unpaidOnly ? totals.balance : totals.amount)}`;
+        els.billingScorecardSubtitle.textContent = `${scopeLabel} - ${formatMetricCount(rows.length, 'invoice')} - ${formatCurrency(totals.amount)}`;
     }
     if (els.billingScorecardContent) {
         els.billingScorecardContent.innerHTML = `
@@ -10233,10 +10331,6 @@ async function openBillingStatement(options = {}) {
             </div>
             <div class="detail-summary-grid">
                 <article class="detail-summary-card">
-                    <span class="label">Invoices</span>
-                    <span class="value">${escapeHtml(formatCount(rows.length))}</span>
-                </article>
-                <article class="detail-summary-card">
                     <span class="label">Invoice Amount</span>
                     <span class="value">${escapeHtml(formatCurrency(totals.amount))}</span>
                 </article>
@@ -10247,10 +10341,6 @@ async function openBillingStatement(options = {}) {
                 <article class="detail-summary-card">
                     <span class="label">VAT</span>
                     <span class="value">${escapeHtml(formatCurrency(totals.vat))}</span>
-                </article>
-                <article class="detail-summary-card">
-                    <span class="label">Balance</span>
-                    <span class="value">${escapeHtml(formatCurrency(totals.balance))}</span>
                 </article>
             </div>
             ${buildStatementPreviewRows(rows)}
