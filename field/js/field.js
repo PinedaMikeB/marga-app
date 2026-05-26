@@ -1955,6 +1955,10 @@ function workingRouteRows(rows = []) {
     return rows.filter(isWorkingRouteRow);
 }
 
+function closedRowsForSelectedDate() {
+    return state.rows.filter(isClosedOnSelectedDate);
+}
+
 function setActiveTab(tab) {
     state.activeTab = tab === 'carryover' ? 'carryover' : (tab === 'closed' ? 'closed' : 'today');
     state.statusFilter = 'all';
@@ -1997,8 +2001,10 @@ function updateTabControls() {
 
     const todayCount = document.getElementById('fieldTodayCount');
     const carryoverCount = document.getElementById('fieldCarryoverCount');
+    const closedCount = document.getElementById('fieldClosedCount');
     if (todayCount) todayCount.textContent = String(workingRouteRows(state.todayRows).length);
     if (carryoverCount) carryoverCount.textContent = String(workingRouteRows(state.carryoverRows).length);
+    if (closedCount) closedCount.textContent = String(closedRowsForSelectedDate().length);
 }
 
 function updateSubtitle() {
@@ -2007,8 +2013,9 @@ function updateSubtitle() {
     const date = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
     const newToday = todayWorkingRows().length;
     const pastPending = pastPendingWorkingRows().length;
+    const closedToday = closedRowsForSelectedDate().length;
     const total = newToday + pastPending;
-    subtitle.textContent = `${total} open workload task(s) for ${date}: ${newToday} new + ${pastPending} past pending.`;
+    subtitle.textContent = `${total} open workload task(s) for ${date}: ${newToday} new + ${pastPending} past pending, ${closedToday} closed.`;
 }
 
 function renderActiveView() {
@@ -4971,6 +4978,8 @@ function renderList() {
             ? 'No closed tasks for the selected date.'
             : state.activeTab === 'carryover'
             ? 'No past pending tasks for selected date/filter.'
+            : closedRowsForSelectedDate().length
+            ? `No open tasks for selected date/filter. ${closedRowsForSelectedDate().length} closed task(s) are available in the Closed tab.`
             : 'No current tasks for selected date/filter.';
         list.innerHTML = `<div class="loading-cell">${sanitize(emptyText)}</div>`;
         return;
