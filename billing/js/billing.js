@@ -4565,8 +4565,7 @@ function renderCustomerStatementBar(filteredRows = []) {
                     <small>${escapeHtml(formatMetricCount(context.rows.length, 'machine row'))} / ${escapeHtml(formatMetricCount(context.branchCount, 'branch'))} / ${escapeHtml(formatCurrency(context.billedAmount))} loaded billed total</small>
                 </div>
                 <div class="customer-statement-actions">
-                    <button class="btn btn-primary btn-sm" type="button" data-customer-statement-key="${escapeHtml(context.key)}" data-statement-unpaid="false">Customer Billing Statement</button>
-                    <button class="btn btn-secondary btn-sm" type="button" data-customer-statement-key="${escapeHtml(context.key)}" data-statement-unpaid="true">Unpaid Statement</button>
+                    <button class="btn btn-primary btn-sm" type="button" data-customer-statement-key="${escapeHtml(context.key)}">Customer Billing Statement</button>
                 </div>
             </div>
         `).join('')}
@@ -9296,8 +9295,7 @@ async function openInvoiceDetailModal(rowId, monthKey) {
     els.invoiceDetailContent.innerHTML = `
         ${rtpPreviewBlock}
         <div class="detail-action-row">
-            <button class="btn btn-primary" type="button" data-branch-billing-statement-row-id="${escapeHtml(String(rowId))}" data-statement-unpaid="false">Branch Billing Statement</button>
-            <button class="btn btn-secondary" type="button" data-branch-billing-statement-row-id="${escapeHtml(String(rowId))}" data-statement-unpaid="true">Unpaid Statement</button>
+            <button class="btn btn-primary" type="button" data-branch-billing-statement-row-id="${escapeHtml(String(rowId))}">Branch Billing Statement</button>
         </div>
         ${
             canManageBilling
@@ -10215,7 +10213,7 @@ function buildBillingStatementPrintDocument(statement) {
         <div>
             <div><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
             <div><strong>Rows:</strong> ${escapeHtml(formatCount(rows.length))}</div>
-            <div><strong>Mode:</strong> ${escapeHtml(statement?.unpaidOnly ? 'Unpaid invoices only' : 'All loaded invoices')}</div>
+            <div><strong>Mode:</strong> Unpaid invoices</div>
         </div>
     </div>
     <table>
@@ -10262,7 +10260,7 @@ function buildBillingStatementPrintDocument(statement) {
 
 async function openBillingStatement(options = {}) {
     const scope = String(options.scope || 'customer');
-    const unpaidOnly = Boolean(options.unpaidOnly);
+    const unpaidOnly = true;
     let sourceRows = [];
     let title = scope === 'branch' ? 'Branch Billing Statement' : 'Customer Billing Statement';
     let scopeLabel = '';
@@ -10325,7 +10323,7 @@ async function openBillingStatement(options = {}) {
             <div class="statement-toolbar">
                 <div>
                     <strong>${escapeHtml(scopeLabel)}</strong>
-                    <small>${escapeHtml(unpaidOnly ? 'Unpaid invoice balances only' : 'All loaded billed invoices')}</small>
+                    <small>Unpaid invoice balances only</small>
                 </div>
                 <button class="btn btn-primary" type="button" data-print-billing-statement>Print ${escapeHtml(title)}</button>
             </div>
@@ -10820,8 +10818,7 @@ function bindEvents() {
         event.preventDefault();
         openBillingStatement({
             scope: 'customer',
-            customerKey: trigger.dataset.customerStatementKey,
-            unpaidOnly: String(trigger.dataset.statementUnpaid || '') === 'true'
+            customerKey: trigger.dataset.customerStatementKey
         });
     });
     els.invoiceSearchResults?.addEventListener('click', async (event) => {
@@ -10960,8 +10957,7 @@ function bindEvents() {
         event.preventDefault();
         openBillingStatement({
             scope: 'branch',
-            rowId: trigger.dataset.branchBillingStatementRowId,
-            unpaidOnly: String(trigger.dataset.statementUnpaid || '') === 'true'
+            rowId: trigger.dataset.branchBillingStatementRowId
         });
     });
     els.billingCalcCloseBtn?.addEventListener('click', closeBillingCalcModal);
