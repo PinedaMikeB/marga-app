@@ -68,6 +68,7 @@ const els = {
 let lastPayload = null;
 let renderedMatrixRows = [];
 let searchReloadTimer = null;
+let billingWorkDistributionState = null;
 let invoiceDetailRequestToken = 0;
 let billingCalcRequestToken = 0;
 let dashboardRequestToken = 0;
@@ -6524,6 +6525,212 @@ function renderSavedToPrintRows(rows = []) {
     `;
 }
 
+function getSavedToPrintDateRange(report = {}) {
+    const rows = report?.saved_to_print?.invoices || [];
+    const dates = rows
+        .map((row) => normalizeWorkDistributionDate(row.saved_at))
+        .filter(Boolean)
+        .sort();
+    const today = formatIsoDate(new Date());
+    return {
+        from: dates[0] || today,
+        to: dates[dates.length - 1] || today
+    };
+}
+
+function summarizeSavedToPrint(rows = [], from = '', to = '') {
+    const filteredRows = rows.filter((row) => isDateInWorkRange(row.saved_at, from, to));
+    const byPreparer = new Map();
+    filteredRows.forEach((row) => {
+        const staffId = String(row.prepared_by_id || row.prepared_by || 'unknown-preparer').trim() || 'unknown-preparer';
+        const staffName = String(row.prepared_by || 'Unknown preparer').trim() || 'Unknown preparer';
+        if (!byPreparer.has(staffId)) {
+            byPreparer.set(staffId, {
+                staff_id: staffId,
+                staff_name: staffName,
+                invoice_count: 0,
+                amount_total: 0
+            });
+        }
+        const group = byPreparer.get(staffId);
+        group.invoice_count += 1;
+        group.amount_total += Number(row.amount_total || 0) || 0;
+    });
+
+    return {
+        rows: filteredRows,
+        byPreparer: Array.from(byPreparer.values())
+            .map((row) => ({ ...row, amount_total: roundDisplayAmount(row.amount_total) }))
+            .sort((a, b) => b.invoice_count - a.invoice_count || b.amount_total - a.amount_total || a.staff_name.localeCompare(b.staff_name)),
+        totals: {
+            invoice_count: filteredRows.length,
+            amount_total: roundDisplayAmount(filteredRows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0))
+        }
+    };
+}
+
+function renderSavedToPrintDistribution(report, overrideRange = {}) {
+    const defaultRange = getSavedToPrintDateRange(report);
+    const from = overrideRange.from || billingWorkDistributionState?.from || defaultRange.from;
+    const to = overrideRange.to || billingWorkDistributionState?.to || defaultRange.to;
+    const sourceRows = report?.saved_to_print?.invoices || [];
+    const summary = summarizeSavedToPrint(sourceRows, from, to);
+    billingWorkDistributionState = { report, sourceRows, from, to, summary, mode: 'saved_to_print' };
+
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Prepared Invoices';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${formatMetricCount(summary.totals.invoice_count, 'saved invoice')} • ${formatCurrency(summary.totals.amount_total)} waiting`;
+    }
+    if (!els.billingScorecardContent) return;
+
+    els.billingScorecardContent.innerHTML = `
+        <div class="work-distribution-shell">
+            <div class="work-distribution-toolbar">
+                <div>
+                    <div class="detail-section-title">Saved invoices ready to print</div>
+                    <p class="sheet-copy">Filter by saved date, then open a preparer to review the exact invoices waiting for print.</p>
+                </div>
+                <div class="work-distribution-filters">
+                    <label>
+                        <span>From</span>
+                        <input type="date" data-saved-dist-from value="${escapeHtml(from)}">
+                    </label>
+                    <label>
+                        <span>To</span>
+                        <input type="date" data-saved-dist-to value="${escapeHtml(to)}">
+                    </label>
+                    <button class="btn btn-secondary" type="button" data-saved-dist-apply>Apply</button>
+                </div>
+            </div>
+            <div class="work-summary-strip saved-summary-strip">
+                <div class="work-metric-card">
+                    <span>Total</span>
+                    <strong>${escapeHtml(formatCount(summary.totals.invoice_count))}</strong>
+                    <small>saved invoices</small>
+                </div>
+                <div class="work-metric-card">
+                    <span>Amount</span>
+                    <strong>${escapeHtml(formatCurrency(summary.totals.amount_total))}</strong>
+                    <small>ready to print</small>
+                </div>
+                <div class="work-metric-card">
+                    <span>Preparers</span>
+                    <strong>${escapeHtml(formatCount(summary.byPreparer.length))}</strong>
+                    <small>with waiting invoices</small>
+                </div>
+            </div>
+            <section class="work-distribution-section">
+                <div class="work-section-heading">
+                    <strong>Prepared By</strong>
+                    <span>Filtered saved invoices</span>
+                </div>
+                <div class="work-table-wrap">
+                    <table class="work-distribution-table prepared-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th class="text-right">Total</th>
+                                <th class="text-right">Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${summary.byPreparer.length ? summary.byPreparer.map((row) => `
+                                <tr>
+                                    <td><strong>${escapeHtml(row.staff_name)}</strong></td>
+                                    <td class="text-right">${escapeHtml(formatCount(row.invoice_count))}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(row.amount_total))}</td>
+                                    <td>
+                                        <button class="btn btn-secondary btn-sm" type="button" data-saved-dist-preparer="${escapeHtml(row.staff_id)}">View</button>
+                                    </td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="4" class="muted-cell">No saved invoices are waiting for print in this date range.</td></tr>'}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td>Total</td>
+                                <td class="text-right">${escapeHtml(formatCount(summary.totals.invoice_count))}</td>
+                                <td class="text-right">${escapeHtml(formatCurrency(summary.totals.amount_total))}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function renderSavedToPrintPreparerDetail(staffId) {
+    const state = billingWorkDistributionState || {};
+    const rows = (state.sourceRows || [])
+        .filter((row) => isDateInWorkRange(row.saved_at, state.from, state.to))
+        .filter((row) => String(row.prepared_by_id || row.prepared_by || 'unknown-preparer').trim() === String(staffId || '').trim())
+        .sort((a, b) => String(b.saved_at || '').localeCompare(String(a.saved_at || '')));
+    const preparer = state.summary?.byPreparer?.find((row) => String(row.staff_id) === String(staffId))?.staff_name
+        || rows[0]?.prepared_by
+        || 'Unknown preparer';
+    const total = rows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0);
+
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Prepared Invoices';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `Prepared by ${preparer} • ${formatMetricCount(rows.length, 'invoice')} • ${formatCurrency(total)}`;
+    }
+    if (!els.billingScorecardContent) return;
+    els.billingScorecardContent.innerHTML = `
+        <div class="work-distribution-shell">
+            <div class="work-detail-header">
+                <button class="btn btn-secondary" type="button" data-saved-dist-back>Back</button>
+                <div>
+                    <div class="detail-section-title">Prepared by: ${escapeHtml(preparer)}</div>
+                    <p class="sheet-copy">${escapeHtml(state.from || '')} to ${escapeHtml(state.to || '')}</p>
+                </div>
+            </div>
+            <div class="work-table-wrap detail">
+                <table class="work-distribution-table detail">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th>Branch</th>
+                            <th>Serial</th>
+                            <th>Invoice No</th>
+                            <th class="text-right">Amount</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.length ? rows.map((row) => `
+                            <tr>
+                                <td><strong>${escapeHtml(row.company_name || 'Unknown')}</strong></td>
+                                <td>${escapeHtml(row.branch_name || 'Main')}</td>
+                                <td>${escapeHtml((row.serial_numbers || []).join(', ') || row.machine_label || '-')}</td>
+                                <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
+                                <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                                <td>
+                                    <button
+                                        class="btn btn-primary btn-sm"
+                                        type="button"
+                                        data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}"
+                                        data-productivity-row-id="${escapeHtml(row.row_id || '')}"
+                                        data-productivity-month-key="${escapeHtml(row.month_key || '')}"
+                                    >View to Print</button>
+                                </td>
+                            </tr>
+                        `).join('') : '<tr><td colspan="6" class="muted-cell">No invoices for this preparer in the selected date range.</td></tr>'}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="4">Total</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(total))}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
 function renderMonthlyPrintedRows(rows = []) {
     if (!rows.length) {
         return '<div class="detail-empty">No actual print records found for this billing month yet.</div>';
@@ -6568,6 +6775,367 @@ function renderMonthlyPrintedRows(rows = []) {
                     }).join('')}
                 </tbody>
             </table>
+        </div>
+    `;
+}
+
+function getBillingWorkDateRange(report = {}) {
+    const today = formatIsoDate(new Date());
+    const monthKey = String(report.current_month_key || getDateMonthKey(new Date()) || '').trim();
+    return {
+        from: monthKey ? `${monthKey}-01` : today,
+        to: today
+    };
+}
+
+function normalizeWorkDistributionDate(value) {
+    return formatIsoDate(asValidDate(value));
+}
+
+function isDateInWorkRange(value, from, to) {
+    const ymd = normalizeWorkDistributionDate(value);
+    if (!ymd) return false;
+    return (!from || ymd >= from) && (!to || ymd <= to);
+}
+
+function getWorkDistributionStaff(row, mode) {
+    if (mode === 'printed') {
+        return {
+            id: String(row.printed_by_id || row.printed_by || 'unknown-printer').trim() || 'unknown-printer',
+            name: String(row.printed_by || 'Unknown printer').trim() || 'Unknown printer'
+        };
+    }
+    return {
+        id: String(row.assigned_staff_id || row.assigned_staff_name || 'unassigned').trim() || 'unassigned',
+        name: String(row.assigned_staff_name || 'Unassigned').trim() || 'Unassigned'
+    };
+}
+
+function summarizeWorkDistribution(rows = [], from = '', to = '') {
+    const today = formatIsoDate(new Date());
+    const filteredRows = rows.filter((row) => isDateInWorkRange(row.printed_at, from, to));
+    const printedBy = new Map();
+    const assignedTo = new Map();
+
+    rows.forEach((row) => {
+        const printedYmd = normalizeWorkDistributionDate(row.printed_at);
+        if (printedYmd !== today && !isDateInWorkRange(row.printed_at, from, to)) return;
+        const staff = getWorkDistributionStaff(row, 'printed');
+        if (!printedBy.has(staff.id)) {
+            printedBy.set(staff.id, {
+                staff_id: staff.id,
+                staff_name: staff.name,
+                printed_today: 0,
+                printed_range: 0,
+                amount_total: 0
+            });
+        }
+        const group = printedBy.get(staff.id);
+        if (printedYmd === today) group.printed_today += 1;
+        if (isDateInWorkRange(row.printed_at, from, to)) {
+            group.printed_range += 1;
+            group.amount_total += Number(row.amount_total || 0) || 0;
+        }
+    });
+
+    filteredRows.forEach((row) => {
+        const staff = getWorkDistributionStaff(row, 'assigned');
+        if (!assignedTo.has(staff.id)) {
+            assignedTo.set(staff.id, {
+                staff_id: staff.id,
+                staff_name: staff.name,
+                assigned_count: 0,
+                received_count: 0,
+                pending_count: 0,
+                amount_total: 0
+            });
+        }
+        const group = assignedTo.get(staff.id);
+        group.assigned_count += 1;
+        group.amount_total += Number(row.amount_total || 0) || 0;
+        if (row.receipt_status === 'received') group.received_count += 1;
+        else group.pending_count += 1;
+    });
+
+    const sortByWork = (items, countKey) => Array.from(items.values())
+        .map((row) => ({ ...row, amount_total: roundDisplayAmount(row.amount_total) }))
+        .sort((a, b) => Number(b[countKey] || 0) - Number(a[countKey] || 0) || Number(b.amount_total || 0) - Number(a.amount_total || 0) || a.staff_name.localeCompare(b.staff_name));
+
+    return {
+        rows: filteredRows,
+        printedBy: sortByWork(printedBy, 'printed_range'),
+        assignedTo: sortByWork(assignedTo, 'assigned_count'),
+        totals: {
+            printed: filteredRows.length,
+            received: filteredRows.filter((row) => row.receipt_status === 'received').length,
+            pending: filteredRows.filter((row) => row.receipt_status !== 'received').length,
+            amount: roundDisplayAmount(filteredRows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0))
+        }
+    };
+}
+
+function roundDisplayAmount(value) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function renderWorkMetricButton({ label, value, small = '', detail = {} }) {
+    const attrs = Object.entries(detail)
+        .map(([key, val]) => `data-${key}="${escapeHtml(val)}"`)
+        .join(' ');
+    return `
+        <button class="work-metric-button" type="button" ${attrs}>
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+            ${small ? `<small>${escapeHtml(small)}</small>` : ''}
+        </button>
+    `;
+}
+
+function renderBillingWorkDistribution(report, overrideRange = {}) {
+    const defaultRange = getBillingWorkDateRange(report);
+    const from = overrideRange.from || billingWorkDistributionState?.from || defaultRange.from;
+    const to = overrideRange.to || billingWorkDistributionState?.to || defaultRange.to;
+    const sourceRows = report?.current_month_printed?.invoices || [];
+    const summary = summarizeWorkDistribution(sourceRows, from, to);
+    billingWorkDistributionState = { report, sourceRows, from, to, summary };
+
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Billing Work Distribution';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${report.current_month_label || formatMonthLabel(report.current_month_key, report.current_month_key || '')} • ${formatMetricCount(summary.totals.printed, 'printed invoice')} • ${formatCurrency(summary.totals.amount)}`;
+    }
+    if (!els.billingScorecardContent) return;
+
+    els.billingScorecardContent.innerHTML = `
+        <div class="work-distribution-shell">
+            <div class="work-distribution-toolbar">
+                <div>
+                    <div class="detail-section-title">Printed and delivery accountability</div>
+                    <p class="sheet-copy">Use the date range to inspect who printed, who received, and which assigned billings are still pending.</p>
+                </div>
+                <div class="work-distribution-filters">
+                    <label>
+                        <span>From</span>
+                        <input type="date" data-work-dist-from value="${escapeHtml(from)}">
+                    </label>
+                    <label>
+                        <span>To</span>
+                        <input type="date" data-work-dist-to value="${escapeHtml(to)}">
+                    </label>
+                    <button class="btn btn-secondary" type="button" data-work-dist-apply>Apply</button>
+                </div>
+            </div>
+
+            <div class="work-summary-strip">
+                ${renderWorkMetricButton({
+                    label: 'Total Printed Billing',
+                    value: formatCount(summary.totals.printed),
+                    small: formatCurrency(summary.totals.amount),
+                    detail: { 'work-dist-detail': 'all', 'work-dist-status': 'all' }
+                })}
+                ${renderWorkMetricButton({
+                    label: 'Received',
+                    value: formatCount(summary.totals.received),
+                    small: 'Customer acknowledged',
+                    detail: { 'work-dist-detail': 'assigned', 'work-dist-status': 'received' }
+                })}
+                ${renderWorkMetricButton({
+                    label: 'Pending Received',
+                    value: formatCount(summary.totals.pending),
+                    small: 'Not yet acknowledged',
+                    detail: { 'work-dist-detail': 'assigned', 'work-dist-status': 'pending' }
+                })}
+                ${renderWorkMetricButton({
+                    label: 'Amount',
+                    value: formatCurrency(summary.totals.amount),
+                    small: 'Range total',
+                    detail: { 'work-dist-detail': 'all', 'work-dist-status': 'all' }
+                })}
+            </div>
+
+            <section class="work-distribution-section">
+                <div class="work-section-heading">
+                    <strong>Printed By</strong>
+                    <span>Today and selected range</span>
+                </div>
+                <div class="work-table-wrap">
+                    <table class="work-distribution-table">
+                        <thead>
+                            <tr>
+                                <th>Staff</th>
+                                <th class="text-right">Printed Today</th>
+                                <th class="text-right">Printed In Range</th>
+                                <th class="text-right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${summary.printedBy.length ? summary.printedBy.map((row) => `
+                                <tr>
+                                    <td><strong>${escapeHtml(row.staff_name)}</strong></td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Today',
+                                        value: formatCount(row.printed_today),
+                                        detail: { 'work-dist-detail': 'printed', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'today' }
+                                    })}</td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Range',
+                                        value: formatCount(row.printed_range),
+                                        detail: { 'work-dist-detail': 'printed', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'range' }
+                                    })}</td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Amount',
+                                        value: formatCurrency(row.amount_total),
+                                        detail: { 'work-dist-detail': 'printed', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'range' }
+                                    })}</td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="4" class="muted-cell">No printed invoice records in this range.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="work-distribution-section">
+                <div class="work-section-heading">
+                    <strong>Assigned To</strong>
+                    <span>Field staff delivery status</span>
+                </div>
+                <div class="work-table-wrap">
+                    <table class="work-distribution-table">
+                        <thead>
+                            <tr>
+                                <th>Field Staff</th>
+                                <th class="text-right">Assigned</th>
+                                <th class="text-right">Received</th>
+                                <th class="text-right">Pending</th>
+                                <th class="text-right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${summary.assignedTo.length ? summary.assignedTo.map((row) => `
+                                <tr>
+                                    <td><strong>${escapeHtml(row.staff_name)}</strong></td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Assigned',
+                                        value: formatCount(row.assigned_count),
+                                        detail: { 'work-dist-detail': 'assigned', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'all' }
+                                    })}</td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Received',
+                                        value: formatCount(row.received_count),
+                                        detail: { 'work-dist-detail': 'assigned', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'received' }
+                                    })}</td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Pending',
+                                        value: formatCount(row.pending_count),
+                                        detail: { 'work-dist-detail': 'assigned', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'pending' }
+                                    })}</td>
+                                    <td class="text-right">${renderWorkMetricButton({
+                                        label: 'Amount',
+                                        value: formatCurrency(row.amount_total),
+                                        detail: { 'work-dist-detail': 'assigned', 'work-dist-staff-id': row.staff_id, 'work-dist-status': 'all' }
+                                    })}</td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="5" class="muted-cell">No field staff assignment records in this range.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    `;
+}
+
+function filterBillingWorkDetailRows(detailType, staffId, status) {
+    const state = billingWorkDistributionState || {};
+    const rows = (state.sourceRows || []).filter((row) => isDateInWorkRange(row.printed_at, state.from, state.to));
+    const today = formatIsoDate(new Date());
+    return rows.filter((row) => {
+        if (detailType === 'printed') {
+            const staff = getWorkDistributionStaff(row, 'printed');
+            if (staffId && staff.id !== staffId) return false;
+            if (status === 'today') return normalizeWorkDistributionDate(row.printed_at) === today;
+            return true;
+        }
+        if (detailType === 'assigned') {
+            const staff = getWorkDistributionStaff(row, 'assigned');
+            if (staffId && staff.id !== staffId) return false;
+            if (status === 'received') return row.receipt_status === 'received';
+            if (status === 'pending') return row.receipt_status !== 'received';
+            return true;
+        }
+        return true;
+    });
+}
+
+function renderBillingWorkDetail(detailType, staffId, status) {
+    const state = billingWorkDistributionState || {};
+    const rows = filterBillingWorkDetailRows(detailType, staffId, status);
+    const staffRow = [...(state.summary?.printedBy || []), ...(state.summary?.assignedTo || [])]
+        .find((row) => row.staff_id === staffId);
+    const label = [
+        detailType === 'printed' ? 'Printed invoices' : (detailType === 'assigned' ? 'Assigned billings' : 'Printed billings'),
+        staffRow?.staff_name,
+        status === 'pending' ? 'Pending received' : (status === 'received' ? 'Received' : (status === 'today' ? 'Today' : ''))
+    ].filter(Boolean).join(' • ');
+    const total = rows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0);
+
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Billing Work Distribution';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${label || 'Invoice details'} • ${formatMetricCount(rows.length, 'invoice')} • ${formatCurrency(total)}`;
+    }
+    if (!els.billingScorecardContent) return;
+    els.billingScorecardContent.innerHTML = `
+        <div class="work-distribution-shell">
+            <div class="work-detail-header">
+                <button class="btn btn-secondary" type="button" data-work-dist-back>Back</button>
+                <div>
+                    <div class="detail-section-title">${escapeHtml(label || 'Invoice details')}</div>
+                    <p class="sheet-copy">${escapeHtml(state.from || '')} to ${escapeHtml(state.to || '')}</p>
+                </div>
+            </div>
+            <div class="work-table-wrap detail">
+                <table class="work-distribution-table detail">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th>Branch</th>
+                            <th>Invoice No</th>
+                            <th>Printed By</th>
+                            <th>Assigned To</th>
+                            <th>Received</th>
+                            <th class="text-right">Age</th>
+                            <th class="text-right">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.length ? rows.map((row) => {
+                            const received = row.receipt_status === 'received';
+                            return `
+                                <tr>
+                                    <td><strong>${escapeHtml(row.company_name || 'Unknown')}</strong></td>
+                                    <td>${escapeHtml(row.branch_name || 'Main')}</td>
+                                    <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
+                                    <td>
+                                        ${escapeHtml(row.printed_by || 'Unknown printer')}
+                                        ${row.printed_at ? `<small>${escapeHtml(formatReportDateTime(row.printed_at))}</small>` : ''}
+                                    </td>
+                                    <td>${escapeHtml(row.assigned_staff_name || 'Unassigned')}</td>
+                                    <td>
+                                        <strong>${received ? 'Received' : 'Pending'}</strong>
+                                        ${received ? `<small>${escapeHtml([row.received_by, row.received_at ? formatReportDateTime(row.received_at) : ''].filter(Boolean).join(' • '))}</small>` : ''}
+                                    </td>
+                                    <td class="text-right">${escapeHtml(received ? 'Closed' : formatInvoiceAge(row.printed_at))}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="8" class="muted-cell">No matching invoice rows.</td></tr>'}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="7">Total</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(total))}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
         </div>
     `;
 }
@@ -6620,16 +7188,8 @@ function openSavedToPrintReport() {
         MargaUtils.showToast('Load the dashboard first to see saved invoices waiting for print.', 'info');
         return;
     }
-    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Saved Invoice To Print';
-    if (els.billingScorecardSubtitle) {
-        els.billingScorecardSubtitle.textContent = `${formatMetricCount(report.saved_to_print?.invoice_count || 0, 'invoice')} • ${formatCurrency(report.saved_to_print?.amount_total || 0)} waiting`;
-    }
-    if (els.billingScorecardContent) {
-        els.billingScorecardContent.innerHTML = `
-            <div class="detail-section-title">Ready for printing</div>
-            ${renderSavedToPrintRows(report.saved_to_print?.invoices || [])}
-        `;
-    }
+    billingWorkDistributionState = null;
+    renderSavedToPrintDistribution(report);
     els.billingScorecardModal?.classList.remove('hidden');
 }
 
@@ -6639,34 +7199,8 @@ function openPrintedMonthReport() {
         MargaUtils.showToast('Load the dashboard first to see monthly printed invoice totals.', 'info');
         return;
     }
-    const month = report.current_month_label || formatMonthLabel(report.current_month_key, report.current_month_key || '');
-    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Printed Invoice This Month';
-    if (els.billingScorecardSubtitle) {
-        els.billingScorecardSubtitle.textContent = `${month} • ${formatMetricCount(report.current_month_printed?.invoice_count || 0, 'invoice')} • ${formatCount(report.current_month_printed?.received_count || 0)} received / ${formatCount(report.current_month_printed?.pending_received_count || 0)} pending`;
-    }
-    if (els.billingScorecardContent) {
-        els.billingScorecardContent.innerHTML = `
-            <div class="productivity-summary-grid">
-                <div class="detail-summary-card">
-                    <span class="label">Total Printed Billing</span>
-                    <span class="value">${escapeHtml(formatCount(report.current_month_printed?.invoice_count || 0))}</span>
-                    <small>${escapeHtml(formatCurrency(report.current_month_printed?.amount_total || 0))}</small>
-                </div>
-                <div class="detail-summary-card">
-                    <span class="label">Received</span>
-                    <span class="value">${escapeHtml(formatCount(report.current_month_printed?.received_count || 0))}</span>
-                    <small>Customer acknowledged</small>
-                </div>
-                <div class="detail-summary-card">
-                    <span class="label">Pending Received</span>
-                    <span class="value">${escapeHtml(formatCount(report.current_month_printed?.pending_received_count || 0))}</span>
-                    <small>Assigned but not yet received</small>
-                </div>
-            </div>
-            <div class="detail-section-title">Printed invoice status</div>
-            ${renderMonthlyPrintedRows(report.current_month_printed?.invoices || [])}
-        `;
-    }
+    billingWorkDistributionState = null;
+    renderBillingWorkDistribution(report);
     els.billingScorecardModal?.classList.remove('hidden');
 }
 
@@ -11068,6 +11602,62 @@ function bindEvents() {
         openBillingScorecardTotal(trigger.dataset.metricKey, trigger.dataset.monthKey);
     });
     els.billingScorecardContent?.addEventListener('click', (event) => {
+        const savedBack = event.target.closest('[data-saved-dist-back]');
+        if (savedBack) {
+            event.preventDefault();
+            const report = billingWorkDistributionState?.report || lastPayload?.productivity_report || null;
+            if (report) renderSavedToPrintDistribution(report, {
+                from: billingWorkDistributionState?.from,
+                to: billingWorkDistributionState?.to
+            });
+            return;
+        }
+        const savedApply = event.target.closest('[data-saved-dist-apply]');
+        if (savedApply) {
+            event.preventDefault();
+            const report = billingWorkDistributionState?.report || lastPayload?.productivity_report || null;
+            if (report) renderSavedToPrintDistribution(report, {
+                from: els.billingScorecardContent.querySelector('[data-saved-dist-from]')?.value || '',
+                to: els.billingScorecardContent.querySelector('[data-saved-dist-to]')?.value || ''
+            });
+            return;
+        }
+        const savedPreparer = event.target.closest('[data-saved-dist-preparer]');
+        if (savedPreparer) {
+            event.preventDefault();
+            renderSavedToPrintPreparerDetail(savedPreparer.dataset.savedDistPreparer || '');
+            return;
+        }
+        const workBack = event.target.closest('[data-work-dist-back]');
+        if (workBack) {
+            event.preventDefault();
+            const report = billingWorkDistributionState?.report || lastPayload?.productivity_report || null;
+            if (report) renderBillingWorkDistribution(report, {
+                from: billingWorkDistributionState?.from,
+                to: billingWorkDistributionState?.to
+            });
+            return;
+        }
+        const workApply = event.target.closest('[data-work-dist-apply]');
+        if (workApply) {
+            event.preventDefault();
+            const report = billingWorkDistributionState?.report || lastPayload?.productivity_report || null;
+            if (report) renderBillingWorkDistribution(report, {
+                from: els.billingScorecardContent.querySelector('[data-work-dist-from]')?.value || '',
+                to: els.billingScorecardContent.querySelector('[data-work-dist-to]')?.value || ''
+            });
+            return;
+        }
+        const workDetail = event.target.closest('[data-work-dist-detail]');
+        if (workDetail) {
+            event.preventDefault();
+            renderBillingWorkDetail(
+                workDetail.dataset.workDistDetail || 'all',
+                workDetail.dataset.workDistStaffId || '',
+                workDetail.dataset.workDistStatus || 'all'
+            );
+            return;
+        }
         const productivityInvoiceTrigger = event.target.closest('[data-productivity-view-invoice]');
         if (productivityInvoiceTrigger) {
             event.preventDefault();

@@ -950,6 +950,241 @@ button.matrix-total-card:focus-visible {
     vertical-align: top;
 }
 
+.work-distribution-shell {
+    display: grid;
+    gap: 0.95rem;
+}
+
+.work-distribution-toolbar,
+.work-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.work-distribution-filters {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.work-distribution-filters label {
+    display: grid;
+    gap: 0.22rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.work-distribution-filters input {
+    min-height: 42px;
+    border: 1px solid var(--bill-line);
+    border-radius: 10px;
+    padding: 0.56rem 0.7rem;
+    color: var(--bill-ink);
+    font: inherit;
+    font-weight: 800;
+    background: #fff;
+}
+
+.work-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(145px, 1fr));
+    gap: 0.65rem;
+}
+
+.work-distribution-section {
+    border: 1px solid var(--bill-line);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.work-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.78rem 0.9rem;
+    border-bottom: 1px solid var(--bill-line);
+    background: #f6f9fd;
+}
+
+.work-section-heading strong {
+    color: var(--bill-ink);
+    font-size: 0.96rem;
+}
+
+.work-section-heading span {
+    color: var(--bill-muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.work-table-wrap {
+    max-height: 280px;
+    overflow: auto;
+}
+
+.work-table-wrap.detail {
+    max-height: min(58vh, 560px);
+}
+
+.work-distribution-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: var(--bill-ink);
+}
+
+.work-distribution-table.detail {
+    min-width: 1080px;
+}
+
+.work-distribution-table th,
+.work-distribution-table td {
+    border-bottom: 1px solid var(--bill-line);
+    padding: 0.68rem 0.8rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+.work-distribution-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #e8f2fc;
+    color: var(--bill-ink);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.work-distribution-table tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: #f8fbff;
+    font-weight: 900;
+}
+
+.work-distribution-table .text-right {
+    text-align: right;
+}
+
+.work-distribution-table small {
+    display: block;
+    margin-top: 0.18rem;
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.work-metric-button {
+    display: inline-flex;
+    width: 100%;
+    min-height: 44px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.1rem;
+    border: 1px solid #cfe0f3;
+    border-radius: 10px;
+    padding: 0.5rem 0.62rem;
+    background: #f8fbff;
+    color: var(--bill-ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.work-metric-button:hover,
+.work-metric-button:focus-visible {
+    border-color: #8dbcf2;
+    background: #edf6ff;
+    outline: 2px solid rgba(59, 130, 246, 0.18);
+}
+
+.work-metric-button span {
+    color: var(--bill-muted);
+    font-size: 0.64rem;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.work-metric-button strong {
+    color: var(--bill-ink);
+    font-size: 1.02rem;
+    line-height: 1.1;
+}
+
+.work-metric-button small {
+    color: var(--bill-muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.work-summary-strip .work-metric-button {
+    min-height: 76px;
+    border-color: #bcd9f4;
+}
+
+.work-summary-strip .work-metric-button strong {
+    font-size: 1.36rem;
+}
+
+.work-metric-card {
+    display: grid;
+    gap: 0.14rem;
+    min-height: 76px;
+    align-content: center;
+    border: 1px solid #d7e5f4;
+    border-radius: 12px;
+    padding: 0.65rem 0.78rem;
+    background: #f8fbff;
+}
+
+.work-metric-card span {
+    color: var(--bill-muted);
+    font-size: 0.66rem;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.work-metric-card strong {
+    color: var(--bill-ink);
+    font-size: 1.22rem;
+    line-height: 1.15;
+}
+
+.work-metric-card small {
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.saved-summary-strip {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.prepared-table {
+    min-width: 640px;
+}
+
+.muted-cell {
+    color: var(--bill-muted);
+    font-weight: 800;
+    text-align: center !important;
+}
+
 .summary-sheet td.pending-count {
     color: var(--bill-danger);
     font-weight: 800;
