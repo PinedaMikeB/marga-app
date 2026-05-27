@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v86-billing-statement-zero-balance';
+const CACHE_NAME = 'marga-app-shell-v87-field-unfinished-draft-save';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -33,7 +33,7 @@ const SHELL_ASSETS = [
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',
-    '/field/js/field.js?v=20260521-margabase-refresh-1',
+    '/field/js/field.js?v=20260527-unfinished-draft-save-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',

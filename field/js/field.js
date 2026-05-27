@@ -793,6 +793,11 @@ function saveFieldModalDraftNow() {
     safeWriteJsonStorage(fieldModalDraftKey(), draft);
 }
 
+function flushFieldModalDraftSave() {
+    window.clearTimeout(fieldModalDraftTimer);
+    saveFieldModalDraftNow();
+}
+
 function queueFieldModalDraftSave() {
     if (state.suppressModalDraftSave || state.modalDraftRestoreInProgress) return;
     if (!state.modalScheduleId || state.modalReadOnly) return;
@@ -6398,6 +6403,7 @@ function resetModalFields() {
 }
 
 function closeModal() {
+    flushFieldModalDraftSave();
     setModalOpen(false);
     resetModalFields();
 }
@@ -8152,6 +8158,34 @@ async function saveDraftUpdate() {
     }
 }
 
+
+async function preserveUnfinishedFieldForm(row, form, reasonCode = 'finish_blocked', extraPatch = {}) {
+    if (!row || !form) return false;
+    flushFieldModalDraftSave();
+
+    const staffId = Number(state.staffId || 0) || 0;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        ...buildSchedulePayload(row, form, '[FIELD_UNFINISHED_DRAFT]'),
+        ...extraPatch,
+        field_unfinished_draft_saved_at: nowIso,
+        field_unfinished_draft_saved_by: staffId,
+        field_unfinished_draft_reason: clampText(reasonCode, 80),
+        field_last_close_blocked_at: nowIso,
+        field_last_close_blocked_by: staffId,
+        field_last_close_blocked_reason: clampText(reasonCode, 80)
+    };
+
+    try {
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
+        await safeUpsertSchedtimeLog(row, form, 'draft');
+        applyRowPatch(row.id, payload);
+        return true;
+    } catch (error) {
+        console.warn('Unable to preserve unfinished field form on schedule; local draft remains available.', error);
+        return false;
+    }
+}
 async function markPendingTask() {
     const row = getCurrentRow();
     if (!row) return;
@@ -8230,8 +8264,8 @@ async function markPendingTask() {
         }
 
         applyRowPatch(row.id, payload);
-        clearFieldModalDraft(row.id);
         closeModal();
+        clearFieldModalDraft(row.id);
         await loadMySchedule();
         alert('Marked as Pending (Parts Needed).');
     } catch (err) {
@@ -8263,16 +8297,19 @@ async function closeTask() {
         revealCloseIssue(issue);
         await logFinishBlockedAttempt(row, issue, form);
         alert(closeIssueMessage(issue));
+        await preserveUnfinishedFieldForm(row, form, issue?.code || 'finish_validation');
         return;
     }
 
     if (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) {
         if (!pinPattern.test(form.pin)) {
             alert('Customer PIN must be exactly 4 digits.');
+            await preserveUnfinishedFieldForm(row, form, 'invalid_customer_pin_format');
             return;
         }
         if (form.pin !== expectedPin) {
             alert('Invalid customer PIN.');
+            await preserveUnfinishedFieldForm(row, form, 'invalid_customer_pin');
             return;
         }
     }
@@ -8295,6 +8332,7 @@ async function closeTask() {
         timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
     } catch (err) {
         alert(`Cannot mark finished: ${err?.message || err}`);
+        await preserveUnfinishedFieldForm(row, form, 'time_in_location_proof_failed');
         return;
     }
 
@@ -8303,6 +8341,7 @@ async function closeTask() {
         collectionPaymentPatch = await saveFieldCollectionPaymentRecord(row, form, nowIso, staffId);
     } catch (err) {
         alert(`Cannot mark finished: collection payment record could not be saved. ${err?.message || err}`);
+        await preserveUnfinishedFieldForm(row, form, 'collection_payment_save_failed');
         return;
     }
 
@@ -8399,6 +8438,7 @@ async function closeTask() {
     } catch (err) {
         console.error('Close task failed:', err);
         alert(`Failed to close task: ${err?.message || err}`);
+        await preserveUnfinishedFieldForm(row, form, 'schedule_close_save_failed', collectionPaymentPatch);
     } finally {
         button.disabled = false;
     }
