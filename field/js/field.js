@@ -8295,21 +8295,21 @@ async function closeTask() {
     if (closeIssues.length) {
         const issue = closeIssues[0];
         revealCloseIssue(issue);
+        await preserveUnfinishedFieldForm(row, form, issue?.code || 'finish_validation');
         await logFinishBlockedAttempt(row, issue, form);
         alert(closeIssueMessage(issue));
-        await preserveUnfinishedFieldForm(row, form, issue?.code || 'finish_validation');
         return;
     }
 
     if (!TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin && expectedPin) {
         if (!pinPattern.test(form.pin)) {
-            alert('Customer PIN must be exactly 4 digits.');
             await preserveUnfinishedFieldForm(row, form, 'invalid_customer_pin_format');
+            alert('Customer PIN must be exactly 4 digits.');
             return;
         }
         if (form.pin !== expectedPin) {
-            alert('Invalid customer PIN.');
             await preserveUnfinishedFieldForm(row, form, 'invalid_customer_pin');
+            alert('Invalid customer PIN.');
             return;
         }
     }
@@ -8331,8 +8331,8 @@ async function closeTask() {
     try {
         timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
     } catch (err) {
-        alert(`Cannot mark finished: ${err?.message || err}`);
         await preserveUnfinishedFieldForm(row, form, 'time_in_location_proof_failed');
+        alert(`Cannot mark finished: ${err?.message || err}`);
         return;
     }
 
@@ -8340,8 +8340,8 @@ async function closeTask() {
     try {
         collectionPaymentPatch = await saveFieldCollectionPaymentRecord(row, form, nowIso, staffId);
     } catch (err) {
-        alert(`Cannot mark finished: collection payment record could not be saved. ${err?.message || err}`);
         await preserveUnfinishedFieldForm(row, form, 'collection_payment_save_failed');
+        alert(`Cannot mark finished: collection payment record could not be saved. ${err?.message || err}`);
         return;
     }
 
@@ -8437,8 +8437,8 @@ async function closeTask() {
         alert(combinedClosed ? `Task marked as Finished. ${combinedClosed} combined schedule${combinedClosed === 1 ? '' : 's'} also closed.` : 'Task marked as Finished.');
     } catch (err) {
         console.error('Close task failed:', err);
-        alert(`Failed to close task: ${err?.message || err}`);
         await preserveUnfinishedFieldForm(row, form, 'schedule_close_save_failed', collectionPaymentPatch);
+        alert(`Failed to close task: ${err?.message || err}`);
     } finally {
         button.disabled = false;
     }
