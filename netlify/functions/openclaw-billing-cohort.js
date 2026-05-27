@@ -1720,12 +1720,17 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
         };
         const groupKey = `${invoiceNo}:${monthKey || ''}`;
 
-        if (!actualPrintedDate && savedYmd === todayYmd && amount > 0) {
+        const isSavedWaitingForPrint = !actualPrintedDate
+            && savedYmd
+            && savedYmd >= currentPrintMonthStartYmd
+            && savedYmd <= todayYmd
+            && amount > 0;
+        if (isSavedWaitingForPrint) {
             const group = addInvoiceGroup(savedInvoiceGroups, groupKey, detail, amount);
             group.saved_at = group.saved_at || detail.saved_at;
             group.prepared_by = group.prepared_by || preparedStaff.name;
             group.prepared_by_id = group.prepared_by_id || preparedStaff.id;
-            return;
+            if (savedYmd === todayYmd) return;
         }
 
         if (!operationalPrintedDate) return;
