@@ -822,7 +822,7 @@ function renderAlerts() {
     }).join('');
 }
 
-function onBillSubmit(event) {
+async function onBillSubmit(event) {
     event.preventDefault();
     const billId = String(document.getElementById('billIdInput').value || '').trim();
     const documentType = document.getElementById('billDocTypeInput').value;
@@ -997,8 +997,12 @@ function onBillSubmit(event) {
         plannedBills.forEach((bill) => APD_STATE.bills.push(bill));
     }
 
-    persistState();
-    persistApdSharedState();
+    const localPersisted = persistState();
+    const sharedPersisted = await persistApdSharedState();
+    if (!localPersisted && !sharedPersisted) {
+        MargaUtils.showToast('Payable was not saved. Browser storage is full and shared APD sync failed.', 'error');
+        return;
+    }
     syncPettyCashRequestsFromChecks();
     focusDashboardOnDueDate(base.dueDate);
     clearBillForm();
@@ -1157,6 +1161,7 @@ function clearBillForm() {
     document.getElementById('billIdInput').value = '';
     document.getElementById('billSeriesIdInput').value = '';
     document.getElementById('billSeriesIndexInput').value = '';
+    document.getElementById('billDueDateInput').value = toDateInputValue(startOfDay(new Date()));
     document.getElementById('billStatusInput').value = 'Draft';
     document.getElementById('billPlanTypeInput').value = 'one_time';
     document.getElementById('billRemainingYearsInput').value = '0';
@@ -1202,9 +1207,12 @@ function resetDemoData() {
 }
 
 function persistState() {
-    localStorage.setItem(APD_STORAGE_KEYS.accounts, JSON.stringify(APD_STATE.accounts));
-    localStorage.setItem(APD_STORAGE_KEYS.bills, JSON.stringify(APD_STATE.bills));
-    localStorage.setItem(APD_STORAGE_KEYS.checks, JSON.stringify(APD_STATE.checks));
+    const results = [
+        safeSetLocalSnapshot(APD_STORAGE_KEYS.accounts, APD_STATE.accounts, 'APD accounts'),
+        safeSetLocalSnapshot(APD_STORAGE_KEYS.bills, APD_STATE.bills, 'APD payables'),
+        safeSetLocalSnapshot(APD_STORAGE_KEYS.checks, APD_STATE.checks, 'APD checks')
+    ];
+    return results.some(Boolean);
 }
 
 async function syncApdSharedState() {
@@ -1246,16 +1254,20 @@ async function syncApdSharedState() {
     }
 }
 
-function persistApdSharedState() {
+async function persistApdSharedState() {
     const bills = APD_STATE.bills.filter(shouldShareLocalBill);
     const checks = APD_STATE.checks.filter(shouldShareLocalCheck);
-    Promise.all([
-        ...bills.map((bill) => saveApdBillToShared(bill)),
-        ...checks.map((check) => saveApdCheckToShared(check))
-    ]).catch((error) => {
+    try {
+        await Promise.all([
+            ...bills.map((bill) => saveApdBillToShared(bill)),
+            ...checks.map((check) => saveApdCheckToShared(check))
+        ]);
+        return true;
+    } catch (error) {
         console.warn('Unable to save APD shared Margabase state.', error);
         MargaUtils.showToast('Saved locally, but shared APD sync is still catching up.', 'info');
-    });
+        return false;
+    }
 }
 
 async function fetchApdCollection(collection) {
@@ -1411,6 +1423,16 @@ function readStorage(key, fallback) {
     }
 }
 
+function safeSetLocalSnapshot(key, value, label = 'APD data') {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch (error) {
+        console.warn(`Unable to save ${label} to browser storage. Continuing with shared APD sync.`, error);
+        return false;
+    }
+}
+
 function syncPettyCashRequestsFromChecks() {
     const requests = readStorage(PETTY_CASH_SYNC_STORAGE_KEYS.requests, []);
     const entries = readStorage(PETTY_CASH_SYNC_STORAGE_KEYS.entries, []);
@@ -1468,8 +1490,8 @@ function syncPettyCashRequestsFromChecks() {
     });
 
     if (changed) {
-        localStorage.setItem(PETTY_CASH_SYNC_STORAGE_KEYS.requests, JSON.stringify(requests));
-        localStorage.setItem(PETTY_CASH_SYNC_STORAGE_KEYS.entries, JSON.stringify(entries));
+        safeSetLocalSnapshot(PETTY_CASH_SYNC_STORAGE_KEYS.requests, requests, 'petty cash request APD links');
+        safeSetLocalSnapshot(PETTY_CASH_SYNC_STORAGE_KEYS.entries, entries, 'petty cash entry APD links');
     }
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v87-field-unfinished-draft-save';
+const CACHE_NAME = 'marga-app-shell-v88-apd-storage-safe';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -49,7 +49,7 @@ const SHELL_ASSETS = [
     '/apd/',
     '/apd/index.html',
     '/apd/css/apd.css',
-    '/apd/js/apd.js',
+    '/apd/js/apd.js?v=20260527-storage-safe-1',
     '/service/',
     '/service/index.html',
     '/service/css/service.css?v=20260505-delivery-history-status-1',
