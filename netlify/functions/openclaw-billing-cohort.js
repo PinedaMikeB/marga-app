@@ -9,7 +9,8 @@ const DEFAULT_SCHEDULE_MAX_PAGES = Number(process.env.OPENCLAW_BILLING_COHORT_SC
 const DEFAULT_MACHINE_READING_LOOKBACK_MONTHS = Number(process.env.OPENCLAW_BILLING_MACHINE_READING_LOOKBACK_MONTHS || 18);
 const DEFAULT_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_ROW_LIMIT || 5000);
 const MAX_ROW_LIMIT = Number(process.env.OPENCLAW_BILLING_COHORT_MAX_ROW_LIMIT || 5000);
-const PRODUCTIVITY_REPORT_VERSION = '20260526-print-calendar-month-v1';
+const PRODUCTIVITY_REPORT_VERSION = '20260528-saved-queue-audit-window-v1';
+const SAVED_TO_PRINT_QUEUE_START_YMD = process.env.OPENCLAW_BILLING_SAVED_QUEUE_START_YMD || '2026-05-25';
 const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
@@ -1722,14 +1723,15 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
 
         const isSavedWaitingForPrint = !actualPrintedDate
             && savedYmd
-            && savedYmd === todayYmd
+            && savedYmd >= SAVED_TO_PRINT_QUEUE_START_YMD
+            && savedYmd <= todayYmd
             && amount > 0;
         if (isSavedWaitingForPrint) {
             const group = addInvoiceGroup(savedInvoiceGroups, groupKey, detail, amount);
             group.saved_at = group.saved_at || detail.saved_at;
             group.prepared_by = group.prepared_by || preparedStaff.name;
             group.prepared_by_id = group.prepared_by_id || preparedStaff.id;
-            if (savedYmd === todayYmd) return;
+            return;
         }
 
         if (!operationalPrintedDate) return;
@@ -1821,6 +1823,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             by_month: Array.from(printedTodayByMonth.values()).map((row) => ({ ...row, amount_total: roundCurrency(row.amount_total) }))
         },
         saved_to_print: {
+            queue_start_date: SAVED_TO_PRINT_QUEUE_START_YMD,
             invoice_count: savedGroups.length,
             amount_total: roundCurrency(savedGroups.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
             by_staff: sortStaff(savedToPrintByStaff),

@@ -6576,6 +6576,10 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
     const to = overrideRange.to || billingWorkDistributionState?.to || defaultRange.to;
     const sourceRows = report?.saved_to_print?.invoices || [];
     const summary = summarizeSavedToPrint(sourceRows, from, to);
+    const queueStartDate = report?.saved_to_print?.queue_start_date || '';
+    const queueStartCopy = queueStartDate
+        ? ` Queue starts ${escapeHtml(queueStartDate)} because older saved rows do not have reliable print-audit status.`
+        : '';
     billingWorkDistributionState = { report, sourceRows, from, to, summary, mode: 'saved_to_print' };
 
     if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Prepared Invoices';
@@ -6589,7 +6593,7 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
             <div class="work-distribution-toolbar">
                 <div>
                     <div class="detail-section-title">Saved invoices ready to print</div>
-                    <p class="sheet-copy">Filter by saved date, then open a preparer to review the exact invoices waiting for print.</p>
+                    <p class="sheet-copy">Filter by saved date, then open a preparer to review the exact invoices waiting for print.${queueStartCopy}</p>
                 </div>
                 <div class="work-distribution-filters">
                     <label>
