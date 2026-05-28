@@ -71,6 +71,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (performanceDate) performanceDate.value = todayDateKey();
 
     document.getElementById('refreshHrBtn').addEventListener('click', () => loadHrModule());
+    document.getElementById('printPayrollBtn')?.addEventListener('click', () => {
+        setActiveTab('payroll');
+        window.print();
+    });
     performanceDate?.addEventListener('change', () => refreshPerformanceDate());
     document.querySelectorAll('[data-performance-tab]').forEach((button) => {
         button.addEventListener('click', () => setPerformanceTab(button.dataset.performanceTab));
@@ -713,90 +717,92 @@ async function savePerformanceRowStatus(statusKey, status) {
 function renderPayrollModel() {
     const sampleRows = buildSamplePayrollRows();
     const totals = sampleRows.reduce((sum, row) => ({
-        basic: sum.basic + row.basicPay,
-        overtime: sum.overtime + row.overtimePay,
-        allowance: sum.allowance + row.allowance,
-        deductions: sum.deductions + row.totalDeductions,
-        net: sum.net + row.netPay
-    }), { basic: 0, overtime: 0, allowance: 0, deductions: 0, net: 0 });
-    document.getElementById('payrollStatus').textContent = 'Sample payroll for May 10-25, 2026. Preview only; no payroll records are written.';
+        monthly: sum.monthly + row.monthlyRate,
+        semiMonthly: sum.semiMonthly + row.semiMonthlyRate
+    }), { monthly: 0, semiMonthly: 0 });
+    document.getElementById('payrollStatus').textContent = 'Workbook format from payroll.xlsx: PAYROLL employee list and monthly rate. OT and deductions require manual approved entries.';
     document.getElementById('payrollSample').innerHTML = `
         <div class="hr-payroll-sample-header">
             <div>
-                <span>Sample Cutoff</span>
-                <h4>May 10-25, 2026 Payroll</h4>
-                <p>Computed from loaded HR salary fields with sample attendance inputs. Use this as the screen shape before connecting final attendance and deduction sources.</p>
+                <span>Print Format</span>
+                <h4>PAYROLL</h4>
+                <p>Follow the workbook layout: employee list with monthly rate. This screen does not automatically compute overtime, deductions, or net pay.</p>
             </div>
             <div class="hr-payroll-total">
-                <span>Sample Net Payroll</span>
-                <strong>${formatMoneyOrDash(totals.net)}</strong>
+                <span>Total Monthly Rate</span>
+                <strong>${formatMoneyOrDash(totals.monthly)}</strong>
             </div>
         </div>
         <div class="hr-payroll-totals">
-            <div><span>Basic</span><strong>${formatMoneyOrDash(totals.basic)}</strong></div>
-            <div><span>OT</span><strong>${formatMoneyOrDash(totals.overtime)}</strong></div>
-            <div><span>Allowance</span><strong>${formatMoneyOrDash(totals.allowance)}</strong></div>
-            <div><span>Deductions</span><strong>${formatMoneyOrDash(totals.deductions)}</strong></div>
+            <div><span>Sheet</span><strong>Sheet1</strong></div>
+            <div><span>Title</span><strong>PAYROLL</strong></div>
+            <div><span>Monthly Rate Total</span><strong>${formatMoneyOrDash(totals.monthly)}</strong></div>
+            <div><span>Semi-month Basis</span><strong>${formatMoneyOrDash(totals.semiMonthly)}</strong></div>
         </div>
         <div class="table-container hr-payroll-table-wrap">
             <table class="table hr-payroll-table">
                 <thead>
                     <tr>
-                        <th>Employee</th>
-                        <th>Position</th>
-                        <th>Rate</th>
-                        <th>Abs.</th>
-                        <th>OT</th>
-                        <th>Late</th>
-                        <th>Basic</th>
-                        <th>Allowance</th>
-                        <th>Deductions</th>
-                        <th>Net Pay</th>
-                        <th>Payout</th>
+                        <th>No.</th>
+                        <th>employee</th>
+                        <th>monthly rate</th>
+                        <th>semi-monthly reference</th>
+                        <th>remarks</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${sampleRows.map((row) => `
                         <tr>
-                            <td data-label="Employee"><strong>${sanitize(row.name)}</strong><small>ID ${sanitize(row.id)}</small></td>
-                            <td data-label="Position">${sanitize(row.position || '-')}</td>
-                            <td data-label="Rate">${sanitize(formatMoneyOrDash(row.semiMonthlyRate))}</td>
-                            <td data-label="Abs.">${sanitize(row.absences)}</td>
-                            <td data-label="OT">${sanitize(row.overtimeHours)}h</td>
-                            <td data-label="Late">${sanitize(row.lateMinutes)}m</td>
-                            <td data-label="Basic">${sanitize(formatMoneyOrDash(row.basicPay))}</td>
-                            <td data-label="Allowance">${sanitize(formatMoneyOrDash(row.allowance))}</td>
-                            <td data-label="Deductions">${sanitize(formatMoneyOrDash(row.totalDeductions))}</td>
-                            <td data-label="Net Pay"><strong>${sanitize(formatMoneyOrDash(row.netPay))}</strong></td>
-                            <td data-label="Payout"><span class="hr-pill ${row.payoutClass}">${sanitize(row.payout)}</span></td>
+                            <td data-label="No.">${row.number}</td>
+                            <td data-label="employee"><strong>${sanitize(row.name)}</strong><small>ID ${sanitize(row.id)}</small></td>
+                            <td data-label="monthly rate">${sanitize(formatMoneyOrDash(row.monthlyRate))}</td>
+                            <td data-label="semi-monthly reference">${sanitize(formatMoneyOrDash(row.semiMonthlyRate))}</td>
+                            <td data-label="remarks">${sanitize(row.position || '-')}</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         </div>
+        <div class="hr-manual-payroll-grid">
+            <section>
+                <h4>Approved Overtime Authorization</h4>
+                <p>OT is case by case only. Enter it here only when there is a signed approved overtime authorization form.</p>
+                <div class="table-container">
+                    <table class="table hr-payroll-table">
+                        <thead><tr><th>Employee</th><th>Date</th><th>Reason / Work To Finish</th><th>Hours</th><th>Approved By</th><th>Signed Form</th></tr></thead>
+                        <tbody><tr><td colspan="6">No approved OT entries for this sample.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+            <section>
+                <h4>Deductions Register</h4>
+                <p>The uploaded workbook does not contain deduction columns or formulas. Deductions should be manually encoded from approved payroll records before printing final payroll.</p>
+                <div class="table-container">
+                    <table class="table hr-payroll-table">
+                        <thead><tr><th>Employee</th><th>Deduction Type</th><th>Reference</th><th>Amount</th><th>Approved / Source</th></tr></thead>
+                        <tbody><tr><td colspan="5">No deduction entries in payroll.xlsx.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
     `;
     document.getElementById('payrollAnalysis').innerHTML = `
-        <h4>Payroll Sheet Formula Map</h4>
+        <h4>payroll.xlsx Analysis</h4>
         <div class="hr-detected-grid">
-            <div><span>Cutoff</span><strong>May 10-25, 2026</strong></div>
-            <div><span>Source Sheet</span><strong>payroll</strong></div>
-            <div><span>Attendance Sheet</span><strong>Sheet2</strong></div>
-            <div><span>Payout Sheet</span><strong>Sheet1</strong></div>
-            <div><span>Primary Key</span><strong>Employee name, then employee ID once HR fills it</strong></div>
-            <div><span>Output</span><strong>Net salary + bank/encashment summary</strong></div>
+            <div><span>Workbook</span><strong>payroll.xlsx</strong></div>
+            <div><span>Sheet</span><strong>Sheet1</strong></div>
+            <div><span>Title Cell</span><strong>PAYROLL</strong></div>
+            <div><span>Columns</span><strong>employee, monthly rate</strong></div>
+            <div><span>Print Setup</span><strong>Landscape</strong></div>
+            <div><span>Deduction Formula</span><strong>Not present</strong></div>
         </div>
-        <h4>Computation Design</h4>
+        <h4>Payroll Rules For MARGA HR</h4>
         <ol>
-            <li><strong>Semi-monthly rate:</strong> monthly salary / 2, stored from HR employee salary setup.</li>
-            <li><strong>Daily rate:</strong> <code>((semiMonthlyRate * 2) / 313) * 12</code>, matching the workbook's 313-day annual divisor and 12-day pay-period basis.</li>
-            <li><strong>Total basic:</strong> <code>semiMonthlyRate - (dailyRate * absences)</code>.</li>
-            <li><strong>OT pay:</strong> <code>((dailyRate / 8) * 1.25) * overtimeHours</code>.</li>
-            <li><strong>Regular OT / RDOT / adjustments:</strong> added as separate payroll inputs, with attendance defaults from Field App where possible.</li>
-            <li><strong>Total pay:</strong> basic + OT + allowance + RDOT + regular OT + adjustment.</li>
-            <li><strong>Undertime and late deductions:</strong> undertime uses hourly rate * UT hours; late uses per-minute rate * minutes late.</li>
-            <li><strong>Gross income:</strong> total pay - undertime - SSS - provident fund - PhilHealth - HDMF - late deduction.</li>
-            <li><strong>Net salary:</strong> gross income + non-tax allowance - withholding tax + tax refund - SSS loan - coop loan - PhilHealth adjustment - cash advance - Pag-IBIG loan - bank loan - A/R house rental - others.</li>
-            <li><strong>Payout summary:</strong> split by bank account/direct deposit and encashment, then reconcile totals against payroll totals.</li>
+            <li><strong>Do not auto-compute OT:</strong> overtime is a special approved exception, not an attendance-derived payroll default.</li>
+            <li><strong>OT support required:</strong> every OT entry must have employee, date, reason/work to finish, hours, approver, and signed authorization form reference.</li>
+            <li><strong>Deduction support required:</strong> deductions must come from approved payroll inputs such as SSS, PhilHealth, HDMF, loans, cash advance, withholding tax, A/R house rental, or other named source records.</li>
+            <li><strong>Workbook finding:</strong> this uploaded payroll.xlsx only shows employee and monthly rate; it does not show deduction formulas to copy.</li>
+            <li><strong>Print rule:</strong> print the payroll rate sheet in the workbook style first, then attach approved OT and deduction registers when final payroll is prepared.</li>
         </ol>
     `;
 }
@@ -808,43 +814,16 @@ function buildSamplePayrollRows() {
         .sort((left, right) => MargaUtils.getEmployeeFullName(left, '').localeCompare(MargaUtils.getEmployeeFullName(right, '')))
         .slice(0, 8);
     const employees = source.length ? source : getFallbackSampleEmployees();
-    const attendancePattern = [
-        { absences: 0, overtimeHours: 2, lateMinutes: 0 },
-        { absences: 0.5, overtimeHours: 0, lateMinutes: 12 },
-        { absences: 1, overtimeHours: 4, lateMinutes: 0 },
-        { absences: 0, overtimeHours: 1, lateMinutes: 30 },
-        { absences: 0, overtimeHours: 0, lateMinutes: 5 },
-        { absences: 0.5, overtimeHours: 3, lateMinutes: 0 },
-        { absences: 0, overtimeHours: 2, lateMinutes: 18 },
-        { absences: 1, overtimeHours: 0, lateMinutes: 0 }
-    ];
     return employees.map((employee, index) => {
-        const pattern = attendancePattern[index % attendancePattern.length];
         const rates = payrollRatesFor(employee);
-        const hourlyRate = rates.dailyRate / 8;
-        const basicPay = Math.max(rates.semiMonthlyRate - (rates.dailyRate * pattern.absences), 0);
-        const overtimePay = hourlyRate * 1.25 * pattern.overtimeHours;
-        const lateDeduction = (hourlyRate / 60) * pattern.lateMinutes;
-        const statutory = Math.min(900, Math.max(350, rates.semiMonthlyRate * 0.055));
-        const totalDeductions = lateDeduction + statutory;
-        const netPay = basicPay + overtimePay + rates.allowance - totalDeductions;
-        const hasBank = Boolean(String(firstPresent(employee, ['bank_account_no', 'bank_account', 'account_no', 'payroll_account_no']) || '').trim());
         return {
+            number: index + 1,
             id: employee.id || employee._docId || `S${index + 1}`,
             name: MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || `Sample Staff ${index + 1}`),
             position: getPositionLabel(employee),
+            monthlyRate: roundMoney(rates.monthlyRate),
             semiMonthlyRate: roundMoney(rates.semiMonthlyRate),
-            dailyRate: roundMoney(rates.dailyRate),
-            allowance: roundMoney(rates.allowance),
-            absences: pattern.absences,
-            overtimeHours: pattern.overtimeHours,
-            lateMinutes: pattern.lateMinutes,
-            basicPay: roundMoney(basicPay),
-            overtimePay: roundMoney(overtimePay),
-            totalDeductions: roundMoney(totalDeductions),
-            netPay: roundMoney(netPay),
-            payout: hasBank ? 'Bank' : 'Encashment',
-            payoutClass: hasBank ? '' : 'warning'
+            dailyRate: roundMoney(rates.dailyRate)
         };
     });
 }
@@ -853,12 +832,13 @@ function payrollRatesFor(employee) {
     const monthly = toNumber(firstPresent(employee, ['monthly_salary', 'basic_salary', 'basic_monthly', 'monthly_rate']));
     const semiMonthly = toNumber(firstPresent(employee, ['semi_monthly_rate', 'semim_rate', 'semimrate', 'salary_rate', 'salary']));
     const daily = toNumber(firstPresent(employee, ['daily_rate', 'marga_daily_rate']));
-    const resolvedSemi = semiMonthly || (monthly ? monthly / 2 : daily * 12) || 12500;
+    const resolvedMonthly = monthly || (semiMonthly ? semiMonthly * 2 : daily * 24) || 25000;
+    const resolvedSemi = semiMonthly || (resolvedMonthly / 2) || 12500;
     const resolvedDaily = daily || ((resolvedSemi * 2) / 313) * 12;
     return {
+        monthlyRate: resolvedMonthly,
         semiMonthlyRate: resolvedSemi,
-        dailyRate: resolvedDaily,
-        allowance: toNumber(getAllowance(employee))
+        dailyRate: resolvedDaily
     };
 }
 
@@ -1475,7 +1455,7 @@ function detectPayrollColumns(headers) {
         employee: find(/employee|name|staff/),
         salaryRate: find(/salary.*rate|daily.*rate|monthly.*rate|basic.*pay|basic.*salary|\brate\b/),
         daysWorked: find(/days.*work|work.*days|present|attendance/),
-        overtime: find(/overtime|\bot\b/),
+        approvedOvertime: find(/approved.*overtime|overtime.*authorization|\bot\b/),
         allowance: find(/allowance|meal|transport/),
         grossPay: find(/gross/),
         sss: find(/\bsss\b/),

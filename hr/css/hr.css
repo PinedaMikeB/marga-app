@@ -564,6 +564,34 @@
     font-weight: 800;
 }
 
+.hr-manual-payroll-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.hr-manual-payroll-grid section {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.85rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-manual-payroll-grid h4 {
+    margin: 0;
+    color: #19345c;
+}
+
+.hr-manual-payroll-grid p {
+    margin: 0;
+    color: #50627d;
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
 .hr-payroll-analysis {
     display: grid;
     gap: 0.75rem;
@@ -1038,6 +1066,7 @@
     .hr-detected-grid,
     .hr-payroll-sample-header,
     .hr-payroll-totals,
+    .hr-manual-payroll-grid,
     .hr-employee-brief,
     .hr-employee-brief-metrics,
     .hr-performance-summary,
@@ -1079,5 +1108,148 @@
 
     .hr-actions {
         width: 100%;
+    }
+}
+
+@media print {
+    @page {
+        size: landscape;
+        margin: 0.25in;
+    }
+
+    body {
+        background: #fff;
+    }
+
+    .sidebar,
+    .topbar,
+    .hr-overview-grid,
+    .hr-tabs,
+    .hr-payroll-analysis,
+    .meeting-button,
+    #refreshHrBtn,
+    #printPayrollBtn {
+        display: none !important;
+    }
+
+    .main-content,
+    .content-card,
+    .hr-pane,
+    .hr-payroll-layout,
+    .hr-payroll-sample {
+        display: block !important;
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        background: #fff !important;
+    }
+
+    .main-content {
+        margin-left: 0 !important;
+    }
+
+    .content-card:not(#payrollPane),
+    .hr-pane:not(#payrollPane) {
+        display: none !important;
+    }
+
+    #payrollPane .card-header {
+        margin-bottom: 0.12in;
+        border: 0;
+    }
+
+    #payrollPane .card-header h3 {
+        display: none;
+    }
+
+    #payrollPane .ops-subtext {
+        color: #000;
+        font-size: 9pt;
+    }
+
+    .hr-payroll-sample-header {
+        display: grid !important;
+        grid-template-columns: 1fr 2.15in;
+        gap: 0.16in;
+        margin-bottom: 0.08in;
+    }
+
+    .hr-payroll-sample-header h4 {
+        color: #000;
+        font-size: 18pt;
+    }
+
+    .hr-payroll-sample-header p,
+    .hr-payroll-sample-header span,
+    .hr-payroll-total span,
+    .hr-payroll-totals span,
+    .hr-manual-payroll-grid p {
+        color: #000;
+    }
+
+    .hr-payroll-total,
+    .hr-payroll-totals div,
+    .hr-manual-payroll-grid section {
+        border: 1px solid #000;
+        border-radius: 0;
+        background: #fff;
+    }
+
+    .hr-payroll-totals {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.06in;
+        margin-bottom: 0.08in;
+    }
+
+    .hr-payroll-totals div {
+        min-height: auto;
+        padding: 0.06in;
+    }
+
+    .hr-payroll-table-wrap {
+        max-height: none;
+        overflow: visible;
+        border: 0;
+        border-radius: 0;
+    }
+
+    .hr-payroll-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9pt;
+    }
+
+    .hr-payroll-table thead th {
+        position: static;
+        color: #000;
+        background: #e8eef7 !important;
+        border: 1px solid #000;
+        text-transform: none;
+    }
+
+    .hr-payroll-table td {
+        color: #000;
+        border: 1px solid #000;
+        padding: 0.05in 0.06in;
+    }
+
+    .hr-payroll-table td:first-child {
+        min-width: 0;
+    }
+
+    .hr-payroll-table small {
+        color: #000;
+    }
+
+    .hr-manual-payroll-grid {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.08in;
+        margin-top: 0.1in;
+        break-inside: avoid;
     }
 }
