@@ -1016,6 +1016,10 @@ function openEmployeeModal(employeeId) {
     setInputValue('employeeBirthdateInput', toDateInputValue(firstPresent(employee, ['birthdate', 'birthday', 'date_of_birth'])));
     setInputValue('employeeCivilStatusInput', firstPresent(employee, ['civil_status', 'marital_status']));
     setInputValue('employeeAddressInput', firstPresent(employee, ['address', 'home_address', 'current_address']));
+    setInputValue('employeeAccountStatusInput', MargaUtils.isOfficialActiveEmployee(employee) ? 'active' : 'inactive');
+    setInputValue('employeeUsernameInput', employee.username || employee.marga_username || '');
+    setInputValue('employeePasswordInput', '');
+    setInputValue('employeePasswordConfirmInput', '');
     setInputValue('employeePositionInput', getPositionLabel(employee));
     setInputValue('employeeHireDateInput', toDateInputValue(firstPresent(employee, ['hire_date', 'date_hired', 'employment_date', 'start_date'])));
     setInputValue('employeeRateTypeInput', getRateType(employee));
@@ -1071,12 +1075,20 @@ async function saveEmployeeDetails() {
     status.textContent = 'Saving employee details...';
     saveBtn.disabled = true;
     const nowIso = new Date().toISOString();
+    const accountActive = valueOf('employeeAccountStatusInput') !== 'inactive';
+    const newPassword = valueOf('employeePasswordInput');
+    const confirmPassword = valueOf('employeePasswordConfirmInput');
     const fields = {
         firstname: valueOf('employeeFirstNameInput'),
         lastname: valueOf('employeeLastNameInput'),
         nickname: valueOf('employeeNicknameInput'),
         email: valueOf('employeeEmailInput'),
         marga_login_email: valueOf('employeeEmailInput'),
+        username: valueOf('employeeUsernameInput'),
+        marga_active: accountActive,
+        marga_account_active: accountActive,
+        active: accountActive,
+        estatus: accountActive ? 1 : 0,
         mobile: valueOf('employeeMobileInput'),
         birthdate: valueOf('employeeBirthdateInput'),
         civil_status: valueOf('employeeCivilStatusInput'),
@@ -1101,6 +1113,9 @@ async function saveEmployeeDetails() {
         hr_updated_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr'
     };
     try {
+        if (newPassword || confirmPassword) {
+            Object.assign(fields, await buildEmployeePasswordFields(newPassword, confirmPassword, nowIso));
+        }
         await patchDocument('tbl_employee', docId, fields);
         const employee = findEmployeeById(docId);
         if (employee) Object.assign(employee, fields);
@@ -1113,6 +1128,33 @@ async function saveEmployeeDetails() {
     } finally {
         saveBtn.disabled = false;
     }
+}
+
+async function buildEmployeePasswordFields(newPassword, confirmPassword, nowIso) {
+    if (!newPassword || !confirmPassword) {
+        throw new Error('Enter and confirm the new login password.');
+    }
+    if (newPassword !== confirmPassword) {
+        throw new Error('New password and confirmation do not match.');
+    }
+    if (newPassword.length < 4) {
+        throw new Error('Use at least 4 characters for staff login passwords.');
+    }
+    if (!MargaAuth.canHashPasswords()) {
+        throw new Error('Password reset requires HTTPS or localhost so the browser can create the secure password hash.');
+    }
+    const iterations = 120000;
+    const salt = new Uint8Array(16);
+    crypto.getRandomValues(salt);
+    const hash = await MargaAuth.pbkdf2(newPassword, salt, iterations);
+    return {
+        password: '',
+        password_hash: MargaAuth.bytesToBase64(hash),
+        password_salt: MargaAuth.bytesToBase64(salt),
+        password_iterations: iterations,
+        password_updated_at: nowIso,
+        password_updated_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr'
+    };
 }
 
 function openPerformanceModal(employeeId) {
