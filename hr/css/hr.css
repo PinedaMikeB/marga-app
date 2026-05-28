@@ -564,6 +564,22 @@
     font-weight: 800;
 }
 
+.hr-payroll-row-warning {
+    background: #fff8e6;
+}
+
+.hr-payroll-org-select {
+    width: 100%;
+    min-width: 96px;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #cfe0f4;
+    border-radius: 8px;
+    background: #fff;
+    color: #19345c;
+    font: inherit;
+    font-weight: 800;
+}
+
 .hr-manual-payroll-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1220,7 +1236,15 @@
     .hr-payroll-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 9pt;
+        font-size: 7.5pt;
+    }
+
+    .hr-payroll-org-select {
+        border: 0;
+        padding: 0;
+        color: #000;
+        font-size: 7.5pt;
+        appearance: none;
     }
 
     .hr-payroll-table thead th {
