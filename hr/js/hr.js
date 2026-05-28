@@ -7,50 +7,8 @@ const OFFICE_MAX_METERS = 30;
 const PRODUCTION_MAX_METERS = 30;
 const CUSTOMER_SITE_MAX_METERS = 100;
 
-const OFFICIAL_PAYROLL_ROWS = [
-    { employee: 'Agustin, Arlene', monthlyRate: 20982 },
-    { employee: 'Alegre, Gemar', monthlyRate: 18000 },
-    { employee: 'Ario, Teodoro', monthlyRate: 18980 },
-    { employee: 'Arnedo Jr., Ruben', monthlyRate: 18000 },
-    { employee: 'Bias, John Ronniel', monthlyRate: 18000 },
-    { employee: 'Ciar, Joan', monthlyRate: 20982 },
-    { employee: 'Claveria, Hener', monthlyRate: 23600 },
-    { employee: 'De Guzman, Jonathan', monthlyRate: 18000 },
-    { employee: 'Domingo, Alvin', monthlyRate: 18000 },
-    { employee: 'Edaño, Analee', monthlyRate: 18300 },
-    { employee: 'Edaño, Arriane', monthlyRate: 18000 },
-    { employee: 'Edaño, Carlos', monthlyRate: 19500 },
-    { employee: 'Edaño, Charlotte', monthlyRate: 18000 },
-    { employee: 'Edaño, Cynthia', monthlyRate: 18300 },
-    { employee: 'Escaraman Jr, Crispin', monthlyRate: 22100 },
-    { employee: 'Francisco, Evelyn', monthlyRate: 19000 },
-    { employee: 'Francisco, Merila', monthlyRate: 23000 },
-    { employee: 'Garcia, Mic Jagger', monthlyRate: 18980 },
-    { employee: 'Garcia, Regina', monthlyRate: 18000 },
-    { employee: 'Genova, Emmanuel', monthlyRate: 22000 },
-    { employee: 'Gonzales, Marites', monthlyRate: 52100 },
-    { employee: 'Herilares, Raffy', monthlyRate: 18000 },
-    { employee: 'Iballo, John Bonifacio', monthlyRate: 20982 },
-    { employee: 'Ladia, Jonathan', monthlyRate: 18000 },
-    { employee: 'Laurenciano, Richard', monthlyRate: 21000 },
-    { employee: 'Lozano, Erlinda', monthlyRate: 20100 },
-    { employee: 'Magdaraog, Marlon', monthlyRate: 20000 },
-    { employee: 'Mortel, Johnny', monthlyRate: 21900 },
-    { employee: 'Olbedo, John Emmanuel', monthlyRate: 18000 },
-    { employee: 'Pineda, Irene', monthlyRate: 62100 },
-    { employee: 'Ramos, Joselito', monthlyRate: 19000 },
-    { employee: 'Rubiz, Armond A.', monthlyRate: 15000 },
-    { employee: 'Toledo, Jemuel', monthlyRate: 18000 },
-    { employee: 'Vasquez, Perlie', monthlyRate: 18000 }
-];
-
 const PAYROLL_ORGANIZATIONS = ['WOTG', 'Marga', 'Others'];
-const PAYROLL_NAME_ALIASES = new Map([
-    ['teodoro ario', ['teodorico ario']],
-    ['ruben arnedo jr', ['ruben arnedo']],
-    ['raffy herilares', ['raffy heriales']],
-    ['john bonifacio iballo', ['rod ryan entereso']]
-]);
+const PAYROLL_RATE_SOURCE = 'payroll 1st Period of May 2026.xlsx';
 
 const DEFAULT_WORK_LOCATIONS = [
     {
@@ -768,16 +726,15 @@ function renderPayrollModel() {
     const totals = sampleRows.reduce((sum, row) => ({
         monthly: sum.monthly + row.monthlyRate,
         semiMonthly: sum.semiMonthly + row.semiMonthlyRate,
-        netSalary: sum.netSalary + row.netSalary,
-        rateMismatches: sum.rateMismatches + (row.rateStatus === 'Mismatch' ? 1 : 0)
-    }), { monthly: 0, semiMonthly: 0, netSalary: 0, rateMismatches: 0 });
-    document.getElementById('payrollStatus').textContent = 'Official May 1st-period payroll source: payroll 1st Period of May 2026.xlsx. Rates follow the workbook/image record; OT stays manual approved only.';
+        netSalary: sum.netSalary + row.netSalary
+    }), { monthly: 0, semiMonthly: 0, netSalary: 0 });
+    document.getElementById('payrollStatus').textContent = 'Payroll runs read the Employment & Payroll fields in tbl_employee. Semi-monthly rate is the source rate; monthly salary is semi-monthly x 2. OT stays manual approved only.';
     document.getElementById('payrollSample').innerHTML = `
         <div class="hr-payroll-sample-header">
             <div>
-                <span>Official Source</span>
-                <h4>PAYROLL CUT OFF: April 26, 2026 - May 10, 2026</h4>
-                <p>Rates follow the official payroll record. Semi-monthly, daily rate, deductions, gross income, and net salary use the workbook formula pattern; OT is entered only from approved authorization forms.</p>
+                <span>Employee Master Source</span>
+                <h4>15th and 30th Payroll Basis</h4>
+                <p>Each payroll run pulls approved rates from tbl_employee. The May 1st-period workbook seeded the current semi-monthly, monthly, daily, and allowance fields.</p>
             </div>
             <div class="hr-payroll-total">
                 <span>Total Monthly Rate</span>
@@ -788,7 +745,7 @@ function renderPayrollModel() {
             <div><span>Sheet</span><strong>Sheet1</strong></div>
             <div><span>Title</span><strong>PAYROLL</strong></div>
             <div><span>Monthly Rate Total</span><strong>${formatMoneyOrDash(totals.monthly)}</strong></div>
-            <div><span>Rate Differences</span><strong>${totals.rateMismatches}</strong></div>
+            <div><span>Payroll Employees</span><strong>${sampleRows.length}</strong></div>
         </div>
         <div class="table-container hr-payroll-table-wrap">
             <table class="table hr-payroll-table">
@@ -801,14 +758,14 @@ function renderPayrollModel() {
                         <th>monthly rate</th>
                         <th>semimrate</th>
                         <th>daily_rate</th>
+                        <th>allowance</th>
                         <th>net_salary sample</th>
-                        <th>Margabase monthly</th>
-                        <th>check</th>
+                        <th>source</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${sampleRows.map((row) => `
-                        <tr class="${row.rateStatus === 'Mismatch' ? 'hr-payroll-row-warning' : ''}">
+                        <tr>
                             <td data-label="No.">${row.number}</td>
                             <td data-label="employee"><strong>${sanitize(row.name)}</strong><small>${row.id ? `ID ${sanitize(row.id)}` : 'No Margabase match'}</small></td>
                             <td data-label="organization">
@@ -820,9 +777,9 @@ function renderPayrollModel() {
                             <td data-label="monthly rate">${sanitize(formatMoneyOrDash(row.monthlyRate))}</td>
                             <td data-label="semimrate">${sanitize(formatMoneyOrDash(row.semiMonthlyRate))}</td>
                             <td data-label="daily_rate">${sanitize(formatMoneyOrDash(row.dailyRate))}</td>
+                            <td data-label="allowance">${sanitize(formatMoneyOrDash(row.allowance))}</td>
                             <td data-label="net_salary sample">${sanitize(formatMoneyOrDash(row.netSalary))}</td>
-                            <td data-label="Margabase monthly">${sanitize(row.databaseMonthlyRate ? formatMoneyOrDash(row.databaseMonthlyRate) : '-')}</td>
-                            <td data-label="check"><span class="hr-pill ${row.rateStatus === 'Mismatch' ? 'inactive' : ''}">${sanitize(row.rateStatus)}</span></td>
+                            <td data-label="source"><span class="hr-pill">${sanitize(row.sourceLabel)}</span></td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -841,7 +798,7 @@ function renderPayrollModel() {
             </section>
             <section>
                 <h4>Deductions Register</h4>
-                <p>The uploaded workbook does not contain deduction columns or formulas. Deductions should be manually encoded from approved payroll records before printing final payroll.</p>
+                <p>The workbook contains deduction columns and formulas. Deduction amounts should be encoded from approved payroll records before printing the final payroll.</p>
                 <div class="table-container">
                     <table class="table hr-payroll-table">
                         <thead><tr><th>Employee</th><th>Deduction Type</th><th>Reference</th><th>Amount</th><th>Approved / Source</th></tr></thead>
@@ -856,9 +813,9 @@ function renderPayrollModel() {
         <div class="hr-detected-grid">
             <div><span>Workbook</span><strong>payroll 1st Period of May 2026.xlsx</strong></div>
             <div><span>Sheet</span><strong>Sheet1</strong></div>
-            <div><span>Rows</span><strong>34 official payroll employees</strong></div>
+            <div><span>Rows</span><strong>${sampleRows.length} employees from tbl_employee payroll setup</strong></div>
             <div><span>Print Setup</span><strong>Portrait, fit to page</strong></div>
-            <div><span>Monthly Rate</span><strong>Official rate from payroll image / semimrate x 2</strong></div>
+            <div><span>Monthly Rate</span><strong>tbl_employee semimrate x 2</strong></div>
             <div><span>Net Salary Sample Total</span><strong>${formatMoneyOrDash(totals.netSalary)}</strong></div>
         </div>
         <h4>Copied Computation Rules</h4>
@@ -876,40 +833,43 @@ function renderPayrollModel() {
 }
 
 function buildSamplePayrollRows() {
-    return OFFICIAL_PAYROLL_ROWS.map((payrollRow, index) => {
-        const employee = findEmployeeForPayrollName(payrollRow.employee);
-        const rates = payrollRatesFor({
-            monthly_rate: payrollRow.monthlyRate,
-            semim_rate: payrollRow.monthlyRate / 2
-        });
-        const databaseMonthlyRate = employee ? toNumber(firstPresent(employee, ['monthly_rate', 'monthly_salary', 'basic_salary', 'basic_monthly'])) : 0;
-        const rateStatus = !employee
-            ? 'No record'
-            : Math.abs(databaseMonthlyRate - payrollRow.monthlyRate) < 0.01
-                ? 'Match'
-                : 'Mismatch';
-        return {
-            number: index + 1,
-            id: employee?.id || employee?._docId || '',
-            name: payrollRow.employee,
-            organization: getPayrollOrganization(payrollRow.employee, employee),
-            status: employee ? (MargaUtils.isOfficialActiveEmployee(employee) ? 'Active' : 'Inactive') : 'No record',
-            monthlyRate: roundMoney(rates.monthlyRate),
-            semiMonthlyRate: roundMoney(rates.semiMonthlyRate),
-            dailyRate: roundMoney(rates.dailyRate),
-            netSalary: roundMoney(payrollPreviewNetSalary(payrollRow.monthlyRate)),
-            databaseMonthlyRate: roundMoney(databaseMonthlyRate),
-            rateStatus
-        };
-    });
+    return HR_STATE.employees
+        .map((employee) => {
+            const rates = payrollRatesFor(employee);
+            const payrollSource = firstPresent(employee, ['payroll_rate_source']);
+            const sequence = toNumber(firstPresent(employee, ['payroll_sequence']));
+            const hasSeededPayrollRate = payrollSource === PAYROLL_RATE_SOURCE || sequence > 0;
+            if (!hasSeededPayrollRate) return null;
+            const name = firstPresent(employee, ['payroll_sheet_employee_name'])
+                || MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || 'Employee');
+            return {
+                number: sequence || 9999,
+                id: employee.id || employee._docId || '',
+                name,
+                organization: getPayrollOrganization(name, employee),
+                status: MargaUtils.isOfficialActiveEmployee(employee) ? 'Active' : 'Inactive',
+                monthlyRate: roundMoney(rates.monthlyRate),
+                semiMonthlyRate: roundMoney(rates.semiMonthlyRate),
+                dailyRate: roundMoney(rates.dailyRate),
+                allowance: roundMoney(toNumber(firstPresent(employee, ['allowance', 'payroll_allowance']))),
+                netSalary: roundMoney(payrollPreviewNetSalary(rates.monthlyRate, firstPresent(employee, ['allowance', 'payroll_allowance']))),
+                sourceLabel: payrollSource || 'tbl_employee'
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+            if (left.number !== right.number) return left.number - right.number;
+            return left.name.localeCompare(right.name);
+        })
+        .map((row, index) => ({ ...row, number: index + 1 }));
 }
 
-function payrollPreviewNetSalary(monthlyRate) {
+function payrollPreviewNetSalary(monthlyRate, allowanceValue = 0) {
     const semiMonthlyRate = toNumber(monthlyRate) / 2;
     const dailyRate = ((semiMonthlyRate * 2) / 313) * 12;
     const totalBasic = semiMonthlyRate;
     const approvedOtPay = 0;
-    const allowance = 0;
+    const allowance = toNumber(allowanceValue);
     const regularOt = 0;
     const holidayPay = 0;
     const adjustment = 0;
@@ -960,12 +920,6 @@ function savePayrollOrganizationDraft(payrollName, organization) {
     } catch (error) {
         console.warn('Unable to save payroll organization draft.', error);
     }
-}
-
-function findEmployeeForPayrollName(payrollName) {
-    const target = normalizePayrollName(payrollName);
-    const candidates = new Set([target, ...(PAYROLL_NAME_ALIASES.get(target) || [])]);
-    return HR_STATE.employees.find((employee) => candidates.has(normalizePayrollName(MargaUtils.getEmployeeFullName(employee, '')))) || null;
 }
 
 function normalizePayrollName(value) {
@@ -1245,6 +1199,9 @@ function renderPerformanceDetail(row) {
 
 function getSalaryRate(employee) {
     return firstPresent(employee, [
+        'monthly_salary',
+        'monthly_rate',
+        'basic_salary',
         'semi_monthly_rate',
         'semim_rate',
         'semimrate',
@@ -1252,8 +1209,6 @@ function getSalaryRate(employee) {
         'salary',
         'daily_rate',
         'rate',
-        'basic_salary',
-        'monthly_salary',
         'marga_salary_rate',
         'marga_daily_rate',
         'payroll_rate'
