@@ -15,8 +15,10 @@ const ALLOWED_ORIGINS = new Set([
     'https://care.marga.biz',
     'http://127.0.0.1:9100',
     'http://127.0.0.1:9200',
+    'http://127.0.0.1:5178',
     'http://localhost:9100',
     'http://localhost:9200',
+    'http://localhost:5178',
 ]);
 
 const MIME_TYPES = {

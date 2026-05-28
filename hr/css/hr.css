@@ -620,6 +620,52 @@
     margin-top: 0.35rem;
 }
 
+.hr-location-form.marga-form-grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    align-items: start;
+    gap: 0.85rem;
+}
+
+.hr-location-form .marga-field,
+.hr-validator-grid .marga-field {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.hr-location-form .marga-field span,
+.hr-validator-grid .marga-field span {
+    color: #41516b;
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.hr-location-form input,
+.hr-location-form select,
+.hr-location-form textarea,
+.hr-validator-grid input,
+.hr-validator-grid select {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    border: 1px solid #cfdbea;
+    border-radius: 7px;
+    background: #fff;
+    color: #19345c;
+    padding: 0.5rem 0.65rem;
+    font: inherit;
+    font-size: 0.92rem;
+}
+
+.hr-location-form textarea {
+    min-height: 86px;
+    resize: vertical;
+}
+
+.hr-location-form .marga-field-full {
+    grid-column: 1 / -1;
+}
+
 .hr-meter-control {
     display: grid;
     grid-template-columns: 1fr 64px;
@@ -988,6 +1034,7 @@
 @media (max-width: 1100px) {
     .hr-location-layout,
     .hr-validator-grid,
+    .hr-location-form.marga-form-grid,
     .hr-detected-grid,
     .hr-payroll-sample-header,
     .hr-payroll-totals,
