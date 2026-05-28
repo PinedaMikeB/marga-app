@@ -457,6 +457,113 @@
     gap: 1rem;
 }
 
+.hr-payroll-sample {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border: 1px solid rgba(36, 82, 143, 0.18);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 249, 255, 0.92)),
+        repeating-linear-gradient(90deg, rgba(36, 82, 143, 0.045) 0, rgba(36, 82, 143, 0.045) 1px, transparent 1px, transparent 18px);
+}
+
+.hr-payroll-sample-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.28fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.hr-payroll-sample-header span,
+.hr-payroll-total span,
+.hr-payroll-totals span,
+.hr-kicker,
+.hr-employee-brief-metrics span {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.hr-payroll-sample-header h4 {
+    margin: 0.15rem 0 0.25rem;
+    color: #132948;
+    font-size: 1.35rem;
+    line-height: 1.12;
+}
+
+.hr-payroll-sample-header p {
+    margin: 0;
+    color: #50627d;
+    font-weight: 700;
+    line-height: 1.42;
+}
+
+.hr-payroll-total {
+    display: grid;
+    gap: 0.35rem;
+    justify-items: end;
+    padding: 0.85rem;
+    border: 1px solid #cfe0f4;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-payroll-total strong {
+    color: #0f4f91;
+    font-size: 1.35rem;
+}
+
+.hr-payroll-totals {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.hr-payroll-totals div {
+    display: grid;
+    gap: 0.25rem;
+    min-height: 66px;
+    padding: 0.75rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-payroll-totals strong {
+    color: #19345c;
+    font-size: 1rem;
+}
+
+.hr-payroll-table-wrap {
+    max-height: 460px;
+    overflow: auto;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-payroll-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #eef5fd;
+}
+
+.hr-payroll-table td:first-child {
+    min-width: 190px;
+}
+
+.hr-payroll-table small {
+    display: block;
+    margin-top: 0.2rem;
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
 .hr-payroll-analysis {
     display: grid;
     gap: 0.75rem;
@@ -653,7 +760,7 @@
 }
 
 .hr-modal {
-    width: min(960px, calc(100vw - 2rem));
+    width: min(1120px, calc(100vw - 2rem));
     z-index: 270;
 }
 
@@ -684,12 +791,14 @@
 
 .hr-modal .modal-body {
     display: grid;
-    gap: 1rem;
-    padding: 1.25rem;
+    gap: 0.85rem;
+    padding: 1rem 1.25rem;
     overflow: auto;
 }
 
 .hr-modal .modal-footer {
+    position: sticky;
+    bottom: 0;
     display: flex;
     justify-content: flex-end;
     gap: 0.75rem;
@@ -699,11 +808,118 @@
 
 .hr-modal-section {
     display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: rgba(248, 251, 255, 0.9);
+}
+
+.hr-employee-brief {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
     gap: 0.85rem;
-    padding: 1rem;
+    align-items: stretch;
+    padding: 0.9rem;
+    border: 1px solid rgba(36, 82, 143, 0.18);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.hr-employee-identity {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.hr-employee-avatar {
+    display: grid;
+    width: 54px;
+    height: 54px;
+    place-items: center;
+    border-radius: 8px;
+    background: #19345c;
+    color: #fff;
+    font-size: 1.35rem;
+    font-weight: 900;
+}
+
+.hr-employee-identity strong {
+    display: block;
+    color: #132948;
+    font-size: 1.3rem;
+    line-height: 1.15;
+}
+
+.hr-employee-identity p {
+    margin: 0.2rem 0 0;
+    color: #50627d;
+    font-weight: 700;
+}
+
+.hr-employee-brief-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.hr-employee-brief-metrics div {
+    display: grid;
+    align-content: center;
+    gap: 0.25rem;
+    min-height: 70px;
+    padding: 0.7rem;
     border: 1px solid #d9e4f2;
     border-radius: 8px;
     background: #f8fbff;
+}
+
+.hr-employee-brief-metrics strong {
+    color: #19345c;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.hr-employee-detail-grid {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    gap: 0.7rem;
+}
+
+.hr-employee-detail-grid .marga-field {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.hr-employee-detail-grid .marga-field span {
+    color: #41516b;
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.hr-employee-detail-grid input,
+.hr-employee-detail-grid select,
+.hr-employee-detail-grid textarea {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    border: 1px solid #cfdbea;
+    border-radius: 7px;
+    background: #fff;
+    color: #19345c;
+    padding: 0.48rem 0.6rem;
+    font: inherit;
+    font-size: 0.92rem;
+}
+
+.hr-employee-detail-grid textarea {
+    min-height: 70px;
+    resize: vertical;
+}
+
+.hr-employee-detail-grid .marga-field-full {
+    grid-column: span 2;
 }
 
 .hr-performance-detail {
@@ -773,12 +989,24 @@
     .hr-location-layout,
     .hr-validator-grid,
     .hr-detected-grid,
+    .hr-payroll-sample-header,
+    .hr-payroll-totals,
+    .hr-employee-brief,
+    .hr-employee-brief-metrics,
     .hr-performance-summary,
     .hr-recommendation-board,
     .hr-performance-hero,
     .hr-perf-tile-grid,
     .hr-performance-lanes {
         grid-template-columns: 1fr;
+    }
+
+    .hr-payroll-total {
+        justify-items: start;
+    }
+
+    .hr-employee-detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .hr-recommendation-lead {
@@ -793,8 +1021,13 @@
 @media (max-width: 760px) {
     .hr-overview-grid,
     .hr-switch-row,
-    .hr-form-actions {
+    .hr-form-actions,
+    .hr-employee-detail-grid {
         grid-template-columns: 1fr;
+    }
+
+    .hr-employee-detail-grid .marga-field-full {
+        grid-column: auto;
     }
 
     .hr-actions {

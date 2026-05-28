@@ -150,6 +150,7 @@ async function loadHrModule() {
     } catch (error) {
         console.error('HR module load failed:', error);
         status.textContent = `Unable to load HR records: ${error.message || error}`;
+        renderPayrollModel();
     }
 }
 
@@ -710,11 +711,74 @@ async function savePerformanceRowStatus(statusKey, status) {
 }
 
 function renderPayrollModel() {
-    document.getElementById('payrollStatus').textContent = 'Formula design from attached workbook: payroll, attendance summary, and payout summary sheets.';
+    const sampleRows = buildSamplePayrollRows();
+    const totals = sampleRows.reduce((sum, row) => ({
+        basic: sum.basic + row.basicPay,
+        overtime: sum.overtime + row.overtimePay,
+        allowance: sum.allowance + row.allowance,
+        deductions: sum.deductions + row.totalDeductions,
+        net: sum.net + row.netPay
+    }), { basic: 0, overtime: 0, allowance: 0, deductions: 0, net: 0 });
+    document.getElementById('payrollStatus').textContent = 'Sample payroll for May 10-25, 2026. Preview only; no payroll records are written.';
+    document.getElementById('payrollSample').innerHTML = `
+        <div class="hr-payroll-sample-header">
+            <div>
+                <span>Sample Cutoff</span>
+                <h4>May 10-25, 2026 Payroll</h4>
+                <p>Computed from loaded HR salary fields with sample attendance inputs. Use this as the screen shape before connecting final attendance and deduction sources.</p>
+            </div>
+            <div class="hr-payroll-total">
+                <span>Sample Net Payroll</span>
+                <strong>${formatMoneyOrDash(totals.net)}</strong>
+            </div>
+        </div>
+        <div class="hr-payroll-totals">
+            <div><span>Basic</span><strong>${formatMoneyOrDash(totals.basic)}</strong></div>
+            <div><span>OT</span><strong>${formatMoneyOrDash(totals.overtime)}</strong></div>
+            <div><span>Allowance</span><strong>${formatMoneyOrDash(totals.allowance)}</strong></div>
+            <div><span>Deductions</span><strong>${formatMoneyOrDash(totals.deductions)}</strong></div>
+        </div>
+        <div class="table-container hr-payroll-table-wrap">
+            <table class="table hr-payroll-table">
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Position</th>
+                        <th>Rate</th>
+                        <th>Abs.</th>
+                        <th>OT</th>
+                        <th>Late</th>
+                        <th>Basic</th>
+                        <th>Allowance</th>
+                        <th>Deductions</th>
+                        <th>Net Pay</th>
+                        <th>Payout</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sampleRows.map((row) => `
+                        <tr>
+                            <td data-label="Employee"><strong>${sanitize(row.name)}</strong><small>ID ${sanitize(row.id)}</small></td>
+                            <td data-label="Position">${sanitize(row.position || '-')}</td>
+                            <td data-label="Rate">${sanitize(formatMoneyOrDash(row.semiMonthlyRate))}</td>
+                            <td data-label="Abs.">${sanitize(row.absences)}</td>
+                            <td data-label="OT">${sanitize(row.overtimeHours)}h</td>
+                            <td data-label="Late">${sanitize(row.lateMinutes)}m</td>
+                            <td data-label="Basic">${sanitize(formatMoneyOrDash(row.basicPay))}</td>
+                            <td data-label="Allowance">${sanitize(formatMoneyOrDash(row.allowance))}</td>
+                            <td data-label="Deductions">${sanitize(formatMoneyOrDash(row.totalDeductions))}</td>
+                            <td data-label="Net Pay"><strong>${sanitize(formatMoneyOrDash(row.netPay))}</strong></td>
+                            <td data-label="Payout"><span class="hr-pill ${row.payoutClass}">${sanitize(row.payout)}</span></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
     document.getElementById('payrollAnalysis').innerHTML = `
         <h4>Payroll Sheet Formula Map</h4>
         <div class="hr-detected-grid">
-            <div><span>Cutoff</span><strong>April 11-25, 2026</strong></div>
+            <div><span>Cutoff</span><strong>May 10-25, 2026</strong></div>
             <div><span>Source Sheet</span><strong>payroll</strong></div>
             <div><span>Attendance Sheet</span><strong>Sheet2</strong></div>
             <div><span>Payout Sheet</span><strong>Sheet1</strong></div>
@@ -735,6 +799,75 @@ function renderPayrollModel() {
             <li><strong>Payout summary:</strong> split by bank account/direct deposit and encashment, then reconcile totals against payroll totals.</li>
         </ol>
     `;
+}
+
+function buildSamplePayrollRows() {
+    const source = HR_STATE.employees
+        .filter((employee) => MargaUtils.isOfficialActiveEmployee(employee))
+        .filter((employee) => Number(toNumber(firstPresent(employee, ['monthly_salary', 'basic_salary', 'semi_monthly_rate', 'semim_rate', 'semimrate', 'daily_rate', 'salary_rate', 'salary']))) > 0)
+        .sort((left, right) => MargaUtils.getEmployeeFullName(left, '').localeCompare(MargaUtils.getEmployeeFullName(right, '')))
+        .slice(0, 8);
+    const employees = source.length ? source : getFallbackSampleEmployees();
+    const attendancePattern = [
+        { absences: 0, overtimeHours: 2, lateMinutes: 0 },
+        { absences: 0.5, overtimeHours: 0, lateMinutes: 12 },
+        { absences: 1, overtimeHours: 4, lateMinutes: 0 },
+        { absences: 0, overtimeHours: 1, lateMinutes: 30 },
+        { absences: 0, overtimeHours: 0, lateMinutes: 5 },
+        { absences: 0.5, overtimeHours: 3, lateMinutes: 0 },
+        { absences: 0, overtimeHours: 2, lateMinutes: 18 },
+        { absences: 1, overtimeHours: 0, lateMinutes: 0 }
+    ];
+    return employees.map((employee, index) => {
+        const pattern = attendancePattern[index % attendancePattern.length];
+        const rates = payrollRatesFor(employee);
+        const hourlyRate = rates.dailyRate / 8;
+        const basicPay = Math.max(rates.semiMonthlyRate - (rates.dailyRate * pattern.absences), 0);
+        const overtimePay = hourlyRate * 1.25 * pattern.overtimeHours;
+        const lateDeduction = (hourlyRate / 60) * pattern.lateMinutes;
+        const statutory = Math.min(900, Math.max(350, rates.semiMonthlyRate * 0.055));
+        const totalDeductions = lateDeduction + statutory;
+        const netPay = basicPay + overtimePay + rates.allowance - totalDeductions;
+        const hasBank = Boolean(String(firstPresent(employee, ['bank_account_no', 'bank_account', 'account_no', 'payroll_account_no']) || '').trim());
+        return {
+            id: employee.id || employee._docId || `S${index + 1}`,
+            name: MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || `Sample Staff ${index + 1}`),
+            position: getPositionLabel(employee),
+            semiMonthlyRate: roundMoney(rates.semiMonthlyRate),
+            dailyRate: roundMoney(rates.dailyRate),
+            allowance: roundMoney(rates.allowance),
+            absences: pattern.absences,
+            overtimeHours: pattern.overtimeHours,
+            lateMinutes: pattern.lateMinutes,
+            basicPay: roundMoney(basicPay),
+            overtimePay: roundMoney(overtimePay),
+            totalDeductions: roundMoney(totalDeductions),
+            netPay: roundMoney(netPay),
+            payout: hasBank ? 'Bank' : 'Encashment',
+            payoutClass: hasBank ? '' : 'warning'
+        };
+    });
+}
+
+function payrollRatesFor(employee) {
+    const monthly = toNumber(firstPresent(employee, ['monthly_salary', 'basic_salary', 'basic_monthly', 'monthly_rate']));
+    const semiMonthly = toNumber(firstPresent(employee, ['semi_monthly_rate', 'semim_rate', 'semimrate', 'salary_rate', 'salary']));
+    const daily = toNumber(firstPresent(employee, ['daily_rate', 'marga_daily_rate']));
+    const resolvedSemi = semiMonthly || (monthly ? monthly / 2 : daily * 12) || 12500;
+    const resolvedDaily = daily || ((resolvedSemi * 2) / 313) * 12;
+    return {
+        semiMonthlyRate: resolvedSemi,
+        dailyRate: resolvedDaily,
+        allowance: toNumber(getAllowance(employee))
+    };
+}
+
+function getFallbackSampleEmployees() {
+    return [
+        { id: 'S-001', firstname: 'Sample', lastname: 'Admin', position_name: 'Office Admin', monthly_salary: 28000, allowance: 1000, bank_account_no: 'sample' },
+        { id: 'S-002', firstname: 'Sample', lastname: 'Technician', position_name: 'Field Technician', monthly_salary: 24000, allowance: 800 },
+        { id: 'S-003', firstname: 'Sample', lastname: 'Collector', position_name: 'Collector', monthly_salary: 26000, allowance: 900, bank_account_no: 'sample' }
+    ];
 }
 
 function getPositionLabel(employee) {
@@ -810,8 +943,31 @@ function openEmployeeModal(employeeId) {
     setInputValue('employeeEmergencyNameInput', firstPresent(employee, ['emergency_contact_name', 'emergency_contact']));
     setInputValue('employeeEmergencyPhoneInput', firstPresent(employee, ['emergency_contact_phone', 'emergency_phone']));
     setInputValue('employeeNotesInput', firstPresent(employee, ['hr_notes', 'notes', 'remarks']));
+    document.getElementById('employeeModalBrief').innerHTML = renderEmployeeBrief(employee);
     document.getElementById('employeeModalStatus').textContent = 'Ready.';
     setModalOpen('employeeModal', 'employeeModalOverlay', true);
+}
+
+function renderEmployeeBrief(employee) {
+    const active = MargaUtils.isOfficialActiveEmployee(employee);
+    const rates = payrollRatesFor(employee);
+    const mobile = firstPresent(employee, ['mobile', 'mobile_no', 'phone', 'contact_no', 'contact_number']) || '-';
+    const email = employee.email || employee.marga_login_email || employee.username || '-';
+    return `
+        <div class="hr-employee-identity">
+            <span class="hr-employee-avatar">${sanitize(String(MargaUtils.getEmployeeFullName(employee, 'E').charAt(0) || 'E').toUpperCase())}</span>
+            <div>
+                <span class="hr-kicker">${active ? 'Active Employee' : 'Inactive Employee'} · ID ${sanitize(employee.id || employee._docId || '-')}</span>
+                <strong>${sanitize(MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || 'Employee'))}</strong>
+                <p>${sanitize(getPositionLabel(employee) || 'No position set')} · ${sanitize(email)} · ${sanitize(mobile)}</p>
+            </div>
+        </div>
+        <div class="hr-employee-brief-metrics">
+            <div><span>Semi-monthly</span><strong>${sanitize(formatMoneyOrDash(rates.semiMonthlyRate))}</strong></div>
+            <div><span>Daily rate</span><strong>${sanitize(formatMoneyOrDash(rates.dailyRate))}</strong></div>
+            <div><span>Allowance</span><strong>${sanitize(formatMoneyOrDash(rates.allowance))}</strong></div>
+        </div>
+    `;
 }
 
 function closeEmployeeModal() {
@@ -1274,6 +1430,15 @@ function formatMoneyOrDash(value) {
         return `PHP ${numeric.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     return String(value || '-');
+}
+
+function toNumber(value) {
+    const numeric = Number(String(value ?? '').replace(/,/g, ''));
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function roundMoney(value) {
+    return Math.round((Number(value) || 0) * 100) / 100;
 }
 
 function normalizeStaffKey(value) {

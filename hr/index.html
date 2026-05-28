@@ -183,6 +183,9 @@
                     </div>
                 </div>
                 <div class="hr-payroll-layout">
+                    <div class="hr-payroll-sample" id="payrollSample">
+                        <div class="ops-subtext">Building May 10-25 sample payroll...</div>
+                    </div>
                     <div class="hr-payroll-analysis" id="payrollAnalysis">
                         <h4>Payroll Computation Model</h4>
                         <p>Loading payroll formula design...</p>
@@ -345,9 +348,10 @@
         </div>
         <div class="modal-body">
             <input type="hidden" id="employeeDocId">
-            <div class="hr-modal-section">
+            <section class="hr-employee-brief" id="employeeModalBrief" aria-label="Employee payroll summary"></section>
+            <div class="hr-modal-section hr-modal-section-identity">
                 <h3>Identity</h3>
-                <div class="marga-form-grid">
+                <div class="marga-form-grid hr-employee-detail-grid">
                     <label class="marga-field"><span>Employee ID</span><input id="employeeIdInput" disabled></label>
                     <label class="marga-field"><span>First Name</span><input id="employeeFirstNameInput"></label>
                     <label class="marga-field"><span>Last Name</span><input id="employeeLastNameInput"></label>
@@ -361,7 +365,7 @@
             </div>
             <div class="hr-modal-section">
                 <h3>Employment & Payroll</h3>
-                <div class="marga-form-grid">
+                <div class="marga-form-grid hr-employee-detail-grid">
                     <label class="marga-field"><span>Position</span><input id="employeePositionInput"></label>
                     <label class="marga-field"><span>Hire Date</span><input id="employeeHireDateInput" type="date"></label>
                     <label class="marga-field"><span>Rate Type</span><select id="employeeRateTypeInput"><option value="">Select</option><option value="Monthly">Monthly</option><option value="Semi-monthly">Semi-monthly</option><option value="Daily">Daily</option><option value="Hourly">Hourly</option></select></label>
@@ -374,7 +378,7 @@
             </div>
             <div class="hr-modal-section">
                 <h3>Government & Emergency Details</h3>
-                <div class="marga-form-grid">
+                <div class="marga-form-grid hr-employee-detail-grid">
                     <label class="marga-field"><span>SSS Number</span><input id="employeeSssInput"></label>
                     <label class="marga-field"><span>PhilHealth Number</span><input id="employeePhilhealthInput"></label>
                     <label class="marga-field"><span>Pag-IBIG / HDMF Number</span><input id="employeePagibigInput"></label>
@@ -415,6 +419,6 @@
     <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="js/hr.js?v=20260518-performance-status-1"></script>
+    <script src="js/hr.js?v=20260528-payroll-detail-1"></script>
 </body>
 </html>
