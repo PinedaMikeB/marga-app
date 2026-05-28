@@ -4618,7 +4618,8 @@ function setStatus(text, type = 'idle') {
 }
 
 function initDefaults() {
-    els.endMonthInput.value = monthInputValue(new Date());
+    const now = new Date();
+    els.endMonthInput.value = `${now.getFullYear()}-12`;
 }
 
 function compareBillingRows(left, right, sortValue) {
@@ -4766,7 +4767,7 @@ function buildRequestContext(options = {}) {
     const params = new URLSearchParams();
     params.set('end_year', String(end.year));
     params.set('end_month', String(end.month));
-    params.set('months_back', '6');
+    params.set('months_back', '13');
     params.set('row_limit', String(Math.max(1, Math.min(5000, Number(els.rowLimitInput.value || 5000)))));
     params.set('latest_limit', '100');
     params.set('max_billing_pages', String(Math.max(10, Number(els.billingPagesInput.value || 10))));
@@ -4875,7 +4876,7 @@ function renderSummaryTable(payload) {
     els.summarySubhead.textContent = current
         ? `${formatCount(current.to_bill_customers_total)} customers should be billed by ${endLabel}, ${formatCount(current.pending_customers_total)} are still pending.`
         : 'No monthly summary returned.';
-    els.sheetMeta.textContent = payload.meta?.reading_day_source || '6-month billing carryover view';
+    els.sheetMeta.textContent = payload.meta?.reading_day_source || 'Billing carryover view';
 
     if (!rows.length) {
         els.summaryTableWrap.innerHTML = '<div class="empty-panel">No monthly summary returned.</div>';

@@ -14,7 +14,7 @@ const BILLING_PURPOSE_ID = 1;
 const READING_PURPOSE_ID = 8;
 const BILLABLE_CONTRACT_STATUS_IDS = new Set([1, 2, 3, 4, 8, 9, 10, 13]);
 const FOR_READING_CATEGORY_IDS = new Set([1, 2, 3, 5, 8]);
-const DEFAULT_MONTHS_BACK = 6;
+const DEFAULT_MONTHS_BACK = 13;
 const DETAIL_ID_PREVIEW_LIMIT = 12;
 const READING_CATEGORY_IDS = new Set([1, 3, 8]);
 const CONTRACT_CATEGORY_META = {
@@ -1722,8 +1722,7 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
 
         const isSavedWaitingForPrint = !actualPrintedDate
             && savedYmd
-            && savedYmd >= currentPrintMonthStartYmd
-            && savedYmd <= todayYmd
+            && savedYmd === todayYmd
             && amount > 0;
         if (isSavedWaitingForPrint) {
             const group = addInvoiceGroup(savedInvoiceGroups, groupKey, detail, amount);
@@ -2755,7 +2754,7 @@ exports.handler = async (event) => {
         const endMonth = normalizeMonth(searchParams.get('end_month')) || (now.getMonth() + 1);
         const explicitStartYear = normalizeYear(searchParams.get('start_year'));
         const explicitStartMonth = normalizeMonth(searchParams.get('start_month'));
-        const monthsBack = intParam(searchParams.get('months_back') || searchParams.get('months') || DEFAULT_MONTHS_BACK, DEFAULT_MONTHS_BACK, 2, 12);
+        const monthsBack = intParam(searchParams.get('months_back') || searchParams.get('months') || DEFAULT_MONTHS_BACK, DEFAULT_MONTHS_BACK, 2, 18);
         const endKey = monthKeyFromYearMonth(endYear, endMonth);
         const startKey = explicitStartYear && explicitStartMonth
             ? monthKeyFromYearMonth(explicitStartYear, explicitStartMonth)

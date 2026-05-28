@@ -1193,15 +1193,19 @@ button.matrix-total-card:focus-visible {
 .rd-col {
     width: 72px;
     min-width: 72px;
+    max-width: 72px;
 }
 
 .sn-col {
     width: 156px;
     min-width: 156px;
+    max-width: 156px;
 }
 
 .customer-col {
+    width: 320px;
     min-width: 240px;
+    max-width: 320px;
     text-align: left;
 }
 
@@ -1212,19 +1216,43 @@ button.matrix-total-card:focus-visible {
     text-align: left;
 }
 
+.matrix-sheet .rd-col,
+.matrix-sheet .sn-col,
+.matrix-sheet .customer-col,
 .matrix-sheet .branch-col {
     position: sticky;
-    left: 0;
     z-index: 11;
     background: var(--bill-paper);
     box-shadow: 1px 0 0 rgba(214, 225, 238, 0.95);
 }
 
+.matrix-sheet .rd-col {
+    left: 0;
+}
+
+.matrix-sheet .sn-col {
+    left: 72px;
+}
+
+.matrix-sheet .customer-col {
+    left: 228px;
+}
+
+.matrix-sheet .branch-col {
+    left: 548px;
+}
+
+.matrix-sheet thead .rd-col,
+.matrix-sheet thead .sn-col,
+.matrix-sheet thead .customer-col,
 .matrix-sheet thead .branch-col {
     z-index: 36;
     background: var(--bill-header);
 }
 
+.matrix-sheet tfoot .rd-col,
+.matrix-sheet tfoot .sn-col,
+.matrix-sheet tfoot .customer-col,
 .matrix-sheet tfoot .branch-col {
     z-index: 13;
     background: var(--bill-total);
