@@ -4246,15 +4246,43 @@ function getEnvelopeBankDetails(payload) {
     };
 }
 
-function buildEnvelopePrintDocument(payload) {
+function getEnvelopePrintProfile(size = 'brown') {
+    if (size === 'white') {
+        return {
+            label: 'White envelope',
+            padding: '0.35in 0.42in',
+            gap: '0.09in',
+            toFont: '14pt',
+            attentionFont: '12.5pt',
+            bankFont: '8pt',
+            fromFont: '12.5pt',
+            bankTop: '0.04in',
+            fromTop: '0.06in'
+        };
+    }
+    return {
+        label: 'Brown envelope',
+        padding: '0.45in 0.55in',
+        gap: '0.18in',
+        toFont: '28pt',
+        attentionFont: '25pt',
+        bankFont: '16pt',
+        fromFont: '25pt',
+        bankTop: '0.08in',
+        fromTop: '0.12in'
+    };
+}
+
+function buildEnvelopePrintDocument(payload, size = 'brown') {
     const details = getEnvelopeBankDetails(payload);
     const toName = getEnvelopeRecipientName(payload);
     const contactPerson = String(payload?.envelopeContactPerson || '').trim();
+    const profile = getEnvelopePrintProfile(size);
     return `<!doctype html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Billing Envelope - ${escapeHtml(toName)}</title>
+    <title>${escapeHtml(profile.label)} - ${escapeHtml(toName)}</title>
     <style>
         @page { size: 9.5in 4.125in landscape; margin: 0; }
         * { box-sizing: border-box; }
@@ -4262,29 +4290,29 @@ function buildEnvelopePrintDocument(payload) {
         .envelope-sheet {
             width: 9.5in;
             height: 4.125in;
-            padding: 0.45in 0.55in;
+            padding: ${profile.padding};
             display: flex;
             flex-direction: column;
             justify-content: center;
-            gap: 0.18in;
+            gap: ${profile.gap};
         }
         .envelope-to {
-            font-size: 28pt;
+            font-size: ${profile.toFont};
             line-height: 1.15;
             font-weight: 500;
         }
         .envelope-attention {
-            font-size: 25pt;
+            font-size: ${profile.attentionFont};
             line-height: 1.12;
         }
         .envelope-bank {
-            margin-top: 0.08in;
-            font-size: 16pt;
+            margin-top: ${profile.bankTop};
+            font-size: ${profile.bankFont};
             line-height: 1.18;
         }
         .envelope-from {
-            margin-top: 0.12in;
-            font-size: 25pt;
+            margin-top: ${profile.fromTop};
+            font-size: ${profile.fromFont};
             line-height: 1.12;
         }
     </style>
@@ -4302,6 +4330,45 @@ function buildEnvelopePrintDocument(payload) {
     </main>
 </body>
 </html>`;
+}
+
+function requestEnvelopeSize() {
+    return new Promise((resolve) => {
+        document.getElementById('billingEnvelopeSizeOverlay')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'billingEnvelopeSizeOverlay';
+        overlay.className = 'billing-save-result-overlay';
+        overlay.innerHTML = `
+            <section class="billing-save-result-card envelope-size-card" role="dialog" aria-modal="true" aria-label="Envelope size">
+                <button class="billing-save-result-close" type="button" aria-label="Close">x</button>
+                <div class="billing-save-result-kicker">Print Envelope</div>
+                <div class="billing-save-result-title">Choose envelope size</div>
+                <div class="envelope-size-actions">
+                    <button class="envelope-size-option" type="button" data-envelope-size="brown">
+                        <strong>Brown envelope</strong>
+                        <span>Big print, current layout</span>
+                    </button>
+                    <button class="envelope-size-option" type="button" data-envelope-size="white">
+                        <strong>White envelope</strong>
+                        <span>Small print, half-size text</span>
+                    </button>
+                </div>
+            </section>
+        `;
+        const close = (value = null) => {
+            overlay.remove();
+            resolve(value);
+        };
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close(null);
+        });
+        overlay.querySelector('.billing-save-result-close')?.addEventListener('click', () => close(null));
+        overlay.querySelectorAll('[data-envelope-size]').forEach((button) => {
+            button.addEventListener('click', () => close(button.dataset.envelopeSize || 'brown'));
+        });
+        document.body.appendChild(overlay);
+        overlay.querySelector('[data-envelope-size="white"]')?.focus();
+    });
 }
 
 async function saveEnvelopeContactForCurrentBilling(payload, contactPerson) {
@@ -4406,6 +4473,8 @@ async function printCurrentEnvelope() {
         MargaUtils.showToast('Open a saved printable billing first.', 'error');
         return;
     }
+    const envelopeSize = await requestEnvelopeSize();
+    if (!envelopeSize) return;
     const payload = currentRtpPrintPayload;
     let contactPerson = String(payload.envelopeContactPerson || '').trim();
     if (!contactPerson) {
@@ -4423,7 +4492,7 @@ async function printCurrentEnvelope() {
             }
         }
     }
-    printHtmlDocument(buildEnvelopePrintDocument(payload), 'marga_envelope_print');
+    printHtmlDocument(buildEnvelopePrintDocument(payload, envelopeSize), 'marga_envelope_print');
 }
 
 function printHtmlDocument(printMarkup, windowName = 'marga_print') {
