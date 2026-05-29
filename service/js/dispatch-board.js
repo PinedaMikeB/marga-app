@@ -3227,6 +3227,7 @@ function getLatestVisitEventByStaff() {
 function getAttendanceByStaff() {
     const latest = new Map();
     opsState.attendanceRows.forEach((row) => {
+        if (isAdministrativeAttendanceBackfill(row)) return;
         const staffId = Number(row.staff_id || row.tech_id || row.employee_id || 0);
         if (staffId <= 0) return;
         const current = latest.get(staffId);
@@ -3245,6 +3246,15 @@ function getAttendanceByStaff() {
         }
     });
     return latest;
+}
+
+function isAdministrativeAttendanceBackfill(row) {
+    if (!row) return false;
+    const mode = String(row.attendance_mode || row.source || '').trim().toLowerCase();
+    const policy = String(row.attendance_location_policy || '').trim().toLowerCase();
+    if (row.cutoff_backfill === true) return true;
+    if (mode === 'admin_cutoff_backfill') return true;
+    return policy.includes('admin_cutoff_backfill');
 }
 
 function getAttendanceCoordinates(attendance) {
@@ -3363,7 +3373,7 @@ function buildServiceProgressItems() {
 
             return {
                 staffId,
-                staffName: getEmployeeName(employee, staffId),
+                staffName: getEmployeeFullName(employee, staffId),
                 role: getRole(employee, position),
                 taskCount: rows.length,
                 actionKey,
