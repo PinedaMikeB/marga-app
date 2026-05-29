@@ -4250,24 +4250,24 @@ function getEnvelopePrintProfile(size = 'brown') {
     if (size === 'white') {
         return {
             label: 'White envelope',
-            padding: '0.35in 2.5in',
-            gap: '0.09in',
-            toFont: '16pt',
-            attentionFont: '14.5pt',
-            bankFont: '14pt',
-            fromFont: '14pt',
+            padding: '0.35in 0.45in',
+            gap: '0.1in',
+            toFont: '18pt',
+            attentionFont: '16pt',
+            bankFont: '16pt',
+            fromFont: '16pt',
             bankTop: '0.04in',
             fromTop: '0.06in'
         };
     }
     return {
         label: 'Brown envelope',
-        padding: '0.45in 0.55in',
-        gap: '0.18in',
-        toFont: '28pt',
-        attentionFont: '25pt',
-        bankFont: '16pt',
-        fromFont: '25pt',
+        padding: '0.4in 0.5in',
+        gap: '0.12in',
+        toFont: '20pt',
+        attentionFont: '20pt',
+        bankFont: '20pt',
+        fromFont: '20pt',
         bankTop: '0.08in',
         fromTop: '0.12in'
     };
@@ -4284,17 +4284,31 @@ function buildEnvelopePrintDocument(payload, size = 'brown') {
     <meta charset="utf-8">
     <title>${escapeHtml(profile.label)} - ${escapeHtml(toName)}</title>
     <style>
-        @page { size: 9.5in 4.125in landscape; margin: 0; }
+        @page { size: landscape; margin: 0; }
         * { box-sizing: border-box; }
-        body { margin: 0; background: #fff; color: #222; font-family: "Times New Roman", Georgia, serif; }
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #fff;
+            color: #222;
+            font-family: "Times New Roman", Georgia, serif;
+        }
+        body {
+            display: grid;
+            place-items: center;
+        }
         .envelope-sheet {
-            width: 9.5in;
-            height: 4.125in;
+            width: 8.9in;
+            max-width: 100vw;
+            min-height: 3.7in;
             padding: ${profile.padding};
             display: flex;
             flex-direction: column;
             justify-content: center;
             gap: ${profile.gap};
+            text-align: center;
         }
         .envelope-to {
             font-size: ${profile.toFont};

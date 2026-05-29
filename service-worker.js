@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v94-billing-envelope-white';
+const CACHE_NAME = 'marga-app-shell-v95-billing-envelope-landscape';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -21,8 +21,8 @@ const SHELL_ASSETS = [
     '/assets/icons/icon-512.png',
     '/billing/',
     '/billing/index.html',
-    '/billing/css/billing.css?v=20260529-envelope-white-2',
-    '/billing/js/billing.js?v=20260529-envelope-white-2',
+    '/billing/css/billing.css?v=20260529-envelope-landscape-1',
+    '/billing/js/billing.js?v=20260529-envelope-landscape-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',
