@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v91-billing-saved-queue-audit-window';
+const CACHE_NAME = 'marga-app-shell-v92-billing-envelope-print';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -21,8 +21,8 @@ const SHELL_ASSETS = [
     '/assets/icons/icon-512.png',
     '/billing/',
     '/billing/index.html',
-    '/billing/css/billing.css?v=20260528-saved-queue-audit-window-1',
-    '/billing/js/billing.js?v=20260528-saved-queue-audit-window-1',
+    '/billing/css/billing.css?v=20260529-envelope-print-1',
+    '/billing/js/billing.js?v=20260529-envelope-print-1',
     '/customers/',
     '/customers/index.html',
     '/customers.html',

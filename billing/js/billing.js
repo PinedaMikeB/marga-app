@@ -62,6 +62,7 @@ const els = {
     billingCalcPrintBtn: null,
     billingCalcDotMatrixBtn: null,
     billingCalcMeterFormBtn: null,
+    billingCalcEnvelopeBtn: null,
     billingCalcCloseBtn: null
 };
 
@@ -96,6 +97,12 @@ const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
 const BILLING_DRAFTS_COLLECTION = 'tbl_billing_drafts';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SCHEDULE_AREA_RULES_COLLECTION = 'tbl_schedule_area_rules';
+const ENVELOPE_DEFAULTS = {
+    bankName: 'China Bank Savings Antipolo Branch',
+    accountName: 'Marga Enterprises',
+    accountNumber: '6173-00-00163-4',
+    from: 'Marga Enterprises'
+};
 const BILLING_SCHEDULE_PURPOSES = {
     printed_billing: {
         key: 'printed_billing',
@@ -2892,11 +2899,13 @@ function setRtpPrintPayload(payload) {
     els.billingCalcPrintBtn?.classList.toggle('hidden', !payload);
     els.billingCalcDotMatrixBtn?.classList.toggle('hidden', !payload);
     els.billingCalcMeterFormBtn?.classList.toggle('hidden', !payload);
+    els.billingCalcEnvelopeBtn?.classList.toggle('hidden', !payload);
     if (els.rtpInvoicePrintBtn) els.rtpInvoicePrintBtn.textContent = `Print ${printCode}`;
     if (els.rtpInvoiceDotMatrixBtn) els.rtpInvoiceDotMatrixBtn.textContent = `${printCode} Dot Matrix Print`;
     if (els.billingCalcPrintBtn) els.billingCalcPrintBtn.textContent = `Print ${printCode}`;
     if (els.billingCalcDotMatrixBtn) els.billingCalcDotMatrixBtn.textContent = `${printCode} Dot Matrix Print`;
     if (els.billingCalcMeterFormBtn) els.billingCalcMeterFormBtn.textContent = 'Print Meter Reading Form';
+    if (els.billingCalcEnvelopeBtn) els.billingCalcEnvelopeBtn.textContent = 'Print Envelope';
 }
 
 async function recordBillingPrintEvent(preview, channel = 'browser_print') {
@@ -3134,9 +3143,17 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
     return {
         invoiceNo,
         billingDocIds,
+        branchId: String(row?.branch_id || '').trim(),
+        companyId: String(row?.company_id || '').trim(),
+        billInfoDocId: String(billInfo?._docId || billInfo?.id || '').trim(),
         customerName: accountName || 'Unknown Customer',
         baseCustomerName: accountName || 'Unknown Customer',
         branchName: String(row?.branch_name || branch?.branchname || branch?.branch_name || '').trim(),
+        envelopeContactPerson: String(billInfo?.envelope_contact_person || '').trim(),
+        envelopeBankName: String(billInfo?.envelope_marga_bank_name || ENVELOPE_DEFAULTS.bankName).trim(),
+        envelopeAccountName: String(billInfo?.envelope_marga_account_name || ENVELOPE_DEFAULTS.accountName).trim(),
+        envelopeAccountNumber: String(billInfo?.envelope_marga_account_number || ENVELOPE_DEFAULTS.accountNumber).trim(),
+        envelopeFrom: String(billInfo?.envelope_from || ENVELOPE_DEFAULTS.from).trim(),
         tin: String(company?.company_tin || '').trim() || 'N/A',
         address,
         invoiceDate: formatUsDate(invoiceDate),
@@ -3204,9 +3221,17 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     return {
         invoiceNo: snapshotInvoiceNo,
         billingDocIds: [],
+        branchId: String(row?.branch_id || '').trim(),
+        companyId: String(row?.company_id || '').trim(),
+        billInfoDocId: String(billInfo?._docId || billInfo?.id || '').trim(),
         customerName: accountName || 'Unknown Customer',
         baseCustomerName: accountName || 'Unknown Customer',
         branchName: String(row?.branch_name || branch?.branchname || branch?.branch_name || '').trim(),
+        envelopeContactPerson: String(billInfo?.envelope_contact_person || '').trim(),
+        envelopeBankName: String(billInfo?.envelope_marga_bank_name || ENVELOPE_DEFAULTS.bankName).trim(),
+        envelopeAccountName: String(billInfo?.envelope_marga_account_name || ENVELOPE_DEFAULTS.accountName).trim(),
+        envelopeAccountNumber: String(billInfo?.envelope_marga_account_number || ENVELOPE_DEFAULTS.accountNumber).trim(),
+        envelopeFrom: String(billInfo?.envelope_from || ENVELOPE_DEFAULTS.from).trim(),
         tin: String(company?.company_tin || '').trim() || 'N/A',
         address,
         invoiceDate: formatUsDate(invoiceDate),
@@ -4206,6 +4231,199 @@ function printCurrentMeterReadingForm() {
     }
 
     printBillingAttachment(currentRtpPrintPayload, currentRtpMeterFormEstimate, 'meter_form');
+}
+
+function getEnvelopeRecipientName(payload) {
+    return String(payload?.branchName || payload?.customerName || '').trim() || 'Customer';
+}
+
+function getEnvelopeBankDetails(payload) {
+    return {
+        bankName: String(payload?.envelopeBankName || ENVELOPE_DEFAULTS.bankName).trim(),
+        accountName: String(payload?.envelopeAccountName || ENVELOPE_DEFAULTS.accountName).trim(),
+        accountNumber: String(payload?.envelopeAccountNumber || ENVELOPE_DEFAULTS.accountNumber).trim(),
+        from: String(payload?.envelopeFrom || ENVELOPE_DEFAULTS.from).trim()
+    };
+}
+
+function buildEnvelopePrintDocument(payload) {
+    const details = getEnvelopeBankDetails(payload);
+    const toName = getEnvelopeRecipientName(payload);
+    const contactPerson = String(payload?.envelopeContactPerson || '').trim();
+    return `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Billing Envelope - ${escapeHtml(toName)}</title>
+    <style>
+        @page { size: 9.5in 4.125in landscape; margin: 0; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #fff; color: #222; font-family: "Times New Roman", Georgia, serif; }
+        .envelope-sheet {
+            width: 9.5in;
+            height: 4.125in;
+            padding: 0.45in 0.55in;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 0.18in;
+        }
+        .envelope-to {
+            font-size: 28pt;
+            line-height: 1.15;
+            font-weight: 500;
+        }
+        .envelope-attention {
+            font-size: 25pt;
+            line-height: 1.12;
+        }
+        .envelope-bank {
+            margin-top: 0.08in;
+            font-size: 16pt;
+            line-height: 1.18;
+        }
+        .envelope-from {
+            margin-top: 0.12in;
+            font-size: 25pt;
+            line-height: 1.12;
+        }
+    </style>
+</head>
+<body>
+    <main class="envelope-sheet">
+        <div class="envelope-to">To: ${escapeHtml(toName)}</div>
+        ${contactPerson ? `<div class="envelope-attention">Attention to: ${escapeHtml(contactPerson)}</div>` : ''}
+        <div class="envelope-bank">
+            <div>Bank: ${escapeHtml(details.bankName)}</div>
+            <div>Account Name: ${escapeHtml(details.accountName)}</div>
+            <div>Account Number: ${escapeHtml(details.accountNumber)}</div>
+        </div>
+        <div class="envelope-from">From: ${escapeHtml(details.from)}</div>
+    </main>
+</body>
+</html>`;
+}
+
+async function saveEnvelopeContactForCurrentBilling(payload, contactPerson) {
+    const billInfoDocId = String(payload?.billInfoDocId || '').trim();
+    if (!billInfoDocId) {
+        throw new Error('This branch does not have a billing-info row to save the envelope contact.');
+    }
+    const details = getEnvelopeBankDetails(payload);
+    const audit = getCurrentUserAudit();
+    const patch = {
+        envelope_contact_person: String(contactPerson || '').trim(),
+        envelope_marga_bank_name: details.bankName,
+        envelope_marga_account_name: details.accountName,
+        envelope_marga_account_number: details.accountNumber,
+        envelope_from: details.from,
+        envelope_contact_source: 'billing_envelope_modal',
+        envelope_contact_updated_at: new Date().toISOString(),
+        envelope_contact_updated_by: audit.name,
+        envelope_contact_updated_by_id: audit.id,
+        envelope_contact_branch_id: String(payload?.branchId || '').trim(),
+        envelope_contact_company_id: String(payload?.companyId || '').trim()
+    };
+    const result = await setFirestoreDocument('tbl_billinfo', billInfoDocId, patch, {
+        mode: 'patch',
+        label: `Envelope contact ${getEnvelopeRecipientName(payload)}`,
+        dedupeKey: `billing-envelope-contact:${billInfoDocId}`
+    });
+    payload.envelopeContactPerson = patch.envelope_contact_person;
+    Object.assign(payload, {
+        envelopeBankName: patch.envelope_marga_bank_name,
+        envelopeAccountName: patch.envelope_marga_account_name,
+        envelopeAccountNumber: patch.envelope_marga_account_number,
+        envelopeFrom: patch.envelope_from
+    });
+    if (invoicePreviewReferenceData?.billInfoByBranchId && payload.branchId) {
+        const rows = invoicePreviewReferenceData.billInfoByBranchId.get(String(payload.branchId)) || [];
+        rows.forEach((row) => {
+            if (String(row?._docId || row?.id || '') === billInfoDocId) Object.assign(row, patch);
+        });
+    }
+    return result;
+}
+
+function requestEnvelopeContact(payload) {
+    return new Promise((resolve) => {
+        document.getElementById('billingEnvelopeContactOverlay')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'billingEnvelopeContactOverlay';
+        overlay.className = 'billing-save-result-overlay';
+        overlay.innerHTML = `
+            <section class="billing-save-result-card envelope-contact-card" role="dialog" aria-modal="true" aria-label="Envelope contact">
+                <button class="billing-save-result-close" type="button" aria-label="Close">x</button>
+                <div class="billing-save-result-kicker">Envelope</div>
+                <div class="billing-save-result-title">Add contact person</div>
+                <div class="billing-save-result-message">This will be saved to ${escapeHtml(getEnvelopeRecipientName(payload))} for the next billing print.</div>
+                <label class="envelope-contact-field">
+                    <span>Contact person</span>
+                    <input type="text" id="billingEnvelopeContactInput" placeholder="Mr./Ms. Contact Person">
+                </label>
+                <label class="calc-checkbox-label envelope-save-option">
+                    <input type="checkbox" id="billingEnvelopeSaveContactInput" checked>
+                    <span>Save this contact for next billing</span>
+                </label>
+                <div class="envelope-contact-actions">
+                    <button class="btn btn-secondary" type="button" data-envelope-print-once>Print once only</button>
+                    <button class="btn btn-primary" type="button" data-envelope-save-print>Save and Print</button>
+                </div>
+            </section>
+        `;
+        const close = (value = null) => {
+            overlay.remove();
+            resolve(value);
+        };
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close(null);
+        });
+        overlay.querySelector('.billing-save-result-close')?.addEventListener('click', () => close(null));
+        overlay.querySelector('[data-envelope-print-once]')?.addEventListener('click', () => {
+            const contact = String(overlay.querySelector('#billingEnvelopeContactInput')?.value || '').trim();
+            if (!contact) {
+                MargaUtils.showToast('Enter the contact person before printing the envelope.', 'error');
+                return;
+            }
+            close({ contactPerson: contact, save: false });
+        });
+        overlay.querySelector('[data-envelope-save-print]')?.addEventListener('click', () => {
+            const contact = String(overlay.querySelector('#billingEnvelopeContactInput')?.value || '').trim();
+            if (!contact) {
+                MargaUtils.showToast('Enter the contact person before saving.', 'error');
+                return;
+            }
+            const save = overlay.querySelector('#billingEnvelopeSaveContactInput')?.checked !== false;
+            close({ contactPerson: contact, save });
+        });
+        document.body.appendChild(overlay);
+        overlay.querySelector('#billingEnvelopeContactInput')?.focus();
+    });
+}
+
+async function printCurrentEnvelope() {
+    if (!currentRtpPrintPayload) {
+        MargaUtils.showToast('Open a saved printable billing first.', 'error');
+        return;
+    }
+    const payload = currentRtpPrintPayload;
+    let contactPerson = String(payload.envelopeContactPerson || '').trim();
+    if (!contactPerson) {
+        const requested = await requestEnvelopeContact(payload);
+        if (!requested) return;
+        contactPerson = requested.contactPerson;
+        payload.envelopeContactPerson = contactPerson;
+        if (requested.save) {
+            try {
+                const result = await saveEnvelopeContactForCurrentBilling(payload, contactPerson);
+                MargaUtils.showToast(result?.queued ? 'Envelope contact queued.' : 'Envelope contact saved.', 'success');
+            } catch (error) {
+                MargaUtils.showToast(String(error?.message || 'Unable to save envelope contact.'), 'error');
+                return;
+            }
+        }
+    }
+    printHtmlDocument(buildEnvelopePrintDocument(payload), 'marga_envelope_print');
 }
 
 function printHtmlDocument(printMarkup, windowName = 'marga_print') {
@@ -8246,6 +8464,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                                     <button class="btn btn-primary" type="button" id="calcInlinePrintBtn" disabled>Print ${escapeHtml(printContractCode)}</button>
                                     <button class="btn btn-secondary" type="button" id="calcPrintBreakdownBtn" disabled>Print Breakdown</button>
                                     <button class="btn btn-secondary" type="button" id="calcPrintMeterFormBtn" disabled>Print Meter Form</button>
+                                    <button class="btn btn-secondary" type="button" id="calcPrintEnvelopeBtn" disabled>Print Envelope</button>
                                     <div class="calc-print-name-options" aria-label="Invoice company name print options">
                                         <span>Print company name with</span>
                                         <label class="calc-checkbox-label">
@@ -8359,6 +8578,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
     const printBreakdownBtn = document.getElementById('calcPrintBreakdownBtn');
     const printMeterFormBtn = document.getElementById('calcPrintMeterFormBtn');
+    const printEnvelopeBtn = document.getElementById('calcPrintEnvelopeBtn');
     const printNameOptionInputs = Array.from(document.querySelectorAll('#calcPrintNameDepartmentInput, #calcPrintNameModelInput, #calcPrintNameSerialInput'));
     const inlinePrintHint = document.getElementById('calcInlinePrintHint');
     const templateSelect = document.getElementById('calcPrintTemplateSelect');
@@ -8421,6 +8641,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     printMeterFormBtn?.addEventListener('click', () => {
         printBillingAttachment(currentRtpPrintPayload, activeEstimate, 'meter_form');
     });
+    printEnvelopeBtn?.addEventListener('click', printCurrentEnvelope);
     const refreshRtpInvoiceNamePreview = () => {
         if (!previewMount || !currentRtpPrintPayload) return;
         previewMount.innerHTML = buildRtpCalibratedPreviewHtml(decorateRtpPrintPayload(currentRtpPrintPayload));
@@ -8765,8 +8986,13 @@ async function openBillingCalcModal(rowId, monthKey) {
             els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
             els.billingCalcMeterFormBtn.disabled = !printEnabled;
         }
+        if (els.billingCalcEnvelopeBtn) {
+            els.billingCalcEnvelopeBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
+            els.billingCalcEnvelopeBtn.disabled = !printEnabled;
+        }
         if (printBreakdownBtn) printBreakdownBtn.disabled = !printEnabled;
         if (printMeterFormBtn) printMeterFormBtn.disabled = !printEnabled;
+        if (printEnvelopeBtn) printEnvelopeBtn.disabled = !printEnabled;
     };
 
     const renderCalcPreview = async (nextEstimate) => {
@@ -11739,6 +11965,7 @@ function bindEvents() {
     els.billingCalcPrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     els.billingCalcDotMatrixBtn?.addEventListener('click', printCurrentDotMatrixInvoice);
     els.billingCalcMeterFormBtn?.addEventListener('click', printCurrentMeterReadingForm);
+    els.billingCalcEnvelopeBtn?.addEventListener('click', printCurrentEnvelope);
     els.billingCalcModal?.addEventListener('click', (event) => {
         if (event.target === els.billingCalcModal) closeBillingCalcModal();
     });

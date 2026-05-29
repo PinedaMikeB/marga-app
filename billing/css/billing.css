@@ -1910,6 +1910,53 @@ button.matrix-total-card:focus-visible {
     color: var(--bill-danger);
 }
 
+.envelope-contact-card {
+    width: min(520px, 100%);
+    text-align: left;
+}
+
+.envelope-contact-card .billing-save-result-message {
+    margin-bottom: 1rem;
+}
+
+.envelope-contact-field {
+    display: grid;
+    gap: 0.45rem;
+    margin: 1rem 0 0.85rem;
+    color: var(--bill-muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.envelope-contact-field input {
+    width: 100%;
+    min-height: 48px;
+    padding: 0.72rem 0.85rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 8px;
+    background: #f8fbff;
+    color: var(--bill-ink);
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.envelope-save-option {
+    justify-content: flex-start;
+    margin-bottom: 1rem;
+}
+
+.envelope-contact-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
 .detail-action-link {
     display: inline-flex;
     align-items: center;
