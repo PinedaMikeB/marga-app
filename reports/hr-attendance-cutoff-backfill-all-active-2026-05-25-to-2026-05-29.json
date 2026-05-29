@@ -1,0 +1,1968 @@
+{
+  "created_at": "2026-05-29T00:53:37.251Z",
+  "dates": [
+    "2026-05-25",
+    "2026-05-26",
+    "2026-05-27",
+    "2026-05-28",
+    "2026-05-29"
+  ],
+  "included_count": 32,
+  "write_count": 160,
+  "included": [
+    {
+      "id": 3,
+      "name": "Arlene Agustin",
+      "role": "collection collection collection collection",
+      "production_pin": false
+    },
+    {
+      "id": 15,
+      "name": "Jonathan De Guzman",
+      "role": "messenger messenger messenger messenger",
+      "production_pin": false
+    },
+    {
+      "id": 18,
+      "name": "Crispin Escaraman Jr",
+      "role": "technician technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 19,
+      "name": "Arriane Edaño",
+      "role": "billing cashier cashier",
+      "production_pin": false
+    },
+    {
+      "id": 20,
+      "name": "Carlos Edaño",
+      "role": "messenger messenger messenger messenger",
+      "production_pin": false
+    },
+    {
+      "id": 30,
+      "name": "Erlinda Lozano",
+      "role": "service billing billing",
+      "production_pin": false
+    },
+    {
+      "id": 31,
+      "name": "Marlon Magdaraog",
+      "role": "technician technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 35,
+      "name": "Johnny Mortel",
+      "role": "production-technician production-technician technician technician",
+      "production_pin": true
+    },
+    {
+      "id": 54,
+      "name": "Hener Claveria",
+      "role": "technician technician technician technician",
+      "production_pin": false
+    },
+    {
+      "id": 77,
+      "name": "Joselito Ramos",
+      "role": "service service csr csr",
+      "production_pin": false
+    },
+    {
+      "id": 105,
+      "name": "John Philip Capinpin",
+      "role": "technician technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 106,
+      "name": "Joan Ciar",
+      "role": "service purchasing purchasing",
+      "production_pin": false
+    },
+    {
+      "id": 112,
+      "name": "Charlote Edaño",
+      "role": "ai-consultant-admin sales sales",
+      "production_pin": false
+    },
+    {
+      "id": 116,
+      "name": "Emmanuel Genova",
+      "role": "service lead teachnician lead teachnician",
+      "production_pin": true
+    },
+    {
+      "id": 117,
+      "name": "Marites Gonzales",
+      "role": "hr accounting head accounting head",
+      "production_pin": false
+    },
+    {
+      "id": 118,
+      "name": "Raffy Heriales",
+      "role": "production-toner production-toner refiller refiller",
+      "production_pin": true
+    },
+    {
+      "id": 119,
+      "name": "John Bonifacio Iballo",
+      "role": "production-technician production-technician technician technician",
+      "production_pin": true
+    },
+    {
+      "id": 121,
+      "name": "Richard Laurenciano",
+      "role": "technician technician field technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 145,
+      "name": "Jonathan Ladia",
+      "role": "messenger refiller refiller",
+      "production_pin": true
+    },
+    {
+      "id": 155,
+      "name": "Mic Jagger Garcia",
+      "role": "logistics-driver logistics-driver driver driver",
+      "production_pin": true
+    },
+    {
+      "id": 223,
+      "name": "Analee Edano",
+      "role": "service csr csr",
+      "production_pin": false
+    },
+    {
+      "id": 261,
+      "name": "Alvin Domingo",
+      "role": "service service csr csr",
+      "production_pin": false
+    },
+    {
+      "id": 262,
+      "name": "Regina Garcia",
+      "role": "inventory-controller inventory-controller maintenance maintenance",
+      "production_pin": false
+    },
+    {
+      "id": 264,
+      "name": "John Emmanuel Olbedo",
+      "role": "messenger messenger messenger messenger",
+      "production_pin": false
+    },
+    {
+      "id": 267,
+      "name": "Mike Pineda",
+      "role": "admin admin general manager",
+      "production_pin": false
+    },
+    {
+      "id": 268,
+      "name": "Irene Pineda",
+      "role": "admin finance head finance head",
+      "production_pin": false
+    },
+    {
+      "id": 270,
+      "name": "Perlie Vasquez",
+      "role": "marketing marketing video editor video editor",
+      "production_pin": false
+    },
+    {
+      "id": 273,
+      "name": "John Ronniel Bias",
+      "role": "technician technician field technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 274,
+      "name": "Jemuel Toledo",
+      "role": "technician technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 333,
+      "name": "Ruben Arnedo",
+      "role": "technician technician field technician field technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 3339,
+      "name": "Gemar Alegre",
+      "role": "technician technician field technician",
+      "production_pin": false
+    },
+    {
+      "id": 9000,
+      "name": "Armond A. Rubiz",
+      "role": "messenger messenger messenger messenger messenger",
+      "production_pin": false
+    }
+  ],
+  "writes": [
+    {
+      "docId": "3_20260525",
+      "staff_id": 3,
+      "staff_name": "Arlene Agustin",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3_20260526",
+      "staff_id": 3,
+      "staff_name": "Arlene Agustin",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3_20260527",
+      "staff_id": 3,
+      "staff_name": "Arlene Agustin",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3_20260528",
+      "staff_id": 3,
+      "staff_name": "Arlene Agustin",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3_20260529",
+      "staff_id": 3,
+      "staff_name": "Arlene Agustin",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "15_20260525",
+      "staff_id": 15,
+      "staff_name": "Jonathan De Guzman",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "15_20260526",
+      "staff_id": 15,
+      "staff_name": "Jonathan De Guzman",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "15_20260527",
+      "staff_id": 15,
+      "staff_name": "Jonathan De Guzman",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "15_20260528",
+      "staff_id": 15,
+      "staff_name": "Jonathan De Guzman",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "15_20260529",
+      "staff_id": 15,
+      "staff_name": "Jonathan De Guzman",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:41:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "18_20260525",
+      "staff_id": 18,
+      "staff_name": "Crispin Escaraman Jr",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 07:40:00",
+      "preserved_time_out": "2026-05-25 17:01:00"
+    },
+    {
+      "docId": "18_20260526",
+      "staff_id": 18,
+      "staff_name": "Crispin Escaraman Jr",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 07:29:00",
+      "preserved_time_out": "2026-05-26 16:46:00"
+    },
+    {
+      "docId": "18_20260527",
+      "staff_id": 18,
+      "staff_name": "Crispin Escaraman Jr",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "18_20260528",
+      "staff_id": 18,
+      "staff_name": "Crispin Escaraman Jr",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 07:38:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "18_20260529",
+      "staff_id": 18,
+      "staff_name": "Crispin Escaraman Jr",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:25:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "19_20260525",
+      "staff_id": 19,
+      "staff_name": "Arriane Edaño",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "19_20260526",
+      "staff_id": 19,
+      "staff_name": "Arriane Edaño",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "19_20260527",
+      "staff_id": 19,
+      "staff_name": "Arriane Edaño",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "19_20260528",
+      "staff_id": 19,
+      "staff_name": "Arriane Edaño",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "19_20260529",
+      "staff_id": 19,
+      "staff_name": "Arriane Edaño",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "20_20260525",
+      "staff_id": 20,
+      "staff_name": "Carlos Edaño",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "20_20260526",
+      "staff_id": 20,
+      "staff_name": "Carlos Edaño",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "20_20260527",
+      "staff_id": 20,
+      "staff_name": "Carlos Edaño",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "20_20260528",
+      "staff_id": 20,
+      "staff_name": "Carlos Edaño",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "20_20260529",
+      "staff_id": 20,
+      "staff_name": "Carlos Edaño",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:19:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "30_20260525",
+      "staff_id": 30,
+      "staff_name": "Erlinda Lozano",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "30_20260526",
+      "staff_id": 30,
+      "staff_name": "Erlinda Lozano",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "30_20260527",
+      "staff_id": 30,
+      "staff_name": "Erlinda Lozano",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "30_20260528",
+      "staff_id": 30,
+      "staff_name": "Erlinda Lozano",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "30_20260529",
+      "staff_id": 30,
+      "staff_name": "Erlinda Lozano",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "31_20260525",
+      "staff_id": 31,
+      "staff_name": "Marlon Magdaraog",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 07:59:00",
+      "preserved_time_out": "2026-05-25 17:53:00"
+    },
+    {
+      "docId": "31_20260526",
+      "staff_id": 31,
+      "staff_name": "Marlon Magdaraog",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:10:00",
+      "preserved_time_out": "2026-05-26 18:06:00"
+    },
+    {
+      "docId": "31_20260527",
+      "staff_id": 31,
+      "staff_name": "Marlon Magdaraog",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "31_20260528",
+      "staff_id": 31,
+      "staff_name": "Marlon Magdaraog",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 10:37:00",
+      "preserved_time_out": "2026-05-28 19:42:00"
+    },
+    {
+      "docId": "31_20260529",
+      "staff_id": 31,
+      "staff_name": "Marlon Magdaraog",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:02:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "35_20260525",
+      "staff_id": 35,
+      "staff_name": "Johnny Mortel",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "35_20260526",
+      "staff_id": 35,
+      "staff_name": "Johnny Mortel",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "35_20260527",
+      "staff_id": 35,
+      "staff_name": "Johnny Mortel",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "35_20260528",
+      "staff_id": 35,
+      "staff_name": "Johnny Mortel",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "35_20260529",
+      "staff_id": 35,
+      "staff_name": "Johnny Mortel",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "54_20260525",
+      "staff_id": 54,
+      "staff_name": "Hener Claveria",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 07:43:00",
+      "preserved_time_out": "2026-05-25 16:32:00"
+    },
+    {
+      "docId": "54_20260526",
+      "staff_id": 54,
+      "staff_name": "Hener Claveria",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 07:44:00",
+      "preserved_time_out": "2026-05-26 18:06:00"
+    },
+    {
+      "docId": "54_20260527",
+      "staff_id": 54,
+      "staff_name": "Hener Claveria",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "54_20260528",
+      "staff_id": 54,
+      "staff_name": "Hener Claveria",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 07:37:00",
+      "preserved_time_out": "2026-05-28 18:19:00"
+    },
+    {
+      "docId": "54_20260529",
+      "staff_id": 54,
+      "staff_name": "Hener Claveria",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:40:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "77_20260525",
+      "staff_id": 77,
+      "staff_name": "Joselito Ramos",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "77_20260526",
+      "staff_id": 77,
+      "staff_name": "Joselito Ramos",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "77_20260527",
+      "staff_id": 77,
+      "staff_name": "Joselito Ramos",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "77_20260528",
+      "staff_id": 77,
+      "staff_name": "Joselito Ramos",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "77_20260529",
+      "staff_id": 77,
+      "staff_name": "Joselito Ramos",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "105_20260525",
+      "staff_id": 105,
+      "staff_name": "John Philip Capinpin",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "105_20260526",
+      "staff_id": 105,
+      "staff_name": "John Philip Capinpin",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "105_20260527",
+      "staff_id": 105,
+      "staff_name": "John Philip Capinpin",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "105_20260528",
+      "staff_id": 105,
+      "staff_name": "John Philip Capinpin",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "105_20260529",
+      "staff_id": 105,
+      "staff_name": "John Philip Capinpin",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "106_20260525",
+      "staff_id": 106,
+      "staff_name": "Joan Ciar",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "106_20260526",
+      "staff_id": 106,
+      "staff_name": "Joan Ciar",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "106_20260527",
+      "staff_id": 106,
+      "staff_name": "Joan Ciar",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "106_20260528",
+      "staff_id": 106,
+      "staff_name": "Joan Ciar",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "106_20260529",
+      "staff_id": 106,
+      "staff_name": "Joan Ciar",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "112_20260525",
+      "staff_id": 112,
+      "staff_name": "Charlote Edaño",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "112_20260526",
+      "staff_id": 112,
+      "staff_name": "Charlote Edaño",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "112_20260527",
+      "staff_id": 112,
+      "staff_name": "Charlote Edaño",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "112_20260528",
+      "staff_id": 112,
+      "staff_name": "Charlote Edaño",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "112_20260529",
+      "staff_id": 112,
+      "staff_name": "Charlote Edaño",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "116_20260525",
+      "staff_id": 116,
+      "staff_name": "Emmanuel Genova",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "116_20260526",
+      "staff_id": 116,
+      "staff_name": "Emmanuel Genova",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "116_20260527",
+      "staff_id": 116,
+      "staff_name": "Emmanuel Genova",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "116_20260528",
+      "staff_id": 116,
+      "staff_name": "Emmanuel Genova",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "116_20260529",
+      "staff_id": 116,
+      "staff_name": "Emmanuel Genova",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "117_20260525",
+      "staff_id": 117,
+      "staff_name": "Marites Gonzales",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "117_20260526",
+      "staff_id": 117,
+      "staff_name": "Marites Gonzales",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "117_20260527",
+      "staff_id": 117,
+      "staff_name": "Marites Gonzales",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "117_20260528",
+      "staff_id": 117,
+      "staff_name": "Marites Gonzales",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "117_20260529",
+      "staff_id": 117,
+      "staff_name": "Marites Gonzales",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "118_20260525",
+      "staff_id": 118,
+      "staff_name": "Raffy Heriales",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "118_20260526",
+      "staff_id": 118,
+      "staff_name": "Raffy Heriales",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "118_20260527",
+      "staff_id": 118,
+      "staff_name": "Raffy Heriales",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "118_20260528",
+      "staff_id": 118,
+      "staff_name": "Raffy Heriales",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "118_20260529",
+      "staff_id": 118,
+      "staff_name": "Raffy Heriales",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "119_20260525",
+      "staff_id": 119,
+      "staff_name": "John Bonifacio Iballo",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "119_20260526",
+      "staff_id": 119,
+      "staff_name": "John Bonifacio Iballo",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "119_20260527",
+      "staff_id": 119,
+      "staff_name": "John Bonifacio Iballo",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "119_20260528",
+      "staff_id": 119,
+      "staff_name": "John Bonifacio Iballo",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "119_20260529",
+      "staff_id": 119,
+      "staff_name": "John Bonifacio Iballo",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "121_20260525",
+      "staff_id": 121,
+      "staff_name": "Richard Laurenciano",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 07:55:00",
+      "preserved_time_out": "2026-05-25 13:32:00"
+    },
+    {
+      "docId": "121_20260526",
+      "staff_id": 121,
+      "staff_name": "Richard Laurenciano",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "121_20260527",
+      "staff_id": 121,
+      "staff_name": "Richard Laurenciano",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "121_20260528",
+      "staff_id": 121,
+      "staff_name": "Richard Laurenciano",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "121_20260529",
+      "staff_id": 121,
+      "staff_name": "Richard Laurenciano",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:39:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "145_20260525",
+      "staff_id": 145,
+      "staff_name": "Jonathan Ladia",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "145_20260526",
+      "staff_id": 145,
+      "staff_name": "Jonathan Ladia",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "145_20260527",
+      "staff_id": 145,
+      "staff_name": "Jonathan Ladia",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "145_20260528",
+      "staff_id": 145,
+      "staff_name": "Jonathan Ladia",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "145_20260529",
+      "staff_id": 145,
+      "staff_name": "Jonathan Ladia",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "155_20260525",
+      "staff_id": 155,
+      "staff_name": "Mic Jagger Garcia",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "155_20260526",
+      "staff_id": 155,
+      "staff_name": "Mic Jagger Garcia",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "155_20260527",
+      "staff_id": 155,
+      "staff_name": "Mic Jagger Garcia",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "155_20260528",
+      "staff_id": 155,
+      "staff_name": "Mic Jagger Garcia",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "155_20260529",
+      "staff_id": 155,
+      "staff_name": "Mic Jagger Garcia",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Production",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "223_20260525",
+      "staff_id": 223,
+      "staff_name": "Analee Edano",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "223_20260526",
+      "staff_id": 223,
+      "staff_name": "Analee Edano",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "223_20260527",
+      "staff_id": 223,
+      "staff_name": "Analee Edano",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "223_20260528",
+      "staff_id": 223,
+      "staff_name": "Analee Edano",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "223_20260529",
+      "staff_id": 223,
+      "staff_name": "Analee Edano",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "261_20260525",
+      "staff_id": 261,
+      "staff_name": "Alvin Domingo",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "261_20260526",
+      "staff_id": 261,
+      "staff_name": "Alvin Domingo",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "261_20260527",
+      "staff_id": 261,
+      "staff_name": "Alvin Domingo",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "261_20260528",
+      "staff_id": 261,
+      "staff_name": "Alvin Domingo",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "261_20260529",
+      "staff_id": 261,
+      "staff_name": "Alvin Domingo",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "262_20260525",
+      "staff_id": 262,
+      "staff_name": "Regina Garcia",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "262_20260526",
+      "staff_id": 262,
+      "staff_name": "Regina Garcia",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "262_20260527",
+      "staff_id": 262,
+      "staff_name": "Regina Garcia",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "262_20260528",
+      "staff_id": 262,
+      "staff_name": "Regina Garcia",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "262_20260529",
+      "staff_id": 262,
+      "staff_name": "Regina Garcia",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "264_20260525",
+      "staff_id": 264,
+      "staff_name": "John Emmanuel Olbedo",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "264_20260526",
+      "staff_id": 264,
+      "staff_name": "John Emmanuel Olbedo",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "264_20260527",
+      "staff_id": 264,
+      "staff_name": "John Emmanuel Olbedo",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "264_20260528",
+      "staff_id": 264,
+      "staff_name": "John Emmanuel Olbedo",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:05:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "264_20260529",
+      "staff_id": 264,
+      "staff_name": "John Emmanuel Olbedo",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:50:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "267_20260525",
+      "staff_id": 267,
+      "staff_name": "Mike Pineda",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "267_20260526",
+      "staff_id": 267,
+      "staff_name": "Mike Pineda",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "267_20260527",
+      "staff_id": 267,
+      "staff_name": "Mike Pineda",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "267_20260528",
+      "staff_id": 267,
+      "staff_name": "Mike Pineda",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "267_20260529",
+      "staff_id": 267,
+      "staff_name": "Mike Pineda",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "268_20260525",
+      "staff_id": 268,
+      "staff_name": "Irene Pineda",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "268_20260526",
+      "staff_id": 268,
+      "staff_name": "Irene Pineda",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "268_20260527",
+      "staff_id": 268,
+      "staff_name": "Irene Pineda",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "268_20260528",
+      "staff_id": 268,
+      "staff_name": "Irene Pineda",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "268_20260529",
+      "staff_id": 268,
+      "staff_name": "Irene Pineda",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "270_20260525",
+      "staff_id": 270,
+      "staff_name": "Perlie Vasquez",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-25 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "270_20260526",
+      "staff_id": 270,
+      "staff_name": "Perlie Vasquez",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-26 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "270_20260527",
+      "staff_id": 270,
+      "staff_name": "Perlie Vasquez",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-27 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "270_20260528",
+      "staff_id": 270,
+      "staff_name": "Perlie Vasquez",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "270_20260529",
+      "staff_id": 270,
+      "staff_name": "Perlie Vasquez",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:00:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "273_20260525",
+      "staff_id": 273,
+      "staff_name": "John Ronniel Bias",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "273_20260526",
+      "staff_id": 273,
+      "staff_name": "John Ronniel Bias",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "273_20260527",
+      "staff_id": 273,
+      "staff_name": "John Ronniel Bias",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "273_20260528",
+      "staff_id": 273,
+      "staff_name": "John Ronniel Bias",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "273_20260529",
+      "staff_id": 273,
+      "staff_name": "John Ronniel Bias",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "274_20260525",
+      "staff_id": 274,
+      "staff_name": "Jemuel Toledo",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "274_20260526",
+      "staff_id": 274,
+      "staff_name": "Jemuel Toledo",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "274_20260527",
+      "staff_id": 274,
+      "staff_name": "Jemuel Toledo",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "274_20260528",
+      "staff_id": 274,
+      "staff_name": "Jemuel Toledo",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 09:41:00",
+      "preserved_time_out": "2026-05-28 17:16:00"
+    },
+    {
+      "docId": "274_20260529",
+      "staff_id": 274,
+      "staff_name": "Jemuel Toledo",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:57:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "333_20260525",
+      "staff_id": 333,
+      "staff_name": "Ruben Arnedo",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "333_20260526",
+      "staff_id": 333,
+      "staff_name": "Ruben Arnedo",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "333_20260527",
+      "staff_id": 333,
+      "staff_name": "Ruben Arnedo",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "333_20260528",
+      "staff_id": 333,
+      "staff_name": "Ruben Arnedo",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 09:43:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "333_20260529",
+      "staff_id": 333,
+      "staff_name": "Ruben Arnedo",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 07:44:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3339_20260525",
+      "staff_id": 3339,
+      "staff_name": "Gemar Alegre",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3339_20260526",
+      "staff_id": 3339,
+      "staff_name": "Gemar Alegre",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3339_20260527",
+      "staff_id": 3339,
+      "staff_name": "Gemar Alegre",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3339_20260528",
+      "staff_id": 3339,
+      "staff_name": "Gemar Alegre",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "3339_20260529",
+      "staff_id": 3339,
+      "staff_name": "Gemar Alegre",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "9000_20260525",
+      "staff_id": 9000,
+      "staff_name": "Armond A. Rubiz",
+      "date": "2026-05-25",
+      "time_in": "2026-05-25 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "9000_20260526",
+      "staff_id": 9000,
+      "staff_name": "Armond A. Rubiz",
+      "date": "2026-05-26",
+      "time_in": "2026-05-26 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "9000_20260527",
+      "staff_id": 9000,
+      "staff_name": "Armond A. Rubiz",
+      "date": "2026-05-27",
+      "time_in": "2026-05-27 08:00:00",
+      "location": "Havila",
+      "existed": false,
+      "previous_time_in": "",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "9000_20260528",
+      "staff_id": 9000,
+      "staff_name": "Armond A. Rubiz",
+      "date": "2026-05-28",
+      "time_in": "2026-05-28 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-28 09:28:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    },
+    {
+      "docId": "9000_20260529",
+      "staff_id": 9000,
+      "staff_name": "Armond A. Rubiz",
+      "date": "2026-05-29",
+      "time_in": "2026-05-29 08:00:00",
+      "location": "Havila",
+      "existed": true,
+      "previous_time_in": "2026-05-29 08:26:00",
+      "preserved_time_out": "0000-00-00 00:00:00"
+    }
+  ]
+}
