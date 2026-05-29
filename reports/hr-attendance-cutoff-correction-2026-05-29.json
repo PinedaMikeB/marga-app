@@ -1,0 +1,1200 @@
+{
+  "created_at": "2026-05-29T04:42:39.904Z",
+  "summary": {
+    "kept_existing_on_time": 86,
+    "may29_restored_previous_time": 29,
+    "missing_added_8am": 38,
+    "late_adjusted_to_8am": 4,
+    "may29_created_backfill_deleted": 3
+  },
+  "actions": [
+    {
+      "docId": "3_20260525",
+      "date": "2026-05-25",
+      "name": "Arlene Agustin",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "3_20260526",
+      "date": "2026-05-26",
+      "name": "Arlene Agustin",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "3_20260527",
+      "date": "2026-05-27",
+      "name": "Arlene Agustin",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "3_20260528",
+      "date": "2026-05-28",
+      "name": "Arlene Agustin",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "3_20260529",
+      "date": "2026-05-29",
+      "name": "Arlene Agustin",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "15_20260525",
+      "date": "2026-05-25",
+      "name": "Jonathan De Guzman",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "15_20260526",
+      "date": "2026-05-26",
+      "name": "Jonathan De Guzman",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "15_20260527",
+      "date": "2026-05-27",
+      "name": "Jonathan De Guzman",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "15_20260528",
+      "date": "2026-05-28",
+      "name": "Jonathan De Guzman",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "15_20260529",
+      "date": "2026-05-29",
+      "name": "Jonathan De Guzman",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:41:00",
+      "late": 26
+    },
+    {
+      "docId": "18_20260525",
+      "date": "2026-05-25",
+      "name": "Crispin Escaraman Jr",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 07:40:00"
+    },
+    {
+      "docId": "18_20260526",
+      "date": "2026-05-26",
+      "name": "Crispin Escaraman Jr",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 07:29:00"
+    },
+    {
+      "docId": "18_20260527",
+      "date": "2026-05-27",
+      "name": "Crispin Escaraman Jr",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "18_20260528",
+      "date": "2026-05-28",
+      "name": "Crispin Escaraman Jr",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 07:38:00"
+    },
+    {
+      "docId": "18_20260529",
+      "date": "2026-05-29",
+      "name": "Crispin Escaraman Jr",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:25:00",
+      "late": 0
+    },
+    {
+      "docId": "19_20260525",
+      "date": "2026-05-25",
+      "name": "Arriane Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "19_20260526",
+      "date": "2026-05-26",
+      "name": "Arriane Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "19_20260527",
+      "date": "2026-05-27",
+      "name": "Arriane Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "19_20260528",
+      "date": "2026-05-28",
+      "name": "Arriane Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "19_20260529",
+      "date": "2026-05-29",
+      "name": "Arriane Edaño",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "20_20260525",
+      "date": "2026-05-25",
+      "name": "Carlos Edaño",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "20_20260526",
+      "date": "2026-05-26",
+      "name": "Carlos Edaño",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "20_20260527",
+      "date": "2026-05-27",
+      "name": "Carlos Edaño",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "20_20260528",
+      "date": "2026-05-28",
+      "name": "Carlos Edaño",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "20_20260529",
+      "date": "2026-05-29",
+      "name": "Carlos Edaño",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:19:00",
+      "late": 0
+    },
+    {
+      "docId": "30_20260525",
+      "date": "2026-05-25",
+      "name": "Erlinda Lozano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "30_20260526",
+      "date": "2026-05-26",
+      "name": "Erlinda Lozano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "30_20260527",
+      "date": "2026-05-27",
+      "name": "Erlinda Lozano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "30_20260528",
+      "date": "2026-05-28",
+      "name": "Erlinda Lozano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "30_20260529",
+      "date": "2026-05-29",
+      "name": "Erlinda Lozano",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "31_20260525",
+      "date": "2026-05-25",
+      "name": "Marlon Magdaraog",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 07:59:00"
+    },
+    {
+      "docId": "31_20260526",
+      "date": "2026-05-26",
+      "name": "Marlon Magdaraog",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:10:00"
+    },
+    {
+      "docId": "31_20260527",
+      "date": "2026-05-27",
+      "name": "Marlon Magdaraog",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "31_20260528",
+      "date": "2026-05-28",
+      "name": "Marlon Magdaraog",
+      "action": "late_adjusted_to_8am",
+      "previous_time_in": "2026-05-28 10:37:00",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "31_20260529",
+      "date": "2026-05-29",
+      "name": "Marlon Magdaraog",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:02:00",
+      "late": 0
+    },
+    {
+      "docId": "35_20260525",
+      "date": "2026-05-25",
+      "name": "Johnny Mortel",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "35_20260526",
+      "date": "2026-05-26",
+      "name": "Johnny Mortel",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "35_20260527",
+      "date": "2026-05-27",
+      "name": "Johnny Mortel",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "35_20260528",
+      "date": "2026-05-28",
+      "name": "Johnny Mortel",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "35_20260529",
+      "date": "2026-05-29",
+      "name": "Johnny Mortel",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "54_20260525",
+      "date": "2026-05-25",
+      "name": "Hener Claveria",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 07:43:00"
+    },
+    {
+      "docId": "54_20260526",
+      "date": "2026-05-26",
+      "name": "Hener Claveria",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 07:44:00"
+    },
+    {
+      "docId": "54_20260527",
+      "date": "2026-05-27",
+      "name": "Hener Claveria",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "54_20260528",
+      "date": "2026-05-28",
+      "name": "Hener Claveria",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 07:37:00"
+    },
+    {
+      "docId": "54_20260529",
+      "date": "2026-05-29",
+      "name": "Hener Claveria",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:40:00",
+      "late": 0
+    },
+    {
+      "docId": "77_20260525",
+      "date": "2026-05-25",
+      "name": "Joselito Ramos",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "77_20260526",
+      "date": "2026-05-26",
+      "name": "Joselito Ramos",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "77_20260527",
+      "date": "2026-05-27",
+      "name": "Joselito Ramos",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "77_20260528",
+      "date": "2026-05-28",
+      "name": "Joselito Ramos",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "77_20260529",
+      "date": "2026-05-29",
+      "name": "Joselito Ramos",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "105_20260525",
+      "date": "2026-05-25",
+      "name": "John Philip Capinpin",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "105_20260526",
+      "date": "2026-05-26",
+      "name": "John Philip Capinpin",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "105_20260527",
+      "date": "2026-05-27",
+      "name": "John Philip Capinpin",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "105_20260528",
+      "date": "2026-05-28",
+      "name": "John Philip Capinpin",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "105_20260529",
+      "date": "2026-05-29",
+      "name": "John Philip Capinpin",
+      "action": "may29_created_backfill_deleted"
+    },
+    {
+      "docId": "106_20260525",
+      "date": "2026-05-25",
+      "name": "Joan Ciar",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "106_20260526",
+      "date": "2026-05-26",
+      "name": "Joan Ciar",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "106_20260527",
+      "date": "2026-05-27",
+      "name": "Joan Ciar",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "106_20260528",
+      "date": "2026-05-28",
+      "name": "Joan Ciar",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "106_20260529",
+      "date": "2026-05-29",
+      "name": "Joan Ciar",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "112_20260525",
+      "date": "2026-05-25",
+      "name": "Charlote Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "112_20260526",
+      "date": "2026-05-26",
+      "name": "Charlote Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "112_20260527",
+      "date": "2026-05-27",
+      "name": "Charlote Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "112_20260528",
+      "date": "2026-05-28",
+      "name": "Charlote Edaño",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "112_20260529",
+      "date": "2026-05-29",
+      "name": "Charlote Edaño",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "116_20260525",
+      "date": "2026-05-25",
+      "name": "Emmanuel Genova",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "116_20260526",
+      "date": "2026-05-26",
+      "name": "Emmanuel Genova",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "116_20260527",
+      "date": "2026-05-27",
+      "name": "Emmanuel Genova",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "116_20260528",
+      "date": "2026-05-28",
+      "name": "Emmanuel Genova",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "116_20260529",
+      "date": "2026-05-29",
+      "name": "Emmanuel Genova",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "117_20260525",
+      "date": "2026-05-25",
+      "name": "Marites Gonzales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "117_20260526",
+      "date": "2026-05-26",
+      "name": "Marites Gonzales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "117_20260527",
+      "date": "2026-05-27",
+      "name": "Marites Gonzales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "117_20260528",
+      "date": "2026-05-28",
+      "name": "Marites Gonzales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "117_20260529",
+      "date": "2026-05-29",
+      "name": "Marites Gonzales",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "118_20260525",
+      "date": "2026-05-25",
+      "name": "Raffy Heriales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "118_20260526",
+      "date": "2026-05-26",
+      "name": "Raffy Heriales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "118_20260527",
+      "date": "2026-05-27",
+      "name": "Raffy Heriales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "118_20260528",
+      "date": "2026-05-28",
+      "name": "Raffy Heriales",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "118_20260529",
+      "date": "2026-05-29",
+      "name": "Raffy Heriales",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "119_20260525",
+      "date": "2026-05-25",
+      "name": "John Bonifacio Iballo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "119_20260526",
+      "date": "2026-05-26",
+      "name": "John Bonifacio Iballo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "119_20260527",
+      "date": "2026-05-27",
+      "name": "John Bonifacio Iballo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "119_20260528",
+      "date": "2026-05-28",
+      "name": "John Bonifacio Iballo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "119_20260529",
+      "date": "2026-05-29",
+      "name": "John Bonifacio Iballo",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "121_20260525",
+      "date": "2026-05-25",
+      "name": "Richard Laurenciano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 07:55:00"
+    },
+    {
+      "docId": "121_20260526",
+      "date": "2026-05-26",
+      "name": "Richard Laurenciano",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "121_20260527",
+      "date": "2026-05-27",
+      "name": "Richard Laurenciano",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "121_20260528",
+      "date": "2026-05-28",
+      "name": "Richard Laurenciano",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "121_20260529",
+      "date": "2026-05-29",
+      "name": "Richard Laurenciano",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:39:00",
+      "late": 0
+    },
+    {
+      "docId": "145_20260525",
+      "date": "2026-05-25",
+      "name": "Jonathan Ladia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "145_20260526",
+      "date": "2026-05-26",
+      "name": "Jonathan Ladia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "145_20260527",
+      "date": "2026-05-27",
+      "name": "Jonathan Ladia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "145_20260528",
+      "date": "2026-05-28",
+      "name": "Jonathan Ladia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "145_20260529",
+      "date": "2026-05-29",
+      "name": "Jonathan Ladia",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "155_20260525",
+      "date": "2026-05-25",
+      "name": "Mic Jagger Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "155_20260526",
+      "date": "2026-05-26",
+      "name": "Mic Jagger Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "155_20260527",
+      "date": "2026-05-27",
+      "name": "Mic Jagger Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "155_20260528",
+      "date": "2026-05-28",
+      "name": "Mic Jagger Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "155_20260529",
+      "date": "2026-05-29",
+      "name": "Mic Jagger Garcia",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "223_20260525",
+      "date": "2026-05-25",
+      "name": "Analee Edano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "223_20260526",
+      "date": "2026-05-26",
+      "name": "Analee Edano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "223_20260527",
+      "date": "2026-05-27",
+      "name": "Analee Edano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "223_20260528",
+      "date": "2026-05-28",
+      "name": "Analee Edano",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "223_20260529",
+      "date": "2026-05-29",
+      "name": "Analee Edano",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "261_20260525",
+      "date": "2026-05-25",
+      "name": "Alvin Domingo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "261_20260526",
+      "date": "2026-05-26",
+      "name": "Alvin Domingo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "261_20260527",
+      "date": "2026-05-27",
+      "name": "Alvin Domingo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "261_20260528",
+      "date": "2026-05-28",
+      "name": "Alvin Domingo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "261_20260529",
+      "date": "2026-05-29",
+      "name": "Alvin Domingo",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "262_20260525",
+      "date": "2026-05-25",
+      "name": "Regina Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "262_20260526",
+      "date": "2026-05-26",
+      "name": "Regina Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "262_20260527",
+      "date": "2026-05-27",
+      "name": "Regina Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "262_20260528",
+      "date": "2026-05-28",
+      "name": "Regina Garcia",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "262_20260529",
+      "date": "2026-05-29",
+      "name": "Regina Garcia",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "264_20260525",
+      "date": "2026-05-25",
+      "name": "John Emmanuel Olbedo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "264_20260526",
+      "date": "2026-05-26",
+      "name": "John Emmanuel Olbedo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "264_20260527",
+      "date": "2026-05-27",
+      "name": "John Emmanuel Olbedo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "264_20260528",
+      "date": "2026-05-28",
+      "name": "John Emmanuel Olbedo",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:05:00"
+    },
+    {
+      "docId": "264_20260529",
+      "date": "2026-05-29",
+      "name": "John Emmanuel Olbedo",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:50:00",
+      "late": 0
+    },
+    {
+      "docId": "267_20260525",
+      "date": "2026-05-25",
+      "name": "Mike Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "267_20260526",
+      "date": "2026-05-26",
+      "name": "Mike Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "267_20260527",
+      "date": "2026-05-27",
+      "name": "Mike Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "267_20260528",
+      "date": "2026-05-28",
+      "name": "Mike Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "267_20260529",
+      "date": "2026-05-29",
+      "name": "Mike Pineda",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "268_20260525",
+      "date": "2026-05-25",
+      "name": "Irene Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "268_20260526",
+      "date": "2026-05-26",
+      "name": "Irene Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "268_20260527",
+      "date": "2026-05-27",
+      "name": "Irene Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "268_20260528",
+      "date": "2026-05-28",
+      "name": "Irene Pineda",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "268_20260529",
+      "date": "2026-05-29",
+      "name": "Irene Pineda",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "270_20260525",
+      "date": "2026-05-25",
+      "name": "Perlie Vasquez",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "270_20260526",
+      "date": "2026-05-26",
+      "name": "Perlie Vasquez",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "270_20260527",
+      "date": "2026-05-27",
+      "name": "Perlie Vasquez",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "270_20260528",
+      "date": "2026-05-28",
+      "name": "Perlie Vasquez",
+      "action": "kept_existing_on_time",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "270_20260529",
+      "date": "2026-05-29",
+      "name": "Perlie Vasquez",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:00:00",
+      "late": 0
+    },
+    {
+      "docId": "273_20260525",
+      "date": "2026-05-25",
+      "name": "John Ronniel Bias",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "273_20260526",
+      "date": "2026-05-26",
+      "name": "John Ronniel Bias",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "273_20260527",
+      "date": "2026-05-27",
+      "name": "John Ronniel Bias",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "273_20260528",
+      "date": "2026-05-28",
+      "name": "John Ronniel Bias",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "273_20260529",
+      "date": "2026-05-29",
+      "name": "John Ronniel Bias",
+      "action": "may29_created_backfill_deleted"
+    },
+    {
+      "docId": "274_20260525",
+      "date": "2026-05-25",
+      "name": "Jemuel Toledo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "274_20260526",
+      "date": "2026-05-26",
+      "name": "Jemuel Toledo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "274_20260527",
+      "date": "2026-05-27",
+      "name": "Jemuel Toledo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "274_20260528",
+      "date": "2026-05-28",
+      "name": "Jemuel Toledo",
+      "action": "late_adjusted_to_8am",
+      "previous_time_in": "2026-05-28 09:41:00",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "274_20260529",
+      "date": "2026-05-29",
+      "name": "Jemuel Toledo",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:57:00",
+      "late": 0
+    },
+    {
+      "docId": "333_20260525",
+      "date": "2026-05-25",
+      "name": "Ruben Arnedo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "333_20260526",
+      "date": "2026-05-26",
+      "name": "Ruben Arnedo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "333_20260527",
+      "date": "2026-05-27",
+      "name": "Ruben Arnedo",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "333_20260528",
+      "date": "2026-05-28",
+      "name": "Ruben Arnedo",
+      "action": "late_adjusted_to_8am",
+      "previous_time_in": "2026-05-28 09:43:00",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "333_20260529",
+      "date": "2026-05-29",
+      "name": "Ruben Arnedo",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 07:44:00",
+      "late": 0
+    },
+    {
+      "docId": "3339_20260525",
+      "date": "2026-05-25",
+      "name": "Gemar Alegre",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "3339_20260526",
+      "date": "2026-05-26",
+      "name": "Gemar Alegre",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "3339_20260527",
+      "date": "2026-05-27",
+      "name": "Gemar Alegre",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "3339_20260528",
+      "date": "2026-05-28",
+      "name": "Gemar Alegre",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "3339_20260529",
+      "date": "2026-05-29",
+      "name": "Gemar Alegre",
+      "action": "may29_created_backfill_deleted"
+    },
+    {
+      "docId": "9000_20260525",
+      "date": "2026-05-25",
+      "name": "Armond A. Rubiz",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-25 08:00:00"
+    },
+    {
+      "docId": "9000_20260526",
+      "date": "2026-05-26",
+      "name": "Armond A. Rubiz",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-26 08:00:00"
+    },
+    {
+      "docId": "9000_20260527",
+      "date": "2026-05-27",
+      "name": "Armond A. Rubiz",
+      "action": "missing_added_8am",
+      "previous_time_in": "",
+      "time_in": "2026-05-27 08:00:00"
+    },
+    {
+      "docId": "9000_20260528",
+      "date": "2026-05-28",
+      "name": "Armond A. Rubiz",
+      "action": "late_adjusted_to_8am",
+      "previous_time_in": "2026-05-28 09:28:00",
+      "time_in": "2026-05-28 08:00:00"
+    },
+    {
+      "docId": "9000_20260529",
+      "date": "2026-05-29",
+      "name": "Armond A. Rubiz",
+      "action": "may29_restored_previous_time",
+      "time_in": "2026-05-29 08:26:00",
+      "late": 11
+    }
+  ]
+}

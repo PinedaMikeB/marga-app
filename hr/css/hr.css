@@ -457,6 +457,32 @@
     gap: 1rem;
 }
 
+.hr-payroll-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    align-items: end;
+    justify-content: flex-end;
+}
+
+.hr-payroll-controls label {
+    display: grid;
+    gap: 0.25rem;
+    color: #50627d;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.hr-payroll-controls input {
+    min-height: 38px;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #cfe0f4;
+    border-radius: 8px;
+    color: #19345c;
+    font-weight: 800;
+}
+
 .hr-payroll-sample {
     display: grid;
     gap: 0.85rem;
@@ -553,7 +579,7 @@
 }
 
 .hr-payroll-table td:first-child {
-    min-width: 190px;
+    min-width: 0;
 }
 
 .hr-payroll-table small {
@@ -1144,7 +1170,8 @@
     .hr-payroll-analysis,
     .meeting-button,
     #refreshHrBtn,
-    #printPayrollBtn {
+    #printPayrollBtn,
+    .hr-payroll-controls {
         display: none !important;
     }
 
@@ -1236,7 +1263,8 @@
     .hr-payroll-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 7.5pt;
+        table-layout: fixed;
+        font-size: 5.2pt;
     }
 
     .hr-payroll-org-select {
@@ -1253,12 +1281,16 @@
         background: #e8eef7 !important;
         border: 1px solid #000;
         text-transform: none;
+        padding: 0.025in;
+        word-break: break-word;
     }
 
     .hr-payroll-table td {
         color: #000;
         border: 1px solid #000;
-        padding: 0.05in 0.06in;
+        padding: 0.025in;
+        line-height: 1.15;
+        word-break: break-word;
     }
 
     .hr-payroll-table td:first-child {

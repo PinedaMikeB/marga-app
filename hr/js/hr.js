@@ -9,6 +9,41 @@ const CUSTOMER_SITE_MAX_METERS = 200;
 
 const PAYROLL_ORGANIZATIONS = ['WOTG', 'Marga', 'Others'];
 const PAYROLL_RATE_SOURCE = 'payroll 1st Period of May 2026.xlsx';
+const PAYROLL_PRINT_COLUMNS = [
+    ['number', 'No.'],
+    ['name', 'employee'],
+    ['semiMonthlyRate', 'semimrate'],
+    ['dailyRate', 'daily_rate'],
+    ['totalBasic', 'total_basic'],
+    ['absences', 'absences'],
+    ['otHours', 'ot_hours'],
+    ['otPay', 'ot_pay'],
+    ['allowance', 'allowance'],
+    ['regularOt', 'Regular OT'],
+    ['holidayPay', 'Holiday pay'],
+    ['payAdjustment', 'adjustment'],
+    ['totalPay', 'total_pay'],
+    ['utHours', 'ut_hours'],
+    ['utDeduction', 'ut_deduction'],
+    ['sss', 'sss'],
+    ['phic', 'phic'],
+    ['hdmf', 'hdmf'],
+    ['minutesLate', 'minutes_late'],
+    ['lateDeduction', 'late_deduction'],
+    ['grossIncome', 'gross_income'],
+    ['nontaxAllowance', 'Nontax allowance'],
+    ['withholdingTax', 'withholding_tax'],
+    ['taxRefund', 'tax_refund'],
+    ['sssLoan', 'sss_loan'],
+    ['coopLoan', 'coop_loan'],
+    ['bankLoan', 'Bank Loan'],
+    ['cashAdvance', 'cash_adv'],
+    ['pagibigLoan', 'Pagibig loan'],
+    ['tshirt', 'T-shirt'],
+    ['taxAdjustment', 'TAX Adjustment'],
+    ['deductionAdjustment', 'Adjustment'],
+    ['netSalary', 'net_salary']
+];
 
 const DEFAULT_WORK_LOCATIONS = [
     {
@@ -82,6 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const select = event.target.closest('[data-payroll-organization]');
         if (select) savePayrollOrganizationDraft(select.dataset.payrollOrganization, select.value);
     });
+    document.getElementById('payrollDateFromInput')?.addEventListener('change', renderPayrollModel);
+    document.getElementById('payrollDateToInput')?.addEventListener('change', renderPayrollModel);
     performanceDate?.addEventListener('change', () => refreshPerformanceDate());
     document.querySelectorAll('[data-performance-tab]').forEach((button) => {
         button.addEventListener('click', () => setPerformanceTab(button.dataset.performanceTab));
@@ -723,6 +760,7 @@ async function savePerformanceRowStatus(statusKey, status) {
 
 function renderPayrollModel() {
     const sampleRows = buildSamplePayrollRows();
+    const period = getPayrollPeriod();
     const totals = sampleRows.reduce((sum, row) => ({
         monthly: sum.monthly + row.monthlyRate,
         semiMonthly: sum.semiMonthly + row.semiMonthlyRate,
@@ -732,54 +770,32 @@ function renderPayrollModel() {
     document.getElementById('payrollSample').innerHTML = `
         <div class="hr-payroll-sample-header">
             <div>
-                <span>Employee Master Source</span>
-                <h4>15th and 30th Payroll Basis</h4>
-                <p>Each payroll run pulls approved rates from tbl_employee. The May 1st-period workbook seeded the current semi-monthly, monthly, daily, and allowance fields.</p>
+                <span>PAYROLL CUT OFF: ${sanitize(period.label)}</span>
+                <h4>PAYROLL</h4>
+                <p>Each payroll run follows the payroll workbook columns. OT remains manual and requires signed approved overtime authorization.</p>
             </div>
             <div class="hr-payroll-total">
-                <span>Total Monthly Rate</span>
-                <strong>${formatMoneyOrDash(totals.monthly)}</strong>
+                <span>Net Salary Total</span>
+                <strong>${formatMoneyOrDash(totals.netSalary)}</strong>
             </div>
         </div>
         <div class="hr-payroll-totals">
             <div><span>Sheet</span><strong>Sheet1</strong></div>
             <div><span>Title</span><strong>PAYROLL</strong></div>
-            <div><span>Monthly Rate Total</span><strong>${formatMoneyOrDash(totals.monthly)}</strong></div>
+            <div><span>Cutoff Period</span><strong>${sanitize(period.compactLabel)}</strong></div>
             <div><span>Payroll Employees</span><strong>${sampleRows.length}</strong></div>
         </div>
         <div class="table-container hr-payroll-table-wrap">
             <table class="table hr-payroll-table">
                 <thead>
                     <tr>
-                        <th>No.</th>
-                        <th>employee</th>
-                        <th>organization</th>
-                        <th>status</th>
-                        <th>monthly rate</th>
-                        <th>semimrate</th>
-                        <th>daily_rate</th>
-                        <th>allowance</th>
-                        <th>net_salary sample</th>
-                        <th>source</th>
+                        ${PAYROLL_PRINT_COLUMNS.map(([, label]) => `<th>${sanitize(label)}</th>`).join('')}
                     </tr>
                 </thead>
                 <tbody>
                     ${sampleRows.map((row) => `
                         <tr>
-                            <td data-label="No.">${row.number}</td>
-                            <td data-label="employee"><strong>${sanitize(row.name)}</strong><small>${row.id ? `ID ${sanitize(row.id)}` : 'No Margabase match'}</small></td>
-                            <td data-label="organization">
-                                <select class="hr-payroll-org-select" data-payroll-organization="${sanitize(row.name)}">
-                                    ${PAYROLL_ORGANIZATIONS.map((organization) => `<option value="${sanitize(organization)}" ${organization === row.organization ? 'selected' : ''}>${sanitize(organization)}</option>`).join('')}
-                                </select>
-                            </td>
-                            <td data-label="status"><span class="status-badge ${row.status === 'Active' ? 'success' : 'neutral'}">${sanitize(row.status)}</span></td>
-                            <td data-label="monthly rate">${sanitize(formatMoneyOrDash(row.monthlyRate))}</td>
-                            <td data-label="semimrate">${sanitize(formatMoneyOrDash(row.semiMonthlyRate))}</td>
-                            <td data-label="daily_rate">${sanitize(formatMoneyOrDash(row.dailyRate))}</td>
-                            <td data-label="allowance">${sanitize(formatMoneyOrDash(row.allowance))}</td>
-                            <td data-label="net_salary sample">${sanitize(formatMoneyOrDash(row.netSalary))}</td>
-                            <td data-label="source"><span class="hr-pill">${sanitize(row.sourceLabel)}</span></td>
+                            ${PAYROLL_PRINT_COLUMNS.map(([key, label]) => `<td data-label="${sanitize(label)}">${formatPayrollCell(row, key)}</td>`).join('')}
                         </tr>
                     `).join('')}
                 </tbody>
@@ -814,7 +830,7 @@ function renderPayrollModel() {
             <div><span>Workbook</span><strong>payroll 1st Period of May 2026.xlsx</strong></div>
             <div><span>Sheet</span><strong>Sheet1</strong></div>
             <div><span>Rows</span><strong>${sampleRows.length} employees from tbl_employee payroll setup</strong></div>
-            <div><span>Print Setup</span><strong>Portrait, fit to page</strong></div>
+            <div><span>Print Setup</span><strong>Landscape, workbook columns</strong></div>
             <div><span>Monthly Rate</span><strong>tbl_employee semimrate x 2</strong></div>
             <div><span>Net Salary Sample Total</span><strong>${formatMoneyOrDash(totals.netSalary)}</strong></div>
         </div>
@@ -832,9 +848,41 @@ function renderPayrollModel() {
     `;
 }
 
+function getPayrollPeriod() {
+    const from = valueOf('payrollDateFromInput') || '2026-05-10';
+    const to = valueOf('payrollDateToInput') || '2026-05-25';
+    return {
+        from,
+        to,
+        label: `${formatPayrollPeriodDate(from)} - ${formatPayrollPeriodDate(to)}`,
+        compactLabel: `${from} to ${to}`
+    };
+}
+
+function formatPayrollPeriodDate(value) {
+    const date = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function formatPayrollCell(row, key) {
+    if (key === 'number') return sanitize(row.number);
+    if (key === 'name') return `<strong>${sanitize(row.name)}</strong>`;
+    const value = row[key];
+    if (value === '' || value === null || value === undefined) return '';
+    if (typeof value === 'number') return sanitize(formatPayrollNumber(value));
+    return sanitize(value);
+}
+
+function formatPayrollNumber(value) {
+    const rounded = roundMoney(value);
+    return rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function buildSamplePayrollRows() {
     return HR_STATE.employees
         .map((employee) => {
+            if (!MargaUtils.isOfficialActiveEmployee(employee)) return null;
             const rates = payrollRatesFor(employee);
             const payrollSource = firstPresent(employee, ['payroll_rate_source']);
             const sequence = toNumber(firstPresent(employee, ['payroll_sequence']));
@@ -842,6 +890,36 @@ function buildSamplePayrollRows() {
             if (!hasSeededPayrollRate) return null;
             const name = firstPresent(employee, ['payroll_sheet_employee_name'])
                 || MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || 'Employee');
+            const semiMonthlyRate = roundMoney(rates.semiMonthlyRate);
+            const dailyRate = roundMoney(rates.dailyRate);
+            const allowance = roundMoney(toNumber(firstPresent(employee, ['allowance', 'payroll_allowance'])));
+            const absences = 0;
+            const otHours = 0;
+            const otPay = 0;
+            const regularOt = 0;
+            const holidayPay = 0;
+            const payAdjustment = 0;
+            const totalBasic = roundMoney(semiMonthlyRate - (dailyRate * absences));
+            const totalPay = roundMoney(totalBasic + otPay + allowance + regularOt + holidayPay + payAdjustment);
+            const utHours = 0;
+            const utDeduction = 0;
+            const sss = 0;
+            const phic = 0;
+            const hdmf = 0;
+            const minutesLate = 0;
+            const lateDeduction = 0;
+            const grossIncome = roundMoney(totalPay - utDeduction - sss - phic - hdmf - lateDeduction);
+            const nontaxAllowance = 0;
+            const withholdingTax = 0;
+            const taxRefund = 0;
+            const sssLoan = 0;
+            const coopLoan = 0;
+            const bankLoan = 0;
+            const cashAdvance = 0;
+            const pagibigLoan = 0;
+            const tshirt = 0;
+            const taxAdjustment = 0;
+            const deductionAdjustment = 0;
             return {
                 number: sequence || 9999,
                 id: employee.id || employee._docId || '',
@@ -849,10 +927,37 @@ function buildSamplePayrollRows() {
                 organization: getPayrollOrganization(name, employee),
                 status: MargaUtils.isOfficialActiveEmployee(employee) ? 'Active' : 'Inactive',
                 monthlyRate: roundMoney(rates.monthlyRate),
-                semiMonthlyRate: roundMoney(rates.semiMonthlyRate),
-                dailyRate: roundMoney(rates.dailyRate),
-                allowance: roundMoney(toNumber(firstPresent(employee, ['allowance', 'payroll_allowance']))),
-                netSalary: roundMoney(payrollPreviewNetSalary(rates.monthlyRate, firstPresent(employee, ['allowance', 'payroll_allowance']))),
+                semiMonthlyRate,
+                dailyRate,
+                totalBasic,
+                absences,
+                otHours,
+                otPay,
+                allowance,
+                regularOt,
+                holidayPay,
+                payAdjustment,
+                totalPay,
+                utHours,
+                utDeduction,
+                sss,
+                phic,
+                hdmf,
+                minutesLate,
+                lateDeduction,
+                grossIncome,
+                nontaxAllowance,
+                withholdingTax,
+                taxRefund,
+                sssLoan,
+                coopLoan,
+                bankLoan,
+                cashAdvance,
+                pagibigLoan,
+                tshirt,
+                taxAdjustment,
+                deductionAdjustment,
+                netSalary: roundMoney(grossIncome + nontaxAllowance - withholdingTax + taxRefund - sssLoan - coopLoan - bankLoan - cashAdvance - pagibigLoan - tshirt - deductionAdjustment - taxAdjustment),
                 sourceLabel: payrollSource || 'tbl_employee'
             };
         })
