@@ -4250,12 +4250,12 @@ function getEnvelopePrintProfile(size = 'brown') {
     if (size === 'white') {
         return {
             label: 'White envelope',
-            padding: '0.35in 0.42in',
+            padding: '0.35in 2.5in',
             gap: '0.09in',
-            toFont: '14pt',
-            attentionFont: '12.5pt',
-            bankFont: '8pt',
-            fromFont: '12.5pt',
+            toFont: '16pt',
+            attentionFont: '14.5pt',
+            bankFont: '14pt',
+            fromFont: '14pt',
             bankTop: '0.04in',
             fromTop: '0.06in'
         };
@@ -4473,8 +4473,6 @@ async function printCurrentEnvelope() {
         MargaUtils.showToast('Open a saved printable billing first.', 'error');
         return;
     }
-    const envelopeSize = await requestEnvelopeSize();
-    if (!envelopeSize) return;
     const payload = currentRtpPrintPayload;
     let contactPerson = String(payload.envelopeContactPerson || '').trim();
     if (!contactPerson) {
@@ -4492,6 +4490,8 @@ async function printCurrentEnvelope() {
             }
         }
     }
+    const envelopeSize = await requestEnvelopeSize();
+    if (!envelopeSize) return;
     printHtmlDocument(buildEnvelopePrintDocument(payload, envelopeSize), 'marga_envelope_print');
 }
 
