@@ -3,9 +3,9 @@ if (!MargaAuth.requireAccess('hr')) {
 }
 
 const WORK_LOCATIONS_COLLECTION = 'marga_hr_work_locations';
-const OFFICE_MAX_METERS = 100;
-const PRODUCTION_MAX_METERS = 100;
-const CUSTOMER_SITE_MAX_METERS = 100;
+const OFFICE_MAX_METERS = 200;
+const PRODUCTION_MAX_METERS = 200;
+const CUSTOMER_SITE_MAX_METERS = 200;
 
 const PAYROLL_ORGANIZATIONS = ['WOTG', 'Marga', 'Others'];
 const PAYROLL_RATE_SOURCE = 'payroll 1st Period of May 2026.xlsx';
@@ -18,7 +18,7 @@ const DEFAULT_WORK_LOCATIONS = [
         address: 'MARGA office / Havila, Antipolo',
         latitude: '',
         longitude: '',
-        allowedMeters: 100,
+        allowedMeters: 200,
         requiresPincode: true,
         isActive: true
     },
@@ -29,7 +29,7 @@ const DEFAULT_WORK_LOCATIONS = [
         address: '',
         latitude: '',
         longitude: '',
-        allowedMeters: 100,
+        allowedMeters: 200,
         requiresPincode: true,
         isActive: true
     }
@@ -1410,7 +1410,7 @@ function resetLocationForm(location = null) {
         address: '',
         latitude: '',
         longitude: '',
-        allowedMeters: 100,
+        allowedMeters: 200,
         requiresPincode: true,
         isActive: true
     });

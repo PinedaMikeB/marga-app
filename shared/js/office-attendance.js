@@ -12,7 +12,7 @@
     const GRACE_MINUTES = 15;
     const WORKDAY_LABEL = 'weekday_8am_6pm_no_saturday';
     const ALLOWED_LOCATION_TYPES = new Set(['office', 'production']);
-    const OFFICE_ATTENDANCE_RADIUS_METERS = 100;
+    const OFFICE_ATTENDANCE_RADIUS_METERS = 200;
 
     const state = {
         user: null,

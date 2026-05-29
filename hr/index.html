@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/hr.css?v=20260528-employee-credentials-1">
+    <link rel="stylesheet" href="css/hr.css?v=20260529-location-radius-200-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -239,7 +239,7 @@
                     <div class="card-header">
                         <div>
                             <h3>Work Location Settings</h3>
-                            <p class="ops-subtext">Office, production, customer, and temporary pins are capped at 100m.</p>
+                            <p class="ops-subtext">Office, production, customer, and temporary pins are capped at 200m.</p>
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm" id="newLocationBtn">New Location</button>
                     </div>
@@ -273,8 +273,8 @@
                         <label class="marga-field marga-field-full">
                             <span>Allowed GPS Tolerance</span>
                             <div class="hr-meter-control">
-                                <input id="allowedMeters" type="range" min="5" max="100" value="100">
-                                <output id="allowedMetersLabel" for="allowedMeters">100m</output>
+                                <input id="allowedMeters" type="range" min="5" max="200" value="200">
+                                <output id="allowedMetersLabel" for="allowedMeters">200m</output>
                             </div>
                         </label>
                         <div class="hr-switch-row">
@@ -430,6 +430,6 @@
     <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
     <script src="../shared/js/utils.js"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="js/hr.js?v=20260528-payroll-workbook-1"></script>
+    <script src="js/hr.js?v=20260529-location-radius-200-1"></script>
 </body>
 </html>
