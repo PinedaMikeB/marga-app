@@ -261,7 +261,7 @@
         } else if (!isRegularWorkday()) {
             setStatus('Non-regular workday. Regular payroll schedule is Monday-Friday, 8 AM-6 PM.', 'idle');
         } else if (!hasTimeIn) {
-            setStatus(`Ready for office/production Time In. Must be within ${OFFICE_ATTENDANCE_RADIUS_METERS}m of a saved work-location pin.`, 'idle');
+            setStatus(`Ready for office/production Time In. Any active office or production pin is allowed within ${OFFICE_ATTENDANCE_RADIUS_METERS}m.`, 'idle');
         } else if (!hasTimeOut) {
             setStatus('Timed in. Time Out before leaving.', 'live');
         } else {
@@ -313,8 +313,12 @@
             .sort((a, b) => a.distance - b.distance);
         const nearest = ranked[0];
         if (!nearest || nearest.distance > nearest.allowedMeters) {
-            const label = nearest ? `${Math.round(nearest.distance)}m from ${locationName(nearest.location)}` : 'No pinned work location nearby';
-            throw new Error(`${label}. Office/production attendance requires ${OFFICE_ATTENDANCE_RADIUS_METERS}m maximum. Move closer to the saved office/production pin, turn on browser location permission, then try again. If the pin is wrong, update it in Human Resource > Work Locations.`);
+            const distanceList = ranked
+                .slice(0, 4)
+                .map((match) => `${locationName(match.location)} ${Math.round(match.distance)}m`)
+                .join(', ');
+            const accuracyText = accuracy ? ` Phone GPS accuracy: about ${Math.round(accuracy)}m.` : '';
+            throw new Error(`Not within ${OFFICE_ATTENDANCE_RADIUS_METERS}m of any saved office/production pin. Staff may time in at either Office or Production; nearest pins: ${distanceList || 'none'}.${accuracyText} Turn on precise browser location, then try again. If a pin is wrong, update it in Human Resource > Work Locations.`);
         }
         return nearest;
     }
