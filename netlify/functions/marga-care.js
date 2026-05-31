@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
-const MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || process.env.FIREBASE_API_KEY || 'margabase-local';
-const BASE_URL = process.env.FIRESTORE_BASE_URL || 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+const MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || 'margabase-local';
+const BASE_URL = process.env.MARGABASE_DOCUMENTS_BASE_URL || process.env.MARGABASE_FIRESTORE_BASE_URL || 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
 const PASSWORD_SEED = process.env.MARGA_CARE_PASSWORD_SEED || process.env.OPENCLAW_API_KEY || MARGABASE_API_KEY || 'marga-care-onboarding';
 const DEFAULT_PAGE_SIZE = Number(process.env.MARGA_CARE_PAGE_SIZE || 300);
 const OVERRIDE_COLLECTION = 'marga_care_onboarding_overrides';

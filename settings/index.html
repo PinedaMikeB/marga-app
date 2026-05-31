@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/settings.css?v=20260511-database-settings-1">
+    <link rel="stylesheet" href="css/settings.css?v=20260523-backup-settings-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -388,6 +388,13 @@
                                 </div>
                             </div>
 
+                            <div class="database-subtabs" role="tablist" aria-label="Database setting sections">
+                                <button type="button" class="database-subtab active" id="databaseOverviewSubtab" data-database-section="overview">Connection</button>
+                                <button type="button" class="database-subtab" id="databaseBackupSubtab" data-database-section="backup">Backup</button>
+                            </div>
+
+                            <div class="database-section open" id="databaseOverviewSection">
+
                             <div class="database-choice-grid" role="radiogroup" aria-label="Select database backend">
                                 <label class="database-choice" id="databaseChoiceMargabase">
                                     <input type="radio" name="databaseBackend" value="margabase" checked>
@@ -418,6 +425,121 @@
                             </div>
 
                             <div class="ops-subtext" id="databaseSettingsStatus">Select a backend, then Apply & Reload.</div>
+                            </div>
+
+                            <div class="database-section" id="databaseBackupSection">
+                                <div class="backup-layout">
+                                    <section class="backup-panel">
+                                        <div class="backup-panel-header">
+                                            <div>
+                                                <h5>Automatic Backup</h5>
+                                                <p class="ops-subtext">Postgres dump is written locally, then copied into the Google Drive Desktop folder when connected.</p>
+                                            </div>
+                                            <span class="backup-state-pill" id="backupScheduleState">Checking</span>
+                                        </div>
+                                        <div class="backup-form-grid">
+                                            <label class="marga-field">
+                                                <span>Frequency</span>
+                                                <select id="backupFrequency">
+                                                    <option value="daily">Daily</option>
+                                                    <option value="weekly">Once a week</option>
+                                                </select>
+                                            </label>
+                                            <label class="marga-field" id="backupWeekdayField">
+                                                <span>Weekly Day</span>
+                                                <select id="backupWeekday">
+                                                    <option value="1">Monday</option>
+                                                    <option value="2">Tuesday</option>
+                                                    <option value="3">Wednesday</option>
+                                                    <option value="4">Thursday</option>
+                                                    <option value="5">Friday</option>
+                                                    <option value="6">Saturday</option>
+                                                    <option value="0">Sunday</option>
+                                                </select>
+                                            </label>
+                                            <label class="marga-field">
+                                                <span>Time</span>
+                                                <input type="time" id="backupTime" value="11:00">
+                                            </label>
+                                            <label class="marga-field">
+                                                <span>Retention Days</span>
+                                                <input type="number" id="backupRetentionDays" min="1" max="365" value="30">
+                                            </label>
+                                            <label class="marga-field marga-field-full">
+                                                <span>Local Backup Folder</span>
+                                                <input type="text" id="backupLocalPath" placeholder="/Volumes/Backup/Marga/Postgres">
+                                                <div class="ops-subtext">Use any absolute path, including a mounted network folder from another computer.</div>
+                                            </label>
+                                            <label class="marga-field marga-field-full">
+                                                <span>Google Drive Desktop Folder</span>
+                                                <input type="text" id="backupGooglePath" placeholder="/Users/mike/Library/CloudStorage/GoogleDrive.../My Drive/Work/Database">
+                                                <div class="backup-inline-actions">
+                                                    <button type="button" class="btn btn-secondary btn-sm" id="authorizeGoogleDriveBtn">Authorize Google Drive Folder</button>
+                                                    <span class="ops-subtext" id="backupGoogleAuthStatus">Use this if Google Drive shows permission needed.</span>
+                                                </div>
+                                            </label>
+                                            <label class="marga-field marga-field-full">
+                                                <span>Google Drive Folder Link</span>
+                                                <input type="url" id="backupGoogleUrl" placeholder="https://drive.google.com/drive/folders/...">
+                                            </label>
+                                        </div>
+                                        <div class="settings-sync-actions backup-actions">
+                                            <button type="button" class="btn btn-secondary btn-sm" id="refreshBackupStatusBtn">Refresh Backup Status</button>
+                                            <button type="button" class="btn btn-primary btn-sm" id="saveBackupSettingsBtn">Save Backup Settings</button>
+                                        </div>
+                                        <div class="ops-subtext" id="backupSettingsStatus">Backup status not loaded yet.</div>
+                                    </section>
+
+                                    <section class="backup-panel">
+                                        <div class="backup-panel-header">
+                                            <div>
+                                                <h5>Storage Status</h5>
+                                                <p class="ops-subtext">Restore lists are loaded only when Restore is opened.</p>
+                                            </div>
+                                            <button type="button" class="btn btn-secondary btn-sm" id="openRestoreBackupBtn">Restore</button>
+                                        </div>
+                                        <div class="backup-status-grid">
+                                            <div class="backup-status-item">
+                                                <span>Local Folder</span>
+                                                <strong id="backupLocalState">Unknown</strong>
+                                                <p id="backupLocalDetail">Waiting for status.</p>
+                                            </div>
+                                            <div class="backup-status-item">
+                                                <span>Google Drive</span>
+                                                <strong id="backupGoogleState">Unknown</strong>
+                                                <p id="backupGoogleDetail">Waiting for status.</p>
+                                            </div>
+                                            <div class="backup-status-item backup-status-wide">
+                                                <span>Latest Backup</span>
+                                                <strong id="backupLatestState">Unknown</strong>
+                                                <p id="backupLatestDetail">Waiting for status.</p>
+                                            </div>
+                                        </div>
+
+                                        <div class="restore-box" id="restoreBackupBox" hidden>
+                                            <div class="restore-source-grid">
+                                                <label class="marga-field">
+                                                    <span>Restore from Google Drive</span>
+                                                    <select id="restoreGoogleBackupSelect">
+                                                        <option value="">Load restore list first</option>
+                                                    </select>
+                                                </label>
+                                                <label class="marga-field">
+                                                    <span>Restore from Local Folder</span>
+                                                    <select id="restoreLocalBackupSelect">
+                                                        <option value="">Load restore list first</option>
+                                                    </select>
+                                                </label>
+                                            </div>
+                                            <div class="settings-sync-actions">
+                                                <button type="button" class="btn btn-secondary btn-sm" id="refreshRestoreListsBtn">Refresh Restore Lists</button>
+                                                <button type="button" class="btn btn-primary btn-sm" id="restoreSelectedBackupBtn" disabled>Restore Selected</button>
+                                            </div>
+                                            <div class="ops-subtext" id="restoreBackupStatus">Choose a backup source. Restore execution will require a separate confirmation step.</div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -629,9 +751,9 @@
     <script src="../shared/js/firebase-config.js?v=20260521-margabase-documents-1"></script>
     <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
     <script src="../shared/js/utils.js"></script>
-    <script src="../shared/js/offline-sync.js"></script>
+    <script src="../shared/js/offline-sync.js?v=20260530-digitalocean-cache-guard-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="js/settings.js?v=20260518-margabase-locked-1"></script>
+    <script src="js/settings.js?v=20260523-backup-settings-1"></script>
 </body>
 </html>

@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT || 9100);
+const HOST = process.env.HOST || '127.0.0.1';
 const API_ORIGIN = process.env.MARGABASE_API_ORIGIN || 'http://127.0.0.1:8787';
-const MARGABASE_FIRESTORE_BASE_URL = `${API_ORIGIN}/v1/projects/sah-spiritual-journal/databases/(default)/documents`;
+const MARGABASE_DOCUMENTS_BASE_URL = `${API_ORIGIN}/v1/projects/sah-spiritual-journal/databases/(default)/documents`;
 const require = createRequire(import.meta.url);
 const ALLOWED_ORIGINS = new Set([
     'https://app.marga.biz',
@@ -106,12 +107,12 @@ async function runLocalNetlifyFunction(req, res, url) {
         return;
     }
 
+    const previousDocumentsBaseUrl = process.env.MARGABASE_DOCUMENTS_BASE_URL;
     const previousBaseUrl = process.env.FIRESTORE_BASE_URL;
     const previousMargabaseApiKey = process.env.MARGABASE_API_KEY;
-    const previousLegacyApiKey = process.env.FIREBASE_API_KEY;
-    process.env.FIRESTORE_BASE_URL = MARGABASE_FIRESTORE_BASE_URL;
+    process.env.MARGABASE_DOCUMENTS_BASE_URL = MARGABASE_DOCUMENTS_BASE_URL;
+    process.env.FIRESTORE_BASE_URL = MARGABASE_DOCUMENTS_BASE_URL;
     process.env.MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || 'margabase-local';
-    process.env.FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || process.env.MARGABASE_API_KEY;
 
     const bodyBuffer = req.method === 'GET' || req.method === 'HEAD' ? Buffer.alloc(0) : await readRequestBody(req);
     const handlerModule = require(functionPath);
@@ -133,12 +134,12 @@ async function runLocalNetlifyFunction(req, res, url) {
         isBase64Encoded: false,
     });
 
+    if (previousDocumentsBaseUrl === undefined) delete process.env.MARGABASE_DOCUMENTS_BASE_URL;
+    else process.env.MARGABASE_DOCUMENTS_BASE_URL = previousDocumentsBaseUrl;
     if (previousBaseUrl === undefined) delete process.env.FIRESTORE_BASE_URL;
     else process.env.FIRESTORE_BASE_URL = previousBaseUrl;
     if (previousMargabaseApiKey === undefined) delete process.env.MARGABASE_API_KEY;
     else process.env.MARGABASE_API_KEY = previousMargabaseApiKey;
-    if (previousLegacyApiKey === undefined) delete process.env.FIREBASE_API_KEY;
-    else process.env.FIREBASE_API_KEY = previousLegacyApiKey;
 
     const responseBody = result?.isBase64Encoded
         ? Buffer.from(result.body || '', 'base64')
@@ -200,7 +201,7 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-    console.log(`MARGA local Margabase proxy: http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+    console.log(`MARGA local Margabase proxy: http://${HOST}:${PORT}`);
     console.log(`Proxying /margabase-api/* to ${API_ORIGIN}`);
 });

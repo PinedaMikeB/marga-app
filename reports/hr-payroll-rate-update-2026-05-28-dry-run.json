@@ -1,0 +1,1031 @@
+{
+  "dry_run": true,
+  "workbook": "/Users/mike/Downloads/payroll 1st Period of May 2026.xlsx",
+  "source_label": "payroll 1st Period of May 2026.xlsx",
+  "effective_cutoff": "2026-04-26_to_2026-05-10",
+  "updated_at": "2026-05-28T12:01:16.150169Z",
+  "rows": [
+    {
+      "payroll_no": 1,
+      "employee": "Agustin, Arlene",
+      "normalized_name": "arlene agustin",
+      "semi_monthly_rate": 10491.0,
+      "monthly_salary": 20982.0,
+      "daily_rate": 804.42,
+      "allowance": 0.0,
+      "employee_doc_id": "3",
+      "employee_record_name": "Arlene Agustin",
+      "candidate_doc_ids": [
+        "3"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10491.0,
+        "semim_rate": 10491.0,
+        "monthly_salary": 20982.0,
+        "monthly_rate": 20982.0,
+        "daily_rate": 804.42,
+        "allowance": 0.0,
+        "payroll_sequence": 1,
+        "payroll_sheet_employee_name": "Agustin, Arlene",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 2,
+      "employee": "Alegre, Gemar",
+      "normalized_name": "gemar alegre",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "3339",
+      "employee_record_name": "Gemar Alegre",
+      "candidate_doc_ids": [
+        "3339",
+        "260"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 2,
+        "payroll_sheet_employee_name": "Alegre, Gemar",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 3,
+      "employee": "Ario, Teodorio",
+      "normalized_name": "teodorio ario",
+      "semi_monthly_rate": 9490.0,
+      "monthly_salary": 18980.0,
+      "daily_rate": 727.67,
+      "allowance": 0.0,
+      "employee_doc_id": "7",
+      "employee_record_name": "Teodorico Ario",
+      "candidate_doc_ids": [
+        "7"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9490.0,
+        "semim_rate": 9490.0,
+        "monthly_salary": 18980.0,
+        "monthly_rate": 18980.0,
+        "daily_rate": 727.67,
+        "allowance": 0.0,
+        "payroll_sequence": 3,
+        "payroll_sheet_employee_name": "Ario, Teodorio",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 4,
+      "employee": "Arnedo Jr., Ruben",
+      "normalized_name": "ruben arnedo jr",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "333",
+      "employee_record_name": "Ruben Arnedo",
+      "candidate_doc_ids": [
+        "333"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 4,
+        "payroll_sheet_employee_name": "Arnedo Jr., Ruben",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 5,
+      "employee": "Bias, John Ronniel",
+      "normalized_name": "john ronniel bias",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "273",
+      "employee_record_name": "John Ronniel Bias",
+      "candidate_doc_ids": [
+        "273",
+        "249"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 5,
+        "payroll_sheet_employee_name": "Bias, John Ronniel",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 6,
+      "employee": "Ciar, Joan",
+      "normalized_name": "joan ciar",
+      "semi_monthly_rate": 10491.0,
+      "monthly_salary": 20982.0,
+      "daily_rate": 804.42,
+      "allowance": 0.0,
+      "employee_doc_id": "118",
+      "employee_record_name": "Joan Ciar",
+      "candidate_doc_ids": [
+        "118"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10491.0,
+        "semim_rate": 10491.0,
+        "monthly_salary": 20982.0,
+        "monthly_rate": 20982.0,
+        "daily_rate": 804.42,
+        "allowance": 0.0,
+        "payroll_sequence": 6,
+        "payroll_sheet_employee_name": "Ciar, Joan",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 7,
+      "employee": "Claveria, Hener",
+      "normalized_name": "hener claveria",
+      "semi_monthly_rate": 11800.0,
+      "monthly_salary": 23600.0,
+      "daily_rate": 904.79,
+      "allowance": 0.0,
+      "employee_doc_id": "54",
+      "employee_record_name": "Hener Claveria",
+      "candidate_doc_ids": [
+        "54"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 11800.0,
+        "semim_rate": 11800.0,
+        "monthly_salary": 23600.0,
+        "monthly_rate": 23600.0,
+        "daily_rate": 904.79,
+        "allowance": 0.0,
+        "payroll_sequence": 7,
+        "payroll_sheet_employee_name": "Claveria, Hener",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 8,
+      "employee": "De Guzman, Jonathan",
+      "normalized_name": "jonathan de guzman",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "15",
+      "employee_record_name": "Jonathan De Guzman",
+      "candidate_doc_ids": [
+        "15"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 8,
+        "payroll_sheet_employee_name": "De Guzman, Jonathan",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 9,
+      "employee": "Domingo, Alvin",
+      "normalized_name": "alvin domingo",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "261",
+      "employee_record_name": "Alvin Domingo",
+      "candidate_doc_ids": [
+        "261"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 9,
+        "payroll_sheet_employee_name": "Domingo, Alvin",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 10,
+      "employee": "Edaño, Analee",
+      "normalized_name": "analee edano",
+      "semi_monthly_rate": 9150.0,
+      "monthly_salary": 18300.0,
+      "daily_rate": 701.6,
+      "allowance": 0.0,
+      "employee_doc_id": "223",
+      "employee_record_name": "Analee Edano",
+      "candidate_doc_ids": [
+        "223"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9150.0,
+        "semim_rate": 9150.0,
+        "monthly_salary": 18300.0,
+        "monthly_rate": 18300.0,
+        "daily_rate": 701.6,
+        "allowance": 0.0,
+        "payroll_sequence": 10,
+        "payroll_sheet_employee_name": "Edaño, Analee",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 11,
+      "employee": "Edaño, Arriane",
+      "normalized_name": "arriane edano",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "19",
+      "employee_record_name": "Arriane Edaño",
+      "candidate_doc_ids": [
+        "19",
+        "255"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 11,
+        "payroll_sheet_employee_name": "Edaño, Arriane",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 12,
+      "employee": "Edaño, Carlos",
+      "normalized_name": "carlos edano",
+      "semi_monthly_rate": 9750.0,
+      "monthly_salary": 19500.0,
+      "daily_rate": 747.6,
+      "allowance": 0.0,
+      "employee_doc_id": "20",
+      "employee_record_name": "Carlos Edaño",
+      "candidate_doc_ids": [
+        "20"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9750.0,
+        "semim_rate": 9750.0,
+        "monthly_salary": 19500.0,
+        "monthly_rate": 19500.0,
+        "daily_rate": 747.6,
+        "allowance": 0.0,
+        "payroll_sequence": 12,
+        "payroll_sheet_employee_name": "Edaño, Carlos",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 13,
+      "employee": "Edaño, Charlotte",
+      "normalized_name": "charlotte edano",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "67",
+      "employee_record_name": "Charlotte Edaño",
+      "candidate_doc_ids": [
+        "67",
+        "245"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 13,
+        "payroll_sheet_employee_name": "Edaño, Charlotte",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 14,
+      "employee": "Edaño, Cynthia",
+      "normalized_name": "cynthia edano",
+      "semi_monthly_rate": 9150.0,
+      "monthly_salary": 18300.0,
+      "daily_rate": 701.6,
+      "allowance": 0.0,
+      "employee_doc_id": "104",
+      "employee_record_name": "Cynthia Edaño",
+      "candidate_doc_ids": [
+        "104"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9150.0,
+        "semim_rate": 9150.0,
+        "monthly_salary": 18300.0,
+        "monthly_rate": 18300.0,
+        "daily_rate": 701.6,
+        "allowance": 0.0,
+        "payroll_sequence": 14,
+        "payroll_sheet_employee_name": "Edaño, Cynthia",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 15,
+      "employee": "Escaraman Jr, Crispin",
+      "normalized_name": "crispin escaraman jr",
+      "semi_monthly_rate": 11050.0,
+      "monthly_salary": 22100.0,
+      "daily_rate": 847.28,
+      "allowance": 0.0,
+      "employee_doc_id": "18",
+      "employee_record_name": "Crispin Escaraman Jr",
+      "candidate_doc_ids": [
+        "18"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 11050.0,
+        "semim_rate": 11050.0,
+        "monthly_salary": 22100.0,
+        "monthly_rate": 22100.0,
+        "daily_rate": 847.28,
+        "allowance": 0.0,
+        "payroll_sequence": 15,
+        "payroll_sheet_employee_name": "Escaraman Jr, Crispin",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 16,
+      "employee": "Francisco, Evelyn",
+      "normalized_name": "evelyn francisco",
+      "semi_monthly_rate": 9500.0,
+      "monthly_salary": 19000.0,
+      "daily_rate": 728.43,
+      "allowance": 0.0,
+      "employee_doc_id": "",
+      "employee_record_name": "",
+      "candidate_doc_ids": [],
+      "status": "missing"
+    },
+    {
+      "payroll_no": 17,
+      "employee": "Francisco, Merila",
+      "normalized_name": "merila francisco",
+      "semi_monthly_rate": 10000.0,
+      "monthly_salary": 20000.0,
+      "daily_rate": 766.77,
+      "allowance": 1500.0,
+      "employee_doc_id": "134",
+      "employee_record_name": "Merila Francisco",
+      "candidate_doc_ids": [
+        "134"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10000.0,
+        "semim_rate": 10000.0,
+        "monthly_salary": 20000.0,
+        "monthly_rate": 20000.0,
+        "daily_rate": 766.77,
+        "allowance": 1500.0,
+        "payroll_sequence": 17,
+        "payroll_sheet_employee_name": "Francisco, Merila",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 18,
+      "employee": "Garcia, Mic Jagger",
+      "normalized_name": "mic jagger garcia",
+      "semi_monthly_rate": 9490.0,
+      "monthly_salary": 18980.0,
+      "daily_rate": 727.67,
+      "allowance": 0.0,
+      "employee_doc_id": "155",
+      "employee_record_name": "Mic Jagger Garcia",
+      "candidate_doc_ids": [
+        "155"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9490.0,
+        "semim_rate": 9490.0,
+        "monthly_salary": 18980.0,
+        "monthly_rate": 18980.0,
+        "daily_rate": 727.67,
+        "allowance": 0.0,
+        "payroll_sequence": 18,
+        "payroll_sheet_employee_name": "Garcia, Mic Jagger",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 19,
+      "employee": "Garcia, Regina",
+      "normalized_name": "regina garcia",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "262",
+      "employee_record_name": "Regina Garcia",
+      "candidate_doc_ids": [
+        "262"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 19,
+        "payroll_sheet_employee_name": "Garcia, Regina",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 20,
+      "employee": "Genova, Emmanuel",
+      "normalized_name": "emmanuel genova",
+      "semi_monthly_rate": 11000.0,
+      "monthly_salary": 22000.0,
+      "daily_rate": 843.45,
+      "allowance": 0.0,
+      "employee_doc_id": "22",
+      "employee_record_name": "Emmanuel Genova",
+      "candidate_doc_ids": [
+        "22"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 11000.0,
+        "semim_rate": 11000.0,
+        "monthly_salary": 22000.0,
+        "monthly_rate": 22000.0,
+        "daily_rate": 843.45,
+        "allowance": 0.0,
+        "payroll_sequence": 20,
+        "payroll_sheet_employee_name": "Genova, Emmanuel",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 21,
+      "employee": "Gonzales, Marites",
+      "normalized_name": "marites gonzales",
+      "semi_monthly_rate": 23550.0,
+      "monthly_salary": 47100.0,
+      "daily_rate": 1805.75,
+      "allowance": 2500.0,
+      "employee_doc_id": "122",
+      "employee_record_name": "Marites Gonzales",
+      "candidate_doc_ids": [
+        "122"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 23550.0,
+        "semim_rate": 23550.0,
+        "monthly_salary": 47100.0,
+        "monthly_rate": 47100.0,
+        "daily_rate": 1805.75,
+        "allowance": 2500.0,
+        "payroll_sequence": 21,
+        "payroll_sheet_employee_name": "Gonzales, Marites",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 22,
+      "employee": "Heriales, Raffy",
+      "normalized_name": "raffy heriales",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "263",
+      "employee_record_name": "Raffy Heriales",
+      "candidate_doc_ids": [
+        "263",
+        "239",
+        "238"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 22,
+        "payroll_sheet_employee_name": "Heriales, Raffy",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 23,
+      "employee": "Iballo, John Bonifacio",
+      "normalized_name": "john bonifacio iballo",
+      "semi_monthly_rate": 10491.0,
+      "monthly_salary": 20982.0,
+      "daily_rate": 804.42,
+      "allowance": 0.0,
+      "employee_doc_id": "192",
+      "employee_record_name": "John Bonifacio Iballo",
+      "candidate_doc_ids": [
+        "192"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10491.0,
+        "semim_rate": 10491.0,
+        "monthly_salary": 20982.0,
+        "monthly_rate": 20982.0,
+        "daily_rate": 804.42,
+        "allowance": 0.0,
+        "payroll_sequence": 23,
+        "payroll_sheet_employee_name": "Iballo, John Bonifacio",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 24,
+      "employee": "Ladia, Jonathan",
+      "normalized_name": "jonathan ladia",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "145",
+      "employee_record_name": "Jonathan Ladia",
+      "candidate_doc_ids": [
+        "145"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 24,
+        "payroll_sheet_employee_name": "Ladia, Jonathan",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 25,
+      "employee": "Laurenciano, Richard",
+      "normalized_name": "richard laurenciano",
+      "semi_monthly_rate": 10500.0,
+      "monthly_salary": 21000.0,
+      "daily_rate": 805.11,
+      "allowance": 0.0,
+      "employee_doc_id": "27",
+      "employee_record_name": "Richard Laurenciano",
+      "candidate_doc_ids": [
+        "27"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10500.0,
+        "semim_rate": 10500.0,
+        "monthly_salary": 21000.0,
+        "monthly_rate": 21000.0,
+        "daily_rate": 805.11,
+        "allowance": 0.0,
+        "payroll_sequence": 25,
+        "payroll_sheet_employee_name": "Laurenciano, Richard",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 26,
+      "employee": "Lozano, Erlinda",
+      "normalized_name": "erlinda lozano",
+      "semi_monthly_rate": 10050.0,
+      "monthly_salary": 20100.0,
+      "daily_rate": 770.61,
+      "allowance": 0.0,
+      "employee_doc_id": "30",
+      "employee_record_name": "Erlinda Lozano",
+      "candidate_doc_ids": [
+        "30"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10050.0,
+        "semim_rate": 10050.0,
+        "monthly_salary": 20100.0,
+        "monthly_rate": 20100.0,
+        "daily_rate": 770.61,
+        "allowance": 0.0,
+        "payroll_sequence": 26,
+        "payroll_sheet_employee_name": "Lozano, Erlinda",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 27,
+      "employee": "Magdaraog, Marlon",
+      "normalized_name": "marlon magdaraog",
+      "semi_monthly_rate": 10000.0,
+      "monthly_salary": 20000.0,
+      "daily_rate": 766.77,
+      "allowance": 0.0,
+      "employee_doc_id": "31",
+      "employee_record_name": "Marlon Magdaraog",
+      "candidate_doc_ids": [
+        "31"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10000.0,
+        "semim_rate": 10000.0,
+        "monthly_salary": 20000.0,
+        "monthly_rate": 20000.0,
+        "daily_rate": 766.77,
+        "allowance": 0.0,
+        "payroll_sequence": 27,
+        "payroll_sheet_employee_name": "Magdaraog, Marlon",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 28,
+      "employee": "Mortel, Johnny",
+      "normalized_name": "johnny mortel",
+      "semi_monthly_rate": 10950.0,
+      "monthly_salary": 21900.0,
+      "daily_rate": 839.62,
+      "allowance": 0.0,
+      "employee_doc_id": "35",
+      "employee_record_name": "Johnny Mortel",
+      "candidate_doc_ids": [
+        "35"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 10950.0,
+        "semim_rate": 10950.0,
+        "monthly_salary": 21900.0,
+        "monthly_rate": 21900.0,
+        "daily_rate": 839.62,
+        "allowance": 0.0,
+        "payroll_sequence": 28,
+        "payroll_sheet_employee_name": "Mortel, Johnny",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 29,
+      "employee": "Olbedo, John Emmanuel",
+      "normalized_name": "john emmanuel olbedo",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "264",
+      "employee_record_name": "John Emmanuel Olbedo",
+      "candidate_doc_ids": [
+        "264",
+        "253"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 29,
+        "payroll_sheet_employee_name": "Olbedo, John Emmanuel",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 30,
+      "employee": "Pineda, Irene",
+      "normalized_name": "irene pineda",
+      "semi_monthly_rate": 26050.0,
+      "monthly_salary": 52100.0,
+      "daily_rate": 1997.44,
+      "allowance": 6000.0,
+      "employee_doc_id": "106",
+      "employee_record_name": "Irene Pineda",
+      "candidate_doc_ids": [
+        "106",
+        "268"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 26050.0,
+        "semim_rate": 26050.0,
+        "monthly_salary": 52100.0,
+        "monthly_rate": 52100.0,
+        "daily_rate": 1997.44,
+        "allowance": 6000.0,
+        "payroll_sequence": 30,
+        "payroll_sheet_employee_name": "Pineda, Irene",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 31,
+      "employee": "Ramos, Joselito",
+      "normalized_name": "joselito ramos",
+      "semi_monthly_rate": 9500.0,
+      "monthly_salary": 19000.0,
+      "daily_rate": 728.43,
+      "allowance": 0.0,
+      "employee_doc_id": "77",
+      "employee_record_name": "Joselito Ramos",
+      "candidate_doc_ids": [
+        "77"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9500.0,
+        "semim_rate": 9500.0,
+        "monthly_salary": 19000.0,
+        "monthly_rate": 19000.0,
+        "daily_rate": 728.43,
+        "allowance": 0.0,
+        "payroll_sequence": 31,
+        "payroll_sheet_employee_name": "Ramos, Joselito",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 32,
+      "employee": "Rubiz, Armond A.",
+      "normalized_name": "armond a rubiz",
+      "semi_monthly_rate": 7500.0,
+      "monthly_salary": 15000.0,
+      "daily_rate": 575.08,
+      "allowance": 0.0,
+      "employee_doc_id": "9000",
+      "employee_record_name": "Armond A. Rubiz",
+      "candidate_doc_ids": [
+        "9000"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 7500.0,
+        "semim_rate": 7500.0,
+        "monthly_salary": 15000.0,
+        "monthly_rate": 15000.0,
+        "daily_rate": 575.08,
+        "allowance": 0.0,
+        "payroll_sequence": 32,
+        "payroll_sheet_employee_name": "Rubiz, Armond A.",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 33,
+      "employee": "Toledo, Jemuel",
+      "normalized_name": "jemuel toledo",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "274",
+      "employee_record_name": "Jemuel Toledo",
+      "candidate_doc_ids": [
+        "274",
+        "135",
+        "269",
+        "266",
+        "234"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 33,
+        "payroll_sheet_employee_name": "Toledo, Jemuel",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    },
+    {
+      "payroll_no": 34,
+      "employee": "Vasquez, Perlie",
+      "normalized_name": "perlie vasquez",
+      "semi_monthly_rate": 9000.0,
+      "monthly_salary": 18000.0,
+      "daily_rate": 690.1,
+      "allowance": 0.0,
+      "employee_doc_id": "270",
+      "employee_record_name": "Perlie Vasquez",
+      "candidate_doc_ids": [
+        "270",
+        "240"
+      ],
+      "status": "matched",
+      "patch_fields": {
+        "rate_type": "Monthly",
+        "semi_monthly_rate": 9000.0,
+        "semim_rate": 9000.0,
+        "monthly_salary": 18000.0,
+        "monthly_rate": 18000.0,
+        "daily_rate": 690.1,
+        "allowance": 0.0,
+        "payroll_sequence": 34,
+        "payroll_sheet_employee_name": "Vasquez, Perlie",
+        "payroll_rate_source": "payroll 1st Period of May 2026.xlsx",
+        "payroll_rate_effective_cutoff": "2026-04-26_to_2026-05-10",
+        "payroll_rate_updated_at": "2026-05-28T12:01:16.150169Z",
+        "payroll_rate_updated_by": "codex-local-margabase"
+      }
+    }
+  ],
+  "summary": {
+    "workbook_rows": 34,
+    "matched": 33,
+    "updated": 0,
+    "missing": 1
+  }
+}

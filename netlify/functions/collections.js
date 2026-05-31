@@ -1,5 +1,5 @@
-const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M';
-const BASE_URL = process.env.FIRESTORE_BASE_URL || 'https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+const MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || 'margabase-local';
+const BASE_URL = process.env.MARGABASE_DOCUMENTS_BASE_URL || process.env.MARGABASE_FIRESTORE_BASE_URL || 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
 const OPENCLAW_API_KEY = process.env.OPENCLAW_API_KEY || '';
 
 const CACHE_TTL_MS = Number(process.env.COLLECTIONS_API_CACHE_TTL_MS || 5 * 60 * 1000);
@@ -149,7 +149,7 @@ function parseDateParam(value) {
 async function firestoreGet(collection, pageSize = 300, pageToken = null, fieldMask = null) {
     const params = new URLSearchParams();
     params.set('pageSize', String(pageSize));
-    params.set('key', FIREBASE_API_KEY);
+    params.set('key', MARGABASE_API_KEY);
     if (pageToken) params.set('pageToken', pageToken);
 
     if (Array.isArray(fieldMask)) {
@@ -188,7 +188,7 @@ async function firestoreGetAll(collection, options = {}) {
 }
 
 async function firestoreRunQuery(structuredQuery) {
-    const response = await fetch(`${BASE_URL}:runQuery?key=${encodeURIComponent(FIREBASE_API_KEY)}`, {
+    const response = await fetch(`${BASE_URL}:runQuery?key=${encodeURIComponent(MARGABASE_API_KEY)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ structuredQuery })

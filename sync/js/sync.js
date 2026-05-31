@@ -131,18 +131,8 @@ const els = {
 };
 
 function initFirebase() {
-    if (!firebase?.apps?.length) {
-        firebase.initializeApp({
-            apiKey: FIREBASE_CONFIG.apiKey,
-            authDomain: FIREBASE_CONFIG.authDomain,
-            projectId: FIREBASE_CONFIG.projectId,
-            storageBucket: FIREBASE_CONFIG.storageBucket,
-            messagingSenderId: FIREBASE_CONFIG.messagingSenderId,
-            appId: FIREBASE_CONFIG.appId
-        });
-    }
-
-    syncState.db = firebase.firestore();
+    syncState.db = null;
+    throw new Error('Legacy SQL-to-Firebase sync is disabled after the Margabase migration.');
 }
 
 function applyUserContext() {
@@ -1154,7 +1144,7 @@ async function updateSyncStates(file, note, dryRun) {
                 last_file_name: file.name,
                 last_file_size: file.size,
                 last_note: note || '',
-                updated_at: firebase.firestore.FieldValue.serverTimestamp()
+                updated_at: new Date().toISOString()
             }
         }));
 
@@ -1351,8 +1341,8 @@ async function writeBaselineWatermarks(file, note) {
             baseline_file_name: file.name,
             baseline_file_size: file.size,
             baseline_note: note || '',
-            baseline_initialized_at: firebase.firestore.FieldValue.serverTimestamp(),
-            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+            baseline_initialized_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         }, { merge: true });
 
         ops += 1;

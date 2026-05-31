@@ -3,8 +3,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-const DEFAULT_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents";
-const DEFAULT_FIREBASE_API_KEY = "AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M";
+const DEFAULT_BASE_URL = "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents";
+const DEFAULT_FIREBASE_API_KEY = "margabase-local";
+const LEGACY_FIRESTORE_HOST = "firestore.googleapis.com";
 const ZERO_DATETIME = "0000-00-00 00:00:00";
 const SERVICE_PURPOSE_IDS = new Set([5]);
 const MESSENGER_PURPOSE_IDS = new Set([1, 2, 3, 4, 8]);
@@ -136,6 +137,9 @@ class FirestoreClient {
   constructor() {
     this.baseUrl = process.env.FIRESTORE_BASE_URL || DEFAULT_BASE_URL;
     this.apiKey = process.env.FIREBASE_API_KEY || DEFAULT_FIREBASE_API_KEY;
+    if (this.baseUrl.includes(LEGACY_FIRESTORE_HOST) && process.env.ALLOW_LEGACY_FIREBASE_WRITES !== "1") {
+      throw new Error("Blocked legacy Firebase backend. Set ALLOW_LEGACY_FIREBASE_WRITES=1 only for an explicitly approved rescue.");
+    }
   }
 
   async list(collection, { fieldMask = null, pageSize = 300, maxPages = 80 } = {}) {

@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-05-21
+Last Updated: 2026-05-30
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -15,6 +15,16 @@ Start every new Marga-App thread by reading:
   - Error-resolution learning rule: every real bug, migration miss, costly mistake, repeated prompt, or staff data-entry failure must be treated as a reusable lesson. After resolving it, Codex should actively decide whether to create or update a skill under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills`, link it into `/Users/mike/.codex/skills` when broadly useful, and reference it here/masterplan/agents so the same mistake is prevented next time.
   - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
   - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
+- 2026-05-28 Marga-App staging workflow:
+  - Staging app worktree: `/Volumes/Wotg Drive Mike/GitHub/Marga-App-staging`.
+  - Staging Git branch: `codex/staging`, tracking `origin/codex/staging`.
+  - Local staging URL/proxy: `http://127.0.0.1:9300`, started from the staging worktree with `PORT=9300 MARGABASE_API_ORIGIN=http://127.0.0.1:8787 node scripts/local-margabase-proxy.mjs`.
+  - Staging uses the same real live Margabase/Postgres API at `127.0.0.1:8787`; do not create a separate staging database unless the user explicitly approves it for schema or destructive-write testing.
+  - Owner preference as of 2026-05-29: for normal small Marga-App code changes, skip staging and skip local test cycles. Work directly in the production worktree `/Volumes/Wotg Drive Mike/GitHub/Marga-App`, make narrow changes, commit/push to `main`, test live through `app.marga.biz`, then rollback with `git revert <commit>` if needed.
+  - Staging is optional only when the user explicitly asks for it, when Cursor needs a sandbox for a larger experiment, or when a risky change should not be tested live first.
+  - Read-only parity/report testing may use live Margabase data freely. Write-path tests against live Margabase must be narrow, auditable, and use known test/reversible records only; never casually test payments, ORs, invoices, DRs, schedules, petty cash, deletes, or ID allocation with uncontrolled production records.
+  - Intended public staging route, when Cloudflare is configured: `staging.marga.biz` -> local port `9300`. Production remains `app.marga.biz` -> production Marga-App proxy/worktree.
+  - Direct-to-main rollback rule: for Codex changes made directly in production, commit verified work clearly; if a committed change breaks production, prefer `git revert <commit>` to create a forward rollback commit. For uncommitted bad changes, inspect `git diff` and revert only the specific files/lines involved; never run broad destructive reset/checkout commands without explicit user approval.
 - 2026-05-21 Firebase/Margabase reconciliation incident:
   - User-approved emergency order is: rescue all May 21 transactions from Firebase into Margabase first, verify the report, then rescue May 20, then May 19.
   - Use `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/rescue-firebase-day-to-margabase.mjs --app=margabase --day=YYYY-MM-DD` for day-specific rescue. It scans operational Firebase collections and upserts any document whose Firebase update time or business date fields match the target day. It writes JSON reports under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/reports/`.
@@ -209,6 +219,32 @@ Start every new Marga-App thread by reading:
   - Complete permanent Cloudflare named tunnel only after nameserver propagation is done for `marga.biz`.
 - Cloudflare/domain checkpoint:
   - User added `marga.biz` to Cloudflare Free plan.
+  - Hostinger nameservers were changed to `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
+  - Named tunnel `marga-api` (`52302446-f24e-4f17-9ed6-a369e2d0a8fc`) is **locally managed** from `/Users/mike/.cloudflared/config.yml`. Zero Trust **Routes** are read-only in the dashboard; do not expect to delete `app.marga.biz` there.
+  - `api.marga.biz`, `care.marga.biz`, and aistaff hosts may remain on the tunnel via CNAME to `cfargotunnel.com` while `app` moves to DigitalOcean.
+  - Existing `margaapp.netlify.app` remains usable even after nameserver changes.
+- 2026-05-30 `app.marga.biz` DNS cutover off tunnel to DigitalOcean (proven):
+  - Symptom: deleting `app.marga.biz` in **DNS → Records** failed or the CNAME to `cfargotunnel.com` came back while `cloudflared` / LaunchAgent was still running.
+  - Root cause: tunnel-managed / locally pushed ingress plus an active connector can keep the hostname bound to `127.0.0.1:9100` even when the Zero Trust Routes tab says the tunnel is locally managed.
+  - Required order (do not reverse):
+    1. Stop the tunnel on the Mac **first** (CLI), before touching DNS.
+    2. Delete the `app` DNS record in Cloudflare **DNS → Records** (not Zero Trust Routes).
+    3. Add/replace the `app` record to point at DigitalOcean (verified: **A** `168.144.96.24`, proxied orange cloud).
+    4. Confirm the record does **not** reappear, then continue backend/Postgres cutover on DO.
+  - Stop commands that worked:
+    ```bash
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.marga.cloudflare-tunnel.plist 2>/dev/null || true
+    pkill -f "cloudflared tunnel" 2>/dev/null || true
+    ```
+  - Optional guard: keep `app.marga.biz` out of `/Users/mike/.cloudflared/config.yml` ingress so a future tunnel start does not re-advertise the hostname to Cloudflare.
+  - Verify after DNS change: `dig +short app.marga.biz` and `curl -sI https://app.marga.biz/` should reflect DigitalOcean, not local `127.0.0.1:9100`.
+  - Reusable detail is also in `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` and `docs/MARGABASE-DIGITALOCEAN-CUTOVER-AUDIT.md`.
+- 2026-05-30 Collections endless reload after `app.marga.biz` moved to DigitalOcean (proven):
+  - Symptom: Collections month matrix and work queue appeared to reload endlessly; browser console showed `QuotaExceededError` from `offline-sync.js` while caching `tbl_collectionhistory` GET responses.
+  - Root cause: Collections still loads ~270k `tbl_collectionhistory` rows through paginated Margabase GETs (unchanged query). `shared/js/offline-sync.js` tried to store each large page in `localStorage`, filling browser quota and spamming errors during bootstrap.
+  - Fix: skip offline response caching for bulk collection scans and payloads over ~400KB; bump Collections script to `offline-sync.js?v=20260530-collections-bulk-cache-skip-1`.
+  - Immediate staff workaround before deploy: hard refresh, then clear site data/localStorage for `app.marga.biz` (or run `localStorage.clear()` in console) to remove old `marga_firestore_response_cache_v1:*` keys.
+  - Longer-term performance note: full `tbl_collectionhistory` scan is still heavy on DigitalOcean; targeted queries/views remain the durable optimization, but that is separate from this cache bug.
 
 ## Local Scheduled Jobs
 - Pending schedule carry-over now runs on the owner-controlled local stack, not Codex or Netlify.
@@ -217,10 +253,6 @@ Start every new Marga-App thread by reading:
 - Tracked runner source: `/Volumes/Wotg Drive Mike/GitHub/Marga-App/scripts/run-auto-forward-pending-schedules-local.sh`
 - Schedule: daily at 18:00 local machine time; the runner skips Sunday using Asia/Manila weekday checks.
 - Backend: local Margabase API at `http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents` with `MARGABASE_API_KEY=margabase-local`.
-  - Hostinger nameservers were changed to `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
-  - At the last checkpoint, propagation was not fully complete; Cloudflare Tunnel authorization showed `marga.biz` as invalid nameservers.
-  - Temporary quick tunnel works now, but permanent `api.marga.biz` needs named tunnel setup after Cloudflare recognizes the zone.
-  - Existing `margaapp.netlify.app` remains usable even after nameserver changes.
 
 ## Current Protected Baselines
 - Billing protected baseline: commit `8df832d` `Include multimeter invoice amounts in billing totals`

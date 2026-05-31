@@ -67,6 +67,9 @@ function defaultMargabaseBaseUrl() {
         if ((host === 'localhost' || host === '127.0.0.1') && !['9100', '9200'].includes(String(window.location.port || ''))) {
             return 'http://127.0.0.1:9100/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents';
         }
+        if (host && host !== 'localhost' && host !== '127.0.0.1') {
+            return '/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+        }
     } catch (error) {
         // Fall back to direct local API below.
     }

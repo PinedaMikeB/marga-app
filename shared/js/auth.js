@@ -636,12 +636,13 @@ MargaAuth.applyModulePermissions = function applyModulePermissions({ selector = 
         const module = String(el.dataset.module || '').trim().toLowerCase();
         if (!module) return;
         const canAccess = this.hasAccess(module);
+        const shouldHide = hideUnauthorized || el.closest('.sidebar') || el.classList.contains('nav-item');
         if (canAccess) {
             el.classList.remove('disabled');
-            if (hideUnauthorized) el.style.removeProperty('display');
+            if (shouldHide) el.style.removeProperty('display');
             return;
         }
-        if (hideUnauthorized) {
+        if (shouldHide) {
             el.style.display = 'none';
             return;
         }

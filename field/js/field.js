@@ -2860,39 +2860,7 @@ async function prepareReimbursementImageUpload(file, requestId, kind) {
 }
 
 async function uploadReimbursementImageToStorage(blob, { requestId, kind }) {
-    const bucket = String(FIREBASE_CONFIG.storageBucket || '').trim();
-    if (!bucket) throw new Error('Firebase Storage bucket is not configured.');
-    const token = randomToken();
-    const path = [
-        'pettycash-field-requests',
-        localDateYmd(new Date()),
-        safeStorageSegment(requestId),
-        `${safeStorageSegment(kind)}-${Date.now()}.jpg`
-    ].join('/');
-    const boundary = `marga-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const metadata = {
-        name: path,
-        contentType: 'image/jpeg',
-        metadata: { firebaseStorageDownloadTokens: token }
-    };
-    const body = new Blob([
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-        JSON.stringify(metadata),
-        `\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
-        blob,
-        `\r\n--${boundary}--`
-    ], { type: `multipart/related; boundary=${boundary}` });
-    const response = await fetch(
-        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=multipart&key=${encodeURIComponent(FIREBASE_CONFIG.apiKey)}`,
-        { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || 'Receipt image upload failed.');
-    return {
-        path,
-        url: `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(path)}?alt=media&token=${encodeURIComponent(token)}`,
-        size: Number(blob.size || 0) || 0
-    };
+    throw new Error('Receipt image upload is disabled until Margabase file storage is configured.');
 }
 
 async function writeReimbursementAudit(requestId, action, previous, next, remarks = '') {
@@ -6175,51 +6143,7 @@ function randomToken() {
 }
 
 async function uploadLocationPhotoToStorage(blob, { branchId, scheduleId, now }) {
-    const bucket = String(FIREBASE_CONFIG.storageBucket || '').trim();
-    if (!bucket) throw new Error('Firebase Storage bucket is not configured.');
-
-    const token = randomToken();
-    const path = [
-        'field-location-photos',
-        localDateYmd(now),
-        `branch-${safeStorageSegment(branchId)}`,
-        `schedule-${safeStorageSegment(scheduleId)}-${Date.now()}.jpg`
-    ].join('/');
-    const boundary = `marga-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const metadata = {
-        name: path,
-        contentType: 'image/jpeg',
-        metadata: {
-            firebaseStorageDownloadTokens: token
-        }
-    };
-    const body = new Blob([
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-        JSON.stringify(metadata),
-        `\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
-        blob,
-        `\r\n--${boundary}--`
-    ], { type: `multipart/related; boundary=${boundary}` });
-
-    const response = await fetch(
-        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=multipart&key=${encodeURIComponent(FIREBASE_CONFIG.apiKey)}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-            body
-        }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.error) {
-        throw new Error(payload?.error?.message || 'Firebase Storage upload failed.');
-    }
-
-    return {
-        path,
-        url: `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(path)}?alt=media&token=${encodeURIComponent(token)}`,
-        size: Number(blob.size || 0) || 0,
-        type: 'image/jpeg'
-    };
+    throw new Error('Location photo upload is disabled until Margabase file storage is configured.');
 }
 
 async function prepareLocationPhotoUpload(file, context) {

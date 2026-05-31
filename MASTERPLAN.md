@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-05-21
+Last Updated: 2026-05-30
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -32,8 +32,13 @@ This file exists to protect the project across new chats by recording:
 
 ## Non-Negotiable Constraints
 - Keep Marga App implementation in the `Marga-App` repo/thread. If the active thread or cwd is `marga-biz`, stop and redirect before editing app code.
-- User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
-- Default release behavior for new Codex threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
+- Current production delivery is moving from Cloudflare Tunnel → Mac mini → local Margabase/Postgres to **Cloudflare DNS → DigitalOcean** for `app.marga.biz`, while `api.marga.biz` and other tunnel hostnames may stay on the named tunnel until the API is moved. Netlify-era files remain compatibility/fallback only. Production verification must use the same hostname staff use (`app.marga.biz`), not Netlify preview or localhost alone.
+- User expects verified Marga App changes to be promoted to production after testing unless explicitly told not to.
+- Default release behavior for new Codex/Cursor work: for normal small Marga-App code changes, skip staging and skip local test cycles. Work directly in the production Marga-App worktree `/Volumes/Wotg Drive Mike/GitHub/Marga-App`, keep changes narrow, commit and push to `main`, test live through `app.marga.biz`, then rollback with `git revert <commit>` if needed.
+- Staging workflow: staging is optional, not the default. Use the Git worktree `/Volumes/Wotg Drive Mike/GitHub/Marga-App-staging` on branch `codex/staging` only when the user explicitly asks for staging, when Cursor needs a sandbox for a larger experiment, or when a risky change should not be tested live first. Its local staging proxy is `http://127.0.0.1:9300`, started with `PORT=9300 MARGABASE_API_ORIGIN=http://127.0.0.1:8787 node scripts/local-margabase-proxy.mjs`. It reads the same live Margabase/Postgres database as production; staging is for Marga-App code/query/UI/API behavior, not a separate database copy.
+- Staging write guardrail: read-only/report/query checks may use live Margabase data, but any write-path test must be narrow, auditable, and use known test/reversible records. Do not casually test payments, ORs, invoices, DRs, schedules, petty cash, deletes, or ID allocation against uncontrolled production records.
+- Intended public staging route is `staging.marga.biz` through Cloudflare to local port `9300`. Production `app.marga.biz` now points at DigitalOcean via Cloudflare DNS (A record); do not route staff app traffic back through the Mac mini tunnel without an explicit rollback decision.
+- Direct-to-main rollback rule: Git recovery is available without staging when work is committed. If a production commit is bad, use `git revert <commit>` so rollback is auditable and does not rewrite history. If bad work is still uncommitted, inspect `git diff` and revert only the specific files/lines involved; do not use broad destructive reset/checkout commands unless explicitly approved by the user.
 - Cost-protection purpose: Codex must protect the owner from unnecessary spending. Before any task, choose the cheapest safe path that preserves operational truth, avoids recurring SaaS/API/database charges, avoids broad paid reads/writes, and prevents repeated manual work. If a proven fix, query, report, UI pattern, or workflow will likely be reused, save it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, or a skill so it is not rediscovered and reprompted later.
 - Waste-prevention design rule: when building any module, anticipate where staff will make mistakes or ask again. Prefer searchable dropdowns over free text for real records, tables/grids for line-item entry, explicit audit reports for financial changes, reusable helper functions over copy-paste logic, and database-side validation where it prevents bad or duplicate operational records.
 - Build-once rule: if a task solved a real business problem before, check the handoff/masterplan/scripts before reimplementing. Promote repeated procedures into scripts, docs, automation, or skills when they save future time or cost.
@@ -164,10 +169,11 @@ This file exists to protect the project across new chats by recording:
   - Next engineering task is not just importing more rows; it is making the Margabase relational/API calculation reproduce the accepted Collections rules.
 - Permanent public access plan:
   - `margaapp.netlify.app` remains usable as the existing Netlify fallback.
-  - Future app domain can be `app.marga.biz`.
-  - Future backend API domain should be `api.marga.biz`.
-  - Hostinger nameservers were changed to Cloudflare nameservers: `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
-  - Permanent Cloudflare named tunnel setup must wait until Cloudflare recognizes `marga.biz` as active.
+  - `app.marga.biz` is the production app hostname; as of 2026-05-30 it uses Cloudflare **DNS** (A/proxied) to DigitalOcean, not a tunnel CNAME to the Mac mini.
+  - `api.marga.biz` remains the backend API hostname; may stay on named tunnel `marga-api` to local `127.0.0.1:8787` until the API runs on DigitalOcean.
+  - Hostinger nameservers: `hope.ns.cloudflare.com` and `major.ns.cloudflare.com`.
+  - Named tunnel `marga-api` is locally managed from `/Users/mike/.cloudflared/config.yml`; dashboard Routes are informational only.
+  - **DNS cutover rule (2026-05-30):** stop `cloudflared`/LaunchAgent on the Mac **before** deleting or replacing the `app` DNS record. If the connector runs first, tunnel DNS for `app` can block DigitalOcean cutover or recreate the old CNAME. See HANDOFF and `marga-database-migration` skill for exact CLI steps.
   - Quick tunnel is acceptable only for temporary testing; do not depend on it for production.
 - Protection requirements:
   - Do not expose a public write-capable Margabase API without authentication, authorization, logging, and rate limiting.

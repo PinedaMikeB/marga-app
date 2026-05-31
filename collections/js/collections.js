@@ -85,8 +85,27 @@ const receivePaymentState = {
     selectedDraft: null,
     selectedDraftGroup: [],
     matchedDraftIds: new Set(),
-    searchResults: []
+    searchResults: [],
+    mode: 'fieldstaff',
+    importRows: []
 };
+
+const DIGITAL_PAYMENT_METHODS = new Set(['bank_transfer', 'gcash', 'maya', 'other_ewallet']);
+const PAYMENT_IMPORT_TEMPLATE_COLUMNS = [
+    'invoice_no',
+    'customer_name',
+    'branch',
+    'payment_date',
+    'amount_paid',
+    'deduction_type',
+    'deduction_amount',
+    'or_number',
+    'payment_method',
+    'reference_no',
+    'bank_or_wallet',
+    'proof_status',
+    'remarks'
+];
 
 const DEFAULT_COLLECTION_STATUSES = [
     { id: 1, label: 'Missing' },
@@ -207,6 +226,11 @@ const COLLECTION_PAYMENT_FIELD_MASK = [
     'ornum',
     'or_number',
     'payment_type',
+    'payment_method',
+    'digital_reference_no',
+    'digital_channel',
+    'proof_status',
+    'receipt_status',
     'payment_status',
     'tax_2307',
     'tax_status',
@@ -445,11 +469,11 @@ function formatCurrency(amount) {
 
 function getActiveDatabaseBackend() {
     if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
-    return 'firebase';
+    return 'margabase';
 }
 
 function getActiveDatabaseBackendLabel() {
-    return 'Firebase';
+    return 'Margabase';
 }
 
 function readCollectionsCompareSnapshots() {
@@ -515,7 +539,7 @@ function buildCollectionsCompareSnapshot() {
 
     return {
         backend,
-        backendLabel: 'Firebase',
+        backendLabel: 'Margabase',
         savedAt: new Date().toISOString(),
         loadSeconds: Math.max(0, (performance.now() - COLLECTIONS_LOAD_STARTED_AT) / 1000),
         filteredInvoices: filteredInvoices.length,
@@ -543,16 +567,16 @@ function renderCollectionsCompareScorecard() {
     const currentSaved = snapshots[current.backend] || null;
 
     if (subtitle) {
-        subtitle.textContent = `${current.backendLabel} render. Save this snapshot to compare against later Firebase runs.`;
+        subtitle.textContent = `${current.backendLabel} render. Save this snapshot to compare against later Margabase runs.`;
     }
 
     const metrics = [
         ['Backend', current.backendLabel, `${current.loadSeconds.toFixed(1)}s since page load`],
-        ['Filtered Invoices', formatSnapshotNumber(current.filteredInvoices), 'Firebase current render'],
-        ['All Loaded Invoices', formatSnapshotNumber(current.allInvoices), 'Firebase current render'],
-        ['Total Unpaid', formatSnapshotMoney(current.totalUnpaid), 'Firebase current render'],
-        ['Customer Rows', formatSnapshotNumber(current.customerRows), 'Firebase current render'],
-        ['Pending Cells', formatSnapshotNumber(current.pendingCells), 'Firebase current render'],
+        ['Filtered Invoices', formatSnapshotNumber(current.filteredInvoices), 'Margabase current render'],
+        ['All Loaded Invoices', formatSnapshotNumber(current.allInvoices), 'Margabase current render'],
+        ['Total Unpaid', formatSnapshotMoney(current.totalUnpaid), 'Margabase current render'],
+        ['Customer Rows', formatSnapshotNumber(current.customerRows), 'Margabase current render'],
+        ['Pending Cells', formatSnapshotNumber(current.pendingCells), 'Margabase current render'],
         ['Bill Records', formatSnapshotNumber(current.durationBillCount), `${formatSnapshotMoney(current.durationBill)} total`],
         ['Payment Records', formatSnapshotNumber(current.durationCollectionsCount), `${formatSnapshotMoney(current.durationCollections)} total`],
         ['Month Range', current.range, 'Collector matrix window'],
@@ -568,8 +592,8 @@ function renderCollectionsCompareScorecard() {
     `).join('');
 
     if (saved) {
-        const firebaseSaved = snapshots.firebase ? `Firebase ${new Date(snapshots.firebase.savedAt).toLocaleString('en-PH')}` : 'Firebase not saved';
-        saved.textContent = firebaseSaved;
+        const margabaseSaved = snapshots.margabase ? `Margabase ${new Date(snapshots.margabase.savedAt).toLocaleString('en-PH')}` : 'Margabase not saved';
+        saved.textContent = margabaseSaved;
     }
 }
 
@@ -3338,6 +3362,11 @@ async function loadLookups() {
                 taxDatePaid,
                 orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
+                paymentMethod: String(getField(f, ['payment_method']) || '').trim(),
+                digitalReferenceNo: String(getField(f, ['digital_reference_no']) || '').trim(),
+                digitalChannel: String(getField(f, ['digital_channel']) || '').trim(),
+                proofStatus: String(getField(f, ['proof_status']) || '').trim(),
+                receiptStatus: String(getField(f, ['receipt_status']) || '').trim(),
                 paymentStatus,
                 tax2307,
                 taxStatus,
@@ -3392,6 +3421,11 @@ async function loadLookups() {
                 taxDatePaid,
                 orNumber,
                 paymentType: String(getField(f, ['payment_type']) || '').trim(),
+                paymentMethod: String(getField(f, ['payment_method']) || '').trim(),
+                digitalReferenceNo: String(getField(f, ['digital_reference_no']) || '').trim(),
+                digitalChannel: String(getField(f, ['digital_channel']) || '').trim(),
+                proofStatus: String(getField(f, ['proof_status']) || '').trim(),
+                receiptStatus: String(getField(f, ['receipt_status']) || '').trim(),
                 paymentStatus,
                 tax2307,
                 taxStatus,
@@ -7142,7 +7176,49 @@ function formatPaymentTypeLabel(value) {
     const raw = String(value ?? '').trim().toLowerCase();
     if (raw === '1' || raw.includes('check')) return 'CHECK';
     if (raw === '0' || raw.includes('cash')) return 'CASH';
+    if (raw === '2' || raw.includes('bank')) return 'BANK TRANSFER';
+    if (raw === '3' || raw.includes('gcash')) return 'GCASH';
+    if (raw === '4' || raw.includes('maya')) return 'MAYA';
+    if (raw === '5' || raw.includes('wallet')) return 'E-WALLET';
     return raw ? raw.toUpperCase() : '-';
+}
+
+function normalizePaymentMethod(value) {
+    const raw = normalizeText(value || 'cash').replace(/\s+/g, '_');
+    if (raw === '0') return 'cash';
+    if (raw === '1') return 'check';
+    if (raw === '2') return 'bank_transfer';
+    if (raw === '3') return 'gcash';
+    if (raw === '4') return 'maya';
+    if (raw === '5') return 'other_ewallet';
+    if (raw === 'bank' || raw === 'bank_deposit' || raw === 'bank_transfer') return 'bank_transfer';
+    if (raw === 'g_cash' || raw === 'gcash') return 'gcash';
+    if (raw === 'maya' || raw === 'paymaya') return 'maya';
+    if (raw === 'ewallet' || raw === 'e_wallet' || raw === 'other_ewallet') return 'other_ewallet';
+    if (raw === 'check' || raw === 'cheque') return 'check';
+    if (raw === 'mixed' || raw === 'mixed_turnover') return 'mixed';
+    return raw === 'cash' ? 'cash' : raw;
+}
+
+function paymentTypeCodeForMethod(method) {
+    const normalized = normalizePaymentMethod(method);
+    if (normalized === 'check') return 1;
+    if (normalized === 'bank_transfer') return 2;
+    if (normalized === 'gcash') return 3;
+    if (normalized === 'maya') return 4;
+    if (normalized === 'other_ewallet') return 5;
+    return 0;
+}
+
+function isDigitalPaymentMethod(method) {
+    return DIGITAL_PAYMENT_METHODS.has(normalizePaymentMethod(method));
+}
+
+function normalizeProofStatus(value) {
+    const raw = normalizeText(value || '');
+    const key = raw.replace(/\s+/g, '_');
+    if (!raw || key === 'yes' || key === 'y' || key === 'received' || key === 'proof_received' || key === 'with_proof') return 'proof_received';
+    return 'pending_proof';
 }
 
 function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxTotal, paymentBalance) {
@@ -7214,6 +7290,17 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                             <label>Date Deposited</label>
                             <input id="collectorPaymentDepositDate" type="date" value="${escapeHtml(getTodayInputValue(0))}">
                         </div>
+                        <div>
+                            <label>Payment Method</label>
+                            <select id="collectorPaymentMethod" onchange="syncCollectorPaymentMethod(this.value)">
+                                <option value="cash">Cash</option>
+                                <option value="check">Check</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="gcash">GCash</option>
+                                <option value="maya">Maya</option>
+                                <option value="other_ewallet">Other E-wallet</option>
+                            </select>
+                        </div>
                         <label class="collection-check-row"><input id="collectorPaymentCash" type="checkbox" checked onchange="syncCollectorPaymentMethod('cash')"> Cash</label>
                         <label class="collection-check-row"><input id="collectorPaymentCheck" type="checkbox" onchange="syncCollectorPaymentMethod('check')"> Check</label>
                         <div>
@@ -7235,6 +7322,21 @@ function renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxT
                         <div>
                             <label>Account Bank</label>
                             <input id="collectorPaymentAccountBank" type="text" value="" disabled>
+                        </div>
+                        <div>
+                            <label>Digital Reference No</label>
+                            <input id="collectorPaymentDigitalReference" type="text" value="" disabled>
+                        </div>
+                        <div>
+                            <label>Bank / Wallet</label>
+                            <input id="collectorPaymentDigitalChannel" type="text" value="" disabled>
+                        </div>
+                        <div>
+                            <label>Proof Status</label>
+                            <select id="collectorPaymentProofStatus" disabled>
+                                <option value="proof_received">Proof received</option>
+                                <option value="pending_proof">Pending proof</option>
+                            </select>
                         </div>
                         <div>
                             <label>Payment Status</label>
@@ -7707,12 +7809,15 @@ function bindCollectorPaymentForm() {
     document.getElementById('collectorPayment2307Pending')?.addEventListener('change', (event) => {
         event.currentTarget.dataset.touched = '1';
     });
-    syncCollectorPaymentMethod(document.getElementById('collectorPaymentCheck')?.checked ? 'check' : 'cash');
+    syncCollectorPaymentMethod(document.getElementById('collectorPaymentMethod')?.value || (document.getElementById('collectorPaymentCheck')?.checked ? 'check' : 'cash'));
     updateCollectorPaymentBalance();
 }
 
 function syncCollectorPaymentMethod(method) {
-    const isCheck = method === 'check';
+    const normalized = normalizePaymentMethod(method);
+    const isCheck = normalized === 'check';
+    const isDigital = isDigitalPaymentMethod(normalized);
+    const methodSelect = document.getElementById('collectorPaymentMethod');
     const cashInput = document.getElementById('collectorPaymentCash');
     const checkInput = document.getElementById('collectorPaymentCheck');
     const checkNumber = document.getElementById('collectorPaymentCheckNumber');
@@ -7720,14 +7825,25 @@ function syncCollectorPaymentMethod(method) {
     const checkDate = document.getElementById('collectorPaymentCheckDate');
     const checkAmount = document.getElementById('collectorPaymentCheckAmount');
     const accountBank = document.getElementById('collectorPaymentAccountBank');
+    const digitalReference = document.getElementById('collectorPaymentDigitalReference');
+    const digitalChannel = document.getElementById('collectorPaymentDigitalChannel');
+    const proofStatus = document.getElementById('collectorPaymentProofStatus');
 
-    if (cashInput) cashInput.checked = !isCheck;
+    if (methodSelect) methodSelect.value = normalized;
+    if (cashInput) cashInput.checked = normalized === 'cash';
     if (checkInput) checkInput.checked = isCheck;
-    [checkNumber, checkBank, checkDate, checkAmount, accountBank].forEach((input) => {
+    [checkNumber, checkBank, checkDate, checkAmount].forEach((input) => {
         if (input) input.disabled = !isCheck;
+    });
+    if (accountBank) accountBank.disabled = !isCheck && !isDigital;
+    [digitalReference, digitalChannel, proofStatus].forEach((input) => {
+        if (input) input.disabled = !isDigital;
     });
     if (isCheck && checkAmount && !String(checkAmount.value || '').trim()) {
         checkAmount.value = document.getElementById('collectorPaymentPaidAmount')?.value || '';
+    }
+    if (isDigital && digitalChannel && !String(digitalChannel.value || '').trim()) {
+        digitalChannel.value = normalized === 'gcash' ? 'GCash' : normalized === 'maya' ? 'Maya' : '';
     }
 }
 
@@ -7775,6 +7891,473 @@ function searchReceivePaymentInvoices(query) {
             return haystack.includes(needle);
         })
         .slice(0, 12);
+}
+
+function findExactReceivePaymentInvoice(invoiceNo) {
+    const needle = normalizeCollectorInvoiceSearchValue(invoiceNo);
+    if (!needle) return null;
+    return collectorBillingRecords.find((record) => {
+        return [
+            record.invoiceNo,
+            record.invoiceId,
+            record.invoiceKey,
+            record.id
+        ].some((value) => normalizeCollectorInvoiceSearchValue(value) === needle);
+    }) || null;
+}
+
+function existingPaymentByOrNumber(orNumber) {
+    const needle = String(orNumber || '').trim().toUpperCase();
+    if (!needle) return null;
+    return paymentEntries.find((payment) => String(payment.orNumber || payment.printedOr || '').trim().toUpperCase() === needle) || null;
+}
+
+function existingPaymentByDigitalReference(referenceNo) {
+    const needle = String(referenceNo || '').trim().toUpperCase();
+    if (!needle) return null;
+    return paymentEntries.find((payment) => String(payment.digitalReferenceNo || '').trim().toUpperCase() === needle) || null;
+}
+
+function paymentBelongsToCurrentImportBatch(payment, row) {
+    const paymentDocId = String(payment?.docId || payment?.id || '').trim();
+    if (!paymentDocId) return false;
+    return (receivePaymentState.importRows || []).some((importRow) => {
+        return importRow.postedDocId === paymentDocId
+            && String(importRow.orNumber || '').trim().toUpperCase() === String(row.orNumber || '').trim().toUpperCase()
+            && toDateKey(importRow.paymentDate) === toDateKey(row.paymentDate);
+    });
+}
+
+function parseDelimitedRows(text) {
+    const rows = [];
+    let row = [];
+    let value = '';
+    let quoted = false;
+    const source = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const delimiter = source.includes('\t') && source.split('\n')[0]?.includes('\t') ? '\t' : ',';
+    for (let index = 0; index < source.length; index += 1) {
+        const char = source[index];
+        const next = source[index + 1];
+        if (char === '"') {
+            if (quoted && next === '"') {
+                value += '"';
+                index += 1;
+            } else {
+                quoted = !quoted;
+            }
+        } else if (char === delimiter && !quoted) {
+            row.push(value);
+            value = '';
+        } else if (char === '\n' && !quoted) {
+            row.push(value);
+            if (row.some((cell) => String(cell || '').trim())) rows.push(row);
+            row = [];
+            value = '';
+        } else {
+            value += char;
+        }
+    }
+    row.push(value);
+    if (row.some((cell) => String(cell || '').trim())) rows.push(row);
+    return rows;
+}
+
+function normalizeImportHeader(value) {
+    return normalizeText(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function importValue(row, keys) {
+    for (const key of keys) {
+        const value = row[key];
+        if (value !== undefined && String(value || '').trim()) return String(value || '').trim();
+    }
+    return '';
+}
+
+function parsePaymentImportText(text) {
+    const rows = parseDelimitedRows(text);
+    if (!rows.length) return [];
+    const headers = rows[0].map(normalizeImportHeader);
+    return rows.slice(1).map((cells, index) => {
+        const raw = {};
+        headers.forEach((header, cellIndex) => {
+            if (header) raw[header] = String(cells[cellIndex] || '').trim();
+        });
+        const paymentMethod = normalizePaymentMethod(importValue(raw, ['payment_method', 'method', 'payment_type']) || 'cash');
+        return {
+            id: `import_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+            lineNumber: index + 2,
+            raw,
+            invoiceNo: importValue(raw, ['invoice_no', 'invoice_num', 'invoice_number', 'invoiceno']),
+            customerName: importValue(raw, ['customer_name', 'customer', 'client']),
+            branch: importValue(raw, ['branch', 'category', 'department']),
+            paymentDate: importValue(raw, ['payment_date', 'date_paid', 'date']),
+            amountPaid: parseMoneyInput(importValue(raw, ['amount_paid', 'payment_amt', 'payment_amount', 'amount'])),
+            deductionType: importValue(raw, ['deduction_type', 'deduction']),
+            deductionAmount: parseMoneyInput(importValue(raw, ['deduction_amount', 'tax_2307', 'withholding'])),
+            orNumber: importValue(raw, ['or_number', 'ornum', 'or_no']),
+            paymentMethod,
+            referenceNo: importValue(raw, ['reference_no', 'digital_reference_no', 'bank_reference', 'transaction_id']),
+            digitalChannel: importValue(raw, ['bank_or_wallet', 'bank_name', 'wallet', 'digital_channel']),
+            proofStatus: normalizeProofStatus(importValue(raw, ['proof_status', 'proof_received'])),
+            remarks: importValue(raw, ['remarks', 'notes']),
+            acceptedPartial: false,
+            skipped: false,
+            posted: false
+        };
+    }).filter((row) => row.invoiceNo || row.orNumber || row.amountPaid || row.referenceNo);
+}
+
+function validatePaymentImportRow(row) {
+    if (row.skipped) return { ...row, status: 'Skipped', statusClass: 'review', issues: ['Skipped by staff.'] };
+    if (row.posted) return { ...row, status: 'Posted', statusClass: 'ready', issues: ['Payment posted.'] };
+    const issues = [];
+    const invoice = findExactReceivePaymentInvoice(row.invoiceNo);
+    const method = normalizePaymentMethod(row.paymentMethod);
+    const isDigital = isDigitalPaymentMethod(method);
+    const paymentDate = toDateKey(row.paymentDate);
+    const amountPaid = Number(row.amountPaid || 0);
+    const deductionAmount = Number(row.deductionAmount || 0);
+    const grossAmount = amountPaid + deductionAmount;
+
+    if (!invoice) issues.push('Invoice Not Found');
+    if (!paymentDate) issues.push('Missing Date');
+    if (!(amountPaid > 0) && !(deductionAmount > 0)) issues.push('Missing Amount');
+    if (!row.orNumber) issues.push('Missing OR');
+    if (isDigital && !row.referenceNo) issues.push('Missing Reference');
+    if (isDigital && !row.digitalChannel) issues.push('Missing Bank/Wallet');
+    if (isDigital && String(row.proofStatus || '').toLowerCase() !== 'proof_received') issues.push('Missing Proof');
+
+    const duplicateOr = existingPaymentByOrNumber(row.orNumber);
+    if (duplicateOr
+        && String(duplicateOr.docId || duplicateOr.id || '') !== String(row.postedDocId || '')
+        && !paymentBelongsToCurrentImportBatch(duplicateOr, row)) issues.push('Duplicate OR');
+    const duplicateReference = existingPaymentByDigitalReference(row.referenceNo);
+    if (isDigital && duplicateReference && String(duplicateReference.docId || duplicateReference.id || '') !== String(row.postedDocId || '')) issues.push('Duplicate Reference');
+
+    let outstanding = 0;
+    if (invoice) {
+        outstanding = receivePaymentOutstandingForInvoice(invoice);
+        if (outstanding <= 0.01) issues.push('Already Paid');
+        if (!row.acceptedPartial && grossAmount > 0 && Math.abs(outstanding - grossAmount) > 0.01) issues.push('Amount Mismatch');
+        const importCustomer = normalizeText(row.customerName);
+        const importBranch = normalizeText(row.branch);
+        if (importCustomer && !normalizeText(invoice.company || invoice.accountLabel).includes(importCustomer)) issues.push('Customer Mismatch');
+        if (importBranch && !normalizeText(invoice.branch || invoice.category).includes(importBranch)) issues.push('Branch Mismatch');
+    }
+
+    const blockingIssue = issues.find((issue) => [
+        'Invoice Not Found',
+        'Missing Date',
+        'Missing Amount',
+        'Missing OR',
+        'Missing Reference',
+        'Missing Bank/Wallet',
+        'Missing Proof',
+        'Duplicate OR',
+        'Duplicate Reference',
+        'Already Paid'
+    ].includes(issue));
+    const status = issues.length ? issues[0] : 'Ready to Post';
+    return {
+        ...row,
+        invoice,
+        outstanding,
+        grossAmount,
+        paymentMethod: method,
+        paymentDate,
+        issues,
+        status,
+        statusClass: issues.length ? (blockingIssue ? 'blocked' : 'review') : 'ready',
+        ready: issues.length === 0
+    };
+}
+
+function validatePaymentImportRows() {
+    receivePaymentState.importRows = (receivePaymentState.importRows || []).map(validatePaymentImportRow);
+    renderPaymentImportRows();
+}
+
+function renderPaymentImportRows() {
+    const review = document.getElementById('paymentImportReview');
+    const summary = document.getElementById('paymentImportSummary');
+    const tbody = document.getElementById('paymentImportRows');
+    const rows = receivePaymentState.importRows || [];
+    if (review) review.classList.toggle('hidden', !rows.length);
+    if (summary) {
+        const ready = rows.filter((row) => row.ready).length;
+        const blocked = rows.filter((row) => row.statusClass === 'blocked').length;
+        const reviewCount = rows.filter((row) => row.statusClass === 'review').length;
+        summary.innerHTML = `
+            <span class="payment-import-pill ready">${escapeHtml(String(ready))} ready</span>
+            <span class="payment-import-pill review">${escapeHtml(String(reviewCount))} review</span>
+            <span class="payment-import-pill blocked">${escapeHtml(String(blocked))} blocked</span>
+            <span class="payment-import-pill">${escapeHtml(String(rows.length))} row(s)</span>
+        `;
+    }
+    if (!tbody) return;
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No rows loaded.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((row, index) => {
+        const issueText = row.issues?.length ? row.issues.join(', ') : 'Ready to post';
+        const invoiceLabel = row.invoice
+            ? `${row.invoice.invoiceNo || row.invoice.invoiceId}<br><small>Balance ${escapeHtml(formatCurrency(row.outstanding || 0))}</small>`
+            : `${escapeHtml(row.invoiceNo || '-')}<br><small>Line ${escapeHtml(String(row.lineNumber))}</small>`;
+        const paymentLabel = `${escapeHtml(formatCurrency(row.amountPaid || 0))}<br><small>${escapeHtml(row.paymentDate || row.raw?.payment_date || '-')} · ${escapeHtml(formatPaymentTypeLabel(row.paymentMethod))}</small>`;
+        const refLabel = `OR ${escapeHtml(row.orNumber || '-')}<br><small>${escapeHtml(row.referenceNo || row.digitalChannel || '-')}</small>`;
+        return `
+            <tr>
+                <td><span class="payment-status-chip ${escapeHtml(row.statusClass || 'review')}">${escapeHtml(row.status || '-')}</span><br><small>${escapeHtml(issueText)}</small></td>
+                <td>${invoiceLabel}</td>
+                <td>${escapeHtml(row.customerName || row.invoice?.company || '-')}<br><small>${escapeHtml(row.branch || row.invoice?.branch || '')}</small></td>
+                <td>${paymentLabel}</td>
+                <td>${refLabel}</td>
+                <td class="import-actions">${renderPaymentImportRowActions(row, index)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderPaymentImportRowActions(row, index) {
+    if (row.posted) return '<div class="import-row-actions"><button type="button" class="btn btn-secondary" disabled>Posted</button></div>';
+    const actions = [];
+    if (row.ready) actions.push(`<button type="button" class="btn btn-primary" onclick="postPaymentImportRow(${index})">Post</button>`);
+    if (row.issues?.includes('Invoice Not Found')) actions.push(`<button type="button" class="btn btn-secondary" onclick="fixPaymentImportInvoice(${index})">Find Invoice</button>`);
+    if (row.issues?.includes('Missing OR')) actions.push(`<button type="button" class="btn btn-secondary" onclick="fixPaymentImportValue(${index}, 'orNumber', 'OR number')">Add OR</button>`);
+    if (row.issues?.includes('Missing Reference')) actions.push(`<button type="button" class="btn btn-secondary" onclick="fixPaymentImportValue(${index}, 'referenceNo', 'Reference number')">Add Ref</button>`);
+    if (row.issues?.includes('Amount Mismatch')) {
+        actions.push(`<button type="button" class="btn btn-secondary" onclick="acceptPaymentImportPartial(${index})">Accept Partial</button>`);
+        actions.push(`<button type="button" class="btn btn-secondary" onclick="fixPaymentImportAmount(${index})">Edit Amount</button>`);
+        actions.push(`<button type="button" class="btn btn-secondary" onclick="fixPaymentImportDeduction(${index})">Add Deduction</button>`);
+    }
+    if (row.invoice) actions.push(`<button type="button" class="btn btn-secondary" onclick="openPaymentImportInvoice(${index})">Open Form</button>`);
+    actions.push(`<button type="button" class="btn btn-secondary" onclick="skipPaymentImportRow(${index})">Skip</button>`);
+    return `<div class="import-row-actions">${actions.join('')}</div>`;
+}
+
+function loadPaymentImportText(text) {
+    receivePaymentState.importRows = parsePaymentImportText(text).map(validatePaymentImportRow);
+    renderPaymentImportRows();
+    setReceivePaymentStatus(receivePaymentState.importRows.length ? `Validated ${receivePaymentState.importRows.length} import row(s).` : 'No import rows found.');
+}
+
+function downloadPaymentImportTemplate() {
+    const sample = [
+        PAYMENT_IMPORT_TEMPLATE_COLUMNS.join(','),
+        '130652,ABC Company,Main Branch,2026-05-28,9500,2307,500,OR12345,bank_transfer,BPI-REF-001,BPI,proof_received,April payment'
+    ].join('\n');
+    const blob = new Blob([sample], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `marga-payment-import-template-${toDateKey(new Date())}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+}
+
+function fixPaymentImportInvoice(index) {
+    const row = receivePaymentState.importRows[index];
+    if (!row) return;
+    const value = window.prompt('Enter the correct invoice number:', row.invoiceNo || '');
+    if (value === null) return;
+    row.invoiceNo = String(value || '').trim();
+    validatePaymentImportRows();
+}
+
+function fixPaymentImportValue(index, key, label) {
+    const row = receivePaymentState.importRows[index];
+    if (!row) return;
+    const value = window.prompt(`Enter ${label}:`, row[key] || '');
+    if (value === null) return;
+    row[key] = String(value || '').trim();
+    validatePaymentImportRows();
+}
+
+function fixPaymentImportAmount(index) {
+    const row = receivePaymentState.importRows[index];
+    if (!row) return;
+    const value = window.prompt('Enter corrected amount paid:', row.amountPaid || '');
+    if (value === null) return;
+    row.amountPaid = parseMoneyInput(value);
+    validatePaymentImportRows();
+}
+
+function fixPaymentImportDeduction(index) {
+    const row = receivePaymentState.importRows[index];
+    if (!row) return;
+    const value = window.prompt('Enter deduction amount:', row.deductionAmount || '');
+    if (value === null) return;
+    row.deductionAmount = parseMoneyInput(value);
+    if (!row.deductionType) row.deductionType = '2307';
+    validatePaymentImportRows();
+}
+
+function acceptPaymentImportPartial(index) {
+    const row = receivePaymentState.importRows[index];
+    if (!row) return;
+    row.acceptedPartial = true;
+    validatePaymentImportRows();
+}
+
+function skipPaymentImportRow(index) {
+    const row = receivePaymentState.importRows[index];
+    if (!row) return;
+    row.skipped = true;
+    validatePaymentImportRows();
+}
+
+function openPaymentImportInvoice(index) {
+    const row = receivePaymentState.importRows[index];
+    if (row?.invoice?.invoiceKey) viewInvoiceDetail(row.invoice.invoiceKey);
+}
+
+async function postPaymentImportRow(index) {
+    const row = validatePaymentImportRow(receivePaymentState.importRows[index]);
+    if (!row?.ready || isSavingReceivePayment) {
+        setReceivePaymentStatus(row?.issues?.join(', ') || 'Import row is not ready to post.');
+        receivePaymentState.importRows[index] = row;
+        renderPaymentImportRows();
+        return;
+    }
+    isSavingReceivePayment = true;
+    setReceivePaymentStatus(`Posting import row ${row.lineNumber}...`);
+    try {
+        const invoice = row.invoice;
+        const paymentDocId = createWebDocId('import_payment');
+        const now = toTimestampString(new Date());
+        const deductionType = String(row.deductionType || '').trim().toLowerCase();
+        const deductionAmount = Number(row.deductionAmount || 0);
+        const tax2307 = deductionType === '2307' ? deductionAmount : 0;
+        const otherDeductionAmount = deductionType && deductionType !== '2307' ? deductionAmount : 0;
+        const balance = Math.max(0, Number(row.outstanding || 0) - Number(row.amountPaid || 0) - deductionAmount);
+        const isCheck = row.paymentMethod === 'check';
+        const checkDocId = isCheck ? createWebDocId('import_checkpayment') : '';
+        const fields = {
+            id: toFirestoreWriteValue(paymentDocId),
+            invoice_id: toFirestoreWriteValue(invoice.invoiceId || invoice.invoiceNo),
+            invoice_num: toFirestoreWriteValue(invoice.invoiceNo || invoice.invoiceId),
+            client: toFirestoreWriteValue(invoice.company || row.customerName || ''),
+            category: toFirestoreWriteValue(invoice.branch || row.branch || ''),
+            invoice_amt: toFirestoreWriteValue(Number(row.outstanding || invoice.amount || 0)),
+            invoice_date: toFirestoreWriteValue(formatInputDateTime(toDateKey(invoice.invoiceDate))),
+            printed_or: toFirestoreWriteValue(row.orNumber),
+            assigned: toFirestoreWriteValue(getCurrentCollectorName()),
+            payment_amt: toFirestoreWriteValue(Number(row.amountPaid || 0)),
+            balance_amt: toFirestoreWriteValue(balance),
+            date_deposit: toFirestoreWriteValue(formatInputDateTime(row.paymentDate)),
+            date_paid: toFirestoreWriteValue(formatInputDateTime(row.paymentDate)),
+            ornum: toFirestoreWriteValue(row.orNumber),
+            or_number: toFirestoreWriteValue(row.orNumber),
+            payment_type: toFirestoreWriteValue(paymentTypeCodeForMethod(row.paymentMethod)),
+            payment_method: toFirestoreWriteValue(row.paymentMethod),
+            digital_reference_no: toFirestoreWriteValue(row.referenceNo),
+            digital_channel: toFirestoreWriteValue(row.digitalChannel),
+            proof_status: toFirestoreWriteValue(row.proofStatus || (isDigitalPaymentMethod(row.paymentMethod) ? 'proof_received' : '')),
+            receipt_status: toFirestoreWriteValue('with_or'),
+            payment_status: toFirestoreWriteValue(balance <= 0.01 ? 'Paid' : 'Partial'),
+            check_number: toFirestoreWriteValue(''),
+            check_amt: toFirestoreWriteValue(isCheck ? Number(row.amountPaid || 0) : 0),
+            check_date: toFirestoreWriteValue(''),
+            account_bank: toFirestoreWriteValue(row.digitalChannel),
+            tax_2307: toFirestoreWriteValue(tax2307),
+            tax_date_paid: toFirestoreWriteValue(formatInputDateTime(tax2307 > 0 ? row.paymentDate : '')),
+            tax_status: toFirestoreWriteValue(tax2307 > 0 ? 1 : 0),
+            deduction_type: toFirestoreWriteValue(deductionType),
+            deduction_amount: toFirestoreWriteValue(deductionAmount),
+            other_deduction_amount: toFirestoreWriteValue(otherDeductionAmount),
+            tax_form_status: toFirestoreWriteValue(tax2307 > 0 ? 'pending' : ''),
+            checkpayment_id: toFirestoreWriteValue(checkDocId || 0),
+            remarks: toFirestoreWriteValue(row.remarks || 'Imported payment'),
+            import_batch_id: toFirestoreWriteValue(row.importBatchId || ''),
+            import_line_number: toFirestoreWriteValue(row.lineNumber),
+            timestamp: toFirestoreWriteValue(now),
+            updated_at: toFirestoreWriteValue(now),
+            source: toFirestoreWriteValue('collections_payment_import')
+        };
+        await firestoreSetDocument('tbl_paymentinfo', paymentDocId, fields);
+        if (isCheck) {
+            await firestoreSetDocument('tbl_checkpayments', checkDocId, {
+                id: toFirestoreWriteValue(checkDocId),
+                payments_id: toFirestoreWriteValue(paymentDocId),
+                invoice_id: toFirestoreWriteValue(invoice.invoiceId || invoice.invoiceNo),
+                check_number: toFirestoreWriteValue(''),
+                bank: toFirestoreWriteValue(row.digitalChannel),
+                account_bank: toFirestoreWriteValue(row.digitalChannel),
+                check_amt: toFirestoreWriteValue(Number(row.amountPaid || 0)),
+                check_date: toFirestoreWriteValue(formatInputDateTime(row.paymentDate)),
+                remarks: toFirestoreWriteValue(row.remarks || 'Imported payment'),
+                source: toFirestoreWriteValue('collections_payment_import'),
+                timestamp: toFirestoreWriteValue(now)
+            });
+        }
+        paymentEntries.push({
+            docId: paymentDocId,
+            id: paymentDocId,
+            invoiceId: invoice.invoiceId || invoice.invoiceNo,
+            invoiceNo: invoice.invoiceNo || invoice.invoiceId,
+            client: invoice.company || row.customerName || '',
+            category: invoice.branch || row.branch || '',
+            invoiceAmount: Number(row.outstanding || invoice.amount || 0),
+            invoiceDate: normalizeDate(invoice.invoiceDate),
+            amount: Number(row.amountPaid || 0),
+            balanceAmount: balance,
+            deductionType,
+            deductionAmount,
+            otherDeductionAmount,
+            paymentDate: normalizeDate(row.paymentDate),
+            datePaid: normalizeDate(row.paymentDate),
+            dateDeposit: normalizeDate(row.paymentDate),
+            orNumber: row.orNumber,
+            paymentType: String(paymentTypeCodeForMethod(row.paymentMethod)),
+            paymentMethod: row.paymentMethod,
+            digitalReferenceNo: row.referenceNo,
+            digitalChannel: row.digitalChannel,
+            proofStatus: row.proofStatus,
+            receiptStatus: 'with_or',
+            paymentStatus: balance <= 0.01 ? 'Paid' : 'Partial',
+            tax2307,
+            taxStatus: tax2307 > 0 ? '1' : '0',
+            taxFormStatus: tax2307 > 0 ? 'pending' : '',
+            checkpaymentId: checkDocId,
+            checkNumber: '',
+            checkAmount: isCheck ? Number(row.amountPaid || 0) : 0,
+            checkDate: normalizeDate(row.paymentDate),
+            accountBank: row.digitalChannel,
+            remarks: row.remarks || 'Imported payment'
+        });
+        row.posted = true;
+        row.postedDocId = paymentDocId;
+        receivePaymentState.importRows[index] = validatePaymentImportRow(row);
+        rebuildPaidInvoiceIdsFromPayments();
+        collectorDashboardData = null;
+        renderPaymentImportRows();
+        setReceivePaymentStatus(`Posted import row ${row.lineNumber}.`);
+        void renderCollectorDashboard({ recompute: true });
+    } catch (error) {
+        console.error('Failed to post import row:', error);
+        setReceivePaymentStatus('Import row failed to post. Please review and try again.');
+    } finally {
+        isSavingReceivePayment = false;
+    }
+}
+
+async function postReadyPaymentImportRows() {
+    validatePaymentImportRows();
+    const readyIndexes = receivePaymentState.importRows
+        .map((row, index) => row.ready ? index : -1)
+        .filter((index) => index >= 0);
+    if (!readyIndexes.length) {
+        setReceivePaymentStatus('No ready import rows to post.');
+        return;
+    }
+    for (const index of readyIndexes) {
+        await postPaymentImportRow(index);
+    }
+    setReceivePaymentStatus(`Posted ${readyIndexes.length} ready import row(s). Review any remaining exceptions.`);
 }
 
 function setReceivePaymentStatus(message) {
@@ -7849,7 +8432,10 @@ function renderReceivePaymentDrafts() {
                         <div class="collector-sub">${group.payments.length} customer collection${group.payments.length === 1 ? '' : 's'} encoded · Cash ${escapeHtml(formatCurrency(group.cash))} · Checks ${escapeHtml(formatCurrency(group.checks))}</div>
                     </div>
                     <div class="receive-payment-group-total"><span>Turnover total</span>${escapeHtml(formatCurrency(group.amount + group.deduction))}</div>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="loadReceivePaymentDraftGroup('${encodeURIComponent(group.messenger)}')">Review Batch</button>
+                    <div class="receive-payment-group-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="loadReceivePaymentDraftGroup('${encodeURIComponent(group.messenger)}')">Review Batch</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="confirmReceivePaymentDraftGroup('${encodeURIComponent(group.messenger)}')">Confirm ${escapeHtml(group.messenger)} Batch</button>
+                    </div>
                 </div>
                 <table class="receive-payment-batch-table">
                     <thead>
@@ -7941,7 +8527,22 @@ function toggleReceivePaymentDraftMatch(paymentDocId, checked) {
     updateReceivePaymentBalanceStatus();
 }
 
+function updateReceivePaymentConfirmButton() {
+    const button = document.getElementById('receivePaymentConfirmBtn');
+    if (!button) return;
+    if (receivePaymentState.mode === 'import') {
+        button.textContent = 'Post All Ready';
+        button.onclick = postReadyPaymentImportRows;
+        return;
+    }
+    const group = receivePaymentState.selectedDraftGroup || [];
+    const messenger = group.length ? getDraftMessengerName(group[0]) : '';
+    button.textContent = messenger ? `Confirm ${messenger} Batch` : 'Confirm Reviewed Batch';
+    button.onclick = confirmReceivePayment;
+}
+
 function updateReceivePaymentBalanceStatus() {
+    updateReceivePaymentConfirmButton();
     const total = receivePaymentState.selectedInvoices.reduce((sum, invoice) => sum + Number(invoice.receiveAmount || 0), 0);
     const amount = parseMoneyInput(document.getElementById('receivePaymentAmount')?.value || '0');
     const deduction = parseMoneyInput(document.getElementById('receivePaymentDeduction')?.value || '0');
@@ -8010,11 +8611,15 @@ function loadReceivePaymentDraft(paymentDocId) {
     setValue('receivePaymentOrNumber', draft.orNumber || draft.printedOr || '');
     setValue('receivePaymentAmount', Number(draft.amount || 0) ? Number(draft.amount || 0).toFixed(2) : '');
     setValue('receivePaymentDeduction', Number(getPaymentDeductionAmount(draft) || 0) ? Number(getPaymentDeductionAmount(draft)).toFixed(2) : '');
-    setValue('receivePaymentType', formatPaymentTypeLabel(draft.paymentType) === 'CHECK' ? 'check' : 'cash');
+    setValue('receivePaymentType', draft.paymentMethod || (formatPaymentTypeLabel(draft.paymentType) === 'CHECK' ? 'check' : 'cash'));
     setValue('receivePaymentCheckNumber', draft.checkNumber || '');
     setValue('receivePaymentCheckDate', toDateKey(draft.checkDate) || '');
     setValue('receivePaymentCheckBank', draft.accountBank || '');
+    setValue('receivePaymentDigitalReference', draft.digitalReferenceNo || '');
+    setValue('receivePaymentDigitalChannel', draft.digitalChannel || draft.accountBank || '');
+    setValue('receivePaymentProofStatus', draft.proofStatus || 'proof_received');
     setValue('receivePaymentRemarks', draft.remarks || '');
+    syncReceivePaymentMethodFields();
 
     const invoice = findReceivePaymentInvoice(draft.invoiceNo || draft.invoiceId);
     if (invoice) addReceivePaymentInvoice(invoice);
@@ -8053,7 +8658,11 @@ function loadReceivePaymentDraftGroup(messengerName) {
     setValue('receivePaymentCheckNumber', group.map((payment) => payment.checkNumber || '').filter(Boolean).join(', '));
     setValue('receivePaymentCheckDate', toDateKey(group.find((payment) => payment.checkDate)?.checkDate) || '');
     setValue('receivePaymentCheckBank', group.map((payment) => payment.accountBank || '').filter(Boolean).join(', '));
+    setValue('receivePaymentDigitalReference', group.map((payment) => payment.digitalReferenceNo || '').filter(Boolean).join(', '));
+    setValue('receivePaymentDigitalChannel', group.map((payment) => payment.digitalChannel || payment.accountBank || '').filter(Boolean).join(', '));
+    setValue('receivePaymentProofStatus', 'proof_received');
     setValue('receivePaymentRemarks', `Messenger turnover: ${messenger}`);
+    syncReceivePaymentMethodFields();
 
     group.forEach((draft) => {
         const invoice = findReceivePaymentInvoice(draft.invoiceNo || draft.invoiceId);
@@ -8071,23 +8680,68 @@ function loadReceivePaymentDraftGroup(messengerName) {
     updateReceivePaymentBalanceStatus();
 }
 
+async function confirmReceivePaymentDraftGroup(messengerName) {
+    const messenger = decodeURIComponent(String(messengerName || '')).trim();
+    const group = draftPaymentEntries.filter((entry) => getDraftMessengerName(entry) === messenger);
+    if (!group.length) {
+        setReceivePaymentStatus('Field staff batch could not be found.');
+        return;
+    }
+    const allVerified = group.every((payment) => receivePaymentState.matchedDraftIds.has(String(payment.docId || payment.id || '')));
+    if (!allVerified) {
+        loadReceivePaymentDraftGroup(messenger);
+        setReceivePaymentStatus(`Tick all ${group.length} ${messenger} row(s) after checking cash/check/slip before confirming this batch.`);
+        return;
+    }
+    loadReceivePaymentDraftGroup(messenger);
+    await confirmReceivePayment();
+}
+
 function openReceivePaymentModal() {
     const modal = document.getElementById('receivePaymentModal');
     if (!modal) return;
+    setReceivePaymentMode(receivePaymentState.mode || 'fieldstaff');
     clearReceivePaymentSelection();
-    ['receivePaymentOrNumber', 'receivePaymentAmount', 'receivePaymentDeduction', 'receivePaymentCheckNumber', 'receivePaymentCheckDate', 'receivePaymentCheckBank', 'receivePaymentRemarks'].forEach((id) => {
+    ['receivePaymentOrNumber', 'receivePaymentAmount', 'receivePaymentDeduction', 'receivePaymentCheckNumber', 'receivePaymentCheckDate', 'receivePaymentCheckBank', 'receivePaymentDigitalReference', 'receivePaymentDigitalChannel', 'receivePaymentRemarks'].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.value = '';
     });
     const paymentDate = document.getElementById('receivePaymentDate');
     const paymentType = document.getElementById('receivePaymentType');
+    const proofStatus = document.getElementById('receivePaymentProofStatus');
     if (paymentDate) paymentDate.value = getTodayInputValue(0);
     if (paymentType) paymentType.value = 'cash';
+    if (proofStatus) proofStatus.value = 'proof_received';
+    syncReceivePaymentMethodFields();
     renderReceivePaymentDrafts();
     renderReceivePaymentInvoices();
     updateReceivePaymentBalanceStatus();
     modal.classList.remove('hidden');
     document.getElementById('receivePaymentInvoiceSearch')?.focus();
+}
+
+function setReceivePaymentMode(mode) {
+    const normalized = mode === 'import' ? 'import' : 'fieldstaff';
+    receivePaymentState.mode = normalized;
+    document.getElementById('receivePaymentFieldstaffModeBtn')?.classList.toggle('active', normalized === 'fieldstaff');
+    document.getElementById('receivePaymentImportModeBtn')?.classList.toggle('active', normalized === 'import');
+    document.getElementById('receivePaymentFieldstaffPanel')?.classList.toggle('hidden', normalized !== 'fieldstaff');
+    document.getElementById('receivePaymentImportPanel')?.classList.toggle('hidden', normalized !== 'import');
+    updateReceivePaymentConfirmButton();
+    setReceivePaymentStatus(normalized === 'import' ? 'Load or paste a payment template, then validate rows.' : 'Ready.');
+}
+
+function syncReceivePaymentMethodFields() {
+    const method = normalizePaymentMethod(document.getElementById('receivePaymentType')?.value || 'cash');
+    const isCheck = method === 'check';
+    const isDigital = isDigitalPaymentMethod(method);
+    ['receivePaymentCheckNumber', 'receivePaymentCheckDate', 'receivePaymentCheckBank'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !isCheck;
+    });
+    document.querySelectorAll('.receive-payment-digital-fields').forEach((node) => {
+        node.classList.toggle('hidden', !isDigital);
+    });
 }
 
 function closeReceivePaymentModal() {
@@ -8111,11 +8765,15 @@ async function confirmReceivePayment() {
     const deduction = parseMoneyInput(document.getElementById('receivePaymentDeduction')?.value || '0');
     const paymentDate = String(document.getElementById('receivePaymentDate')?.value || '').trim();
     const orNumber = String(document.getElementById('receivePaymentOrNumber')?.value || '').trim();
-    const selectedPaymentType = String(document.getElementById('receivePaymentType')?.value || '');
+    const selectedPaymentType = normalizePaymentMethod(document.getElementById('receivePaymentType')?.value || '');
     const isCheck = selectedPaymentType === 'check';
+    const isDigital = isDigitalPaymentMethod(selectedPaymentType);
     const checkNumber = String(document.getElementById('receivePaymentCheckNumber')?.value || '').trim();
     const checkDate = String(document.getElementById('receivePaymentCheckDate')?.value || '').trim();
     const checkBank = String(document.getElementById('receivePaymentCheckBank')?.value || '').trim();
+    const digitalReferenceNo = String(document.getElementById('receivePaymentDigitalReference')?.value || '').trim();
+    const digitalChannel = String(document.getElementById('receivePaymentDigitalChannel')?.value || checkBank || '').trim();
+    const proofStatus = String(document.getElementById('receivePaymentProofStatus')?.value || '').trim();
     const remarks = String(document.getElementById('receivePaymentRemarks')?.value || '').trim();
     const draft = receivePaymentState.selectedDraft;
     const draftGroup = receivePaymentState.selectedDraftGroup || [];
@@ -8128,6 +8786,10 @@ async function confirmReceivePayment() {
         setReceivePaymentStatus('Set the payment date.');
         return;
     }
+    if (!orNumber) {
+        setReceivePaymentStatus('Enter the OR number before posting the payment.');
+        return;
+    }
     if (Math.abs(selectedTotal - amount - deduction) > 0.01) {
         setReceivePaymentStatus('Invoice total must match amount received plus 2307/deduction before confirmation.');
         return;
@@ -8138,6 +8800,18 @@ async function confirmReceivePayment() {
     }
     if (isCheck && (!checkNumber || !checkDate || !checkBank)) {
         setReceivePaymentStatus('Complete check number, check date, and bank.');
+        return;
+    }
+    if (isDigital && (!digitalReferenceNo || !digitalChannel || proofStatus !== 'proof_received')) {
+        setReceivePaymentStatus('Digital payments require OR, bank/wallet, reference number, and proof received before posting.');
+        return;
+    }
+    if (existingPaymentByOrNumber(orNumber)) {
+        setReceivePaymentStatus('That OR number already exists in posted payments.');
+        return;
+    }
+    if (isDigital && existingPaymentByDigitalReference(digitalReferenceNo)) {
+        setReceivePaymentStatus('That digital reference number already exists in posted payments.');
         return;
     }
 
@@ -8165,11 +8839,14 @@ async function confirmReceivePayment() {
                 : buildReceivePaymentAllocation(amount, deduction, Number(invoice.receiveAmount || 0), selectedTotal);
             const paymentDocId = sourceDraft?.docId || createWebDocId('received_payment');
             const paymentRecordId = sourceDraft?.id || paymentDocId;
-            const entryIsCheck = sourceDraft ? formatPaymentTypeLabel(sourceDraft.paymentType) === 'CHECK' : isCheck;
+            const entryMethod = sourceDraft?.paymentMethod || (sourceDraft ? (formatPaymentTypeLabel(sourceDraft.paymentType) === 'CHECK' ? 'check' : 'cash') : selectedPaymentType);
+            const entryIsCheck = normalizePaymentMethod(entryMethod) === 'check';
             const entryCheckNumber = sourceDraft?.checkNumber || checkNumber;
             const entryCheckDate = toDateKey(sourceDraft?.checkDate) || checkDate;
-            const entryCheckBank = sourceDraft?.accountBank || checkBank;
+            const entryCheckBank = sourceDraft?.accountBank || checkBank || digitalChannel;
             const entryOrNumber = sourceDraft?.orNumber || sourceDraft?.printedOr || orNumber;
+            const entryDigitalReferenceNo = sourceDraft?.digitalReferenceNo || digitalReferenceNo;
+            const entryDigitalChannel = sourceDraft?.digitalChannel || digitalChannel;
             const checkDocId = entryIsCheck ? (sourceDraft?.checkpaymentId && sourceDraft.checkpaymentId !== '0' ? sourceDraft.checkpaymentId : createWebDocId('received_checkpayment')) : '';
             const taxFormStatus = allocation.deductionAmount > 0 ? 'pending' : '';
             const paymentFields = {
@@ -8188,7 +8865,12 @@ async function confirmReceivePayment() {
                 date_paid: toFirestoreWriteValue(formatInputDateTime(paymentDate)),
                 ornum: toFirestoreWriteValue(entryOrNumber),
                 or_number: toFirestoreWriteValue(entryOrNumber),
-                payment_type: toFirestoreWriteValue(entryIsCheck ? 1 : 0),
+                payment_type: toFirestoreWriteValue(paymentTypeCodeForMethod(entryMethod)),
+                payment_method: toFirestoreWriteValue(normalizePaymentMethod(entryMethod)),
+                digital_reference_no: toFirestoreWriteValue(entryDigitalReferenceNo),
+                digital_channel: toFirestoreWriteValue(entryDigitalChannel),
+                proof_status: toFirestoreWriteValue(isDigitalPaymentMethod(entryMethod) ? 'proof_received' : ''),
+                receipt_status: toFirestoreWriteValue('with_or'),
                 payment_status: toFirestoreWriteValue(allocation.balanceAmount <= 0.01 ? 'Paid' : 'Partial'),
                 check_number: toFirestoreWriteValue(entryCheckNumber),
                 check_amt: toFirestoreWriteValue(entryIsCheck ? allocation.paymentAmount : 0),
@@ -8251,7 +8933,12 @@ async function confirmReceivePayment() {
                 datePaid: normalizeDate(paymentDate),
                 dateDeposit: normalizeDate(paymentDate),
                 orNumber: entryOrNumber,
-                paymentType: entryIsCheck ? '1' : '0',
+                paymentType: String(paymentTypeCodeForMethod(entryMethod)),
+                paymentMethod: normalizePaymentMethod(entryMethod),
+                digitalReferenceNo: entryDigitalReferenceNo,
+                digitalChannel: entryDigitalChannel,
+                proofStatus: isDigitalPaymentMethod(entryMethod) ? 'proof_received' : '',
+                receiptStatus: 'with_or',
                 paymentStatus: allocation.balanceAmount <= 0.01 ? 'Paid' : 'Partial',
                 tax2307: allocation.deductionAmount,
                 taxStatus: allocation.deductionAmount > 0 ? '1' : '0',
@@ -8309,6 +8996,8 @@ function resetCollectorPaymentForm() {
         'collectorPaymentCheckDate',
         'collectorPaymentCheckAmount',
         'collectorPaymentAccountBank',
+        'collectorPaymentDigitalReference',
+        'collectorPaymentDigitalChannel',
         'collectorPaymentDeductionAmount',
         'collectorPaymentRemarks'
     ].forEach((id) => {
@@ -8319,12 +9008,16 @@ function resetCollectorPaymentForm() {
     const paymentDate = document.getElementById('collectorPaymentDate');
     const depositDate = document.getElementById('collectorPaymentDepositDate');
     const status = document.getElementById('collectorPaymentStatus');
+    const method = document.getElementById('collectorPaymentMethod');
+    const proofStatus = document.getElementById('collectorPaymentProofStatus');
     const deductionType = document.getElementById('collectorPaymentDeductionType');
     const balance = document.getElementById('collectorPaymentBalance');
     const pending2307 = document.getElementById('collectorPayment2307Pending');
     if (paymentDate) paymentDate.value = getTodayInputValue(0);
     if (depositDate) depositDate.value = getTodayInputValue(0);
     if (status) status.value = 'Paid';
+    if (method) method.value = 'cash';
+    if (proofStatus) proofStatus.value = 'proof_received';
     if (deductionType) deductionType.value = '';
     if (balance) balance.value = currentBalance.toFixed(2);
     if (pending2307) {
@@ -8369,11 +9062,15 @@ function editCollectorPaymentRecord(paymentDocId) {
     setValue('collectorPaymentAssigned', payment.assigned || '');
     setValue('collectorPaymentDate', toDateKey(payment.datePaid || payment.paymentDate) || getTodayInputValue(0));
     setValue('collectorPaymentDepositDate', toDateKey(payment.dateDeposit || payment.paymentDate) || getTodayInputValue(0));
+    setValue('collectorPaymentMethod', payment.paymentMethod || normalizePaymentMethod(payment.paymentType || 'cash'));
     setValue('collectorPaymentCheckNumber', payment.checkNumber || '');
     setValue('collectorPaymentCheckBank', payment.accountBank || '');
     setValue('collectorPaymentCheckDate', toDateKey(payment.checkDate) || '');
     setValue('collectorPaymentCheckAmount', Number(payment.checkAmount || 0) ? Number(payment.checkAmount || 0).toFixed(2) : '');
     setValue('collectorPaymentAccountBank', payment.accountBank || '');
+    setValue('collectorPaymentDigitalReference', payment.digitalReferenceNo || '');
+    setValue('collectorPaymentDigitalChannel', payment.digitalChannel || payment.accountBank || '');
+    setValue('collectorPaymentProofStatus', payment.proofStatus || 'proof_received');
     setValue('collectorPaymentStatus', payment.paymentStatus || (Number(payment.balanceAmount || 0) <= 0.01 ? 'Paid' : 'Partial'));
     setValue('collectorPaymentDeductionType', payment.deductionType || (Number(payment.tax2307 || 0) > 0 ? '2307' : ''));
     setValue('collectorPaymentDeductionAmount', Number(getPaymentDeductionAmount(payment) || 0) ? Number(getPaymentDeductionAmount(payment) || 0).toFixed(2) : '');
@@ -8386,7 +9083,7 @@ function editCollectorPaymentRecord(paymentDocId) {
         pending2307.dataset.touched = '1';
     }
 
-    syncCollectorPaymentMethod(formatPaymentTypeLabel(payment.paymentType) === 'CHECK' ? 'check' : 'cash');
+    syncCollectorPaymentMethod(payment.paymentMethod || normalizePaymentMethod(payment.paymentType || 'cash'));
     updateCollectorPaymentBalance();
     if (statusNode) statusNode.textContent = `Editing payment ${payment.id || docId}. Save will update this record.`;
 }
@@ -8532,12 +9229,17 @@ async function saveCollectorPayment() {
     const orNumber = String(document.getElementById('collectorPaymentOrNumber')?.value || '').trim();
     const paymentDate = String(document.getElementById('collectorPaymentDate')?.value || '').trim();
     const depositDate = String(document.getElementById('collectorPaymentDepositDate')?.value || paymentDate || '').trim();
-    const isCheck = Boolean(document.getElementById('collectorPaymentCheck')?.checked);
+    const paymentMethod = normalizePaymentMethod(document.getElementById('collectorPaymentMethod')?.value || (document.getElementById('collectorPaymentCheck')?.checked ? 'check' : 'cash'));
+    const isCheck = paymentMethod === 'check';
+    const isDigital = isDigitalPaymentMethod(paymentMethod);
     const checkNumber = String(document.getElementById('collectorPaymentCheckNumber')?.value || '').trim();
     const checkBank = String(document.getElementById('collectorPaymentCheckBank')?.value || '').trim();
     const checkDate = String(document.getElementById('collectorPaymentCheckDate')?.value || '').trim();
     const checkAmount = isCheck ? parseMoneyInput(document.getElementById('collectorPaymentCheckAmount')?.value || amountPaid) : 0;
-    const accountBank = String(document.getElementById('collectorPaymentAccountBank')?.value || checkBank || '').trim();
+    const digitalReferenceNo = String(document.getElementById('collectorPaymentDigitalReference')?.value || '').trim();
+    const digitalChannel = String(document.getElementById('collectorPaymentDigitalChannel')?.value || '').trim();
+    const proofStatus = String(document.getElementById('collectorPaymentProofStatus')?.value || '').trim();
+    const accountBank = String(document.getElementById('collectorPaymentAccountBank')?.value || checkBank || digitalChannel || '').trim();
     const paymentStatus = String(document.getElementById('collectorPaymentStatus')?.value || (balance <= 0.01 ? 'Paid' : 'Partial')).trim();
     const remarks = String(document.getElementById('collectorPaymentRemarks')?.value || '').trim();
     const now = toTimestampString(new Date());
@@ -8562,8 +9264,30 @@ async function saveCollectorPayment() {
         return;
     }
 
+    if (!orNumber) {
+        if (statusNode) statusNode.textContent = 'Enter the OR number before saving payment.';
+        return;
+    }
+
     if (isCheck && (!checkNumber || !checkBank || !checkDate)) {
         if (statusNode) statusNode.textContent = 'Complete check number, bank, and check date.';
+        return;
+    }
+
+    if (isDigital && (!digitalReferenceNo || !digitalChannel || proofStatus !== 'proof_received')) {
+        if (statusNode) statusNode.textContent = 'Digital payments require OR, bank/wallet, reference number, and proof received before saving.';
+        return;
+    }
+
+    const duplicateOr = existingPaymentByOrNumber(orNumber);
+    if (duplicateOr && String(duplicateOr.docId || duplicateOr.id || '') !== editingDocId) {
+        if (statusNode) statusNode.textContent = 'That OR number already exists in posted payments.';
+        return;
+    }
+
+    const duplicateReference = existingPaymentByDigitalReference(digitalReferenceNo);
+    if (isDigital && duplicateReference && String(duplicateReference.docId || duplicateReference.id || '') !== editingDocId) {
+        if (statusNode) statusNode.textContent = 'That digital reference number already exists in posted payments.';
         return;
     }
 
@@ -8591,7 +9315,13 @@ async function saveCollectorPayment() {
             date_deposit: toFirestoreWriteValue(formatInputDateTime(depositDate)),
             date_paid: toFirestoreWriteValue(formatInputDateTime(paymentDate)),
             ornum: toFirestoreWriteValue(orNumber),
-            payment_type: toFirestoreWriteValue(isCheck ? 1 : 0),
+            or_number: toFirestoreWriteValue(orNumber),
+            payment_type: toFirestoreWriteValue(paymentTypeCodeForMethod(paymentMethod)),
+            payment_method: toFirestoreWriteValue(paymentMethod),
+            digital_reference_no: toFirestoreWriteValue(digitalReferenceNo),
+            digital_channel: toFirestoreWriteValue(digitalChannel),
+            proof_status: toFirestoreWriteValue(isDigital ? proofStatus : ''),
+            receipt_status: toFirestoreWriteValue('with_or'),
             payment_status: toFirestoreWriteValue(paymentStatus),
             check_number: toFirestoreWriteValue(checkNumber),
             check_amt: toFirestoreWriteValue(checkAmount),
@@ -8656,7 +9386,12 @@ async function saveCollectorPayment() {
             dateDeposit: normalizeDate(depositDate || paymentDate),
             taxDatePaid: tax2307 > 0 ? normalizeDate(paymentDate) : null,
             orNumber,
-            paymentType: isCheck ? '1' : '0',
+            paymentType: String(paymentTypeCodeForMethod(paymentMethod)),
+            paymentMethod,
+            digitalReferenceNo,
+            digitalChannel,
+            proofStatus: isDigital ? proofStatus : '',
+            receiptStatus: 'with_or',
             paymentStatus,
             tax2307,
             taxStatus: String(taxStatus),
@@ -10329,6 +11064,27 @@ function setupModalEvents() {
     });
     ['receivePaymentAmount', 'receivePaymentDeduction'].forEach((id) => {
         document.getElementById(id)?.addEventListener('input', updateReceivePaymentBalanceStatus);
+    });
+    document.getElementById('receivePaymentType')?.addEventListener('change', syncReceivePaymentMethodFields);
+    document.getElementById('paymentImportTemplateBtn')?.addEventListener('click', downloadPaymentImportTemplate);
+    document.getElementById('paymentImportValidatePasteBtn')?.addEventListener('click', () => {
+        loadPaymentImportText(document.getElementById('paymentImportPaste')?.value || '');
+    });
+    document.getElementById('paymentImportLoadFileBtn')?.addEventListener('click', async () => {
+        const file = document.getElementById('paymentImportFile')?.files?.[0];
+        if (!file) {
+            setReceivePaymentStatus('Choose a CSV or tab-delimited file first.');
+            return;
+        }
+        if (/\.xlsx$/i.test(file.name)) {
+            setReceivePaymentStatus('Save the Excel sheet as CSV first, then upload it here.');
+            return;
+        }
+        const text = await file.text();
+        loadPaymentImportText(text);
+    });
+    document.getElementById('paymentImportPostReadyBtn')?.addEventListener('click', () => {
+        void postReadyPaymentImportRows();
     });
 
     document.addEventListener('keydown', (event) => {

@@ -1,8 +1,6 @@
 const crypto = require("crypto");
 
-const GOOGLE_SCOPE_FIRESTORE = "https://www.googleapis.com/auth/datastore";
-const FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents";
-const tokenCache = new Map();
+const MARGABASE_BASE_URL = "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents";
 
 const PERMISSIONS = {
   admin: ["customers", "ai-product-consultant", "billing", "schedule", "master-schedule", "apd", "accounting", "collections", "service", "marga-care", "general-production", "releasing", "receiving", "inventory", "hr", "reports", "settings", "sync", "field", "purchasing", "pettycash", "sales"],
@@ -37,11 +35,11 @@ function isLegacyNetlifyHost(event) {
 }
 
 function firestoreBaseUrl() {
-  return env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
+  return env("MARGABASE_DOCUMENTS_BASE_URL") || env("MARGABASE_FIRESTORE_BASE_URL") || MARGABASE_BASE_URL;
 }
 
 function usesGoogleFirestore() {
-  return firestoreBaseUrl().includes("firestore.googleapis.com");
+  return false;
 }
 
 function json(data, status = 200) {
@@ -63,46 +61,8 @@ function base64UrlEncode(input) {
   return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function getGoogleAccessToken(scopes = [GOOGLE_SCOPE_FIRESTORE]) {
-  const serviceEmail = env("GOOGLE_SERVICE_ACCOUNT_EMAIL");
-  const privateKey = sanitizePrivateKey(env("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"));
-  if (!serviceEmail || !privateKey) return "";
-
-  const scopeKey = [...new Set(scopes)].join(" ");
-  const cached = tokenCache.get(scopeKey);
-  const nowTs = Math.floor(Date.now() / 1000);
-  if (cached && cached.expiresAt > nowTs + 60) return cached.accessToken;
-
-  const signingInput = `${base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64UrlEncode(JSON.stringify({
-    iss: serviceEmail,
-    scope: scopeKey,
-    aud: "https://oauth2.googleapis.com/token",
-    exp: nowTs + 3600,
-    iat: nowTs,
-  }))}`;
-  const signer = crypto.createSign("RSA-SHA256");
-  signer.update(signingInput);
-  signer.end();
-  const signature = signer.sign(privateKey).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const body = new URLSearchParams({
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion: `${signingInput}.${signature}`,
-  });
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.access_token) {
-    throw new Error(payload.error_description || payload.error || "Google token request failed.");
-  }
-  const accessToken = payload.access_token;
-  tokenCache.set(scopeKey, {
-    accessToken,
-    expiresAt: nowTs + Math.max(300, Number(payload.expires_in || 3600) - 30),
-  });
-  return accessToken;
+async function getGoogleAccessToken() {
+  return "";
 }
 
 function parseFirestoreValue(value) {
@@ -199,7 +159,7 @@ async function queryEmployee(fieldPath, value) {
   };
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const key = env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
+  const key = env("MARGABASE_API_KEY") || "margabase-local";
   const response = await fetch(`${firestoreBaseUrl()}:runQuery?key=${encodeURIComponent(key)}`, {
     method: "POST",
     headers,

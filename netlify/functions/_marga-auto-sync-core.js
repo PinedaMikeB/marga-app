@@ -98,19 +98,14 @@ function addDaysYmd(ymd, days) {
   return `${year}-${month}-${day}`;
 }
 
-function extractFirebaseConfig() {
-  const apiKey = process.env.FIREBASE_API_KEY || process.env.FIRESTORE_API_KEY;
-  const baseUrl = process.env.FIRESTORE_BASE_URL || process.env.FIREBASE_BASE_URL;
-  if (apiKey && baseUrl) return { apiKey, baseUrl };
-
-  const cfgPath = path.resolve(__dirname, "../../shared/js/firebase-config.js");
-  const source = fs.readFileSync(cfgPath, "utf8");
-  const fileApiKey = (source.match(/apiKey:\s*'([^']+)'/) || [])[1];
-  const fileBaseUrl = (source.match(/baseUrl:\s*'([^']+)'/) || [])[1];
-  if (!fileApiKey || !fileBaseUrl) {
-    throw new Error("Unable to load Firebase config.");
-  }
-  return { apiKey: fileApiKey, baseUrl: fileBaseUrl };
+function extractMargabaseConfig() {
+  return {
+    apiKey: process.env.MARGABASE_API_KEY || "margabase-local",
+    baseUrl: process.env.MARGABASE_DOCUMENTS_BASE_URL
+      || process.env.MARGABASE_FIRESTORE_BASE_URL
+     
+      || "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents",
+  };
 }
 
 function parseProjectAndDb(baseUrl) {
@@ -258,7 +253,7 @@ function createFirestoreClient({ apiKey, baseUrl }) {
 
   async function commitWrites(writes) {
     if (!Array.isArray(writes) || !writes.length) return;
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbSegment}/documents:commit`;
+    const url = `${baseUrl}:commit`;
     const response = await firestoreFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -838,8 +833,8 @@ async function runAutoSync(mode = "manual", opts = {}) {
   const writeEnabled = parseBool(process.env.MARGA_SYNC_WRITE_ENABLED, true);
   const queryLimit = Math.max(1000, parseIntSafe(process.env.MARGA_SYNC_QUERY_LIMIT, 20000));
 
-  const firebaseCfg = extractFirebaseConfig();
-  const db = createFirestoreClient(firebaseCfg);
+  const margabaseCfg = extractMargabaseConfig();
+  const db = createFirestoreClient(margabaseCfg);
   const state = (await db.getDoc(SYNC_STATE_COLLECTION, SYNC_STATE_DOC_ID)) || {};
 
   if (
@@ -1083,10 +1078,19 @@ async function runAutoSync(mode = "manual", opts = {}) {
 }
 
 async function runAutoSyncWithFailureHandling(mode, opts = {}) {
+  if (String(process.env.MARGA_LEGACY_FIREBASE_SYNC_ENABLED || "").trim() !== "1") {
+    return {
+      ok: true,
+      skipped: true,
+      mode,
+      reason: "Legacy Firebase auto-sync is disabled after the Margabase migration.",
+      finishedAt: toIsoNow(),
+    };
+  }
   try {
     return await runAutoSync(mode, opts);
   } catch (error) {
-    const db = createFirestoreClient(extractFirebaseConfig());
+    const db = createFirestoreClient(extractMargabaseConfig());
     const payload = {
       ok: false,
       mode,

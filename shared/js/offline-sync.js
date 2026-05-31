@@ -4,6 +4,7 @@
     const STATUS_ID = 'margaOfflineStatus';
     const STYLE_ID = 'margaOfflineStatusStyles';
     const originalFetch = window.fetch.bind(window);
+    const LEGACY_FIRESTORE_HOST = 'firestore.googleapis.com';
 
     function uid(prefix = 'offline') {
         if (window.crypto?.randomUUID) return `${prefix}_${window.crypto.randomUUID()}`;
@@ -16,6 +17,10 @@
 
     function isFirestoreUrl(url) {
         return normalizeText(url).startsWith(normalizeText(window.FIREBASE_CONFIG?.baseUrl));
+    }
+
+    function isLegacyFirestoreUrl(url) {
+        return normalizeText(url).toLowerCase().includes(LEGACY_FIRESTORE_HOST);
     }
 
     function safeJsonParse(value, fallback = null) {
@@ -38,8 +43,13 @@
         }
     }
 
+    function pruneRetiredBackendQueue(queue) {
+        if (!Array.isArray(queue)) return [];
+        return queue.filter((item) => !isLegacyFirestoreUrl(item?.url));
+    }
+
     function writeQueue(queue) {
-        localStorage.setItem(QUEUE_KEY, JSON.stringify(Array.isArray(queue) ? queue : []));
+        localStorage.setItem(QUEUE_KEY, JSON.stringify(pruneRetiredBackendQueue(queue)));
         updateStatusChip();
     }
 
@@ -132,6 +142,64 @@
         return `${RESPONSE_CACHE_PREFIX}${info.method}::${info.url}${bodyPart}`;
     }
 
+    const BULK_FIRESTORE_COLLECTIONS = new Set([
+        'tbl_collectionhistory',
+        'tbl_billing',
+        'tbl_paymentinfo',
+        'tbl_checkpayments',
+        'tbl_schedule'
+    ]);
+
+    function getFirestoreCollectionFromUrl(url) {
+        try {
+            const pathname = new URL(url, window.location.origin).pathname;
+            const marker = '/documents/';
+            const index = pathname.indexOf(marker);
+            if (index === -1) return '';
+            const remainder = pathname.slice(index + marker.length);
+            return remainder.split('/').filter(Boolean)[0] || '';
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function shouldCacheFirestoreReadResponse(info, payload) {
+        if (!payload || typeof payload !== 'object') return false;
+
+        let serializedLength = 0;
+        try {
+            serializedLength = JSON.stringify(payload).length;
+        } catch (error) {
+            return false;
+        }
+
+        // Collections bootstrap scans can return hundreds of MB across paginated GETs.
+        // Caching them in localStorage triggers QuotaExceededError and slows the page.
+        if (serializedLength > 400000) return false;
+
+        const collection = getFirestoreCollectionFromUrl(info.url);
+        if (!BULK_FIRESTORE_COLLECTIONS.has(collection)) return true;
+
+        const docCount = Array.isArray(payload.documents) ? payload.documents.length : 0;
+        let pageSize = 0;
+        try {
+            pageSize = Number(new URL(info.url, window.location.origin).searchParams.get('pageSize') || 0);
+        } catch (error) {
+            pageSize = 0;
+        }
+
+        return docCount < 100 && pageSize < 200;
+    }
+
+    function pruneResponseCache() {
+        const keys = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (key && key.startsWith(RESPONSE_CACHE_PREFIX)) keys.push(key);
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
+    }
+
     function readCachedResponse(info) {
         try {
             const raw = localStorage.getItem(buildResponseCacheKey(info));
@@ -146,12 +214,21 @@
     }
 
     function writeCachedResponse(info, payload) {
+        if (!shouldCacheFirestoreReadResponse(info, payload)) return;
         try {
             localStorage.setItem(buildResponseCacheKey(info), JSON.stringify({
                 cachedAt: new Date().toISOString(),
                 payload
             }));
         } catch (error) {
+            const isQuotaError = error && (error.name === 'QuotaExceededError' || String(error).includes('QuotaExceededError'));
+            if (isQuotaError) {
+                try {
+                    pruneResponseCache();
+                } catch (pruneError) {
+                    console.warn('Unable to prune Firestore response cache.', pruneError);
+                }
+            }
             console.warn('Unable to cache Firestore response.', error);
         }
     }
@@ -380,6 +457,9 @@
     }
 
     async function executeRawWrite(action) {
+        if (isLegacyFirestoreUrl(action?.url)) {
+            throw new Error('Blocked queued write to retired Firebase backend.');
+        }
         const response = await originalFetch(action.url, {
             method: action.method,
             headers: action.headers || {},
@@ -425,6 +505,9 @@
     }
 
     function queueRawFirestoreRequest(info, writeMeta = null) {
+        if (isLegacyFirestoreUrl(info.url)) {
+            throw new Error('Blocked offline queue write to retired Firebase backend.');
+        }
         return enqueueWrite({
             kind: 'raw',
             mode: 'set',
@@ -569,6 +652,7 @@
     function init() {
         installFetchInterceptor();
         registerServiceWorker();
+        writeQueue(readQueue());
         updateStatusChip();
         window.addEventListener('online', async () => {
             updateStatusChip();

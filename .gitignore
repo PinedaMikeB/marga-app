@@ -1,5 +1,15 @@
 .DS_Store
 **/.DS_Store
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*service-account*.json
+*credentials*.json
 **/__pycache__/
 **/.firebase/
 exports/*.csv

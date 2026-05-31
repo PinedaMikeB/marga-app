@@ -1,0 +1,423 @@
+{
+  "sourceCsv": "/Users/mike/Downloads/attachments/cbs-envelope-print.csv",
+  "source": "cbs-envelope-print-csv-20260529",
+  "applied": false,
+  "generatedAt": "2026-05-29T07:33:46.354Z",
+  "csvRows": 33,
+  "branchBillinfoCandidates": 386,
+  "importedRows": [
+    {
+      "rowNumber": 2,
+      "to": "China Bank Savings Inc- Acquired Asset",
+      "contactPerson": "Mr. Jun Dela Cruz/Ms. Rosemarie Portugal",
+      "score": 1.45,
+      "billinfoDocId": "208",
+      "branchDocId": "208",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Acquired Asset 26th flr"
+    },
+    {
+      "rowNumber": 2,
+      "to": "China Bank Savings Inc- Acquired Asset",
+      "contactPerson": "Mr. Jun Dela Cruz/Ms. Rosemarie Portugal",
+      "score": 1.45,
+      "billinfoDocId": "2918",
+      "branchDocId": "3171",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Acquired Asset "
+    },
+    {
+      "rowNumber": 2,
+      "to": "China Bank Savings Inc- Acquired Asset",
+      "contactPerson": "Mr. Jun Dela Cruz/Ms. Rosemarie Portugal",
+      "score": 1.45,
+      "billinfoDocId": "3308",
+      "branchDocId": "3561",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Acquired Asset Department"
+    },
+    {
+      "rowNumber": 4,
+      "to": "China Bank Savings Inc- Auto Loans Butuan",
+      "contactPerson": "Charlene Joy Grieta",
+      "score": 1.45,
+      "billinfoDocId": "3332",
+      "branchDocId": "3585",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto Loans Butuan "
+    },
+    {
+      "rowNumber": 5,
+      "to": "China Bank Savings Inc- Auto Loans Davao Business Center",
+      "contactPerson": "Charlene Joy Grieta",
+      "score": 1.45,
+      "billinfoDocId": "2523",
+      "branchDocId": "2776",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto Loan Davao Business Center "
+    },
+    {
+      "rowNumber": 5,
+      "to": "China Bank Savings Inc- Auto Loans Davao Business Center",
+      "contactPerson": "Charlene Joy Grieta",
+      "score": 1.45,
+      "billinfoDocId": "2723",
+      "branchDocId": "2976",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto loan Davao Business Center"
+    },
+    {
+      "rowNumber": 6,
+      "to": "China Bank Savings Inc- Auto Loans General Santos",
+      "contactPerson": "Charlene Joy Grieta",
+      "score": 1,
+      "billinfoDocId": "3149",
+      "branchDocId": "3402",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto Loans General Santos "
+    },
+    {
+      "rowNumber": 7,
+      "to": "China Bank Savings Inc- Auto Loans Iloilo",
+      "contactPerson": "Charlene Joy Grieta",
+      "score": 1.45,
+      "billinfoDocId": "1379",
+      "branchDocId": "1456",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto Loans Iloilo Jaro"
+    },
+    {
+      "rowNumber": 8,
+      "to": "China Bank Savings Inc- Auto Loans San Fernando",
+      "contactPerson": "Ms. Jenica Magat",
+      "score": 1,
+      "billinfoDocId": "206",
+      "branchDocId": "206",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto Loans San Fernando Bayan"
+    },
+    {
+      "rowNumber": 9,
+      "to": "China Bank Savings Inc- Auto Loans",
+      "contactPerson": "Ms. Kris Ann Montealto",
+      "score": 1,
+      "billinfoDocId": "1963",
+      "branchDocId": "2215",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Auto Loans Division HQ"
+    },
+    {
+      "rowNumber": 10,
+      "to": "China Bank Savings Inc- Cash Vault Operations Dept Management",
+      "contactPerson": "Ms. Macy Layco",
+      "score": 1,
+      "billinfoDocId": "2525",
+      "branchDocId": "2777",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Cash Vault Operations Dept. Management  Unit"
+    },
+    {
+      "rowNumber": 11,
+      "to": "China Bank Savings Inc- CCAD Consumer Compliance 9th Flr",
+      "contactPerson": "Mr. Jerome Q. Nell",
+      "score": 1,
+      "billinfoDocId": "3198",
+      "branchDocId": "3451",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- CCAD Consumer Compliance 9th flr"
+    },
+    {
+      "rowNumber": 12,
+      "to": "China Bank Savings Inc- Central Clearing",
+      "contactPerson": "Ms. Czarina Mae Lena",
+      "score": 1,
+      "billinfoDocId": "204",
+      "branchDocId": "204",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Central Clearing"
+    },
+    {
+      "rowNumber": 13,
+      "to": "China Bank Savings Inc-Consumer Credit Homeloan",
+      "contactPerson": "Ms. Era Asuncion",
+      "score": 1,
+      "billinfoDocId": "1979",
+      "branchDocId": "2231",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Consumer Credit - Homeloan 2"
+    },
+    {
+      "rowNumber": 14,
+      "to": "China Bank Savings Inc- Consumer Lending Group Colored Printer",
+      "contactPerson": "Ms. Ma. Alissa Corpuz",
+      "score": 1.05,
+      "billinfoDocId": "1873",
+      "branchDocId": "2125",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Consumer Lending Group 7th floor"
+    },
+    {
+      "rowNumber": 15,
+      "to": "China Bank Savings Inc- Handy Salary",
+      "contactPerson": "Ms. Ma. Alissa Corpuz",
+      "score": 1,
+      "billinfoDocId": "195",
+      "branchDocId": "195",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Handy Salary"
+    },
+    {
+      "rowNumber": 16,
+      "to": "China Bank Savings Inc- Housing Loan",
+      "contactPerson": "Ms. Ma. Alissa Corpuz",
+      "score": 1,
+      "billinfoDocId": "194",
+      "branchDocId": "194",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Housing Loan "
+    },
+    {
+      "rowNumber": 16,
+      "to": "China Bank Savings Inc- Housing Loan",
+      "contactPerson": "Ms. Ma. Alissa Corpuz",
+      "score": 1,
+      "billinfoDocId": "2198",
+      "branchDocId": "2450",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Housing Loan "
+    },
+    {
+      "rowNumber": 17,
+      "to": "China Bank Savings Inc- HRD Fulfillment Dept",
+      "contactPerson": "Mr. George Purisima",
+      "score": 1,
+      "billinfoDocId": "3050",
+      "branchDocId": "3303",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- HRD Fulfillment Dept. "
+    },
+    {
+      "rowNumber": 18,
+      "to": "China Bank Savings Inc- Insurance Unit",
+      "contactPerson": "Ms. Ludy Mercado",
+      "score": 1,
+      "billinfoDocId": "892",
+      "branchDocId": "968",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Insurance Unit"
+    },
+    {
+      "rowNumber": 20,
+      "to": "China Bank Savings Inc- Loan Operation Division",
+      "contactPerson": "Ms. Marillet Remolin",
+      "score": 1.45,
+      "billinfoDocId": "2467",
+      "branchDocId": "2719",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Loan Operation Division"
+    },
+    {
+      "rowNumber": 21,
+      "to": "China Bank Savings Inc- Office of the Group Head",
+      "contactPerson": "Mr. Lorenzo Enosh Mata",
+      "score": 1,
+      "billinfoDocId": "2468",
+      "branchDocId": "2720",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Office of the Group Head SME"
+    },
+    {
+      "rowNumber": 22,
+      "to": "China Bank Savings Inc- Personal Loan Dept.",
+      "contactPerson": "Ms. Evelyn T. Binoya",
+      "score": 1,
+      "billinfoDocId": "3142",
+      "branchDocId": "3395",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Personal Loans Underwritting Dept."
+    },
+    {
+      "rowNumber": 22,
+      "to": "China Bank Savings Inc- Personal Loan Dept.",
+      "contactPerson": "Ms. Evelyn T. Binoya",
+      "score": 1,
+      "billinfoDocId": "3423",
+      "branchDocId": "3676",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Personal Loan Dept. "
+    },
+    {
+      "rowNumber": 24,
+      "to": "China Bank Savings Inc- Recon Accounting",
+      "contactPerson": "Mr. MarcoDe Mesa/Ms Marie Grace Cayamanda",
+      "score": 1,
+      "billinfoDocId": "192",
+      "branchDocId": "192",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Recon, General Accounting Division"
+    },
+    {
+      "rowNumber": 25,
+      "to": "China Bank Savings Inc- Retail Banking Group",
+      "contactPerson": "Ms. Jerry Lyn Pascua",
+      "score": 1,
+      "billinfoDocId": "207",
+      "branchDocId": "207",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Retail Banking Group"
+    },
+    {
+      "rowNumber": 26,
+      "to": "China Bank Savings Inc- Risk Management",
+      "contactPerson": "Ms. Ara",
+      "score": 1,
+      "billinfoDocId": "1533",
+      "branchDocId": "1610",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Risk Management Division"
+    },
+    {
+      "rowNumber": 27,
+      "to": "China Bank Savings Inc- Security",
+      "contactPerson": "Ms. Noly G.Unilongo",
+      "score": 1,
+      "billinfoDocId": "3379",
+      "branchDocId": "3632",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Security "
+    },
+    {
+      "rowNumber": 28,
+      "to": "China Bank Savings Bldg. SLG-Luzon North Lending Dept.",
+      "contactPerson": "Ms. Eliza M.Paez; 2nd F, Cagayan Valley Road, Brgy. Banga 1st, Plaridel, Bulacan",
+      "score": 1,
+      "billinfoDocId": "2533",
+      "branchDocId": "2785",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- SLG-LUZON NORTH LENDING DEPT1 Plaridel Bulacan"
+    },
+    {
+      "rowNumber": 29,
+      "to": "China Bank Savings Inc- SLG- LLD - LNLD - 1 URDANETA",
+      "contactPerson": "Mr. Teddy Alecpec",
+      "score": 0.95,
+      "billinfoDocId": "3337",
+      "branchDocId": "3590",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- SLG LNLD1 URDANETA"
+    },
+    {
+      "rowNumber": 29,
+      "to": "China Bank Savings Inc- SLG- LLD - LNLD - 1 URDANETA",
+      "contactPerson": "Mr. Teddy Alecpec",
+      "score": 0.7,
+      "billinfoDocId": "249",
+      "branchDocId": "249",
+      "companyDocId": "72",
+      "branch": "China Bank Savings - Branches - Urdaneta Branch (CBS)"
+    },
+    {
+      "rowNumber": 30,
+      "to": "China Bank Savings Inc-SME Credit Evaluation",
+      "contactPerson": "Ms. Marie Antoinette B. Cleto",
+      "score": 1,
+      "billinfoDocId": "3220",
+      "branchDocId": "3473",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- SME Credit Evaluation Department"
+    },
+    {
+      "rowNumber": 31,
+      "to": "China Bank Savings Inc- SME IN HOUSE CREDIT VERIFICATION UNIT",
+      "contactPerson": "Ms. Danica Jimenez",
+      "score": 1,
+      "billinfoDocId": "3246",
+      "branchDocId": "3499",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- IN-HOUSE CREDIT VERIFICATION UNIT - 9TH FLOOR"
+    },
+    {
+      "rowNumber": 32,
+      "to": "China Bank Savings Inc- SSD Consumer Security",
+      "contactPerson": "Ms. Germaine",
+      "score": 1.117,
+      "billinfoDocId": "1846",
+      "branchDocId": "2098",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- SSD - Consumer Securities"
+    },
+    {
+      "rowNumber": 33,
+      "to": "China Bank Savings Inc- SSD-SCU",
+      "contactPerson": "Mr. Erwin Tuazon",
+      "score": 1.45,
+      "billinfoDocId": "2978",
+      "branchDocId": "3231",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- SSD-SCU  2th Floor"
+    },
+    {
+      "rowNumber": 34,
+      "to": "China Bank Savings Inc- Treasury Dept",
+      "contactPerson": "Ms. Geraldine Beltran",
+      "score": 1,
+      "billinfoDocId": "2784",
+      "branchDocId": "3037",
+      "companyDocId": "73",
+      "branch": "China Bank Savings Inc. - China Bank Savings Inc- Treasury Dept. "
+    }
+  ],
+  "skippedRows": [
+    {
+      "rowNumber": 3,
+      "to": "China Bank Savings Inc- APD Tagaytay",
+      "reason": "missing contact person"
+    }
+  ],
+  "unmatchedRows": [
+    {
+      "rowNumber": 23,
+      "to": "China Bank Savings Inc- Personal Loans Underwriting Dept",
+      "contactPerson": "Ms. Mauvic Krystel Castañeda",
+      "topCandidates": [
+        {
+          "score": 0.75,
+          "billinfoDocId": "3142",
+          "branchDocId": "3395",
+          "label": "China Bank Savings Inc. - China Bank Savings Inc- Personal Loans Underwritting Dept."
+        },
+        {
+          "score": 0.75,
+          "billinfoDocId": "3423",
+          "branchDocId": "3676",
+          "label": "China Bank Savings Inc. - China Bank Savings Inc- Personal Loan Dept. "
+        },
+        {
+          "score": 0.5,
+          "billinfoDocId": "1978",
+          "branchDocId": "2230",
+          "label": "China Bank Savings Inc. - China Bank Savings Inc- Consumer Credit - Auto Loans Underwriting 4"
+        },
+        {
+          "score": 0.5,
+          "billinfoDocId": "200",
+          "branchDocId": "200",
+          "label": "China Bank Savings Inc. - China Bank Savings Inc- Consumer Credit - Auto Loans Underwriting 1"
+        },
+        {
+          "score": 0.5,
+          "billinfoDocId": "2984",
+          "branchDocId": "3237",
+          "label": "China Bank Savings Inc (PDB) - China Bank Savings Inc 2nd flr  APD Loans Dept"
+        },
+        {
+          "score": 0.5,
+          "billinfoDocId": "3401",
+          "branchDocId": "3654",
+          "label": "China Bank Savings Inc. - China Bank Savings Inc- Consumer Credit - Auto Loans Underwriting 1"
+        }
+      ]
+    }
+  ],
+  "ambiguousRows": []
+}

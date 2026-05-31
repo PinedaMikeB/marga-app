@@ -71,25 +71,7 @@
         <div id="log">Ready to migrate...</div>
     </div>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    
     <script>
-        // Firebase Configuration
-        const firebaseConfig = {
-            apiKey: 'AIzaSyCgPJs1Neq2bRMAOvREBeV-f2i_3h1Qx3M',
-            authDomain: 'sah-spiritual-journal.firebaseapp.com',
-            projectId: 'sah-spiritual-journal',
-            storageBucket: 'sah-spiritual-journal.firebasestorage.app',
-            messagingSenderId: '450636566224',
-            appId: '1:450636566224:web:5c46eb4b827e6fd3ad58d5'
-        };
-
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-
         // Machine status data from MySQL dump
         const machineStatusData = [
             { id: 1, status: 'ON STOCK' },
@@ -153,83 +135,19 @@
         async function runMigration() {
             const btn = document.getElementById('migrateBtn');
             btn.disabled = true;
-            btn.textContent = 'Migrating...';
-
-            try {
-                // Migrate machine status
-                log('Starting machine status migration...');
-                const batch1 = db.batch();
-                
-                for (const status of machineStatusData) {
-                    const docRef = db.collection('tbl_newmachinestatus').doc(String(status.id));
-                    batch1.set(docRef, {
-                        id: status.id,
-                        status: status.status,
-                        created_at: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-                
-                await batch1.commit();
-                log(`Migrated ${machineStatusData.length} machine status records`, 'success');
-
-                // Migrate contract status
-                log('Starting contract status migration...');
-                const batch2 = db.batch();
-                
-                for (const status of contractStatusData) {
-                    const docRef = db.collection('tbl_contractstatus').doc(String(status.id));
-                    batch2.set(docRef, {
-                        id: status.id,
-                        con_status: status.con_status,
-                        created_at: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-                
-                await batch2.commit();
-                log(`Migrated ${contractStatusData.length} contract status records`, 'success');
-
-                log('Migration completed successfully!', 'success');
-                
-            } catch (error) {
-                log(`Error: ${error.message}`, 'error');
-                console.error(error);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Run Migration';
-            }
+            btn.textContent = 'Disabled';
+            log('Legacy Firebase migration is disabled after the Margabase migration.', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Run Migration';
         }
 
         async function verifyData() {
             const btn = document.getElementById('verifyBtn');
             btn.disabled = true;
-            btn.textContent = 'Verifying...';
-
-            try {
-                log('Verifying machine status data...');
-                const machineSnapshot = await db.collection('tbl_newmachinestatus').get();
-                log(`Found ${machineSnapshot.size} machine status records`, 'success');
-                
-                machineSnapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    log(`  ID ${data.id}: ${data.status}`);
-                });
-
-                log('Verifying contract status data...');
-                const contractSnapshot = await db.collection('tbl_contractstatus').get();
-                log(`Found ${contractSnapshot.size} contract status records`, 'success');
-                
-                contractSnapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    log(`  ID ${data.id}: ${data.con_status}`);
-                });
-
-            } catch (error) {
-                log(`Error: ${error.message}`, 'error');
-                console.error(error);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Verify Data';
-            }
+            btn.textContent = 'Disabled';
+            log('Legacy Firebase verification is disabled after the Margabase migration.', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Verify Data';
         }
 
         // Initialize

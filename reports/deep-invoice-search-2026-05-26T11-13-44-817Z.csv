@@ -1,0 +1,13 @@
+invoice_no,found,customer,branch,billing_month,amount,paid_amount,balance_hint,date_received,received_by,receipt_source,schedule_count,history_count,payment_count
+121495,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),June 2025,3200,0,3200,2025-06-17 00:00:00,Kenneth Ediza,tbl_billing.date_received/receivedby,1,70,0
+122509,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),July 2025,3200,0,3200,2025-07-30 00:00:00,Abie,tbl_billing.date_received/receivedby,1,63,0
+123219,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),August 2025,3200,0,3200,2025-08-19 00:00:00,Abhe Osana,tbl_billing.date_received/receivedby,1,54,0
+124077,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),September 2025,3200,0,3200,2025-09-12 00:00:00,,tbl_billing.date_received/receivedby,1,40,1
+124982,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),October 2025,3200,0,3200,2025-10-13 00:00:00,Keneth Ediza,tbl_billing.date_received/receivedby,1,38,1
+125947,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),November 2025,3200,0,3200,2025-11-17 00:00:00,Abhe Osana,tbl_billing.date_received/receivedby,1,31,1
+126855,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),December 2025,3200,0,3200,2025-12-12 00:00:00,Abhe Osana,tbl_billing.date_received/receivedby,1,23,1
+127605,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),January 2026,3200,0,3200,,,,1,0,0
+121497,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),June 2025,3700,0,3700,2025-06-17 00:00:00,Kenneth Ediza,tbl_billing.date_received/receivedby,1,16,1
+123218,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),August 2025,3700,0,3700,2025-08-19 00:00:00,Abhe Osana,tbl_billing.date_received/receivedby,1,51,1
+124979,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),October 2025,3700,0,3700,2025-10-13 00:00:00,Kenneth Ediza,tbl_billing.date_received/receivedby,1,43,0
+124980,true,Kabuklod Sa Kaunlaran Credit Inc.,Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main),October 2025,4000,0,4000,2025-10-13 00:00:00,Kenneth Ediza,tbl_billing.date_received/receivedby,1,42,0

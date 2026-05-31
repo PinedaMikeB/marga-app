@@ -1,6 +1,3 @@
-const fs = require("fs");
-const path = require("path");
-
 const ZERO_DATETIME = "0000-00-00 00:00:00";
 const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_CARRYOVER_DAYS = 14;
@@ -185,21 +182,14 @@ function percentage(numerator, denominator) {
   return Number(((numerator / denominator) * 100).toFixed(2));
 }
 
-function loadFirebaseConfigFromEnvOrFile() {
-  const envApiKey = process.env.FIREBASE_API_KEY;
-  const envBaseUrl = process.env.FIREBASE_BASE_URL;
-  if (envApiKey && envBaseUrl) {
-    return { apiKey: envApiKey, baseUrl: envBaseUrl };
-  }
-
-  const configPath = path.resolve(__dirname, "../../shared/js/firebase-config.js");
-  const source = fs.readFileSync(configPath, "utf8");
-  const apiKey = (source.match(/apiKey:\s*'([^']+)'/) || [])[1];
-  const baseUrl = (source.match(/baseUrl:\s*'([^']+)'/) || [])[1];
-  if (!apiKey || !baseUrl) {
-    throw new Error("Unable to load Firebase config (apiKey/baseUrl).");
-  }
-  return { apiKey, baseUrl };
+function loadMargabaseConfig() {
+  return {
+    apiKey: process.env.MARGABASE_API_KEY || "margabase-local",
+    baseUrl: process.env.MARGABASE_DOCUMENTS_BASE_URL
+      || process.env.MARGABASE_FIRESTORE_BASE_URL
+     
+      || "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents",
+  };
 }
 
 function createFirestoreClient({ apiKey, baseUrl }) {
@@ -357,7 +347,7 @@ exports.handler = async (event) => {
     const carryStartYmd = includeCarryover ? addDaysYmd(startDate, -carryoverDays) : startDate;
     const fetchStart = `${carryStartYmd} 00:00:00`;
 
-    const cfg = loadFirebaseConfigFromEnvOrFile();
+    const cfg = loadMargabaseConfig();
     const db = createFirestoreClient(cfg);
     const warnings = [];
 

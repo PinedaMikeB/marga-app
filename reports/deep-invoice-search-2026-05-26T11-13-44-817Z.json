@@ -1,0 +1,4417 @@
+{
+  "ok": true,
+  "searched_at": "2026-05-26T11:13:44.817Z",
+  "source": "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents",
+  "invoice_count": 12,
+  "results": [
+    {
+      "invoice_no": "121495",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "June 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-06-17 00:00:00",
+      "received_by": "Kenneth Ediza",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 96780,
+          "invoice_id": 121495,
+          "contractmain_id": 3478,
+          "month": "June",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-06-17 00:00:00",
+          "receivedby": "Kenneth Ediza",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/96780",
+          "_docId": "96780"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 324452,
+          "invoice_num": 121495,
+          "date_finished": "2025-06-17 17:42:45",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/324452",
+          "_docId": "324452"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 277271,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw naforward sa kanya ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/277271",
+          "_docId": "277271"
+        },
+        {
+          "id": 281055,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw na forward sa accounting follow up ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/281055",
+          "_docId": "281055"
+        },
+        {
+          "id": 281788,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw nafoforward sa kanya ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/281788",
+          "_docId": "281788"
+        },
+        {
+          "id": 282447,
+          "invoice_num": 121495,
+          "remarks": "wla pa daw po na foforward sa kanila- KAREN",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/282447",
+          "_docId": "282447"
+        },
+        {
+          "id": 284315,
+          "invoice_num": 121495,
+          "remarks": "FOLLOW UP DAW ULIT SA MONDAY. NASA PROCUREMENT PA DAW",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/284315",
+          "_docId": "284315"
+        },
+        {
+          "id": 284790,
+          "invoice_num": 121495,
+          "remarks": "nasa purchasing palang follow up pa ulit - Ms.Karen",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/284790",
+          "_docId": "284790"
+        },
+        {
+          "id": 286893,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw follow up ulit bukas ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/286893",
+          "_docId": "286893"
+        },
+        {
+          "id": 287327,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287327",
+          "_docId": "287327"
+        },
+        {
+          "id": 287440,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas wala pa daw po ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287440",
+          "_docId": "287440"
+        },
+        {
+          "id": 287535,
+          "invoice_num": 121495,
+          "remarks": "for process pa check hanggang Friday ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287535",
+          "_docId": "287535"
+        },
+        {
+          "id": 287805,
+          "invoice_num": 121495,
+          "remarks": "for process pa sya try kung aabot sa Friday",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287805",
+          "_docId": "287805"
+        },
+        {
+          "id": 288094,
+          "invoice_num": 121495,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288094",
+          "_docId": "288094"
+        },
+        {
+          "id": 288452,
+          "invoice_num": 121495,
+          "remarks": "may fire drill tawag ulit later ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288452",
+          "_docId": "288452"
+        },
+        {
+          "id": 288812,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas baka meron na po",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288812",
+          "_docId": "288812"
+        },
+        {
+          "id": 289042,
+          "invoice_num": 121495,
+          "remarks": "follow bukas ng umaga ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289042",
+          "_docId": "289042"
+        },
+        {
+          "id": 289235,
+          "invoice_num": 121495,
+          "remarks": "ok na today ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289235",
+          "_docId": "289235"
+        },
+        {
+          "id": 289776,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw nafoforward sa kanila \r\n",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289776",
+          "_docId": "289776"
+        },
+        {
+          "id": 291564,
+          "invoice_num": 121495,
+          "remarks": "wala pa nafoforward follow up ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/291564",
+          "_docId": "291564"
+        },
+        {
+          "id": 292575,
+          "invoice_num": 121495,
+          "remarks": "Follow up Friday",
+          "collection_id": 96780,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/292575",
+          "_docId": "292575"
+        },
+        {
+          "id": 292839,
+          "invoice_num": 121495,
+          "remarks": "nakaprocess pa lang follow up ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/292839",
+          "_docId": "292839"
+        },
+        {
+          "id": 293131,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293131",
+          "_docId": "293131"
+        },
+        {
+          "id": 293308,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas wala pa daw pirma ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293308",
+          "_docId": "293308"
+        },
+        {
+          "id": 293892,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas need pa isang pirma \r\n",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293892",
+          "_docId": "293892"
+        },
+        {
+          "id": 294197,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit later nakabreak pa sya ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294197",
+          "_docId": "294197"
+        },
+        {
+          "id": 294266,
+          "invoice_num": 121495,
+          "remarks": "Fosr sign pa, follow up ulit ng afternoon -Ms Karen ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294266",
+          "_docId": "294266"
+        },
+        {
+          "id": 294339,
+          "invoice_num": 121495,
+          "remarks": "negative na din Linkenergie \r\n",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294339",
+          "_docId": "294339"
+        },
+        {
+          "id": 295154,
+          "invoice_num": 121495,
+          "remarks": "okay na sa Friday 9-3 - Ms Karen",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/295154",
+          "_docId": "295154"
+        },
+        {
+          "id": 298255,
+          "invoice_num": 121495,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298255",
+          "_docId": "298255"
+        },
+        {
+          "id": 298603,
+          "invoice_num": 121495,
+          "remarks": "nasa signatory pa yung check ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298603",
+          "_docId": "298603"
+        },
+        {
+          "id": 298972,
+          "invoice_num": 121495,
+          "remarks": "ok na today ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298972",
+          "_docId": "298972"
+        },
+        {
+          "id": 299028,
+          "invoice_num": 121495,
+          "remarks": "ma release pa today ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299028",
+          "_docId": "299028"
+        },
+        {
+          "id": 302467,
+          "invoice_num": 121495,
+          "remarks": "for signature ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302467",
+          "_docId": "302467"
+        },
+        {
+          "id": 302725,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302725",
+          "_docId": "302725"
+        },
+        {
+          "id": 302854,
+          "invoice_num": 121495,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302854",
+          "_docId": "302854"
+        },
+        {
+          "id": 302952,
+          "invoice_num": 121495,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302952",
+          "_docId": "302952"
+        },
+        {
+          "id": 303283,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303283",
+          "_docId": "303283"
+        },
+        {
+          "id": 303367,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303367",
+          "_docId": "303367"
+        },
+        {
+          "id": 303454,
+          "invoice_num": 121495,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303454",
+          "_docId": "303454"
+        },
+        {
+          "id": 303647,
+          "invoice_num": 121495,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303647",
+          "_docId": "303647"
+        },
+        {
+          "id": 303737,
+          "invoice_num": 121495,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303737",
+          "_docId": "303737"
+        },
+        {
+          "id": 303833,
+          "invoice_num": 121495,
+          "remarks": "ok na today ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303833",
+          "_docId": "303833"
+        },
+        {
+          "id": 305182,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit next week",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305182",
+          "_docId": "305182"
+        },
+        {
+          "id": 305792,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305792",
+          "_docId": "305792"
+        },
+        {
+          "id": 307049,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307049",
+          "_docId": "307049"
+        },
+        {
+          "id": 307447,
+          "invoice_num": 121495,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307447",
+          "_docId": "307447"
+        },
+        {
+          "id": 308978,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308978",
+          "_docId": "308978"
+        },
+        {
+          "id": 309598,
+          "invoice_num": 121495,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309598",
+          "_docId": "309598"
+        },
+        {
+          "id": 310151,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310151",
+          "_docId": "310151"
+        },
+        {
+          "id": 310871,
+          "invoice_num": 121495,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310871",
+          "_docId": "310871"
+        },
+        {
+          "id": 311340,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311340",
+          "_docId": "311340"
+        },
+        {
+          "id": 311967,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311967",
+          "_docId": "311967"
+        },
+        {
+          "id": 312019,
+          "invoice_num": 121495,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312019",
+          "_docId": "312019"
+        },
+        {
+          "id": 312135,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312135",
+          "_docId": "312135"
+        },
+        {
+          "id": 312618,
+          "invoice_num": 121495,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312618",
+          "_docId": "312618"
+        },
+        {
+          "id": 312899,
+          "invoice_num": 121495,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312899",
+          "_docId": "312899"
+        },
+        {
+          "id": 313168,
+          "invoice_num": 121495,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313168",
+          "_docId": "313168"
+        },
+        {
+          "id": 313804,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313804",
+          "_docId": "313804"
+        },
+        {
+          "id": 314511,
+          "invoice_num": 121495,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314511",
+          "_docId": "314511"
+        },
+        {
+          "id": 315238,
+          "invoice_num": 121495,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315238",
+          "_docId": "315238"
+        },
+        {
+          "id": 315589,
+          "invoice_num": 121495,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315589",
+          "_docId": "315589"
+        },
+        {
+          "id": 315830,
+          "invoice_num": 121495,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315830",
+          "_docId": "315830"
+        },
+        {
+          "id": 316073,
+          "invoice_num": 121495,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316073",
+          "_docId": "316073"
+        },
+        {
+          "id": 316296,
+          "invoice_num": 121495,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316296",
+          "_docId": "316296"
+        },
+        {
+          "id": 317040,
+          "invoice_num": 121495,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317040",
+          "_docId": "317040"
+        },
+        {
+          "id": 317201,
+          "invoice_num": 121495,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317201",
+          "_docId": "317201"
+        },
+        {
+          "id": 317347,
+          "invoice_num": 121495,
+          "remarks": "ok na today",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317347",
+          "_docId": "317347"
+        },
+        {
+          "id": 319442,
+          "invoice_num": 121495,
+          "remarks": "follow up ulit next week wala pa daw po ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319442",
+          "_docId": "319442"
+        },
+        {
+          "id": 319953,
+          "invoice_num": 121495,
+          "remarks": "wala padaw, follow up ulit bukas wala padaw signatory",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319953",
+          "_docId": "319953"
+        },
+        {
+          "id": 320874,
+          "invoice_num": 121495,
+          "remarks": "for process pa sya ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/320874",
+          "_docId": "320874"
+        },
+        {
+          "id": 321640,
+          "invoice_num": 121495,
+          "remarks": "ok na today ",
+          "collection_id": 91473,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/321640",
+          "_docId": "321640"
+        }
+      ],
+      "payments": []
+    },
+    {
+      "invoice_no": "122509",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "July 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-07-30 00:00:00",
+      "received_by": "Abie",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 98002,
+          "invoice_id": 122509,
+          "contractmain_id": 3478,
+          "month": "July",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-07-30 00:00:00",
+          "receivedby": "Abie",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/98002",
+          "_docId": "98002"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 328173,
+          "invoice_num": 122509,
+          "date_finished": "2025-07-30 11:35:21",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/328173",
+          "_docId": "328173"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 286892,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw follow up ulit bukas ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/286892",
+          "_docId": "286892"
+        },
+        {
+          "id": 287326,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit next week ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287326",
+          "_docId": "287326"
+        },
+        {
+          "id": 287439,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas wala pa daw po ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287439",
+          "_docId": "287439"
+        },
+        {
+          "id": 287534,
+          "invoice_num": 122509,
+          "remarks": "for process pa check hanggang Friday ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287534",
+          "_docId": "287534"
+        },
+        {
+          "id": 287804,
+          "invoice_num": 122509,
+          "remarks": "for process pa sya try kung aabot sa Friday",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287804",
+          "_docId": "287804"
+        },
+        {
+          "id": 288093,
+          "invoice_num": 122509,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288093",
+          "_docId": "288093"
+        },
+        {
+          "id": 288451,
+          "invoice_num": 122509,
+          "remarks": "may fire drill tawag ulit later ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288451",
+          "_docId": "288451"
+        },
+        {
+          "id": 288811,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas baka meron na po",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288811",
+          "_docId": "288811"
+        },
+        {
+          "id": 289041,
+          "invoice_num": 122509,
+          "remarks": "follow bukas ng umaga ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289041",
+          "_docId": "289041"
+        },
+        {
+          "id": 289234,
+          "invoice_num": 122509,
+          "remarks": "ok na today ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289234",
+          "_docId": "289234"
+        },
+        {
+          "id": 289775,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw nafoforward sa kanila \r\n",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289775",
+          "_docId": "289775"
+        },
+        {
+          "id": 291563,
+          "invoice_num": 122509,
+          "remarks": "wala pa nafoforward follow up ulit next week ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/291563",
+          "_docId": "291563"
+        },
+        {
+          "id": 292838,
+          "invoice_num": 122509,
+          "remarks": "nakaprocess pa lang follow up ulit next week ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/292838",
+          "_docId": "292838"
+        },
+        {
+          "id": 293130,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293130",
+          "_docId": "293130"
+        },
+        {
+          "id": 293307,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas wala pa daw pirma ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293307",
+          "_docId": "293307"
+        },
+        {
+          "id": 293891,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas need pa isang pirma \r\n",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293891",
+          "_docId": "293891"
+        },
+        {
+          "id": 294196,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit later nakabreak pa sya ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294196",
+          "_docId": "294196"
+        },
+        {
+          "id": 294265,
+          "invoice_num": 122509,
+          "remarks": "Fosr sign pa, follow up ulit ng afternoon -Ms Karen ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294265",
+          "_docId": "294265"
+        },
+        {
+          "id": 294338,
+          "invoice_num": 122509,
+          "remarks": "negative na din Linkenergie \r\n",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294338",
+          "_docId": "294338"
+        },
+        {
+          "id": 295157,
+          "invoice_num": 122509,
+          "remarks": "okay na sa Friday 9-3 - Ms Karen",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/295157",
+          "_docId": "295157"
+        },
+        {
+          "id": 298254,
+          "invoice_num": 122509,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298254",
+          "_docId": "298254"
+        },
+        {
+          "id": 298602,
+          "invoice_num": 122509,
+          "remarks": "nasa signatory pa yung check ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298602",
+          "_docId": "298602"
+        },
+        {
+          "id": 298971,
+          "invoice_num": 122509,
+          "remarks": "ok na today ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298971",
+          "_docId": "298971"
+        },
+        {
+          "id": 299027,
+          "invoice_num": 122509,
+          "remarks": "ma release pa today ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299027",
+          "_docId": "299027"
+        },
+        {
+          "id": 302466,
+          "invoice_num": 122509,
+          "remarks": "for signature ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302466",
+          "_docId": "302466"
+        },
+        {
+          "id": 302724,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302724",
+          "_docId": "302724"
+        },
+        {
+          "id": 302853,
+          "invoice_num": 122509,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302853",
+          "_docId": "302853"
+        },
+        {
+          "id": 302951,
+          "invoice_num": 122509,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302951",
+          "_docId": "302951"
+        },
+        {
+          "id": 303282,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303282",
+          "_docId": "303282"
+        },
+        {
+          "id": 303366,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303366",
+          "_docId": "303366"
+        },
+        {
+          "id": 303453,
+          "invoice_num": 122509,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303453",
+          "_docId": "303453"
+        },
+        {
+          "id": 303646,
+          "invoice_num": 122509,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303646",
+          "_docId": "303646"
+        },
+        {
+          "id": 303736,
+          "invoice_num": 122509,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303736",
+          "_docId": "303736"
+        },
+        {
+          "id": 303832,
+          "invoice_num": 122509,
+          "remarks": "ok na today ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303832",
+          "_docId": "303832"
+        },
+        {
+          "id": 305181,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit next week",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305181",
+          "_docId": "305181"
+        },
+        {
+          "id": 305791,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305791",
+          "_docId": "305791"
+        },
+        {
+          "id": 307048,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307048",
+          "_docId": "307048"
+        },
+        {
+          "id": 307446,
+          "invoice_num": 122509,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307446",
+          "_docId": "307446"
+        },
+        {
+          "id": 308977,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308977",
+          "_docId": "308977"
+        },
+        {
+          "id": 309597,
+          "invoice_num": 122509,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309597",
+          "_docId": "309597"
+        },
+        {
+          "id": 310150,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310150",
+          "_docId": "310150"
+        },
+        {
+          "id": 310870,
+          "invoice_num": 122509,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310870",
+          "_docId": "310870"
+        },
+        {
+          "id": 311339,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311339",
+          "_docId": "311339"
+        },
+        {
+          "id": 311966,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311966",
+          "_docId": "311966"
+        },
+        {
+          "id": 312018,
+          "invoice_num": 122509,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312018",
+          "_docId": "312018"
+        },
+        {
+          "id": 312134,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312134",
+          "_docId": "312134"
+        },
+        {
+          "id": 312617,
+          "invoice_num": 122509,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312617",
+          "_docId": "312617"
+        },
+        {
+          "id": 312898,
+          "invoice_num": 122509,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312898",
+          "_docId": "312898"
+        },
+        {
+          "id": 313167,
+          "invoice_num": 122509,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313167",
+          "_docId": "313167"
+        },
+        {
+          "id": 313803,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313803",
+          "_docId": "313803"
+        },
+        {
+          "id": 314510,
+          "invoice_num": 122509,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314510",
+          "_docId": "314510"
+        },
+        {
+          "id": 315237,
+          "invoice_num": 122509,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315237",
+          "_docId": "315237"
+        },
+        {
+          "id": 315588,
+          "invoice_num": 122509,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315588",
+          "_docId": "315588"
+        },
+        {
+          "id": 315829,
+          "invoice_num": 122509,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315829",
+          "_docId": "315829"
+        },
+        {
+          "id": 316072,
+          "invoice_num": 122509,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316072",
+          "_docId": "316072"
+        },
+        {
+          "id": 316295,
+          "invoice_num": 122509,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316295",
+          "_docId": "316295"
+        },
+        {
+          "id": 317039,
+          "invoice_num": 122509,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317039",
+          "_docId": "317039"
+        },
+        {
+          "id": 317200,
+          "invoice_num": 122509,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317200",
+          "_docId": "317200"
+        },
+        {
+          "id": 317346,
+          "invoice_num": 122509,
+          "remarks": "ok na today",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317346",
+          "_docId": "317346"
+        },
+        {
+          "id": 319441,
+          "invoice_num": 122509,
+          "remarks": "follow up ulit next week wala pa daw po ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319441",
+          "_docId": "319441"
+        },
+        {
+          "id": 319952,
+          "invoice_num": 122509,
+          "remarks": "wala padaw, follow up ulit bukas wala padaw signatory",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319952",
+          "_docId": "319952"
+        },
+        {
+          "id": 320873,
+          "invoice_num": 122509,
+          "remarks": "for process pa sya ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/320873",
+          "_docId": "320873"
+        },
+        {
+          "id": 321639,
+          "invoice_num": 122509,
+          "remarks": "ok na today ",
+          "collection_id": 92526,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/321639",
+          "_docId": "321639"
+        }
+      ],
+      "payments": []
+    },
+    {
+      "invoice_no": "123219",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "August 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-08-19 00:00:00",
+      "received_by": "Abhe Osana",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 98505,
+          "invoice_id": 123219,
+          "contractmain_id": 3478,
+          "month": "August",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-08-19 00:00:00",
+          "receivedby": "Abhe Osana",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/98505",
+          "_docId": "98505"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 329741,
+          "invoice_num": 123219,
+          "date_finished": "2025-08-19 15:17:13",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/329741",
+          "_docId": "329741"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 289233,
+          "invoice_num": 123219,
+          "remarks": "ok na today ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289233",
+          "_docId": "289233"
+        },
+        {
+          "id": 289774,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw nafoforward sa kanila \r\n",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289774",
+          "_docId": "289774"
+        },
+        {
+          "id": 291562,
+          "invoice_num": 123219,
+          "remarks": "wala pa nafoforward follow up ulit next week ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/291562",
+          "_docId": "291562"
+        },
+        {
+          "id": 292837,
+          "invoice_num": 123219,
+          "remarks": "nakaprocess pa lang follow up ulit next week ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/292837",
+          "_docId": "292837"
+        },
+        {
+          "id": 293129,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293129",
+          "_docId": "293129"
+        },
+        {
+          "id": 293306,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas wala pa daw pirma ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293306",
+          "_docId": "293306"
+        },
+        {
+          "id": 293890,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas need pa isang pirma \r\n",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293890",
+          "_docId": "293890"
+        },
+        {
+          "id": 294195,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit later nakabreak pa sya ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294195",
+          "_docId": "294195"
+        },
+        {
+          "id": 294264,
+          "invoice_num": 123219,
+          "remarks": "Fosr sign pa, follow up ulit ng afternoon -Ms Karen ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294264",
+          "_docId": "294264"
+        },
+        {
+          "id": 294337,
+          "invoice_num": 123219,
+          "remarks": "negative na din Linkenergie \r\n",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294337",
+          "_docId": "294337"
+        },
+        {
+          "id": 295156,
+          "invoice_num": 123219,
+          "remarks": "okay na sa Friday 9-3 - Ms Karen",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/295156",
+          "_docId": "295156"
+        },
+        {
+          "id": 298253,
+          "invoice_num": 123219,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298253",
+          "_docId": "298253"
+        },
+        {
+          "id": 298601,
+          "invoice_num": 123219,
+          "remarks": "nasa signatory pa yung check ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298601",
+          "_docId": "298601"
+        },
+        {
+          "id": 298970,
+          "invoice_num": 123219,
+          "remarks": "ok na today ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298970",
+          "_docId": "298970"
+        },
+        {
+          "id": 299026,
+          "invoice_num": 123219,
+          "remarks": "ma release pa today ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299026",
+          "_docId": "299026"
+        },
+        {
+          "id": 302465,
+          "invoice_num": 123219,
+          "remarks": "for signature ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302465",
+          "_docId": "302465"
+        },
+        {
+          "id": 302723,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302723",
+          "_docId": "302723"
+        },
+        {
+          "id": 302852,
+          "invoice_num": 123219,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302852",
+          "_docId": "302852"
+        },
+        {
+          "id": 302950,
+          "invoice_num": 123219,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302950",
+          "_docId": "302950"
+        },
+        {
+          "id": 303281,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303281",
+          "_docId": "303281"
+        },
+        {
+          "id": 303365,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303365",
+          "_docId": "303365"
+        },
+        {
+          "id": 303452,
+          "invoice_num": 123219,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303452",
+          "_docId": "303452"
+        },
+        {
+          "id": 303645,
+          "invoice_num": 123219,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303645",
+          "_docId": "303645"
+        },
+        {
+          "id": 303735,
+          "invoice_num": 123219,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303735",
+          "_docId": "303735"
+        },
+        {
+          "id": 303831,
+          "invoice_num": 123219,
+          "remarks": "ok na today ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303831",
+          "_docId": "303831"
+        },
+        {
+          "id": 305180,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit next week",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305180",
+          "_docId": "305180"
+        },
+        {
+          "id": 305790,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305790",
+          "_docId": "305790"
+        },
+        {
+          "id": 307047,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307047",
+          "_docId": "307047"
+        },
+        {
+          "id": 307445,
+          "invoice_num": 123219,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307445",
+          "_docId": "307445"
+        },
+        {
+          "id": 308976,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308976",
+          "_docId": "308976"
+        },
+        {
+          "id": 309596,
+          "invoice_num": 123219,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309596",
+          "_docId": "309596"
+        },
+        {
+          "id": 310149,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310149",
+          "_docId": "310149"
+        },
+        {
+          "id": 310869,
+          "invoice_num": 123219,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310869",
+          "_docId": "310869"
+        },
+        {
+          "id": 311338,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311338",
+          "_docId": "311338"
+        },
+        {
+          "id": 311965,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311965",
+          "_docId": "311965"
+        },
+        {
+          "id": 312017,
+          "invoice_num": 123219,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312017",
+          "_docId": "312017"
+        },
+        {
+          "id": 312133,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312133",
+          "_docId": "312133"
+        },
+        {
+          "id": 312616,
+          "invoice_num": 123219,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312616",
+          "_docId": "312616"
+        },
+        {
+          "id": 312897,
+          "invoice_num": 123219,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312897",
+          "_docId": "312897"
+        },
+        {
+          "id": 313166,
+          "invoice_num": 123219,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313166",
+          "_docId": "313166"
+        },
+        {
+          "id": 313802,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313802",
+          "_docId": "313802"
+        },
+        {
+          "id": 314509,
+          "invoice_num": 123219,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314509",
+          "_docId": "314509"
+        },
+        {
+          "id": 315236,
+          "invoice_num": 123219,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315236",
+          "_docId": "315236"
+        },
+        {
+          "id": 315587,
+          "invoice_num": 123219,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315587",
+          "_docId": "315587"
+        },
+        {
+          "id": 315828,
+          "invoice_num": 123219,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315828",
+          "_docId": "315828"
+        },
+        {
+          "id": 316071,
+          "invoice_num": 123219,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316071",
+          "_docId": "316071"
+        },
+        {
+          "id": 316294,
+          "invoice_num": 123219,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316294",
+          "_docId": "316294"
+        },
+        {
+          "id": 317038,
+          "invoice_num": 123219,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317038",
+          "_docId": "317038"
+        },
+        {
+          "id": 317199,
+          "invoice_num": 123219,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317199",
+          "_docId": "317199"
+        },
+        {
+          "id": 317345,
+          "invoice_num": 123219,
+          "remarks": "ok na today",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317345",
+          "_docId": "317345"
+        },
+        {
+          "id": 319440,
+          "invoice_num": 123219,
+          "remarks": "follow up ulit next week wala pa daw po ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319440",
+          "_docId": "319440"
+        },
+        {
+          "id": 319951,
+          "invoice_num": 123219,
+          "remarks": "wala padaw, follow up ulit bukas wala padaw signatory",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319951",
+          "_docId": "319951"
+        },
+        {
+          "id": 320872,
+          "invoice_num": 123219,
+          "remarks": "for process pa sya ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/320872",
+          "_docId": "320872"
+        },
+        {
+          "id": 321638,
+          "invoice_num": 123219,
+          "remarks": "ok na today ",
+          "collection_id": 93085,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/321638",
+          "_docId": "321638"
+        }
+      ],
+      "payments": []
+    },
+    {
+      "invoice_no": "124077",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "September 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-09-12 00:00:00",
+      "received_by": "",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 99334,
+          "invoice_id": 124077,
+          "contractmain_id": 3478,
+          "month": "September",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-09-12 00:00:00",
+          "receivedby": "",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/99334",
+          "_docId": "99334"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 331996,
+          "invoice_num": 124077,
+          "date_finished": "2025-09-12 13:00:51",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/331996",
+          "_docId": "331996"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 295155,
+          "invoice_num": 124077,
+          "remarks": "okay na sa Friday 9-3 - Ms Karen",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/295155",
+          "_docId": "295155"
+        },
+        {
+          "id": 298252,
+          "invoice_num": 124077,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298252",
+          "_docId": "298252"
+        },
+        {
+          "id": 298600,
+          "invoice_num": 124077,
+          "remarks": "nasa signatory pa yung check ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298600",
+          "_docId": "298600"
+        },
+        {
+          "id": 298969,
+          "invoice_num": 124077,
+          "remarks": "ok na today ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298969",
+          "_docId": "298969"
+        },
+        {
+          "id": 299025,
+          "invoice_num": 124077,
+          "remarks": "ma release pa today ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299025",
+          "_docId": "299025"
+        },
+        {
+          "id": 302464,
+          "invoice_num": 124077,
+          "remarks": "for signature ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302464",
+          "_docId": "302464"
+        },
+        {
+          "id": 302722,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302722",
+          "_docId": "302722"
+        },
+        {
+          "id": 302851,
+          "invoice_num": 124077,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302851",
+          "_docId": "302851"
+        },
+        {
+          "id": 302949,
+          "invoice_num": 124077,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302949",
+          "_docId": "302949"
+        },
+        {
+          "id": 303280,
+          "invoice_num": 124077,
+          "remarks": "wala pa daw ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303280",
+          "_docId": "303280"
+        },
+        {
+          "id": 303364,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303364",
+          "_docId": "303364"
+        },
+        {
+          "id": 303451,
+          "invoice_num": 124077,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303451",
+          "_docId": "303451"
+        },
+        {
+          "id": 303644,
+          "invoice_num": 124077,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303644",
+          "_docId": "303644"
+        },
+        {
+          "id": 303734,
+          "invoice_num": 124077,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303734",
+          "_docId": "303734"
+        },
+        {
+          "id": 303830,
+          "invoice_num": 124077,
+          "remarks": "ok na today ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303830",
+          "_docId": "303830"
+        },
+        {
+          "id": 305179,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit next week",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305179",
+          "_docId": "305179"
+        },
+        {
+          "id": 305789,
+          "invoice_num": 124077,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305789",
+          "_docId": "305789"
+        },
+        {
+          "id": 307046,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307046",
+          "_docId": "307046"
+        },
+        {
+          "id": 307444,
+          "invoice_num": 124077,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307444",
+          "_docId": "307444"
+        },
+        {
+          "id": 308975,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308975",
+          "_docId": "308975"
+        },
+        {
+          "id": 309595,
+          "invoice_num": 124077,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309595",
+          "_docId": "309595"
+        },
+        {
+          "id": 310148,
+          "invoice_num": 124077,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310148",
+          "_docId": "310148"
+        },
+        {
+          "id": 310868,
+          "invoice_num": 124077,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310868",
+          "_docId": "310868"
+        },
+        {
+          "id": 311337,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311337",
+          "_docId": "311337"
+        },
+        {
+          "id": 311964,
+          "invoice_num": 124077,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311964",
+          "_docId": "311964"
+        },
+        {
+          "id": 312016,
+          "invoice_num": 124077,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312016",
+          "_docId": "312016"
+        },
+        {
+          "id": 312132,
+          "invoice_num": 124077,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312132",
+          "_docId": "312132"
+        },
+        {
+          "id": 312615,
+          "invoice_num": 124077,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312615",
+          "_docId": "312615"
+        },
+        {
+          "id": 312896,
+          "invoice_num": 124077,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312896",
+          "_docId": "312896"
+        },
+        {
+          "id": 313165,
+          "invoice_num": 124077,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313165",
+          "_docId": "313165"
+        },
+        {
+          "id": 313801,
+          "invoice_num": 124077,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313801",
+          "_docId": "313801"
+        },
+        {
+          "id": 314508,
+          "invoice_num": 124077,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314508",
+          "_docId": "314508"
+        },
+        {
+          "id": 315235,
+          "invoice_num": 124077,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315235",
+          "_docId": "315235"
+        },
+        {
+          "id": 315586,
+          "invoice_num": 124077,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315586",
+          "_docId": "315586"
+        },
+        {
+          "id": 315827,
+          "invoice_num": 124077,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315827",
+          "_docId": "315827"
+        },
+        {
+          "id": 316070,
+          "invoice_num": 124077,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316070",
+          "_docId": "316070"
+        },
+        {
+          "id": 316293,
+          "invoice_num": 124077,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316293",
+          "_docId": "316293"
+        },
+        {
+          "id": 317037,
+          "invoice_num": 124077,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317037",
+          "_docId": "317037"
+        },
+        {
+          "id": 317198,
+          "invoice_num": 124077,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317198",
+          "_docId": "317198"
+        },
+        {
+          "id": 317344,
+          "invoice_num": 124077,
+          "remarks": "ok na today",
+          "collection_id": 93831,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317344",
+          "_docId": "317344"
+        }
+      ],
+      "payments": [
+        {
+          "id": 119041,
+          "invoice_id": 124077,
+          "date_paid": "2026-03-11 00:00:00",
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_paymentinfo/119041",
+          "_docId": "119041"
+        }
+      ]
+    },
+    {
+      "invoice_no": "124982",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "October 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-10-13 00:00:00",
+      "received_by": "Keneth Ediza",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 100172,
+          "invoice_id": 124982,
+          "contractmain_id": 3478,
+          "month": "October",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-10-13 00:00:00",
+          "receivedby": "Keneth Ediza",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/100172",
+          "_docId": "100172"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 334490,
+          "invoice_num": 124982,
+          "date_finished": "2025-10-13 15:03:12",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/334490",
+          "_docId": "334490"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 298968,
+          "invoice_num": 124982,
+          "remarks": "ok na today ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298968",
+          "_docId": "298968"
+        },
+        {
+          "id": 299024,
+          "invoice_num": 124982,
+          "remarks": "ma release pa today ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299024",
+          "_docId": "299024"
+        },
+        {
+          "id": 302463,
+          "invoice_num": 124982,
+          "remarks": "for signature ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302463",
+          "_docId": "302463"
+        },
+        {
+          "id": 302721,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302721",
+          "_docId": "302721"
+        },
+        {
+          "id": 302850,
+          "invoice_num": 124982,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302850",
+          "_docId": "302850"
+        },
+        {
+          "id": 302948,
+          "invoice_num": 124982,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302948",
+          "_docId": "302948"
+        },
+        {
+          "id": 303279,
+          "invoice_num": 124982,
+          "remarks": "wala pa daw ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303279",
+          "_docId": "303279"
+        },
+        {
+          "id": 303363,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303363",
+          "_docId": "303363"
+        },
+        {
+          "id": 303450,
+          "invoice_num": 124982,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303450",
+          "_docId": "303450"
+        },
+        {
+          "id": 303643,
+          "invoice_num": 124982,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303643",
+          "_docId": "303643"
+        },
+        {
+          "id": 303733,
+          "invoice_num": 124982,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303733",
+          "_docId": "303733"
+        },
+        {
+          "id": 303829,
+          "invoice_num": 124982,
+          "remarks": "ok na today ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303829",
+          "_docId": "303829"
+        },
+        {
+          "id": 305178,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit next week",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305178",
+          "_docId": "305178"
+        },
+        {
+          "id": 305788,
+          "invoice_num": 124982,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305788",
+          "_docId": "305788"
+        },
+        {
+          "id": 307045,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307045",
+          "_docId": "307045"
+        },
+        {
+          "id": 307443,
+          "invoice_num": 124982,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307443",
+          "_docId": "307443"
+        },
+        {
+          "id": 308974,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308974",
+          "_docId": "308974"
+        },
+        {
+          "id": 309594,
+          "invoice_num": 124982,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309594",
+          "_docId": "309594"
+        },
+        {
+          "id": 310147,
+          "invoice_num": 124982,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310147",
+          "_docId": "310147"
+        },
+        {
+          "id": 310867,
+          "invoice_num": 124982,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310867",
+          "_docId": "310867"
+        },
+        {
+          "id": 311336,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311336",
+          "_docId": "311336"
+        },
+        {
+          "id": 311963,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311963",
+          "_docId": "311963"
+        },
+        {
+          "id": 312015,
+          "invoice_num": 124982,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312015",
+          "_docId": "312015"
+        },
+        {
+          "id": 312131,
+          "invoice_num": 124982,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312131",
+          "_docId": "312131"
+        },
+        {
+          "id": 312325,
+          "invoice_num": 124982,
+          "remarks": "follow up ulit bukas ",
+          "collection_id": 100172,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312325",
+          "_docId": "312325"
+        },
+        {
+          "id": 312614,
+          "invoice_num": 124982,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312614",
+          "_docId": "312614"
+        },
+        {
+          "id": 312895,
+          "invoice_num": 124982,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312895",
+          "_docId": "312895"
+        },
+        {
+          "id": 313164,
+          "invoice_num": 124982,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313164",
+          "_docId": "313164"
+        },
+        {
+          "id": 313800,
+          "invoice_num": 124982,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313800",
+          "_docId": "313800"
+        },
+        {
+          "id": 314507,
+          "invoice_num": 124982,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314507",
+          "_docId": "314507"
+        },
+        {
+          "id": 315234,
+          "invoice_num": 124982,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315234",
+          "_docId": "315234"
+        },
+        {
+          "id": 315585,
+          "invoice_num": 124982,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315585",
+          "_docId": "315585"
+        },
+        {
+          "id": 315826,
+          "invoice_num": 124982,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315826",
+          "_docId": "315826"
+        },
+        {
+          "id": 316069,
+          "invoice_num": 124982,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316069",
+          "_docId": "316069"
+        },
+        {
+          "id": 316292,
+          "invoice_num": 124982,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316292",
+          "_docId": "316292"
+        },
+        {
+          "id": 317036,
+          "invoice_num": 124982,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317036",
+          "_docId": "317036"
+        },
+        {
+          "id": 317197,
+          "invoice_num": 124982,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317197",
+          "_docId": "317197"
+        },
+        {
+          "id": 317343,
+          "invoice_num": 124982,
+          "remarks": "ok na today",
+          "collection_id": 94648,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317343",
+          "_docId": "317343"
+        }
+      ],
+      "payments": [
+        {
+          "id": 119040,
+          "invoice_id": 124982,
+          "date_paid": "2026-03-11 00:00:00",
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_paymentinfo/119040",
+          "_docId": "119040"
+        }
+      ]
+    },
+    {
+      "invoice_no": "125947",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "November 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-11-17 00:00:00",
+      "received_by": "Abhe Osana",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 101034,
+          "invoice_id": 125947,
+          "contractmain_id": 3478,
+          "month": "November",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-11-17 00:00:00",
+          "receivedby": "Abhe Osana",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/101034",
+          "_docId": "101034"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 337314,
+          "invoice_num": 125947,
+          "date_finished": "2025-11-17 16:06:46",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/337314",
+          "_docId": "337314"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 303278,
+          "invoice_num": 125947,
+          "remarks": "wala pa daw ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303278",
+          "_docId": "303278"
+        },
+        {
+          "id": 303362,
+          "invoice_num": 125947,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303362",
+          "_docId": "303362"
+        },
+        {
+          "id": 303449,
+          "invoice_num": 125947,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303449",
+          "_docId": "303449"
+        },
+        {
+          "id": 303642,
+          "invoice_num": 125947,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303642",
+          "_docId": "303642"
+        },
+        {
+          "id": 303732,
+          "invoice_num": 125947,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303732",
+          "_docId": "303732"
+        },
+        {
+          "id": 303828,
+          "invoice_num": 125947,
+          "remarks": "ok na today ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303828",
+          "_docId": "303828"
+        },
+        {
+          "id": 305177,
+          "invoice_num": 125947,
+          "remarks": "follow up ulit next week",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305177",
+          "_docId": "305177"
+        },
+        {
+          "id": 305787,
+          "invoice_num": 125947,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305787",
+          "_docId": "305787"
+        },
+        {
+          "id": 307044,
+          "invoice_num": 125947,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307044",
+          "_docId": "307044"
+        },
+        {
+          "id": 307442,
+          "invoice_num": 125947,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307442",
+          "_docId": "307442"
+        },
+        {
+          "id": 308973,
+          "invoice_num": 125947,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308973",
+          "_docId": "308973"
+        },
+        {
+          "id": 309593,
+          "invoice_num": 125947,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309593",
+          "_docId": "309593"
+        },
+        {
+          "id": 310146,
+          "invoice_num": 125947,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310146",
+          "_docId": "310146"
+        },
+        {
+          "id": 310866,
+          "invoice_num": 125947,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310866",
+          "_docId": "310866"
+        },
+        {
+          "id": 311335,
+          "invoice_num": 125947,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311335",
+          "_docId": "311335"
+        },
+        {
+          "id": 311962,
+          "invoice_num": 125947,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311962",
+          "_docId": "311962"
+        },
+        {
+          "id": 312014,
+          "invoice_num": 125947,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312014",
+          "_docId": "312014"
+        },
+        {
+          "id": 312130,
+          "invoice_num": 125947,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312130",
+          "_docId": "312130"
+        },
+        {
+          "id": 312613,
+          "invoice_num": 125947,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312613",
+          "_docId": "312613"
+        },
+        {
+          "id": 312894,
+          "invoice_num": 125947,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312894",
+          "_docId": "312894"
+        },
+        {
+          "id": 313163,
+          "invoice_num": 125947,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313163",
+          "_docId": "313163"
+        },
+        {
+          "id": 313799,
+          "invoice_num": 125947,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313799",
+          "_docId": "313799"
+        },
+        {
+          "id": 314506,
+          "invoice_num": 125947,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314506",
+          "_docId": "314506"
+        },
+        {
+          "id": 315233,
+          "invoice_num": 125947,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315233",
+          "_docId": "315233"
+        },
+        {
+          "id": 315584,
+          "invoice_num": 125947,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315584",
+          "_docId": "315584"
+        },
+        {
+          "id": 315825,
+          "invoice_num": 125947,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315825",
+          "_docId": "315825"
+        },
+        {
+          "id": 316068,
+          "invoice_num": 125947,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316068",
+          "_docId": "316068"
+        },
+        {
+          "id": 316291,
+          "invoice_num": 125947,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316291",
+          "_docId": "316291"
+        },
+        {
+          "id": 317035,
+          "invoice_num": 125947,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317035",
+          "_docId": "317035"
+        },
+        {
+          "id": 317196,
+          "invoice_num": 125947,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317196",
+          "_docId": "317196"
+        },
+        {
+          "id": 317342,
+          "invoice_num": 125947,
+          "remarks": "ok na today",
+          "collection_id": 95513,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317342",
+          "_docId": "317342"
+        }
+      ],
+      "payments": [
+        {
+          "id": 119039,
+          "invoice_id": 125947,
+          "date_paid": "2026-03-11 00:00:00",
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_paymentinfo/119039",
+          "_docId": "119039"
+        }
+      ]
+    },
+    {
+      "invoice_no": "126855",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "December 2025",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "2025-12-12 00:00:00",
+      "received_by": "Abhe Osana",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 101946,
+          "invoice_id": 126855,
+          "contractmain_id": 3478,
+          "month": "December",
+          "year": "2025",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-12-12 00:00:00",
+          "receivedby": "Abhe Osana",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/101946",
+          "_docId": "101946"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 339822,
+          "invoice_num": 126855,
+          "date_finished": "2025-12-12 13:53:50",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/339822",
+          "_docId": "339822"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 307043,
+          "invoice_num": 126855,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307043",
+          "_docId": "307043"
+        },
+        {
+          "id": 307441,
+          "invoice_num": 126855,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307441",
+          "_docId": "307441"
+        },
+        {
+          "id": 308972,
+          "invoice_num": 126855,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308972",
+          "_docId": "308972"
+        },
+        {
+          "id": 309592,
+          "invoice_num": 126855,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309592",
+          "_docId": "309592"
+        },
+        {
+          "id": 310145,
+          "invoice_num": 126855,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310145",
+          "_docId": "310145"
+        },
+        {
+          "id": 310865,
+          "invoice_num": 126855,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310865",
+          "_docId": "310865"
+        },
+        {
+          "id": 311334,
+          "invoice_num": 126855,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311334",
+          "_docId": "311334"
+        },
+        {
+          "id": 311961,
+          "invoice_num": 126855,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311961",
+          "_docId": "311961"
+        },
+        {
+          "id": 312013,
+          "invoice_num": 126855,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312013",
+          "_docId": "312013"
+        },
+        {
+          "id": 312129,
+          "invoice_num": 126855,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312129",
+          "_docId": "312129"
+        },
+        {
+          "id": 312612,
+          "invoice_num": 126855,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312612",
+          "_docId": "312612"
+        },
+        {
+          "id": 312893,
+          "invoice_num": 126855,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312893",
+          "_docId": "312893"
+        },
+        {
+          "id": 313162,
+          "invoice_num": 126855,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313162",
+          "_docId": "313162"
+        },
+        {
+          "id": 313798,
+          "invoice_num": 126855,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313798",
+          "_docId": "313798"
+        },
+        {
+          "id": 314505,
+          "invoice_num": 126855,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314505",
+          "_docId": "314505"
+        },
+        {
+          "id": 315232,
+          "invoice_num": 126855,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315232",
+          "_docId": "315232"
+        },
+        {
+          "id": 315583,
+          "invoice_num": 126855,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315583",
+          "_docId": "315583"
+        },
+        {
+          "id": 315824,
+          "invoice_num": 126855,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315824",
+          "_docId": "315824"
+        },
+        {
+          "id": 316067,
+          "invoice_num": 126855,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316067",
+          "_docId": "316067"
+        },
+        {
+          "id": 316290,
+          "invoice_num": 126855,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316290",
+          "_docId": "316290"
+        },
+        {
+          "id": 317034,
+          "invoice_num": 126855,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317034",
+          "_docId": "317034"
+        },
+        {
+          "id": 317195,
+          "invoice_num": 126855,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317195",
+          "_docId": "317195"
+        },
+        {
+          "id": 317341,
+          "invoice_num": 126855,
+          "remarks": "ok na today",
+          "collection_id": 96300,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317341",
+          "_docId": "317341"
+        }
+      ],
+      "payments": [
+        {
+          "id": 119042,
+          "invoice_id": 126855,
+          "date_paid": "2026-03-11 00:00:00",
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_paymentinfo/119042",
+          "_docId": "119042"
+        }
+      ]
+    },
+    {
+      "invoice_no": "127605",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "January 2026",
+      "amount": 3200,
+      "paid_amount": 0,
+      "balance_hint": 3200,
+      "date_received": "",
+      "received_by": "",
+      "receipt_time": "",
+      "receipt_source": "",
+      "billing_rows": [
+        {
+          "id": 102696,
+          "invoice_id": 127605,
+          "contractmain_id": 3478,
+          "month": "January",
+          "year": "2026",
+          "amount": 3200,
+          "totalamount": 3200,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "undefined 00:00:00",
+          "receivedby": "",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/102696",
+          "_docId": "102696"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 342019,
+          "invoice_num": 127605,
+          "date_finished": "2026-01-15 15:55:05",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/342019",
+          "_docId": "342019"
+        }
+      ],
+      "collection_history": [],
+      "payments": []
+    },
+    {
+      "invoice_no": "121497",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "June 2025",
+      "amount": 3700,
+      "paid_amount": 0,
+      "balance_hint": 3700,
+      "date_received": "2025-06-17 00:00:00",
+      "received_by": "Kenneth Ediza",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 96782,
+          "invoice_id": 121497,
+          "contractmain_id": 5295,
+          "month": "June",
+          "year": "2025",
+          "amount": 3700,
+          "totalamount": 3700,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-06-17 00:00:00",
+          "receivedby": "Kenneth Ediza",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/96782",
+          "_docId": "96782"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 324459,
+          "invoice_num": 121497,
+          "date_finished": "2025-06-17 17:42:50",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/324459",
+          "_docId": "324459"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 277267,
+          "invoice_num": 121497,
+          "remarks": "wala pa daw naforward sa kanya ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/277267",
+          "_docId": "277267"
+        },
+        {
+          "id": 281050,
+          "invoice_num": 121497,
+          "remarks": "wala pa daw na forward sa accounting follow up ulit next week ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/281050",
+          "_docId": "281050"
+        },
+        {
+          "id": 281791,
+          "invoice_num": 121497,
+          "remarks": "wala pa daw nafoforward sa kanya ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/281791",
+          "_docId": "281791"
+        },
+        {
+          "id": 282444,
+          "invoice_num": 121497,
+          "remarks": "wla pa daw po na foforward sa kanila- KAREN",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/282444",
+          "_docId": "282444"
+        },
+        {
+          "id": 284312,
+          "invoice_num": 121497,
+          "remarks": "FOLLOW UP DAW ULIT SA MONDAY. NASA PROCUREMENT PA DAW",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/284312",
+          "_docId": "284312"
+        },
+        {
+          "id": 284793,
+          "invoice_num": 121497,
+          "remarks": "nasa purchasing palang follow up pa ulit - Ms.Karen",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/284793",
+          "_docId": "284793"
+        },
+        {
+          "id": 286899,
+          "invoice_num": 121497,
+          "remarks": "wala pa daw follow up ulit bukas ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/286899",
+          "_docId": "286899"
+        },
+        {
+          "id": 287323,
+          "invoice_num": 121497,
+          "remarks": "follow up ulit next week ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287323",
+          "_docId": "287323"
+        },
+        {
+          "id": 287436,
+          "invoice_num": 121497,
+          "remarks": "follow up ulit bukas wala pa daw po ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287436",
+          "_docId": "287436"
+        },
+        {
+          "id": 287541,
+          "invoice_num": 121497,
+          "remarks": "for process pa check hanggang Friday ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287541",
+          "_docId": "287541"
+        },
+        {
+          "id": 287801,
+          "invoice_num": 121497,
+          "remarks": "for process pa sya try kung aabot sa Friday",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/287801",
+          "_docId": "287801"
+        },
+        {
+          "id": 288090,
+          "invoice_num": 121497,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288090",
+          "_docId": "288090"
+        },
+        {
+          "id": 288448,
+          "invoice_num": 121497,
+          "remarks": "may fire drill tawag ulit later ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288448",
+          "_docId": "288448"
+        },
+        {
+          "id": 288808,
+          "invoice_num": 121497,
+          "remarks": "follow up ulit bukas baka meron na po",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/288808",
+          "_docId": "288808"
+        },
+        {
+          "id": 289038,
+          "invoice_num": 121497,
+          "remarks": "follow bukas ng umaga ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289038",
+          "_docId": "289038"
+        },
+        {
+          "id": 289230,
+          "invoice_num": 121497,
+          "remarks": "ok na today ",
+          "collection_id": 91471,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289230",
+          "_docId": "289230"
+        }
+      ],
+      "payments": [
+        {
+          "id": 113950,
+          "invoice_id": 121497,
+          "date_paid": "2025-08-20 00:00:00",
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_paymentinfo/113950",
+          "_docId": "113950"
+        }
+      ]
+    },
+    {
+      "invoice_no": "123218",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "August 2025",
+      "amount": 3700,
+      "paid_amount": 0,
+      "balance_hint": 3700,
+      "date_received": "2025-08-19 00:00:00",
+      "received_by": "Abhe Osana",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 98506,
+          "invoice_id": 123218,
+          "contractmain_id": 5295,
+          "month": "August",
+          "year": "2025",
+          "amount": 3700,
+          "totalamount": 3700,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-08-19 00:00:00",
+          "receivedby": "Abhe Osana",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/98506",
+          "_docId": "98506"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 329742,
+          "invoice_num": 123218,
+          "date_finished": "2025-08-19 15:17:16",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/329742",
+          "_docId": "329742"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 289228,
+          "invoice_num": 123218,
+          "remarks": "ok na today ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289228",
+          "_docId": "289228"
+        },
+        {
+          "id": 289783,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw nafoforward sa kanila \r\n",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/289783",
+          "_docId": "289783"
+        },
+        {
+          "id": 291571,
+          "invoice_num": 123218,
+          "remarks": "wala pa nafoforward follow up ulit next week ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/291571",
+          "_docId": "291571"
+        },
+        {
+          "id": 292846,
+          "invoice_num": 123218,
+          "remarks": "nakaprocess pa lang follow up ulit next week ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/292846",
+          "_docId": "292846"
+        },
+        {
+          "id": 293138,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293138",
+          "_docId": "293138"
+        },
+        {
+          "id": 293315,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas wala pa daw pirma ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293315",
+          "_docId": "293315"
+        },
+        {
+          "id": 293899,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas need pa isang pirma \r\n",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/293899",
+          "_docId": "293899"
+        },
+        {
+          "id": 294193,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit later nakabreak pa sya ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294193",
+          "_docId": "294193"
+        },
+        {
+          "id": 294273,
+          "invoice_num": 123218,
+          "remarks": "Fosr sign pa, follow up ulit ng afternoon -Ms Karen ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294273",
+          "_docId": "294273"
+        },
+        {
+          "id": 294335,
+          "invoice_num": 123218,
+          "remarks": "negative na din Linkenergie \r\n",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/294335",
+          "_docId": "294335"
+        },
+        {
+          "id": 295167,
+          "invoice_num": 123218,
+          "remarks": "okay na sa Friday 9-3 - Ms Karen",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/295167",
+          "_docId": "295167"
+        },
+        {
+          "id": 297096,
+          "invoice_num": 123218,
+          "remarks": "Follow up Friday ",
+          "collection_id": 98506,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/297096",
+          "_docId": "297096"
+        },
+        {
+          "id": 298251,
+          "invoice_num": 123218,
+          "remarks": "for approval follow up ulit bukas ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298251",
+          "_docId": "298251"
+        },
+        {
+          "id": 298599,
+          "invoice_num": 123218,
+          "remarks": "nasa signatory pa yung check ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298599",
+          "_docId": "298599"
+        },
+        {
+          "id": 298967,
+          "invoice_num": 123218,
+          "remarks": "ok na today ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298967",
+          "_docId": "298967"
+        },
+        {
+          "id": 299040,
+          "invoice_num": 123218,
+          "remarks": "ma release pa today ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299040",
+          "_docId": "299040"
+        },
+        {
+          "id": 302478,
+          "invoice_num": 123218,
+          "remarks": "for signature ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302478",
+          "_docId": "302478"
+        },
+        {
+          "id": 302720,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302720",
+          "_docId": "302720"
+        },
+        {
+          "id": 302849,
+          "invoice_num": 123218,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302849",
+          "_docId": "302849"
+        },
+        {
+          "id": 302963,
+          "invoice_num": 123218,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302963",
+          "_docId": "302963"
+        },
+        {
+          "id": 303277,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303277",
+          "_docId": "303277"
+        },
+        {
+          "id": 303381,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303381",
+          "_docId": "303381"
+        },
+        {
+          "id": 303468,
+          "invoice_num": 123218,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303468",
+          "_docId": "303468"
+        },
+        {
+          "id": 303641,
+          "invoice_num": 123218,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303641",
+          "_docId": "303641"
+        },
+        {
+          "id": 303731,
+          "invoice_num": 123218,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303731",
+          "_docId": "303731"
+        },
+        {
+          "id": 303847,
+          "invoice_num": 123218,
+          "remarks": "ok na today ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303847",
+          "_docId": "303847"
+        },
+        {
+          "id": 305194,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit next week",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305194",
+          "_docId": "305194"
+        },
+        {
+          "id": 305804,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305804",
+          "_docId": "305804"
+        },
+        {
+          "id": 307064,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307064",
+          "_docId": "307064"
+        },
+        {
+          "id": 307440,
+          "invoice_num": 123218,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307440",
+          "_docId": "307440"
+        },
+        {
+          "id": 308971,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308971",
+          "_docId": "308971"
+        },
+        {
+          "id": 309591,
+          "invoice_num": 123218,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309591",
+          "_docId": "309591"
+        },
+        {
+          "id": 310144,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310144",
+          "_docId": "310144"
+        },
+        {
+          "id": 310886,
+          "invoice_num": 123218,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310886",
+          "_docId": "310886"
+        },
+        {
+          "id": 311355,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311355",
+          "_docId": "311355"
+        },
+        {
+          "id": 311982,
+          "invoice_num": 123218,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311982",
+          "_docId": "311982"
+        },
+        {
+          "id": 312002,
+          "invoice_num": 123218,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312002",
+          "_docId": "312002"
+        },
+        {
+          "id": 312128,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312128",
+          "_docId": "312128"
+        },
+        {
+          "id": 312611,
+          "invoice_num": 123218,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312611",
+          "_docId": "312611"
+        },
+        {
+          "id": 312892,
+          "invoice_num": 123218,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312892",
+          "_docId": "312892"
+        },
+        {
+          "id": 313161,
+          "invoice_num": 123218,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313161",
+          "_docId": "313161"
+        },
+        {
+          "id": 313796,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313796",
+          "_docId": "313796"
+        },
+        {
+          "id": 314529,
+          "invoice_num": 123218,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314529",
+          "_docId": "314529"
+        },
+        {
+          "id": 315256,
+          "invoice_num": 123218,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315256",
+          "_docId": "315256"
+        },
+        {
+          "id": 315607,
+          "invoice_num": 123218,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315607",
+          "_docId": "315607"
+        },
+        {
+          "id": 315848,
+          "invoice_num": 123218,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315848",
+          "_docId": "315848"
+        },
+        {
+          "id": 316065,
+          "invoice_num": 123218,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316065",
+          "_docId": "316065"
+        },
+        {
+          "id": 316288,
+          "invoice_num": 123218,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316288",
+          "_docId": "316288"
+        },
+        {
+          "id": 317058,
+          "invoice_num": 123218,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317058",
+          "_docId": "317058"
+        },
+        {
+          "id": 317219,
+          "invoice_num": 123218,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317219",
+          "_docId": "317219"
+        },
+        {
+          "id": 317365,
+          "invoice_num": 123218,
+          "remarks": "ok na today",
+          "collection_id": 93084,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317365",
+          "_docId": "317365"
+        }
+      ],
+      "payments": [
+        {
+          "id": 119038,
+          "invoice_id": 123218,
+          "date_paid": "2026-03-11 00:00:00",
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_paymentinfo/119038",
+          "_docId": "119038"
+        }
+      ]
+    },
+    {
+      "invoice_no": "124979",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "October 2025",
+      "amount": 3700,
+      "paid_amount": 0,
+      "balance_hint": 3700,
+      "date_received": "2025-10-13 00:00:00",
+      "received_by": "Kenneth Ediza",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 100175,
+          "invoice_id": 124979,
+          "contractmain_id": 5281,
+          "month": "October",
+          "year": "2025",
+          "amount": 3700,
+          "totalamount": 3700,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-10-13 00:00:00",
+          "receivedby": "Kenneth Ediza",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/100175",
+          "_docId": "100175"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 334493,
+          "invoice_num": 124979,
+          "date_finished": "2025-10-13 15:03:15",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/334493",
+          "_docId": "334493"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 298955,
+          "invoice_num": 124979,
+          "remarks": "ok na today ",
+          "collection_id": 100175,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298955",
+          "_docId": "298955"
+        },
+        {
+          "id": 298956,
+          "invoice_num": 124979,
+          "remarks": "ok na today ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298956",
+          "_docId": "298956"
+        },
+        {
+          "id": 299029,
+          "invoice_num": 124979,
+          "remarks": "ma release pa today ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299029",
+          "_docId": "299029"
+        },
+        {
+          "id": 301751,
+          "invoice_num": 124979,
+          "remarks": "ok na today ",
+          "collection_id": 100175,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/301751",
+          "_docId": "301751"
+        },
+        {
+          "id": 302468,
+          "invoice_num": 124979,
+          "remarks": "for signature ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302468",
+          "_docId": "302468"
+        },
+        {
+          "id": 302710,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302710",
+          "_docId": "302710"
+        },
+        {
+          "id": 302839,
+          "invoice_num": 124979,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302839",
+          "_docId": "302839"
+        },
+        {
+          "id": 302953,
+          "invoice_num": 124979,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302953",
+          "_docId": "302953"
+        },
+        {
+          "id": 303265,
+          "invoice_num": 124979,
+          "remarks": "wala pa daw ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303265",
+          "_docId": "303265"
+        },
+        {
+          "id": 303369,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303369",
+          "_docId": "303369"
+        },
+        {
+          "id": 303456,
+          "invoice_num": 124979,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303456",
+          "_docId": "303456"
+        },
+        {
+          "id": 303629,
+          "invoice_num": 124979,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303629",
+          "_docId": "303629"
+        },
+        {
+          "id": 303719,
+          "invoice_num": 124979,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303719",
+          "_docId": "303719"
+        },
+        {
+          "id": 303835,
+          "invoice_num": 124979,
+          "remarks": "ok na today ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303835",
+          "_docId": "303835"
+        },
+        {
+          "id": 305184,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit next week",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305184",
+          "_docId": "305184"
+        },
+        {
+          "id": 305794,
+          "invoice_num": 124979,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305794",
+          "_docId": "305794"
+        },
+        {
+          "id": 307052,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307052",
+          "_docId": "307052"
+        },
+        {
+          "id": 307427,
+          "invoice_num": 124979,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307427",
+          "_docId": "307427"
+        },
+        {
+          "id": 308959,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308959",
+          "_docId": "308959"
+        },
+        {
+          "id": 309579,
+          "invoice_num": 124979,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309579",
+          "_docId": "309579"
+        },
+        {
+          "id": 310132,
+          "invoice_num": 124979,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310132",
+          "_docId": "310132"
+        },
+        {
+          "id": 310874,
+          "invoice_num": 124979,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310874",
+          "_docId": "310874"
+        },
+        {
+          "id": 311343,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311343",
+          "_docId": "311343"
+        },
+        {
+          "id": 311970,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311970",
+          "_docId": "311970"
+        },
+        {
+          "id": 312005,
+          "invoice_num": 124979,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312005",
+          "_docId": "312005"
+        },
+        {
+          "id": 312116,
+          "invoice_num": 124979,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312116",
+          "_docId": "312116"
+        },
+        {
+          "id": 312599,
+          "invoice_num": 124979,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312599",
+          "_docId": "312599"
+        },
+        {
+          "id": 312880,
+          "invoice_num": 124979,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312880",
+          "_docId": "312880"
+        },
+        {
+          "id": 313149,
+          "invoice_num": 124979,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313149",
+          "_docId": "313149"
+        },
+        {
+          "id": 313782,
+          "invoice_num": 124979,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313782",
+          "_docId": "313782"
+        },
+        {
+          "id": 314515,
+          "invoice_num": 124979,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314515",
+          "_docId": "314515"
+        },
+        {
+          "id": 315242,
+          "invoice_num": 124979,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315242",
+          "_docId": "315242"
+        },
+        {
+          "id": 315593,
+          "invoice_num": 124979,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315593",
+          "_docId": "315593"
+        },
+        {
+          "id": 315834,
+          "invoice_num": 124979,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315834",
+          "_docId": "315834"
+        },
+        {
+          "id": 316051,
+          "invoice_num": 124979,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316051",
+          "_docId": "316051"
+        },
+        {
+          "id": 316274,
+          "invoice_num": 124979,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316274",
+          "_docId": "316274"
+        },
+        {
+          "id": 317044,
+          "invoice_num": 124979,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317044",
+          "_docId": "317044"
+        },
+        {
+          "id": 317205,
+          "invoice_num": 124979,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317205",
+          "_docId": "317205"
+        },
+        {
+          "id": 317351,
+          "invoice_num": 124979,
+          "remarks": "ok na today",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317351",
+          "_docId": "317351"
+        },
+        {
+          "id": 319447,
+          "invoice_num": 124979,
+          "remarks": "follow up ulit next week wala pa daw po ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319447",
+          "_docId": "319447"
+        },
+        {
+          "id": 319935,
+          "invoice_num": 124979,
+          "remarks": "wala padaw, follow up ulit bukas wala padaw signatory",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319935",
+          "_docId": "319935"
+        },
+        {
+          "id": 320879,
+          "invoice_num": 124979,
+          "remarks": "for process pa sya ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/320879",
+          "_docId": "320879"
+        },
+        {
+          "id": 321622,
+          "invoice_num": 124979,
+          "remarks": "ok na today ",
+          "collection_id": 94645,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/321622",
+          "_docId": "321622"
+        }
+      ],
+      "payments": []
+    },
+    {
+      "invoice_no": "124980",
+      "found": true,
+      "customer": "Kabuklod Sa Kaunlaran Credit Inc.",
+      "branch": "Kabuklod Sa Kaunlaran Credit Inc. - Pasig City (Main)",
+      "serial_number": "E69895K2N621534",
+      "machine": "DCP-7065DN",
+      "billing_month": "October 2025",
+      "amount": 4000,
+      "paid_amount": 0,
+      "balance_hint": 4000,
+      "date_received": "2025-10-13 00:00:00",
+      "received_by": "Kenneth Ediza",
+      "receipt_time": "",
+      "receipt_source": "tbl_billing.date_received/receivedby",
+      "billing_rows": [
+        {
+          "id": 100174,
+          "invoice_id": 124980,
+          "contractmain_id": 2907,
+          "month": "October",
+          "year": "2025",
+          "amount": 4000,
+          "totalamount": 4000,
+          "amount2": 0,
+          "totalamount2": 0,
+          "date_received": "2025-10-13 00:00:00",
+          "receivedby": "Kenneth Ediza",
+          "isreceived": 0,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/100174",
+          "_docId": "100174"
+        }
+      ],
+      "schedules": [
+        {
+          "id": 334492,
+          "invoice_num": 124980,
+          "date_finished": "2025-10-13 15:03:07",
+          "status": 0,
+          "purpose_id": 1,
+          "remarks": "",
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_schedule/334492",
+          "_docId": "334492"
+        }
+      ],
+      "collection_history": [
+        {
+          "id": 298961,
+          "invoice_num": 124980,
+          "remarks": "ok na today ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/298961",
+          "_docId": "298961"
+        },
+        {
+          "id": 299034,
+          "invoice_num": 124980,
+          "remarks": "ma release pa today ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/299034",
+          "_docId": "299034"
+        },
+        {
+          "id": 302473,
+          "invoice_num": 124980,
+          "remarks": "for signature ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302473",
+          "_docId": "302473"
+        },
+        {
+          "id": 302715,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit next week for signature pa sya \r\n",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302715",
+          "_docId": "302715"
+        },
+        {
+          "id": 302844,
+          "invoice_num": 124980,
+          "remarks": "for signature pa daw sya follow up hanggang friday ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302844",
+          "_docId": "302844"
+        },
+        {
+          "id": 302958,
+          "invoice_num": 124980,
+          "remarks": "for signature pa sya follow up ulit bukas ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/302958",
+          "_docId": "302958"
+        },
+        {
+          "id": 303271,
+          "invoice_num": 124980,
+          "remarks": "wala pa daw ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303271",
+          "_docId": "303271"
+        },
+        {
+          "id": 303375,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit afterlunch ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303375",
+          "_docId": "303375"
+        },
+        {
+          "id": 303462,
+          "invoice_num": 124980,
+          "remarks": "tawag ulit later wala pa signatory ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303462",
+          "_docId": "303462"
+        },
+        {
+          "id": 303635,
+          "invoice_num": 124980,
+          "remarks": "tawag ulit mga wednesday ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303635",
+          "_docId": "303635"
+        },
+        {
+          "id": 303725,
+          "invoice_num": 124980,
+          "remarks": "tawag ulit bukas dila",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303725",
+          "_docId": "303725"
+        },
+        {
+          "id": 303841,
+          "invoice_num": 124980,
+          "remarks": "ok na today ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/303841",
+          "_docId": "303841"
+        },
+        {
+          "id": 305188,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit next week",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305188",
+          "_docId": "305188"
+        },
+        {
+          "id": 305798,
+          "invoice_num": 124980,
+          "remarks": "wala pa daw po na foforward ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/305798",
+          "_docId": "305798"
+        },
+        {
+          "id": 307057,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit bukas wala si karen ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307057",
+          "_docId": "307057"
+        },
+        {
+          "id": 307432,
+          "invoice_num": 124980,
+          "remarks": "follow uip ulit next week ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/307432",
+          "_docId": "307432"
+        },
+        {
+          "id": 308964,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit bukas wala pa daw ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/308964",
+          "_docId": "308964"
+        },
+        {
+          "id": 309584,
+          "invoice_num": 124980,
+          "remarks": "for p.o pa lang daw ito ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/309584",
+          "_docId": "309584"
+        },
+        {
+          "id": 310137,
+          "invoice_num": 124980,
+          "remarks": "wala pa daw po nafoforward",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310137",
+          "_docId": "310137"
+        },
+        {
+          "id": 310879,
+          "invoice_num": 124980,
+          "remarks": "kakareceive nya lang daw mga papers for process ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/310879",
+          "_docId": "310879"
+        },
+        {
+          "id": 311348,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit bukas d pa daw nafoforwaRD",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311348",
+          "_docId": "311348"
+        },
+        {
+          "id": 311975,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit bukas nakaprocess ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/311975",
+          "_docId": "311975"
+        },
+        {
+          "id": 312010,
+          "invoice_num": 124980,
+          "remarks": "Follow up ulit sa Thursday",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312010",
+          "_docId": "312010"
+        },
+        {
+          "id": 312121,
+          "invoice_num": 124980,
+          "remarks": "wala pa daw po follow up muna ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312121",
+          "_docId": "312121"
+        },
+        {
+          "id": 312604,
+          "invoice_num": 124980,
+          "remarks": "for process pa lang sya follow up ulit next week ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312604",
+          "_docId": "312604"
+        },
+        {
+          "id": 312885,
+          "invoice_num": 124980,
+          "remarks": "nakaprocess pa lang sya \r\n",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/312885",
+          "_docId": "312885"
+        },
+        {
+          "id": 313154,
+          "invoice_num": 124980,
+          "remarks": "nakaprocess na sya ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313154",
+          "_docId": "313154"
+        },
+        {
+          "id": 313788,
+          "invoice_num": 124980,
+          "remarks": "wala pa daw nafoforwad=-------------------------------------",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/313788",
+          "_docId": "313788"
+        },
+        {
+          "id": 314521,
+          "invoice_num": 124980,
+          "remarks": "wala pa daw na foforward follow up ulit",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/314521",
+          "_docId": "314521"
+        },
+        {
+          "id": 315248,
+          "invoice_num": 124980,
+          "remarks": "tawag ulit bukas ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315248",
+          "_docId": "315248"
+        },
+        {
+          "id": 315599,
+          "invoice_num": 124980,
+          "remarks": "nakaprocess pa lang sya follow up ulit next week ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315599",
+          "_docId": "315599"
+        },
+        {
+          "id": 315840,
+          "invoice_num": 124980,
+          "remarks": "di pa nabibigay ni accounting yung mga kailangan followup",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/315840",
+          "_docId": "315840"
+        },
+        {
+          "id": 316057,
+          "invoice_num": 124980,
+          "remarks": "inaayos pa sa accounting di pa ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316057",
+          "_docId": "316057"
+        },
+        {
+          "id": 316280,
+          "invoice_num": 124980,
+          "remarks": "FOLLOW UP ULIT BUKAS ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316280",
+          "_docId": "316280"
+        },
+        {
+          "id": 316741,
+          "invoice_num": 124980,
+          "remarks": "Follow up friday",
+          "collection_id": 100174,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/316741",
+          "_docId": "316741"
+        },
+        {
+          "id": 317050,
+          "invoice_num": 124980,
+          "remarks": "Follow up Thursday - Ms Karen",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317050",
+          "_docId": "317050"
+        },
+        {
+          "id": 317211,
+          "invoice_num": 124980,
+          "remarks": "tawag ulit bukas for signing pa sya \r\n",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317211",
+          "_docId": "317211"
+        },
+        {
+          "id": 317357,
+          "invoice_num": 124980,
+          "remarks": "ok na today",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/317357",
+          "_docId": "317357"
+        },
+        {
+          "id": 319454,
+          "invoice_num": 124980,
+          "remarks": "follow up ulit next week wala pa daw po ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319454",
+          "_docId": "319454"
+        },
+        {
+          "id": 319942,
+          "invoice_num": 124980,
+          "remarks": "wala padaw, follow up ulit bukas wala padaw signatory",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/319942",
+          "_docId": "319942"
+        },
+        {
+          "id": 320886,
+          "invoice_num": 124980,
+          "remarks": "for process pa sya ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/320886",
+          "_docId": "320886"
+        },
+        {
+          "id": 321629,
+          "invoice_num": 124980,
+          "remarks": "ok na today ",
+          "collection_id": 94646,
+          "_docPath": "projects/sah-spiritual-journal/databases/(default)/documents/tbl_collectionhistory/321629",
+          "_docId": "321629"
+        }
+      ],
+      "payments": []
+    }
+  ]
+}

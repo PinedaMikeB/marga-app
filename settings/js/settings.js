@@ -17,7 +17,8 @@ const SETTINGS_STATE = {
     activeRoleEditor: 'collection',
     appSettings: {
         allowSavedBillingReprints: true
-    }
+    },
+    backupSettings: null
 };
 
 const BILLING_PRINT_POLICY_DOC_ID = 'billing_printing_policy_v1';
@@ -42,7 +43,7 @@ const BASE_MODULE_OPTIONS = [
     { id: 'hr', label: 'Human Resource Module', dashboardLabel: 'Human Resource', route: 'hr/', note: 'Employees, position mapping' },
     { id: 'reports', label: 'Reports Module', dashboardLabel: 'Reports', route: 'reports/', note: 'Daily and historical reports' },
     { id: 'settings', label: 'Settings Module', dashboardLabel: 'Settings', route: 'settings/index.html', note: 'Users, permissions, app config' },
-    { id: 'sync', label: 'Sync Updater Module', dashboardLabel: 'Sync Updater', route: 'sync/index.html', note: 'SQL to Firebase updates' },
+    { id: 'sync', label: 'Sync Updater Module', dashboardLabel: 'Sync Updater', route: 'sync/index.html', note: 'Legacy Firebase updater disabled after Margabase migration' },
     { id: 'purchasing', label: 'Purchasing Module', dashboardLabel: 'Purchasing', route: '', note: 'Purchase requests, vendors, and approval flow' },
     { id: 'pettycash', label: 'Petty Cash Module', dashboardLabel: 'Petty Cash', route: 'pettycash/', note: 'Petty cash releases, replenishment, liquidation, and daily reporting' },
     { id: 'sales', label: 'Sales Module', dashboardLabel: 'Sales', route: '', note: 'Sales pipeline, quotations, and account follow-up' }
@@ -125,6 +126,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('hardRefreshAppBtn').addEventListener('click', () => hardRefreshApp());
     document.getElementById('deriveMargabaseBtn').addEventListener('click', () => runMargabaseSync('derive'));
     document.getElementById('runMargabaseSyncBtn').addEventListener('click', () => runMargabaseSync('firebase'));
+    document.getElementById('databaseOverviewSubtab')?.addEventListener('click', () => setDatabaseSection('overview'));
+    document.getElementById('databaseBackupSubtab')?.addEventListener('click', () => setDatabaseSection('backup'));
+    document.getElementById('backupFrequency')?.addEventListener('change', () => renderBackupFrequencyFields());
+    document.getElementById('refreshBackupStatusBtn')?.addEventListener('click', () => refreshBackupStatus());
+    document.getElementById('saveBackupSettingsBtn')?.addEventListener('click', () => saveBackupSettings());
+    document.getElementById('openRestoreBackupBtn')?.addEventListener('click', () => openRestoreBackupBox());
+    document.getElementById('refreshRestoreListsBtn')?.addEventListener('click', () => refreshRestoreLists());
     document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
         input.addEventListener('change', () => setDatabaseChoice(input.value));
     });
@@ -178,9 +186,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('moduleDashboardLabelInput').disabled = !isAdmin;
     document.getElementById('moduleRouteInput').disabled = !isAdmin;
     document.getElementById('moduleNoteInput').disabled = !isAdmin;
-    ['testMargabaseBtn', 'applyDatabaseBackendBtn', 'refreshDatabaseSyncStatusBtn', 'hardRefreshAppBtn', 'deriveMargabaseBtn', 'runMargabaseSyncBtn'].forEach((id) => {
+    ['testMargabaseBtn', 'applyDatabaseBackendBtn', 'refreshDatabaseSyncStatusBtn', 'hardRefreshAppBtn', 'deriveMargabaseBtn', 'runMargabaseSyncBtn', 'refreshBackupStatusBtn', 'saveBackupSettingsBtn', 'openRestoreBackupBtn', 'refreshRestoreListsBtn', 'restoreSelectedBackupBtn'].forEach((id) => {
         const button = document.getElementById(id);
         if (button) button.disabled = !isAdmin;
+    });
+    ['backupFrequency', 'backupWeekday', 'backupTime', 'backupRetentionDays', 'backupLocalPath', 'backupGooglePath', 'backupGoogleUrl', 'restoreGoogleBackupSelect', 'restoreLocalBackupSelect'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !isAdmin;
     });
     document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
         input.disabled = !isAdmin;
@@ -190,7 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderDatabaseSettings();
-    if (isAdmin) refreshDatabaseSyncStatus({ quiet: true });
+    if (isAdmin) {
+        refreshDatabaseSyncStatus({ quiet: true });
+        refreshBackupStatus({ quiet: true });
+    }
     setActiveTab('employees');
     loadDirectory();
 });
@@ -237,31 +252,29 @@ function setActiveTab(tab) {
     if (next === 'database') {
         renderDatabaseSettings();
         refreshDatabaseSyncStatus({ quiet: true });
+        refreshBackupStatus({ quiet: true });
     }
+}
+
+function setDatabaseSection(section) {
+    const next = section === 'backup' ? 'backup' : 'overview';
+    document.getElementById('databaseOverviewSubtab')?.classList.toggle('active', next === 'overview');
+    document.getElementById('databaseBackupSubtab')?.classList.toggle('active', next === 'backup');
+    document.getElementById('databaseOverviewSection')?.classList.toggle('open', next === 'overview');
+    document.getElementById('databaseBackupSection')?.classList.toggle('open', next === 'backup');
+    if (next === 'backup') refreshBackupStatus({ quiet: true });
 }
 
 function getStoredDatabaseBackend() {
-    if (window.location.hostname === 'app.marga.biz' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') return 'margabase';
-    if (window.MargaBackendPreference?.read) return window.MargaBackendPreference.read();
-    try {
-        return localStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
-    } catch (err) {
-        try {
-            return sessionStorage.getItem(DATABASE_BACKEND_STORAGE_KEY) === 'margabase' ? 'margabase' : 'firebase';
-        } catch (sessionErr) {
-            return 'firebase';
-        }
-    }
+    return 'margabase';
 }
 
 function getSelectedDatabaseBackend() {
-    if (window.location.hostname === 'app.marga.biz' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') return 'margabase';
-    const selected = document.querySelector('input[name="databaseBackend"]:checked');
-    return selected?.value === 'margabase' ? 'margabase' : 'firebase';
+    return 'margabase';
 }
 
 function formatBackendLabel(backend) {
-    return backend === 'margabase' ? 'Margabase' : 'Firebase';
+    return 'Margabase';
 }
 
 function formatSyncTime(value) {
@@ -274,8 +287,8 @@ function formatSyncTime(value) {
 }
 
 function setDatabaseChoice(backend) {
-    const lockedToMargabase = window.location.hostname === 'app.marga.biz' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-    const selectedBackend = lockedToMargabase || backend === 'margabase' ? 'margabase' : 'firebase';
+    const lockedToMargabase = true;
+    const selectedBackend = 'margabase';
     document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
         input.checked = input.value === selectedBackend;
         input.disabled = lockedToMargabase && input.value !== 'margabase';
@@ -283,7 +296,7 @@ function setDatabaseChoice(backend) {
     document.getElementById('databaseChoiceFirebase')?.classList.toggle('active', selectedBackend === 'firebase');
     document.getElementById('databaseChoiceMargabase')?.classList.toggle('active', selectedBackend === 'margabase');
     const status = document.getElementById('databaseSettingsStatus');
-    if (status) status.textContent = lockedToMargabase ? 'Margabase is locked for production. Firebase reads and writes are disabled.' : `${formatBackendLabel(selectedBackend)} selected. Apply & Reload to use it in this browser.`;
+    if (status) status.textContent = 'Margabase is locked for production. Firebase reads and writes are disabled.';
 }
 
 function renderDatabaseSettings() {
@@ -433,6 +446,157 @@ async function runMargabaseSync(mode) {
         if (status) status.textContent = `Relational refresh started. PID ${payload.sync?.pid || 'unknown'}.`;
     } catch (error) {
         if (status) status.textContent = error.message || 'Unable to start relational refresh.';
+    }
+}
+
+function renderBackupFrequencyFields() {
+    const frequency = document.getElementById('backupFrequency')?.value || 'daily';
+    const field = document.getElementById('backupWeekdayField');
+    if (field) field.style.display = frequency === 'weekly' ? 'flex' : 'none';
+}
+
+function formatBackupTime(hour, minute) {
+    return `${String(Number(hour || 0)).padStart(2, '0')}:${String(Number(minute || 0)).padStart(2, '0')}`;
+}
+
+function backupDisplayName(item) {
+    if (!item) return '';
+    const sizeMb = item.dumpSizeBytes ? ` (${(Number(item.dumpSizeBytes) / 1024 / 1024).toFixed(1)} MB)` : '';
+    const date = item.modifiedAt ? new Date(item.modifiedAt).toLocaleString() : '';
+    return `${item.name}${sizeMb}${date ? ` - ${date}` : ''}`;
+}
+
+function applyBackupStatus(payload) {
+    const settings = payload?.settings || payload?.status?.settings || {};
+    SETTINGS_STATE.backupSettings = settings;
+    const [hour = '11', minute = '00'] = formatBackupTime(settings.hour ?? 11, settings.minute ?? 0).split(':');
+    const backupTime = document.getElementById('backupTime');
+    if (document.getElementById('backupFrequency')) document.getElementById('backupFrequency').value = settings.frequency || 'daily';
+    if (document.getElementById('backupWeekday')) document.getElementById('backupWeekday').value = String(settings.weekday ?? 1);
+    if (backupTime) backupTime.value = `${hour}:${minute}`;
+    if (document.getElementById('backupRetentionDays')) document.getElementById('backupRetentionDays').value = settings.retentionDays || 30;
+    if (document.getElementById('backupLocalPath')) document.getElementById('backupLocalPath').value = settings.localBackupDir || '';
+    if (document.getElementById('backupGooglePath')) document.getElementById('backupGooglePath').value = settings.googleDriveBackupDir || '';
+    if (document.getElementById('backupGoogleUrl')) document.getElementById('backupGoogleUrl').value = settings.googleDriveBackupUrl || '';
+    renderBackupFrequencyFields();
+
+    const launchd = payload?.launchd || {};
+    const local = payload?.localFolder || {};
+    const google = payload?.googleDrive || {};
+    const scheduleState = document.getElementById('backupScheduleState');
+    if (scheduleState) {
+        scheduleState.textContent = launchd.installed ? 'Scheduled' : 'Not scheduled';
+        scheduleState.classList.toggle('ok', Boolean(launchd.installed));
+        scheduleState.classList.toggle('warn', !launchd.installed);
+    }
+    const localState = document.getElementById('backupLocalState');
+    const localDetail = document.getElementById('backupLocalDetail');
+    if (localState) localState.textContent = local.exists ? 'Available' : 'Missing';
+    if (localDetail) localDetail.textContent = local.path || 'No local backup folder configured.';
+    const googleState = document.getElementById('backupGoogleState');
+    const googleDetail = document.getElementById('backupGoogleDetail');
+    if (googleState) googleState.textContent = google.connected ? 'Connected' : (google.exists ? 'Permission needed' : 'Not connected');
+    if (googleDetail) googleDetail.textContent = google.error || google.path || 'No Google Drive Desktop folder configured.';
+    const latestState = document.getElementById('backupLatestState');
+    const latestDetail = document.getElementById('backupLatestDetail');
+    if (latestState) latestState.textContent = local.latestDumpExists ? 'Found' : 'No verified dump';
+    if (latestDetail) latestDetail.textContent = local.latestDump || 'No latest backup pointer found.';
+}
+
+async function refreshBackupStatus({ quiet = false } = {}) {
+    const status = document.getElementById('backupSettingsStatus');
+    if (status && !quiet) status.textContent = 'Checking backup status...';
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/backup/status'), { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        applyBackupStatus(payload);
+        if (status) {
+            const schedule = payload.launchd?.installed
+                ? `${payload.settings.frequency} at ${formatBackupTime(payload.settings.hour, payload.settings.minute)}`
+                : 'not scheduled';
+            status.textContent = `Backup is ${schedule}. Local: ${payload.localFolder?.exists ? 'ready' : 'missing'}. Google Drive: ${payload.googleDrive?.connected ? 'connected' : 'not connected'}.`;
+        }
+    } catch (error) {
+        if (status) status.textContent = error.message || 'Unable to check backup status.';
+    }
+}
+
+async function saveBackupSettings() {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can update backup settings.');
+        return;
+    }
+    const [hourText, minuteText] = String(document.getElementById('backupTime')?.value || '11:00').split(':');
+    const body = {
+        frequency: document.getElementById('backupFrequency')?.value || 'daily',
+        weekday: Number(document.getElementById('backupWeekday')?.value || 1),
+        hour: Number(hourText || 11),
+        minute: Number(minuteText || 0),
+        retentionDays: Number(document.getElementById('backupRetentionDays')?.value || 30),
+        localBackupDir: document.getElementById('backupLocalPath')?.value || '',
+        googleDriveBackupDir: document.getElementById('backupGooglePath')?.value || '',
+        googleDriveBackupUrl: document.getElementById('backupGoogleUrl')?.value || '',
+    };
+    const status = document.getElementById('backupSettingsStatus');
+    if (status) status.textContent = 'Saving backup settings...';
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/backup/settings'), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        applyBackupStatus(payload.status || payload);
+        if (status) status.textContent = `Backup schedule saved for ${body.frequency} at ${formatBackupTime(body.hour, body.minute)}.`;
+    } catch (error) {
+        if (status) status.textContent = error.message || 'Unable to save backup settings.';
+    }
+}
+
+function openRestoreBackupBox() {
+    const box = document.getElementById('restoreBackupBox');
+    if (!box) return;
+    box.hidden = !box.hidden;
+    if (!box.hidden) refreshRestoreLists();
+}
+
+async function loadBackupList(source) {
+    const response = await fetch(getMargabaseAdminUrl(`/admin/backup/list?source=${encodeURIComponent(source)}`), { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+    return payload;
+}
+
+function renderBackupSelect(selectId, payload) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const backups = payload?.backups || [];
+    if (!payload?.exists || payload?.readable === false) {
+        select.innerHTML = `<option value="">${sanitize(payload?.error || 'Folder is not reachable')}</option>`;
+        return;
+    }
+    if (!backups.length) {
+        select.innerHTML = '<option value="">No backups found</option>';
+        return;
+    }
+    select.innerHTML = backups.map((item) => `<option value="${sanitize(item.path)}">${sanitize(backupDisplayName(item))}</option>`).join('');
+}
+
+async function refreshRestoreLists() {
+    const status = document.getElementById('restoreBackupStatus');
+    if (status) status.textContent = 'Loading restore lists...';
+    try {
+        const [googleList, localList] = await Promise.all([
+            loadBackupList('google'),
+            loadBackupList('local')
+        ]);
+        renderBackupSelect('restoreGoogleBackupSelect', googleList);
+        renderBackupSelect('restoreLocalBackupSelect', localList);
+        if (status) status.textContent = 'Restore lists loaded. Select a backup when restore execution is enabled.';
+    } catch (error) {
+        if (status) status.textContent = error.message || 'Unable to load restore lists.';
     }
 }
 

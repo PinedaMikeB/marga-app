@@ -23,6 +23,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SYNC_STATE_COLLECTION = "sys_sync_state";
+const LEGACY_FIREBASE_WRITE_GUARD_ENV = "ALLOW_LEGACY_FIREBASE_WRITES";
 const WRITE_BATCH_LIMIT = 250;
 const CHUNK_SIZE_BYTES = 1024 * 1024;
 const DEFAULT_TABLES = ["tbl_schedule", "tbl_schedtime", "tbl_closedscheds"];
@@ -296,6 +297,11 @@ export function createWritableFirestoreClient({ apiKey, baseUrl, serviceAccountE
 
   async function commitWrites(writes) {
     if (!Array.isArray(writes) || !writes.length) return;
+    if (process.env[LEGACY_FIREBASE_WRITE_GUARD_ENV] !== "1") {
+      throw new Error(
+        `Blocked legacy Firebase commit. Set ${LEGACY_FIREBASE_WRITE_GUARD_ENV}=1 only for an explicitly approved Firebase rescue.`
+      );
+    }
     const url = useServiceAccount
       ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbSegment}/documents:commit`
       : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbSegment}/documents:commit?key=${encodeURIComponent(apiKey)}`;

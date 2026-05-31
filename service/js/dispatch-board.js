@@ -143,17 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         purposeFilter.value = defaultPurpose;
     }
 
-    document.querySelectorAll('[data-module]').forEach((el) => {
-        const module = el.dataset.module;
-        if (!module || module === 'dashboard') return;
-        if (!MargaAuth.hasAccess(module)) {
-            el.classList.add('disabled');
-            el.addEventListener('click', (e) => {
-                e.preventDefault();
-                alert('You do not have permission to access this module.');
-            });
-        }
-    });
+    MargaAuth.applyModulePermissions({ hideUnauthorized: true });
 
     const dateInput = document.getElementById('opsDateInput');
     dateInput.value = formatDateYmd(new Date());

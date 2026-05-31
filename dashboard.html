@@ -444,7 +444,7 @@
 	    <script src="shared/js/firebase-config.js?v=20260521-margabase-documents-1"></script>
 	    <script src="shared/js/auth.js?v=20260518-login-permissions-2"></script>
 	    <script src="shared/js/utils.js"></script>
-	    <script src="shared/js/offline-sync.js"></script>
+	    <script src="shared/js/offline-sync.js?v=20260530-digitalocean-cache-guard-1"></script>
     <script src="shared/js/office-attendance.js?v=20260529-office-attendance-any-pin-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
@@ -488,7 +488,7 @@
 	            await refreshDashboardRoleModules();
 	            renderDashboardUser();
 	            await loadModuleRegistry();
-	            applyModulePermissions();
+	            MargaAuth.applyModulePermissions({ hideUnauthorized: true });
 	            renderDepartmentTiles();
 	            applyRoleLayout();
 	            loadDashboardData();
@@ -520,35 +520,6 @@
             } catch (error) {
                 console.warn('Dashboard role permission refresh failed:', error);
             }
-        }
-
-        function applyModulePermissions() {
-            document.querySelectorAll('[data-module]').forEach((el) => {
-                const module = el.dataset.module;
-                if (!module) return;
-                if (module === 'accounting') {
-                    el.classList.remove('disabled');
-                    el.style.removeProperty('display');
-                    return;
-                }
-                if (MargaAuth.hasAccess(module)) {
-                    el.classList.remove('disabled');
-                    el.style.removeProperty('display');
-                    return;
-                }
-                if (!MargaAuth.hasAccess(module)) {
-                    if (el.classList.contains('action-card') || el.classList.contains('department-tile')) {
-                        el.style.display = 'none';
-                        return;
-                    }
-                    el.classList.add('disabled');
-                    el.addEventListener('click', (e) => {
-                        if (MargaAuth.hasAccess(module)) return;
-                        e.preventDefault();
-                        alert('You do not have permission to access this module.');
-                    });
-                }
-            });
         }
 
 	        function applyRoleLayout() {

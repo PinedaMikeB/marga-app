@@ -80,6 +80,9 @@
             background: #f8fafc;
             border: 1px solid rgba(148, 163, 184, 0.35);
             box-shadow: 0 24px 70px rgba(15, 23, 42, 0.38);
+            max-height: calc(100dvh - 28px);
+            display: flex;
+            flex-direction: column;
         }
 
         #receivePaymentModal .modal-header {
@@ -87,6 +90,7 @@
             color: #fff;
             padding: 20px 22px;
             border-bottom: 0;
+            flex: 0 0 auto;
         }
 
         #receivePaymentModal .modal-header h2,
@@ -99,6 +103,15 @@
             display: grid;
             gap: 14px;
             background: linear-gradient(180deg, #ffffff 0%, #f6f9fd 100%);
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #receivePaymentModal .modal-footer {
+            flex: 0 0 auto;
         }
 
         #receivePaymentModal .brief-section {
@@ -159,6 +172,160 @@
 
         .receive-payment-grid .full {
             grid-column: 1 / -1;
+        }
+
+        .receive-payment-mode-toggle {
+            display: inline-flex;
+            gap: 6px;
+            padding: 4px;
+            border-radius: 12px;
+            background: #dbeafe;
+            border: 1px solid #bfdbfe;
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        }
+
+        .receive-payment-mode-toggle button {
+            border: 0;
+            border-radius: 9px;
+            padding: 8px 12px;
+            background: transparent;
+            color: #26486e;
+            font-size: 13px;
+            font-weight: 800;
+            cursor: pointer;
+        }
+
+        .receive-payment-mode-toggle button.active {
+            color: #fff;
+            background: #2458ce;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+        }
+
+        .receive-payment-mode-panel.hidden,
+        .receive-payment-digital-fields.hidden,
+        .payment-import-review.hidden {
+            display: none;
+        }
+
+        .payment-import-tools {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .payment-import-tools input[type="file"] {
+            width: auto;
+            max-width: 280px;
+        }
+
+        .payment-import-paste {
+            width: 100%;
+            min-height: 96px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+
+        .payment-import-review {
+            display: grid;
+            gap: 10px;
+        }
+
+        .payment-import-summary {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .payment-import-pill {
+            display: inline-flex;
+            gap: 5px;
+            align-items: center;
+            border-radius: 999px;
+            padding: 5px 9px;
+            background: #eef4fb;
+            color: #274767;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .payment-import-pill.ready { background: #dcfce7; color: #166534; }
+        .payment-import-pill.review { background: #fef3c7; color: #92400e; }
+        .payment-import-pill.blocked { background: #fee2e2; color: #991b1b; }
+
+        .payment-import-table-wrap {
+            max-height: 360px;
+            overflow: auto;
+            border: 1px solid #cfe0f3;
+            border-radius: 10px;
+            background: #fff;
+        }
+
+        .payment-import-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .payment-import-table th,
+        .payment-import-table td {
+            padding: 8px 9px;
+            border-bottom: 1px solid #e6eef8;
+            text-align: left;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+
+        .payment-import-table th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #f1f6fc;
+            color: #385b82;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .payment-import-table td.import-actions {
+            white-space: normal;
+            min-width: 220px;
+        }
+
+        .payment-status-chip {
+            display: inline-flex;
+            border-radius: 999px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .payment-status-chip.ready { background: #dcfce7; color: #166534; }
+        .payment-status-chip.review { background: #fef3c7; color: #92400e; }
+        .payment-status-chip.blocked { background: #fee2e2; color: #991b1b; }
+
+        .import-row-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .import-row-actions button {
+            min-height: 28px;
+            padding: 4px 8px;
+            border-radius: 7px;
+            font-size: 11px;
+        }
+
+        .import-inline-input {
+            width: 120px;
+            min-height: 30px;
+            padding: 5px 7px;
+            border: 1px solid #bed0e6;
+            border-radius: 7px;
         }
 
         .receive-payment-search {
@@ -231,6 +398,17 @@
             align-items: center;
             padding: 12px 14px;
             background: #eef5ff;
+        }
+
+        .receive-payment-group-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .receive-payment-group-actions .btn {
+            white-space: nowrap;
         }
 
         .receive-payment-messenger {
@@ -3487,6 +3665,11 @@
                 <p>Match messenger encoded collections against actual cash, checks, and bank slips before posting.</p>
             </div>
             <div class="modal-body">
+                <div class="receive-payment-mode-toggle" aria-label="Receive payment source">
+                    <button type="button" id="receivePaymentFieldstaffModeBtn" class="active" onclick="setReceivePaymentMode('fieldstaff')">From Fieldstaff</button>
+                    <button type="button" id="receivePaymentImportModeBtn" onclick="setReceivePaymentMode('import')">Import Excel / CSV</button>
+                </div>
+                <div class="receive-payment-mode-panel" id="receivePaymentFieldstaffPanel">
                 <div class="brief-section">
                     <h4>Messenger Turnover Batches</h4>
                     <div id="receivePaymentDraftList" class="receive-payment-drafts">
@@ -3539,13 +3722,64 @@
                             <select id="receivePaymentType">
                                 <option value="cash">Cash</option>
                                 <option value="check">Check</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="gcash">GCash</option>
+                                <option value="maya">Maya</option>
+                                <option value="other_ewallet">Other E-wallet</option>
                                 <option value="mixed">Mixed turnover</option>
                             </select>
                         </label>
                         <label><span>Check No</span><input type="text" id="receivePaymentCheckNumber" placeholder="Check number"></label>
                         <label><span>Check Date</span><input type="date" id="receivePaymentCheckDate"></label>
                         <label><span>Check Bank</span><input type="text" id="receivePaymentCheckBank" placeholder="Bank name"></label>
+                        <label class="receive-payment-digital-fields hidden"><span>Digital Reference No</span><input type="text" id="receivePaymentDigitalReference" placeholder="Bank memo / e-wallet ref"></label>
+                        <label class="receive-payment-digital-fields hidden"><span>Bank / Wallet</span><input type="text" id="receivePaymentDigitalChannel" placeholder="BDO, BPI, GCash, Maya"></label>
+                        <label class="receive-payment-digital-fields hidden"><span>Proof Status</span>
+                            <select id="receivePaymentProofStatus">
+                                <option value="proof_received">Proof received</option>
+                                <option value="pending_proof">Pending proof</option>
+                            </select>
+                        </label>
                         <label class="full"><span>Remarks</span><textarea id="receivePaymentRemarks" rows="2" placeholder="Notes from field staff, collection staff, or confirmation details"></textarea></label>
+                    </div>
+                </div>
+                </div>
+                <div class="receive-payment-mode-panel hidden" id="receivePaymentImportPanel">
+                    <div class="brief-section">
+                        <h4>Import Template</h4>
+                        <div class="payment-import-tools">
+                            <button type="button" class="btn btn-secondary" id="paymentImportTemplateBtn">Download CSV Template</button>
+                            <input type="file" id="paymentImportFile" accept=".csv,.txt,.tsv">
+                            <button type="button" class="btn btn-secondary" id="paymentImportLoadFileBtn">Load File</button>
+                        </div>
+                    </div>
+                    <div class="brief-section">
+                        <h4>Paste From Google Sheet / Excel</h4>
+                        <textarea id="paymentImportPaste" class="payment-import-paste" placeholder="Paste rows here, including the header row."></textarea>
+                        <div class="payment-import-tools">
+                            <button type="button" class="btn btn-secondary" id="paymentImportValidatePasteBtn">Validate Pasted Rows</button>
+                            <button type="button" class="btn btn-primary" id="paymentImportPostReadyBtn">Post All Ready</button>
+                        </div>
+                    </div>
+                    <div class="payment-import-review hidden" id="paymentImportReview">
+                        <div class="payment-import-summary" id="paymentImportSummary"></div>
+                        <div class="payment-import-table-wrap">
+                            <table class="payment-import-table">
+                                <thead>
+                                    <tr>
+                                        <th>Status</th>
+                                        <th>Invoice</th>
+                                        <th>Customer / Branch</th>
+                                        <th>Payment</th>
+                                        <th>OR / Ref</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="paymentImportRows">
+                                    <tr><td colspan="6">No rows loaded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3996,11 +4230,11 @@
     <script src="shared/js/auth.js?v=20260518-company-meeting-1"></script>
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
     <script src="shared/js/schedule-consolidation.js?v=20260518-combined-visit-1"></script>
-    <script src="shared/js/offline-sync.js"></script>
+    <script src="shared/js/offline-sync.js?v=20260530-collections-bulk-cache-skip-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260526-official-receipt-payments-1"></script>
+    <script src="collections/js/collections.js?v=20260528-payment-import-digital-1"></script>
 </body>
 </html>
