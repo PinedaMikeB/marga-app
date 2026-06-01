@@ -2631,35 +2631,19 @@ async function loadCollectionsDataAndBuildMatrixSnapshot() {
 
     try {
         hideLoadError();
-        collectionsFullScanAuthorized = true;
-
-        const noteNode = document.getElementById('collector-dashboard-note');
-        if (noteNode) {
-            noteNode.textContent = 'Running full scan and rebuilding the permanent month comparison summary...';
-        }
-        setCollectorMatrixLoadingOverlay('Running full scan from local Postgres...');
-
-        const loaded = await loadInvoices('active');
-        if (!loaded) {
-            showLoadError('Full Collections scan did not complete. Clear site data and try again while no staff are using the app.');
+        const hydratedFromCache = await hydrateCollectorMatrixFromDeviceCache();
+        const result = await refreshCollectorMatrixFromSnapshot({ quiet: false });
+        if (!result?.loaded && !collectorMatrixSnapshotLoaded) {
+            if (!hydratedFromCache) {
+                renderCollectorMatrixEmptyState();
+            }
+            showLoadError('No saved month comparison is available yet. Run the controlled full summary build only when the office is idle.');
             return false;
         }
-
-        await renderCollectorDashboard({ recompute: true });
-        if (!collectorDashboardData) {
-            showLoadError('Full scan finished, but the month comparison could not be computed.');
-            return false;
-        }
-
-        const saved = await persistCollectorMatrixSnapshotFromCurrentData('manual-full-scan');
-        if (noteNode && saved?.builtAt) {
-            noteNode.textContent = `Permanent month comparison saved at ${new Date(saved.builtAt).toLocaleString('en-PH')}.`;
-        }
-        await refreshCollectorMatrixFromSnapshot({ quiet: true });
         return true;
     } catch (error) {
-        console.error('Collections full matrix summary build failed:', error);
-        showLoadError(error.message || 'Unable to build and save the permanent month comparison summary.');
+        console.error('Collections matrix summary load failed:', error);
+        showLoadError(error.message || 'Unable to load the permanent month comparison summary.');
         return false;
     } finally {
         collectorMatrixBuildInProgress = false;

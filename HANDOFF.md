@@ -16,6 +16,11 @@ Start every new Marga-App thread by reading:
   - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
   - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
 - 2026-06-01 DigitalOcean managed Postgres incident and infrastructure direction:
+  - 2026-06-01 10:37 PM Manila Collections summary checkpoint:
+    - After the DO-to-local raw-document backfill for May 30 and June 1, the accepted browser calculation was run once from the Collections **Load Data** button and saved to local Postgres permanent summary table `app_meta.collections_matrix_snapshot`.
+    - Current saved row `id='current'`: `built_at=2026-06-01T22:37:31.464137+08:00`, `built_by=michael.marga@gmail.com`, `build_source=manual-full-scan`, `row_count=1926`, `pending_cell_count=5350`, `window_start=2025-09-30`, `window_end=2026-11-30`, payload about `43,405,996` bytes.
+    - The new visible dashboard activity increased from the earlier pre-backfill screenshot (`Confirmed Collections 2`, `Total Calls 5`) to the rebuilt current scan (`Confirmed Collections 15`, `Total Calls 17`), which matches the expectation that June 1 operational records were copied back from DigitalOcean.
+    - After saving this checkpoint, the Collections full-scan button was closed again in the app code so normal staff loading reads the permanent Postgres summary rather than rerunning a heavy browser scan.
   - 2026-06-01 8:45 PM Manila live-test rollback completed:
     - `app.marga.biz` DNS was moved from the DigitalOcean/Caddy path back to Cloudflare Tunnel `marga-api`.
     - Local tunnel ingress now routes `app.marga.biz` to `http://127.0.0.1:9100`; `api.marga.biz` still routes to `http://127.0.0.1:8787`.
