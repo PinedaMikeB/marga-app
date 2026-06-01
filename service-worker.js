@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260601-detail-workspace-1',
+    '/collections/js/collections.js?v=20260601-full-summary-build-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',
