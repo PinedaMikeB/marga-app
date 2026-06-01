@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-05-21
+Last Updated: 2026-06-01
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -15,6 +15,22 @@ Start every new Marga-App thread by reading:
   - Error-resolution learning rule: every real bug, migration miss, costly mistake, repeated prompt, or staff data-entry failure must be treated as a reusable lesson. After resolving it, Codex should actively decide whether to create or update a skill under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills`, link it into `/Users/mike/.codex/skills` when broadly useful, and reference it here/masterplan/agents so the same mistake is prevented next time.
   - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
   - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
+- 2026-06-01 DigitalOcean managed Postgres incident and infrastructure direction:
+  - Production app traffic had been moved to DigitalOcean (`app.marga.biz` -> Droplet/Caddy -> Margabase API -> DigitalOcean managed Postgres).
+  - Even with low Droplet CPU/RAM, Billing, Field App, and Collections became stuck because the managed Postgres plan had limited connection slots and the Firestore-compatible API was still serving broad JSON-document queries. The visible failure was waiting/timeout, not raw Droplet compute exhaustion.
+  - Emergency fixes applied:
+    - stopped stray local/legacy Margabase proxy/API processes that were still consuming database slots
+    - reduced Margabase API Postgres pool pressure and added connection/query/statement timeouts
+    - added production indexes for hot raw-document fields used by Billing, Field App, Collections payments, and Collections history
+    - restored Collections customer detail workspace by loading only the clicked cell's invoice/payment/history data instead of requiring a full browser matrix rebuild
+  - Pushed Marga-App fix: `0c210eb` `Restore Collections detail workspace loading`.
+  - Pushed marga-platform fix: `422c7c4` `Harden Margabase API pool for production`.
+  - Reusable production index script added in `marga-platform`: `scripts/apply-margabase-production-indexes.mjs`.
+  - Operational lesson: DigitalOcean managed Postgres is not the desired long-term economic model for MARGA. If 32 staff and a few heavy app tabs can hit managed connection/query limits, then future `care.marga.biz` customer usage and `aistaff` voice sales assistants with 20+ clients would create larger recurring cost, latency, and upgrade pressure.
+  - New direction to plan: move production back to owner-controlled local Postgres/Margabase on a dedicated server with enough RAM/SSD/UPS/network, because local app + local Postgres removes the Droplet-to-managed-DB latency hop and avoids per-plan connection economics. DigitalOcean/Cloudflare can remain routing, backup, or failover tools, but business truth should live on owner-controlled infrastructure unless a managed service is deliberately justified.
+  - Cache/cutover lesson from the earlier Firebase incident: production can keep using a retired backend if old browsers, service workers, localStorage, IndexedDB offline queues, or stale backend preferences survive the cutover. Apply the same protection when moving away from DigitalOcean managed Postgres: bump service worker/app asset versions, force backend config to the new local Margabase route, clear/override `marga_data_backend`, `marga_api_base_url`, response-cache keys, and pending offline writes, then block/rotate/restrict the retired DO API path so stale tabs cannot keep reading or writing DO Postgres.
+  - A rollback from DO to local Postgres is not complete while any existing staff browser can silently read/write the DO database. Verify both a fresh incognito browser and an existing staff browser session through `app.marga.biz`, then prove read/write/readback on Field App, Billing, Collections, Petty Cash, and the future `care.marga.biz`/`aistaff` routes before shutting the incident.
+  - Guardrail: do not respond to this class of incident by simply upsizing managed services. First reduce browser/API broad scans, add indexes/materialized summaries, and prefer a local production database/server design with tested backups and restore drills.
 - 2026-05-21 Firebase/Margabase reconciliation incident:
   - User-approved emergency order is: rescue all May 21 transactions from Firebase into Margabase first, verify the report, then rescue May 20, then May 19.
   - Use `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/rescue-firebase-day-to-margabase.mjs --app=margabase --day=YYYY-MM-DD` for day-specific rescue. It scans operational Firebase collections and upserts any document whose Firebase update time or business date fields match the target day. It writes JSON reports under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/reports/`.

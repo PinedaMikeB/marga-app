@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-05-21
+Last Updated: 2026-06-01
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -40,6 +40,13 @@ This file exists to protect the project across new chats by recording:
 - Skill reuse rule: repeated migration, design, cost-protection, and continuous-improvement lessons should become reusable skills under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills` and, when broadly useful, be linked into `/Users/mike/.codex/skills`.
 - Continuous improvement rule: every resolved production error should be converted into reusable protection when it has future value. Codex must actively ask whether the fix belongs in a skill, script, checklist, validation, searchable UI, database rule, or handoff note so the app and the working process improve every day.
 - Production backend protection: `app.marga.biz` is the production app path and must use Margabase/Postgres. Do not allow production staff to write new operational records to Firebase.
+- Production cost/latency direction after the 2026-06-01 DigitalOcean incident:
+  - Do not treat managed Postgres upsizing as the default answer for MARGA.
+  - The long-term target is owner-controlled production Postgres/Margabase on a dedicated local server, with Cloudflare/DigitalOcean used only where they add routing, monitoring, backup, or failover value without recreating per-connection/per-upgrade pressure.
+  - The MARGA staff app, future `care.marga.biz` customer portal, and `aistaff` voice sales assistants must be planned as one infrastructure load. Voice sales assistant traffic is especially latency-sensitive; if 20+ AI Staff clients are talking while staff modules query the database, Droplet-to-managed-Postgres network hops and managed connection limits become a recurring cost and reliability risk.
+  - Before adding recurring cloud spend, first eliminate broad browser scans, move large calculations to background summaries/materialized tables, add database indexes, and keep the app/API/database physically close.
+  - Before moving production away from DigitalOcean managed Postgres, force old app shells to forget the DO path: bump service worker and critical JS versions, override/clear stale browser backend preferences and offline queues, and restrict the retired DO API/database route after local read/write proof. The earlier Firebase incident proved that old cached browsers can keep using the wrong backend after a migration.
+  - Migration is not successful if it saves Firebase cost but replaces it with forced managed-database upgrades.
 - Firebase cost/data protection: after the 2026-05-18 rescue, do not restart live Firebase sync, admin catch-up, or broad Firebase parity readers unless the user explicitly approves a targeted rescue/check. Prefer local backups, saved rescue reports, and Margabase tables first.
 - Migration completion rule for MARGA and future webapps: migration is not complete when data is copied. Migration is complete only when old backend secrets/config are removed, old domains are blocked, service worker cache is reset, all write paths are proven against the new database through the same production URL staff use, and stale writes from the old database are reconciled with an auditable report.
 - Write-path proof rule: each migrated module must prove create/update/delete behavior against Margabase, not only load data. ID allocators that depend on `orderBy id DESC limit 1`, invoice/OR/DR uniqueness, schedule creation, release item creation, payment posting, petty cash voucher lines, and audit rows must be smoke-tested through `app.marga.biz` before users rely on the module.
@@ -62,6 +69,12 @@ This file exists to protect the project across new chats by recording:
 - Dedicated platform repo/path: `/Volumes/Wotg Drive Mike/GitHub/marga-platform`.
 - First app stack path: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/apps/margabase`.
 - Target: Mac mini-hosted backend that provides Firebase-like realtime updates without Firestore per-document read/write billing.
+- 2026-06-01 infrastructure correction:
+  - DigitalOcean managed Postgres exposed the wrong cost and latency shape for production: low Droplet CPU/RAM did not prevent module failures because the bottleneck was managed DB connection/query limits and network/database wait time.
+  - Owner-controlled local production Postgres is now the preferred primary architecture for MARGA, including the staff app, customer portal, and AI Staff voice assistants.
+  - The local production server must be treated as real production infrastructure, not a casual development machine: dedicated hardware, wired network, UPS/solar support, automated backups, offsite copy, restore drills, monitoring, and a documented cutover/rollback path.
+  - DigitalOcean can still serve as a public edge host, VPN endpoint, standby replica, or offsite backup target, but the database should not depend on a small managed plan that forces upgrades as usage grows.
+  - Cutover from DO back to local must include a cache purge and backend-path lock: old service workers, localStorage, IndexedDB queues, cached API responses, and stale module JS must not be able to continue reading or writing DO Postgres after the local server becomes production.
 - Candidate stack:
   - Supabase/Postgres-style self-hosted platform for PostgreSQL, auth, REST, realtime, and future storage.
   - Docker-based deployment on the Mac mini.
@@ -77,6 +90,7 @@ This file exists to protect the project across new chats by recording:
   - Cloudflare Tunnel/DNS on the free plan is expected to avoid Firebase-style per-read/write database charges.
   - Cloudflare does not become the database; it only routes web/API traffic to the Mac mini.
   - Real constraints become Mac mini uptime, CPU/RAM, local storage, upload bandwidth, backups, and security.
+  - For `aistaff` voice sales assistant, keep speech/agent services close to the database/cache wherever possible. 20+ talking clients can create many short, latency-sensitive reads/writes; do not put every turn through a slow Droplet-to-managed-Postgres path unless the cost and latency have been load-tested.
 - Cutover rule:
   - Do not cut production Field App/customer workflows to MargaBase until backups, auth isolation, realtime behavior, and offline/failover behavior are verified.
   - Keep Firebase available as a fallback/mirror during transition until the self-hosted backend is proven stable.
@@ -547,6 +561,7 @@ Production board workflow:
 
 ## Current Known Live Status
 From the latest confirmed module checks:
+- 2026-06-01: DigitalOcean managed Postgres is currently patched with API pool limits and indexes, but the strategic direction is to plan a return to owner-controlled local production Postgres/Margabase before expanding customer portal or AI Staff usage.
 - Next user-requested work is the Customer module.
 - Collections month-to-month matrix scroll format is accepted by the user.
 - User likes it more than Billing's current month-to-month format.
@@ -566,24 +581,26 @@ From the latest confirmed module checks:
 
 ## Safe Next Work Sequence
 1. Start next session by reading `HANDOFF.md` and this `MASTERPLAN.md`.
-2. Continue the Customer module in `customers/`; do not start from scratch.
-3. Verify Customer module grouping against the Active Contract Customer Graph and Billing matrix rows:
+2. Plan the local production Postgres/Margabase return before adding more customer-facing or AI Staff traffic.
+3. Keep the DigitalOcean production patch in place only as a stabilizer while the local-server plan is prepared and tested.
+4. Continue the Customer module in `customers/`; do not start from scratch.
+5. Verify Customer module grouping against the Active Contract Customer Graph and Billing matrix rows:
    - company/branch grouping
    - active contract membership
    - machine/model/serial display
    - billing information/profile details
-4. Preserve Billing, Collections, Master Schedule, Field App, and General Production behavior while changing Customers.
-5. If returning to General Production later, add active-contract vs machine-master-status mismatch warnings.
-6. Optional General Production tuning remains:
+6. Preserve Billing, Collections, Master Schedule, Field App, and General Production behavior while changing Customers.
+7. If returning to General Production later, add active-contract vs machine-master-status mismatch warnings.
+8. Optional General Production tuning remains:
    - Service machine request / change-unit / termination-upgrade signals
    - purchase request data feeding `Source: To Purchase`
    - `tbl_newmachinestatus` and `tbl_machine.status_id`
    - overhauling/repair assignment tables or conventions
-7. Keep Today vs Carry Over Field App behavior intact.
-8. Preserve the accepted Collections month-matrix format.
-9. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
-10. Re-verify Billing presentation after any Billing matrix changes.
-11. If continuing field tracking, add the action-based GPS buttons and keep Service Progress map load light.
+9. Keep Today vs Carry Over Field App behavior intact.
+10. Preserve the accepted Collections month-matrix format.
+11. If Billing matrix UX is changed later, port the Collections format carefully and keep Billing save/print behavior protected.
+12. Re-verify Billing presentation after any Billing matrix changes.
+13. If continuing field tracking, add the action-based GPS buttons and keep Service Progress map load light.
 
 ## Rollback Reference
 - `8df832d`: current protected Billing baseline
