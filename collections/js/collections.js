@@ -4513,6 +4513,157 @@ async function queryCollectionBillingDocsByInvoice(invoiceNo) {
     return Array.from(byKey.values());
 }
 
+function collectionPaymentEntryToken(entry) {
+    return [
+        entry.docId,
+        entry.invoiceId,
+        entry.invoiceNo,
+        Number(entry.amount || 0).toFixed(2),
+        Number(entry.tax2307 || 0).toFixed(2),
+        entry.paymentDate ? toDateKey(entry.paymentDate) : '',
+        entry.orNumber
+    ].join('|');
+}
+
+function buildCollectionPaymentEntryFromDoc(doc) {
+    const f = doc.fields || {};
+    const paymentStatus = String(getField(f, ['payment_status']) || '').trim();
+    const isCancelled = Boolean(Number(getField(f, ['iscancel']) || 0)) || /^cancel/i.test(paymentStatus);
+    if (isCancelled) return null;
+
+    const source = String(getField(f, ['source']) || '').trim();
+    const isDraftPayment = /^draft/i.test(paymentStatus) || source === 'field_app_collection_payment_draft';
+    if (isDraftPayment) return null;
+
+    const invoiceId = getField(f, ['invoice_id']);
+    const invoiceIdKey = invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '';
+    const invoiceNo = String(getField(f, ['invoice_num']) || '').trim();
+    const amount = Number(getField(f, ['payment_amt']) || 0);
+    const tax2307 = Number(getField(f, ['tax_2307']) || 0);
+    const deductionType = String(getField(f, ['deduction_type']) || (tax2307 > 0 ? '2307' : '')).trim().toLowerCase();
+    const deductionAmount = Number(getField(f, ['deduction_amount']) || tax2307 || 0);
+    const otherDeductionAmount = Number(getField(f, ['other_deduction_amount']) || (deductionType && deductionType !== '2307' ? deductionAmount : 0) || 0);
+    const balanceAmountRaw = getField(f, ['balance_amt']);
+    const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
+    const datePaid = normalizeDate(getField(f, ['date_paid']));
+    const dateDeposit = normalizeDate(getField(f, ['date_deposit']));
+    const taxDatePaid = normalizeDate(getField(f, ['tax_date_paid']));
+    const paymentDate = datePaid || taxDatePaid || dateDeposit;
+    if (!(amount > 0 || tax2307 > 0 || deductionAmount > 0) && !paymentDate) return null;
+
+    return {
+        docId: getFirestoreDocumentId(doc),
+        id: String(getField(f, ['id']) || getFirestoreDocumentId(doc) || '').trim(),
+        invoiceId: invoiceIdKey,
+        invoiceNo,
+        client: String(getField(f, ['client']) || '').trim(),
+        category: String(getField(f, ['category']) || '').trim(),
+        invoiceAmount: Number(getField(f, ['invoice_amt']) || 0),
+        invoiceDate: normalizeDate(getField(f, ['invoice_date'])),
+        printedOr: String(getField(f, ['printed_or']) || '').trim(),
+        assigned: String(getField(f, ['assigned']) || '').trim(),
+        amount,
+        balanceAmount,
+        deductionType,
+        deductionAmount,
+        otherDeductionAmount,
+        paymentDate,
+        datePaid,
+        dateDeposit,
+        taxDatePaid,
+        orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim(),
+        paymentType: String(getField(f, ['payment_type']) || '').trim(),
+        paymentStatus,
+        tax2307,
+        taxStatus: String(getField(f, ['tax_status']) || '').trim(),
+        taxFormStatus: String(getField(f, ['tax_form_status']) || '').trim().toLowerCase(),
+        taxFormReceivedAt: normalizeDate(getField(f, ['tax_form_received_at'])),
+        taxFormRemarks: String(getField(f, ['tax_form_remarks']) || '').trim(),
+        checkpaymentId: String(getField(f, ['checkpayment_id']) || '').trim(),
+        checkNumber: String(getField(f, ['check_number']) || '').trim(),
+        checkAmount: Number(getField(f, ['check_amt']) || 0),
+        checkDate: normalizeDate(getField(f, ['check_date'])),
+        accountBank: String(getField(f, ['account_bank']) || '').trim(),
+        remarks: String(getField(f, ['remarks']) || '').trim(),
+        source,
+        scheduleId: String(getField(f, ['schedule_id']) || '').trim(),
+        scheduleDocId: String(getField(f, ['schedule_doc_id']) || '').trim()
+    };
+}
+
+async function queryCollectionPaymentDocsByInvoice(invoiceKey) {
+    const normalizedInvoice = normalizeCollectorInvoiceSearchValue(invoiceKey);
+    if (!normalizedInvoice) return [];
+    const queryPairs = [
+        ['invoice_num', normalizedInvoice],
+        ['invoice_id', normalizedInvoice]
+    ];
+    if (/^\d+$/.test(normalizedInvoice)) {
+        queryPairs.push(['invoice_id', Number(normalizedInvoice)]);
+    }
+
+    const byKey = new Map();
+    const settled = await Promise.allSettled(queryPairs.map(([fieldPath, value]) => (
+        firestoreQueryEquals('tbl_paymentinfo', fieldPath, value, {
+            fieldMask: COLLECTION_PAYMENT_FIELD_MASK,
+            limit: 40
+        })
+    )));
+    settled.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        result.value.forEach((doc) => {
+            const key = getFirestoreDocumentId(doc) || doc.name || JSON.stringify(doc.fields || {});
+            if (key) byKey.set(key, doc);
+        });
+    });
+    return Array.from(byKey.values());
+}
+
+async function ensureCollectorCellDetailData(cell) {
+    if (!cell) return;
+    const invoiceKeys = Array.from(new Set((cell.records || [])
+        .flatMap((record) => [record.invoiceNo, record.invoiceId, record.invoiceKey, record.id])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)));
+    if (!invoiceKeys.length) return;
+
+    const billingDocs = (await Promise.all(invoiceKeys.map((key) => queryCollectionBillingDocsByInvoice(key)))).flat();
+    let changedInvoices = false;
+    billingDocs.forEach((doc) => {
+        const detail = buildCollectorBillingRecordFromDoc(doc);
+        if (detail.invoiceId) billingMetaByInvoiceKey.set(detail.invoiceId, detail.billingMeta);
+        if (detail.invoiceNo) billingMetaByInvoiceKey.set(detail.invoiceNo, detail.billingMeta);
+        changedInvoices = ingestCollectorBillingRecord(detail.record) || changedInvoices;
+
+        const invoice = processInvoice(doc);
+        if (invoice && !allInvoices.some((item) => (
+            item.invoiceKey === invoice.invoiceKey
+            || item.invoiceNo === invoice.invoiceNo
+            || item.invoiceId === invoice.invoiceId
+        ))) {
+            allInvoices.push(invoice);
+            changedInvoices = true;
+        }
+    });
+
+    const paymentDocs = (await Promise.all(invoiceKeys.map((key) => queryCollectionPaymentDocsByInvoice(key)))).flat();
+    const existingPaymentTokens = new Set(paymentEntries.map(collectionPaymentEntryToken));
+    paymentDocs.forEach((doc) => {
+        const entry = buildCollectionPaymentEntryFromDoc(doc);
+        if (!entry) return;
+        const token = collectionPaymentEntryToken(entry);
+        if (existingPaymentTokens.has(token)) return;
+        existingPaymentTokens.add(token);
+        paymentEntries.push(entry);
+        if (entry.balanceAmount !== null && Number(entry.balanceAmount) <= 0.01) {
+            if (entry.invoiceId) paidInvoiceIds.add(entry.invoiceId);
+            if (entry.invoiceNo) paidInvoiceIds.add(entry.invoiceNo);
+        }
+    });
+
+    if (changedInvoices) rebuildInvoiceIndex();
+}
+
 async function ensureCollectorInvoiceSearchSupplement() {
     const term = getCollectorInvoiceSearchTerm();
     const normalizedTerm = normalizeCollectorInvoiceSearchValue(term);
@@ -7195,26 +7346,6 @@ async function openCollectorCellFullWorkspace(cellId) {
         window.alert('Unable to open this cell. Refresh the matrix and try again.');
         return;
     }
-    if (!lastLoadSucceeded) {
-        const modal = document.getElementById('collectorCellModal');
-        const title = document.getElementById('collectorCellTitle');
-        const subtitle = document.getElementById('collectorCellSubtitle');
-        const content = document.getElementById('collectorCellContent');
-        const workspace = isCollectorProjectionOnlyCell(cell)
-            ? buildCollectorProjectionOnlyWorkspace(cell)
-            : buildCollectorSnapshotCellWorkspace(cell);
-        currentCollectorWorkspace = { ...workspace, cellId: cell.id };
-        if (title) title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
-        if (subtitle) subtitle.textContent = 'Showing saved matrix snapshot. No browser rebuild is required.';
-        if (content) {
-            content.innerHTML = isCollectorProjectionOnlyCell(cell)
-                ? renderCollectorProjectionOnlyWorkspace(workspace)
-                : renderCollectorSnapshotCellWorkspace(workspace);
-        }
-        if (modal) modal.classList.remove('hidden');
-        return;
-    }
-
     const modal = document.getElementById('collectorCellModal');
     const subtitle = document.getElementById('collectorCellSubtitle');
     const content = document.getElementById('collectorCellContent');
@@ -7225,8 +7356,14 @@ async function openCollectorCellFullWorkspace(cellId) {
         `;
     }
     if (modal) modal.classList.remove('hidden');
+    currentCollectorWorkspace = {
+        cell,
+        context: resolveCollectorCellContext(cell),
+        cellId: cell.id
+    };
 
     try {
+        if (!lastLoadSucceeded) await ensureCollectorCellDetailData(cell);
         const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
         if (currentCollectorWorkspace?.cellId !== cell.id) return;
         currentCollectorWorkspace = { ...workspace, cellId: cell.id };
@@ -8473,13 +8610,25 @@ async function openCollectorCell(cellId) {
 
     try {
         if (!lastLoadSucceeded && canUseCollectorMatrixSnapshot()) {
-            const snapshotWorkspace = buildCollectorSnapshotCellWorkspace(cell);
             if (isCollectorProjectionOnlyCell(cell)) {
                 content.innerHTML = renderCollectorProjectionOnlyWorkspace(buildCollectorProjectionOnlyWorkspace(cell));
+                subtitle.textContent = 'Showing saved matrix projection. No invoice row is linked yet.';
             } else {
-                content.innerHTML = renderCollectorSnapshotCellWorkspace(snapshotWorkspace);
+                await ensureCollectorCellDetailData(cell);
+                const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
+                if (currentCollectorWorkspace?.cellId !== cell.id) return;
+                currentCollectorWorkspace = {
+                    ...workspace,
+                    cellId: cell.id
+                };
+                const selectedInvoice = workspace.selectedInvoice;
+                title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
+                subtitle.textContent = selectedInvoice
+                    ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
+                    : `Follow-up workspace`;
+                content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+                bindCollectorPaymentForm();
             }
-            subtitle.textContent = 'Showing saved matrix snapshot. Live follow-up, schedule, and payment tools load separately from the summary.';
             return;
         }
 
