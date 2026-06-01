@@ -16,6 +16,15 @@ Start every new Marga-App thread by reading:
   - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
   - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
 - 2026-06-01 DigitalOcean managed Postgres incident and infrastructure direction:
+  - 2026-06-01 8:45 PM Manila live-test rollback completed:
+    - `app.marga.biz` DNS was moved from the DigitalOcean/Caddy path back to Cloudflare Tunnel `marga-api`.
+    - Local tunnel ingress now routes `app.marga.biz` to `http://127.0.0.1:9100`; `api.marga.biz` still routes to `http://127.0.0.1:8787`.
+    - Local Margabase API env now points to local Postgres (`POSTGRES_HOST=127.0.0.1`, `POSTGRES_PORT=5432`, `POSTGRES_USER=margabase_admin`, `POSTGRES_DB=margabase`, SSL disabled).
+    - Verified `https://app.marga.biz/margabase-api/health`, live GET through `app.marga.biz`, API socket to `127.0.0.1:5432`, and create/read/local-row/delete smoke test using collection `codex_cutover_smoke`.
+    - App cache guard was bumped to service worker cache `marga-app-shell-v105-local-postgres-live-test`; critical `firebase-config.js` and `offline-sync.js` script versions were bumped to `20260601-local-postgres-live-1`.
+    - `offline-sync.js` now blocks queued raw writes whose saved URL no longer matches the current Margabase base URL, preventing old queued writes from replaying to a retired backend.
+    - Local database is behind DigitalOcean for records created after the Saturday DO move and today, especially Petty Cash/current-day operational records. Do not run broad Firebase/DO imports. Reconcile only named collections/windows with an auditable report after live route stability is confirmed.
+    - Rollback-to-DO path if local live test fails: restore `/Users/mike/.cloudflared/config.yml.backup-before-app-local-20260601-204015` or remove `app.marga.biz` from tunnel ingress, restore `/Volumes/Wotg Drive Mike/GitHub/marga-platform/apps/margabase/.env.backup-before-local-postgres-20260601-203716`, restart `com.marga.margabase-firestore-api`, `com.marga.app-proxy`, and `com.marga.cloudflare-tunnel`, then use `cloudflared tunnel route dns --overwrite-dns` or Cloudflare DNS to point `app.marga.biz` back to the DO origin.
   - Production app traffic had been moved to DigitalOcean (`app.marga.biz` -> Droplet/Caddy -> Margabase API -> DigitalOcean managed Postgres).
   - Even with low Droplet CPU/RAM, Billing, Field App, and Collections became stuck because the managed Postgres plan had limited connection slots and the Firestore-compatible API was still serving broad JSON-document queries. The visible failure was waiting/timeout, not raw Droplet compute exhaustion.
   - Emergency fixes applied:

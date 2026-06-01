@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v104-collections-detail-workspace';
+const CACHE_NAME = 'marga-app-shell-v105-local-postgres-live-test';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -65,11 +65,11 @@ const SHELL_ASSETS = [
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
-    '/shared/js/firebase-config.js?v=20260521-margabase-documents-1',
+    '/shared/js/firebase-config.js?v=20260601-local-postgres-live-1',
     '/shared/js/auth.js?v=20260518-login-permissions-2',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
-    '/shared/js/offline-sync.js?v=20260601-collections-no-bulk-cache-1',
+    '/shared/js/offline-sync.js?v=20260601-local-postgres-live-1',
     '/shared/js/pwa-install.js?v=20260520-update-waits-1'
 ];
 

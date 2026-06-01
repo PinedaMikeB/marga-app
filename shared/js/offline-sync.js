@@ -14,8 +14,29 @@
         return String(value || '').trim();
     }
 
+    function getCurrentFirestoreBaseHref() {
+        try {
+            return new URL(window.FIREBASE_CONFIG?.baseUrl || '', window.location.origin).href.replace(/\/+$/, '');
+        } catch (error) {
+            return normalizeText(window.FIREBASE_CONFIG?.baseUrl).replace(/\/+$/, '');
+        }
+    }
+
     function isFirestoreUrl(url) {
-        return normalizeText(url).startsWith(normalizeText(window.FIREBASE_CONFIG?.baseUrl));
+        try {
+            const href = new URL(url || '', window.location.origin).href.replace(/\/+$/, '');
+            const baseHref = getCurrentFirestoreBaseHref();
+            return Boolean(baseHref) && (href === baseHref || href.startsWith(`${baseHref}/`) || href.startsWith(`${baseHref}:`));
+        } catch (error) {
+            return normalizeText(url).startsWith(normalizeText(window.FIREBASE_CONFIG?.baseUrl));
+        }
+    }
+
+    function isRetiredFirestoreWriteUrl(url) {
+        const text = normalizeText(url).toLowerCase();
+        if (!text) return false;
+        if (text.includes('firestore.googleapis.com')) return true;
+        return !isFirestoreUrl(url);
     }
 
     function safeJsonParse(value, fallback = null) {
@@ -526,6 +547,13 @@
         for (const item of queue) {
             try {
                 if (item.kind === 'raw') {
+                    if (isRetiredFirestoreWriteUrl(item.url)) {
+                        remaining.push({
+                            ...item,
+                            lastError: 'Blocked queued write because it targets a retired backend URL.'
+                        });
+                        continue;
+                    }
                     await executeRawWrite(item);
                 } else {
                     await executeStructuredWrite(item);
