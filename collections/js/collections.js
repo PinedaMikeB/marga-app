@@ -42,6 +42,8 @@ let billingMetaByInvoiceKey = new Map();
 let collectorBillingRecords = [];
 let collectorBillingRecordKeys = new Set();
 let collectorCellMap = new Map();
+let collectorCellsByRowId = new Map();
+let collectionHistoryBulkLoaded = false;
 let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
 let collectorBillingMatrixCache = null;
@@ -130,6 +132,17 @@ const dailyTips = [
 const PROMISE_REMARK_PATTERN = /\b(ok na|for signing|check|pickup|ready|release|promise|ptp|payment|paid)\b/i;
 const COLLECTOR_DASHBOARD_START = new Date(2025, 9, 1);
 COLLECTOR_DASHBOARD_START.setHours(0, 0, 0, 0);
+const COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION = 1;
+let collectorMatrixSnapshotMeta = null;
+let collectorMatrixSnapshotLoaded = false;
+let collectorMatrixBuildInProgress = false;
+let collectorMatrixSnapshotLoadSeq = 0;
+let collectorMatrixSnapshotFetchPromise = null;
+const COLLECTOR_MATRIX_SNAPSHOT_DB_NAME = 'marga_collections_matrix_snapshot_v1';
+const COLLECTOR_MATRIX_SNAPSHOT_STORE = 'snapshots';
+const COLLECTOR_MATRIX_SNAPSHOT_CACHE_ID = 'current';
+const COLLECTOR_MATRIX_SNAPSHOT_FETCH_MS = 180000;
+let collectionsFullScanAuthorized = false;
 const MONTHLY_TREND_START = new Date(2025, 10, 1);
 MONTHLY_TREND_START.setHours(0, 0, 0, 0);
 const GROUPED_COLLECTION_COMPANIES = [
@@ -2040,6 +2053,707 @@ function bindCollectorMatrixViewport() {
     updateCollectorHorizontalScrollbar();
 }
 
+function getMargabaseAdminUrl(path) {
+    const baseUrl = String(BASE_URL || window.MARGABASE_CONFIG?.baseUrl || '').trim();
+    if (baseUrl.startsWith('/margabase-api/')) return `/margabase-api${path}`;
+    if (baseUrl.includes('/v1/projects/')) {
+        const origin = new URL(baseUrl, window.location.href).origin;
+        return `${origin}${path}`;
+    }
+    return `http://127.0.0.1:8787${path}`;
+}
+
+function collectorSnapshotJsonReplacer(_key, value) {
+    if (value instanceof Date) return { __margaDate: value.toISOString() };
+    if (value instanceof Set) return { __margaSet: Array.from(value) };
+    return value;
+}
+
+function collectorSnapshotJsonReviver(_key, value) {
+    if (value && typeof value === 'object') {
+        if (value.__margaDate) return new Date(value.__margaDate);
+        if (value.__margaSet) return new Set(value.__margaSet);
+    }
+    return value;
+}
+
+function packCollectorDashboardSnapshot(data) {
+    const cells = [];
+    collectorCellMap.forEach((cell) => {
+        cells.push({
+            ...cell,
+            records: (cell.records || []).map((record) => ({
+                ...record,
+                paymentOrNumbers: Array.from(record.paymentOrNumbers || [])
+            }))
+        });
+    });
+    return JSON.parse(JSON.stringify({
+        schemaVersion: COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION,
+        dashboard: data,
+        cells
+    }, collectorSnapshotJsonReplacer));
+}
+
+function unpackCollectorDashboardSnapshot(payload) {
+    const parsed = typeof payload === 'string'
+        ? JSON.parse(payload, collectorSnapshotJsonReviver)
+        : JSON.parse(JSON.stringify(payload), collectorSnapshotJsonReviver);
+    if (!parsed?.dashboard) return null;
+    collectorCellMap = new Map();
+    (parsed.cells || []).forEach((cell) => {
+        const records = (cell.records || []).map((record) => ({
+            ...record,
+            paymentOrNumbers: new Set(record.paymentOrNumbers || [])
+        }));
+        collectorCellMap.set(cell.id, { ...cell, records });
+    });
+    rebuildCollectorCellsByRowId();
+    return ensureCollectorDashboardDerivedFields(parsed.dashboard);
+}
+
+function rebuildCollectorCellsByRowId() {
+    collectorCellsByRowId = new Map();
+    collectorCellMap.forEach((cell) => {
+        const rowId = String(cell.rowId || '').trim();
+        if (!rowId) return;
+        if (!collectorCellsByRowId.has(rowId)) collectorCellsByRowId.set(rowId, []);
+        collectorCellsByRowId.get(rowId).push(cell);
+    });
+}
+
+function buildCollectorAccountSetByMonth(customerRows, summaryMonthColumns) {
+    const accountSetByMonth = new Map();
+    (summaryMonthColumns || []).forEach((column) => {
+        accountSetByMonth.set(column.key, new Set());
+    });
+
+    (customerRows || [])
+        .filter((row) => !row.isGroupedChild)
+        .forEach((row) => {
+            (summaryMonthColumns || []).forEach((column) => {
+                const cell = collectorCellMap.get(String(row.months?.[column.key] || '').trim());
+                if (!cell) return;
+                const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                if (billedTarget > 0 || cell.missedReading || cell.pendingBilling || cell.collectedTotal > 0) {
+                    accountSetByMonth.get(column.key).add(row.rowId);
+                }
+            });
+        });
+
+    return accountSetByMonth;
+}
+
+function buildCollectorMonthlySummaryRows(dashboard, accountSetByMonth) {
+    const summaryMonthColumns = dashboard.summaryMonthColumns || [];
+    const summaryCustomerRows = (dashboard.customerRows || []).filter((row) => !row.isGroupedChild);
+
+    return summaryMonthColumns
+        .map((column) => {
+            const previousCustomers = accountSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
+            const currentCustomers = accountSetByMonth.get(column.key) || new Set();
+            const additional = Array.from(currentCustomers).filter((rowId) => !previousCustomers.has(rowId)).length;
+            const inactive = Array.from(previousCustomers).filter((rowId) => !currentCustomers.has(rowId)).length;
+            const toCollect = currentCustomers.size;
+            const collected = summaryCustomerRows.filter((row) => {
+                const cell = collectorCellMap.get(row.months[column.key] || '');
+                return cell && cell.collectedTotal > 0;
+            }).length;
+
+            return {
+                monthKey: column.key,
+                monthLabel: column.label,
+                balance: previousCustomers.size,
+                additional,
+                inactive,
+                toCollect,
+                collected,
+                pending: Math.max(0, toCollect - collected)
+            };
+        })
+        .reverse();
+}
+
+function ensureCollectorDashboardDerivedFields(dashboard) {
+    if (!dashboard || !Array.isArray(dashboard.customerRows)) return dashboard;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const windowStart = normalizeDate(dashboard.windowStart) || COLLECTOR_DASHBOARD_START;
+    const summaryEnd = startOfMonth(normalizeDate(dashboard.windowEnd) || today);
+    const matrixEnd = startOfMonth(normalizeDate(dashboard.matrixEnd) || new Date(today.getFullYear(), 11, 1));
+
+    if (!Array.isArray(dashboard.summaryMonthColumns) || !dashboard.summaryMonthColumns.length) {
+        dashboard.summaryMonthColumns = buildMonthColumns(windowStart, summaryEnd);
+    }
+    if (!Array.isArray(dashboard.monthColumns) || !dashboard.monthColumns.length) {
+        dashboard.monthColumns = buildMonthColumns(windowStart, matrixEnd);
+        const currentMonthKey = getMonthKey(today);
+        dashboard.monthColumns.forEach((column) => {
+            column.isCurrentMonth = column.key === currentMonthKey;
+        });
+    }
+
+    if (collectorCellMap.size) {
+        const needsSummaryRows = !Array.isArray(dashboard.monthlySummaryRows) || !dashboard.monthlySummaryRows.length;
+        if (needsSummaryRows) {
+            const accountSetByMonth = buildCollectorAccountSetByMonth(dashboard.customerRows, dashboard.summaryMonthColumns);
+            dashboard.monthlySummaryRows = buildCollectorMonthlySummaryRows(dashboard, accountSetByMonth);
+        }
+        if (!Array.isArray(dashboard.matrixTotalRows) || !dashboard.matrixTotalRows.length) {
+            dashboard.matrixTotalRows = buildCollectorMatrixTotalRows(dashboard.monthColumns, dashboard.customerRows);
+        }
+    }
+
+    return dashboard;
+}
+
+function canUseCollectorMatrixSnapshot() {
+    return Boolean(collectorMatrixSnapshotLoaded && collectorDashboardData && collectorCellMap.size);
+}
+
+function buildCollectorSnapshotCellWorkspace(cell) {
+    const context = resolveCollectorCellContext(cell);
+    return {
+        snapshot: true,
+        cell,
+        context,
+        latestHistory: cell.latestHistory || null,
+        records: Array.isArray(cell.records) ? cell.records : []
+    };
+}
+
+function renderCollectorSnapshotCellWorkspace(workspace) {
+    const { cell, context, latestHistory, records } = workspace;
+    const builtLabel = collectorMatrixSnapshotMeta?.builtAt
+        ? new Date(collectorMatrixSnapshotMeta.builtAt).toLocaleString('en-PH')
+        : 'the last matrix build';
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+    const pendingAmount = getCellOutstandingBalance(cell);
+    const invoiceRows = records
+        .filter((record) => String(record.invoiceNo || record.invoiceId || record.invoiceKey || '').trim())
+        .slice(0, 12)
+        .map((record) => `
+            <tr>
+                <td>${escapeHtml(record.invoiceNo || record.invoiceId || '-')}</td>
+                <td class="text-right">${escapeHtml(formatCurrency(record.billedAmount || record.amount || 0))}</td>
+                <td class="text-right">${escapeHtml(formatCurrency(record.collectedAmount || 0))}</td>
+            </tr>
+        `)
+        .join('');
+
+    return `
+        <div class="collection-followup-shell collection-followup-lite">
+            <section class="collection-followup-hero">
+                <div>
+                    <div class="collection-followup-kicker">Saved matrix snapshot • ${escapeHtml(cell.label || context.label || '')}</div>
+                    <h3>${escapeHtml(context.customer)}</h3>
+                    <p>${escapeHtml(context.branchName || context.accountLabel || 'Main')} • ${escapeHtml(displaySerialNumber(context.serialNumber))}</p>
+                </div>
+                <div class="collection-balance-card">
+                    <span>Cell totals</span>
+                    <strong>${escapeHtml(formatCurrency(pendingAmount || billedTarget))}</strong>
+                    <em>Billed ${escapeHtml(formatCurrency(billedTarget))} • Collected ${escapeHtml(formatCurrency(cell.collectedTotal || 0))}</em>
+                </div>
+            </section>
+            <div class="collection-followup-panel">
+                <div class="collection-followup-panel-title">Saved at last Load Data</div>
+                <p>Matrix colors and <strong>Followed up by …</strong> badges come from the summary saved ${escapeHtml(builtLabel)}. No live reload is required just to review this cell.</p>
+                ${renderFollowupBadge(latestHistory)}
+                ${invoiceRows ? `
+                    <table class="collection-followup-table">
+                        <thead><tr><th>Invoice</th><th>Billed</th><th>Collected</th></tr></thead>
+                        <tbody>${invoiceRows}</tbody>
+                    </table>
+                ` : '<div class="collection-followup-empty">No invoice rows were linked in this saved cell.</div>'}
+                <button type="button" class="btn btn-primary btn-sm collector-load-live-btn" data-cell-id="${escapeHtml(cell.id)}">
+                    Load Data for live follow-up
+                </button>
+                <p class="collector-settings-help">Use live mode to save follow-up remarks, confirmed collection schedules, messenger assignment, payments, and to rebuild the summary table.</p>
+            </div>
+        </div>
+    `;
+}
+
+function patchCollectorCellFollowupDisplay(cellId, historyEntry) {
+    const cell = collectorCellMap.get(String(cellId || '').trim());
+    if (!cell || !historyEntry || !collectorDashboardData) return;
+
+    cell.latestHistory = historyEntry;
+    const rowId = String(cell.rowId || '').trim();
+    if (rowId) {
+        const row = (collectorDashboardData.customerRows || []).find((item) => String(item.rowId) === rowId);
+        if (row) {
+            row.latestHistory = historyEntry;
+        }
+    }
+
+    renderCollectorDashboardFromData(collectorDashboardData);
+    void persistCollectorMatrixSnapshotFromCurrentData('followup-save');
+}
+
+function getCollectorMatrixBuiltByLabel() {
+    try {
+        const user = JSON.parse(window.localStorage?.getItem('marga_user') || window.sessionStorage?.getItem('marga_user') || 'null');
+        return String(user?.email || user?.name || user?.username || 'collections-ui').trim();
+    } catch (error) {
+        return 'collections-ui';
+    }
+}
+
+function updateCollectorMatrixHeaderStatus() {
+    const lastUpdated = document.getElementById('last-updated');
+    if (!lastUpdated) return;
+    if (collectorMatrixBuildInProgress) {
+        lastUpdated.textContent = 'Building matrix snapshot...';
+        return;
+    }
+    if (collectorMatrixSnapshotMeta?.builtAt) {
+        const builtAt = new Date(collectorMatrixSnapshotMeta.builtAt);
+        const label = Number.isNaN(builtAt.getTime())
+            ? collectorMatrixSnapshotMeta.builtAt
+            : builtAt.toLocaleString('en-PH');
+        lastUpdated.textContent = `Matrix ${label}`;
+        return;
+    }
+    lastUpdated.textContent = 'Matrix not built yet';
+}
+
+function openCollectorMatrixSnapshotDb() {
+    return new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+            reject(new Error('IndexedDB unavailable'));
+            return;
+        }
+        const request = indexedDB.open(COLLECTOR_MATRIX_SNAPSHOT_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(COLLECTOR_MATRIX_SNAPSHOT_STORE)) {
+                db.createObjectStore(COLLECTOR_MATRIX_SNAPSHOT_STORE, { keyPath: 'id' });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Unable to open matrix snapshot cache.'));
+    });
+}
+
+async function readCollectorMatrixSnapshotCache() {
+    try {
+        const db = await openCollectorMatrixSnapshotDb();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(COLLECTOR_MATRIX_SNAPSHOT_STORE, 'readonly');
+            const store = tx.objectStore(COLLECTOR_MATRIX_SNAPSHOT_STORE);
+            const request = store.get(COLLECTOR_MATRIX_SNAPSHOT_CACHE_ID);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.warn('Collector matrix snapshot cache read failed:', error);
+        return null;
+    }
+}
+
+async function writeCollectorMatrixSnapshotCache(serverPayload) {
+    if (!serverPayload?.exists || !serverPayload?.payload) return;
+    try {
+        const db = await openCollectorMatrixSnapshotDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(COLLECTOR_MATRIX_SNAPSHOT_STORE, 'readwrite');
+            const store = tx.objectStore(COLLECTOR_MATRIX_SNAPSHOT_STORE);
+            const request = store.put({
+                id: COLLECTOR_MATRIX_SNAPSHOT_CACHE_ID,
+                schemaVersion: Number(serverPayload.schemaVersion || COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION),
+                savedAt: new Date().toISOString(),
+                builtAt: serverPayload.builtAt || null,
+                builtBy: serverPayload.builtBy || '',
+                buildSource: serverPayload.buildSource || 'manual',
+                rowCount: Number(serverPayload.rowCount || 0),
+                pendingCellCount: Number(serverPayload.pendingCellCount || 0),
+                windowStart: serverPayload.windowStart || '',
+                windowEnd: serverPayload.windowEnd || '',
+                payload: serverPayload.payload
+            });
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.warn('Collector matrix snapshot cache write failed:', error);
+    }
+}
+
+function collectorMatrixCacheRecordToServerPayload(record) {
+    if (!record?.payload) return null;
+    return {
+        exists: true,
+        schemaVersion: Number(record.schemaVersion || COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION),
+        builtAt: record.builtAt || record.savedAt || null,
+        builtBy: record.builtBy || '',
+        buildSource: record.buildSource || 'cached',
+        rowCount: Number(record.rowCount || 0),
+        pendingCellCount: Number(record.pendingCellCount || 0),
+        windowStart: record.windowStart || '',
+        windowEnd: record.windowEnd || '',
+        payload: record.payload
+    };
+}
+
+function setCollectorMatrixLoadingOverlay(message) {
+    const matrixNode = document.getElementById('collector-matrix-table');
+    if (!matrixNode) return;
+    matrixNode.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div><span>${escapeHtml(message)}</span></div>`;
+}
+
+function applyCollectorMatrixSnapshotResponse(serverPayload, options = {}) {
+    if (!serverPayload?.exists || !serverPayload?.payload) {
+        collectorMatrixSnapshotMeta = null;
+        collectorMatrixSnapshotLoaded = false;
+        collectorDashboardData = null;
+        collectorCellMap = new Map();
+        collectorCellsByRowId = new Map();
+        return false;
+    }
+    const dashboard = unpackCollectorDashboardSnapshot(serverPayload.payload);
+    if (!dashboard) throw new Error('Saved matrix summary is unreadable.');
+    collectorDashboardData = dashboard;
+    collectorMatrixSnapshotMeta = {
+        builtAt: serverPayload.builtAt,
+        builtBy: serverPayload.builtBy,
+        buildSource: serverPayload.buildSource,
+        rowCount: serverPayload.rowCount,
+        pendingCellCount: serverPayload.pendingCellCount
+    };
+    collectorMatrixSnapshotLoaded = true;
+    renderCollectorDashboardFromData(collectorDashboardData);
+    updateCollectorMatrixHeaderStatus();
+    const noteNode = document.getElementById('collector-dashboard-note');
+    if (noteNode && options.fromCache && collectorMatrixSnapshotMeta?.builtAt) {
+        const builtAt = new Date(collectorMatrixSnapshotMeta.builtAt);
+        const builtLabel = Number.isNaN(builtAt.getTime())
+            ? collectorMatrixSnapshotMeta.builtAt
+            : builtAt.toLocaleString('en-PH');
+        noteNode.textContent = `Showing saved summary from ${builtLabel} (this device). Checking server for a newer build...`;
+    }
+    return true;
+}
+
+async function fetchCollectorMatrixSnapshot() {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), COLLECTOR_MATRIX_SNAPSHOT_FETCH_MS);
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-snapshot'), {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) {
+            throw new Error(payload?.error?.message || `Snapshot HTTP ${response.status}`);
+        }
+        return payload;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Saved month comparison took too long to download. Try Refresh or use a faster connection.');
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
+}
+
+function fetchCollectorMatrixSnapshotDeduped() {
+    if (!collectorMatrixSnapshotFetchPromise) {
+        collectorMatrixSnapshotFetchPromise = fetchCollectorMatrixSnapshot()
+            .finally(() => {
+                collectorMatrixSnapshotFetchPromise = null;
+            });
+    }
+    return collectorMatrixSnapshotFetchPromise;
+}
+
+async function persistCollectorMatrixSnapshotFromCurrentData(buildSource = 'manual') {
+    if (!collectorDashboardData) return null;
+    const packed = packCollectorDashboardSnapshot(collectorDashboardData);
+    const body = {
+        payload: packed,
+        meta: {
+            builtBy: getCollectorMatrixBuiltByLabel(),
+            buildSource,
+            schemaVersion: COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION,
+            rowCount: collectorDashboardData.customerRows?.length || 0,
+            pendingCellCount: collectorDashboardData.pendingCellCount || 0,
+            windowStart: collectorDashboardData.windowStart instanceof Date
+                ? collectorDashboardData.windowStart.toISOString().slice(0, 10)
+                : String(collectorDashboardData.windowStart || ''),
+            windowEnd: collectorDashboardData.matrixEnd instanceof Date
+                ? collectorDashboardData.matrixEnd.toISOString().slice(0, 10)
+                : String(collectorDashboardData.matrixEnd || collectorDashboardData.windowEnd || '')
+        }
+    };
+    const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-snapshot'), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const saved = await response.json().catch(() => ({}));
+    if (!response.ok || saved?.error) {
+        throw new Error(saved?.error?.message || `Snapshot save HTTP ${response.status}`);
+    }
+    collectorMatrixSnapshotMeta = {
+        builtAt: saved.builtAt,
+        builtBy: saved.builtBy,
+        buildSource: saved.buildSource,
+        rowCount: saved.rowCount,
+        pendingCellCount: saved.pendingCellCount
+    };
+    collectorMatrixSnapshotLoaded = true;
+    updateCollectorMatrixHeaderStatus();
+    void writeCollectorMatrixSnapshotCache({
+        exists: true,
+        schemaVersion: COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION,
+        builtAt: saved.builtAt,
+        builtBy: saved.builtBy,
+        buildSource: saved.buildSource,
+        rowCount: saved.rowCount,
+        pendingCellCount: saved.pendingCellCount,
+        windowStart: collectorDashboardData?.windowStart instanceof Date
+            ? collectorDashboardData.windowStart.toISOString().slice(0, 10)
+            : String(collectorDashboardData?.windowStart || ''),
+        windowEnd: collectorDashboardData?.matrixEnd instanceof Date
+            ? collectorDashboardData.matrixEnd.toISOString().slice(0, 10)
+            : String(collectorDashboardData?.matrixEnd || collectorDashboardData?.windowEnd || ''),
+        payload: packCollectorDashboardSnapshot(collectorDashboardData)
+    });
+    return saved;
+}
+
+async function refreshCollectorMatrixFromSnapshot(options = {}) {
+    const loadSeq = ++collectorMatrixSnapshotLoadSeq;
+    const matrixNode = document.getElementById('collector-matrix-table');
+    const noteNode = document.getElementById('collector-dashboard-note');
+    const hadRenderedMatrix = Boolean(collectorMatrixSnapshotLoaded && collectorDashboardData);
+    if (!options.quiet && !hadRenderedMatrix) {
+        setCollectorMatrixLoadingOverlay('Loading month comparison from summary...');
+    } else if (!options.quiet && noteNode) {
+        noteNode.textContent = 'Refreshing saved month-to-month summary...';
+    }
+
+    try {
+        const payload = await fetchCollectorMatrixSnapshotDeduped();
+        if (loadSeq !== collectorMatrixSnapshotLoadSeq) {
+            return { loaded: false, cancelled: true };
+        }
+        if (!payload?.exists || !payload?.payload) {
+            collectorMatrixSnapshotMeta = null;
+            collectorMatrixSnapshotLoaded = false;
+            collectorDashboardData = null;
+            collectorCellMap = new Map();
+            collectorCellsByRowId = new Map();
+            updateCollectorMatrixHeaderStatus();
+            if (!hadRenderedMatrix) renderCollectorMatrixEmptyState();
+            return { loaded: false, payload };
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        if (loadSeq !== collectorMatrixSnapshotLoadSeq) {
+            return { loaded: false, cancelled: true };
+        }
+
+        applyCollectorMatrixSnapshotResponse(payload);
+        void writeCollectorMatrixSnapshotCache(payload);
+        return { loaded: true, payload };
+    } catch (error) {
+        console.error('Collector matrix snapshot load failed:', error);
+        if (!hadRenderedMatrix) {
+            if (noteNode) {
+                noteNode.textContent = error?.message || 'Unable to load the saved month comparison. Try Refresh or Load Data.';
+            }
+            if (matrixNode) {
+                matrixNode.innerHTML = '<div class="empty-followup">Unable to load saved month comparison.</div>';
+            }
+        } else if (noteNode) {
+            noteNode.textContent = 'Server refresh failed. Showing the last saved summary stored on this device.';
+        }
+        return { loaded: false, error };
+    }
+}
+
+async function hydrateCollectorMatrixFromDeviceCache() {
+    const cached = await readCollectorMatrixSnapshotCache();
+    const payload = collectorMatrixCacheRecordToServerPayload(cached);
+    if (!payload) return false;
+    if (Number(payload.schemaVersion) !== COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION) return false;
+    try {
+        return applyCollectorMatrixSnapshotResponse(payload, { fromCache: true });
+    } catch (error) {
+        console.warn('Collector matrix device cache unreadable:', error);
+        return false;
+    }
+}
+
+function renderCollectorMatrixEmptyState() {
+    const matrixNode = document.getElementById('collector-matrix-table');
+    const noteNode = document.getElementById('collector-dashboard-note');
+    const summaryNode = document.getElementById('collector-summary-table');
+    if (summaryNode) summaryNode.innerHTML = '';
+    if (noteNode) {
+        noteNode.textContent = 'No month comparison in the permanent summary table yet. Click Load Data once to run the accepted Collections scan and save the summary.';
+    }
+    if (matrixNode) {
+        matrixNode.innerHTML = '<div class="empty-followup">No saved month comparison yet — click <strong>Load Data</strong> once to rebuild it from the working Collections calculation.</div>';
+    }
+    const rangeNode = document.getElementById('collector-dashboard-range');
+    if (rangeNode) rangeNode.textContent = 'Not built yet';
+    const pendingNode = document.getElementById('collector-dashboard-pending');
+    if (pendingNode) pendingNode.textContent = 'Pending cells: —';
+}
+
+function renderDeferredCollectionsWorkspaceNote() {
+    if (lastLoadSucceeded) return;
+    const container = document.getElementById('table-container');
+    if (!container) return;
+    container.innerHTML = `
+        <div class="empty-state">
+            <h3>Invoice work queue not loaded</h3>
+            <p>Priority buckets and the invoice list use live billing data when loaded separately. The month-to-month matrix and summary table always come from the permanent Postgres summary—not from a browser scan.</p>
+        </div>
+    `;
+    filteredInvoices = [];
+    updateAllStats();
+    updateDurationSummary();
+    renderTable();
+}
+
+async function loadCollectionsDataAndBuildMatrixSnapshot() {
+    if (collectorMatrixBuildInProgress) return false;
+
+    collectorMatrixBuildInProgress = true;
+    updateCollectorMatrixHeaderStatus();
+    const loadBtn = document.getElementById('btnLoadCollectionsData');
+    const refreshBtn = document.getElementById('btnRefreshCollectorMatrix');
+    if (loadBtn) loadBtn.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+
+    try {
+        collectionsFullScanAuthorized = true;
+        collectorMatrixSnapshotLoaded = false;
+        collectorMatrixSnapshotMeta = null;
+        collectorBillingMatrixCache = null;
+        collectorBillingMatrixPromise = null;
+        collectorDashboardData = null;
+        updateLoadingStatus('Running the accepted Collections scan before saving the permanent summary...');
+
+        const loaded = await loadInvoices(dataMode || 'active');
+        if (!loaded) {
+            throw new Error('Collections data load did not finish.');
+        }
+
+        await renderCollectorDashboard({ recompute: true });
+        if (!collectorDashboardData || !collectorCellMap.size) {
+            throw new Error('The Collections matrix did not finish building.');
+        }
+
+        const saved = await persistCollectorMatrixSnapshotFromCurrentData('exact-collections-browser-scan');
+        const noteNode = document.getElementById('collector-dashboard-note');
+        if (noteNode) {
+            const builtAt = saved?.builtAt ? new Date(saved.builtAt) : new Date();
+            const builtLabel = Number.isNaN(builtAt.getTime()) ? String(saved?.builtAt || '') : builtAt.toLocaleString('en-PH');
+            noteNode.textContent = `Saved permanent month comparison from the working Collections scan (${builtLabel}).`;
+        }
+        updateLoadingStatus('Collections permanent summary saved.');
+        return true;
+    } catch (error) {
+        console.error('Collections matrix summary build failed:', error);
+        showLoadError(error.message || 'Unable to rebuild the permanent month comparison summary.');
+        return false;
+    } finally {
+        collectorMatrixBuildInProgress = false;
+        if (loadBtn) loadBtn.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
+        updateCollectorMatrixHeaderStatus();
+    }
+}
+
+async function fetchCollectorMatrixSettings() {
+    const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-settings'), { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Settings HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+async function saveCollectorMatrixSettings(settings) {
+    const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-settings'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ settings })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Settings save HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+function renderCollectorMatrixSettingsModal() {
+    const modal = document.getElementById('collectorMatrixSettingsModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+}
+
+function closeCollectorMatrixSettingsModal() {
+    document.getElementById('collectorMatrixSettingsModal')?.classList.add('hidden');
+}
+
+async function openCollectorMatrixSettingsModal() {
+    const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+    const enabledNode = document.getElementById('collectorMatrixAutoRebuildEnabled');
+    const timeNode = document.getElementById('collectorMatrixAutoRebuildTime');
+    const lastBuiltNode = document.getElementById('collectorMatrixLastBuiltAt');
+    if (statusNode) statusNode.textContent = 'Loading settings...';
+    renderCollectorMatrixSettingsModal();
+    try {
+        const payload = await fetchCollectorMatrixSettings();
+        const settings = payload.settings || {};
+        if (enabledNode) enabledNode.checked = settings.autoRebuildEnabled !== false;
+        if (timeNode) timeNode.value = settings.autoRebuildTime || '00:00';
+        const builtParts = [];
+        if (collectorMatrixSnapshotMeta?.builtAt) {
+            builtParts.push(`Last matrix build: ${new Date(collectorMatrixSnapshotMeta.builtAt).toLocaleString('en-PH')}`);
+        }
+        if (payload.lastAutoBuiltAt) {
+            builtParts.push(`Last scheduled run: ${new Date(payload.lastAutoBuiltAt).toLocaleString('en-PH')}`);
+        }
+        if (lastBuiltNode) {
+            lastBuiltNode.textContent = builtParts.length
+                ? builtParts.join(' • ')
+                : 'No saved matrix build yet. Use Load Data once, then nightly refresh can reuse the saved summary.';
+        }
+        if (statusNode) {
+            statusNode.textContent = `Automatic rebuild uses ${settings.timezone || 'Asia/Manila'} time. Server cron should call the same summary save after Load Data logic is ported server-side; until then, staff can use Load Data manually.`;
+        }
+    } catch (error) {
+        if (statusNode) statusNode.textContent = error.message || 'Unable to load matrix settings.';
+    }
+}
+
+async function saveCollectorMatrixSettingsFromModal() {
+    const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+    const enabledNode = document.getElementById('collectorMatrixAutoRebuildEnabled');
+    const timeNode = document.getElementById('collectorMatrixAutoRebuildTime');
+    if (statusNode) statusNode.textContent = 'Saving...';
+    try {
+        await saveCollectorMatrixSettings({
+            autoRebuildEnabled: Boolean(enabledNode?.checked),
+            autoRebuildTime: String(timeNode?.value || '00:00').trim(),
+            timezone: 'Asia/Manila'
+        });
+        if (statusNode) statusNode.textContent = 'Saved. The server scheduler reads this time for the nightly matrix rebuild job.';
+        setTimeout(() => closeCollectorMatrixSettingsModal(), 900);
+    } catch (error) {
+        if (statusNode) statusNode.textContent = error.message || 'Unable to save settings.';
+    }
+}
+
 function updateLoadingStatus(message) {
     const container = document.getElementById('table-container');
     if (!container) return;
@@ -2573,6 +3287,8 @@ function indexCollectionHistoryEntry(entry) {
 }
 
 async function loadCollectionHistoryForKeys(keys = []) {
+    if (collectionHistoryBulkLoaded) return;
+
     const uniqueKeys = Array.from(new Set(keys.map((key) => String(key || '').trim()).filter(Boolean)));
     if (!uniqueKeys.length) return;
 
@@ -2645,13 +3361,11 @@ function latestHistoryForCell(cell = {}) {
 }
 
 function getHistoryForCollectorRow(rowId) {
-    const histories = [];
-    collectorCellMap.forEach((cell) => {
-        if (String(cell.rowId || '') === String(rowId || '')) {
-            histories.push(getHistoryForCell(cell));
-        }
-    });
-    return mergeHistoryLists(...histories);
+    const safeRowId = String(rowId || '').trim();
+    if (!safeRowId) return [];
+    const rowCells = collectorCellsByRowId.get(safeRowId) || [];
+    if (!rowCells.length) return [];
+    return mergeHistoryLists(...rowCells.map((cell) => getHistoryForCell(cell)));
 }
 
 function isCancelledLegacySchedule(row = {}) {
@@ -2885,6 +3599,7 @@ async function loadTodayCollectionHistoryDocs() {
 }
 
 async function loadCollectionHistory() {
+    collectionHistoryBulkLoaded = false;
     await loadCollectionEmployeeLookup();
 
     const [historyDocs, todayHistoryDocs] = await Promise.all([
@@ -2938,6 +3653,8 @@ async function loadCollectionHistory() {
         followupSeen.add(token);
         return true;
     });
+
+    collectionHistoryBulkLoaded = true;
 }
 
 function updateFollowupBadge() {
@@ -3894,6 +4611,12 @@ async function loadCollectionBillingDocs(statusCallback = null) {
 }
 
 async function loadInvoices(mode) {
+    if (!collectionsFullScanAuthorized) {
+        console.warn('Collections full scan blocked until Load Data is clicked.');
+        renderDeferredCollectionsWorkspaceNote();
+        return false;
+    }
+
     dataMode = mode;
     const isAllMode = mode === 'all';
     lastLoadSucceeded = false;
@@ -3963,6 +4686,10 @@ async function loadAllInvoices() {
 }
 
 function toggleBadDebt() {
+    if (!collectionsFullScanAuthorized) {
+        window.alert('Click Load Data first to scan billing and payment records.');
+        return;
+    }
     if (dataMode === 'active') loadAllInvoices();
     else loadActiveInvoices();
 }
@@ -4107,7 +4834,9 @@ function recomputeFilteredInvoices() {
 
     updateAllStats();
     updateDurationSummary();
-    const collectorDashboardPromise = renderCollectorDashboard();
+    const collectorDashboardPromise = collectorDashboardData
+        ? renderCollectorDashboardFromData(collectorDashboardData)
+        : Promise.resolve(renderCollectorMatrixEmptyState());
     renderTrendDashboard();
     renderTable();
     showActiveFilters();
@@ -5181,6 +5910,7 @@ async function computeCollectorDashboardData() {
     });
 
     finalizeCollectorCellRecords(collectorCellMap);
+    rebuildCollectorCellsByRowId();
 
     let customerRows = Array.from(accountRowsMap.values())
         .map((row) => {
@@ -5313,6 +6043,13 @@ function renderCollectorSummaryTable(data) {
     const container = document.getElementById('collector-summary-table');
     if (!container) return;
 
+    ensureCollectorDashboardDerivedFields(data);
+    const summaryRows = Array.isArray(data.monthlySummaryRows) ? data.monthlySummaryRows : [];
+    if (!summaryRows.length) {
+        container.innerHTML = '<div class="empty-followup">No summary counts in this saved build yet. Click <strong>Load Data</strong> to rebuild the month summary.</div>';
+        return;
+    }
+
     container.innerHTML = `
         <table class="collector-sheet">
             <thead>
@@ -5327,7 +6064,7 @@ function renderCollectorSummaryTable(data) {
                 </tr>
             </thead>
             <tbody>
-                ${data.monthlySummaryRows
+                ${summaryRows
                     .map(
                         (row) => `
                             <tr>
@@ -5604,6 +6341,7 @@ function renderCollectorMatrixTable(data, visibleRows) {
 function renderCollectorDashboardFromData(data) {
     if (!data) return null;
 
+    ensureCollectorDashboardDerivedFields(data);
     const visibleRows = prepareCollectorRows(data.customerRows);
     renderCollectorSummaryTable(data);
     renderCollectorMatrixTable(data, visibleRows);
@@ -5789,10 +6527,17 @@ async function saveCollectorBranchStatus() {
 
 async function renderCollectorDashboard(options = {}) {
     const renderSeq = ++collectorDashboardRenderSeq;
-    const shouldRecompute = Boolean(options.recompute) || !collectorDashboardData;
 
-    if (!shouldRecompute) {
+    if (options.fromSnapshot && collectorDashboardData) {
         return renderCollectorDashboardFromData(collectorDashboardData);
+    }
+
+    if (!options.recompute && collectorDashboardData) {
+        return renderCollectorDashboardFromData(collectorDashboardData);
+    }
+
+    if (!lastLoadSucceeded) {
+        return refreshCollectorMatrixFromSnapshot({ quiet: Boolean(options.quiet) });
     }
 
     const noteNode = document.getElementById('collector-dashboard-note');
@@ -5820,6 +6565,24 @@ async function renderCollectorDashboard(options = {}) {
             matrixNode.innerHTML = '<div class="empty-followup">Unable to finalize payment status. Please refresh Collections.</div>';
         }
         return null;
+    }
+}
+
+async function refreshCollectorMatrixAfterStaffWrite() {
+    await refreshCollectorMatrixFromSnapshot({ quiet: true });
+    updateCollectorMatrixHeaderStatus();
+}
+
+async function refreshCollectorMatrixOnly() {
+    const refreshBtn = document.getElementById('btnRefreshCollectorMatrix');
+    if (refreshBtn) refreshBtn.disabled = true;
+    try {
+        await refreshCollectorMatrixFromSnapshot({ quiet: true });
+        if (!collectorMatrixSnapshotLoaded) {
+            renderCollectorMatrixEmptyState();
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
     }
 }
 
@@ -6389,7 +7152,118 @@ async function loadCollectionActivityHistory(context) {
     return rows;
 }
 
-async function buildCollectorFollowupWorkspace(cell) {
+function isCollectorProjectionOnlyCell(cell) {
+    if (!cell?.pendingBilling && !cell?.missedReading) return false;
+    const records = Array.isArray(cell.records) ? cell.records : [];
+    const hasInvoiceRecord = records.some((record) => {
+        const key = String(record.invoiceNo || record.invoiceId || record.invoiceKey || '').trim();
+        return Boolean(key);
+    });
+    return !hasInvoiceRecord;
+}
+
+function buildCollectorProjectionOnlyWorkspace(cell) {
+    const context = resolveCollectorCellContext(cell);
+    const projectionAmount = Number(cell.pendingBillingProjectionTotal || cell.displayBilledTotal || cell.billedTotal || 0);
+    return {
+        lite: true,
+        cell,
+        context,
+        projectionAmount,
+        statusLabel: cell.missedReading ? 'Missed Reading' : 'Pending Billing'
+    };
+}
+
+function renderCollectorProjectionOnlyWorkspace(workspace) {
+    const { cell, context, projectionAmount, statusLabel } = workspace;
+    return `
+        <div class="collection-followup-shell collection-followup-lite">
+            <section class="collection-followup-hero">
+                <div>
+                    <div class="collection-followup-kicker">${escapeHtml(statusLabel)} • ${escapeHtml(cell.label || context.label || '')}</div>
+                    <h3>${escapeHtml(context.customer)}</h3>
+                    <p>${escapeHtml(context.branchName || context.accountLabel || 'Main')} • ${escapeHtml(displaySerialNumber(context.serialNumber))}</p>
+                </div>
+            </section>
+            <div class="collection-followup-panel">
+                <div class="collection-followup-panel-title">Matrix Projection</div>
+                <p>This month cell is a <strong>${escapeHtml(statusLabel)}</strong> projection from the saved matrix summary. There is no saved invoice row linked yet, so invoice history, schedules, and service records were not loaded.</p>
+                <div class="collection-followup-facts">
+                    <div><span>Estimated amount</span><strong>${escapeHtml(formatCurrency(projectionAmount))}</strong></div>
+                    <div><span>Reading tasks</span><strong>${escapeHtml(String(cell.readingTaskCount || 0))}</strong></div>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm collector-load-live-btn" data-cell-id="${escapeHtml(cell.id)}">
+                    Load Invoice Detail
+                </button>
+                <p class="collector-settings-help">Loads live billing, payment, call history, and schedules. Use only when you need the full follow-up workspace.</p>
+            </div>
+        </div>
+    `;
+}
+
+function decodeCollectorCellToken(cellId) {
+    try {
+        return decodeURIComponent(String(cellId || '').trim());
+    } catch (error) {
+        return String(cellId || '').trim();
+    }
+}
+
+async function openCollectorCellFullWorkspace(cellId) {
+    const safeCellId = decodeCollectorCellToken(cellId);
+    const cell = collectorCellMap.get(safeCellId);
+    if (!cell) {
+        console.warn('Collection cell not found for follow-up workspace:', safeCellId);
+        window.alert('Unable to open this cell. Refresh the matrix and try again.');
+        return;
+    }
+    if (!lastLoadSucceeded) {
+        if (!window.confirm('Load Data scans billing, payments, and history, then rebuilds the summary. Continue?')) {
+            return;
+        }
+        const loaded = await loadCollectionsDataAndBuildMatrixSnapshot();
+        if (!loaded) return;
+    }
+
+    const modal = document.getElementById('collectorCellModal');
+    const subtitle = document.getElementById('collectorCellSubtitle');
+    const content = document.getElementById('collectorCellContent');
+    if (subtitle) subtitle.textContent = 'Loading full invoice detail, history, and schedules...';
+    if (content) {
+        content.innerHTML = `
+            <div class="loading-overlay"><div class="loading-spinner"></div><span>Loading full follow-up workspace...</span></div>
+        `;
+    }
+    if (modal) modal.classList.remove('hidden');
+
+    try {
+        const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
+        if (currentCollectorWorkspace?.cellId !== cell.id) return;
+        currentCollectorWorkspace = { ...workspace, cellId: cell.id };
+        const title = document.getElementById('collectorCellTitle');
+        if (title) {
+            title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
+        }
+        if (subtitle) {
+            subtitle.textContent = workspace.selectedInvoice
+                ? `Invoice #${workspace.selectedInvoice.invoiceNo || workspace.selectedInvoice.invoiceId || '-'} follow-up`
+                : 'Follow-up workspace';
+        }
+        if (content) {
+            content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+            bindCollectorPaymentForm();
+        }
+    } catch (error) {
+        console.error('Failed to open full collection follow-up workspace:', error);
+        if (subtitle) subtitle.textContent = 'Full follow-up workspace could not load.';
+    }
+}
+
+async function buildCollectorFollowupWorkspace(cell, options = {}) {
+    if (!options.forceFull && isCollectorProjectionOnlyCell(cell)) {
+        return buildCollectorProjectionOnlyWorkspace(cell);
+    }
+
     await loadCollectionWorkspaceLookups();
 
     const context = resolveCollectorCellContext(cell);
@@ -7554,8 +8428,12 @@ function renderCollectorFollowupWorkspace(workspace) {
 }
 
 async function openCollectorCell(cellId) {
-    const cell = collectorCellMap.get(String(cellId || '').trim());
+    const cell = collectorCellMap.get(decodeCollectorCellToken(cellId));
     if (!cell) return;
+    if (!lastLoadSucceeded && !canUseCollectorMatrixSnapshot()) {
+        window.alert('No saved matrix summary yet. Click Load Data once to build the month comparison table.');
+        return;
+    }
     captureCollectorReturnBookmark(cell.id || cellId);
 
     const modal = document.getElementById('collectorCellModal');
@@ -7604,6 +8482,17 @@ async function openCollectorCell(cellId) {
     };
 
     try {
+        if (!lastLoadSucceeded && canUseCollectorMatrixSnapshot()) {
+            const snapshotWorkspace = buildCollectorSnapshotCellWorkspace(cell);
+            if (isCollectorProjectionOnlyCell(cell)) {
+                content.innerHTML = renderCollectorProjectionOnlyWorkspace(buildCollectorProjectionOnlyWorkspace(cell));
+            } else {
+                content.innerHTML = renderCollectorSnapshotCellWorkspace(snapshotWorkspace);
+            }
+            subtitle.textContent = 'Showing saved matrix snapshot. Load Data only if you need live follow-up, schedule, or payment tools.';
+            return;
+        }
+
         const workspace = await buildCollectorFollowupWorkspace(cell);
         if (currentCollectorWorkspace?.cellId !== cell.id) return;
         currentCollectorWorkspace = {
@@ -7616,8 +8505,10 @@ async function openCollectorCell(cellId) {
         subtitle.textContent = selectedInvoice
             ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
             : `Follow-up workspace`;
-        content.innerHTML = renderCollectorFollowupWorkspace(workspace);
-        bindCollectorPaymentForm();
+        content.innerHTML = workspace.lite
+            ? renderCollectorProjectionOnlyWorkspace(workspace)
+            : renderCollectorFollowupWorkspace(workspace);
+        if (!workspace.lite && !workspace.snapshot) bindCollectorPaymentForm();
     } catch (error) {
         console.error('Failed to open collection follow-up workspace:', error);
         subtitle.textContent = 'Collection follow-up workspace could not load completely.';
@@ -7631,8 +8522,12 @@ async function openCollectorCell(cellId) {
 }
 
 function openCollectorCellByToken(token) {
-    void openCollectorCell(decodeURIComponent(String(token || '')));
+    void openCollectorCell(token);
 }
+
+window.openCollectorCellFullWorkspace = openCollectorCellFullWorkspace;
+window.openCollectorCell = openCollectorCell;
+window.openCollectorCellByToken = openCollectorCellByToken;
 
 function closeCollectorCellModal() {
     document.getElementById('collectorCellModal')?.classList.add('hidden');
@@ -8674,8 +9569,7 @@ async function saveCollectorPayment() {
         rebuildPaidInvoiceIdsFromPayments();
 
         await refreshCollectorPaymentWorkspace(editingDocId ? 'Updated. Payment record was edited.' : 'Saved. Payment record updated.');
-        collectorDashboardData = null;
-        void renderCollectorDashboard({ recompute: true });
+        void refreshCollectorMatrixAfterStaffWrite();
     } catch (error) {
         console.error('Failed to save collection payment:', error);
         if (statusNode) statusNode.textContent = 'Payment save failed. Please try again.';
@@ -8752,8 +9646,13 @@ async function saveCollectorFollowup() {
             payment_amount: { doubleValue: Number.isFinite(paymentAmount) ? paymentAmount : 0 }
         });
 
-        await loadCollectionHistory();
-        indexCollectionHistoryEntry(collectionHistoryDocToEntry(createdHistory));
+        const savedHistoryEntry = collectionHistoryDocToEntry(createdHistory);
+        if (collectionHistoryBulkLoaded) {
+            indexCollectionHistoryEntry(savedHistoryEntry);
+        } else {
+            await loadCollectionHistory();
+            indexCollectionHistoryEntry(savedHistoryEntry);
+        }
 
         const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
         currentCollectorWorkspace = {
@@ -8766,8 +9665,7 @@ async function saveCollectorFollowup() {
         bindCollectorPaymentForm();
         const refreshedStatusNode = document.getElementById('collectorFollowupSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Follow-up history updated.';
-        collectorDashboardData = null;
-        void renderCollectorDashboard({ recompute: true });
+        void refreshCollectorMatrixAfterStaffWrite();
     } catch (error) {
         console.error('Failed to save collection follow-up:', error);
         if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
@@ -10304,6 +11202,14 @@ function setupModalEvents() {
         if (event.target === collectorCellModal) closeCollectorCellModal();
     });
 
+    document.getElementById('collectorCellContent')?.addEventListener('click', (event) => {
+        const loadLiveBtn = event.target.closest('.collector-load-live-btn');
+        if (!loadLiveBtn) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void openCollectorCellFullWorkspace(loadLiveBtn.getAttribute('data-cell-id') || '');
+    });
+
     collectorBranchModal?.addEventListener('click', (event) => {
         if (event.target === collectorBranchModal) closeCollectorBranchModal();
     });
@@ -10356,7 +11262,28 @@ function initQuickAgeButtons() {
     setQuickAgeFilter('all');
 }
 
+function clearCollectionsResponseCache() {
+    try {
+        let removed = 0;
+        for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+            const key = localStorage.key(index);
+            if (!key) continue;
+            if (key.startsWith('marga_firestore_response_cache_v1') || key.startsWith('marga_firestore_cache_v1:')) {
+                localStorage.removeItem(key);
+                removed += 1;
+            }
+        }
+        if (removed > 0) {
+            console.info(`Collections cleared ${removed} cached API response(s) from local storage.`);
+        }
+    } catch (error) {
+        console.warn('Unable to clear Collections response cache.', error);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    collectorMatrixBuildInProgress = false;
+    clearCollectionsResponseCache();
     setupModalEvents();
     showRandomTip();
     initQuickAgeButtons();
@@ -10393,6 +11320,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    await loadActiveInvoices();
+    renderDeferredCollectionsWorkspaceNote();
+    const hydratedFromCache = await hydrateCollectorMatrixFromDeviceCache();
+    if (!hydratedFromCache) {
+        const noteNode = document.getElementById('collector-dashboard-note');
+        if (noteNode) {
+            noteNode.textContent = 'Loading saved month-to-month summary from server...';
+        }
+    }
+    void refreshCollectorMatrixFromSnapshot({ quiet: true }).then((result) => {
+        if (!result?.loaded && !collectorMatrixSnapshotLoaded) {
+            renderCollectorMatrixEmptyState();
+        }
+        updateCollectorMatrixHeaderStatus();
+    });
+    updateCollectorMatrixHeaderStatus();
     if (lastLoadSucceeded) checkWelcomeModal();
 });

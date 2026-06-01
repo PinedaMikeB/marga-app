@@ -132,7 +132,70 @@
         return `${RESPONSE_CACHE_PREFIX}${info.method}::${info.url}${bodyPart}`;
     }
 
+    const BULK_FIRESTORE_COLLECTIONS = new Set([
+        'tbl_collectionhistory',
+        'tbl_billing',
+        'tbl_paymentinfo',
+        'tbl_checkpayments',
+        'tbl_schedule'
+    ]);
+
+    function isCollectionsModulePage() {
+        return /\/collections\.html/i.test(String(window.location.pathname || ''));
+    }
+
+    function getFirestoreCollectionFromUrl(url) {
+        try {
+            const pathname = new URL(url, window.location.origin).pathname;
+            const marker = '/documents/';
+            const index = pathname.indexOf(marker);
+            if (index === -1) return '';
+            const remainder = pathname.slice(index + marker.length);
+            return remainder.split('/').filter(Boolean)[0] || '';
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function shouldCacheFirestoreReadResponse(info, payload) {
+        if (isCollectionsModulePage()) return false;
+
+        if (!payload || typeof payload !== 'object') return false;
+
+        let serializedLength = 0;
+        try {
+            serializedLength = JSON.stringify(payload).length;
+        } catch (error) {
+            return false;
+        }
+
+        if (serializedLength > 400000) return false;
+
+        const collection = getFirestoreCollectionFromUrl(info.url);
+        if (!BULK_FIRESTORE_COLLECTIONS.has(collection)) return true;
+
+        const docCount = Array.isArray(payload.documents) ? payload.documents.length : 0;
+        let pageSize = 0;
+        try {
+            pageSize = Number(new URL(info.url, window.location.origin).searchParams.get('pageSize') || 0);
+        } catch (error) {
+            pageSize = 0;
+        }
+
+        return docCount < 100 && pageSize < 200;
+    }
+
+    function pruneResponseCache() {
+        const keys = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (key && key.startsWith(RESPONSE_CACHE_PREFIX)) keys.push(key);
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
+    }
+
     function readCachedResponse(info) {
+        if (isCollectionsModulePage()) return null;
         try {
             const raw = localStorage.getItem(buildResponseCacheKey(info));
             if (!raw) return null;
@@ -146,12 +209,21 @@
     }
 
     function writeCachedResponse(info, payload) {
+        if (!shouldCacheFirestoreReadResponse(info, payload)) return;
         try {
             localStorage.setItem(buildResponseCacheKey(info), JSON.stringify({
                 cachedAt: new Date().toISOString(),
                 payload
             }));
         } catch (error) {
+            const isQuotaError = error && (error.name === 'QuotaExceededError' || String(error).includes('QuotaExceededError'));
+            if (isQuotaError) {
+                try {
+                    pruneResponseCache();
+                } catch (pruneError) {
+                    console.warn('Unable to prune Firestore response cache.', pruneError);
+                }
+            }
             console.warn('Unable to cache Firestore response.', error);
         }
     }

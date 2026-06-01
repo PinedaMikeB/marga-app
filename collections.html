@@ -769,6 +769,23 @@
             color: #4f6f8f;
         }
 
+        .collector-settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 12px 0;
+            font-weight: 700;
+            color: #334155;
+        }
+
+        .collector-settings-meta,
+        .collector-settings-help {
+            font-size: 12px;
+            line-height: 1.5;
+            color: #64748b;
+        }
+
         .collections-compare-card {
             margin: 12px;
             padding: 12px;
@@ -3415,6 +3432,32 @@
     </style>
 </head>
 <body>
+    <div class="modal-overlay hidden" id="collectorMatrixSettingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Matrix Summary Schedule</h2>
+                <button type="button" class="modal-close" onclick="closeCollectorMatrixSettingsModal()">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="collectorMatrixSettingsStatus">Loading settings...</p>
+                <p id="collectorMatrixLastBuiltAt" class="collector-settings-meta"></p>
+                <label class="collector-settings-row">
+                    <input type="checkbox" id="collectorMatrixAutoRebuildEnabled" checked>
+                    Enable automatic nightly matrix rebuild
+                </label>
+                <label class="collector-settings-row">
+                    <span>Rebuild time (Asia/Manila)</span>
+                    <input type="time" id="collectorMatrixAutoRebuildTime" value="00:00">
+                </label>
+                <p class="collector-settings-help">Normal page loads and Refresh read the permanent Postgres month-comparison summary. Load Data runs the accepted Collections scan once and saves that exact result when the summary needs to be rebuilt.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeCollectorMatrixSettingsModal()">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveCollectorMatrixSettingsFromModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="welcomeModal">
         <div class="modal">
             <div class="modal-header">
@@ -3687,12 +3730,14 @@
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-primary btn-sm" onclick="openReceivePaymentModal()">Receive Payment</button>
+                    <button class="btn btn-success btn-sm" id="btnLoadCollectionsData" onclick="loadCollectionsDataAndBuildMatrixSnapshot()" title="Run the accepted Collections scan once, then save it to the permanent Postgres summary">Load Data</button>
                     <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">Today's Brief</button>
                     <button class="btn btn-secondary btn-sm" id="btnToggleAnalytics" onclick="toggleAnalyticsDashboard()">Analytics</button>
                     <button class="btn btn-secondary btn-sm" id="btnShowBadDebt" onclick="toggleBadDebt()">Bad Debt</button>
-                    <span id="last-updated"></span>
-                    <button class="btn btn-primary btn-sm" onclick="loadUnpaidInvoices()">Refresh</button>
+                    <button class="btn btn-secondary btn-sm" title="Matrix settings" onclick="openCollectorMatrixSettingsModal()">Settings</button>
+                    <span id="last-updated">Matrix not built yet</span>
+                    <button class="btn btn-primary btn-sm" id="btnRefreshCollectorMatrix" onclick="refreshCollectorMatrixOnly()" title="Reload month comparison from saved summary only">Refresh</button>
                 </div>
             </div>
 
@@ -3996,11 +4041,11 @@
     <script src="shared/js/auth.js?v=20260518-company-meeting-1"></script>
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
     <script src="shared/js/schedule-consolidation.js?v=20260518-combined-visit-1"></script>
-    <script src="shared/js/offline-sync.js"></script>
+    <script src="shared/js/offline-sync.js?v=20260601-collections-no-bulk-cache-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260526-official-receipt-payments-1"></script>
+    <script src="collections/js/collections.js?v=20260601-exact-scan-summary-1"></script>
 </body>
 </html>

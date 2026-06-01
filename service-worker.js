@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v95-billing-envelope-landscape';
+const CACHE_NAME = 'marga-app-shell-v100-exact-collections-summary';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -29,7 +29,7 @@ const SHELL_ASSETS = [
     '/customers/js/customer-form.js',
     '/customers/js/customers.js',
     '/collections.html',
-    '/collections/js/collections.js?v=20260526-official-receipt-payments-1',
+    '/collections/js/collections.js?v=20260601-exact-scan-summary-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260519-field-invoice-table-1',
@@ -69,7 +69,7 @@ const SHELL_ASSETS = [
     '/shared/js/auth.js?v=20260518-login-permissions-2',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
-    '/shared/js/offline-sync.js?v=20260521-margabase-cache-guard-1',
+    '/shared/js/offline-sync.js?v=20260601-collections-no-bulk-cache-1',
     '/shared/js/pwa-install.js?v=20260520-update-waits-1'
 ];
 
