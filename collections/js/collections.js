@@ -11179,6 +11179,7 @@ function setupModalEvents() {
     const collectorTotalModal = document.getElementById('collectorTotalModal');
     const collectorSoaPeriodModal = document.getElementById('collectorSoaPeriodModal');
     const receivePaymentModal = document.getElementById('receivePaymentModal');
+    const welcomeModal = document.getElementById('welcomeModal');
 
     followupModal?.addEventListener('click', (event) => {
         if (event.target === followupModal) closeFollowupModal();
@@ -11214,6 +11215,10 @@ function setupModalEvents() {
 
     receivePaymentModal?.addEventListener('click', (event) => {
         if (event.target === receivePaymentModal) closeReceivePaymentModal();
+    });
+
+    welcomeModal?.addEventListener('click', (event) => {
+        if (event.target === welcomeModal) closeWelcomeModal();
     });
 
     document.getElementById('receivePaymentInvoiceSearch')?.addEventListener('input', runReceivePaymentSearch);
