@@ -4,6 +4,8 @@ if (!MargaAuth.requireAccess('releasing')) {
 
 const RELEASE_QUERY_LIMIT = 20000;
 const RELEASE_ROWS_PER_VIEW = 600;
+const RELEASE_FETCH_TIMEOUT_MS = 9000;
+const RELEASE_ROUTE_COLLECTION_LIMIT = 6000;
 const RELEASE_ZERO_DATES = new Set([
     '',
     '0000-00-00',
@@ -211,8 +213,13 @@ async function loadReleasingData() {
     setReleaseLoadingRows();
 
     try {
-        const [schedules, requestItems, finalDrs, branches, companies, machines, troubles, models] = await Promise.all([
-            fetchLatestRows('tbl_schedule', RELEASE_QUERY_LIMIT),
+        const [schedules, savedSchedules, printedSchedules, requestItems, finalDrs, branches, companies, machines, troubles, models] = await Promise.all([
+            fetchLatestRows('tbl_schedule', RELEASE_QUERY_LIMIT).catch((error) => {
+                console.warn('tbl_schedule latest query unavailable for Releasing; using route/request fallbacks.', error);
+                return [];
+            }),
+            fetchRouteSchedules('tbl_savedscheds').catch(() => []),
+            fetchRouteSchedules('tbl_printedscheds').catch(() => []),
             fetchLatestRows('tbl_newfordr', RELEASE_QUERY_LIMIT).catch(() => []),
             fetchLatestRows('tbl_finaldr', RELEASE_QUERY_LIMIT).catch(() => []),
             fetchOptionalCollection('tbl_branchinfo', 1200),
@@ -222,7 +229,7 @@ async function loadReleasingData() {
             fetchOptionalCollection('tbl_model', 600)
         ]);
 
-        releaseState.raw = { schedules, requestItems, finalDrs, models };
+        releaseState.raw = { schedules: mergeScheduleRows(schedules, savedSchedules, printedSchedules), requestItems, finalDrs, models };
         releaseState.maps.branches = keyedMap(branches);
         releaseState.maps.companies = keyedMap(companies);
         releaseState.maps.machines = keyedMap(machines);
@@ -257,8 +264,55 @@ async function fetchOptionalCollection(collection, pageSize = 500) {
     }
 }
 
+async function fetchRouteSchedules(collection, maxRows = RELEASE_ROUTE_COLLECTION_LIMIT) {
+    const rows = await fetchCollectionLimited(collection, {
+        pageSize: 500,
+        maxPages: Math.ceil(maxRows / 500)
+    });
+    return rows
+        .filter(isDeliverySchedule)
+        .sort((left, right) => {
+            const leftTime = clean(firstDate(left.task_datetime, left.original_sched, left.tmestamp));
+            const rightTime = clean(firstDate(right.task_datetime, right.original_sched, right.tmestamp));
+            return rightTime.localeCompare(leftTime) || Number(right.id || right._docId || 0) - Number(left.id || left._docId || 0);
+        })
+        .slice(0, maxRows);
+}
+
+async function fetchCollectionLimited(collection, { pageSize = 500, maxPages = 12 } = {}) {
+    const allDocs = [];
+    let pageToken = '';
+
+    for (let page = 0; page < maxPages; page += 1) {
+        const params = new URLSearchParams({ pageSize: String(pageSize), key: FIREBASE_CONFIG.apiKey });
+        params.set('orderBy', 'doc_id_desc');
+        if (pageToken) params.set('pageToken', pageToken);
+        const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}/${collection}?${params.toString()}`, {}, RELEASE_FETCH_TIMEOUT_MS);
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 404) break;
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `Failed to load ${collection}`);
+        allDocs.push(...(payload.documents || []).map((doc) => MargaUtils.parseFirestoreDoc(doc)));
+        if (!payload.nextPageToken) break;
+        pageToken = payload.nextPageToken;
+    }
+
+    return allDocs;
+}
+
+function mergeScheduleRows(...groups) {
+    const merged = new Map();
+    groups.flat().forEach((row) => {
+        if (!row) return;
+        const key = String(row.id || row._docId || '').trim();
+        if (!key) return;
+        const current = merged.get(key) || {};
+        merged.set(key, { ...current, ...row });
+    });
+    return Array.from(merged.values());
+}
+
 async function fetchLatestRows(collectionId, limit = 500, orderField = 'id') {
-    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+    const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -268,7 +322,7 @@ async function fetchLatestRows(collectionId, limit = 500, orderField = 'id') {
                 limit
             }
         })
-    });
+    }, RELEASE_FETCH_TIMEOUT_MS);
     const payload = await response.json();
     if (!response.ok || payload?.error || payload?.[0]?.error) {
         throw new Error(payload?.error?.message || payload?.[0]?.error?.message || `Failed to query ${collectionId}`);
@@ -278,8 +332,18 @@ async function fetchLatestRows(collectionId, limit = 500, orderField = 'id') {
         : [];
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = RELEASE_FETCH_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function queryEqualsLimit(collectionId, fieldPath, value, limit = 50) {
-    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+    const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -295,7 +359,7 @@ async function queryEqualsLimit(collectionId, fieldPath, value, limit = 50) {
                 limit
             }
         })
-    });
+    }, RELEASE_FETCH_TIMEOUT_MS);
     const payload = await response.json();
     if (!response.ok || payload?.error || payload?.[0]?.error) return [];
     return Array.isArray(payload)
@@ -304,7 +368,7 @@ async function queryEqualsLimit(collectionId, fieldPath, value, limit = 50) {
 }
 
 async function fetchDoc(collection, docId) {
-    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(String(docId))}?key=${FIREBASE_CONFIG.apiKey}`);
+    const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(String(docId))}?key=${FIREBASE_CONFIG.apiKey}`, {}, RELEASE_FETCH_TIMEOUT_MS);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) return null;
     return MargaUtils.parseFirestoreDoc(payload);
@@ -2324,7 +2388,7 @@ async function maybeLoadExactReference(value) {
     releaseState.referenceFetches.add(ref);
     try {
         const [schedule, requestItems, finalDrs] = await Promise.all([
-            fetchDoc('tbl_schedule', ref),
+            fetchScheduleByReference(ref),
             queryEqualsLimit('tbl_newfordr', 'reference_id', Number(ref), 50),
             queryEqualsLimit('tbl_finaldr', 'reference_id', Number(ref), 20)
         ]);
@@ -2347,6 +2411,15 @@ async function maybeLoadExactReference(value) {
     } catch (error) {
         console.warn(`Reference ${ref} lookup failed.`, error);
     }
+}
+
+async function fetchScheduleByReference(ref) {
+    const candidates = await Promise.all([
+        fetchDoc('tbl_schedule', ref).catch(() => null),
+        fetchDoc('tbl_savedscheds', ref).catch(() => null),
+        fetchDoc('tbl_printedscheds', ref).catch(() => null)
+    ]);
+    return candidates.find(Boolean) || null;
 }
 
 function setReleaseLoadingRows() {
