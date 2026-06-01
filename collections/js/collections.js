@@ -7321,10 +7321,6 @@ function renderCollectorProjectionOnlyWorkspace(workspace) {
                     <div><span>Estimated amount</span><strong>${escapeHtml(formatCurrency(projectionAmount))}</strong></div>
                     <div><span>Reading tasks</span><strong>${escapeHtml(String(cell.readingTaskCount || 0))}</strong></div>
                 </div>
-                <button type="button" class="btn btn-primary btn-sm collector-load-live-btn" data-cell-id="${escapeHtml(cell.id)}">
-                    Load Invoice Detail
-                </button>
-                <p class="collector-settings-help">Loads live billing, payment, call history, and schedules. Use only when you need the full follow-up workspace.</p>
             </div>
         </div>
     `;
@@ -8610,29 +8606,24 @@ async function openCollectorCell(cellId) {
 
     try {
         if (!lastLoadSucceeded && canUseCollectorMatrixSnapshot()) {
-            if (isCollectorProjectionOnlyCell(cell)) {
-                content.innerHTML = renderCollectorProjectionOnlyWorkspace(buildCollectorProjectionOnlyWorkspace(cell));
-                subtitle.textContent = 'Showing saved matrix projection. No invoice row is linked yet.';
-            } else {
-                await ensureCollectorCellDetailData(cell);
-                const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
-                if (currentCollectorWorkspace?.cellId !== cell.id) return;
-                currentCollectorWorkspace = {
-                    ...workspace,
-                    cellId: cell.id
-                };
-                const selectedInvoice = workspace.selectedInvoice;
-                title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
-                subtitle.textContent = selectedInvoice
-                    ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
-                    : `Follow-up workspace`;
-                content.innerHTML = renderCollectorFollowupWorkspace(workspace);
-                bindCollectorPaymentForm();
-            }
+            await ensureCollectorCellDetailData(cell);
+            const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
+            if (currentCollectorWorkspace?.cellId !== cell.id) return;
+            currentCollectorWorkspace = {
+                ...workspace,
+                cellId: cell.id
+            };
+            const selectedInvoice = workspace.selectedInvoice;
+            title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
+            subtitle.textContent = selectedInvoice
+                ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
+                : `Follow-up workspace`;
+            content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+            bindCollectorPaymentForm();
             return;
         }
 
-        const workspace = await buildCollectorFollowupWorkspace(cell);
+        const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
         if (currentCollectorWorkspace?.cellId !== cell.id) return;
         currentCollectorWorkspace = {
             ...workspace,
@@ -8644,10 +8635,8 @@ async function openCollectorCell(cellId) {
         subtitle.textContent = selectedInvoice
             ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
             : `Follow-up workspace`;
-        content.innerHTML = workspace.lite
-            ? renderCollectorProjectionOnlyWorkspace(workspace)
-            : renderCollectorFollowupWorkspace(workspace);
-        if (!workspace.lite && !workspace.snapshot) bindCollectorPaymentForm();
+        content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+        if (!workspace.snapshot) bindCollectorPaymentForm();
     } catch (error) {
         console.error('Failed to open collection follow-up workspace:', error);
         subtitle.textContent = 'Collection follow-up workspace could not load completely.';
@@ -11340,14 +11329,6 @@ function setupModalEvents() {
 
     collectorCellModal?.addEventListener('click', (event) => {
         if (event.target === collectorCellModal) closeCollectorCellModal();
-    });
-
-    document.getElementById('collectorCellContent')?.addEventListener('click', (event) => {
-        const loadLiveBtn = event.target.closest('.collector-load-live-btn');
-        if (!loadLiveBtn) return;
-        event.preventDefault();
-        event.stopPropagation();
-        window.alert('Live reload is temporarily disabled. This customer detail opens from the saved permanent summary so Collections staff can work without a browser full scan.');
     });
 
     collectorBranchModal?.addEventListener('click', (event) => {
