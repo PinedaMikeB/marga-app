@@ -3751,7 +3751,7 @@
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-primary btn-sm" onclick="openReceivePaymentModal()">Receive Payment</button>
-                    <button class="btn btn-success btn-sm" id="btnLoadCollectionsData" onclick="loadCollectionsDataAndBuildMatrixSnapshot()" title="Load month comparison from the permanent Postgres summary">Load Data</button>
+                    <button class="btn btn-success btn-sm" id="btnLoadCollectionsData" disabled title="Permanent summary auto-updates from Postgres movements">Load Data</button>
                     <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">Today's Brief</button>
                     <button class="btn btn-secondary btn-sm" id="btnToggleAnalytics" onclick="toggleAnalyticsDashboard()">Analytics</button>
@@ -4067,6 +4067,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260601-summary-readonly-2"></script>
+    <script src="collections/js/collections.js?v=20260601-summary-autoupdate-1"></script>
 </body>
 </html>

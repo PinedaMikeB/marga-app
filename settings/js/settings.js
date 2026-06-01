@@ -17,7 +17,8 @@ const SETTINGS_STATE = {
     activeRoleEditor: 'collection',
     appSettings: {
         allowSavedBillingReprints: true
-    }
+    },
+    databaseBackups: []
 };
 
 const BILLING_PRINT_POLICY_DOC_ID = 'billing_printing_policy_v1';
@@ -125,6 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('hardRefreshAppBtn').addEventListener('click', () => hardRefreshApp());
     document.getElementById('deriveMargabaseBtn').addEventListener('click', () => runMargabaseSync('derive'));
     document.getElementById('runMargabaseSyncBtn').addEventListener('click', () => runMargabaseSync('firebase'));
+    document.getElementById('databaseBackupSource')?.addEventListener('change', () => loadDatabaseBackupList());
+    document.getElementById('refreshBackupListBtn')?.addEventListener('click', () => loadDatabaseBackupList());
+    document.getElementById('testRestoreBackupBtn')?.addEventListener('click', () => testRestoreSelectedBackup());
     document.querySelectorAll('input[name="databaseBackend"]').forEach((input) => {
         input.addEventListener('change', () => setDatabaseChoice(input.value));
     });
@@ -237,6 +241,7 @@ function setActiveTab(tab) {
     if (next === 'database') {
         renderDatabaseSettings();
         refreshDatabaseSyncStatus({ quiet: true });
+        loadDatabaseBackupList({ quiet: true });
     }
 }
 
@@ -433,6 +438,143 @@ async function runMargabaseSync(mode) {
         if (status) status.textContent = `Relational refresh started. PID ${payload.sync?.pid || 'unknown'}.`;
     } catch (error) {
         if (status) status.textContent = error.message || 'Unable to start relational refresh.';
+    }
+}
+
+function formatBytes(bytes) {
+    const size = Number(bytes || 0);
+    if (!size) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = size;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`;
+}
+
+function backupDisplayLabel(backup) {
+    const dateLabel = backup.name.replace(/^BU(\d{2})(\d{2})(\d{2})-MargaDB/, (_, mm, dd, yy) => `${mm}/${dd}/20${yy}`);
+    const timeSuffix = backup.name.match(/-(\d{8})-(\d{6})$/)?.[2] || '';
+    const timeLabel = timeSuffix ? ` ${timeSuffix.slice(0, 2)}:${timeSuffix.slice(2, 4)}` : '';
+    return `${dateLabel}${timeLabel} - ${formatBytes(backup.dumpSizeBytes)}`;
+}
+
+async function loadDatabaseBackupList({ quiet = false } = {}) {
+    const sourceInput = document.getElementById('databaseBackupSource');
+    const select = document.getElementById('databaseBackupSelect');
+    const status = document.getElementById('databaseRestoreStatus');
+    if (!sourceInput || !select) return;
+    const source = sourceInput.value === 'google' ? 'google' : 'local';
+    if (!quiet && status) status.textContent = `Loading ${source === 'google' ? 'Google Drive' : 'local'} backups...`;
+    select.disabled = true;
+    try {
+        const response = await fetch(getMargabaseAdminUrl(`/admin/backup/list?source=${encodeURIComponent(source)}`), { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        const backups = Array.isArray(payload.backups) ? payload.backups : [];
+        SETTINGS_STATE.databaseBackups = backups;
+        select.innerHTML = backups.length
+            ? backups.map((backup) => `<option value="${sanitize(backup.name)}">${sanitize(backupDisplayLabel(backup))}</option>`).join('')
+            : '<option value="">No backups found</option>';
+        select.disabled = !backups.length;
+        if (status) {
+            status.textContent = `${backups.length.toLocaleString()} backup folder(s) found in ${payload.rootDir || source}. Test Restore uses a separate database and will not overwrite production.`;
+        }
+    } catch (error) {
+        SETTINGS_STATE.databaseBackups = [];
+        select.innerHTML = '<option value="">Unable to load backups</option>';
+        select.disabled = true;
+        if (status) status.textContent = error.message || 'Unable to load backup list.';
+    }
+}
+
+function summarizeRestoreVerification(payload) {
+    const verification = payload?.verification || payload?.restore?.verification || {};
+    const summary = verification.collections_summary || null;
+    const lines = [
+        `Restored ${payload?.backup?.name || 'backup'} to ${payload?.restoredTo || 'test database'}.`,
+        `Raw documents: ${Number(verification.firestore_documents || 0).toLocaleString()} across ${Number(verification.raw_collections || 0).toLocaleString()} collection(s).`,
+        `Billing invoices: ${Number(verification.billing_invoices || 0).toLocaleString()} | Payments: ${Number(verification.payments || 0).toLocaleString()} | Service schedules: ${Number(verification.service_schedules || 0).toLocaleString()}.`,
+    ];
+    if (summary) {
+        lines.push(`Collections permanent summary included: ${Number(summary.row_count || 0).toLocaleString()} row(s), ${Number(summary.pending_cell_count || 0).toLocaleString()} pending cell(s), built ${formatSyncTime(summary.built_at)}.`);
+    } else {
+        lines.push('Collections permanent summary was not found in the restored test database.');
+    }
+    return lines.join('\n');
+}
+
+function renderRestoreStatus(payload) {
+    const restore = payload?.restore || payload;
+    const status = document.getElementById('databaseRestoreStatus');
+    if (!status || !restore) return;
+    if (restore.running) {
+        status.textContent = `Restore test running from ${restore.source === 'google' ? 'Google Drive' : 'local'} backup ${restore.backup?.name || ''}...\nTarget: ${restore.restoredTo || 'margabase_restore_test'}\nStarted: ${formatSyncTime(restore.startedAt)}\nProduction database is not touched.`;
+        return;
+    }
+    if (restore.ok && restore.verification) {
+        status.textContent = summarizeRestoreVerification(restore);
+        return;
+    }
+    if (restore.error) {
+        status.textContent = `Restore test failed:\n${restore.error}`;
+    }
+}
+
+async function pollRestoreStatus() {
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/backup/restore-test'), { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        renderRestoreStatus(payload);
+        if (payload.restore?.running) {
+            window.setTimeout(pollRestoreStatus, 5000);
+        } else {
+            const button = document.getElementById('testRestoreBackupBtn');
+            if (button) button.disabled = false;
+        }
+    } catch (error) {
+        const status = document.getElementById('databaseRestoreStatus');
+        if (status) status.textContent = error.message || 'Unable to check restore status.';
+        const button = document.getElementById('testRestoreBackupBtn');
+        if (button) button.disabled = false;
+    }
+}
+
+async function testRestoreSelectedBackup() {
+    if (!MargaAuth.isAdmin()) {
+        alert('Only admin can test database restore.');
+        return;
+    }
+    const source = document.getElementById('databaseBackupSource')?.value === 'google' ? 'google' : 'local';
+    const backupName = document.getElementById('databaseBackupSelect')?.value || '';
+    const status = document.getElementById('databaseRestoreStatus');
+    const button = document.getElementById('testRestoreBackupBtn');
+    if (!backupName) {
+        if (status) status.textContent = 'Select a backup first.';
+        return;
+    }
+    if (status) status.textContent = `Testing restore from ${source === 'google' ? 'Google Drive' : 'local'} backup ${backupName}...\nProduction database is not touched.`;
+    if (button) button.disabled = true;
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/backup/restore-test'), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ source, backupName })
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        renderRestoreStatus(payload);
+        if (payload.restore?.running) {
+            window.setTimeout(pollRestoreStatus, 5000);
+        } else if (button) {
+            button.disabled = false;
+        }
+    } catch (error) {
+        if (status) status.textContent = error.message || 'Restore test failed.';
+        if (button) button.disabled = false;
     }
 }
 

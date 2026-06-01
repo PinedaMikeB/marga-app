@@ -21,6 +21,12 @@ Start every new Marga-App thread by reading:
     - Current saved row `id='current'`: `built_at=2026-06-01T22:37:31.464137+08:00`, `built_by=michael.marga@gmail.com`, `build_source=manual-full-scan`, `row_count=1926`, `pending_cell_count=5350`, `window_start=2025-09-30`, `window_end=2026-11-30`, payload about `43,405,996` bytes.
     - The new visible dashboard activity increased from the earlier pre-backfill screenshot (`Confirmed Collections 2`, `Total Calls 5`) to the rebuilt current scan (`Confirmed Collections 15`, `Total Calls 17`), which matches the expectation that June 1 operational records were copied back from DigitalOcean.
     - After saving this checkpoint, the Collections full-scan button was closed again in the app code so normal staff loading reads the permanent Postgres summary rather than rerunning a heavy browser scan.
+  - 2026-06-01 11 PM Manila backup/restore proof:
+    - Latest manual backup folder in Google Drive Desktop is `BU060126-MargaDB-20260601-225952`; the older `BU060126-MargaDB` is the scheduled 2:45 PM backup from the same day.
+    - Restored the latest Google Drive dump into the separate test database `margabase_restore_test` without touching production `margabase`.
+    - Test restore verification: `firestore_documents=5,700,085`, `raw_collections=290`, `billing_invoices=78,625`, `payments=117,903`, `service_schedules=323,394`.
+    - Permanent Collections summary is included in the backup because it lives in Postgres table `app_meta.collections_matrix_snapshot`; restored row showed `row_count=1926`, `pending_cell_count=5350`, payload about `43,405,686` bytes.
+    - Settings → Database now has Backup & Restore Test controls for Local Mac / Google Drive backup selection and a guarded restore test into `margabase_restore_test`; production restore remains intentionally unavailable from the browser.
   - 2026-06-01 8:45 PM Manila live-test rollback completed:
     - `app.marga.biz` DNS was moved from the DigitalOcean/Caddy path back to Cloudflare Tunnel `marga-api`.
     - Local tunnel ingress now routes `app.marga.biz` to `http://127.0.0.1:9100`; `api.marga.biz` still routes to `http://127.0.0.1:8787`.

@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/settings.css?v=20260511-database-settings-1">
+    <link rel="stylesheet" href="css/settings.css?v=20260601-backup-restore-test-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -417,6 +417,31 @@
                                 <div class="ops-subtext" id="databaseSyncStatus">Ready to check Margabase status.</div>
                             </div>
 
+                            <div class="settings-sync-box database-backup-box">
+                                <div class="settings-sync-title">Backup &amp; Restore Test</div>
+                                <div class="ops-subtext">Select a backup from local disk or Google Drive. Test Restore restores into a separate database only; production is not overwritten.</div>
+                                <div class="database-restore-grid">
+                                    <label class="marga-field">
+                                        <span>Backup Source</span>
+                                        <select id="databaseBackupSource">
+                                            <option value="local">Local Mac</option>
+                                            <option value="google">Google Drive</option>
+                                        </select>
+                                    </label>
+                                    <label class="marga-field">
+                                        <span>Backup Date</span>
+                                        <select id="databaseBackupSelect">
+                                            <option value="">Loading backups...</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="settings-sync-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="refreshBackupListBtn">Refresh Backups</button>
+                                    <button type="button" class="btn btn-primary btn-sm" id="testRestoreBackupBtn">Test Restore</button>
+                                </div>
+                                <pre class="database-command" id="databaseRestoreStatus">Choose a backup, then run Test Restore to verify counts and the Collections permanent summary table.</pre>
+                            </div>
+
                             <div class="ops-subtext" id="databaseSettingsStatus">Select a backend, then Apply & Reload.</div>
                         </div>
                     </div>
@@ -632,6 +657,6 @@
     <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="js/settings.js?v=20260518-margabase-locked-1"></script>
+    <script src="js/settings.js?v=20260601-backup-restore-test-1"></script>
 </body>
 </html>
