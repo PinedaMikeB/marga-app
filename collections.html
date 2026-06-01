@@ -3449,7 +3449,7 @@
                     <span>Rebuild time (Asia/Manila)</span>
                     <input type="time" id="collectorMatrixAutoRebuildTime" value="00:00">
                 </label>
-                <p class="collector-settings-help">Normal page loads and Refresh read the permanent Postgres month-comparison summary. Load Data runs the accepted Collections scan once and saves that exact result when the summary needs to be rebuilt.</p>
+                <p class="collector-settings-help">Normal page loads, Load Data, and Refresh read the permanent Postgres month-comparison summary. Full rebuilds run only as controlled backend jobs so staff browsers do not scan the whole dataset.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="closeCollectorMatrixSettingsModal()">Cancel</button>
@@ -3730,7 +3730,7 @@
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-primary btn-sm" onclick="openReceivePaymentModal()">Receive Payment</button>
-                    <button class="btn btn-success btn-sm" id="btnLoadCollectionsData" onclick="loadCollectionsDataAndBuildMatrixSnapshot()" title="Run the accepted Collections scan once, then save it to the permanent Postgres summary">Load Data</button>
+                    <button class="btn btn-success btn-sm" id="btnLoadCollectionsData" onclick="loadCollectionsDataAndBuildMatrixSnapshot()" title="Load month comparison from the permanent Postgres summary">Load Data</button>
                     <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">Today's Brief</button>
                     <button class="btn btn-secondary btn-sm" id="btnToggleAnalytics" onclick="toggleAnalyticsDashboard()">Analytics</button>
@@ -4046,6 +4046,6 @@
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260601-exact-scan-summary-1"></script>
+    <script src="collections/js/collections.js?v=20260601-snapshot-detail-1"></script>
 </body>
 </html>

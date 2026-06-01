@@ -2257,7 +2257,7 @@ function renderCollectorSnapshotCellWorkspace(workspace) {
                 </div>
             </section>
             <div class="collection-followup-panel">
-                <div class="collection-followup-panel-title">Saved at last Load Data</div>
+                <div class="collection-followup-panel-title">Saved collection detail</div>
                 <p>Matrix colors and <strong>Followed up by …</strong> badges come from the summary saved ${escapeHtml(builtLabel)}. No live reload is required just to review this cell.</p>
                 ${renderFollowupBadge(latestHistory)}
                 ${invoiceRows ? `
@@ -2266,10 +2266,7 @@ function renderCollectorSnapshotCellWorkspace(workspace) {
                         <tbody>${invoiceRows}</tbody>
                     </table>
                 ` : '<div class="collection-followup-empty">No invoice rows were linked in this saved cell.</div>'}
-                <button type="button" class="btn btn-primary btn-sm collector-load-live-btn" data-cell-id="${escapeHtml(cell.id)}">
-                    Load Data for live follow-up
-                </button>
-                <p class="collector-settings-help">Use live mode to save follow-up remarks, confirmed collection schedules, messenger assignment, payments, and to rebuild the summary table.</p>
+                <p class="collector-settings-help">Temporary mode: collectors can review saved customer details from the permanent summary. Live follow-up tools will be restored after the local summary table catch-up.</p>
             </div>
         </div>
     `;
@@ -2564,7 +2561,7 @@ async function refreshCollectorMatrixFromSnapshot(options = {}) {
         console.error('Collector matrix snapshot load failed:', error);
         if (!hadRenderedMatrix) {
             if (noteNode) {
-                noteNode.textContent = error?.message || 'Unable to load the saved month comparison. Try Refresh or Load Data.';
+                noteNode.textContent = error?.message || 'Unable to load the saved month comparison. Try Refresh.';
             }
             if (matrixNode) {
                 matrixNode.innerHTML = '<div class="empty-followup">Unable to load saved month comparison.</div>';
@@ -2595,10 +2592,10 @@ function renderCollectorMatrixEmptyState() {
     const summaryNode = document.getElementById('collector-summary-table');
     if (summaryNode) summaryNode.innerHTML = '';
     if (noteNode) {
-        noteNode.textContent = 'No month comparison in the permanent summary table yet. Click Load Data once to run the accepted Collections scan and save the summary.';
+        noteNode.textContent = 'No month comparison in the permanent summary table yet. A controlled backend rebuild must create it before staff browsers load this grid.';
     }
     if (matrixNode) {
-        matrixNode.innerHTML = '<div class="empty-followup">No saved month comparison yet — click <strong>Load Data</strong> once to rebuild it from the working Collections calculation.</div>';
+        matrixNode.innerHTML = '<div class="empty-followup">No saved month comparison yet. The backend rebuild job must create the permanent summary first.</div>';
     }
     const rangeNode = document.getElementById('collector-dashboard-range');
     if (rangeNode) rangeNode.textContent = 'Not built yet';
@@ -2633,36 +2630,17 @@ async function loadCollectionsDataAndBuildMatrixSnapshot() {
     if (refreshBtn) refreshBtn.disabled = true;
 
     try {
-        collectionsFullScanAuthorized = true;
-        collectorMatrixSnapshotLoaded = false;
-        collectorMatrixSnapshotMeta = null;
-        collectorBillingMatrixCache = null;
-        collectorBillingMatrixPromise = null;
-        collectorDashboardData = null;
-        updateLoadingStatus('Running the accepted Collections scan before saving the permanent summary...');
-
-        const loaded = await loadInvoices(dataMode || 'active');
-        if (!loaded) {
-            throw new Error('Collections data load did not finish.');
+        const hydratedFromCache = await hydrateCollectorMatrixFromDeviceCache();
+        const result = await refreshCollectorMatrixFromSnapshot({ quiet: false });
+        if (!result?.loaded && !collectorMatrixSnapshotLoaded) {
+            if (!hydratedFromCache) renderCollectorMatrixEmptyState();
+            showLoadError('No saved month comparison is available yet. The full rebuild now runs only as a controlled backend job to protect staff browsers.');
+            return false;
         }
-
-        await renderCollectorDashboard({ recompute: true });
-        if (!collectorDashboardData || !collectorCellMap.size) {
-            throw new Error('The Collections matrix did not finish building.');
-        }
-
-        const saved = await persistCollectorMatrixSnapshotFromCurrentData('exact-collections-browser-scan');
-        const noteNode = document.getElementById('collector-dashboard-note');
-        if (noteNode) {
-            const builtAt = saved?.builtAt ? new Date(saved.builtAt) : new Date();
-            const builtLabel = Number.isNaN(builtAt.getTime()) ? String(saved?.builtAt || '') : builtAt.toLocaleString('en-PH');
-            noteNode.textContent = `Saved permanent month comparison from the working Collections scan (${builtLabel}).`;
-        }
-        updateLoadingStatus('Collections permanent summary saved.');
         return true;
     } catch (error) {
-        console.error('Collections matrix summary build failed:', error);
-        showLoadError(error.message || 'Unable to rebuild the permanent month comparison summary.');
+        console.error('Collections matrix summary load failed:', error);
+        showLoadError(error.message || 'Unable to load the permanent month comparison summary.');
         return false;
     } finally {
         collectorMatrixBuildInProgress = false;
@@ -2726,10 +2704,10 @@ async function openCollectorMatrixSettingsModal() {
         if (lastBuiltNode) {
             lastBuiltNode.textContent = builtParts.length
                 ? builtParts.join(' • ')
-                : 'No saved matrix build yet. Use Load Data once, then nightly refresh can reuse the saved summary.';
+                : 'No saved matrix build yet. A controlled backend rebuild must create the permanent summary.';
         }
         if (statusNode) {
-            statusNode.textContent = `Automatic rebuild uses ${settings.timezone || 'Asia/Manila'} time. Server cron should call the same summary save after Load Data logic is ported server-side; until then, staff can use Load Data manually.`;
+            statusNode.textContent = `Automatic rebuild uses ${settings.timezone || 'Asia/Manila'} time. Server jobs rebuild the summary; staff browsers only read the saved result.`;
         }
     } catch (error) {
         if (statusNode) statusNode.textContent = error.message || 'Unable to load matrix settings.';
@@ -6046,7 +6024,7 @@ function renderCollectorSummaryTable(data) {
     ensureCollectorDashboardDerivedFields(data);
     const summaryRows = Array.isArray(data.monthlySummaryRows) ? data.monthlySummaryRows : [];
     if (!summaryRows.length) {
-        container.innerHTML = '<div class="empty-followup">No summary counts in this saved build yet. Click <strong>Load Data</strong> to rebuild the month summary.</div>';
+        container.innerHTML = '<div class="empty-followup">No summary counts in this saved build yet. The controlled backend job must rebuild the month summary.</div>';
         return;
     }
 
@@ -7218,11 +7196,23 @@ async function openCollectorCellFullWorkspace(cellId) {
         return;
     }
     if (!lastLoadSucceeded) {
-        if (!window.confirm('Load Data scans billing, payments, and history, then rebuilds the summary. Continue?')) {
-            return;
+        const modal = document.getElementById('collectorCellModal');
+        const title = document.getElementById('collectorCellTitle');
+        const subtitle = document.getElementById('collectorCellSubtitle');
+        const content = document.getElementById('collectorCellContent');
+        const workspace = isCollectorProjectionOnlyCell(cell)
+            ? buildCollectorProjectionOnlyWorkspace(cell)
+            : buildCollectorSnapshotCellWorkspace(cell);
+        currentCollectorWorkspace = { ...workspace, cellId: cell.id };
+        if (title) title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
+        if (subtitle) subtitle.textContent = 'Showing saved matrix snapshot. No browser rebuild is required.';
+        if (content) {
+            content.innerHTML = isCollectorProjectionOnlyCell(cell)
+                ? renderCollectorProjectionOnlyWorkspace(workspace)
+                : renderCollectorSnapshotCellWorkspace(workspace);
         }
-        const loaded = await loadCollectionsDataAndBuildMatrixSnapshot();
-        if (!loaded) return;
+        if (modal) modal.classList.remove('hidden');
+        return;
     }
 
     const modal = document.getElementById('collectorCellModal');
@@ -8431,7 +8421,7 @@ async function openCollectorCell(cellId) {
     const cell = collectorCellMap.get(decodeCollectorCellToken(cellId));
     if (!cell) return;
     if (!lastLoadSucceeded && !canUseCollectorMatrixSnapshot()) {
-        window.alert('No saved matrix summary yet. Click Load Data once to build the month comparison table.');
+        window.alert('No saved matrix summary yet. The backend rebuild job must create the month comparison table.');
         return;
     }
     captureCollectorReturnBookmark(cell.id || cellId);
@@ -8489,7 +8479,7 @@ async function openCollectorCell(cellId) {
             } else {
                 content.innerHTML = renderCollectorSnapshotCellWorkspace(snapshotWorkspace);
             }
-            subtitle.textContent = 'Showing saved matrix snapshot. Load Data only if you need live follow-up, schedule, or payment tools.';
+            subtitle.textContent = 'Showing saved matrix snapshot. Live follow-up, schedule, and payment tools load separately from the summary.';
             return;
         }
 
@@ -11207,7 +11197,7 @@ function setupModalEvents() {
         if (!loadLiveBtn) return;
         event.preventDefault();
         event.stopPropagation();
-        void openCollectorCellFullWorkspace(loadLiveBtn.getAttribute('data-cell-id') || '');
+        window.alert('Live reload is temporarily disabled. This customer detail opens from the saved permanent summary so Collections staff can work without a browser full scan.');
     });
 
     collectorBranchModal?.addEventListener('click', (event) => {
