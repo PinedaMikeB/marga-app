@@ -121,6 +121,11 @@ Start every new Marga-App thread by reading:
   - Preserve `balance_amt = 0` from `tbl_paymentinfo` as a real zero balance. Do not convert it to null/false and fall back to `invoice amount - payment amount`, because paid invoices with deductions/2307 can have `payment_amt` lower than the invoice but an explicit zero balance.
   - Reusable skill saved at `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-billing-collections` and linked into `/Users/mike/.codex/skills/marga-billing-collections`; use it for future billing/collections statement, payment matching, grouping, quota/RTP, fixed-rate, and receivable-total work.
 - Billing grouped-invoice rule from 2026-05-25: do not hardcode one customer correction when a shared-invoice account is wrong. Use authoritative grouping membership (`tbl_groupings` + `tbl_groupsum.contract_main_id`) first. If a grouping has explicit `tbl_groupsum` members, only those contracts share the invoice/quota; other same-company departments stay separate. If a grouping has no membership rows, fall back to the existing company-level group behavior. This protects future customers with the same error without adding one-off patches.
+- 2026-06-02 CVM billing rule:
+  - `CVM Finance and Credit Corporation` is a one-invoice grouped Billing account, but it is not fixed-rate, print-all-you-can, RTP, or rate-per-page billing.
+  - Collapse CVM into one parent invoice row with expandable branch/machine details.
+  - Billing calculation uses toner quantity only: default description `Toner Cartridge`, quantity `50`, unit amount `650`, VAT-inclusive total `32,500` with VAT retro-computed from the total.
+  - Pending/unbilled projection must count CVM once per month at the toner invoice total, not once per branch/machine row.
 - Releasing is now live and materially implemented; only parity/tuning work should remain there, not a rebuild.
 - Preserve the accepted Collections month-matrix scroll format; user likes it and may want Billing to adopt it later.
 - Collections SN/data display is acceptable in the dashboard as of the latest live check.

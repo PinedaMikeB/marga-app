@@ -79,6 +79,7 @@ let invoicePreviewReferencePromise = null;
 let currentRtpPrintPayload = null;
 let currentRtpMeterFormEstimate = null;
 let invoiceSearchGroupCache = new Map();
+let billingExpandedGroupRows = new Set();
 const priorMachineReadingCache = new Map();
 const priorBillingReadingCache = new Map();
 let billingExclusionCache = [];
@@ -96,6 +97,18 @@ const DEFAULT_SPOILAGE_RATE = 0.02;
 const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
 const BILLING_DRAFTS_COLLECTION = 'tbl_billing_drafts';
 const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
+const SPECIAL_TONER_BILLING_GROUPS = [
+    {
+        key: 'cvm-toner',
+        parentName: 'CVM Finance and Credit Corporation',
+        groupName: 'CVM Toner Cartridge',
+        description: 'Toner Cartridge',
+        defaultQuantity: 50,
+        unitPrice: 650,
+        vatInclusive: true,
+        matchNames: ['cvm finance and credit corporation']
+    }
+];
 const SCHEDULE_AREA_RULES_COLLECTION = 'tbl_schedule_area_rules';
 const ENVELOPE_DEFAULTS = {
     bankName: 'China Bank Savings Antipolo Branch',
@@ -450,6 +463,35 @@ function formatAllPagesRate(value) {
 
 function isReadingPricing(profile) {
     return String(profile?.pricing_mode || '').toLowerCase() === 'reading';
+}
+
+function normalizeBillingName(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function getSpecialTonerBillingConfig(row) {
+    const haystack = normalizeBillingName([
+        row?.company_name,
+        row?.account_name,
+        row?.display_name,
+        row?.branch_name
+    ].filter(Boolean).join(' '));
+    if (!haystack) return null;
+    return SPECIAL_TONER_BILLING_GROUPS.find((config) => (
+        (config.matchNames || []).some((name) => haystack.includes(normalizeBillingName(name)))
+    )) || null;
+}
+
+function getSpecialTonerGroupRowId(config) {
+    return `special-toner-group:${config.key}`;
+}
+
+function isSpecialTonerBillingRow(row) {
+    return Boolean(row?.special_toner_billing || getSpecialTonerBillingConfig(row));
+}
+
+function isBillingGroupExpanded(groupRowId) {
+    return billingExpandedGroupRows.has(String(groupRowId || '').trim());
 }
 
 function formatMonthLabel(monthKey, fallback = '') {
@@ -1849,6 +1891,10 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         quota_amount: Number(estimate?.quotaAmount || 0) || 0,
         succeeding_amount: Number(estimate?.succeedingAmount || 0) || 0,
         billing_formula: String(estimate?.formula || '').trim(),
+        billing_item_description: String(estimate?.tonerDescription || primaryLine.description || primaryLine.label || '').trim(),
+        billing_item_quantity: Number(estimate?.tonerQuantity || primaryLine.quantity || 0) || 0,
+        billing_item_unit_price: Number(estimate?.tonerUnitPrice || primaryLine.unitPrice || 0) || 0,
+        billing_item_vat_inclusive: String(estimate?.billingMode || snapshot?.billingMode || '').trim() === 'toner_cartridge' ? 1 : 0,
         withvat: context?.profile?.with_vat ? 1 : 0,
         category_id: Number(context?.profile?.category_id || 0) || 0,
         category_code: String(context?.profile?.category_code || '').trim(),
@@ -2959,7 +3005,7 @@ async function recordBillingPrintEvent(preview, channel = 'browser_print') {
 }
 
 function isPrintableContractCode(code) {
-    return ['RTP', 'RTF', 'MAP'].includes(String(code || '').trim().toUpperCase());
+    return ['RTP', 'RTF', 'MAP', 'RTC'].includes(String(code || '').trim().toUpperCase());
 }
 
 function getPrintableContractCode(row, cell) {
@@ -3210,7 +3256,8 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         || row?.account_name
         || ''
     );
-    const isGroupedPrint = isOneInvoiceMultipleMachinesPrint({ row, context, estimate });
+    const isTonerInvoice = String(estimate?.billingMode || '').trim() === 'toner_cartridge';
+    const isGroupedPrint = isTonerInvoice || isOneInvoiceMultipleMachinesPrint({ row, context, estimate });
     const groupedRows = isGroupedPrint && Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
     const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
     const snapshotInvoiceNo = normalizeInvoiceNumber(context?.savedSnapshot?.invoiceNo || estimate?.invoiceNo || '');
@@ -3253,6 +3300,9 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         previousReadingDate: period.from || (context?.latestPriorGroup?.task_date ? formatIsoDate(asValidDate(context.latestPriorGroup.task_date)) : ''),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
+        itemDescription: estimate?.tonerDescription || estimate?.lineItems?.[0]?.description || '',
+        itemQuantity: Number(estimate?.tonerQuantity || estimate?.lineItems?.[0]?.quantity || 0) || 0,
+        itemUnitPrice: Number(estimate?.tonerUnitPrice || estimate?.lineItems?.[0]?.unitPrice || 0) || 0,
         totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
         rate: contractCode === 'RTF'
             ? Number(context?.profile?.monthly_rate || 0) || 0
@@ -3833,6 +3883,7 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
     const totals = preview?.totals || {};
     const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     const isFixedRate = contractCode === 'RTF';
+    const isTonerInvoice = contractCode === 'RTC' && String(preview?.itemDescription || '').trim();
     return `
         <div class="rtp-section-block" style="${buildRtpSectionStyle('header', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 150 }, mode)}"><strong>${escapeHtml(preview?.customerName || 'Unknown Customer')}</strong></div>
@@ -3852,6 +3903,15 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 142, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingTo || 'N/A')}</div>
 
             ${
+                isTonerInvoice
+                    ? `
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Description:</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 62, yMm: 32, widthMm: 112 }, mode)}">${escapeHtml(preview?.itemDescription || 'Toner Cartridge')}</div>
+
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Quantity / Unit:</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 70 }, mode)}">${escapeHtml(`${formatCount(preview?.itemQuantity || 0)} x ${formatFixedAmount(preview?.itemUnitPrice || 0)}`)}</div>
+                    `
+                    :
                 isFixedRate
                     ? `
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Monthly Rate:</strong></div>
@@ -5415,6 +5475,119 @@ function buildCompanySummaryRows(rows, months) {
     return displayRows;
 }
 
+function buildSpecialTonerParentCell(config, childRows, monthKey) {
+    const childCells = childRows.map((child) => child.months?.[monthKey] || {});
+    const billedCells = childCells.filter((cell) => cell.billed || Number(cell.amount_total || 0) > 0);
+    const mergedGroups = mergeInvoiceGroups(
+        childCells.flatMap((cell) => (Array.isArray(cell.invoice_groups) ? cell.invoice_groups : []))
+    );
+    const amountTotal = billedCells.reduce((sum, cell) => sum + Number(cell.amount_total || 0), 0);
+    const pending = amountTotal <= 0;
+    const projectedTotal = Number(config.defaultQuantity || 0) * Number(config.unitPrice || 0);
+    return {
+        month_key: monthKey,
+        month_label: childCells[0]?.month_label || monthKey,
+        month_label_short: childCells[0]?.month_label_short || formatMonthLabel(monthKey, monthKey),
+        billed: amountTotal > 0,
+        pending,
+        skipped: pending,
+        invoice_count: mergedGroups.length || (amountTotal > 0 ? 1 : 0),
+        billing_line_count: amountTotal > 0 ? 1 : 0,
+        machine_count: childRows.length,
+        amount_total: Number(amountTotal.toFixed(2)),
+        display_amount_total: Number(amountTotal.toFixed(2)),
+        reading_amount_total: 0,
+        reading_pages_total: 0,
+        reading_task_count: 0,
+        billing_task_count: childCells.reduce((sum, cell) => sum + Number(cell.billing_task_count || 0), 0),
+        received_task_count: childCells.reduce((sum, cell) => sum + Number(cell.received_task_count || 0), 0),
+        receipt_status: summarizeReceiptStatus(childCells),
+        billed_basis: amountTotal > 0 ? 'invoice' : 'toner_cartridge',
+        latest_invoice_date: childCells
+            .map((cell) => cell.latest_invoice_date)
+            .filter(Boolean)
+            .sort()
+            .slice(-1)[0] || null,
+        received_by_names: Array.from(new Set(childCells.flatMap((cell) => cell.received_by_names || []))).sort((a, b) => a.localeCompare(b)),
+        invoice_groups: mergedGroups,
+        reading_groups: [],
+        pending_count: pending ? 1 : 0,
+        toner_quantity: Number(config.defaultQuantity || 0),
+        toner_unit_price: Number(config.unitPrice || 0),
+        toner_description: config.description,
+        toner_projected_total: projectedTotal
+    };
+}
+
+function applySpecialTonerGroupedRows(rows, months) {
+    const groups = new Map();
+    const passthroughRows = [];
+
+    rows.forEach((row) => {
+        if (row?.is_summary_row || row?.is_detail_row || row?.isSpecialTonerChild || row?.isSpecialTonerParent) {
+            passthroughRows.push(row);
+            return;
+        }
+        const config = getSpecialTonerBillingConfig(row);
+        if (!config) {
+            passthroughRows.push(row);
+            return;
+        }
+        const groupRowId = getSpecialTonerGroupRowId(config);
+        if (!groups.has(groupRowId)) groups.set(groupRowId, { config, rows: [] });
+        groups.get(groupRowId).rows.push(row);
+    });
+
+    groups.forEach((group) => {
+        group.rows.sort((left, right) => compareBillingRows(left, right, 'customer'));
+        const firstRow = group.rows[0] || {};
+        const groupRowId = getSpecialTonerGroupRowId(group.config);
+        const monthsMap = {};
+        months.forEach((monthKey) => {
+            monthsMap[monthKey] = buildSpecialTonerParentCell(group.config, group.rows, monthKey);
+        });
+        passthroughRows.push({
+            ...firstRow,
+            row_id: groupRowId,
+            isSpecialTonerParent: true,
+            special_toner_billing: group.config,
+            company_id: firstRow.company_id || '',
+            company_name: group.config.parentName,
+            account_name: group.config.parentName,
+            display_name: group.config.parentName,
+            branch_name: `${formatCount(group.rows.length)} branches / machines`,
+            serial_number: '',
+            machine_id: firstRow.machine_id || '',
+            contractmain_id: firstRow.contractmain_id || '',
+            machine_label: group.config.groupName,
+            months: monthsMap
+        });
+        group.rows.forEach((childRow) => {
+            passthroughRows.push({
+                ...childRow,
+                isSpecialTonerChild: true,
+                specialTonerParentRowId: groupRowId,
+                specialTonerParentName: group.config.parentName
+            });
+        });
+    });
+
+    return passthroughRows.sort((left, right) => {
+        if (left.isSpecialTonerParent && right.specialTonerParentRowId === left.row_id) return -1;
+        if (right.isSpecialTonerParent && left.specialTonerParentRowId === right.row_id) return 1;
+        if (left.specialTonerParentRowId && left.specialTonerParentRowId === right.specialTonerParentRowId) {
+            return compareBillingRows(left, right, 'customer');
+        }
+        return compareBillingRows(left, right, getMatrixSortValue());
+    });
+}
+
+function prepareBillingDisplayRows(rows, months, searchTerm = '') {
+    const summaryRows = searchTerm ? buildCompanySummaryRows(rows, months) : rows;
+    const groupedRows = applySpecialTonerGroupedRows(summaryRows, months);
+    return groupedRows.filter((row) => !row.isSpecialTonerChild || isBillingGroupExpanded(row.specialTonerParentRowId));
+}
+
 function getCompanySummaryGroupKey(row) {
     const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
     if (groupId) return `billing-group:${groupId}`;
@@ -6545,6 +6718,9 @@ function buildBillingLinesSignature(lineItems = []) {
         succeedingRate: Number(line.succeedingRate || 0) || 0,
         monthlyQuota: Number(line.monthlyQuota || 0) || 0,
         monthlyRate: Number(line.monthlyRate || 0) || 0,
+        description: String(line.description || '').trim(),
+        quantity: Number(line.quantity || 0) || 0,
+        unitPrice: Number(line.unitPrice || 0) || 0,
         amountDue: Number(line.amountDue || 0) || 0
     })));
 }
@@ -7521,6 +7697,7 @@ function getBillingExclusionsForContext(row, context) {
 
 function buildBillingCalculationContext(row, monthKey) {
     if (!row) return null;
+    const specialTonerBilling = row.special_toner_billing || getSpecialTonerBillingConfig(row);
     const hasVerifiedBillingGroup = Boolean(row.billing_group);
     const isVerifiedSummaryGroup = Boolean(row.is_summary_row && row.billing_group);
     const summaryGroupedRows = hasVerifiedBillingGroup ? getGroupedMachineRows(row, monthKey) : [];
@@ -7528,7 +7705,7 @@ function buildBillingCalculationContext(row, monthKey) {
     const baseProfile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
     const groupProfile = hasVerifiedBillingGroup ? getSharedBillingGroupProfile(row, baseProfile) : null;
     const profile = isVerifiedSummaryGroup && groupProfile ? groupProfile : baseProfile;
-    if (!profile) return null;
+    if (!profile && !specialTonerBilling) return null;
 
     const targetCell = workingRow.months?.[monthKey] || {};
     const targetReadingGroup = getPrimaryTargetReadingGroup(workingRow, monthKey);
@@ -7553,7 +7730,16 @@ function buildBillingCalculationContext(row, monthKey) {
         targetCell,
         targetReadingGroup,
         monthLabel: targetCell.month_label_short || formatMonthLabel(monthKey, monthKey),
-        profile,
+        specialTonerBilling,
+        isSpecialToner: Boolean(specialTonerBilling),
+        profile: profile || {
+            category_id: 5,
+            category_code: 'RTC',
+            category_label: 'Toner Cartridge',
+            pricing_mode: 'toner',
+            monthly_rate: Number(specialTonerBilling?.defaultQuantity || 0) * Number(specialTonerBilling?.unitPrice || 0),
+            with_vat: specialTonerBilling?.vatInclusive !== false
+        },
         contractProfile: baseProfile,
         groupProfile,
         latestPriorGroup,
@@ -7561,9 +7747,9 @@ function buildBillingCalculationContext(row, monthKey) {
         previousMeter: targetPreviousMeter,
         presentMeter: targetPresentMeter,
         spoilageRate: DEFAULT_SPOILAGE_RATE,
-        isReading: isReadingPricing(profile),
-        isFixed: !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
-        hasSecondaryRtp: !forceGroupedMode && (hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2)),
+        isReading: !specialTonerBilling && isReadingPricing(profile),
+        isFixed: !specialTonerBilling && !isReadingPricing(profile) && Number(profile.monthly_rate || 0) > 0,
+        hasSecondaryRtp: !specialTonerBilling && !forceGroupedMode && (hasSecondaryRtpRate(profile) || Boolean(targetReadingGroup?.present_meter2 || targetReadingGroup?.meter_reading2)),
         groupedMachineRows,
         forceGroupedMode
     };
@@ -7594,11 +7780,76 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
     });
 }
 
+function calculateTonerBillingEstimate(context, values = {}) {
+    const config = context?.specialTonerBilling || {};
+    const quantity = Math.max(0, Number(values.quantity ?? config.defaultQuantity ?? 50) || 0);
+    const unitPrice = Math.max(0, Number(values.unitPrice ?? config.unitPrice ?? 650) || 0);
+    const description = String(values.description ?? config.description ?? 'Toner Cartridge').trim() || 'Toner Cartridge';
+    const amountDue = roundBillingAmount(quantity * unitPrice);
+    const netAmount = config.vatInclusive === false ? amountDue : roundBillingAmount(amountDue / 1.12);
+    const vatAmount = config.vatInclusive === false ? roundBillingAmount(amountDue * 0.12) : roundBillingAmount(amountDue - netAmount);
+    const line = {
+        label: description,
+        description,
+        subtitle: `${formatCount(quantity)} pc x ${formatAmount(unitPrice)}`,
+        rowId: String(context?.row?.row_id || context?.row?.company_id || '').trim(),
+        companyName: String(context?.row?.company_name || context?.row?.account_name || '').trim(),
+        branchName: String(context?.row?.branch_name || '').trim(),
+        machineId: '',
+        contractmainId: String(context?.row?.contractmain_id || '').trim(),
+        serialNumber: '',
+        machineModel: '',
+        quantity,
+        unitPrice,
+        previousMeter: 0,
+        presentMeter: 0,
+        rawPages: 0,
+        spoilagePercent: 0,
+        spoilageRate: 0,
+        systemSpoilagePages: 0,
+        actualSpoilagePages: 0,
+        totalSpoilagePages: 0,
+        spoilagePages: 0,
+        netPages: 0,
+        billedPages: 0,
+        quotaPages: 0,
+        succeedingPages: 0,
+        quotaAmount: 0,
+        succeedingAmount: 0,
+        succeedingRate: 0,
+        pageRate: 0,
+        monthlyQuota: 0,
+        monthlyRate: amountDue,
+        applyQuota: false,
+        quotaBypassed: false,
+        quotaBypassReason: '',
+        pages: 0,
+        amountDue,
+        netAmount,
+        vatAmount,
+        quotaVariance: null,
+        formula: 'toner_quantity_x_unit_price',
+        warning: '',
+        approvalStatus: 'none'
+    };
+    return {
+        ...line,
+        billingMode: 'toner_cartridge',
+        lineItems: [line],
+        formula: 'toner_quantity_x_unit_price',
+        savedComputation: `${description}: ${formatCount(quantity)} pc x ${formatAmount(unitPrice)} = ${formatAmount(amountDue)} VAT-inclusive.`,
+        tonerQuantity: quantity,
+        tonerUnitPrice: unitPrice,
+        tonerDescription: description
+    };
+}
+
 function getBillingModeOptions(context) {
     const options = [];
     const savedMode = String(context?.savedBillingMode || '').trim();
     const groupedRows = context?.groupedMachineRows || [];
     const canUseGroupedInvoiceMode = context?.forceGroupedMode || savedMode === 'multi_machine_rtp' || Boolean(context?.row?.billing_group);
+    if (context?.isSpecialToner) options.push({ key: 'toner_cartridge', label: 'Toner Cartridge' });
     if (context?.isReading) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
     if (context?.isReading && context?.hasSecondaryRtp) options.push({ key: 'multi_meter_rtp', label: 'Multiple Meter RTP' });
     if (context?.isFixed) options.push({ key: 'rtf', label: 'RTF Fixed Rate' });
@@ -7613,6 +7864,7 @@ function getDefaultBillingMode(context) {
     const savedMode = String(context?.savedBillingMode || '').trim();
     const options = getBillingModeOptions(context);
     if (savedMode && options.some((option) => option.key === savedMode)) return savedMode;
+    if (context?.isSpecialToner) return 'toner_cartridge';
     if (context?.forceGroupedMode && options.some((option) => option.key === 'multi_machine_rtp')) return 'multi_machine_rtp';
     if (context?.isFixed) return 'rtf';
     if (context?.hasSecondaryRtp) return 'multi_meter_rtp';
@@ -7828,6 +8080,46 @@ function renderBillingLinePanel(mode, title, copy, lines, warningNote = '') {
                     previousSection = section;
                     return `${sectionHeader}${renderMeterLineCard(line, mode, index)}`;
                 }).join('')}
+            </div>
+        </section>
+    `;
+}
+
+function renderTonerBillingPanel(context, estimate) {
+    const config = context?.specialTonerBilling || {};
+    return `
+        <section class="calc-panel calc-line-panel hidden" data-calc-mode-panel="toner_cartridge">
+            <div class="calc-panel-title">Toner Cartridge Billing</div>
+            <div class="calc-note calc-note-tight">One invoice for toner cartridge purchases. No meter reading, fixed-rate, RTP, or contract page computation is used.</div>
+            <div class="calc-panel-grid calc-contract-grid">
+                <div class="calc-field calc-field-span-2">
+                    <label for="calcTonerDescriptionInput">Description</label>
+                    <input type="text" id="calcTonerDescriptionInput" value="${escapeHtml(estimate?.tonerDescription || config.description || 'Toner Cartridge')}">
+                </div>
+                <div class="calc-field">
+                    <label for="calcTonerQuantityInput">Quantity</label>
+                    <input type="number" id="calcTonerQuantityInput" min="0" step="1" value="${escapeHtml(String(estimate?.tonerQuantity ?? config.defaultQuantity ?? 50))}">
+                </div>
+                <div class="calc-field">
+                    <label for="calcTonerUnitPriceInput">Unit Amount</label>
+                    <input type="number" id="calcTonerUnitPriceInput" min="0" step="0.01" value="${escapeHtml(String(estimate?.tonerUnitPrice ?? config.unitPrice ?? 650))}">
+                </div>
+                <div class="calc-field">
+                    <label>Subtotal</label>
+                    <input type="text" id="calcTonerSubtotalValue" readonly value="${escapeHtml(formatAmount(estimate?.amountDue || 0))}">
+                </div>
+                <div class="calc-field">
+                    <label>VAT</label>
+                    <input type="text" id="calcTonerVatValue" readonly value="${escapeHtml(formatAmount(estimate?.vatAmount || 0))}">
+                </div>
+                <div class="calc-field">
+                    <label>Net of VAT</label>
+                    <input type="text" id="calcTonerNetValue" readonly value="${escapeHtml(formatAmount(estimate?.netAmount || 0))}">
+                </div>
+                <div class="calc-field calc-field-strong">
+                    <label>Final Total</label>
+                    <input type="text" id="calcTonerTotalValue" readonly value="${escapeHtml(formatAmount(estimate?.amountDue || 0))}">
+                </div>
             </div>
         </section>
     `;
@@ -8050,12 +8342,18 @@ async function openBillingCalcModal(rowId, monthKey) {
             applyQuota: context.applyQuota,
             quotaBypassReason: context.quotaBypassReason
         });
-    let estimate = calculateBillingEstimate(
-        context,
-        initialSnapshot.previousMeter,
-        initialSnapshot.presentMeter,
-        initialSnapshot.spoilagePercent / 100
-    );
+    let estimate = context.isSpecialToner
+        ? calculateTonerBillingEstimate(context, savedBillingDoc ? {
+            description: savedBillingDoc.billing_item_description || savedBillingDoc.toner_description || context.specialTonerBilling?.description,
+            quantity: savedBillingDoc.billing_item_quantity || savedBillingDoc.toner_quantity || context.specialTonerBilling?.defaultQuantity,
+            unitPrice: savedBillingDoc.billing_item_unit_price || savedBillingDoc.toner_unit_price || context.specialTonerBilling?.unitPrice
+        } : {})
+        : calculateBillingEstimate(
+            context,
+            initialSnapshot.previousMeter,
+            initialSnapshot.presentMeter,
+            initialSnapshot.spoilagePercent / 100
+        );
 
     context.savedBillingMode = savedBillingDoc?.billing_mode || '';
     const billingModeOptions = getBillingModeOptions(context);
@@ -8071,14 +8369,14 @@ async function openBillingCalcModal(rowId, monthKey) {
     const canUseLegacyMultiMeterSeeds = !hasSavedSplitMultiMeter
         && String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp'
         && savedLineItems.length > 0;
-    const savedLegacyEstimate = savedBillingDoc && !savedLineItems.length
+    const savedLegacyEstimate = savedBillingDoc && !context.isSpecialToner && !savedLineItems.length
         ? buildSavedLegacyBillingEstimate({ doc: savedBillingDoc, context, profile, row, seedEstimate: estimate })
         : null;
     if (savedLegacyEstimate) {
         savedLegacyEstimate.billingMode = activeBillingMode;
         estimate = savedLegacyEstimate;
     }
-    else estimate.lineItems = [estimate];
+    else if (!Array.isArray(estimate.lineItems) || !estimate.lineItems.length) estimate.lineItems = [estimate];
     const savedSecondaryLine = savedLineItems.find((line) => String(line?.label || '').toLowerCase().includes('color'))
         || (String(savedBillingDoc?.billing_mode || '').trim() === 'multi_meter_rtp' ? savedLineItems[1] : null)
         || null;
@@ -8535,6 +8833,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             </div>
             ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate Print and Copy counters for black/white and colored pages.', multiMeterSeedLines, legacyMultiMeterNote)}
             ${renderBillingLinePanel('multi_machine_rtp', 'One Invoice, Multiple Machines', 'Use one invoice number, compute each machine line, then sum the invoice total.', multiMachineSeedLines)}
+            ${renderTonerBillingPanel(context, estimate)}
             ${renderBillingExclusionEditor()}
             ${renderSavedBillingExclusions(savedExclusionsForContext)}
             ${
@@ -8686,6 +8985,13 @@ async function openBillingCalcModal(rowId, monthKey) {
     const modeSummaryPanel = document.getElementById('calcModeSummaryPanel');
     const saveBillingRow = document.getElementById('calcSaveBillingRow');
     const calculationSections = document.getElementById('calcCalculationSections');
+    const tonerDescriptionInput = document.getElementById('calcTonerDescriptionInput');
+    const tonerQuantityInput = document.getElementById('calcTonerQuantityInput');
+    const tonerUnitPriceInput = document.getElementById('calcTonerUnitPriceInput');
+    const tonerSubtotalValue = document.getElementById('calcTonerSubtotalValue');
+    const tonerVatValue = document.getElementById('calcTonerVatValue');
+    const tonerNetValue = document.getElementById('calcTonerNetValue');
+    const tonerTotalValue = document.getElementById('calcTonerTotalValue');
     const exclusionEditor = document.getElementById('calcExclusionEditor');
     const exclusionTargetInput = document.getElementById('calcExclusionTargetInput');
     const exclusionReasonInput = document.getElementById('calcExclusionReasonInput');
@@ -8868,6 +9174,13 @@ async function openBillingCalcModal(rowId, monthKey) {
         if (!calculationEdited && savedLegacyEstimate && activeBillingMode === (savedLegacyEstimate.billingMode || activeBillingMode)) {
             return savedLegacyEstimate;
         }
+        if (activeBillingMode === 'toner_cartridge') {
+            return calculateTonerBillingEstimate(context, {
+                description: tonerDescriptionInput?.value || '',
+                quantity: tonerQuantityInput?.value,
+                unitPrice: tonerUnitPriceInput?.value
+            });
+        }
         if (activeBillingMode === 'multi_meter_rtp') {
             const lines = multiMeterSeedLines.map((seed, index) => estimateLineFromSeed({ ...seed, profile: seed.profile || profile, row }, activeBillingMode, index));
             const summary = applySharedMultiMeterQuota(lines);
@@ -8931,6 +9244,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 modeSummaryCopy.textContent = 'Print and Copy counters are computed separately for black/white and colored pages, then summed into one invoice.';
             } else if (activeBillingMode === 'multi_machine_rtp') {
                 modeSummaryCopy.textContent = 'Machine lines share one invoice number, one combined quota, and one rate plan.';
+            } else if (activeBillingMode === 'toner_cartridge') {
+                modeSummaryCopy.textContent = 'This invoice uses toner quantity and unit amount only. VAT is computed from the VAT-inclusive total.';
             } else if (activeBillingMode === 'rtf') {
                 modeSummaryCopy.textContent = 'This invoice uses the fixed monthly contract rate.';
             } else {
@@ -9184,6 +9499,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         setElementDisplayValue(netValue, formatAmount(next.netAmount || 0));
         setElementDisplayValue(vatValue, formatAmount(next.vatAmount || 0));
         setElementDisplayValue(modeTotalAmountValue, formatAmount(next.amountDue || 0));
+        setElementDisplayValue(tonerSubtotalValue, formatAmount(next.amountDue || 0));
+        setElementDisplayValue(tonerVatValue, formatAmount(next.vatAmount || 0));
+        setElementDisplayValue(tonerNetValue, formatAmount(next.netAmount || 0));
+        setElementDisplayValue(tonerTotalValue, formatAmount(next.amountDue || 0));
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
             quotaValue.textContent = next.sharedMeterGroups?.length
@@ -9199,6 +9518,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 ? next.lineItems.map((line) => `${line.label}: ${formatAmount(line.amountDue || 0)}`).join(' • ')
                 : next.savedComputation
                 ? next.savedComputation
+                : activeBillingMode === 'toner_cartridge'
+                ? (next.savedComputation || `${next.tonerDescription || 'Toner Cartridge'}: ${formatCount(next.tonerQuantity || 0)} pc x ${formatAmount(next.tonerUnitPrice || 0)} = ${formatAmount(next.amountDue || 0)}.`)
                 : context.isReading
                 ? formatBillingComputationFlow(next)
                 : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
@@ -9251,6 +9572,13 @@ async function openBillingCalcModal(rowId, monthKey) {
         calculationEdited = true;
         workflowError = '';
         recompute();
+    });
+    [tonerDescriptionInput, tonerQuantityInput, tonerUnitPriceInput].forEach((input) => {
+        input?.addEventListener('input', () => {
+            calculationEdited = true;
+            workflowError = '';
+            recompute();
+        });
     });
     quotaBypassReasonInput?.addEventListener('input', () => {
         calculationEdited = true;
@@ -9906,7 +10234,7 @@ function renderMatrixTable(payload) {
     )).length;
     const sortValue = getMatrixSortValue();
 
-    const displayRows = searchTerm ? buildCompanySummaryRows(sortedRows, months) : sortedRows;
+    const displayRows = prepareBillingDisplayRows(sortedRows, months, searchTerm);
     renderedMatrixRows = displayRows;
     renderCustomerStatementBar(filteredRows);
 
@@ -9961,7 +10289,9 @@ function renderMatrixTable(payload) {
             title: authoritativeTotal ? 'Full matched billing total' : 'Loaded row subtotal'
         };
     });
-    unbilledProjectionData = buildUnbilledProjectionData(payload, filteredRows);
+    const projectionRows = prepareBillingDisplayRows(filteredRows, months, searchTerm)
+        .filter((row) => !row.isSpecialTonerChild);
+    unbilledProjectionData = buildUnbilledProjectionData(payload, projectionRows);
     unbilledProjectionDetailMap = unbilledProjectionData.detailsByMonth;
     const unbilledTotals = unbilledProjectionData.monthTotals;
 
@@ -10011,7 +10341,8 @@ function renderMatrixTable(payload) {
         const trClass = [
             String(rowId) === String(selectedRowId) ? 'selected-row' : '',
             row.is_summary_row ? 'summary-row' : '',
-            row.is_detail_row ? 'detail-row' : ''
+            row.is_detail_row || row.isSpecialTonerChild ? 'detail-row' : '',
+            row.isSpecialTonerParent ? 'summary-row special-toner-parent-row' : ''
         ].filter(Boolean).join(' ');
         const monthCells = months.map((monthKey) => {
             const cell = row.months?.[monthKey] || {};
@@ -10019,7 +10350,8 @@ function renderMatrixTable(payload) {
             const shownAmount = Number(cell.display_amount_total || cell.amount_total || 0);
             const hasReadingBreakdown = Number(cell.reading_amount_total || 0) > 0;
             const hasInvoiceAmount = Number(cell.amount_total || 0) > 0;
-            const canOpenCalculator = (!row.is_summary_row && Boolean(getRowBillingProfile(row)))
+            const canOpenCalculator = row.isSpecialTonerParent
+                || (!row.is_summary_row && Boolean(getRowBillingProfile(row)))
                 || (row.is_summary_row && Number(cell.pending_count || 0) > 0);
             if (cell.billed || shownAmount > 0) {
                 const invoiceMeta = `${formatCount(cell.invoice_count || 0)} inv`;
@@ -10100,8 +10432,15 @@ function renderMatrixTable(payload) {
                     }
                 </td>
                 <td class="customer-col">
-                    <div class="customer-main">${escapeHtml(row.company_name || row.account_name)}</div>
+                    <div class="customer-main">
+                        ${row.isSpecialTonerParent ? `
+                            <button class="collector-group-toggle billing-group-toggle" type="button" data-billing-group-toggle="${escapeHtml(String(rowId))}" aria-expanded="${isBillingGroupExpanded(rowId) ? 'true' : 'false'}">
+                                <span class="collector-primary">${isBillingGroupExpanded(rowId) ? '-' : '+'} ${escapeHtml(row.company_name || row.account_name)}</span>
+                            </button>
+                        ` : escapeHtml(row.company_name || row.account_name)}
+                    </div>
                     ${row.is_summary_row && row.billing_group ? '<div class="customer-badge-line"><span class="grouped-invoice-badge">Grouped Invoice</span></div>' : ''}
+                    ${row.isSpecialTonerParent ? '<div class="customer-badge-line"><span class="grouped-invoice-badge">Toner Group Invoice</span></div>' : ''}
                     <div class="customer-sub">${escapeHtml(row.is_summary_row ? (row.machine_label || '') : (row.machine_label || row.machine_id || ''))}</div>
                 </td>
                 <td class="branch-col">
@@ -10565,6 +10904,11 @@ async function loadBillingScorecardPayments() {
 
 function getBillingScorecardPendingProjection(cell, row) {
     if (!cell || !cell.pending) return 0;
+    if (row?.isSpecialTonerParent || row?.special_toner_billing) {
+        const config = row.special_toner_billing || getSpecialTonerBillingConfig(row) || {};
+        return Number(cell.toner_projected_total || 0)
+            || (Number(config.defaultQuantity || 0) * Number(config.unitPrice || 0));
+    }
     const readingAmount = Number(cell.reading_amount_total || 0);
     if (readingAmount > 0) return readingAmount;
     const displayAmount = Number(cell.display_amount_total || 0);
@@ -10584,6 +10928,7 @@ function getBillingScorecardPendingProjection(cell, row) {
 }
 
 function getBillingScorecardPendingReason(cell, row) {
+    if (row?.isSpecialTonerParent || row?.special_toner_billing) return 'Pending toner cartridge invoice';
     if (Number(cell?.reading_amount_total || 0) > 0) return 'Pending billing from actual meter-reading amount';
     if (Number(cell?.display_amount_total || 0) > 0 && Number(cell?.amount_total || 0) <= 0) return 'Pending billing from displayed meter-reading amount';
     const profile = row?.billing_profile || {};
@@ -11893,6 +12238,16 @@ function bindEvents() {
         }
     });
     els.matrixTableWrap?.addEventListener('click', (event) => {
+        const groupToggle = event.target.closest('[data-billing-group-toggle]');
+        if (groupToggle) {
+            const groupRowId = String(groupToggle.dataset.billingGroupToggle || '').trim();
+            if (groupRowId) {
+                if (billingExpandedGroupRows.has(groupRowId)) billingExpandedGroupRows.delete(groupRowId);
+                else billingExpandedGroupRows.add(groupRowId);
+                if (lastPayload) renderMatrixTable(lastPayload);
+            }
+            return;
+        }
         const calcTrigger = event.target.closest('.calc-link');
         if (calcTrigger) {
             event.preventDefault();
