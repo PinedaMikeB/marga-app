@@ -251,6 +251,11 @@ const COLLECTION_PRIORITY_CARD_DEFINITIONS = [
     { mode: 'overdue_accounts', title: 'Overdue Accounts', countLabel: 'accounts', amountLabel: 'overdue' },
     { mode: 'for_approval', title: 'For Approval', countLabel: 'accounts', amountLabel: 'pending approval' }
 ];
+const COLLECTION_ROLE_PRIORITY_MODES = {
+    collection_head: COLLECTION_PRIORITY_CARD_DEFINITIONS.map((card) => card.mode),
+    priority_accounts: ['promise_today', 'broken_promise', 'followup_today', 'top_collectible', 'overdue_accounts'],
+    regular_accounts: ['billing_received_unfollowed', 'needs_document', 'for_approval']
+};
 
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
@@ -5291,6 +5296,17 @@ function isCollectionPriorityCardMode(mode) {
     return COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === mode);
 }
 
+function getAllowedPriorityModesForCurrentLane() {
+    const role = getCurrentCollectionRoleAssignment();
+    const modes = COLLECTION_ROLE_PRIORITY_MODES[role];
+    return new Set(modes || COLLECTION_ROLE_PRIORITY_MODES.collection_head);
+}
+
+function isPriorityModeAllowedForCurrentLane(mode) {
+    if (!isCollectionPriorityCardMode(mode)) return true;
+    return getAllowedPriorityModesForCurrentLane().has(mode);
+}
+
 function getPriorityCardDefinition(mode) {
     return COLLECTION_PRIORITY_CARD_DEFINITIONS.find((card) => card.mode === mode) || null;
 }
@@ -5441,6 +5457,7 @@ function renderPriorityWorklist() {
 
     if (listBtn) listBtn.classList.toggle('active', currentPriorityWorklistView === 'list');
     if (gridBtn) gridBtn.classList.toggle('active', currentPriorityWorklistView === 'grid');
+    syncPriorityCardsForCurrentLane();
 
     const definition = getPriorityCardDefinition(currentWorkQueueMode);
     const title = definition?.title || 'Priority Worklist';
@@ -5591,6 +5608,12 @@ function invoiceMatchesWorkQueueMode(invoice) {
 }
 
 function setWorkQueueMode(mode) {
+    if (!isPriorityModeAllowedForCurrentLane(mode)) {
+        currentWorkQueueMode = 'all';
+        renderPriorityWorklist();
+        scrollToWorkQueue();
+        return;
+    }
     currentWorkQueueMode = currentWorkQueueMode === mode ? 'all' : mode;
     if (isCollectionPriorityCardMode(currentWorkQueueMode)) {
         currentPriorityWorklistView = 'list';
@@ -7648,6 +7671,37 @@ function renderDashboardCollectionAssignment() {
             .join(' | ');
         textNode.textContent = assignedText || 'Choose the lane you are handling today. This is coordination only, not an access lock.';
     }
+    syncPriorityCardsForCurrentLane();
+}
+
+function syncPriorityCardsForCurrentLane() {
+    const allowedModes = getAllowedPriorityModesForCurrentLane();
+    const role = getCurrentCollectionRoleAssignment();
+    document.querySelectorAll('.priority-card[data-work-queue-mode]').forEach((card) => {
+        const mode = String(card.dataset.workQueueMode || '');
+        card.classList.toggle('lane-hidden', isCollectionPriorityCardMode(mode) && !allowedModes.has(mode));
+    });
+
+    if (currentWorkQueueMode !== 'all' && isCollectionPriorityCardMode(currentWorkQueueMode) && !allowedModes.has(currentWorkQueueMode)) {
+        currentWorkQueueMode = 'all';
+        currentPriorityWorklistView = 'list';
+        document.querySelectorAll('[data-work-queue-mode]').forEach((card) => card.classList.remove('active'));
+        recomputeFilteredInvoices();
+    }
+
+    const titleNode = document.getElementById('priorityWorklistTitle');
+    const subtitleNode = document.getElementById('priorityWorklistSubtitle');
+    if (titleNode && currentWorkQueueMode === 'all') {
+        const label = role ? getCollectionRoleLabel(role) : 'All collection lanes';
+        titleNode.textContent = `${label} Worklist`;
+    }
+    if (subtitleNode && currentWorkQueueMode === 'all') {
+        subtitleNode.textContent = role === 'priority_accounts'
+            ? 'Priority lane shows promise, broken promise, high-value, overdue, and due follow-up accounts.'
+            : role === 'regular_accounts'
+                ? 'Regular lane shows billing received, document concerns, and approval follow-ups.'
+                : 'Collection Head sees every priority card and can monitor all lanes.';
+    }
 }
 
 async function saveDashboardCollectionAssignment() {
@@ -7670,6 +7724,8 @@ async function saveDashboardCollectionAssignment() {
         await saveCollectionWorkflowSettings();
         renderDashboardCollectionAssignment();
         renderCollectionAssignmentSettings();
+        renderPriorityWorklist();
+        updatePriorityCardsFromCurrentData();
         if (statusNode) statusNode.textContent = role
             ? `Saved: ${getCollectionRoleLabel(role)}`
             : 'Saved: Open / not set';
@@ -8453,14 +8509,62 @@ function openCollectorSoaPeriodModal() {
     const status = document.getElementById('collectorSoaStatus');
     const context = currentCollectorWorkspace.context || {};
     const accountLabel = context.accountLabel || context.customer || 'this account';
+    const defaultFromDate = getCollectorSoaDefaultFromDate(currentCollectorWorkspace);
+    const defaultFromKey = toDateKey(defaultFromDate) || '2026-01-01';
 
-    if (fromInput && !fromInput.value) fromInput.value = '2026-01-01';
+    if (fromInput) fromInput.value = defaultFromKey;
     if (toInput) toInput.value = getTodayInputValue(0);
     if (subtitle) subtitle.textContent = `Choose the SOA period for ${accountLabel}.`;
-    if (note) note.textContent = 'Default starts January 1, 2026 so 2025 invoices are excluded unless you change the date.';
+    if (note) note.textContent = `Default starts ${formatDate(defaultFromDate)} based on the earliest unpaid invoice in this workspace.`;
     if (status) status.textContent = 'Ready.';
 
     modal.classList.remove('hidden');
+}
+
+function getCollectorSoaCandidateInvoices(workspace) {
+    const context = workspace?.context || {};
+    const candidates = [];
+    const append = (invoice, source = 'workspace') => {
+        if (!invoice) return;
+        candidates.push({
+            ...invoice,
+            source,
+            invoiceDate: normalizeDate(invoice.invoiceDate || invoice.dueDate) || null,
+            amount: Number(invoice.amount || invoice.billedAmount || invoice.displayBilledTotal || 0) || 0,
+            company: invoice.company || context.customer,
+            branch: invoice.branch || context.branchName,
+            companyId: invoice.companyId || context.companyId,
+            branchId: invoice.branchId || context.branchId
+        });
+    };
+
+    (workspace?.branchInvoices || []).forEach((invoice) => append(invoice, 'branch'));
+    if (!candidates.length && workspace?.selectedInvoice) append(workspace.selectedInvoice, 'selected');
+    if (!candidates.length) {
+        (workspace?.cell?.records || []).forEach((record) => append(record, 'cell'));
+    }
+
+    collectorBillingRecords
+        .filter((record) => isCollectorSoaRecordMatch(record, context))
+        .forEach((record) => append(record, 'loaded_billing'));
+
+    const seen = new Set();
+    return candidates
+        .filter((invoice) => {
+            const key = String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .filter((invoice) => Number(invoice.amount || invoice.billedAmount || 0) > 0);
+}
+
+function getCollectorSoaDefaultFromDate(workspace) {
+    const dates = getCollectorSoaCandidateInvoices(workspace)
+        .map((invoice) => normalizeDate(invoice.invoiceDate || invoice.dueDate))
+        .filter(Boolean)
+        .sort((left, right) => left.getTime() - right.getTime());
+    return dates[0] || normalizeDate('2026-01-01') || new Date();
 }
 
 function isCollectorSoaRecordMatch(record, context) {
@@ -8490,17 +8594,8 @@ function getPaymentsForInvoiceKeys(invoice) {
 }
 
 function buildCollectorSoaRows(workspace, fromDate, toDate) {
-    const context = workspace?.context || {};
-    const seen = new Set();
-    const matchedInvoices = collectorBillingRecords
+    const matchedInvoices = getCollectorSoaCandidateInvoices(workspace)
         .filter((record) => record.invoiceDate && isDateWithinRange(record.invoiceDate, fromDate, toDate))
-        .filter((record) => isCollectorSoaRecordMatch(record, context))
-        .filter((record) => {
-            const key = String(record.invoiceKey || record.invoiceNo || record.invoiceId || '').trim();
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        })
         .sort((left, right) => {
             const leftTime = (left.invoiceDate || new Date(0)).getTime();
             const rightTime = (right.invoiceDate || new Date(0)).getTime();
@@ -8519,16 +8614,17 @@ function buildCollectorSoaRows(workspace, fromDate, toDate) {
                 const rightTime = (right.paymentDate || new Date(0)).getTime();
                 return rightTime - leftTime;
             })[0]?.balanceAmount;
-        const computedBalance = Math.max(0, Number(invoice.amount || 0) - paymentAmount);
+        const workspaceBalance = getOutstandingInvoiceAmount(invoice);
+        const computedBalance = Math.max(0, Number(invoice.amount || invoice.billedAmount || 0) - paymentAmount);
         const balance = latestBalance !== undefined
             ? Math.min(Math.max(0, Number(latestBalance || 0)), computedBalance)
-            : computedBalance;
+            : (workspaceBalance > 0 ? workspaceBalance : computedBalance);
         finalBalance += balance;
 
         return {
             date: invoice.invoiceDate,
             invoiceNo: invoice.invoiceNo || invoice.invoiceId || invoice.invoiceKey || '-',
-            amountBilled: Number(invoice.amount || 0),
+            amountBilled: Number(invoice.amount || invoice.billedAmount || 0),
             payment: paymentAmount,
             balance
         };
