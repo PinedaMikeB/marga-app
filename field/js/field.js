@@ -1103,6 +1103,19 @@ async function queryCollection(collectionId, limit = 1000) {
     return runQuery(structuredQuery);
 }
 
+async function queryCollectionSelect(collectionId, fields = [], limit = 1000) {
+    const structuredQuery = {
+        from: [{ collectionId }],
+        limit
+    };
+    if (Array.isArray(fields) && fields.length) {
+        structuredQuery.select = {
+            fields: fields.map((fieldPath) => ({ fieldPath }))
+        };
+    }
+    return runQuery(structuredQuery);
+}
+
 async function queryLatestById(collectionId, limit = 1) {
     const structuredQuery = {
         from: [{ collectionId }],
@@ -3272,7 +3285,11 @@ async function loadFieldWorkLocations() {
 async function loadPinnedCustomerBranches() {
     if (state.pinnedCustomerBranchesLoaded) return state.pinnedCustomerBranches;
     const cached = [...caches.branch.values()].filter((branch) => getBranchCoordinates(branch));
-    const docs = await queryCollection('tbl_branchinfo', FIELD_BRANCH_LOCATION_QUERY_LIMIT).catch(() => []);
+    const branchFields = ['id', 'company_id', 'area_id', 'branchname', 'branch_name', 'address', 'latitude', 'longitude', 'lat', 'lng', 'lon'];
+    const docs = await queryCollectionSelect('tbl_branchinfo', branchFields, FIELD_BRANCH_LOCATION_QUERY_LIMIT).catch((error) => {
+        console.warn('Pinned customer branch lookup failed:', error);
+        return [];
+    });
     const byId = new Map();
     cached.forEach((branch) => {
         const id = String(branch?.id || branch?._docId || '').trim();
@@ -3759,7 +3776,8 @@ function renderAttendanceLocationResult(snapshot) {
     });
 }
 
-async function checkAttendanceLocation() {
+async function checkAttendanceLocation(options = {}) {
+    const { openAddPanelOnMatch = false } = options;
     const button = document.getElementById('fieldCheckLocationBtn');
     if (button) button.disabled = true;
     setAttendanceLocationCheckUi({
@@ -3772,6 +3790,9 @@ async function checkAttendanceLocation() {
     try {
         const snapshot = await getAttendanceLocationSnapshot({ withGps: true });
         renderAttendanceLocationResult(snapshot);
+        if (openAddPanelOnMatch && snapshot.nearbyCustomerBranch) {
+            openAddNearbySchedulePanel();
+        }
     } catch (err) {
         console.error('Attendance location check failed:', err);
         setAttendanceLocationCheckUi({
@@ -3793,8 +3814,14 @@ function populateAddSchedulePurposeOptions() {
         .join('');
 }
 
-function openAddNearbySchedulePanel() {
-    if (!state.attendanceNearbyScheduleMatch) return;
+async function openAddNearbySchedulePanel() {
+    if (!state.attendanceNearbyScheduleMatch) {
+        await checkAttendanceLocation({ openAddPanelOnMatch: true });
+        if (!state.attendanceNearbyScheduleMatch) {
+            alert('Check My Location did not find an addable pinned customer site. You can only add a schedule while your phone is within 200m of that customer pin.');
+            return;
+        }
+    }
     populateAddSchedulePurposeOptions();
     const panel = document.getElementById('fieldAddSchedulePanel');
     if (panel) panel.hidden = false;
