@@ -1390,7 +1390,14 @@ function prepareCollectorRows(rows) {
     const searchTerm = getCollectorSearchTerm();
     const invoiceSearchTerm = getCollectorInvoiceSearchTerm();
     const normalizedInvoiceSearch = normalizeCollectorInvoiceSearchValue(invoiceSearchTerm);
+    const matrixPriorityRowIds = COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === currentWorkQueueMode)
+        ? getMatrixPriorityRowIdSet(currentWorkQueueMode)
+        : null;
     const filteredRows = rows
+        .filter((row) => {
+            if (!matrixPriorityRowIds) return true;
+            return matrixPriorityRowIds.has(String(row.rowId || '').trim());
+        })
         .filter((row) => {
             if (!searchTerm) return true;
             return (row._collectorAccountSearchText || '').includes(searchTerm);
@@ -5097,7 +5104,111 @@ function getHistoryPromisedAmount(entry, invoice) {
     return amount > 0 ? amount : Number(invoice?.amount || 0) || 0;
 }
 
+function getCollectorRowOpenCells(row = {}) {
+    return Object.values(row.months || {})
+        .map((cellId) => collectorCellMap.get(String(cellId || '').trim()))
+        .filter((cell) => {
+            if (!cell) return false;
+            const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+            const outstanding = getCellOutstandingBalance(cell);
+            return (billedTarget > 0 || cell.pendingBilling || cell.missedReading) && Number(cell.collectedTotal || 0) <= 0 && outstanding > 0.01;
+        });
+}
+
+function getCollectorRowOpenAmount(row = {}) {
+    return getCollectorRowOpenCells(row).reduce((sum, cell) => {
+        const outstanding = getCellOutstandingBalance(cell);
+        const projected = Number(cell.pendingBillingProjectionTotal || 0);
+        const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+        return sum + Math.max(outstanding, projected, billedTarget, 0);
+    }, 0);
+}
+
+function getCollectorRowLatestHistory(row = {}) {
+    const histories = [
+        row.latestHistory,
+        ...Object.values(row.months || {}).map((cellId) => collectorCellMap.get(String(cellId || '').trim())?.latestHistory)
+    ].filter(Boolean);
+    histories.sort((left, right) => {
+        const leftDate = normalizeDate(left.callDate || left.callDateRaw) || new Date(0);
+        const rightDate = normalizeDate(right.callDate || right.callDateRaw) || new Date(0);
+        const leftTime = leftDate.getTime();
+        const rightTime = rightDate.getTime();
+        return rightTime - leftTime;
+    });
+    return histories[0] || null;
+}
+
+function getCollectorRowsForPriorityCards() {
+    return (collectorDashboardData?.customerRows || []).filter((row) => !row.isGroupedChild);
+}
+
+function getMatrixPriorityRowsForMode(mode) {
+    const todayKey = toDateKey(new Date());
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const rows = getCollectorRowsForPriorityCards();
+
+    if (mode === 'promise_today') {
+        return rows.filter((row) => {
+            const entry = getCollectorRowLatestHistory(row);
+            return entry?.promiseToPay === 'Promised to Pay' && (entry.promiseToPayDateKey || entry.followupDateKey) === todayKey;
+        });
+    }
+
+    if (mode === 'broken_promise') {
+        return rows.filter((row) => {
+            const entry = getCollectorRowLatestHistory(row);
+            if (!entry) return false;
+            if (entry.promiseToPay === 'Broken Promise') return true;
+            const promiseDate = entry.promiseToPayDate || entry.followupDate;
+            return ['Promised to Pay', 'Rescheduled Promise'].includes(entry.promiseToPay) && promiseDate && promiseDate < now;
+        });
+    }
+
+    if (mode === 'followup_today') {
+        return rows.filter((row) => getCollectorRowLatestHistory(row)?.followupDateKey === todayKey);
+    }
+
+    if (mode === 'needs_document') {
+        return rows.filter((row) => DOCUMENT_ISSUE_TYPES.has(getCollectorRowLatestHistory(row)?.issueType || ''));
+    }
+
+    if (mode === 'billing_received_unfollowed') {
+        return rows.filter((row) => {
+            if (getCollectorRowLatestHistory(row)?.callDate) return false;
+            return getCollectorRowOpenCells(row).some((cell) => (cell.records || []).length || Number(cell.displayBilledTotal || cell.billedTotal || 0) > 0);
+        });
+    }
+
+    if (mode === 'top_collectible') {
+        return rows
+            .map((row) => ({ row, amount: getCollectorRowOpenAmount(row) }))
+            .filter((item) => item.amount > 0.01)
+            .sort((left, right) => right.amount - left.amount)
+            .slice(0, 25)
+            .map((item) => item.row);
+    }
+
+    if (mode === 'overdue_accounts') {
+        return rows
+            .filter((row) => getCollectorRowOpenAmount(row) > 0.01)
+            .sort((left, right) => getCollectorRowOpenAmount(right) - getCollectorRowOpenAmount(left));
+    }
+
+    if (mode === 'for_approval') {
+        return rows.filter((row) => {
+            const entry = getCollectorRowLatestHistory(row);
+            return entry?.promiseToPay === 'For Approval Only' || entry?.issueType === 'For Approval';
+        });
+    }
+
+    return [];
+}
+
 function getPriorityRowsForMode(mode) {
+    if (!allInvoices.length && collectorDashboardData) return getMatrixPriorityRowsForMode(mode);
+
     const todayKey = toDateKey(new Date());
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -5154,9 +5265,21 @@ function getPriorityRowsForMode(mode) {
 }
 
 function getPriorityMetricAmount(mode, invoice) {
+    if (invoice?.rowId && collectorDashboardData) {
+        const entry = getCollectorRowLatestHistory(invoice);
+        if (mode === 'promise_today' || mode === 'broken_promise') {
+            const promised = Number(entry?.promiseToPayAmount || entry?.paymentAmount || 0);
+            return promised > 0 ? promised : getCollectorRowOpenAmount(invoice);
+        }
+        return getCollectorRowOpenAmount(invoice);
+    }
     const entry = getLatestHistoryForInvoice(invoice);
     if (mode === 'promise_today' || mode === 'broken_promise') return getHistoryPromisedAmount(entry, invoice);
     return Number(invoice?.amount || 0) || 0;
+}
+
+function getMatrixPriorityRowIdSet(mode) {
+    return new Set(getMatrixPriorityRowsForMode(mode).map((row) => String(row.rowId || '').trim()).filter(Boolean));
 }
 
 function invoiceMatchesWorkQueueMode(invoice) {
@@ -5385,11 +5508,16 @@ function updateQueueContext() {
     const queueText = currentWorkQueueMode !== 'all'
         ? getWorkQueueModeLabel(currentWorkQueueMode)
         : (currentPriorityFilter ? `Priority: ${currentPriorityFilter.toUpperCase()}` : 'All priorities');
-    node.textContent = `${queueText} • ${filteredInvoices.length.toLocaleString()} account(s) in queue`;
+    const matrixCount = currentWorkQueueMode !== 'all' && !allInvoices.length && collectorDashboardData
+        ? getMatrixPriorityRowsForMode(currentWorkQueueMode).length
+        : null;
+    node.textContent = `${queueText} • ${(matrixCount ?? filteredInvoices.length).toLocaleString()} account(s) in queue`;
 }
 
 function scrollToWorkQueue() {
-    const node = document.getElementById('collector-work-queue');
+    const node = !allInvoices.length && collectorDashboardData
+        ? document.getElementById('collector-dashboard')
+        : document.getElementById('collector-work-queue');
     if (!node) return;
     node.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -5418,15 +5546,7 @@ function updateAllStats() {
     if (reviewCountEl) reviewCountEl.textContent = reviewCount.toLocaleString();
     if (reviewAmountEl) reviewAmountEl.textContent = formatCurrencyShort(reviewAmount);
 
-    COLLECTION_PRIORITY_CARD_DEFINITIONS.forEach((card) => {
-        const rows = getPriorityRowsForMode(card.mode);
-        const amount = rows.reduce((sum, invoice) => sum + getPriorityMetricAmount(card.mode, invoice), 0);
-        const safeId = card.mode.replace(/_/g, '-');
-        const countEl = document.getElementById(`count-${safeId}`);
-        const amountEl = document.getElementById(`amount-${safeId}`);
-        if (countEl) countEl.textContent = rows.length.toLocaleString();
-        if (amountEl) amountEl.textContent = `${formatCurrencyShort(amount)} ${card.amountLabel}`;
-    });
+    updatePriorityCardsFromCurrentData();
 
     const totalPayables = allInvoices.reduce((sum, inv) => sum + inv.amount, 0);
     const activeAmount = allInvoices.filter((inv) => inv.age <= 120).reduce((sum, inv) => sum + inv.amount, 0);
@@ -5456,6 +5576,18 @@ function updateAllStats() {
     document.getElementById('stale-urgent-count').textContent = staleUrgent.length.toLocaleString();
     document.getElementById('stale-urgent-amount').textContent = formatCurrencyShort(staleUrgentTotal);
     renderCollectionsCompareScorecard();
+}
+
+function updatePriorityCardsFromCurrentData() {
+    COLLECTION_PRIORITY_CARD_DEFINITIONS.forEach((card) => {
+        const rows = getPriorityRowsForMode(card.mode);
+        const amount = rows.reduce((sum, invoice) => sum + getPriorityMetricAmount(card.mode, invoice), 0);
+        const safeId = card.mode.replace(/_/g, '-');
+        const countEl = document.getElementById(`count-${safeId}`);
+        const amountEl = document.getElementById(`amount-${safeId}`);
+        if (countEl) countEl.textContent = rows.length.toLocaleString();
+        if (amountEl) amountEl.textContent = `${formatCurrencyShort(amount)} ${card.amountLabel}`;
+    });
 }
 
 function updateDurationSummary() {
@@ -6777,6 +6909,7 @@ function renderCollectorDashboardFromData(data, options = {}) {
     if (!options.matrixOnly) renderCollectorSummaryTable(data);
     renderCollectorMatrixTable(data, visibleRows);
     updateCollectorDashboardMatrixStatus(data, visibleRows);
+    updatePriorityCardsFromCurrentData();
 
     if (!options.matrixOnly) {
         updateCollectorTodaySummaryCard();
