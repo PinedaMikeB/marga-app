@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v105-local-postgres-live-test';
+const CACHE_NAME = 'marga-app-shell-v106-attendance-flex';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -32,8 +32,8 @@ const SHELL_ASSETS = [
     '/collections/js/collections.js?v=20260601-summary-autoupdate-1',
     '/field/',
     '/field/index.html',
-    '/field/css/field.css?v=20260519-field-invoice-table-1',
-    '/field/js/field.js?v=20260527-unfinished-draft-save-1',
+    '/field/css/field.css?v=20260602-attendance-flex-1',
+    '/field/js/field.js?v=20260602-attendance-flex-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',

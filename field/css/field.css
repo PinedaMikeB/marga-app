@@ -392,6 +392,50 @@
     background: rgba(255, 251, 235, 0.82);
 }
 
+.field-add-schedule-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) auto;
+    gap: 0.65rem;
+    align-items: end;
+    padding: 0.7rem 0.8rem;
+    border-radius: 14px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    background: rgba(239, 246, 255, 0.82);
+}
+
+.field-add-schedule-panel[hidden] {
+    display: none;
+}
+
+.field-add-schedule-panel label span {
+    display: block;
+    margin-bottom: 0.22rem;
+    color: #2563eb;
+    font-size: 0.64rem;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.field-add-schedule-panel select {
+    width: 100%;
+    min-height: 2.25rem;
+    border: 1px solid rgba(147, 197, 253, 0.75);
+    border-radius: 10px;
+    padding: 0.48rem 0.6rem;
+    color: #16345b;
+    background: rgba(255, 255, 255, 0.92);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 750;
+}
+
+.field-add-schedule-actions {
+    display: flex;
+    gap: 0.45rem;
+}
+
 .field-location-check span {
     display: block;
     color: #2563eb;
@@ -2327,6 +2371,18 @@
     }
 
     .field-location-check-actions .btn {
+        flex: 1;
+    }
+
+    .field-add-schedule-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .field-add-schedule-actions {
+        justify-content: stretch;
+    }
+
+    .field-add-schedule-actions .btn {
         flex: 1;
     }
 

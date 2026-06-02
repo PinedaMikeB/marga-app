@@ -8,6 +8,8 @@ const REQUIRED_PRIORITY_COUNT = 5;
 const ATTENDANCE_LOCATION_RADIUS_METERS = 200;
 const FIELD_ATTENDANCE_START_TIME = '08:00';
 const FIELD_ATTENDANCE_GRACE_MINUTES = 15;
+const FIELD_BRANCH_LOCATION_QUERY_LIMIT = 7000;
+const FIELD_WORK_LOCATION_TYPES = new Set(['office', 'production']);
 const PARTS_CATALOG_QUERY_LIMIT = 12000;
 const DELIVERY_RECEIPT_LINE_LIMIT = 100;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
@@ -31,6 +33,7 @@ const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
 const FIELD_LOCATION_REQUEST_COLLECTION = 'tbl_field_location_requests';
 const FIELD_CALL_COLLECTION = 'tbl_field_call_requests';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
+const WORK_LOCATIONS_COLLECTION = 'marga_hr_work_locations';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
 const PETTY_CASH_REQUEST_COLLECTION = 'tbl_pettycash_requests';
@@ -64,6 +67,7 @@ const COLLECTION_PURPOSE_ID = 2;
 const DELIVERY_PURPOSE_IDS = new Set([3, 4]);
 const SERVICE_PURPOSE_ID = 5;
 const READING_PURPOSE_ID = 8;
+const FIELD_SELF_ADD_SCHEDULE_PURPOSE_IDS = [SERVICE_PURPOSE_ID, 3, 4, BILLING_PURPOSE_ID, COLLECTION_PURPOSE_ID, READING_PURPOSE_ID, 9];
 const FIELD_FINISH_BLOCK_COLLECTION = 'tbl_field_finish_blocks';
 const FIELD_CALL_DOMAIN = 'call.wotgonline.com';
 const FIELD_CALL_PUBLIC_DOMAIN = 'meet.jit.si';
@@ -264,6 +268,11 @@ const state = {
     attendanceDocId: '',
     attendance: null,
     attendanceLocationCheckScheduleId: null,
+    attendanceNearbyScheduleMatch: null,
+    fieldWorkLocations: [],
+    fieldWorkLocationsLoaded: false,
+    pinnedCustomerBranches: [],
+    pinnedCustomerBranchesLoaded: false,
     callPollTimer: null,
     activeIncomingCallId: '',
     activeCallDocId: '',
@@ -328,6 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldAttendanceTimeOutBtn')?.addEventListener('click', () => markAttendanceTime('out'));
     document.getElementById('fieldCheckLocationBtn')?.addEventListener('click', checkAttendanceLocation);
     document.getElementById('fieldOpenLocationTaskBtn')?.addEventListener('click', openAttendanceLocationTask);
+    document.getElementById('fieldAddNearbyScheduleBtn')?.addEventListener('click', openAddNearbySchedulePanel);
+    document.getElementById('fieldAddScheduleCancelBtn')?.addEventListener('click', closeAddNearbySchedulePanel);
+    document.getElementById('fieldAddSchedulePanel')?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        saveNearbyAttendanceSchedule();
+    });
+    populateAddSchedulePurposeOptions();
     document.getElementById('fieldVoiceOfficeBtn')?.addEventListener('click', () => startFieldRoleCall('csr', 'voice'));
     document.getElementById('fieldVideoOfficeBtn')?.addEventListener('click', () => startFieldRoleCall('csr', 'video'));
     document.getElementById('fieldVoiceTechLeaderBtn')?.addEventListener('click', () => startFieldRoleCall('tech_leader', 'voice'));
@@ -1085,6 +1101,25 @@ async function queryCollection(collectionId, limit = 1000) {
         limit
     };
     return runQuery(structuredQuery);
+}
+
+async function queryLatestById(collectionId, limit = 1) {
+    const structuredQuery = {
+        from: [{ collectionId }],
+        orderBy: [{ field: { fieldPath: 'id' }, direction: 'DESCENDING' }],
+        limit
+    };
+    return runQuery(structuredQuery);
+}
+
+async function allocateNextNumericId(collectionId) {
+    const docs = await queryLatestById(collectionId, 1);
+    const latest = docs.map(parseFirestoreDoc).filter(Boolean)[0] || null;
+    const nextId = Number(latest?.id || 0) + 1;
+    if (!Number.isFinite(nextId) || nextId <= 0) {
+        throw new Error(`Unable to allocate new ${collectionId} id.`);
+    }
+    return nextId;
 }
 
 function uniqueNonBlankValues(values = []) {
@@ -3202,6 +3237,156 @@ function scheduleLocationLabel(row) {
     };
 }
 
+function locationName(location) {
+    return String(location?.name || location?.location_name || location?.label || location?._docId || 'Work location').trim();
+}
+
+function locationType(location) {
+    return String(location?.type || location?.location_type || '').trim().toLowerCase();
+}
+
+function isActiveWorkLocation(location) {
+    if (!location) return false;
+    if (location.active === false || location.isActive === false || location.is_active === false) return false;
+    return FIELD_WORK_LOCATION_TYPES.has(locationType(location));
+}
+
+function workLocationCoordinates(location) {
+    const latitude = parseCoordinate(location?.latitude ?? location?.lat);
+    const longitude = parseCoordinate(location?.longitude ?? location?.lng ?? location?.lon);
+    if (latitude === null || longitude === null) return null;
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+    return { latitude, longitude };
+}
+
+async function loadFieldWorkLocations() {
+    if (state.fieldWorkLocationsLoaded) return state.fieldWorkLocations;
+    const docs = await queryCollection(WORK_LOCATIONS_COLLECTION, 200).catch(() => []);
+    state.fieldWorkLocations = docs
+        .map(parseFirestoreDoc)
+        .filter((location) => isActiveWorkLocation(location) && workLocationCoordinates(location));
+    state.fieldWorkLocationsLoaded = true;
+    return state.fieldWorkLocations;
+}
+
+async function loadPinnedCustomerBranches() {
+    if (state.pinnedCustomerBranchesLoaded) return state.pinnedCustomerBranches;
+    const cached = [...caches.branch.values()].filter((branch) => getBranchCoordinates(branch));
+    const docs = await queryCollection('tbl_branchinfo', FIELD_BRANCH_LOCATION_QUERY_LIMIT).catch(() => []);
+    const byId = new Map();
+    cached.forEach((branch) => {
+        const id = String(branch?.id || branch?._docId || '').trim();
+        if (id) byId.set(id, branch);
+    });
+    docs.map(parseFirestoreDoc).filter(Boolean).forEach((branch) => {
+        const id = String(branch?.id || branch?._docId || '').trim();
+        if (id && !byId.has(id)) byId.set(id, branch);
+    });
+    state.pinnedCustomerBranches = [...byId.values()].filter((branch) => getBranchCoordinates(branch));
+    state.pinnedCustomerBranchesLoaded = true;
+    return state.pinnedCustomerBranches;
+}
+
+async function buildCustomerBranchLocationItem(branch, latitude, longitude, accuracy) {
+    const coords = getBranchCoordinates(branch);
+    if (!coords) return null;
+    const companyId = Number(branch.company_id || branch.comp_id || 0) || 0;
+    const company = companyId ? await ensureLookup('tbl_companylist', companyId, caches.company).catch(() => null) : null;
+    const areaId = Number(branch.area_id || 0) || 0;
+    const area = areaId ? await ensureLookup('tbl_area', areaId, caches.area).catch(() => null) : null;
+    const companyName = firstNonBlank(company?.companyname, branch.company_name, branch.customer_name);
+    const branchName = firstNonBlank(branch.branchname, branch.branch_name, branch.location, `Branch #${branch.id || branch._docId || ''}`);
+    const address = branchAddressText(branch, area);
+    const distance = distanceMeters(latitude, longitude, coords.latitude, coords.longitude);
+    return {
+        branch,
+        company,
+        area,
+        coords,
+        latitude,
+        longitude,
+        accuracy,
+        distance,
+        companyId,
+        branchId: Number(branch.id || branch._docId || 0) || 0,
+        areaId,
+        companyName,
+        branchName,
+        address,
+        label: [companyName, branchName].filter(Boolean).join(' - ') || `Branch #${branch.id || branch._docId || ''}`
+    };
+}
+
+async function findNearestPinnedCustomerBranch(latitude, longitude, accuracy) {
+    const branches = await loadPinnedCustomerBranches();
+    const ranked = branches
+        .map((branch) => {
+            const coords = getBranchCoordinates(branch);
+            if (!coords) return null;
+            return {
+                branch,
+                distance: distanceMeters(latitude, longitude, coords.latitude, coords.longitude)
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.distance - b.distance);
+    const nearest = ranked[0] || null;
+    if (!nearest || nearest.distance > ATTENDANCE_LOCATION_RADIUS_METERS) return null;
+    return buildCustomerBranchLocationItem(nearest.branch, latitude, longitude, accuracy);
+}
+
+function makeScheduleRowFromNearbyMatch(scheduleId, match, purposeId, taskDatetime, nowIso) {
+    const purposeLabel = PURPOSE_LABELS[purposeId] || `Purpose ${purposeId}`;
+    return {
+        id: scheduleId,
+        _docId: String(scheduleId),
+        company_id: match.companyId,
+        branch_id: match.branchId,
+        area_id: match.areaId,
+        serial: 0,
+        mach_id: 0,
+        machine_id: 0,
+        caller: purposeLabel,
+        phone_number: '',
+        purpose_id: purposeId,
+        purpose: purposeLabel,
+        trouble: purposeLabel,
+        trouble_id: 0,
+        task_datetime: taskDatetime,
+        original_sched: taskDatetime,
+        tech_id: Number(state.staffId || 0) || 0,
+        remarks: 'Field staff added schedule from GPS-matched pinned customer site.',
+        status: 1,
+        isongoing: 0,
+        date_finished: ZERO_DATETIME,
+        iscancel: 0,
+        scheduled: 1,
+        from_mobileapp: 1,
+        request_origin: 'field_attendance_self_add',
+        self_added_for_attendance: 1,
+        self_added_at: nowIso,
+        self_added_by: Number(state.staffId || 0) || 0,
+        self_added_latitude: match.latitude.toFixed(7),
+        self_added_longitude: match.longitude.toFixed(7),
+        self_added_accuracy_meters: Math.round(match.accuracy),
+        self_added_distance_meters: Math.round(match.distance),
+        self_added_location_status: 'matched_customer_pin',
+        branch_name: match.branchName || '',
+        company_name: match.companyName || '',
+        route_id: 0,
+        route_doc_id: '',
+        route_source: 'Field Self Added',
+        route_tech_id: Number(state.staffId || 0) || 0,
+        route_task_datetime: taskDatetime,
+        route_status: '',
+        route_iscancelled: 0,
+        route_date_finished: '',
+        route_remarks: 'Field staff added from current pinned customer location',
+        bridge_updated_at: nowIso,
+        bridge_updated_by: Number(state.staffId || 0) || 0
+    };
+}
+
 function distanceMeters(aLat, aLng, bLat, bLng) {
     const radius = 6371000;
     const toRad = (value) => (value * Math.PI) / 180;
@@ -3224,7 +3409,7 @@ function formatDistanceForLocationCheck(meters) {
 
 async function getAttendanceLocationSnapshot({ withGps = false } = {}) {
     const rows = workloadRows();
-    if (!rows.length) {
+    if (!withGps && !rows.length) {
         return {
             rows,
             pinnedRows: [],
@@ -3233,11 +3418,14 @@ async function getAttendanceLocationSnapshot({ withGps = false } = {}) {
             longitude: null,
             accuracy: null,
             ranked: [],
-            nearest: null
+            nearest: null,
+            workLocationRanked: [],
+            nearestWorkLocation: null,
+            nearbyCustomerBranch: null
         };
     }
 
-    await hydrateLookups(rows);
+    if (rows.length) await hydrateLookups(rows);
     const pinnedRows = [];
     const missingPinRows = [];
     rows.forEach((row) => {
@@ -3259,7 +3447,10 @@ async function getAttendanceLocationSnapshot({ withGps = false } = {}) {
             longitude: null,
             accuracy: null,
             ranked: [],
-            nearest: null
+            nearest: null,
+            workLocationRanked: [],
+            nearestWorkLocation: null,
+            nearbyCustomerBranch: null
         };
     }
 
@@ -3278,6 +3469,29 @@ async function getAttendanceLocationSnapshot({ withGps = false } = {}) {
         }))
         .sort((a, b) => a.distance - b.distance);
 
+    const workLocations = await loadFieldWorkLocations();
+    const workLocationRanked = workLocations
+        .map((location) => {
+            const coords = workLocationCoordinates(location);
+            return {
+                location,
+                coords,
+                latitude,
+                longitude,
+                accuracy,
+                distance: distanceMeters(latitude, longitude, coords.latitude, coords.longitude)
+            };
+        })
+        .sort((a, b) => a.distance - b.distance);
+
+    let nearbyCustomerBranch = null;
+    const scheduledMatch = ranked[0] || null;
+    const workMatch = workLocationRanked[0] || null;
+    if ((!scheduledMatch || scheduledMatch.distance > ATTENDANCE_LOCATION_RADIUS_METERS)
+        && (!workMatch || workMatch.distance > ATTENDANCE_LOCATION_RADIUS_METERS)) {
+        nearbyCustomerBranch = await findNearestPinnedCustomerBranch(latitude, longitude, accuracy);
+    }
+
     return {
         rows,
         pinnedRows,
@@ -3286,14 +3500,31 @@ async function getAttendanceLocationSnapshot({ withGps = false } = {}) {
         longitude,
         accuracy,
         ranked,
-        nearest: ranked[0] || null
+        nearest: ranked[0] || null,
+        workLocationRanked,
+        nearestWorkLocation: workLocationRanked[0] || null,
+        nearbyCustomerBranch
     };
 }
 
 async function getAttendanceScheduleLocationMatch() {
     const snapshot = await getAttendanceLocationSnapshot({ withGps: true });
+    const workLocation = snapshot.nearestWorkLocation;
+    if (workLocation && workLocation.distance <= ATTENDANCE_LOCATION_RADIUS_METERS) {
+        return {
+            type: 'work_location',
+            latitude: snapshot.latitude,
+            longitude: snapshot.longitude,
+            accuracy: snapshot.accuracy,
+            workLocation
+        };
+    }
+
     if (!snapshot.rows.length) {
-        throw new Error('No open or pending schedule is available for this route date. Time In is blocked.');
+        if (snapshot.nearbyCustomerBranch) {
+            throw new Error(`No open or pending schedule is available for this customer. Tap Add Schedule for ${snapshot.nearbyCustomerBranch.label}, choose a purpose, save, then Time In.`);
+        }
+        throw new Error('No open or pending schedule is available for this route date, and you are not within an office/production pin. Time In is blocked.');
     }
 
     if (!snapshot.pinnedRows.length) {
@@ -3303,6 +3534,9 @@ async function getAttendanceScheduleLocationMatch() {
 
     const nearest = snapshot.nearest;
     if (!nearest || nearest.distance > ATTENDANCE_LOCATION_RADIUS_METERS) {
+        if (snapshot.nearbyCustomerBranch) {
+            throw new Error(`You are within ${formatDistanceForLocationCheck(snapshot.nearbyCustomerBranch.distance)} of ${snapshot.nearbyCustomerBranch.label}, but no schedule is assigned to you there. Tap Add Schedule, choose the purpose, save, then Time In.`);
+        }
         const missingPinHint = snapshot.missingPinRows.length
             ? ' If you are already at a scheduled customer with no saved pin, open that task, tap Pin Customer Location, then Time In.'
             : '';
@@ -3313,6 +3547,7 @@ async function getAttendanceScheduleLocationMatch() {
     }
 
     return {
+        type: 'scheduled_customer',
         latitude: snapshot.latitude,
         longitude: snapshot.longitude,
         accuracy: snapshot.accuracy,
@@ -3393,12 +3628,13 @@ async function ensureCustomerTimeInLocationProof(row, form) {
     return buildCustomerTimeInLocationPatch(row, match);
 }
 
-function setAttendanceLocationCheckUi({ status = 'idle', title = 'Not checked yet', body = 'Tap Check My Location before Time In to confirm if you are near a scheduled customer.', meta = '', scheduleId = null, buttonLabel = 'Open Task' } = {}) {
+function setAttendanceLocationCheckUi({ status = 'idle', title = 'Not checked yet', body = 'Tap Check My Location before Time In to confirm if you are near an office, production site, or scheduled customer.', meta = '', scheduleId = null, buttonLabel = 'Open Task', nearbyScheduleMatch = null } = {}) {
     const card = document.getElementById('fieldAttendanceLocationCheck');
     const titleEl = document.getElementById('fieldLocationCheckTitle');
     const bodyEl = document.getElementById('fieldLocationCheckBody');
     const metaEl = document.getElementById('fieldLocationCheckMeta');
     const openBtn = document.getElementById('fieldOpenLocationTaskBtn');
+    const addBtn = document.getElementById('fieldAddNearbyScheduleBtn');
     if (!card || !titleEl || !bodyEl || !metaEl || !openBtn) return;
 
     card.dataset.status = status;
@@ -3406,8 +3642,11 @@ function setAttendanceLocationCheckUi({ status = 'idle', title = 'Not checked ye
     bodyEl.textContent = body;
     metaEl.textContent = meta;
     state.attendanceLocationCheckScheduleId = scheduleId ? Number(scheduleId) : null;
+    state.attendanceNearbyScheduleMatch = nearbyScheduleMatch || null;
     openBtn.hidden = !state.attendanceLocationCheckScheduleId;
     openBtn.textContent = buttonLabel;
+    if (addBtn) addBtn.hidden = !state.attendanceNearbyScheduleMatch;
+    if (!state.attendanceNearbyScheduleMatch) closeAddNearbySchedulePanel();
 }
 
 function summarizeMissingPins(missingPinRows = []) {
@@ -3422,8 +3661,8 @@ function renderAttendanceLocationSummary() {
     if (!rows.length) {
         setAttendanceLocationCheckUi({
             status: 'warning',
-            title: 'No open customer for this date',
-            body: 'Time In needs an open or pending scheduled customer.',
+            title: 'Ready to check location',
+            body: 'Time In is allowed at an office/production pin. If you are at a customer with a saved pin, Check My Location can unlock Add Schedule.',
             meta: ''
         });
         return;
@@ -3437,7 +3676,7 @@ function renderAttendanceLocationSummary() {
     setAttendanceLocationCheckUi({
         status: missingCount ? 'warning' : 'idle',
         title: 'Ready to check location',
-        body: `Tap Check My Location to compare your GPS against ${pinnedCount} pinned scheduled customer${pinnedCount === 1 ? '' : 's'}.`,
+        body: `Tap Check My Location to compare your GPS against office/production pins and ${pinnedCount} pinned scheduled customer${pinnedCount === 1 ? '' : 's'}.`,
         meta: missingCount ? `${missingCount} scheduled customer${missingCount === 1 ? '' : 's'} still need location pin${missingCount === 1 ? '' : 's'}.` : ''
     });
 }
@@ -3450,12 +3689,33 @@ function renderAttendanceLocationResult(snapshot) {
         : '';
     const checkedText = `Checked ${new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.`;
     const meta = [accuracyText, missingSummary, checkedText].filter(Boolean).join(' ');
+    const workLocation = snapshot.nearestWorkLocation;
+
+    if (workLocation && workLocation.distance <= ATTENDANCE_LOCATION_RADIUS_METERS) {
+        setAttendanceLocationCheckUi({
+            status: 'allowed',
+            title: `Within ${formatDistanceForLocationCheck(workLocation.distance)} of ${locationName(workLocation.location)}`,
+            body: 'You are at an approved office/production site. Official Time In is allowed.',
+            meta: [locationType(workLocation.location), meta].filter(Boolean).join(' - ')
+        });
+        return;
+    }
 
     if (!snapshot.rows.length) {
+        if (snapshot.nearbyCustomerBranch) {
+            setAttendanceLocationCheckUi({
+                status: 'warning',
+                title: `At ${snapshot.nearbyCustomerBranch.label}`,
+                body: 'No schedule is assigned to you here. Add a schedule from this pinned customer site, choose a purpose, then Time In.',
+                meta,
+                nearbyScheduleMatch: snapshot.nearbyCustomerBranch
+            });
+            return;
+        }
         setAttendanceLocationCheckUi({
             status: 'warning',
             title: 'No open customer for this date',
-            body: 'Time In needs an open or pending scheduled customer.',
+            body: 'Time In is allowed at an office/production pin. Customer-site Time In needs a schedule or a nearby pinned customer to add one.',
             meta
         });
         return;
@@ -3489,10 +3749,13 @@ function renderAttendanceLocationResult(snapshot) {
     setAttendanceLocationCheckUi({
         status: 'blocked',
         title: nearest ? `${formatDistanceForLocationCheck(nearest.distance)} from ${nearest.label}` : 'No pinned customer nearby',
-        body: `You are not within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of a pinned open/pending customer. Official Time In will be blocked.`,
+        body: snapshot.nearbyCustomerBranch
+            ? 'You are at a pinned customer site with no assigned schedule. Add a schedule, choose a purpose, then Time In.'
+            : `You are not within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of an office, production site, or pinned open/pending customer. Official Time In will be blocked.`,
         meta,
         scheduleId: nearest?.row?.id || snapshot.missingPinRows[0]?.row?.id,
-        buttonLabel: nearest ? 'Open Nearest Task' : 'Open Task To Pin'
+        buttonLabel: nearest ? 'Open Nearest Task' : 'Open Task To Pin',
+        nearbyScheduleMatch: snapshot.nearbyCustomerBranch
     });
 }
 
@@ -3522,6 +3785,91 @@ async function checkAttendanceLocation() {
     }
 }
 
+function populateAddSchedulePurposeOptions() {
+    const select = document.getElementById('fieldAddSchedulePurpose');
+    if (!select) return;
+    select.innerHTML = FIELD_SELF_ADD_SCHEDULE_PURPOSE_IDS
+        .map((id) => `<option value="${sanitize(id)}"${id === SERVICE_PURPOSE_ID ? ' selected' : ''}>${sanitize(PURPOSE_LABELS[id] || `Purpose ${id}`)}</option>`)
+        .join('');
+}
+
+function openAddNearbySchedulePanel() {
+    if (!state.attendanceNearbyScheduleMatch) return;
+    populateAddSchedulePurposeOptions();
+    const panel = document.getElementById('fieldAddSchedulePanel');
+    if (panel) panel.hidden = false;
+}
+
+function closeAddNearbySchedulePanel() {
+    const panel = document.getElementById('fieldAddSchedulePanel');
+    if (panel) panel.hidden = true;
+}
+
+async function saveNearbyAttendanceSchedule() {
+    const match = state.attendanceNearbyScheduleMatch;
+    const saveBtn = document.getElementById('fieldAddScheduleSaveBtn');
+    if (!match) {
+        alert('Check My Location first while at a pinned customer site.');
+        return;
+    }
+    if (Number(match.distance || 0) > ATTENDANCE_LOCATION_RADIUS_METERS) {
+        alert(`You are no longer within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of this customer pin. Check My Location again.`);
+        return;
+    }
+
+    const purposeId = Number(document.getElementById('fieldAddSchedulePurpose')?.value || SERVICE_PURPOSE_ID) || SERVICE_PURPOSE_ID;
+    if (!FIELD_SELF_ADD_SCHEDULE_PURPOSE_IDS.includes(purposeId)) {
+        alert('Please choose a purpose from the list.');
+        return;
+    }
+
+    const date = document.getElementById('fieldDate')?.value || localDateYmd();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const localTime = now.toLocaleTimeString('en-PH', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const taskDatetime = `${date} ${localTime}`;
+
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+        const scheduleId = await allocateNextNumericId('tbl_schedule');
+        const row = makeScheduleRowFromNearbyMatch(scheduleId, match, purposeId, taskDatetime, nowIso);
+        const {
+            _docId,
+            route_id,
+            route_doc_id,
+            route_source,
+            route_tech_id,
+            route_task_datetime,
+            route_status,
+            route_iscancelled,
+            route_date_finished,
+            route_remarks,
+            ...scheduleDoc
+        } = row;
+        await setDocument('tbl_schedule', String(scheduleId), scheduleDoc);
+        caches.branch.set(String(match.branchId), match.branch);
+        if (match.company) caches.company.set(String(match.companyId), match.company);
+        if (match.area) caches.area.set(String(match.areaId), match.area);
+        state.todayRows.push(row);
+        state.rows = [...state.todayRows, ...state.carryoverRows];
+        state.activeTab = 'today';
+        state.statusFilter = 'all';
+        const statusFilter = document.getElementById('fieldStatusFilter');
+        if (statusFilter) statusFilter.value = 'all';
+        updatePriorityGate(workloadRows());
+        renderAttendanceLocationSummary();
+        renderActiveView();
+        closeAddNearbySchedulePanel();
+        await checkAttendanceLocation().catch((error) => console.warn('Location recheck after self-add failed:', error));
+        alert(`Schedule #${scheduleId} added for ${match.label}. You can now Time In.`);
+    } catch (error) {
+        console.error('Add nearby schedule failed:', error);
+        alert(`Failed to add schedule: ${error?.message || error}`);
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
 function openAttendanceLocationTask() {
     const scheduleId = Number(state.attendanceLocationCheckScheduleId || 0);
     if (!scheduleId) return;
@@ -3548,12 +3896,12 @@ function renderAttendanceCard() {
     const hasTimeOut = Boolean(normalizeLegacyDateTime(attendance.time_out));
     timeIn.textContent = formatAttendanceTime(attendance.time_in);
     timeOut.textContent = formatAttendanceTime(attendance.time_out);
-    if (timeInLocation) timeInLocation.textContent = hasTimeIn ? formatAttendanceLocationLine(attendance) : `Must be within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of an open/pending customer.`;
+    if (timeInLocation) timeInLocation.textContent = hasTimeIn ? formatAttendanceLocationLine(attendance) : `Office, production, or pinned customer within ${ATTENDANCE_LOCATION_RADIUS_METERS}m.`;
     timeInBtn.disabled = hasTimeIn;
     timeOutBtn.disabled = !hasTimeIn || hasTimeOut;
 
     if (!hasTimeIn) {
-        status.textContent = 'Time In requires GPS at an open/pending scheduled customer. If there is no saved pin, pin the customer location first.';
+        status.textContent = 'Time In requires GPS at the office, production site, or a pinned customer site. If the customer was not assigned, Check My Location can add the schedule first.';
     } else if (!hasTimeOut) {
         status.textContent = `Official attendance is open. ${getAttendanceTimeliness(attendance).label} Time Out when back at the office.`;
     } else {
@@ -3625,22 +3973,53 @@ async function markAttendanceTime(direction) {
     try {
         if (!isOut) {
             const match = await getAttendanceScheduleLocationMatch();
-            const nearest = match.nearest;
-            payload.time_in_latitude = match.latitude.toFixed(7);
-            payload.time_in_longitude = match.longitude.toFixed(7);
-            payload.time_in_accuracy_meters = Math.round(match.accuracy);
-            payload.time_in_distance_meters = Math.round(nearest.distance);
-            payload.time_in_schedule_id = Number(nearest.row.id || 0) || 0;
-            payload.time_in_schedule_doc_id = scheduleDocIdForRow(nearest.row);
-            payload.time_in_company_id = Number(nearest.row.company_id || nearest.branch?.company_id || 0) || 0;
-            payload.time_in_branch_id = Number(nearest.row.branch_id || 0) || 0;
-            payload.time_in_company_name = nearest.companyName || '';
-            payload.time_in_branch_name = nearest.branchName || '';
-            payload.time_in_address = nearest.address || '';
-            payload.time_in_location_status = 'matched_open_pending_schedule';
-            const timeliness = getAttendanceTimeliness(payload);
-            payload.time_in_timeliness_status = timeliness.status;
-            payload.time_in_late_minutes = timeliness.lateMinutes;
+            if (match.type === 'work_location') {
+                const workLocation = match.workLocation;
+                payload.time_in_latitude = match.latitude.toFixed(7);
+                payload.time_in_longitude = match.longitude.toFixed(7);
+                payload.time_in_accuracy_meters = Math.round(match.accuracy);
+                payload.time_in_distance_meters = Math.round(workLocation.distance);
+                payload.time_in_allowed_meters = ATTENDANCE_LOCATION_RADIUS_METERS;
+                payload.time_in_schedule_id = 0;
+                payload.time_in_schedule_doc_id = '';
+                payload.time_in_company_id = 0;
+                payload.time_in_branch_id = 0;
+                payload.time_in_company_name = locationName(workLocation.location);
+                payload.time_in_branch_name = locationType(workLocation.location);
+                payload.time_in_address = String(workLocation.location?.address || workLocation.location?.location_address || '');
+                payload.time_in_work_location_id = String(workLocation.location?._docId || workLocation.location?.id || '');
+                payload.time_in_work_location_name = locationName(workLocation.location);
+                payload.time_in_work_location_type = locationType(workLocation.location);
+                payload.time_in_location_status = 'matched_work_location';
+                payload.attendance_mode = 'office_production_or_customer_site';
+                payload.attendance_location_policy = `office_production_or_customer_${ATTENDANCE_LOCATION_RADIUS_METERS}m`;
+                payload.attendance_location_radius_meters = ATTENDANCE_LOCATION_RADIUS_METERS;
+                payload.attendance_location_required = true;
+                const timeliness = getAttendanceTimeliness(payload);
+                payload.time_in_timeliness_status = timeliness.status;
+                payload.time_in_late_minutes = timeliness.lateMinutes;
+            } else {
+                const nearest = match.nearest;
+                payload.time_in_latitude = match.latitude.toFixed(7);
+                payload.time_in_longitude = match.longitude.toFixed(7);
+                payload.time_in_accuracy_meters = Math.round(match.accuracy);
+                payload.time_in_distance_meters = Math.round(nearest.distance);
+                payload.time_in_schedule_id = Number(nearest.row.id || 0) || 0;
+                payload.time_in_schedule_doc_id = scheduleDocIdForRow(nearest.row);
+                payload.time_in_company_id = Number(nearest.row.company_id || nearest.branch?.company_id || 0) || 0;
+                payload.time_in_branch_id = Number(nearest.row.branch_id || 0) || 0;
+                payload.time_in_company_name = nearest.companyName || '';
+                payload.time_in_branch_name = nearest.branchName || '';
+                payload.time_in_address = nearest.address || '';
+                payload.time_in_location_status = 'matched_open_pending_schedule';
+                payload.attendance_mode = 'office_production_or_customer_site';
+                payload.attendance_location_policy = `office_production_or_customer_${ATTENDANCE_LOCATION_RADIUS_METERS}m`;
+                payload.attendance_location_radius_meters = ATTENDANCE_LOCATION_RADIUS_METERS;
+                payload.attendance_location_required = true;
+                const timeliness = getAttendanceTimeliness(payload);
+                payload.time_in_timeliness_status = timeliness.status;
+                payload.time_in_late_minutes = timeliness.lateMinutes;
+            }
         }
         await setDocument(FIELD_ATTENDANCE_COLLECTION, docId, payload);
         state.attendanceDocId = docId;
