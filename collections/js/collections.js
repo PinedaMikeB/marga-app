@@ -122,6 +122,135 @@ const COLLECTION_SCHEDULE_OPTIONS = [
     'Pick up RFP'
 ];
 
+const COLLECTION_TARGET_DEFAULTS = {
+    minimumDailyTarget: 125000,
+    goodDailyTarget: 150000,
+    recoveryDailyTarget: 200000,
+    weeklyTarget: 625000,
+    weeklyTargetMin: 600000,
+    weeklyTargetMax: 750000,
+    monthlyTarget: 2500000,
+    week1Cumulative: 625000,
+    week2Cumulative: 1250000,
+    week3Cumulative: 1875000,
+    week4Cumulative: 2500000
+};
+const COLLECTION_ASSIGNMENT_ROLES = [
+    {
+        key: 'collection_head',
+        label: 'Collection Head',
+        description: 'View all collection accounts, assign/reassign collectors, monitor targets, and review performance.'
+    },
+    {
+        key: 'priority_accounts',
+        label: 'Collection - Priority Accounts',
+        description: 'High-value, urgent, escalated, broken promise, and top collectible accounts.'
+    },
+    {
+        key: 'regular_accounts',
+        label: 'Collection - Regular Accounts',
+        description: 'Regular follow-ups, newly received billings, for approval, and document concerns.'
+    }
+];
+const COLLECTION_WORKFLOW_SETTINGS_DOC_ID = 'collections_workflow_settings_v1';
+let collectionWorkflowSettings = {
+    targets: { ...COLLECTION_TARGET_DEFAULTS },
+    assignments: {},
+    customerAssignments: {}
+};
+let collectionWorkflowSettingsLoaded = false;
+
+const CONVERSATION_RESULT_OPTIONS = [
+    'Successful Conversation',
+    'No Answer',
+    'Busy',
+    'Unreachable',
+    'No Reply to Message',
+    'Left Message',
+    'Wrong Contact',
+    'Invalid Number',
+    'Client Not Available',
+    'For Callback'
+];
+const PROMISE_TO_PAY_OPTIONS = [
+    'No Promise to Pay',
+    'Promised to Pay',
+    'For Approval Only',
+    'For Payment Processing',
+    'For Check Release',
+    'For Bank Transfer',
+    'Already Paid, For Verification',
+    'Rescheduled Promise',
+    'Broken Promise'
+];
+const PROMISE_DATE_REQUIRED_OPTIONS = new Set([
+    'Promised to Pay',
+    'For Payment Processing',
+    'For Check Release',
+    'For Bank Transfer',
+    'Rescheduled Promise'
+]);
+const NEXT_FOLLOWUP_TIME_OPTIONS = [
+    'Anytime',
+    'Morning',
+    'Afternoon',
+    '9:00 AM',
+    '10:00 AM',
+    '11:00 AM',
+    '1:00 PM',
+    '2:00 PM',
+    '3:00 PM',
+    '4:00 PM'
+];
+const ISSUE_TYPE_OPTIONS = [
+    'No Issue',
+    'For Approval',
+    'Waiting for Budget',
+    'Waiting for Check Release',
+    'Payment Processing',
+    'Billing Not Received',
+    'Needs SOA',
+    'Needs Invoice Copy',
+    'Needs Delivery Proof',
+    'Needs Purchase Order',
+    'Wrong Amount',
+    'Meter Reading Concern',
+    'Machine Issue',
+    'Machine Not Working',
+    'Print Quality Issue',
+    'Toner Issue',
+    'Service Concern',
+    'Billing Dispute',
+    'Payment Already Made',
+    'Wrong Contact Person',
+    'Authorized Person Not Available',
+    'Client Requested Follow-up',
+    'Other Concern'
+];
+const DOCUMENT_ISSUE_TYPES = new Set(['Billing Not Received', 'Needs SOA', 'Needs Invoice Copy', 'Needs Delivery Proof', 'Needs Purchase Order']);
+const ISSUE_NOTE_SUGGESTIONS = [
+    'Machine sira',
+    'Needs service before payment',
+    'Waiting approval from accounting',
+    'Waiting approval from owner',
+    'Client requested SOA',
+    'Client requested invoice copy',
+    'Client said billing was not received',
+    'Client said payment already made',
+    'Client disputed amount',
+    'Client requested callback'
+];
+const COLLECTION_PRIORITY_CARD_DEFINITIONS = [
+    { mode: 'promise_today', title: 'Promise-to-Pay Today', countLabel: 'accounts', amountLabel: 'projected' },
+    { mode: 'broken_promise', title: 'Broken Promise-to-Pay', countLabel: 'accounts', amountLabel: 'at risk' },
+    { mode: 'followup_today', title: 'Follow-up Scheduled Today', countLabel: 'accounts', amountLabel: 'potential' },
+    { mode: 'needs_document', title: 'Needs Document', countLabel: 'accounts', amountLabel: 'affected' },
+    { mode: 'billing_received_unfollowed', title: 'Billing Received Not Yet Followed Up', countLabel: 'accounts', amountLabel: 'receivable' },
+    { mode: 'top_collectible', title: 'Top Collectible Accounts', countLabel: 'accounts', amountLabel: 'balance' },
+    { mode: 'overdue_accounts', title: 'Overdue Accounts', countLabel: 'accounts', amountLabel: 'overdue' },
+    { mode: 'for_approval', title: 'For Approval', countLabel: 'accounts', amountLabel: 'pending approval' }
+];
+
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
     'Best call times: 9-11 AM and 2-4 PM. Avoid lunch hours.',
@@ -332,6 +461,16 @@ const COLLECTION_HISTORY_FIELD_MASK = [
     'remarks',
     'contact_person',
     'contact_number',
+    'conversation_result',
+    'promise_to_pay',
+    'promise_to_pay_amount',
+    'promise_to_pay_date',
+    'next_followup_date',
+    'next_followup_time',
+    'issue_type',
+    'issue_notes',
+    'collection_role_assignment',
+    'customer_assignment_owner',
     'account_ref',
     'account_group_ref',
     'branch_id',
@@ -2711,10 +2850,15 @@ async function openCollectorMatrixSettingsModal() {
     if (statusNode) statusNode.textContent = 'Loading settings...';
     renderCollectorMatrixSettingsModal();
     try {
-        const payload = await fetchCollectorMatrixSettings();
+        const [payload] = await Promise.all([
+            fetchCollectorMatrixSettings(),
+            loadCollectionWorkflowSettings()
+        ]);
         const settings = payload.settings || {};
         if (enabledNode) enabledNode.checked = settings.autoRebuildEnabled !== false;
         if (timeNode) timeNode.value = settings.autoRebuildTime || '00:00';
+        fillCollectionTargetInputs();
+        renderCollectionAssignmentSettings();
         const builtParts = [];
         if (collectorMatrixSnapshotMeta?.builtAt) {
             builtParts.push(`Last matrix build: ${new Date(collectorMatrixSnapshotMeta.builtAt).toLocaleString('en-PH')}`);
@@ -2741,12 +2885,15 @@ async function saveCollectorMatrixSettingsFromModal() {
     const timeNode = document.getElementById('collectorMatrixAutoRebuildTime');
     if (statusNode) statusNode.textContent = 'Saving...';
     try {
+        collectionWorkflowSettings.targets = collectCollectionTargetInputs();
+        collectionWorkflowSettings.assignments = collectCollectionAssignmentInputs();
+        await saveCollectionWorkflowSettings();
         await saveCollectorMatrixSettings({
             autoRebuildEnabled: Boolean(enabledNode?.checked),
             autoRebuildTime: String(timeNode?.value || '00:00').trim(),
             timezone: 'Asia/Manila'
         });
-        if (statusNode) statusNode.textContent = 'Saved. The server scheduler reads this time for the nightly matrix rebuild job.';
+        if (statusNode) statusNode.textContent = 'Saved. Targets and open assignments are available inside Collections.';
         setTimeout(() => closeCollectorMatrixSettingsModal(), 900);
     } catch (error) {
         if (statusNode) statusNode.textContent = error.message || 'Unable to save settings.';
@@ -3216,7 +3363,7 @@ function collectionHistoryDocToEntry(doc) {
     const accountGroupRef = String(getField(f, ['account_group_ref']) || '').trim();
     if (!invoiceKey && !accountRef && !accountGroupRef) return null;
 
-    const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup']);
+    const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup_date', 'next_followup']);
     const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at', 'updated_at', 'timestmp', 'tmestamp', 'datex', 'date_created']) || followupDateRaw;
     const followupDate = normalizeDate(followupDateRaw);
     const callDate = normalizeDate(callDateRaw);
@@ -3234,6 +3381,16 @@ function collectionHistoryDocToEntry(doc) {
         remarks: getField(f, ['remarks']) || 'No remarks',
         contactPerson: getField(f, ['contact_person']) || '-',
         contactNumber: getField(f, ['contact_number']) || '',
+        conversationResult: getField(f, ['conversation_result']) || '',
+        promiseToPay: getField(f, ['promise_to_pay']) || '',
+        promiseToPayAmount: Number(getField(f, ['promise_to_pay_amount']) || getField(f, ['payment_amount']) || 0),
+        promiseToPayDate: normalizeDate(getField(f, ['promise_to_pay_date'])),
+        promiseToPayDateKey: toDateKey(getField(f, ['promise_to_pay_date'])),
+        nextFollowupTime: getField(f, ['next_followup_time']) || '',
+        issueType: getField(f, ['issue_type']) || '',
+        issueNotes: getField(f, ['issue_notes']) || '',
+        collectionRoleAssignment: getField(f, ['collection_role_assignment']) || '',
+        customerAssignmentOwner: getField(f, ['customer_assignment_owner']) || '',
         scheduleStatus: getField(f, ['schedule_status']),
         statusId: getField(f, ['status_id']),
         locationId: getField(f, ['location_id']),
@@ -4911,13 +5068,95 @@ function getWorkQueueModeLabel(mode) {
         scheduled_today: 'Scheduled Today',
         promise_due: 'Promise Due Today',
         urgent_stale: 'Urgent 20+ Days No Call',
-        missing_contact: 'Missing Contact / No Call Log'
+        missing_contact: 'Missing Contact / No Call Log',
+        promise_today: 'Promise-to-Pay Today',
+        broken_promise: 'Broken Promise-to-Pay',
+        followup_today: 'Follow-up Scheduled Today',
+        needs_document: 'Needs Document',
+        billing_received_unfollowed: 'Billing Received Not Yet Followed Up',
+        top_collectible: 'Top Collectible Accounts',
+        overdue_accounts: 'Overdue Accounts',
+        for_approval: 'For Approval'
     };
     return labels[mode] || 'All priorities';
 }
 
 function invoiceKeySetFromRows(rows = []) {
     return new Set(rows.map((invoice) => String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim()).filter(Boolean));
+}
+
+function getLatestHistoryForInvoice(invoice) {
+    const history = Array.isArray(invoice?.history) && invoice.history.length
+        ? invoice.history
+        : getHistoryForInvoice(invoice?.invoiceNo, invoice?.invoiceId, invoice?.invoiceKey);
+    return history[0] || null;
+}
+
+function getHistoryPromisedAmount(entry, invoice) {
+    const amount = Number(entry?.promiseToPayAmount || entry?.paymentAmount || 0);
+    return amount > 0 ? amount : Number(invoice?.amount || 0) || 0;
+}
+
+function getPriorityRowsForMode(mode) {
+    const todayKey = toDateKey(new Date());
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    if (mode === 'promise_today') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            return entry?.promiseToPay === 'Promised to Pay' && (entry.promiseToPayDateKey || entry.followupDateKey) === todayKey;
+        });
+    }
+
+    if (mode === 'broken_promise') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            if (!entry) return false;
+            if (entry.promiseToPay === 'Broken Promise') return true;
+            const promiseDate = entry.promiseToPayDate || entry.followupDate;
+            return ['Promised to Pay', 'Rescheduled Promise'].includes(entry.promiseToPay) && promiseDate && promiseDate < now;
+        });
+    }
+
+    if (mode === 'followup_today') {
+        return allInvoices.filter((invoice) => getLatestHistoryForInvoice(invoice)?.followupDateKey === todayKey);
+    }
+
+    if (mode === 'needs_document') {
+        return allInvoices.filter((invoice) => DOCUMENT_ISSUE_TYPES.has(getLatestHistoryForInvoice(invoice)?.issueType || ''));
+    }
+
+    if (mode === 'billing_received_unfollowed') {
+        return allInvoices.filter((invoice) => {
+            const received = invoice.dateReceived || invoice.receivedBy;
+            const entry = getLatestHistoryForInvoice(invoice);
+            return Boolean(received) && (!entry || !entry.callDate);
+        });
+    }
+
+    if (mode === 'top_collectible') {
+        return [...allInvoices].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0)).slice(0, 25);
+    }
+
+    if (mode === 'overdue_accounts') {
+        return allInvoices.filter((invoice) => Number(invoice.age || 0) > 0).sort((a, b) => b.age - a.age || b.amount - a.amount);
+    }
+
+    if (mode === 'for_approval') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            return entry?.promiseToPay === 'For Approval Only' || entry?.issueType === 'For Approval';
+        });
+    }
+
+    return [];
+}
+
+function getPriorityMetricAmount(mode, invoice) {
+    const entry = getLatestHistoryForInvoice(invoice);
+    if (mode === 'promise_today' || mode === 'broken_promise') return getHistoryPromisedAmount(entry, invoice);
+    return Number(invoice?.amount || 0) || 0;
 }
 
 function invoiceMatchesWorkQueueMode(invoice) {
@@ -4928,6 +5167,9 @@ function invoiceMatchesWorkQueueMode(invoice) {
     if (currentWorkQueueMode === 'promise_due') return invoiceKeySetFromRows(getPromiseDueTodayInvoices()).has(invoiceKey);
     if (currentWorkQueueMode === 'urgent_stale') return invoiceKeySetFromRows(getUrgentNotCalledInvoices()).has(invoiceKey);
     if (currentWorkQueueMode === 'missing_contact') return invoiceKeySetFromRows(getMissingContactInvoices()).has(invoiceKey);
+    if (COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === currentWorkQueueMode)) {
+        return invoiceKeySetFromRows(getPriorityRowsForMode(currentWorkQueueMode)).has(invoiceKey);
+    }
     return true;
 }
 
@@ -5175,6 +5417,16 @@ function updateAllStats() {
     const reviewAmountEl = document.getElementById('amount-review');
     if (reviewCountEl) reviewCountEl.textContent = reviewCount.toLocaleString();
     if (reviewAmountEl) reviewAmountEl.textContent = formatCurrencyShort(reviewAmount);
+
+    COLLECTION_PRIORITY_CARD_DEFINITIONS.forEach((card) => {
+        const rows = getPriorityRowsForMode(card.mode);
+        const amount = rows.reduce((sum, invoice) => sum + getPriorityMetricAmount(card.mode, invoice), 0);
+        const safeId = card.mode.replace(/_/g, '-');
+        const countEl = document.getElementById(`count-${safeId}`);
+        const amountEl = document.getElementById(`amount-${safeId}`);
+        if (countEl) countEl.textContent = rows.length.toLocaleString();
+        if (amountEl) amountEl.textContent = `${formatCurrencyShort(amount)} ${card.amountLabel}`;
+    });
 
     const totalPayables = allInvoices.reduce((sum, inv) => sum + inv.amount, 0);
     const activeAmount = allInvoices.filter((inv) => inv.age <= 120).reduce((sum, inv) => sum + inv.amount, 0);
@@ -6852,6 +7104,182 @@ function getCurrentCollectorName() {
     ).trim() || 'Collector';
 }
 
+function getCollectionRoleLabel(roleKey) {
+    return COLLECTION_ASSIGNMENT_ROLES.find((role) => role.key === roleKey)?.label || '';
+}
+
+function getCurrentCollectionRoleAssignment() {
+    const collectorName = getCurrentCollectorName();
+    const assignments = collectionWorkflowSettings.assignments || {};
+    return String(assignments[collectorName] || '').trim();
+}
+
+function collectionCustomerAssignmentKey(context = {}) {
+    const branchId = normalizeLookupId(context.branchId);
+    if (branchId && !branchId.startsWith('unlinked:')) return `branch_${branchId}`;
+    const companyId = normalizeLookupId(context.companyId);
+    if (companyId) return `company_${companyId}`;
+    return scheduleSlug(context.accountLabel || context.customer || 'unknown');
+}
+
+function getCustomerAssignmentOwner(context = {}) {
+    const key = collectionCustomerAssignmentKey(context);
+    return String(collectionWorkflowSettings.customerAssignments?.[key] || '').trim();
+}
+
+async function loadCollectionWorkflowSettings() {
+    if (collectionWorkflowSettingsLoaded) return collectionWorkflowSettings;
+    try {
+        const doc = await firestoreGetDocument('tbl_app_settings', COLLECTION_WORKFLOW_SETTINGS_DOC_ID);
+        const row = doc ? documentFieldsToPlain(doc) : {};
+        const parsedTargets = safeParseJson(row.targets_json, {});
+        const parsedAssignments = safeParseJson(row.assignments_json, {});
+        const parsedCustomerAssignments = safeParseJson(row.customer_assignments_json, {});
+        collectionWorkflowSettings = {
+            targets: { ...COLLECTION_TARGET_DEFAULTS, ...parsedTargets },
+            assignments: parsedAssignments && typeof parsedAssignments === 'object' ? parsedAssignments : {},
+            customerAssignments: parsedCustomerAssignments && typeof parsedCustomerAssignments === 'object' ? parsedCustomerAssignments : {}
+        };
+    } catch (error) {
+        console.warn('Unable to load collection workflow settings:', error);
+        collectionWorkflowSettings = {
+            targets: { ...COLLECTION_TARGET_DEFAULTS },
+            assignments: {},
+            customerAssignments: {}
+        };
+    }
+    collectionWorkflowSettingsLoaded = true;
+    return collectionWorkflowSettings;
+}
+
+async function saveCollectionWorkflowSettings() {
+    const now = toTimestampString(new Date());
+    await firestoreSetDocument('tbl_app_settings', COLLECTION_WORKFLOW_SETTINGS_DOC_ID, {
+        id: toFirestoreWriteValue(COLLECTION_WORKFLOW_SETTINGS_DOC_ID),
+        targets_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.targets || {})),
+        assignments_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.assignments || {})),
+        customer_assignments_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.customerAssignments || {})),
+        updated_at: toFirestoreWriteValue(now),
+        updated_by: toFirestoreWriteValue(getCurrentCollectorName()),
+        source: toFirestoreWriteValue('collections_module_settings')
+    });
+}
+
+function safeParseJson(value, fallback) {
+    if (!value) return fallback;
+    try {
+        const parsed = JSON.parse(String(value));
+        return parsed && typeof parsed === 'object' ? parsed : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function renderCollectionAssignmentSettings() {
+    const container = document.getElementById('collectionAssignmentSettings');
+    if (!container) return;
+    const collectorName = getCurrentCollectorName();
+    const currentRole = getCurrentCollectionRoleAssignment();
+    container.innerHTML = COLLECTION_ASSIGNMENT_ROLES.map((role) => `
+        <div class="collection-settings-role-card">
+            <strong>${escapeHtml(role.label)}</strong>
+            <p>${escapeHtml(role.description)}</p>
+            <label>
+                Collector Name
+                <input type="text" data-collection-role="${escapeHtml(role.key)}" value="${escapeHtml(getAssignmentNameForRole(role.key, collectorName, currentRole))}" placeholder="Open / collector name">
+            </label>
+        </div>
+    `).join('');
+}
+
+function getAssignmentNameForRole(roleKey, collectorName, currentRole) {
+    const assignments = collectionWorkflowSettings.assignments || {};
+    const found = Object.entries(assignments).find(([, assignedRole]) => assignedRole === roleKey);
+    if (found) return found[0];
+    return currentRole === roleKey ? collectorName : '';
+}
+
+function fillCollectionTargetInputs() {
+    const targets = { ...COLLECTION_TARGET_DEFAULTS, ...(collectionWorkflowSettings.targets || {}) };
+    const map = {
+        collectionTargetMinimumDaily: 'minimumDailyTarget',
+        collectionTargetGoodDaily: 'goodDailyTarget',
+        collectionTargetRecoveryDaily: 'recoveryDailyTarget',
+        collectionTargetWeekly: 'weeklyTarget',
+        collectionTargetWeeklyMin: 'weeklyTargetMin',
+        collectionTargetWeeklyMax: 'weeklyTargetMax',
+        collectionTargetMonthly: 'monthlyTarget',
+        collectionTargetWeek1: 'week1Cumulative',
+        collectionTargetWeek2: 'week2Cumulative',
+        collectionTargetWeek3: 'week3Cumulative',
+        collectionTargetWeek4: 'week4Cumulative'
+    };
+    Object.entries(map).forEach(([id, key]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(Number(targets[key] || 0));
+    });
+}
+
+function collectCollectionTargetInputs() {
+    const map = {
+        minimumDailyTarget: 'collectionTargetMinimumDaily',
+        goodDailyTarget: 'collectionTargetGoodDaily',
+        recoveryDailyTarget: 'collectionTargetRecoveryDaily',
+        weeklyTarget: 'collectionTargetWeekly',
+        weeklyTargetMin: 'collectionTargetWeeklyMin',
+        weeklyTargetMax: 'collectionTargetWeeklyMax',
+        monthlyTarget: 'collectionTargetMonthly',
+        week1Cumulative: 'collectionTargetWeek1',
+        week2Cumulative: 'collectionTargetWeek2',
+        week3Cumulative: 'collectionTargetWeek3',
+        week4Cumulative: 'collectionTargetWeek4'
+    };
+    const targets = {};
+    Object.entries(map).forEach(([key, id]) => {
+        targets[key] = Number(document.getElementById(id)?.value || COLLECTION_TARGET_DEFAULTS[key] || 0) || 0;
+    });
+    return targets;
+}
+
+function collectCollectionAssignmentInputs() {
+    const assignments = {};
+    document.querySelectorAll('[data-collection-role]').forEach((input) => {
+        const name = String(input.value || '').trim();
+        const role = String(input.dataset.collectionRole || '').trim();
+        if (name && role) assignments[name] = role;
+    });
+    return assignments;
+}
+
+async function saveCurrentCustomerAssignment() {
+    if (!currentCollectorWorkspace?.context) return;
+    const owner = String(document.getElementById('collectorCustomerOwner')?.value || getCurrentCollectorName()).trim();
+    const role = String(document.getElementById('collectorCustomerOwnerRole')?.value || getCurrentCollectionRoleAssignment() || '').trim();
+    const statusNode = document.getElementById('collectorCustomerAssignmentStatus');
+    const key = collectionCustomerAssignmentKey(currentCollectorWorkspace.context);
+    collectionWorkflowSettings.customerAssignments = {
+        ...(collectionWorkflowSettings.customerAssignments || {}),
+        [key]: owner
+    };
+    if (owner && role) {
+        collectionWorkflowSettings.assignments = {
+            ...(collectionWorkflowSettings.assignments || {}),
+            [owner]: role
+        };
+    }
+    try {
+        if (statusNode) statusNode.textContent = 'Saving customer assignment...';
+        await saveCollectionWorkflowSettings();
+        if (statusNode) statusNode.textContent = 'Saved. This is coordination only; access stays open.';
+        const content = document.getElementById('collectorCellContent');
+        if (content && currentCollectorWorkspace) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+        bindCollectorPaymentForm();
+    } catch (error) {
+        console.warn('Unable to save customer assignment:', error);
+        if (statusNode) statusNode.textContent = 'Assignment save failed.';
+    }
+}
+
 function getSchedulePurposeLabel(scheduleStatus) {
     const label = String(scheduleStatus || '').trim();
     if (/promise/i.test(label)) return 'Promise to Pay';
@@ -7427,7 +7855,7 @@ async function buildCollectorFollowupWorkspace(cell, options = {}) {
         return buildCollectorProjectionOnlyWorkspace(cell);
     }
 
-    await loadCollectionWorkspaceLookups();
+    await Promise.all([loadCollectionWorkspaceLookups(), loadCollectionWorkflowSettings()]);
 
     const context = resolveCollectorCellContext(cell);
     const profile = getCollectionProfileForContext(context);
@@ -7915,8 +8343,11 @@ function renderHistoryRows(history) {
                     <tr>
                         <th>Invoice No.</th>
                         <th>Date / Time</th>
-                        <th>Followed Up By</th>
-                        <th>Status</th>
+	                        <th>Followed Up By</th>
+	                        <th>Conversation Result</th>
+	                        <th>Promise To Pay</th>
+	                        <th>Issue</th>
+	                        <th>Status</th>
                         <th>Location</th>
                         <th>Remarks</th>
                     </tr>
@@ -7924,10 +8355,13 @@ function renderHistoryRows(history) {
                 <tbody>
                     ${history.slice(0, 30).map((item) => `
                         <tr>
-                            <td>${escapeHtml(item.invoiceKey || item.collectionId || '-')}</td>
-                            <td>${escapeHtml(formatDate(item.callDate))}</td>
-                            <td>${escapeHtml(getHistoryActor(item) || '-')}</td>
-                            <td>${escapeHtml(getCollectionStatusLabel(item.statusId) || item.scheduleStatus || '-')}</td>
+	                            <td>${escapeHtml(item.invoiceKey || item.collectionId || '-')}</td>
+	                            <td>${escapeHtml(formatDate(item.callDate))}</td>
+	                            <td>${escapeHtml(getHistoryActor(item) || '-')}</td>
+	                            <td>${escapeHtml(item.conversationResult || '-')}</td>
+	                            <td>${escapeHtml(item.promiseToPay || '-')}</td>
+	                            <td>${escapeHtml(item.issueType || '-')}</td>
+	                            <td>${escapeHtml(getCollectionStatusLabel(item.statusId) || item.scheduleStatus || '-')}</td>
                             <td>${escapeHtml(getCollectionLocationLabel(item.locationId, item.locationLabel))}</td>
                             <td>${escapeHtml(item.remarks || '-')}</td>
                         </tr>
@@ -8059,6 +8493,29 @@ function render2307PendingPanel(payments = []) {
             </table>
         </div>
     `;
+}
+
+function buildSelectOptions(options, selectedValue = '') {
+    return options.map((option) => {
+        const selected = String(option).toLowerCase() === String(selectedValue || '').toLowerCase() ? ' selected' : '';
+        return `<option value="${escapeHtml(option)}"${selected}>${escapeHtml(option)}</option>`;
+    }).join('');
+}
+
+function getDefaultConversationResult(lastHistory) {
+    return lastHistory?.conversationResult || 'Successful Conversation';
+}
+
+function getDefaultPromiseToPay(lastHistory) {
+    return lastHistory?.promiseToPay || 'No Promise to Pay';
+}
+
+function getDefaultIssueType(lastHistory) {
+    return lastHistory?.issueType || 'No Issue';
+}
+
+function getDefaultFollowupTime(lastHistory) {
+    return lastHistory?.nextFollowupTime || 'Morning';
 }
 
 async function markCollector2307Submitted(paymentDocId) {
@@ -8372,6 +8829,16 @@ function renderCollectorFollowupWorkspace(workspace) {
     const displayBalance = paymentRecords.length
         ? paymentBalance
         : (Number(branchBalance || 0) > 0 ? Number(branchBalance || 0) : cellOutstanding);
+    const conversationResultValue = getDefaultConversationResult(lastHistory);
+    const promiseToPayValue = getDefaultPromiseToPay(lastHistory);
+    const promiseAmountValue = Number(lastHistory?.promiseToPayAmount || lastHistory?.paymentAmount || 0);
+    const promiseDateValue = toDateKey(lastHistory?.promiseToPayDate) || '';
+    const nextFollowupDateValue = toDateKey(lastHistory?.followupDate) || defaultFollowup;
+    const nextFollowupTimeValue = getDefaultFollowupTime(lastHistory);
+    const issueTypeValue = getDefaultIssueType(lastHistory);
+    const issueNotesValue = lastHistory?.issueNotes || '';
+    const assignedOwner = getCustomerAssignmentOwner(context);
+    const assignedRole = getCurrentCollectionRoleAssignment();
 
     return `
         <div class="collection-followup-shell">
@@ -8417,6 +8884,16 @@ function renderCollectorFollowupWorkspace(workspace) {
                     ` : '<div class="collection-followup-empty">No contact profile found in collection info.</div>'}
 
                     <div class="collection-followup-mini-form">
+                        <div class="collection-customer-assignment-row">
+                            <label>Customer Assignment Owner</label>
+                            <input id="collectorCustomerOwner" type="text" value="${escapeHtml(assignedOwner || getCurrentCollectorName())}" placeholder="Collector responsible for this customer">
+                            <select id="collectorCustomerOwnerRole">
+                                <option value="">Open lane</option>
+                                ${COLLECTION_ASSIGNMENT_ROLES.map((role) => `<option value="${escapeHtml(role.key)}"${role.key === assignedRole ? ' selected' : ''}>${escapeHtml(role.label)}</option>`).join('')}
+                            </select>
+                            <button class="btn btn-secondary btn-sm" onclick="saveCurrentCustomerAssignment()">Save Customer Assignment</button>
+                            <span class="detail-save-status" id="collectorCustomerAssignmentStatus">Coordination only. Anyone can still open this account.</span>
+                        </div>
                         <label>Collection Add.</label>
                         <textarea id="collectorProfileAddress">${escapeHtml(address || '')}</textarea>
                         <div class="collection-followup-two">
@@ -8458,16 +8935,61 @@ function renderCollectorFollowupWorkspace(workspace) {
 
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Invoice State</div>
-                    <div class="collection-followup-facts">
-                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(displayBalance))}</strong></div>
-                        <div><span>Date Received</span><strong>${escapeHtml(formatDate(selectedInvoice?.dateReceived || selectedInvoice?.invoiceDate))}</strong></div>
-                        <div><span>Received By</span><strong>${escapeHtml(selectedInvoice?.receivedBy || '-')}</strong></div>
-                        <div><span>Invoice Month</span><strong>${escapeHtml(selectedInvoice?.monthYear || context.label || '-')}</strong></div>
-                    </div>
-                    <div class="collection-followup-form">
-                        <div>
-                            <label>Received By</label>
-                            <input id="collectorReceivedBy" type="text" value="${escapeHtml(selectedInvoice?.receivedBy || '')}">
+	                    <div class="collection-followup-facts">
+	                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(displayBalance))}</strong></div>
+	                        <div><span>Date Received</span><strong>${escapeHtml(formatDate(selectedInvoice?.dateReceived || selectedInvoice?.invoiceDate))}</strong></div>
+	                        <div><span>Received By</span><strong>${escapeHtml(selectedInvoice?.receivedBy || '-')}</strong></div>
+	                        <div><span>Invoice Month</span><strong>${escapeHtml(selectedInvoice?.monthYear || context.label || '-')}</strong></div>
+	                        <div><span>Collector Lane</span><strong>${escapeHtml(getCollectionRoleLabel(assignedRole) || '-')}</strong></div>
+	                        <div><span>Customer Owner</span><strong>${escapeHtml(assignedOwner || 'Open')}</strong></div>
+	                    </div>
+	                    <div class="collection-followup-form">
+	                        <div>
+	                            <label>Conversation Result</label>
+	                            <select id="collectorConversationResult" required>
+	                                ${buildSelectOptions(CONVERSATION_RESULT_OPTIONS, conversationResultValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Promise To Pay</label>
+	                            <select id="collectorPromiseToPay" required>
+	                                ${buildSelectOptions(PROMISE_TO_PAY_OPTIONS, promiseToPayValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Promise Amount</label>
+	                            <input id="collectorPromiseAmount" type="number" min="0" step="0.01" value="${escapeHtml(promiseAmountValue.toFixed(2))}">
+	                        </div>
+	                        <div>
+	                            <label>Promise Date</label>
+	                            <input id="collectorPromiseDate" type="date" value="${escapeHtml(promiseDateValue)}">
+	                        </div>
+	                        <div>
+	                            <label>Next Follow-up Date</label>
+	                            <input id="collectorFollowupDate" type="date" value="${escapeHtml(nextFollowupDateValue)}" required>
+	                        </div>
+	                        <div>
+	                            <label>Next Follow-up Time</label>
+	                            <select id="collectorNextFollowupTime" required>
+	                                ${buildSelectOptions(NEXT_FOLLOWUP_TIME_OPTIONS, nextFollowupTimeValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Issue Type</label>
+	                            <select id="collectorIssueType" required>
+	                                ${buildSelectOptions(ISSUE_TYPE_OPTIONS, issueTypeValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Issue Notes</label>
+	                            <input id="collectorIssueNotes" type="text" list="collectorIssueNoteSuggestions" value="${escapeHtml(issueNotesValue)}" placeholder="Optional explanation">
+	                            <datalist id="collectorIssueNoteSuggestions">
+	                                ${ISSUE_NOTE_SUGGESTIONS.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('')}
+	                            </datalist>
+	                        </div>
+	                        <div>
+	                            <label>Received By</label>
+	                            <input id="collectorReceivedBy" type="text" value="${escapeHtml(selectedInvoice?.receivedBy || '')}">
                         </div>
                         <div>
                             <label>Contact No.</label>
@@ -8485,15 +9007,11 @@ function renderCollectorFollowupWorkspace(workspace) {
                                 ${COLLECTION_LOCATION_OPTIONS.map((option) => `<option value="${escapeHtml(option.id)}"${Number(option.id) === locationId ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}
                             </select>
                         </div>
-                        <div>
-                            <label>Follow-up Date</label>
-                            <input id="collectorFollowupDate" type="date" value="${escapeHtml(defaultFollowup)}">
-                        </div>
-                        <div>
-                            <label>Coll Time</label>
-                            <input id="collectorCollectionTime" type="time" value="${escapeHtml(fromTime || followupTime || '')}">
-                        </div>
-                        <div class="full">
+	                        <div>
+	                            <label>Coll Time</label>
+	                            <input id="collectorCollectionTime" type="time" value="${escapeHtml(fromTime || followupTime || '')}">
+	                        </div>
+	                        <div class="full">
                             <label>Remarks</label>
                             <textarea id="collectorRemarks" placeholder="Write where the invoice is now, who was contacted, and the next action."></textarea>
                         </div>
@@ -9755,6 +10273,14 @@ async function saveCollectorFollowup() {
 
     const remarks = String(document.getElementById('collectorRemarks')?.value || '').trim();
     const followupDate = String(document.getElementById('collectorFollowupDate')?.value || '').trim();
+    const conversationResult = String(document.getElementById('collectorConversationResult')?.value || '').trim();
+    const promiseToPay = String(document.getElementById('collectorPromiseToPay')?.value || '').trim();
+    const promiseAmountRaw = String(document.getElementById('collectorPromiseAmount')?.value || '').trim();
+    const promiseAmount = promiseAmountRaw ? Number(promiseAmountRaw) : 0;
+    const promiseDate = String(document.getElementById('collectorPromiseDate')?.value || '').trim();
+    const nextFollowupTime = String(document.getElementById('collectorNextFollowupTime')?.value || '').trim();
+    const issueType = String(document.getElementById('collectorIssueType')?.value || '').trim();
+    const issueNotes = String(document.getElementById('collectorIssueNotes')?.value || '').trim();
     const collectionTime = String(document.getElementById('collectorCollectionTime')?.value || '').trim();
     const contactPerson = String(document.getElementById('collectorLastContact')?.value || '').trim();
     const contactNumber = String(document.getElementById('collectorContactNumber')?.value || '').trim();
@@ -9765,6 +10291,21 @@ async function saveCollectorFollowup() {
     const checkNumber = String(document.getElementById('collectorCheckNumber')?.value || '').trim();
     const paymentAmountRaw = String(document.getElementById('collectorPaymentAmount')?.value || '').trim();
     const paymentAmount = paymentAmountRaw ? Number(paymentAmountRaw) : 0;
+
+    if (!conversationResult || !promiseToPay || !nextFollowupTime || !issueType) {
+        if (statusNode) statusNode.textContent = 'Please complete Conversation Result, Promise To Pay, Next Follow-up Time, and Issue Type.';
+        return;
+    }
+
+    if (PROMISE_DATE_REQUIRED_OPTIONS.has(promiseToPay) && !promiseDate) {
+        if (statusNode) statusNode.textContent = 'Please set Promise To Pay Date for this payment schedule.';
+        return;
+    }
+
+    if (promiseAmount < 0 || !Number.isFinite(promiseAmount)) {
+        if (statusNode) statusNode.textContent = 'Promise amount must be zero or higher.';
+        return;
+    }
 
     if (!remarks) {
         if (statusNode) statusNode.textContent = 'Please enter remarks before saving.';
@@ -9801,6 +10342,16 @@ async function saveCollectorFollowup() {
             remarks: { stringValue: remarks },
             contact_person: { stringValue: contactPerson || '-' },
             contact_number: { stringValue: contactNumber || '' },
+            conversation_result: { stringValue: conversationResult },
+            promise_to_pay: { stringValue: promiseToPay },
+            promise_to_pay_amount: { doubleValue: promiseAmount },
+            promise_to_pay_date: { stringValue: promiseDate },
+            next_followup_date: { stringValue: followupDate },
+            next_followup_time: { stringValue: nextFollowupTime },
+            issue_type: { stringValue: issueType },
+            issue_notes: { stringValue: issueNotes },
+            collection_role_assignment: { stringValue: getCurrentCollectionRoleAssignment() },
+            customer_assignment_owner: { stringValue: getCustomerAssignmentOwner(context) || getCurrentCollectorName() },
             followed_up_by: { stringValue: getCurrentCollectorName() },
             collector_name: { stringValue: getCurrentCollectorName() },
             followup_datetime: { stringValue: `${followupDate} ${normalizedTime}` },
@@ -11192,8 +11743,37 @@ function viewInvoiceDetail(invoiceKey) {
                     <textarea id="detailRemarksInput" placeholder="Write what happened in the call..."></textarea>
                 </div>
                 <div class="detail-form-group">
-                    <label>Follow-up Date</label>
+                    <label>Conversation Result</label>
+                    <select id="detailConversationResult">${buildSelectOptions(CONVERSATION_RESULT_OPTIONS, getDefaultConversationResult(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Promise To Pay</label>
+                    <select id="detailPromiseToPay">${buildSelectOptions(PROMISE_TO_PAY_OPTIONS, getDefaultPromiseToPay(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Promise Amount</label>
+                    <input id="detailPromiseAmount" type="number" min="0" step="0.01" value="${escapeHtml(Number(lastHistory?.promiseToPayAmount || 0).toFixed(2))}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Promise Date</label>
+                    <input id="detailPromiseDate" type="date" value="${escapeHtml(toDateKey(lastHistory?.promiseToPayDate) || '')}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Next Follow-up Date</label>
                     <input id="detailFollowupInput" type="date" value="${escapeHtml(defaultFollowup)}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Next Follow-up Time</label>
+                    <select id="detailNextFollowupTime">${buildSelectOptions(NEXT_FOLLOWUP_TIME_OPTIONS, getDefaultFollowupTime(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Issue Type</label>
+                    <select id="detailIssueType">${buildSelectOptions(ISSUE_TYPE_OPTIONS, getDefaultIssueType(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Issue Notes</label>
+                    <input id="detailIssueNotes" type="text" list="detailIssueNoteSuggestions" value="${escapeHtml(lastHistory?.issueNotes || '')}">
+                    <datalist id="detailIssueNoteSuggestions">${ISSUE_NOTE_SUGGESTIONS.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('')}</datalist>
                 </div>
                 <div class="detail-form-group">
                     <label>Schedule Type</label>
@@ -11253,6 +11833,13 @@ async function saveCollectionConversation() {
     const remarks = String(remarksInput?.value || '').trim();
     const followupDate = String(followupInput?.value || '').trim();
     const scheduleStatus = Number(scheduleInput?.value || 0);
+    const conversationResult = String(document.getElementById('detailConversationResult')?.value || '').trim();
+    const promiseToPay = String(document.getElementById('detailPromiseToPay')?.value || '').trim();
+    const promiseAmount = Number(document.getElementById('detailPromiseAmount')?.value || 0) || 0;
+    const promiseDate = String(document.getElementById('detailPromiseDate')?.value || '').trim();
+    const nextFollowupTime = String(document.getElementById('detailNextFollowupTime')?.value || '').trim();
+    const issueType = String(document.getElementById('detailIssueType')?.value || '').trim();
+    const issueNotes = String(document.getElementById('detailIssueNotes')?.value || '').trim();
 
     if (!remarks) {
         if (statusNode) statusNode.textContent = 'Please enter conversation remarks before saving.';
@@ -11261,6 +11848,16 @@ async function saveCollectionConversation() {
 
     if (!followupDate) {
         if (statusNode) statusNode.textContent = 'Please set a follow-up date.';
+        return;
+    }
+
+    if (!conversationResult || !promiseToPay || !nextFollowupTime || !issueType) {
+        if (statusNode) statusNode.textContent = 'Please complete Conversation Result, Promise To Pay, Next Follow-up Time, and Issue Type.';
+        return;
+    }
+
+    if (PROMISE_DATE_REQUIRED_OPTIONS.has(promiseToPay) && !promiseDate) {
+        if (statusNode) statusNode.textContent = 'Please set Promise To Pay Date for this payment schedule.';
         return;
     }
 
@@ -11274,6 +11871,15 @@ async function saveCollectionConversation() {
             remarks: { stringValue: remarks },
             contact_person: { stringValue: contactPerson || '-' },
             contact_number: { stringValue: contactNumber || '' },
+            conversation_result: { stringValue: conversationResult },
+            promise_to_pay: { stringValue: promiseToPay },
+            promise_to_pay_amount: { doubleValue: promiseAmount },
+            promise_to_pay_date: { stringValue: promiseDate },
+            next_followup_date: { stringValue: followupDate },
+            next_followup_time: { stringValue: nextFollowupTime },
+            issue_type: { stringValue: issueType },
+            issue_notes: { stringValue: issueNotes },
+            collection_role_assignment: { stringValue: getCurrentCollectionRoleAssignment() },
             followed_up_by: { stringValue: getCurrentCollectorName() },
             collector_name: { stringValue: getCurrentCollectorName() },
             followup_datetime: { stringValue: `${followupDate} 00:00:00` },
@@ -11484,6 +12090,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     renderDeferredCollectionsWorkspaceNote();
+    void loadCollectionWorkflowSettings().catch((error) => {
+        console.warn('Collection workflow settings preload failed:', error);
+    });
     const hydratedFromCache = await hydrateCollectorMatrixFromDeviceCache();
     if (!hydratedFromCache) {
         const noteNode = document.getElementById('collector-dashboard-note');

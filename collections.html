@@ -360,7 +360,7 @@
 
         .priority-cards {
             display: grid;
-            grid-template-columns: repeat(6, minmax(140px, 1fr));
+            grid-template-columns: repeat(4, minmax(180px, 1fr));
             gap: 10px;
         }
 
@@ -408,12 +408,14 @@
             box-shadow: var(--panel-shadow);
         }
 
-        .priority-card.urgent { border-top-color: #dc2626; }
-        .priority-card.high { border-top-color: #f97316; }
-        .priority-card.medium { border-top-color: #f59e0b; }
-        .priority-card.current { border-top-color: #16a34a; }
-        .priority-card.review { border-top-color: #7c3aed; }
-        .priority-card.baddebt { border-top-color: #475569; }
+        .priority-card.promise-today { border-top-color: #2563eb; }
+        .priority-card.broken-promise { border-top-color: #dc2626; }
+        .priority-card.followup-today { border-top-color: #0ea5e9; }
+        .priority-card.needs-document { border-top-color: #f59e0b; }
+        .priority-card.billing-received { border-top-color: #14b8a6; }
+        .priority-card.top-collectible { border-top-color: #16a34a; }
+        .priority-card.overdue { border-top-color: #f97316; }
+        .priority-card.for-approval { border-top-color: #7c3aed; }
 
         .priority-card .card-title {
             font-size: 12px;
@@ -436,6 +438,18 @@
             font-weight: 700;
         }
 
+        .priority-card .card-count {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        .priority-card .card-count small {
+            font-size: 11px;
+            color: #5a7390;
+            font-weight: 700;
+        }
+
         .priority-card .card-hint {
             margin-top: 6px;
             font-size: 10px;
@@ -449,6 +463,64 @@
             grid-template-columns: repeat(6, minmax(140px, 1fr));
             gap: 10px;
             margin-bottom: 14px;
+        }
+
+        .collection-settings-grid,
+        .collection-settings-assignments {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .collection-settings-grid label,
+        .collection-settings-assignments label,
+        .collection-customer-assignment-row {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            color: #315777;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .collection-settings-grid input,
+        .collection-settings-assignments input,
+        .collection-customer-assignment-row input,
+        .collection-customer-assignment-row select {
+            border: 1px solid rgba(148, 163, 184, 0.36);
+            border-radius: 8px;
+            padding: 7px 9px;
+            font-size: 12px;
+            color: #12395f;
+            background: rgba(255, 255, 255, 0.88);
+        }
+
+        .collection-settings-role-card {
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 8px;
+            padding: 9px;
+            background: rgba(248, 250, 252, 0.85);
+        }
+
+        .collection-settings-role-card strong {
+            display: block;
+            color: #143e69;
+            margin-bottom: 4px;
+        }
+
+        .collection-settings-role-card p {
+            margin: 0 0 8px;
+            color: #54708d;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .collection-settings-note {
+            margin: 8px 0 0;
+            color: #526f8d;
+            font-size: 11px;
+            line-height: 1.45;
+            font-weight: 600;
         }
 
         .stat-card {
@@ -3209,6 +3281,11 @@
                 grid-template-columns: 1fr;
             }
 
+            .collection-settings-grid,
+            .collection-settings-assignments {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .comparison-layout {
                 grid-template-columns: 1fr;
             }
@@ -3255,6 +3332,8 @@
             .collection-payment-form,
             .collection-followup-form,
             .collection-followup-two,
+            .collection-settings-grid,
+            .collection-settings-assignments,
             .collection-soa-period-form {
                 grid-template-columns: 1fr;
             }
@@ -3453,14 +3532,36 @@
 </head>
 <body>
     <div class="modal-overlay hidden" id="collectorMatrixSettingsModal">
-        <div class="modal">
+        <div class="modal modal-lg">
             <div class="modal-header">
-                <h2>Matrix Summary Schedule</h2>
+                <h2>Collection Settings</h2>
                 <button type="button" class="modal-close" onclick="closeCollectorMatrixSettingsModal()">x</button>
             </div>
             <div class="modal-body">
                 <p id="collectorMatrixSettingsStatus">Loading settings...</p>
                 <p id="collectorMatrixLastBuiltAt" class="collector-settings-meta"></p>
+                <div class="brief-section">
+                    <h4>Targets</h4>
+                    <div class="collection-settings-grid">
+                        <label>Minimum Daily Target<input type="number" id="collectionTargetMinimumDaily" min="0" step="1000"></label>
+                        <label>Good Daily Target<input type="number" id="collectionTargetGoodDaily" min="0" step="1000"></label>
+                        <label>Recovery Daily Target<input type="number" id="collectionTargetRecoveryDaily" min="0" step="1000"></label>
+                        <label>Weekly Target<input type="number" id="collectionTargetWeekly" min="0" step="1000"></label>
+                        <label>Weekly Min<input type="number" id="collectionTargetWeeklyMin" min="0" step="1000"></label>
+                        <label>Weekly Max<input type="number" id="collectionTargetWeeklyMax" min="0" step="1000"></label>
+                        <label>Monthly Target<input type="number" id="collectionTargetMonthly" min="0" step="1000"></label>
+                        <label>Week 1 Cumulative<input type="number" id="collectionTargetWeek1" min="0" step="1000"></label>
+                        <label>Week 2 Cumulative<input type="number" id="collectionTargetWeek2" min="0" step="1000"></label>
+                        <label>Week 3 Cumulative<input type="number" id="collectionTargetWeek3" min="0" step="1000"></label>
+                        <label>Week 4 Cumulative<input type="number" id="collectionTargetWeek4" min="0" step="1000"></label>
+                    </div>
+                    <p class="collection-settings-note">When monthly collection falls behind, divide the remaining target by the remaining working days and use the higher daily target.</p>
+                </div>
+                <div class="brief-section">
+                    <h4>Open Collector Assignment</h4>
+                    <div class="collection-settings-assignments" id="collectionAssignmentSettings"></div>
+                    <p class="collection-settings-note">This does not lock access. Collectors can meet, choose a lane, and update customer ownership so the same client is not called twice.</p>
+                </div>
                 <label class="collector-settings-row">
                     <input type="checkbox" id="collectorMatrixAutoRebuildEnabled" checked>
                     Enable automatic nightly matrix rebuild
@@ -3771,43 +3872,47 @@
             </div>
 
             <div class="priority-section">
-                <h3>Priority Buckets</h3>
-                <div class="priority-cards">
-                    <div class="priority-card urgent" onclick="filterByPriority('urgent')">
-                        <div class="card-title">Urgent</div>
-                        <div class="card-count" id="count-urgent">0</div>
-                        <div class="card-amount" id="amount-urgent">P0</div>
-                        <div class="card-hint">91-120 days: call now</div>
+                <h3>Priority To Collect</h3>
+                <div class="priority-cards" id="collectionPriorityCards">
+                    <div class="priority-card promise-today" data-work-queue-mode="promise_today" onclick="setWorkQueueMode('promise_today')">
+                        <div class="card-title">Promise-to-Pay Today</div>
+                        <div class="card-count"><span id="count-promise-today">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-promise-today">₱0 projected</div>
                     </div>
-                    <div class="priority-card high" onclick="filterByPriority('high')">
-                        <div class="card-title">High</div>
-                        <div class="card-count" id="count-high">0</div>
-                        <div class="card-amount" id="amount-high">P0</div>
-                        <div class="card-hint">61-90 days: aggressive follow-up</div>
+                    <div class="priority-card broken-promise" data-work-queue-mode="broken_promise" onclick="setWorkQueueMode('broken_promise')">
+                        <div class="card-title">Broken Promise-to-Pay</div>
+                        <div class="card-count"><span id="count-broken-promise">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-broken-promise">₱0 at risk</div>
                     </div>
-                    <div class="priority-card medium" onclick="filterByPriority('medium')">
-                        <div class="card-title">Medium</div>
-                        <div class="card-count" id="count-medium">0</div>
-                        <div class="card-amount" id="amount-medium">P0</div>
-                        <div class="card-hint">31-60 days: reminders</div>
+                    <div class="priority-card followup-today" data-work-queue-mode="followup_today" onclick="setWorkQueueMode('followup_today')">
+                        <div class="card-title">Follow-up Scheduled Today</div>
+                        <div class="card-count"><span id="count-followup-today">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-followup-today">₱0 potential</div>
                     </div>
-                    <div class="priority-card current" onclick="filterByPriority('current')">
-                        <div class="card-title">Current</div>
-                        <div class="card-count" id="count-current">0</div>
-                        <div class="card-amount" id="amount-current">P0</div>
-                        <div class="card-hint">0-30 days: standard follow-up</div>
+                    <div class="priority-card needs-document" data-work-queue-mode="needs_document" onclick="setWorkQueueMode('needs_document')">
+                        <div class="card-title">Needs Document</div>
+                        <div class="card-count"><span id="count-needs-document">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-needs-document">₱0 affected</div>
                     </div>
-                    <div class="priority-card review" onclick="filterByPriority('review')">
-                        <div class="card-title">For Review</div>
-                        <div class="card-count" id="count-review">0</div>
-                        <div class="card-amount" id="amount-review">P0</div>
-                        <div class="card-hint">121-365 days: management review</div>
+                    <div class="priority-card billing-received" data-work-queue-mode="billing_received_unfollowed" onclick="setWorkQueueMode('billing_received_unfollowed')">
+                        <div class="card-title">Billing Received Not Yet Followed Up</div>
+                        <div class="card-count"><span id="count-billing-received-unfollowed">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-billing-received-unfollowed">₱0 receivable</div>
                     </div>
-                    <div class="priority-card baddebt" onclick="filterByPriority('baddebt')">
-                        <div class="card-title">Bad Debt</div>
-                        <div class="card-count" id="count-baddebt">0</div>
-                        <div class="card-amount" id="amount-baddebt">P0</div>
-                        <div class="card-hint">365+ days: write-off candidate</div>
+                    <div class="priority-card top-collectible" data-work-queue-mode="top_collectible" onclick="setWorkQueueMode('top_collectible')">
+                        <div class="card-title">Top Collectible Accounts</div>
+                        <div class="card-count"><span id="count-top-collectible">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-top-collectible">₱0 balance</div>
+                    </div>
+                    <div class="priority-card overdue" data-work-queue-mode="overdue_accounts" onclick="setWorkQueueMode('overdue_accounts')">
+                        <div class="card-title">Overdue Accounts</div>
+                        <div class="card-count"><span id="count-overdue-accounts">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-overdue-accounts">₱0 overdue</div>
+                    </div>
+                    <div class="priority-card for-approval" data-work-queue-mode="for_approval" onclick="setWorkQueueMode('for_approval')">
+                        <div class="card-title">For Approval</div>
+                        <div class="card-count"><span id="count-for-approval">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-for-approval">₱0 pending approval</div>
                     </div>
                 </div>
             </div>
@@ -3870,29 +3975,6 @@
                 <div class="active-filters" id="active-filters"></div>
             </div>
 
-            <div class="duration-summary" id="duration-summary">
-                <div class="duration-card">
-                    <div class="label">Duration Analysis</div>
-                    <div class="value" id="duration-range-label">All Dates</div>
-                    <div class="subvalue" id="duration-range-help">Set from/to date to analyze billing and collection totals.</div>
-                </div>
-                <div class="duration-card bill">
-                    <div class="label">Total Bill</div>
-                    <div class="value" id="duration-total-bill">₱0.00</div>
-                    <div class="subvalue" id="duration-total-bill-count">0 invoice(s)</div>
-                </div>
-                <div class="duration-card collections">
-                    <div class="label">Total Collections</div>
-                    <div class="value" id="duration-total-collections">₱0.00</div>
-                    <div class="subvalue" id="duration-total-collections-count">0 payment(s)</div>
-                </div>
-                <div class="duration-card need">
-                    <div class="label">Need To Collect</div>
-                    <div class="value" id="duration-need-collect">₱0.00</div>
-                    <div class="subvalue" id="duration-need-collect-count">0 unpaid invoice(s)</div>
-                </div>
-            </div>
-
             <section class="data-table-container collector-dashboard" id="collector-dashboard">
                 <div class="report-panel-title">Collector Dashboard</div>
                 <div class="report-panel-subtitle">Quarter 4 2025 to December 2026 display window. Each row is one machine/account. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
@@ -3901,25 +3983,6 @@
                     <div class="collector-chip-row">
                         <span class="collector-chip" id="collector-dashboard-range">October 2025 to December 2026</span>
                         <span class="collector-chip pending" id="collector-dashboard-pending">Pending cells: 0</span>
-                    </div>
-                </div>
-                <div class="collections-compare-card" id="collectionsCompareCard">
-                    <div class="collections-compare-head">
-                        <div>
-                            <div class="collections-compare-title">Firebase Snapshot</div>
-                            <div class="collections-compare-subtitle" id="collectionsCompareSubtitle">Capture the current Firebase render after loading Collections.</div>
-                        </div>
-                        <button type="button" class="btn btn-secondary btn-sm" id="saveCollectionsSnapshotBtn">Save Snapshot</button>
-                    </div>
-                    <div class="collections-compare-grid" id="collectionsCompareGrid">
-                        <div class="collections-compare-metric"><span>Backend</span><strong>Loading</strong><small>Current browser</small></div>
-                    </div>
-                    <div class="collections-compare-saved" id="collectionsCompareSaved">No saved snapshots yet.</div>
-                </div>
-                <div class="collector-table-wrap">
-                    <h3 class="collector-section-title">Collection for the Last 6 Months</h3>
-                    <div class="collector-sheet-scroll" id="collector-summary-table">
-                        <div class="empty-followup">Loading collector summary...</div>
                     </div>
                 </div>
                 <div class="collector-table-wrap">
