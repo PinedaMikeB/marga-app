@@ -1760,6 +1760,7 @@
     padding: 0.75rem 1rem 1rem;
     display: grid;
     gap: 0.75rem;
+    max-width: 100%;
 }
 
 .field-priority-lock {
@@ -1799,6 +1800,7 @@
     background: rgba(255, 255, 255, 0.78);
     box-shadow: 0 10px 28px rgba(49, 130, 206, 0.08);
     padding: 0.9rem 1rem;
+    min-width: 0;
 }
 
 .field-task-top {
@@ -2204,6 +2206,11 @@
 
 .field-collection-invoice-table-wrap {
     overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
+    touch-action: pan-x pan-y;
+    scrollbar-gutter: stable;
     border: 1px solid rgba(187, 212, 237, 0.9);
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.96);
@@ -2301,6 +2308,7 @@
     .field-view-tabs {
         width: 100%;
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     .field-view-tab {
@@ -2413,6 +2421,30 @@
 }
 
 @media (max-width: 560px) {
+    .field-shell {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        overflow-x: hidden;
+    }
+
+    .field-header,
+    .field-call-card,
+    .field-attendance-card,
+    .field-view-panel,
+    .field-title,
+    .field-brand,
+    .field-actions,
+    .field-call-actions,
+    .field-location-check,
+    .field-location-check-actions,
+    .field-attendance-times,
+    .field-attendance-actions {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
     .field-header {
         padding: 0.8rem 0.85rem;
     }
@@ -2438,7 +2470,7 @@
     .field-actions {
         width: 100%;
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.45rem;
     }
 
@@ -2490,11 +2522,11 @@
     }
 
     .field-attendance-times {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .field-call-actions {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .field-direct-call {
@@ -2503,12 +2535,12 @@
 
     .field-attendance-actions {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .field-location-check-actions {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .field-upload-grid,
@@ -2613,11 +2645,35 @@
 
     .field-list {
         padding: 0.65rem 0.7rem 0.85rem;
+        margin-inline: -0.7rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-inline: contain;
+        scroll-padding-inline: 0.7rem;
+        touch-action: pan-x pan-y;
     }
 
     .field-task {
+        width: min(560px, calc(100vw + 140px));
+        min-width: 460px;
         padding: 0.8rem 0.82rem;
         border-radius: 14px;
+    }
+
+    .field-task h4,
+    .field-task .meta,
+    .field-task .sub {
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    .field-collection-invoice-table-wrap {
+        margin-inline: -0.05rem;
+        border-radius: 10px;
+    }
+
+    .field-collection-invoice-table {
+        min-width: 680px;
     }
 
     .marga-modal {
@@ -2664,5 +2720,88 @@
 
     .marga-modal-footer .btn {
         width: 100%;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 620px) {
+    .field-shell {
+        max-width: none;
+        padding: 0.55rem 0.75rem 0.9rem;
+    }
+
+    .field-header,
+    .field-call-card,
+    .field-attendance-card {
+        border-radius: 14px;
+        padding: 0.68rem 0.8rem;
+    }
+
+    .field-header {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+
+    .field-call-card,
+    .field-attendance-card {
+        grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+    }
+
+    .field-call-actions,
+    .field-location-check-actions,
+    .field-attendance-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(96px, 1fr));
+    }
+
+    .field-view-tabs {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .field-list {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-inline: contain;
+        touch-action: pan-x pan-y;
+    }
+
+    .field-task {
+        min-width: 680px;
+    }
+
+    .marga-modal {
+        inset: 0.45rem;
+        transform: none;
+        width: auto;
+        max-width: none;
+        max-height: none;
+        border-radius: 14px;
+    }
+
+    .marga-modal-header {
+        padding: 0.72rem 0.9rem;
+    }
+
+    .marga-modal-body {
+        padding: 0.72rem 0.9rem;
+    }
+
+    .marga-form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.62rem;
+    }
+
+    .field-collection-invoices,
+    .marga-field-full {
+        grid-column: 1 / -1;
+    }
+
+    .field-collection-invoice-table {
+        min-width: 760px;
+    }
+
+    .marga-modal-footer {
+        padding: 0.68rem 0.9rem;
     }
 }
