@@ -52,6 +52,7 @@ let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
 let collectorDashboardRenderSeq = 0;
+let collectorMatrixFilterFrame = 0;
 let collectorInvoiceSearchSupplementTimer = null;
 let collectorInvoiceSearchSupplementTerm = '';
 let collectorInvoiceSearchSupplementPromise = null;
@@ -1010,7 +1011,7 @@ function collectionAccountHistoryKeys(source = {}) {
 }
 
 function getCollectorSearchTerm() {
-    return String(document.getElementById('collectorSearchInput')?.value || '').trim().toLowerCase();
+    return normalizeCollectorTextSearchValue(document.getElementById('collectorSearchInput')?.value || '');
 }
 
 function getCollectorInvoiceSearchTerm() {
@@ -1021,6 +1022,10 @@ function normalizeCollectorInvoiceSearchValue(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function normalizeCollectorTextSearchValue(value) {
+    return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function getCollectorSortValue() {
     return String(document.getElementById('collectorSortInput')?.value || 'rd').trim().toLowerCase();
 }
@@ -1028,12 +1033,12 @@ function getCollectorSortValue() {
 function compareCollectorRows(left, right, sortValue) {
     const leftRd = Number(left.rd || 0) || Number.MAX_SAFE_INTEGER;
     const rightRd = Number(right.rd || 0) || Number.MAX_SAFE_INTEGER;
-    const leftCustomer = String(left.customer || '').toLowerCase();
-    const rightCustomer = String(right.customer || '').toLowerCase();
-    const leftBranch = String(left.branchName || left.accountLabel || '').toLowerCase();
-    const rightBranch = String(right.branchName || right.accountLabel || '').toLowerCase();
-    const leftSerial = String(left.serialNumber || left.machineLabel || '').toLowerCase();
-    const rightSerial = String(right.serialNumber || right.machineLabel || '').toLowerCase();
+    const leftCustomer = left._collectorSortCustomer || normalizeCollectorTextSearchValue(left.customer);
+    const rightCustomer = right._collectorSortCustomer || normalizeCollectorTextSearchValue(right.customer);
+    const leftBranch = left._collectorSortBranch || normalizeCollectorTextSearchValue(left.branchName || left.accountLabel);
+    const rightBranch = right._collectorSortBranch || normalizeCollectorTextSearchValue(right.branchName || right.accountLabel);
+    const leftSerial = left._collectorSortSerial || normalizeCollectorTextSearchValue(left.serialNumber || left.machineLabel);
+    const rightSerial = right._collectorSortSerial || normalizeCollectorTextSearchValue(right.serialNumber || right.machineLabel);
 
     if (sortValue === 'customer') {
         return leftCustomer.localeCompare(rightCustomer)
@@ -1249,21 +1254,7 @@ function prepareCollectorRows(rows) {
     const filteredRows = rows
         .filter((row) => {
             if (!searchTerm) return true;
-            const haystack = [
-                row.customer,
-                row.branchName,
-                row.accountLabel,
-                row.serialNumber,
-                row.machineLabel,
-                row.machineId,
-                row.contractmainId,
-                row.rd,
-                row.groupedParentName
-            ]
-                .filter(Boolean)
-                .join(' ')
-                .toLowerCase();
-            return haystack.includes(searchTerm);
+            return (row._collectorAccountSearchText || '').includes(searchTerm);
         })
         .filter((row) => {
             if (!invoiceSearchTerm) return true;
@@ -1283,21 +1274,48 @@ function prepareCollectorRows(rows) {
 }
 
 function collectorRowMatchesInvoiceSearch(row, rawTerm, normalizedTerm) {
-    const monthCellIds = Object.values(row?.months || {});
-    return monthCellIds.some((cellId) => {
-        const cell = collectorCellMap.get(cellId || '');
-        return (cell?.records || []).some((record) => {
-            const values = [
-                record.invoiceNo,
-                record.invoiceId,
-                record.invoiceKey
-            ];
-            return values.some((value) => {
-                const rawValue = String(value || '').toLowerCase();
-                const normalizedValue = normalizeCollectorInvoiceSearchValue(value);
-                return rawValue.includes(rawTerm) || (normalizedTerm && normalizedValue.includes(normalizedTerm));
+    const rawIndex = row?._collectorInvoiceSearchText || '';
+    const normalizedIndex = row?._collectorInvoiceSearchNormalizedText || '';
+    return rawIndex.includes(rawTerm) || (normalizedTerm && normalizedIndex.includes(normalizedTerm));
+}
+
+function ensureCollectorRowSearchIndexes(data) {
+    const rows = Array.isArray(data?.customerRows) ? data.customerRows : [];
+    rows.forEach((row) => {
+        if (row?._collectorSearchIndexReady) return;
+
+        row._collectorAccountSearchText = normalizeCollectorTextSearchValue([
+            row.customer,
+            row.branchName,
+            row.accountLabel,
+            row.serialNumber,
+            row.machineLabel,
+            row.machineId,
+            row.contractmainId,
+            row.companyId,
+            row.branchId,
+            row.rd,
+            row.groupedParentName
+        ].filter(Boolean).join(' '));
+        row._collectorSortCustomer = normalizeCollectorTextSearchValue(row.customer);
+        row._collectorSortBranch = normalizeCollectorTextSearchValue(row.branchName || row.accountLabel);
+        row._collectorSortSerial = normalizeCollectorTextSearchValue(row.serialNumber || row.machineLabel);
+
+        const invoiceValues = [];
+        Object.values(row?.months || {}).forEach((cellId) => {
+            const cell = collectorCellMap.get(cellId || '');
+            (cell?.records || []).forEach((record) => {
+                invoiceValues.push(
+                    record.invoiceNo,
+                    record.invoiceId,
+                    record.invoiceKey
+                );
             });
         });
+        const invoiceSearchText = invoiceValues.filter(Boolean).join(' ');
+        row._collectorInvoiceSearchText = normalizeCollectorTextSearchValue(invoiceSearchText);
+        row._collectorInvoiceSearchNormalizedText = normalizeCollectorInvoiceSearchValue(invoiceSearchText);
+        row._collectorSearchIndexReady = true;
     });
 }
 
@@ -2285,7 +2303,7 @@ function patchCollectorCellFollowupDisplay(cellId, historyEntry) {
         }
     }
 
-    renderCollectorDashboardFromData(collectorDashboardData);
+    renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
     void persistCollectorMatrixSnapshotFromCurrentData('followup-save');
 }
 
@@ -6470,13 +6488,8 @@ function renderCollectorMatrixTable(data, visibleRows) {
     scheduleCollectorLatestScroll(data);
 }
 
-function renderCollectorDashboardFromData(data) {
-    if (!data) return null;
-
-    ensureCollectorDashboardDerivedFields(data);
-    const visibleRows = prepareCollectorRows(data.customerRows);
-    renderCollectorSummaryTable(data);
-    renderCollectorMatrixTable(data, visibleRows);
+function updateCollectorDashboardMatrixStatus(data, visibleRows) {
+    if (!data) return;
 
     const noteNode = document.getElementById('collector-dashboard-note');
     if (noteNode) {
@@ -6486,10 +6499,8 @@ function renderCollectorDashboardFromData(data) {
             searchTerm ? `account "${searchTerm}"` : '',
             invoiceSearchTerm ? `invoice "${invoiceSearchTerm}"` : ''
         ].filter(Boolean);
-        const filterText = searchTerm
+        const filterText = filterParts.length
             ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
-            : invoiceSearchTerm
-                ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
         noteNode.textContent = `${filterText} Collected Against Billed follows the invoice billing month. Payments Dated This Month follows the payment/OR date for bank reconciliation, regardless of what billing month the invoice belongs to. Pending billing counts only rows with a contract or meter-reading peso estimate.`;
     }
@@ -6503,10 +6514,36 @@ function renderCollectorDashboardFromData(data) {
     if (pendingNode) {
         pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
     }
+}
 
-    updateCollectorTodaySummaryCard();
-    renderCollectionsCompareScorecard();
+function renderCollectorDashboardFromData(data, options = {}) {
+    if (!data) return null;
+
+    ensureCollectorDashboardDerivedFields(data);
+    ensureCollectorRowSearchIndexes(data);
+    const visibleRows = prepareCollectorRows(data.customerRows);
+    if (!options.matrixOnly) renderCollectorSummaryTable(data);
+    renderCollectorMatrixTable(data, visibleRows);
+    updateCollectorDashboardMatrixStatus(data, visibleRows);
+
+    if (!options.matrixOnly) {
+        updateCollectorTodaySummaryCard();
+        renderCollectionsCompareScorecard();
+    }
     return data;
+}
+
+function queueCollectorMatrixFilterRender() {
+    if (!collectorDashboardData) {
+        if (lastLoadSucceeded) void renderCollectorDashboard();
+        return;
+    }
+
+    if (collectorMatrixFilterFrame) window.cancelAnimationFrame(collectorMatrixFilterFrame);
+    collectorMatrixFilterFrame = window.requestAnimationFrame(() => {
+        collectorMatrixFilterFrame = 0;
+        renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
+    });
 }
 
 function toggleCollectorGroupedRows(groupRowId) {
@@ -6518,7 +6555,7 @@ function toggleCollectorGroupedRows(groupRowId) {
         collectorExpandedGroupRows.add(safeRowId);
     }
     if (collectorDashboardData) {
-        renderCollectorDashboardFromData(collectorDashboardData);
+        renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
     }
 }
 
@@ -11420,16 +11457,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('saveCollectionsSnapshotBtn')?.addEventListener('click', saveCollectionsCompareSnapshot);
 
     document.getElementById('collectorSearchInput')?.addEventListener('input', () => {
-        if (lastLoadSucceeded) void renderCollectorDashboard();
+        queueCollectorMatrixFilterRender();
     });
     document.getElementById('collectorInvoiceSearchInput')?.addEventListener('input', () => {
-        if (lastLoadSucceeded) {
-            void renderCollectorDashboard();
-            queueCollectorInvoiceSearchSupplement();
-        }
+        queueCollectorMatrixFilterRender();
+        queueCollectorInvoiceSearchSupplement();
     });
     document.getElementById('collectorSortInput')?.addEventListener('change', () => {
-        if (lastLoadSucceeded) void renderCollectorDashboard();
+        queueCollectorMatrixFilterRender();
     });
     document.getElementById('collectorTodayConfirmedBtn')?.addEventListener('click', () => {
         openCollectorTodaySummary('confirmed');
