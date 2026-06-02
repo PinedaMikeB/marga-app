@@ -8494,6 +8494,73 @@ function renderMiniInvoiceRows(invoices, emptyText) {
     `;
 }
 
+function renderCollectorWorkspaceInvoiceList(workspace, selectedInvoice) {
+    const invoices = getCollectorSoaCandidateInvoices(workspace);
+    if (!invoices.length) {
+        return `
+            <section class="collection-account-invoices-panel">
+                <div class="collection-account-invoices-head">
+                    <div class="collection-account-invoices-title">Unpaid Invoices In This List</div>
+                    <div class="collection-account-invoices-total">No linked unpaid invoices</div>
+                </div>
+                <div class="collection-followup-empty">No unpaid invoice list is available for this account row yet.</div>
+            </section>
+        `;
+    }
+
+    const selectedKeys = new Set([
+        selectedInvoice?.invoiceKey,
+        selectedInvoice?.invoiceNo,
+        selectedInvoice?.invoiceId
+    ].map((value) => String(value || '').trim()).filter(Boolean));
+    const totalBalance = invoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
+    const sortedInvoices = [...invoices].sort((left, right) => {
+        const leftTime = (left.invoiceDate || normalizeDate(left.dueDate) || new Date(0)).getTime();
+        const rightTime = (right.invoiceDate || normalizeDate(right.dueDate) || new Date(0)).getTime();
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''));
+    });
+
+    return `
+        <section class="collection-account-invoices-panel">
+            <div class="collection-account-invoices-head">
+                <div class="collection-account-invoices-title">Unpaid Invoices In This List</div>
+                <div class="collection-account-invoices-total">${escapeHtml(sortedInvoices.length.toLocaleString())} row(s) • ${escapeHtml(formatCurrency(totalBalance))}</div>
+            </div>
+            <div class="collection-followup-table-wrap">
+                <table class="collection-followup-table">
+                    <thead>
+                        <tr>
+                            <th>Invoice Date</th>
+                            <th>Invoice #</th>
+                            <th>Branch</th>
+                            <th class="text-right">Amount</th>
+                            <th class="text-right">Balance</th>
+                            <th>Received</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sortedInvoices.map((invoice) => {
+                            const key = String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim();
+                            const isSelected = key && selectedKeys.has(key);
+                            return `
+                                <tr class="${isSelected ? 'selected' : ''}">
+                                    <td>${escapeHtml(formatDate(invoice.invoiceDate || invoice.dueDate))}</td>
+                                    <td>${escapeHtml(invoice.invoiceNo || invoice.invoiceId || invoice.invoiceKey || '-')}</td>
+                                    <td>${escapeHtml(invoice.branch || '-')}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(invoice.amount || invoice.billedAmount || 0))}</td>
+                                    <td class="text-right">${escapeHtml(formatCurrency(getOutstandingInvoiceAmount(invoice)))}</td>
+                                    <td>${escapeHtml(formatDate(invoice.dateReceived))}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    `;
+}
+
 function closeCollectorSoaPeriodModal() {
     document.getElementById('collectorSoaPeriodModal')?.classList.add('hidden');
 }
@@ -8524,24 +8591,44 @@ function openCollectorSoaPeriodModal() {
 function getCollectorSoaCandidateInvoices(workspace) {
     const context = workspace?.context || {};
     const candidates = [];
-    const append = (invoice, source = 'workspace') => {
+    const append = (invoice, source = 'workspace', cell = null) => {
         if (!invoice) return;
+        const cellAmount = cell ? getPriorityCellAmount(cell) : 0;
         candidates.push({
             ...invoice,
             source,
             invoiceDate: normalizeDate(invoice.invoiceDate || invoice.dueDate) || null,
-            amount: Number(invoice.amount || invoice.billedAmount || invoice.displayBilledTotal || 0) || 0,
-            company: invoice.company || context.customer,
-            branch: invoice.branch || context.branchName,
-            companyId: invoice.companyId || context.companyId,
-            branchId: invoice.branchId || context.branchId
+            amount: Number(invoice.amount || invoice.billedAmount || invoice.displayBilledTotal || cellAmount || 0) || 0,
+            company: invoice.company || cell?.customer || context.customer,
+            branch: invoice.branch || cell?.branchName || context.branchName,
+            companyId: invoice.companyId || cell?.companyId || context.companyId,
+            branchId: invoice.branchId || cell?.branchId || context.branchId
         });
     };
+
+    getCollectorSoaListGroupCells(workspace).forEach((cell) => {
+        const records = Array.isArray(cell.records) ? cell.records : [];
+        if (records.length) {
+            records.forEach((record) => append(record, 'list_group', cell));
+        } else {
+            append({
+                invoiceNo: cell.pendingBilling ? 'Pending billing' : cell.id,
+                invoiceId: cell.id,
+                invoiceKey: cell.id,
+                invoiceDate: normalizeDate(cell.monthKey ? `${cell.monthKey}-01` : ''),
+                amount: getPriorityCellAmount(cell),
+                company: cell.customer,
+                branch: cell.branchName,
+                companyId: cell.companyId,
+                branchId: cell.branchId
+            }, 'list_group_cell', cell);
+        }
+    });
 
     (workspace?.branchInvoices || []).forEach((invoice) => append(invoice, 'branch'));
     if (!candidates.length && workspace?.selectedInvoice) append(workspace.selectedInvoice, 'selected');
     if (!candidates.length) {
-        (workspace?.cell?.records || []).forEach((record) => append(record, 'cell'));
+        (workspace?.cell?.records || []).forEach((record) => append(record, 'cell', workspace?.cell));
     }
 
     collectorBillingRecords
@@ -8557,6 +8644,32 @@ function getCollectorSoaCandidateInvoices(workspace) {
             return true;
         })
         .filter((invoice) => Number(invoice.amount || invoice.billedAmount || 0) > 0);
+}
+
+function getCollectorSoaListGroupCells(workspace) {
+    const context = workspace?.context || {};
+    const selectedCell = workspace?.cell || null;
+    const selectedRowId = String(selectedCell?.rowId || context.rowId || '').trim();
+    const rows = selectedRowId
+        ? (collectorDashboardData?.customerRows || []).filter((row) => String(row.rowId || '').trim() === selectedRowId)
+        : [];
+    const cells = rows.flatMap((row) => getCollectorRowOpenCells(row));
+    if (selectedCell) cells.push(selectedCell);
+
+    const seen = new Set();
+    return cells
+        .filter((cell) => {
+            const id = String(cell?.id || '').trim();
+            if (!cell || !id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        })
+        .filter((cell) => isCollectorSoaRecordMatch({
+            company: cell.customer,
+            branch: cell.branchName,
+            companyId: cell.companyId,
+            branchId: cell.branchId
+        }, context));
 }
 
 function getCollectorSoaDefaultFromDate(workspace) {
@@ -9412,6 +9525,9 @@ function renderCollectorFollowupWorkspace(workspace) {
     const displayBalance = paymentRecords.length
         ? paymentBalance
         : (Number(branchBalance || 0) > 0 ? Number(branchBalance || 0) : cellOutstanding);
+    const workspaceInvoiceList = getCollectorSoaCandidateInvoices(workspace);
+    const workspaceInvoiceListBalance = workspaceInvoiceList.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
+    const displayAccountBalance = workspaceInvoiceListBalance > 0 ? workspaceInvoiceListBalance : displayBalance;
     const conversationResultValue = getDefaultConversationResult(lastHistory);
     const promiseToPayValue = getDefaultPromiseToPay(lastHistory);
     const promiseAmountValue = Number(lastHistory?.promiseToPayAmount || lastHistory?.paymentAmount || 0);
@@ -9432,11 +9548,13 @@ function renderCollectorFollowupWorkspace(workspace) {
                     <p>Status: Active • Model: ${escapeHtml(context.modelName || selectedInvoice?.modelName || '-')} • Serial: ${escapeHtml(displaySerialNumber(context.serialNumber || selectedInvoice?.serialNumber))}</p>
                 </div>
                 <div class="collection-balance-card">
-                    <span>Branch Balance</span>
-                    <strong>${escapeHtml(formatCurrency(displayBalance))}</strong>
+                    <span>List Balance</span>
+                    <strong>${escapeHtml(formatCurrency(displayAccountBalance))}</strong>
                     <em>Company open: ${escapeHtml(formatCurrency(companyBalance))}</em>
                 </div>
             </section>
+
+            ${renderCollectorWorkspaceInvoiceList(workspace, selectedInvoice)}
 
             <div class="collection-workspace-tabs" role="tablist" aria-label="Collection workspace sections">
                 <button type="button" class="collection-workspace-tab active" id="collectorFollowupTab" role="tab" aria-selected="true" aria-controls="collectorFollowupPanel" onclick="setCollectorWorkspaceTab('followup')">Follow-up</button>
