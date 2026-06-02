@@ -349,6 +349,69 @@
             margin-bottom: 14px;
         }
 
+        .collection-assignment-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 0 0 14px;
+            padding: 12px 14px;
+            background: rgba(248, 250, 252, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 8px;
+            box-shadow: var(--panel-shadow-soft);
+        }
+
+        .collection-assignment-title {
+            font-size: 12px;
+            font-weight: 900;
+            color: #1f3956;
+        }
+
+        .collection-assignment-subtitle {
+            margin-top: 2px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+        }
+
+        .collection-assignment-controls {
+            display: flex;
+            align-items: end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .collection-assignment-controls label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #486682;
+        }
+
+        .collection-assignment-controls select {
+            min-width: 230px;
+            border: 1px solid #d8e2ed;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #1f3956;
+            background: #ffffff;
+        }
+
+        .collection-assignment-status {
+            min-width: 170px;
+            font-size: 11px;
+            font-weight: 800;
+            color: #4f6f8f;
+        }
+
         .priority-section h3 {
             font-size: 12px;
             text-transform: uppercase;
@@ -436,6 +499,169 @@
             font-size: 12px;
             color: #355d85;
             font-weight: 700;
+        }
+
+        .priority-worklist-panel {
+            margin-bottom: 14px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .priority-worklist-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(248, 250, 252, 0.84);
+        }
+
+        .priority-worklist-title {
+            font-size: 14px;
+            font-weight: 900;
+            color: #1f3956;
+        }
+
+        .priority-worklist-subtitle {
+            margin-top: 3px;
+            font-size: 11px;
+            line-height: 1.4;
+            font-weight: 700;
+            color: #64748b;
+        }
+
+        .priority-view-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        .priority-view-toggle button {
+            border: 0;
+            border-radius: 6px;
+            padding: 7px 10px;
+            background: transparent;
+            color: #31577d;
+            font-size: 11px;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .priority-view-toggle button.active {
+            background: #2563eb;
+            color: #ffffff;
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.2);
+        }
+
+        .priority-worklist-body {
+            padding: 12px 14px 14px;
+            background: rgba(255, 255, 255, 0.76);
+        }
+
+        .priority-worklist-summary {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .priority-worklist-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 9px;
+            border-radius: 999px;
+            background: #eaf4ff;
+            border: 1px solid #bfdbfe;
+            color: #1f4f7a;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .priority-worklist-table-wrap {
+            overflow: auto;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        .priority-worklist-table {
+            width: 100%;
+            min-width: 980px;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+            color: #1f3956;
+        }
+
+        .priority-worklist-table th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            padding: 9px 10px;
+            background: #e8f1fb;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.32);
+            color: #486682;
+            text-align: left;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .priority-worklist-table td {
+            padding: 9px 10px;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+            vertical-align: top;
+        }
+
+        .priority-group-row td {
+            background: #f8fafc;
+            font-weight: 900;
+            color: #17385d;
+        }
+
+        .priority-total-row td {
+            background: #eff6ff;
+            font-weight: 900;
+            color: #1f4f7a;
+        }
+
+        .priority-worklist-account {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .priority-worklist-account strong {
+            font-weight: 900;
+        }
+
+        .priority-worklist-account span {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+        }
+
+        .priority-worklist-actions {
+            display: inline-flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .priority-worklist-empty {
+            padding: 20px;
+            border: 1px dashed rgba(148, 163, 184, 0.45);
+            border-radius: 8px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            background: rgba(248, 250, 252, 0.72);
         }
 
         .priority-card .card-count {
@@ -3871,6 +4097,26 @@
                 <span class="tip-close" onclick="closeTip()">x</span>
             </div>
 
+            <section class="collection-assignment-toolbar" id="collectionAssignmentToolbar">
+                <div>
+                    <div class="collection-assignment-title">Collection Assignment Lane</div>
+                    <div class="collection-assignment-subtitle" id="collectionAssignmentToolbarText">Choose the lane you are handling today. This is coordination only, not an access lock.</div>
+                </div>
+                <div class="collection-assignment-controls">
+                    <label>
+                        My Lane
+                        <select id="collectionDashboardAssignmentRole">
+                            <option value="">Open / Not Set</option>
+                            <option value="collection_head">Collection Head</option>
+                            <option value="priority_accounts">Collection - Priority Accounts</option>
+                            <option value="regular_accounts">Collection - Regular Accounts</option>
+                        </select>
+                    </label>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="saveDashboardCollectionAssignment()">Save Lane</button>
+                    <span class="collection-assignment-status" id="collectionDashboardAssignmentStatus">Open.</span>
+                </div>
+            </section>
+
             <div class="priority-section">
                 <h3>Priority To Collect</h3>
                 <div class="priority-cards" id="collectionPriorityCards">
@@ -3916,6 +4162,22 @@
                     </div>
                 </div>
             </div>
+
+            <section class="data-table-container priority-worklist-panel" id="priorityWorklistPanel">
+                <div class="priority-worklist-head">
+                    <div>
+                        <div class="priority-worklist-title" id="priorityWorklistTitle">Priority Worklist</div>
+                        <div class="priority-worklist-subtitle" id="priorityWorklistSubtitle">Click a priority card to see accounts as a fast list, or switch to the filtered grid cells.</div>
+                    </div>
+                    <div class="priority-view-toggle" role="group" aria-label="Priority view">
+                        <button type="button" id="priorityViewListBtn" class="active" onclick="setPriorityWorklistView('list')">List</button>
+                        <button type="button" id="priorityViewGridBtn" onclick="setPriorityWorklistView('grid')">Grid Cells</button>
+                    </div>
+                </div>
+                <div class="priority-worklist-body" id="priorityWorklistBody">
+                    <div class="priority-worklist-empty">Choose a priority card above to load the collector list.</div>
+                </div>
+            </section>
 
             <div class="stats-row">
                 <div class="stat-card primary">

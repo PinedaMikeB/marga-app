@@ -17,6 +17,7 @@ let currentPage = 1;
 const pageSize = 50;
 let currentPriorityFilter = null;
 let currentWorkQueueMode = 'all';
+let currentPriorityWorklistView = 'list';
 let quickAgeFilter = 'all';
 let dataMode = 'active';
 let todayFollowups = [];
@@ -5104,6 +5105,16 @@ function getHistoryPromisedAmount(entry, invoice) {
     return amount > 0 ? amount : Number(invoice?.amount || 0) || 0;
 }
 
+function hasRealReceivedDate(value) {
+    return Boolean(toDateKey(value));
+}
+
+function cellHasRealReceivedInvoice(cell = {}) {
+    const records = Array.isArray(cell.records) ? cell.records : [];
+    if (records.some((record) => hasRealReceivedDate(record.dateReceived))) return true;
+    return hasRealReceivedDate(cell.dateReceived);
+}
+
 function getCollectorRowOpenCells(row = {}) {
     return Object.values(row.months || {})
         .map((cellId) => collectorCellMap.get(String(cellId || '').trim()))
@@ -5176,8 +5187,7 @@ function getMatrixPriorityRowsForMode(mode) {
 
     if (mode === 'billing_received_unfollowed') {
         return rows.filter((row) => {
-            if (getCollectorRowLatestHistory(row)?.callDate) return false;
-            return getCollectorRowOpenCells(row).some((cell) => (cell.records || []).length || Number(cell.displayBilledTotal || cell.billedTotal || 0) > 0);
+            return getCollectorRowOpenCells(row).some((cell) => cellHasRealReceivedInvoice(cell) && !cell.latestHistory?.callDate);
         });
     }
 
@@ -5240,9 +5250,8 @@ function getPriorityRowsForMode(mode) {
 
     if (mode === 'billing_received_unfollowed') {
         return allInvoices.filter((invoice) => {
-            const received = invoice.dateReceived || invoice.receivedBy;
             const entry = getLatestHistoryForInvoice(invoice);
-            return Boolean(received) && (!entry || !entry.callDate);
+            return hasRealReceivedDate(invoice.dateReceived) && (!entry || !entry.callDate);
         });
     }
 
@@ -5278,6 +5287,291 @@ function getPriorityMetricAmount(mode, invoice) {
     return Number(invoice?.amount || 0) || 0;
 }
 
+function isCollectionPriorityCardMode(mode) {
+    return COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === mode);
+}
+
+function getPriorityCardDefinition(mode) {
+    return COLLECTION_PRIORITY_CARD_DEFINITIONS.find((card) => card.mode === mode) || null;
+}
+
+function getPriorityWorklistCellsForRow(row = {}, mode = currentWorkQueueMode) {
+    const cells = getCollectorRowOpenCells(row);
+    if (mode === 'billing_received_unfollowed') {
+        return cells.filter((cell) => cellHasRealReceivedInvoice(cell) && !cell.latestHistory?.callDate);
+    }
+    return cells;
+}
+
+function getPriorityCellAmount(cell = {}) {
+    const outstanding = getCellOutstandingBalance(cell);
+    const projected = Number(cell.pendingBillingProjectionTotal || 0);
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+    return Math.max(outstanding, projected, billedTarget, 0);
+}
+
+function getPriorityRecordAmount(record = {}, cell = {}) {
+    const latestBalance = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
+        ? Number(record.latestBalanceAmount)
+        : 0;
+    const recordBalance = latestBalance > 0 ? latestBalance : getCollectorRecordOutstandingBalance(record);
+    if (recordBalance > 0) return recordBalance;
+    return Number(record.billedAmount || record.amount || 0) || getPriorityCellAmount(cell);
+}
+
+function getPriorityWorklistMonthColumns(items = []) {
+    const available = new Map((collectorDashboardData?.monthColumns || []).map((column) => [column.key, column]));
+    const activeKeys = new Set(items.map((item) => item.monthKey).filter(Boolean));
+    const columns = (collectorDashboardData?.monthColumns || [])
+        .filter((column) => activeKeys.has(column.key))
+        .slice(-4);
+
+    if (columns.length) return columns;
+
+    return Array.from(activeKeys)
+        .slice(-4)
+        .map((key) => available.get(key) || { key, label: key, fullLabel: key });
+}
+
+function buildPriorityWorklistFromMatrix(mode = currentWorkQueueMode) {
+    if (!collectorDashboardData || !isCollectionPriorityCardMode(mode)) {
+        return { groups: [], monthColumns: [], total: 0, rowCount: 0, invoiceCount: 0 };
+    }
+
+    const sourceRows = getMatrixPriorityRowsForMode(mode);
+    const items = [];
+
+    sourceRows.forEach((row) => {
+        getPriorityWorklistCellsForRow(row, mode).forEach((cell) => {
+            const records = Array.isArray(cell.records) ? cell.records : [];
+            const openRecords = records
+                .filter((record) => getPriorityRecordAmount(record, cell) > 0.01)
+                .filter((record) => mode !== 'billing_received_unfollowed' || hasRealReceivedDate(record.dateReceived));
+
+            if (openRecords.length) {
+                openRecords.forEach((record, index) => {
+                    items.push({
+                        groupKey: `${cell.customer || row.customer || ''}|${cell.branchName || row.branchName || ''}`,
+                        cellId: cell.id,
+                        rowId: row.rowId,
+                        customer: cell.customer || row.customer || record.company || '',
+                        branch: cell.branchName || row.branchName || record.branch || 'Main',
+                        accountLabel: cell.accountLabel || row.accountLabel || record.accountLabel || '',
+                        invoiceNo: record.invoiceNo || record.invoiceId || record.invoiceKey || '-',
+                        invoiceDate: record.invoiceDate || record.dueDate || null,
+                        dateReceived: record.dateReceived || null,
+                        monthKey: cell.monthKey,
+                        monthLabel: cell.label,
+                        amount: getPriorityRecordAmount(record, cell),
+                        history: cell.latestHistory || row.latestHistory || null,
+                        serialNumber: record.serialNumber || cell.serialNumber || row.serialNumber || '',
+                        modelName: record.modelName || cell.modelName || row.modelName || '',
+                        sortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${cell.monthKey}|${index}`
+                    });
+                });
+            } else {
+                const amount = getPriorityCellAmount(cell);
+                if (amount <= 0.01) return;
+                items.push({
+                    groupKey: `${cell.customer || row.customer || ''}|${cell.branchName || row.branchName || ''}`,
+                    cellId: cell.id,
+                    rowId: row.rowId,
+                    customer: cell.customer || row.customer || '',
+                    branch: cell.branchName || row.branchName || 'Main',
+                    accountLabel: cell.accountLabel || row.accountLabel || '',
+                    invoiceNo: cell.pendingBilling ? 'Pending billing' : 'No invoice linked',
+                    invoiceDate: null,
+                    dateReceived: null,
+                    monthKey: cell.monthKey,
+                    monthLabel: cell.label,
+                    amount,
+                    history: cell.latestHistory || row.latestHistory || null,
+                    serialNumber: cell.serialNumber || row.serialNumber || '',
+                    modelName: cell.modelName || row.modelName || '',
+                    sortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${cell.monthKey}`
+                });
+            }
+        });
+    });
+
+    const monthColumns = getPriorityWorklistMonthColumns(items);
+    const groups = [];
+    const groupMap = new Map();
+
+    items
+        .sort((left, right) => left.sortKey.localeCompare(right.sortKey) || right.amount - left.amount)
+        .forEach((item) => {
+            if (!groupMap.has(item.groupKey)) {
+                const group = {
+                    key: item.groupKey,
+                    customer: item.customer,
+                    branch: item.branch,
+                    accountLabel: item.accountLabel,
+                    items: [],
+                    monthTotals: {},
+                    total: 0
+                };
+                groupMap.set(item.groupKey, group);
+                groups.push(group);
+            }
+            const group = groupMap.get(item.groupKey);
+            group.items.push(item);
+            group.monthTotals[item.monthKey] = Number(group.monthTotals[item.monthKey] || 0) + Number(item.amount || 0);
+            group.total += Number(item.amount || 0);
+        });
+
+    groups.sort((left, right) => right.total - left.total || left.customer.localeCompare(right.customer));
+
+    return {
+        groups,
+        monthColumns,
+        total: groups.reduce((sum, group) => sum + group.total, 0),
+        rowCount: groups.length,
+        invoiceCount: items.length
+    };
+}
+
+function renderPriorityWorklist() {
+    const titleNode = document.getElementById('priorityWorklistTitle');
+    const subtitleNode = document.getElementById('priorityWorklistSubtitle');
+    const bodyNode = document.getElementById('priorityWorklistBody');
+    const listBtn = document.getElementById('priorityViewListBtn');
+    const gridBtn = document.getElementById('priorityViewGridBtn');
+    if (!bodyNode) return;
+
+    if (listBtn) listBtn.classList.toggle('active', currentPriorityWorklistView === 'list');
+    if (gridBtn) gridBtn.classList.toggle('active', currentPriorityWorklistView === 'grid');
+
+    const definition = getPriorityCardDefinition(currentWorkQueueMode);
+    const title = definition?.title || 'Priority Worklist';
+    if (titleNode) titleNode.textContent = title;
+
+    if (!definition) {
+        if (subtitleNode) subtitleNode.textContent = 'Click a priority card to see accounts as a fast list, or switch to the filtered grid cells.';
+        bodyNode.innerHTML = '<div class="priority-worklist-empty">Choose a priority card above to load the collector list.</div>';
+        return;
+    }
+
+    const worklist = buildPriorityWorklistFromMatrix(currentWorkQueueMode);
+    if (subtitleNode) {
+        subtitleNode.textContent = `${worklist.rowCount.toLocaleString()} account group(s), ${worklist.invoiceCount.toLocaleString()} invoice row(s), ${formatCurrency(worklist.total)} ${definition.amountLabel}.`;
+    }
+
+    if (currentPriorityWorklistView === 'grid') {
+        bodyNode.innerHTML = `
+            <div class="priority-worklist-summary">
+                <span class="priority-worklist-chip">${escapeHtml(title)}</span>
+                <span class="priority-worklist-chip">${escapeHtml(worklist.rowCount.toLocaleString())} account group(s)</span>
+                <span class="priority-worklist-chip">${escapeHtml(formatCurrency(worklist.total))}</span>
+            </div>
+            <div class="priority-worklist-empty">Filtered grid cells are shown in the Collector Dashboard below. Switch back to List when scrolling the matrix takes too long.</div>
+        `;
+        return;
+    }
+
+    if (!worklist.groups.length) {
+        bodyNode.innerHTML = `<div class="priority-worklist-empty">No accounts match ${escapeHtml(title)} right now.</div>`;
+        return;
+    }
+
+    const monthHeaders = worklist.monthColumns
+        .map((column) => `<th class="text-right">${escapeHtml(column.label || column.fullLabel || column.key)}</th>`)
+        .join('');
+    const totalColspan = 3 + worklist.monthColumns.length;
+    const limitedGroups = worklist.groups.slice(0, 80);
+
+    bodyNode.innerHTML = `
+        <div class="priority-worklist-summary">
+            <span class="priority-worklist-chip">${escapeHtml(title)}</span>
+            <span class="priority-worklist-chip">${escapeHtml(worklist.rowCount.toLocaleString())} account group(s)</span>
+            <span class="priority-worklist-chip">${escapeHtml(formatCurrency(worklist.total))}</span>
+        </div>
+        <div class="priority-worklist-table-wrap">
+            <table class="priority-worklist-table">
+                <thead>
+                    <tr>
+                        <th>Invoice Date</th>
+                        <th>Account</th>
+                        <th>Branch</th>
+                        ${monthHeaders}
+                        <th class="text-right">Total</th>
+                        <th>Status / Promise</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${limitedGroups.map((group) => {
+                        const groupRows = group.items.slice(0, 12).map((item) => {
+                            const monthCells = worklist.monthColumns.map((column) => `
+                                <td class="text-right">${column.key === item.monthKey ? escapeHtml(formatCurrency(item.amount)) : ''}</td>
+                            `).join('');
+                            const historyText = [
+                                item.history?.conversationResult,
+                                item.history?.promiseToPay,
+                                item.history?.issueType
+                            ].filter(Boolean).join(' / ') || '-';
+                            return `
+                                <tr>
+                                    <td>${escapeHtml(formatDate(item.invoiceDate))}</td>
+                                    <td>
+                                        <div class="priority-worklist-account">
+                                            <strong>${escapeHtml(item.invoiceNo)}</strong>
+                                            <span>${escapeHtml(item.modelName || displaySerialNumber(item.serialNumber) || item.monthLabel || '-')}</span>
+                                            ${item.dateReceived ? `<span>Received ${escapeHtml(formatDate(item.dateReceived))}</span>` : ''}
+                                        </div>
+                                    </td>
+                                    <td>${escapeHtml(item.branch || 'Main')}</td>
+                                    ${monthCells}
+                                    <td class="text-right"><strong>${escapeHtml(formatCurrency(item.amount))}</strong></td>
+                                    <td>${escapeHtml(historyText)}</td>
+                                    <td>
+                                        <div class="priority-worklist-actions">
+                                            <button type="button" class="btn btn-primary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'followup')">Follow-up</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'payment')">Payment</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                        const totalCells = worklist.monthColumns.map((column) => `
+                            <td class="text-right">${group.monthTotals[column.key] ? escapeHtml(formatCurrency(group.monthTotals[column.key])) : ''}</td>
+                        `).join('');
+                        return `
+                            <tr class="priority-group-row">
+                                <td colspan="3">
+                                    <div class="priority-worklist-account">
+                                        <strong>${escapeHtml(group.customer || 'Unnamed account')}</strong>
+                                        <span>${escapeHtml(group.branch || group.accountLabel || 'Main')}</span>
+                                    </div>
+                                </td>
+                                ${totalCells}
+                                <td class="text-right">${escapeHtml(formatCurrency(group.total))}</td>
+                                <td colspan="2">${escapeHtml(group.items.length.toLocaleString())} row(s)</td>
+                            </tr>
+                            ${groupRows}
+                        `;
+                    }).join('')}
+                    <tr class="priority-total-row">
+                        <td colspan="${escapeHtml(String(totalColspan))}">Total</td>
+                        <td class="text-right">${escapeHtml(formatCurrency(worklist.total))}</td>
+                        <td colspan="2">${limitedGroups.length < worklist.groups.length ? `Showing ${escapeHtml(limitedGroups.length.toLocaleString())} of ${escapeHtml(worklist.groups.length.toLocaleString())} groups` : 'Complete list'}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function setPriorityWorklistView(viewMode) {
+    currentPriorityWorklistView = viewMode === 'grid' ? 'grid' : 'list';
+    renderPriorityWorklist();
+    if (currentPriorityWorklistView === 'grid') {
+        document.getElementById('collector-dashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        document.getElementById('priorityWorklistPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
 function getMatrixPriorityRowIdSet(mode) {
     return new Set(getMatrixPriorityRowsForMode(mode).map((row) => String(row.rowId || '').trim()).filter(Boolean));
 }
@@ -5298,6 +5592,9 @@ function invoiceMatchesWorkQueueMode(invoice) {
 
 function setWorkQueueMode(mode) {
     currentWorkQueueMode = currentWorkQueueMode === mode ? 'all' : mode;
+    if (isCollectionPriorityCardMode(currentWorkQueueMode)) {
+        currentPriorityWorklistView = 'list';
+    }
     currentPriorityFilter = null;
     currentPage = 1;
     clearFilterInputs();
@@ -5307,6 +5604,7 @@ function setWorkQueueMode(mode) {
         card.classList.toggle('active', currentWorkQueueMode !== 'all' && card.dataset.workQueueMode === currentWorkQueueMode);
     });
     recomputeFilteredInvoices();
+    renderPriorityWorklist();
     scrollToWorkQueue();
 }
 
@@ -5515,7 +5813,9 @@ function updateQueueContext() {
 }
 
 function scrollToWorkQueue() {
-    const node = !allInvoices.length && collectorDashboardData
+    const node = isCollectionPriorityCardMode(currentWorkQueueMode)
+        ? document.getElementById('priorityWorklistPanel')
+        : !allInvoices.length && collectorDashboardData
         ? document.getElementById('collector-dashboard')
         : document.getElementById('collector-work-queue');
     if (!node) return;
@@ -6910,6 +7210,7 @@ function renderCollectorDashboardFromData(data, options = {}) {
     renderCollectorMatrixTable(data, visibleRows);
     updateCollectorDashboardMatrixStatus(data, visibleRows);
     updatePriorityCardsFromCurrentData();
+    renderPriorityWorklist();
 
     if (!options.matrixOnly) {
         updateCollectorTodaySummaryCard();
@@ -7282,6 +7583,7 @@ async function loadCollectionWorkflowSettings() {
         };
     }
     collectionWorkflowSettingsLoaded = true;
+    renderDashboardCollectionAssignment();
     return collectionWorkflowSettings;
 }
 
@@ -7323,6 +7625,58 @@ function renderCollectionAssignmentSettings() {
             </label>
         </div>
     `).join('');
+}
+
+function renderDashboardCollectionAssignment() {
+    const select = document.getElementById('collectionDashboardAssignmentRole');
+    const statusNode = document.getElementById('collectionDashboardAssignmentStatus');
+    const textNode = document.getElementById('collectionAssignmentToolbarText');
+    if (!select && !statusNode && !textNode) return;
+
+    const collectorName = getCurrentCollectorName();
+    const currentRole = getCurrentCollectionRoleAssignment();
+    if (select) select.value = currentRole;
+    if (statusNode) {
+        statusNode.textContent = currentRole
+            ? `${collectorName}: ${getCollectionRoleLabel(currentRole)}`
+            : `${collectorName}: Open / not set`;
+    }
+    if (textNode) {
+        const assignments = collectionWorkflowSettings.assignments || {};
+        const assignedText = Object.entries(assignments)
+            .map(([name, role]) => `${name} - ${getCollectionRoleLabel(role) || role}`)
+            .join(' | ');
+        textNode.textContent = assignedText || 'Choose the lane you are handling today. This is coordination only, not an access lock.';
+    }
+}
+
+async function saveDashboardCollectionAssignment() {
+    const select = document.getElementById('collectionDashboardAssignmentRole');
+    const statusNode = document.getElementById('collectionDashboardAssignmentStatus');
+    const collectorName = getCurrentCollectorName();
+    const role = String(select?.value || '').trim();
+    collectionWorkflowSettings.assignments = {
+        ...(collectionWorkflowSettings.assignments || {})
+    };
+
+    if (role) {
+        collectionWorkflowSettings.assignments[collectorName] = role;
+    } else {
+        delete collectionWorkflowSettings.assignments[collectorName];
+    }
+
+    try {
+        if (statusNode) statusNode.textContent = 'Saving lane...';
+        await saveCollectionWorkflowSettings();
+        renderDashboardCollectionAssignment();
+        renderCollectionAssignmentSettings();
+        if (statusNode) statusNode.textContent = role
+            ? `Saved: ${getCollectionRoleLabel(role)}`
+            : 'Saved: Open / not set';
+    } catch (error) {
+        console.warn('Unable to save collection dashboard assignment:', error);
+        if (statusNode) statusNode.textContent = 'Lane save failed.';
+    }
 }
 
 function getAssignmentNameForRole(roleKey, collectorName, currentRole) {
@@ -8467,7 +8821,7 @@ function downloadCollectorSoaPdfFromModal() {
 }
 
 function renderHistoryRows(history) {
-    if (!history.length) return '<div class="collection-followup-empty">No payment progress remarks yet.</div>';
+    if (!history.length) return '<div class="collection-followup-empty">No conversation history yet.</div>';
 
     return `
         <div class="collection-followup-table-wrap">
@@ -9076,6 +9430,8 @@ function renderCollectorFollowupWorkspace(workspace) {
 	                        <div><span>Collector Lane</span><strong>${escapeHtml(getCollectionRoleLabel(assignedRole) || '-')}</strong></div>
 	                        <div><span>Customer Owner</span><strong>${escapeHtml(assignedOwner || 'Open')}</strong></div>
 	                    </div>
+                    <div class="collection-followup-panel-title">Conversation History</div>
+                    ${renderHistoryRows(invoiceHistory)}
 	                    <div class="collection-followup-form">
 	                        <div>
 	                            <label>Conversation Result</label>
@@ -9222,10 +9578,6 @@ function renderCollectorFollowupWorkspace(workspace) {
                     ${renderMiniInvoiceRows(companyInvoices, 'No unpaid company invoices found in the current Collections data.')}
                 </div>
                 <div class="collection-followup-panel">
-                    <div class="collection-followup-panel-title">Payment Progress Remarks</div>
-                    ${renderHistoryRows(invoiceHistory)}
-                </div>
-                <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Pending 2307 Forms</div>
                     ${render2307PendingPanel(paymentRecords)}
                 </div>
@@ -9344,9 +9696,19 @@ function openCollectorCellByToken(token) {
     void openCollectorCell(token);
 }
 
+async function openCollectorPriorityCell(token, tabName = 'followup') {
+    await openCollectorCell(decodeURIComponent(String(token || '')));
+    if (tabName === 'payment') {
+        setTimeout(() => setCollectorWorkspaceTab('payment'), 250);
+    }
+}
+
 window.openCollectorCellFullWorkspace = openCollectorCellFullWorkspace;
 window.openCollectorCell = openCollectorCell;
 window.openCollectorCellByToken = openCollectorCellByToken;
+window.openCollectorPriorityCell = openCollectorPriorityCell;
+window.setPriorityWorklistView = setPriorityWorklistView;
+window.saveDashboardCollectionAssignment = saveDashboardCollectionAssignment;
 
 function closeCollectorCellModal() {
     document.getElementById('collectorCellModal')?.classList.add('hidden');
