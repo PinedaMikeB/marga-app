@@ -355,6 +355,56 @@ body::after {
     line-height: 1.25;
 }
 
+.office-attendance-location-check {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid rgba(251, 191, 36, 0.32);
+    border-radius: 12px;
+    background: rgba(255, 251, 235, 0.84);
+}
+
+.office-attendance-location-check strong {
+    color: #17365f;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.office-attendance-location-check p,
+.office-attendance-location-check small {
+    margin: 0;
+}
+
+.office-attendance-location-check p {
+    color: #526987;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.office-attendance-location-check small {
+    min-height: 0;
+    color: #6b7280;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.office-attendance-location-check[data-status="allowed"] {
+    border-color: rgba(34, 197, 94, 0.35);
+    background: rgba(240, 253, 244, 0.9);
+}
+
+.office-attendance-location-check[data-status="blocked"] {
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(254, 242, 242, 0.9);
+}
+
+.office-attendance-location-check[data-status="live"] {
+    border-color: rgba(59, 130, 246, 0.34);
+    background: rgba(239, 246, 255, 0.9);
+}
+
 .office-attendance-widget[data-attendance-tone="live"] {
     border-color: rgba(59, 130, 246, 0.36);
     background: rgba(239, 246, 255, 0.88);

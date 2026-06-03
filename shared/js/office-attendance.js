@@ -20,7 +20,8 @@
         date: '',
         docId: '',
         attendance: null,
-        locations: []
+        locations: [],
+        lastLocationCheck: null
     };
 
     function localDateYmd(date = new Date()) {
@@ -232,8 +233,13 @@
             status: document.querySelector('[data-office-attendance-status]'),
             timeIn: document.querySelector('[data-office-attendance-time-in]'),
             timeOut: document.querySelector('[data-office-attendance-time-out]'),
+            checkButton: document.querySelector('[data-office-attendance-check]'),
             timeInButton: document.querySelector('[data-office-attendance-action="in"]'),
-            timeOutButton: document.querySelector('[data-office-attendance-action="out"]')
+            timeOutButton: document.querySelector('[data-office-attendance-action="out"]'),
+            locationCheck: document.querySelector('[data-office-attendance-location-check]'),
+            locationTitle: document.querySelector('[data-office-attendance-location-title]'),
+            locationBody: document.querySelector('[data-office-attendance-location-body]'),
+            locationMeta: document.querySelector('[data-office-attendance-location-meta]')
         };
     }
 
@@ -243,29 +249,82 @@
         if (status) status.textContent = text;
     }
 
+    function setLocationCheckUi({ status = 'idle', title = 'Not checked yet', body = 'Tap Check My Location before Time In to confirm if you are near Office or Production.', meta = '' } = {}) {
+        const { locationCheck, locationTitle, locationBody, locationMeta } = getElements();
+        if (locationCheck) locationCheck.dataset.status = status;
+        if (locationTitle) locationTitle.textContent = title;
+        if (locationBody) locationBody.textContent = body;
+        if (locationMeta) locationMeta.textContent = meta;
+    }
+
     function render() {
-        const { timeIn, timeOut, timeInButton, timeOutButton } = getElements();
+        const { timeIn, timeOut, timeInButton, timeOutButton, checkButton } = getElements();
         if (!timeIn || !timeOut || !timeInButton || !timeOutButton) return;
         const attendance = state.attendance || {};
         const hasTimeIn = Boolean(normalizeDateTime(attendance.time_in));
         const hasTimeOut = Boolean(normalizeDateTime(attendance.time_out));
         timeIn.textContent = formatTime(attendance.time_in);
         timeOut.textContent = formatTime(attendance.time_out);
+        if (checkButton) checkButton.disabled = !state.staffId || !state.locations.length;
         timeInButton.disabled = !state.staffId || hasTimeIn;
         timeOutButton.disabled = !state.staffId || !hasTimeIn || hasTimeOut;
 
         if (!state.staffId) {
             setStatus('No staff ID on this login.', 'blocked');
+            setLocationCheckUi({
+                status: 'blocked',
+                title: 'No staff ID',
+                body: 'This login has no staff ID, so office attendance cannot be checked or saved.',
+                meta: ''
+            });
         } else if (!state.locations.length) {
             setStatus('No active office or production pin found.', 'blocked');
+            setLocationCheckUi({
+                status: 'blocked',
+                title: 'No work location pin',
+                body: 'No active Office or Production pin is saved yet.',
+                meta: 'Open Human Resource > Work Locations and save the office/production pin first.'
+            });
         } else if (!isRegularWorkday()) {
             setStatus('Non-regular workday. Regular payroll schedule is Monday-Friday, 8 AM-6 PM.', 'idle');
+            if (!state.lastLocationCheck) {
+                setLocationCheckUi({
+                    status: 'idle',
+                    title: 'Ready to check',
+                    body: `Tap Check My Location to compare your GPS against ${state.locations.length} office/production pin${state.locations.length === 1 ? '' : 's'}.`,
+                    meta: 'Location check still works on non-regular workdays.'
+                });
+            }
         } else if (!hasTimeIn) {
             setStatus(`Ready for office/production Time In. Any active office or production pin is allowed within ${OFFICE_ATTENDANCE_RADIUS_METERS}m.`, 'idle');
+            if (!state.lastLocationCheck) {
+                setLocationCheckUi({
+                    status: 'idle',
+                    title: 'Ready to check',
+                    body: `Tap Check My Location to compare your GPS against ${state.locations.length} office/production pin${state.locations.length === 1 ? '' : 's'}.`,
+                    meta: `Time In is allowed within ${OFFICE_ATTENDANCE_RADIUS_METERS}m of Office or Production.`
+                });
+            }
         } else if (!hasTimeOut) {
             setStatus('Timed in. Time Out before leaving.', 'live');
+            if (!state.lastLocationCheck) {
+                setLocationCheckUi({
+                    status: 'allowed',
+                    title: 'Timed in',
+                    body: 'Office attendance is active. Check My Location can still confirm your current pin before Time Out.',
+                    meta: ''
+                });
+            }
         } else {
             setStatus('Attendance complete for today.', 'done');
+            if (!state.lastLocationCheck) {
+                setLocationCheckUi({
+                    status: 'allowed',
+                    title: 'Attendance complete',
+                    body: 'Today already has both Time In and Time Out.',
+                    meta: ''
+                });
+            }
         }
     }
 
@@ -290,37 +349,97 @@
         };
     }
 
-    async function matchWorkLocation() {
-        if (!state.locations.length) throw new Error('No active office or production location pin is available. Open Human Resource > Work Locations and save the office/production pin first.');
-        const position = await getCurrentPosition();
-        const latitude = Number(position.coords.latitude);
-        const longitude = Number(position.coords.longitude);
-        const accuracy = Number(position.coords.accuracy || 0);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('GPS returned an invalid location.');
-
-        const ranked = state.locations
-            .map((location) => {
-                const coords = locationCoordinates(location);
-                return {
-                    location,
-                    latitude,
-                    longitude,
-                    accuracy,
-                    distance: distanceMeters(latitude, longitude, coords.latitude, coords.longitude),
-                    allowedMeters: locationAllowedMeters(location)
-                };
-            })
-            .sort((a, b) => a.distance - b.distance);
-        const nearest = ranked[0];
-        if (!nearest || nearest.distance > nearest.allowedMeters) {
-            const distanceList = ranked
-                .slice(0, 4)
-                .map((match) => `${locationName(match.location)} ${Math.round(match.distance)}m`)
-                .join(', ');
-            const accuracyText = accuracy ? ` Phone GPS accuracy: about ${Math.round(accuracy)}m.` : '';
-            throw new Error(`Not within ${OFFICE_ATTENDANCE_RADIUS_METERS}m of any saved office/production pin. Staff may time in at either Office or Production; nearest pins: ${distanceList || 'none'}.${accuracyText} Turn on precise browser location, then try again. If a pin is wrong, update it in Human Resource > Work Locations.`);
+    function buildLocationCheckMeta({ latitude, longitude, accuracy, ranked = [] } = {}) {
+        const parts = [];
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+            parts.push(`GPS ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
         }
-        return nearest;
+        if (Number.isFinite(accuracy) && accuracy > 0) {
+            parts.push(`accuracy about ${Math.round(accuracy)}m`);
+        }
+        if (ranked.length) {
+            parts.push(`nearest pins: ${ranked.slice(0, 3).map((match) => `${locationName(match.location)} ${Math.round(match.distance)}m`).join(', ')}`);
+        }
+        return parts.join(' | ');
+    }
+
+    async function checkLocation() {
+        if (!state.staffId) {
+            render();
+            return null;
+        }
+        setLocationCheckUi({
+            status: 'live',
+            title: 'Checking location',
+            body: 'Comparing your phone GPS against Office and Production pins...',
+            meta: ''
+        });
+        try {
+            const position = await getCurrentPosition();
+            const latitude = Number(position.coords.latitude);
+            const longitude = Number(position.coords.longitude);
+            const accuracy = Number(position.coords.accuracy || 0);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) throw new Error('GPS returned an invalid location.');
+
+            const ranked = state.locations
+                .map((location) => {
+                    const coords = locationCoordinates(location);
+                    return {
+                        location,
+                        latitude,
+                        longitude,
+                        accuracy,
+                        distance: distanceMeters(latitude, longitude, coords.latitude, coords.longitude),
+                        allowedMeters: locationAllowedMeters(location)
+                    };
+                })
+                .sort((a, b) => a.distance - b.distance);
+            const nearest = ranked[0] || null;
+            state.lastLocationCheck = {
+                checkedAt: new Date().toISOString(),
+                latitude,
+                longitude,
+                accuracy,
+                nearest
+            };
+
+            if (!nearest || nearest.distance > nearest.allowedMeters) {
+                const distanceList = ranked
+                    .slice(0, 4)
+                    .map((match) => `${locationName(match.location)} ${Math.round(match.distance)}m`)
+                    .join(', ');
+                const accuracyText = accuracy ? `Phone GPS accuracy: about ${Math.round(accuracy)}m.` : '';
+                const message = `Not within ${OFFICE_ATTENDANCE_RADIUS_METERS}m of any saved office/production pin. Staff may time in at either Office or Production; nearest pins: ${distanceList || 'none'}.${accuracyText ? ` ${accuracyText}` : ''} Turn on precise browser location, then try again. If a pin is wrong, update it in Human Resource > Work Locations.`;
+                setLocationCheckUi({
+                    status: 'blocked',
+                    title: 'Outside saved work pins',
+                    body: message,
+                    meta: buildLocationCheckMeta({ latitude, longitude, accuracy, ranked })
+                });
+                throw new Error(message);
+            }
+
+            setLocationCheckUi({
+                status: 'allowed',
+                title: `Within ${Math.round(nearest.distance)}m of ${locationName(nearest.location)}`,
+                body: `You are at an approved ${locationType(nearest.location) || 'work'} site. Office/production Time In is allowed.`,
+                meta: buildLocationCheckMeta({ latitude, longitude, accuracy, ranked })
+            });
+            return nearest;
+        } catch (error) {
+            const message = error?.message || 'Unable to check office/production location.';
+            state.lastLocationCheck = {
+                checkedAt: new Date().toISOString(),
+                error: message
+            };
+            setLocationCheckUi({
+                status: 'blocked',
+                title: 'Location check failed',
+                body: message,
+                meta: 'Allow browser GPS permission and use precise location, then try again.'
+            });
+            throw error;
+        }
     }
 
     function buildLocationFields(prefix, match, nowIso) {
@@ -360,7 +479,7 @@
         try {
             const nowIso = new Date().toISOString();
             const nowDb = nowDbDateTime();
-            const match = await matchWorkLocation();
+            const match = await checkLocation();
             const previous = state.attendance || {};
             const patch = {
                 id: state.docId,
@@ -410,6 +529,13 @@
         state.staffId = getStaffId(state.user);
         state.date = localDateYmd();
         render();
+        document.querySelector('[data-office-attendance-check]')?.addEventListener('click', async () => {
+            try {
+                await checkLocation();
+            } catch (error) {
+                console.error('Office attendance location check failed:', error);
+            }
+        });
         document.querySelector('[data-office-attendance-action="in"]')?.addEventListener('click', () => mark('in'));
         document.querySelector('[data-office-attendance-action="out"]')?.addEventListener('click', () => mark('out'));
         await Promise.all([loadLocations(), loadAttendance()]);
