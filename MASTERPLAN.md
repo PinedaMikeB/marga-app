@@ -227,13 +227,15 @@ Current operations scheduling state:
   - Official daily attendance `Time In` is separate from per-customer check-in/out.
   - Official Time In must be within `200m` of a pinned open/pending scheduled customer assigned to that staff member.
   - Homepage/Daily Attendance Location Check may consider both today's route and past pending/carryover workload; it reports the nearest pinned open/pending customer overall.
-  - Per-customer `field_time_in` must match that specific customer's saved branch pin within `200m` and write location proof.
-  - Per-customer check-in/check-out is required before Mark Finished; official daily attendance Time In does not satisfy a customer visit check-in.
-  - Do not weaken the 200m proof rule without explicit user approval.
+  - 2026-06-03 approved workflow update: per-customer check-in/check-out is still required before Mark Finished, but field staff may record and finish the task from the office or another location. Do not require the schedule close flow to be within `200m` of the customer pin.
+  - Official daily attendance Time In remains separate from per-customer check-in/out.
 - Field App customer pin/repin rule:
   - New customer pins and repins require a frontage/building photo when the phone/browser supports image capture.
   - Already pinned customers must still allow controlled repin because saved pins can be wrong.
   - Repin must confirm before replacing coordinates, preserve previous coordinates in audit fields, and log a distinct `customer_location_repinned` event.
+- Field App billing submission rule:
+  - Billing Submission should not ask technicians to type the billing date/time manually.
+  - Auto-fill the billing date/time when the schedule is opened and require only the receiver name when billing handoff details are needed.
 - MARGA communications state:
   - Use self-hosted Jitsi at `call.wotgonline.com`.
   - Direct/role calls are phone-like and may ring in-app while the app is open.

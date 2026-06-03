@@ -75,7 +75,10 @@ Start every new Marga-App thread by reading:
 - 2026-05-18 Field App / communications checkpoint:
   - Latest pushed `main` commit after this work: `2ba8831` `Add explicit repin photo button`.
   - User expects verified Marga-App code changes to be committed and pushed to `main` automatically unless explicitly told not to push.
-  - Field App is currently production-sensitive; do not revert or weaken the GPS proof rules without explicit user approval.
+  - 2026-06-03 user-approved Field App close workflow change:
+    - Billing Submission now auto-fills billing date/time when the schedule is opened; staff only need to enter the receiver name.
+    - Mark Finished and customer check-in/check-out no longer require the technician to be within `200m` of the customer pin. Field staff may complete the encoding from the office or another location as long as the required close details are complete.
+    - Keep the rest of the close validation strict, especially billing/collection/service data completeness, so accounts cannot be closed with missing operational details.
 - New infrastructure direction: build the reusable self-hosted Marga platform in `/Volumes/Wotg Drive Mike/GitHub/marga-platform`, with the first app stack under `apps/margabase`.
 - Goal: replace Firebase-style per-read/write billing pressure with a Mac mini local server stack for database/API/realtime workflows.
 - Planned public access model:

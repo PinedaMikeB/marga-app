@@ -95,8 +95,6 @@ const FIELD_MODAL_DRAFT_INPUT_IDS = [
     'fieldCustomerContact',
     'fieldFinalSummary',
     'fieldBillingReceivedBy',
-    'fieldBillingDate',
-    'fieldBillingTime',
     'fieldCollectionInvoiceSearch',
     'fieldCollectionCheckNumber',
     'fieldCollectionCheckBank',
@@ -3574,10 +3572,32 @@ async function getAttendanceScheduleLocationMatch() {
 
 function hasCustomerTimeInLocationProof(row) {
     const status = String(row?.field_time_in_location_status || '').trim();
+    if (status === 'manual_no_gps') return true;
     const latitude = parseCoordinate(row?.field_time_in_latitude);
     const longitude = parseCoordinate(row?.field_time_in_longitude);
     const distance = Number(row?.field_time_in_distance_meters || 0);
     return Boolean(status && latitude !== null && longitude !== null && Number.isFinite(distance) && distance <= ATTENDANCE_LOCATION_RADIUS_METERS);
+}
+
+function buildManualCustomerTimePatch(row, nowIso = new Date().toISOString()) {
+    return {
+        field_time_in_latitude: '',
+        field_time_in_longitude: '',
+        field_time_in_accuracy_meters: 0,
+        field_time_in_distance_meters: 0,
+        field_time_in_location_status: 'manual_no_gps',
+        field_time_in_location_checked_at: nowIso,
+        field_time_in_company_id: Number(row?.company_id || 0) || 0,
+        field_time_in_branch_id: Number(row?.branch_id || state.modalBranchId || 0) || 0,
+        field_time_in_company_name: '',
+        field_time_in_branch_name: '',
+        field_time_in_address: '',
+        field_tracking_status: 'customer_checked_in',
+        field_last_action: 'customer_checked_in',
+        field_last_update_at: nowIso,
+        field_last_latitude: '',
+        field_last_longitude: ''
+    };
 }
 
 async function getCustomerTaskLocationMatch(row) {
@@ -3641,8 +3661,7 @@ async function ensureCustomerTimeInLocationProof(row, form) {
     const formTimeIn = normalizeLegacyDateTime(form.timeInDb);
     const existingProofStillApplies = savedTimeIn && (!formTimeIn || savedTimeIn === formTimeIn) && hasCustomerTimeInLocationProof(row);
     if (existingProofStillApplies) return {};
-    const match = await getCustomerTaskLocationMatch(row);
-    return buildCustomerTimeInLocationPatch(row, match);
+    return buildManualCustomerTimePatch(row);
 }
 
 function setAttendanceLocationCheckUi({ status = 'idle', title = 'Not checked yet', body = 'Tap Check My Location before Time In to confirm if you are near an office, production site, or scheduled customer.', meta = '', scheduleId = null, buttonLabel = 'Open Task', nearbyScheduleMatch = null } = {}) {
@@ -6501,6 +6520,31 @@ function localDateYmd(date = new Date()) {
     return formatDateYmd(date);
 }
 
+function localTimeHm(date = new Date()) {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
+function getAutomaticBillingStamp(row = null) {
+    const now = new Date();
+    const savedDate = String(row?.field_billing_date || '').trim();
+    const savedTime = String(row?.field_billing_time || '').trim();
+    return {
+        billingDate: savedDate || localDateYmd(now),
+        billingTime: savedTime || localTimeHm(now)
+    };
+}
+
+function applyAutomaticBillingStamp(row = null) {
+    const billingDateInput = document.getElementById('fieldBillingDate');
+    const billingTimeInput = document.getElementById('fieldBillingTime');
+    if (!billingDateInput || !billingTimeInput) return;
+    const stamp = getAutomaticBillingStamp(row);
+    billingDateInput.value = stamp.billingDate;
+    billingTimeInput.value = stamp.billingTime;
+}
+
 function updateLocationPhotoHint() {
     const input = document.getElementById('fieldLocationPhoto');
     const hint = document.getElementById('fieldLocationPhotoHint');
@@ -6738,8 +6782,7 @@ function resetModalFields() {
     document.getElementById('fieldCustomerContact').value = '';
     document.getElementById('fieldFinalSummary').value = '';
     document.getElementById('fieldBillingReceivedBy').value = '';
-    document.getElementById('fieldBillingDate').value = '';
-    document.getElementById('fieldBillingTime').value = '';
+    applyAutomaticBillingStamp();
     document.getElementById('fieldCollectionInvoiceSearch').value = '';
     renderFieldCollectionInvoiceResults();
     renderFieldCollectionInvoices();
@@ -7375,8 +7418,7 @@ async function openModal(scheduleId) {
         ''
     ).trim();
     document.getElementById('fieldBillingReceivedBy').value = String(row.field_billing_received_by || '').trim();
-    document.getElementById('fieldBillingDate').value = String(row.field_billing_date || '').trim();
-    document.getElementById('fieldBillingTime').value = String(row.field_billing_time || '').trim();
+    applyAutomaticBillingStamp(row);
     state.modalCollectionInvoices = parseSavedCollectionInvoices(row);
     state.modalCollectionInvoiceSearchResults = [];
     document.getElementById('fieldCollectionInvoiceSearch').value = '';
@@ -8131,15 +8173,8 @@ function getCloseTaskIssues(row, form) {
     if (!normalizeLegacyDateTime(form.timeInDb)) {
         return [closeIssue('Cannot mark finished: customer check-in is required for this task. Attendance time-in is only once per day; this customer check-in must be done for every customer visit.', 'fieldTimeSection', 'fieldTimeInNowBtn', 'missing_customer_check_in')];
     }
-    if (!hasCustomerTimeInLocationProof(row)) {
-        return [closeIssue(`Cannot mark finished: customer check-in needs GPS proof within ${ATTENDANCE_LOCATION_RADIUS_METERS}m of this customer pin. Tap Check In Now while at the customer site, then Check Out Now before closing.`, 'fieldTimeSection', 'fieldTimeInNowBtn', 'missing_customer_check_in_gps')];
-    }
     if (!normalizeLegacyDateTime(form.timeOutDb)) {
         return [closeIssue('Cannot mark finished: customer check-out is required for this task. Tap Check Out Now before closing every customer visit.', 'fieldTimeSection', 'fieldTimeOutNowBtn', 'missing_customer_check_out')];
-    }
-    const { hasLocation } = getBranchLocationStatus(row);
-    if (!hasLocation && !canBypassLocationPinForClose(row)) {
-        return [closeIssue('Cannot mark Finished yet: this customer is not detected because the branch has no saved GPS pin. Tap Pin Customer Location while you are at the customer site. If the saved pin is wrong, take a new frontage/building photo and tap Repin Customer Location, then try Mark Finished again.', 'fieldLocationSection', 'fieldPinLocationBtn', 'missing_customer_pin')];
     }
 
     if (isReadingTicket(row) && !Number.isFinite(form.presentMeter)) {
@@ -8151,9 +8186,6 @@ function getCloseTaskIssues(row, form) {
     if (isBillingTicket(row) && !hasCollectionDetails) {
         if (!form.billingReceivedBy) {
             return [closeIssue('Cannot mark finished: enter who received the billing first.', 'fieldBillingSection', 'fieldBillingReceivedBy', 'missing_billing_receiver')];
-        }
-        if (!form.billingDate) {
-            return [closeIssue('Cannot mark finished: select the billing date first.', 'fieldBillingSection', 'fieldBillingDate', 'missing_billing_date')];
         }
     }
 
@@ -8608,7 +8640,7 @@ async function markPendingTask() {
 
     if (!form.timeInLocal) {
         const savedTimeIn = normalizeLegacyDateTime(row.field_time_in);
-        if (savedTimeIn && hasCustomerTimeInLocationProof(row)) {
+        if (savedTimeIn) {
             const savedLocal = toLocalInputDateTime(savedTimeIn);
             document.getElementById('fieldTimeIn').value = savedLocal;
             form.timeInLocal = savedLocal;
@@ -8722,11 +8754,23 @@ async function closeTask() {
 
     if (!form.timeInLocal) {
         const savedTimeIn = normalizeLegacyDateTime(row.field_time_in);
-        if (savedTimeIn && hasCustomerTimeInLocationProof(row)) {
+        if (savedTimeIn) {
             const savedLocal = toLocalInputDateTime(savedTimeIn);
             document.getElementById('fieldTimeIn').value = savedLocal;
             form.timeInLocal = savedLocal;
             form.timeInDb = savedTimeIn;
+        }
+    }
+
+    if (!form.billingDate || !form.billingTime) {
+        const stamp = getAutomaticBillingStamp(row);
+        if (!form.billingDate) {
+            document.getElementById('fieldBillingDate').value = stamp.billingDate;
+            form.billingDate = stamp.billingDate;
+        }
+        if (!form.billingTime) {
+            document.getElementById('fieldBillingTime').value = stamp.billingTime;
+            form.billingTime = stamp.billingTime;
         }
     }
 
@@ -9323,7 +9367,7 @@ async function markTimeInNow() {
     const button = document.getElementById('fieldTimeInNowBtn');
     button.disabled = true;
     try {
-        const timeInLocationPatch = await ensureCustomerTimeInLocationProof(row, form);
+        const timeInLocationPatch = buildManualCustomerTimePatch(row, nowIso);
         const verifiedPatch = {
             ...patch,
             ...timeInLocationPatch
@@ -9331,7 +9375,7 @@ async function markTimeInNow() {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), verifiedPatch);
         await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, verifiedPatch);
-        alert(`Time in captured within ${Math.round(Number(verifiedPatch.field_time_in_distance_meters || 0))}m of the customer pin.`);
+        alert('Time in captured.');
     } catch (err) {
         console.error('Time in failed:', err);
         alert(`Failed to capture time in: ${err?.message || err}`);
@@ -9645,7 +9689,7 @@ async function markTimeOutNow() {
     if (!row) return;
 
     const currentTimeIn = normalizeLegacyDateTime(row.field_time_in);
-    if (!currentTimeIn || !hasCustomerTimeInLocationProof(row)) {
+    if (!currentTimeIn) {
         alert('Please Check In Now for this customer task before checking out.');
         return;
     }
