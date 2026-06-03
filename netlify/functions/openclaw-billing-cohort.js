@@ -1578,6 +1578,8 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     const printedSinceByStaff = new Map();
     const printedTodayByMonth = new Map();
     const printedSinceByMonth = new Map();
+    const receivedTodayByStaff = new Map();
+    const receivedMonthByStaff = new Map();
     const savedToPrintByStaff = new Map();
     const savedInvoiceGroups = new Map();
     const printedInvoiceGroups = new Map();
@@ -1783,12 +1785,34 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
     const todayInvoices = printedGroups
         .filter((row) => ymdInManila(normalizeDateTime(row.printed_at)) === todayYmd)
         .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')));
+    const receivedTodayInvoices = printedGroups
+        .filter((row) => row.receipt_status === 'received')
+        .filter((row) => ymdInManila(normalizeDateTime(row.received_at)) === todayYmd)
+        .sort((a, b) => String(b.received_at || '').localeCompare(String(a.received_at || '')));
     const monthInvoices = printedGroups
         .filter((row) => {
             const printedYmd = ymdInManila(normalizeDateTime(row.printed_at));
             return printedYmd >= currentPrintMonthStartYmd && printedYmd <= todayYmd;
         })
         .sort((a, b) => String(b.printed_at || '').localeCompare(String(a.printed_at || '')));
+    const receivedMonthInvoices = printedGroups
+        .filter((row) => row.receipt_status === 'received')
+        .filter((row) => {
+            const receivedYmd = ymdInManila(normalizeDateTime(row.received_at));
+            return receivedYmd >= currentPrintMonthStartYmd && receivedYmd <= todayYmd;
+        })
+        .sort((a, b) => String(b.received_at || '').localeCompare(String(a.received_at || '')));
+
+    receivedTodayInvoices.forEach((row) => addStaff(receivedTodayByStaff, {
+        id: row.assigned_staff_id || 'unassigned',
+        name: row.assigned_staff_name || 'Unassigned',
+        role: ''
+    }, row.amount_total));
+    receivedMonthInvoices.forEach((row) => addStaff(receivedMonthByStaff, {
+        id: row.assigned_staff_id || 'unassigned',
+        name: row.assigned_staff_name || 'Unassigned',
+        role: ''
+    }, row.amount_total));
     const progressMonthKeys = Array.from(new Set([
         ...(months || []),
         ...Array.from(printedTodayByMonth.keys()),
@@ -1838,6 +1862,18 @@ function buildBillingProductivityReport(cache, months, monthTotals) {
             pending_received_count: monthInvoices.filter((row) => row.receipt_status !== 'received').length,
             by_staff: sortStaff(printedMonthByStaff),
             invoices: monthInvoices.slice(0, 500)
+        },
+        received_today: {
+            invoice_count: receivedTodayInvoices.length,
+            amount_total: roundCurrency(receivedTodayInvoices.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            by_staff: sortStaff(receivedTodayByStaff),
+            invoices: receivedTodayInvoices.slice(0, 250)
+        },
+        current_month_received: {
+            invoice_count: receivedMonthInvoices.length,
+            amount_total: roundCurrency(receivedMonthInvoices.reduce((sum, row) => sum + Number(row.amount_total || 0), 0)),
+            by_staff: sortStaff(receivedMonthByStaff),
+            invoices: receivedMonthInvoices.slice(0, 500)
         },
         since_start: {
             invoice_count: Array.from(printedSinceByStaff.values()).reduce((sum, row) => sum + Number(row.invoice_count || 0), 0),

@@ -30,6 +30,12 @@ const els = {
     printedMonthCard: null,
     printedMonthCount: null,
     printedMonthAmount: null,
+    receivedTodayCard: null,
+    receivedTodayCount: null,
+    receivedTodayAmount: null,
+    receivedMonthCard: null,
+    receivedMonthCount: null,
+    receivedMonthAmount: null,
     invoiceSearchInput: null,
     invoiceSearchBtn: null,
     invoiceDeepSearchBtn: null,
@@ -88,6 +94,8 @@ let billingScorecardDetailMap = new Map();
 let unbilledProjectionData = null;
 let unbilledProjectionDetailMap = new Map();
 let activeUnbilledProjectionMonthKey = '';
+let activeUnbilledCustomerKey = '';
+let activeUnbilledCustomerMonthKey = '';
 let billingScorecardPaymentEntries = [];
 let billingScorecardPaymentPromise = null;
 const BILLING_COLLECTIONS_SCORECARD_ENABLED = false;
@@ -6729,12 +6737,17 @@ function getGroupedMachineRows(row, monthKey) {
     const companyId = String(row?.company_id || '').trim();
     if (!companyId || !lastPayload?.month_matrix?.rows) return [];
     const groupId = String(row?.billing_group?.id || row?.billing_group?.group_id || '').trim();
-    if (!groupId) return [];
+    const isSummaryRow = Boolean(row?.is_summary_row);
+    const groupCompanyId = String(row?.billing_group?.company_id || '').trim();
+    const allowSameCompanyFallback = Boolean(groupCompanyId && groupCompanyId === companyId);
     const rows = lastPayload.month_matrix.rows
         .filter((entry) => (
             entry
             && !entry.is_summary_row
-            && String(entry?.billing_group?.id || entry?.billing_group?.group_id || '').trim() === groupId
+            && (
+                (groupId && String(entry?.billing_group?.id || entry?.billing_group?.group_id || '').trim() === groupId)
+                || ((allowSameCompanyFallback || (!groupId && isSummaryRow)) && String(entry?.company_id || '').trim() === companyId)
+            )
             && getRowBillingProfile(entry)
         ))
         .sort((left, right) => {
@@ -6756,6 +6769,12 @@ function getGroupedMachineRows(row, monthKey) {
         byRowId.set(key, entry);
     });
     return Array.from(byRowId.values());
+}
+
+function getUniqueBranchCount(rows = []) {
+    return new Set((Array.isArray(rows) ? rows : [])
+        .map((row) => String(row?.branch_id || row?.branch_name || '').trim())
+        .filter(Boolean)).size;
 }
 
 function buildSummaryBillingRow(row, groupedMachineRows) {
@@ -6782,6 +6801,25 @@ function formatReportDate(ymd) {
     return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function getLatestReceiptRow(rows = []) {
+    return [...(Array.isArray(rows) ? rows : [])]
+        .filter((row) => row?.received_at)
+        .sort((a, b) => String(b.received_at || '').localeCompare(String(a.received_at || '')))[0] || null;
+}
+
+function buildReceiptCardCopy(amount, rows = [], fallbackText = '') {
+    if (!rows.length) return fallbackText;
+    const latest = getLatestReceiptRow(rows);
+    const latestLabel = latest
+        ? [latest.received_by || latest.assigned_staff_name || '', latest.received_at ? formatReportDateTime(latest.received_at) : '']
+            .filter(Boolean)
+            .join(' • ')
+        : '';
+    return latestLabel
+        ? `${formatCurrency(amount)} • Latest ${latestLabel}`
+        : formatCurrency(amount);
+}
+
 function renderPrintedTodayCard(payload) {
     const report = payload?.productivity_report || null;
     const count = Number(report?.today?.invoice_count || 0);
@@ -6792,6 +6830,10 @@ function renderPrintedTodayCard(payload) {
     const monthAmount = Number(report?.current_month_printed?.amount_total || 0);
     const receivedCount = Number(report?.current_month_printed?.received_count || 0);
     const pendingReceivedCount = Number(report?.current_month_printed?.pending_received_count || 0);
+    const receivedTodayCount = Number(report?.received_today?.invoice_count || 0);
+    const receivedTodayAmount = Number(report?.received_today?.amount_total || 0);
+    const receivedMonthCount = Number(report?.current_month_received?.invoice_count || 0);
+    const receivedMonthAmount = Number(report?.current_month_received?.amount_total || 0);
     if (els.printedTodayCount) els.printedTodayCount.textContent = formatCount(count);
     if (els.printedTodayAmount) {
         els.printedTodayAmount.textContent = `${formatCurrency(amount)} printed today`;
@@ -6805,6 +6847,22 @@ function renderPrintedTodayCard(payload) {
     if (els.printedMonthCount) els.printedMonthCount.textContent = formatCount(monthCount);
     if (els.printedMonthAmount) {
         els.printedMonthAmount.textContent = `${formatCurrency(monthAmount)} • ${formatCount(receivedCount)} received / ${formatCount(pendingReceivedCount)} pending`;
+    }
+    if (els.receivedTodayCount) els.receivedTodayCount.textContent = formatCount(receivedTodayCount);
+    if (els.receivedTodayAmount) {
+        els.receivedTodayAmount.textContent = buildReceiptCardCopy(
+            receivedTodayAmount,
+            report?.received_today?.invoices || [],
+            'No customer receipt confirmations today'
+        );
+    }
+    if (els.receivedMonthCount) els.receivedMonthCount.textContent = formatCount(receivedMonthCount);
+    if (els.receivedMonthAmount) {
+        els.receivedMonthAmount.textContent = buildReceiptCardCopy(
+            receivedMonthAmount,
+            report?.current_month_received?.invoices || [],
+            'No monthly received invoice confirmations'
+        );
     }
     if (els.printedTodayCard) {
         els.printedTodayCard.disabled = false;
@@ -6823,6 +6881,18 @@ function renderPrintedTodayCard(payload) {
         els.printedMonthCard.title = report
             ? 'Open monthly printed and received status'
             : 'Load the dashboard to see monthly printed invoice totals';
+    }
+    if (els.receivedTodayCard) {
+        els.receivedTodayCard.disabled = false;
+        els.receivedTodayCard.title = report
+            ? 'Open today received invoice accountability'
+            : 'Load the dashboard to see today received invoices';
+    }
+    if (els.receivedMonthCard) {
+        els.receivedMonthCard.disabled = false;
+        els.receivedMonthCard.title = report
+            ? 'Open current month received invoice accountability'
+            : 'Load the dashboard to see current month received invoices';
     }
 }
 
@@ -6935,6 +7005,123 @@ function renderProductivityInvoiceRows(rows = []) {
     `;
 }
 
+function summarizeReceivedAccountability(rows = []) {
+    const byStaff = new Map();
+    rows.forEach((row) => {
+        const staffId = String(row?.assigned_staff_id || row?.assigned_staff_name || 'unassigned').trim() || 'unassigned';
+        const staffName = String(row?.assigned_staff_name || 'Unassigned').trim() || 'Unassigned';
+        if (!byStaff.has(staffId)) {
+            byStaff.set(staffId, {
+                staff_id: staffId,
+                staff_name: staffName,
+                invoice_count: 0,
+                amount_total: 0,
+                latest_received_at: ''
+            });
+        }
+        const group = byStaff.get(staffId);
+        group.invoice_count += 1;
+        group.amount_total += Number(row.amount_total || 0) || 0;
+        if (String(row.received_at || '') > String(group.latest_received_at || '')) {
+            group.latest_received_at = String(row.received_at || '');
+        }
+    });
+    return Array.from(byStaff.values())
+        .map((row) => ({ ...row, amount_total: roundDisplayAmount(row.amount_total) }))
+        .sort((a, b) => b.invoice_count - a.invoice_count || b.amount_total - a.amount_total || a.staff_name.localeCompare(b.staff_name));
+}
+
+function renderReceivedAccountabilitySummaryRows(rows = []) {
+    if (!rows.length) {
+        return '<div class="detail-empty">No received invoice confirmations for this period.</div>';
+    }
+    const totalCount = rows.reduce((sum, row) => sum + Number(row.invoice_count || 0), 0);
+    const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0);
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Field Staff</th>
+                        <th class="text-right">Invoices</th>
+                        <th class="text-right">Amount</th>
+                        <th>Latest Submitted</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td><strong>${escapeHtml(row.staff_name || 'Unassigned')}</strong></td>
+                            <td class="text-right">${escapeHtml(formatCount(row.invoice_count || 0))}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                            <td>${escapeHtml(row.latest_received_at ? formatReportDateTime(row.latest_received_at) : '-')}</td>
+                            <td>
+                                <button class="btn btn-secondary btn-sm" type="button" data-received-detail-staff-id="${escapeHtml(row.staff_id || '')}">View</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td>Total</td>
+                        <td class="text-right">${escapeHtml(formatCount(totalCount))}</td>
+                        <td class="text-right">${escapeHtml(formatCurrency(totalAmount))}</td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    `;
+}
+
+function renderReceivedAccountabilityInvoiceRows(rows = []) {
+    if (!rows.length) {
+        return '<div class="detail-empty">No submitted invoice rows for this field staff in the selected period.</div>';
+    }
+    return `
+        <div class="billing-scorecard-detail-wrap">
+            <table class="billing-scorecard-detail-table productivity-table">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Customer</th>
+                        <th>Branch</th>
+                        <th>Received By</th>
+                        <th>Received At</th>
+                        <th>Printed By</th>
+                        <th class="text-right">Amount</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
+                            <td><strong>${escapeHtml(row.company_name || 'Unknown')}</strong></td>
+                            <td>${escapeHtml(row.branch_name || 'Main')}</td>
+                            <td>${escapeHtml(row.received_by || '-')}</td>
+                            <td>${escapeHtml(row.received_at ? formatReportDateTime(row.received_at) : '-')}</td>
+                            <td>${escapeHtml(row.printed_by || 'Unknown printer')}</td>
+                            <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
+                            <td>
+                                <button
+                                    class="btn btn-primary btn-sm"
+                                    type="button"
+                                    data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}"
+                                    data-productivity-row-id="${escapeHtml(row.row_id || '')}"
+                                    data-productivity-month-key="${escapeHtml(row.month_key || '')}"
+                                >Open Billing</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
 function formatReportDateTime(value) {
     const date = asValidDate(value);
     if (!date) return '';
@@ -7019,6 +7206,7 @@ function getSavedToPrintDateRange(report = {}) {
 function summarizeSavedToPrint(rows = [], from = '', to = '') {
     const filteredRows = rows.filter((row) => isDateInWorkRange(row.saved_at, from, to));
     const byPreparer = new Map();
+    const byMonth = new Map();
     filteredRows.forEach((row) => {
         const staffId = String(row.prepared_by_id || row.prepared_by || 'unknown-preparer').trim() || 'unknown-preparer';
         const staffName = String(row.prepared_by || 'Unknown preparer').trim() || 'Unknown preparer';
@@ -7033,6 +7221,20 @@ function summarizeSavedToPrint(rows = [], from = '', to = '') {
         const group = byPreparer.get(staffId);
         group.invoice_count += 1;
         group.amount_total += Number(row.amount_total || 0) || 0;
+
+        const monthKey = String(row.month_key || '').trim() || 'unknown';
+        const monthLabel = String(row.month_label || formatMonthLabel(monthKey, monthKey) || monthKey).trim();
+        if (!byMonth.has(monthKey)) {
+            byMonth.set(monthKey, {
+                month_key: monthKey,
+                month_label: monthLabel,
+                invoice_count: 0,
+                amount_total: 0
+            });
+        }
+        const monthGroup = byMonth.get(monthKey);
+        monthGroup.invoice_count += 1;
+        monthGroup.amount_total += Number(row.amount_total || 0) || 0;
     });
 
     return {
@@ -7040,6 +7242,9 @@ function summarizeSavedToPrint(rows = [], from = '', to = '') {
         byPreparer: Array.from(byPreparer.values())
             .map((row) => ({ ...row, amount_total: roundDisplayAmount(row.amount_total) }))
             .sort((a, b) => b.invoice_count - a.invoice_count || b.amount_total - a.amount_total || a.staff_name.localeCompare(b.staff_name)),
+        byMonth: Array.from(byMonth.values())
+            .map((row) => ({ ...row, amount_total: roundDisplayAmount(row.amount_total) }))
+            .sort((a, b) => String(a.month_key || '').localeCompare(String(b.month_key || ''))),
         totals: {
             invoice_count: filteredRows.length,
             amount_total: roundDisplayAmount(filteredRows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0))
@@ -7096,34 +7301,34 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
                     <small>ready to print</small>
                 </div>
                 <div class="work-metric-card">
-                    <span>Preparers</span>
-                    <strong>${escapeHtml(formatCount(summary.byPreparer.length))}</strong>
+                    <span>Billing Months</span>
+                    <strong>${escapeHtml(formatCount(summary.byMonth.length))}</strong>
                     <small>with waiting invoices</small>
                 </div>
             </div>
             <section class="work-distribution-section">
                 <div class="work-section-heading">
-                    <strong>Prepared By</strong>
+                    <strong>Billing Month</strong>
                     <span>Filtered saved invoices</span>
                 </div>
                 <div class="work-table-wrap">
                     <table class="work-distribution-table prepared-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
+                                <th>Billing Month</th>
                                 <th class="text-right">Total</th>
                                 <th class="text-right">Amount</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${summary.byPreparer.length ? summary.byPreparer.map((row) => `
+                            ${summary.byMonth.length ? summary.byMonth.map((row) => `
                                 <tr>
-                                    <td><strong>${escapeHtml(row.staff_name)}</strong></td>
+                                    <td><strong>${escapeHtml(row.month_label)}</strong></td>
                                     <td class="text-right">${escapeHtml(formatCount(row.invoice_count))}</td>
                                     <td class="text-right">${escapeHtml(formatCurrency(row.amount_total))}</td>
                                     <td>
-                                        <button class="btn btn-secondary btn-sm" type="button" data-saved-dist-preparer="${escapeHtml(row.staff_id)}">View</button>
+                                        <button class="btn btn-secondary btn-sm" type="button" data-saved-dist-month="${escapeHtml(row.month_key)}">View</button>
                                     </td>
                                 </tr>
                             `).join('') : '<tr><td colspan="4" class="muted-cell">No saved invoices are waiting for print in this date range.</td></tr>'}
@@ -7143,20 +7348,21 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
     `;
 }
 
-function renderSavedToPrintPreparerDetail(staffId) {
+function renderSavedToPrintMonthDetail(monthKey) {
     const state = billingWorkDistributionState || {};
     const rows = (state.sourceRows || [])
         .filter((row) => isDateInWorkRange(row.saved_at, state.from, state.to))
-        .filter((row) => String(row.prepared_by_id || row.prepared_by || 'unknown-preparer').trim() === String(staffId || '').trim())
-        .sort((a, b) => String(b.saved_at || '').localeCompare(String(a.saved_at || '')));
-    const preparer = state.summary?.byPreparer?.find((row) => String(row.staff_id) === String(staffId))?.staff_name
-        || rows[0]?.prepared_by
-        || 'Unknown preparer';
+        .filter((row) => String(row.month_key || '').trim() === String(monthKey || '').trim())
+        .sort((a, b) => String(b.saved_at || '').localeCompare(String(a.saved_at || '')) || String(a.invoice_no || '').localeCompare(String(b.invoice_no || '')));
+    const monthLabel = state.summary?.byMonth?.find((row) => String(row.month_key) === String(monthKey))?.month_label
+        || rows[0]?.month_label
+        || formatMonthLabel(monthKey, monthKey)
+        || 'Billing Month';
     const total = rows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0);
 
     if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Prepared Invoices';
     if (els.billingScorecardSubtitle) {
-        els.billingScorecardSubtitle.textContent = `Prepared by ${preparer} • ${formatMetricCount(rows.length, 'invoice')} • ${formatCurrency(total)}`;
+        els.billingScorecardSubtitle.textContent = `${monthLabel} • ${formatMetricCount(rows.length, 'invoice')} • ${formatCurrency(total)}`;
     }
     if (!els.billingScorecardContent) return;
     els.billingScorecardContent.innerHTML = `
@@ -7164,7 +7370,7 @@ function renderSavedToPrintPreparerDetail(staffId) {
             <div class="work-detail-header">
                 <button class="btn btn-secondary" type="button" data-saved-dist-back>Back</button>
                 <div>
-                    <div class="detail-section-title">Prepared by: ${escapeHtml(preparer)}</div>
+                    <div class="detail-section-title">Billing Month: ${escapeHtml(monthLabel)}</div>
                     <p class="sheet-copy">${escapeHtml(state.from || '')} to ${escapeHtml(state.to || '')}</p>
                 </div>
             </div>
@@ -7172,7 +7378,6 @@ function renderSavedToPrintPreparerDetail(staffId) {
                 <table class="work-distribution-table detail">
                     <thead>
                         <tr>
-                            <th>Customer</th>
                             <th>Branch</th>
                             <th>Serial</th>
                             <th>Invoice No</th>
@@ -7183,8 +7388,7 @@ function renderSavedToPrintPreparerDetail(staffId) {
                     <tbody>
                         ${rows.length ? rows.map((row) => `
                             <tr>
-                                <td><strong>${escapeHtml(row.company_name || 'Unknown')}</strong></td>
-                                <td>${escapeHtml(row.branch_name || 'Main')}</td>
+                                <td><strong>${escapeHtml(row.branch_name || row.company_name || 'Main')}</strong><small>${escapeHtml(row.company_name || 'Unknown')}</small></td>
                                 <td>${escapeHtml((row.serial_numbers || []).join(', ') || row.machine_label || '-')}</td>
                                 <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
                                 <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
@@ -7198,11 +7402,11 @@ function renderSavedToPrintPreparerDetail(staffId) {
                                     >View to Print</button>
                                 </td>
                             </tr>
-                        `).join('') : '<tr><td colspan="6" class="muted-cell">No invoices for this preparer in the selected date range.</td></tr>'}
+                        `).join('') : '<tr><td colspan="5" class="muted-cell">No invoices for this billing month in the selected date range.</td></tr>'}
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="4">Total</td>
+                            <td colspan="3">Total</td>
                             <td class="text-right">${escapeHtml(formatCurrency(total))}</td>
                             <td></td>
                         </tr>
@@ -7226,7 +7430,9 @@ function renderMonthlyPrintedRows(rows = []) {
                         <th>Customer</th>
                         <th>Branch</th>
                         <th>Printed By</th>
-                        <th>Received</th>
+                        <th>Status</th>
+                        <th>Received By</th>
+                        <th>Received At</th>
                         <th>Assigned / Age</th>
                         <th class="text-right">Amount</th>
                     </tr>
@@ -7245,8 +7451,9 @@ function renderMonthlyPrintedRows(rows = []) {
                                 </td>
                                 <td>
                                     <strong>${received ? 'Received' : 'Pending received'}</strong>
-                                    ${received ? `<small>${escapeHtml(row.received_by || '-')} ${escapeHtml(row.received_at ? formatReportDateTime(row.received_at) : '')}</small>` : ''}
                                 </td>
+                                <td>${escapeHtml(received ? (row.received_by || '-') : '-')}</td>
+                                <td>${escapeHtml(received && row.received_at ? formatReportDateTime(row.received_at) : '-')}</td>
                                 <td>
                                     ${escapeHtml(row.assigned_staff_name || 'Unassigned')}
                                     <small>${escapeHtml(received ? 'Delivered' : `${formatInvoiceAge(row.printed_at)} since print`)}</small>
@@ -7582,7 +7789,9 @@ function renderBillingWorkDetail(detailType, staffId, status) {
                             <th>Invoice No</th>
                             <th>Printed By</th>
                             <th>Assigned To</th>
-                            <th>Received</th>
+                            <th>Status</th>
+                            <th>Received By</th>
+                            <th>Received At</th>
                             <th class="text-right">Age</th>
                             <th class="text-right">Amount</th>
                         </tr>
@@ -7602,17 +7811,18 @@ function renderBillingWorkDetail(detailType, staffId, status) {
                                     <td>${escapeHtml(row.assigned_staff_name || 'Unassigned')}</td>
                                     <td>
                                         <strong>${received ? 'Received' : 'Pending'}</strong>
-                                        ${received ? `<small>${escapeHtml([row.received_by, row.received_at ? formatReportDateTime(row.received_at) : ''].filter(Boolean).join(' • '))}</small>` : ''}
                                     </td>
+                                    <td>${escapeHtml(received ? (row.received_by || '-') : '-')}</td>
+                                    <td>${escapeHtml(received && row.received_at ? formatReportDateTime(row.received_at) : '-')}</td>
                                     <td class="text-right">${escapeHtml(received ? 'Closed' : formatInvoiceAge(row.printed_at))}</td>
                                     <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
                                 </tr>
                             `;
-                        }).join('') : '<tr><td colspan="8" class="muted-cell">No matching invoice rows.</td></tr>'}
+                        }).join('') : '<tr><td colspan="10" class="muted-cell">No matching invoice rows.</td></tr>'}
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="7">Total</td>
+                            <td colspan="9">Total</td>
                             <td class="text-right">${escapeHtml(formatCurrency(total))}</td>
                         </tr>
                     </tfoot>
@@ -7686,6 +7896,95 @@ function openPrintedMonthReport() {
     els.billingScorecardModal?.classList.remove('hidden');
 }
 
+function renderReceivedAccountabilityReport(mode = 'today') {
+    const report = lastPayload?.productivity_report || null;
+    if (!report) {
+        MargaUtils.showToast('Load the dashboard first to see received invoice totals.', 'info');
+        return;
+    }
+    const section = mode === 'month' ? (report.current_month_received || {}) : (report.received_today || {});
+    const rows = Array.isArray(section.invoices) ? section.invoices : [];
+    const summaryRows = summarizeReceivedAccountability(rows);
+    const latest = getLatestReceiptRow(rows);
+    const summaryLabel = mode === 'month' ? 'Received Invoices This Month' : 'Received Invoices Today';
+    const subtitleDate = mode === 'month'
+        ? `${formatMonthLabel(report.current_month_key, report.current_month_key)} running balance`
+        : formatReportDate(report.today_date);
+    billingWorkDistributionState = {
+        mode: mode === 'month' ? 'received_month' : 'received_today',
+        report,
+        sourceRows: rows,
+        summary: {
+            rows: summaryRows,
+            invoice_count: Number(section.invoice_count || 0),
+            amount_total: Number(section.amount_total || 0) || 0
+        }
+    };
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = summaryLabel;
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${subtitleDate} • ${formatMetricCount(section.invoice_count || 0, 'invoice')} • ${formatCurrency(section.amount_total || 0)}`;
+    }
+    if (!els.billingScorecardContent) return;
+    els.billingScorecardContent.innerHTML = `
+        <div class="work-distribution-shell">
+            <div class="productivity-summary-grid">
+                <div class="detail-summary-card">
+                    <span class="label">Total</span>
+                    <span class="value">${escapeHtml(formatCount(section.invoice_count || 0))}</span>
+                    <small>${escapeHtml(formatCurrency(section.amount_total || 0))}</small>
+                </div>
+                <div class="detail-summary-card">
+                    <span class="label">Field Staff</span>
+                    <span class="value">${escapeHtml(formatCount(summaryRows.length))}</span>
+                    <small>with submitted receipts</small>
+                </div>
+                <div class="detail-summary-card">
+                    <span class="label">Latest Receipt</span>
+                    <span class="value">${escapeHtml(latest?.received_by || latest?.assigned_staff_name || '-')}</span>
+                    <small>${escapeHtml(latest?.received_at ? formatReportDateTime(latest.received_at) : 'No timestamp yet')}</small>
+                </div>
+            </div>
+            <div class="detail-section-title">Summary by field staff</div>
+            ${renderReceivedAccountabilitySummaryRows(summaryRows)}
+        </div>
+    `;
+    els.billingScorecardModal?.classList.remove('hidden');
+}
+
+function renderReceivedAccountabilityStaffDetail(staffId = '') {
+    const state = billingWorkDistributionState || {};
+    const rows = (state.sourceRows || [])
+        .filter((row) => String(row.assigned_staff_id || row.assigned_staff_name || 'unassigned').trim() === String(staffId || '').trim())
+        .sort((a, b) => String(b.received_at || '').localeCompare(String(a.received_at || '')) || String(a.invoice_no || '').localeCompare(String(b.invoice_no || '')));
+    const summaryRow = (state.summary?.rows || []).find((row) => String(row.staff_id || '').trim() === String(staffId || '').trim());
+    const total = rows.reduce((sum, row) => sum + Number(row.amount_total || 0), 0);
+    if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = state.mode === 'received_month' ? 'Received Invoices This Month' : 'Received Invoices Today';
+    if (els.billingScorecardSubtitle) {
+        els.billingScorecardSubtitle.textContent = `${summaryRow?.staff_name || 'Field staff'} • ${formatMetricCount(rows.length, 'invoice')} • ${formatCurrency(total)}`;
+    }
+    if (!els.billingScorecardContent) return;
+    els.billingScorecardContent.innerHTML = `
+        <div class="work-distribution-shell">
+            <div class="work-detail-header">
+                <button class="btn btn-secondary" type="button" data-received-detail-back>Back</button>
+                <div>
+                    <div class="detail-section-title">${escapeHtml(summaryRow?.staff_name || 'Field staff')}</div>
+                    <p class="sheet-copy">${escapeHtml(formatMetricCount(rows.length, 'invoice'))} • ${escapeHtml(formatCurrency(total))}</p>
+                </div>
+            </div>
+            ${renderReceivedAccountabilityInvoiceRows(rows)}
+        </div>
+    `;
+}
+
+function openReceivedTodayReport() {
+    renderReceivedAccountabilityReport('today');
+}
+
+function openReceivedMonthReport() {
+    renderReceivedAccountabilityReport('month');
+}
+
 function getBillingExclusionsForContext(row, context) {
     const companyId = String(row?.company_id || context?.row?.company_id || '').trim();
     if (!companyId) return billingExclusionCache.filter(isActiveBillingExclusion);
@@ -7699,8 +7998,9 @@ function buildBillingCalculationContext(row, monthKey) {
     if (!row) return null;
     const specialTonerBilling = row.special_toner_billing || getSpecialTonerBillingConfig(row);
     const hasVerifiedBillingGroup = Boolean(row.billing_group);
-    const isVerifiedSummaryGroup = Boolean(row.is_summary_row && row.billing_group);
-    const summaryGroupedRows = hasVerifiedBillingGroup ? getGroupedMachineRows(row, monthKey) : [];
+    const isSummaryRow = Boolean(row.is_summary_row);
+    const isVerifiedSummaryGroup = Boolean(isSummaryRow && row.billing_group);
+    const summaryGroupedRows = isSummaryRow ? getGroupedMachineRows(row, monthKey) : [];
     const workingRow = isVerifiedSummaryGroup ? buildSummaryBillingRow(row, summaryGroupedRows) : row;
     const baseProfile = getRowBillingProfile(workingRow) || getRowBillingProfile(summaryGroupedRows[0]);
     const groupProfile = hasVerifiedBillingGroup ? getSharedBillingGroupProfile(row, baseProfile) : null;
@@ -7721,7 +8021,7 @@ function buildBillingCalculationContext(row, monthKey) {
         ? Number(targetReadingGroup.present_meter || targetReadingGroup.meter_reading || targetPreviousMeter || 0) || 0
         : targetPreviousMeter;
     const groupedMachineRows = summaryGroupedRows.length ? summaryGroupedRows : getGroupedMachineRows(workingRow, monthKey);
-    const forceGroupedMode = isVerifiedSummaryGroup && groupedMachineRows.length > 1;
+    const forceGroupedMode = isSummaryRow && groupedMachineRows.length > 1;
 
     return {
         row: workingRow,
@@ -8066,9 +8366,19 @@ function renderMeterLineCard(line, mode, index) {
 
 function renderBillingLinePanel(mode, title, copy, lines, warningNote = '') {
     let previousSection = '';
+    const isMultiMachinePanel = mode === 'multi_machine_rtp';
     return `
         <section class="calc-panel calc-line-panel hidden" data-calc-mode-panel="${escapeHtml(mode)}">
-            <div class="calc-panel-title">${escapeHtml(title)}</div>
+            <div class="calc-line-panel-toolbar">
+                <div class="calc-panel-title">${escapeHtml(title)}</div>
+                ${isMultiMachinePanel ? `
+                    <label class="calc-inline-search" for="calcMultiMachineSearchInput">
+                        <span>Search Customer / Branch</span>
+                        <input type="search" id="calcMultiMachineSearchInput" placeholder="Search customer, branch, serial, contract">
+                    </label>
+                    <div class="calc-line-panel-count" id="calcMultiMachineCountMeta">Total Machines: ${escapeHtml(formatCount(lines.length))}</div>
+                ` : ''}
+            </div>
             <div class="calc-note calc-note-tight">${escapeHtml(copy)}</div>
             ${mode === 'multi_meter_rtp' && warningNote ? `<div class="calc-note calc-note-warning">${escapeHtml(warningNote)}</div>` : ''}
             <div class="calc-meter-lines">
@@ -8476,6 +8786,10 @@ async function openBillingCalcModal(rowId, monthKey) {
         })
     ];
     const groupedRowsForBilling = context.groupedMachineRows || [];
+    const groupedBranchCount = getUniqueBranchCount(groupedRowsForBilling);
+    if (groupedRowsForBilling.length > 1) {
+        els.billingCalcSubtitle.textContent = `${context.monthLabel} • ${profile.category_code || 'N/A'} • ${profile.category_label || 'Billing profile'} • ${formatCount(groupedRowsForBilling.length)} billing row${groupedRowsForBilling.length === 1 ? '' : 's'} / ${formatCount(groupedBranchCount)} branch${groupedBranchCount === 1 ? '' : 'es'}`;
+    }
     const multiMachineSeedLines = groupedRowsForBilling.map((machineRow) => {
         const draft = billingDraftsByLine.get(getBillingDraftLineKey(machineRow)) || null;
         const baseProfile = getSharedBillingGroupProfile(machineRow, getRowBillingProfile(machineRow) || profile);
@@ -9000,6 +9314,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     const exclusionNoteInput = document.getElementById('calcExclusionNoteInput');
     const exclusionSaveBtn = document.getElementById('calcExclusionSaveBtn');
     const exclusionCancelBtn = document.getElementById('calcExclusionCancelBtn');
+    const multiMachineSearchInput = document.getElementById('calcMultiMachineSearchInput');
+    const multiMachineCountMeta = document.getElementById('calcMultiMachineCountMeta');
     let activeEstimate = estimate;
     let previewReady = false;
     let savedSnapshot = savedBillingDoc ? billingSnapshotFromDoc(savedBillingDoc, initialSnapshot) : null;
@@ -9071,6 +9387,34 @@ async function openBillingCalcModal(rowId, monthKey) {
     };
 
     const getLineInputKey = (mode, index, field) => `${mode}:${index}:${field}`;
+
+    const syncMultiMachineSearch = () => {
+        if (!multiMachineSearchInput || !multiMachineCountMeta) return;
+        const query = String(multiMachineSearchInput.value || '').trim().toLowerCase();
+        const cards = Array.from(document.querySelectorAll('[data-calc-line-card="multi_machine_rtp"]'));
+        let visibleCount = 0;
+        cards.forEach((card) => {
+            const index = Number(card.dataset.calcLineIndex || -1);
+            const line = multiMachineSeedLines[index];
+            const lineRow = groupedRowsForBilling[index];
+            const matches = !query || textMatchesSearch(query, [
+                line?.label,
+                line?.subtitle,
+                lineRow?.company_name,
+                lineRow?.branch_name,
+                lineRow?.serial_number,
+                lineRow?.machine_label,
+                lineRow?.machine_id,
+                lineRow?.contractmain_id
+            ]);
+            card.classList.toggle('hidden', !matches);
+            if (matches) visibleCount += 1;
+        });
+        multiMachineCountMeta.textContent = query
+            ? `Total Machines: ${formatCount(groupedRowsForBilling.length)} • Showing: ${formatCount(visibleCount)}`
+            : `Total Machines: ${formatCount(groupedRowsForBilling.length)}`;
+    };
+    multiMachineSearchInput?.addEventListener('input', syncMultiMachineSearch);
 
     const cacheLineInputValue = (input) => {
         const mode = String(input?.dataset?.calcLineMode || '').trim();
@@ -10168,6 +10512,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     });
     els.billingCalcModal.classList.remove('hidden');
     await renderCalcPreview(activeEstimate);
+    syncMultiMachineSearch();
     syncCalcWorkflowState();
 }
 
@@ -10237,12 +10582,16 @@ function renderMatrixTable(payload) {
     const displayRows = prepareBillingDisplayRows(sortedRows, months, searchTerm);
     renderedMatrixRows = displayRows;
     renderCustomerStatementBar(filteredRows);
+    const filteredCompanyCount = new Set(filteredRows
+        .map((row) => String(row?.company_id || row?.company_name || row?.account_name || '').trim())
+        .filter(Boolean)).size;
+    const filteredBranchCount = getUniqueBranchCount(filteredRows);
 
     if (els.matrixSearchMeta) {
         if (!rows.length) {
             els.matrixSearchMeta.textContent = 'No customers loaded yet.';
         } else if (searchTerm && !payloadMatchesCurrentSearch) {
-            els.matrixSearchMeta.textContent = `Filtering ${formatCount(filteredRows.length)} loaded machine rows for "${els.matrixSearchInput.value.trim()}". Full search refresh starts at 2 characters.`;
+            els.matrixSearchMeta.textContent = `Filtering ${formatCount(filteredRows.length)} loaded machine rows across ${formatCount(filteredBranchCount)} branches for "${els.matrixSearchInput.value.trim()}". Full search refresh starts at 2 characters.`;
         } else if (searchTerm) {
             const subtotalCount = displayRows.filter((row) => row.is_summary_row).length;
             const windowText = isRowWindowed
@@ -10254,11 +10603,11 @@ function renderMatrixTable(payload) {
             const sortText = sortValue === 'customer'
                 ? ` ${formatCount(rowsWithAmounts)} row${rowsWithAmounts === 1 ? '' : 's'} already have amounts and are shown first within each customer grouping.`
                 : ' Rows follow Reading Day order first.';
-            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows for "${els.matrixSearchInput.value.trim()}".${sortText}${windowText}${subtotalText} Footer totals reflect all matched rows.`;
+            els.matrixSearchMeta.textContent = `Showing ${formatCount(filteredRows.length)} machine rows across ${formatCount(filteredBranchCount)} branches / ${formatCount(filteredCompanyCount)} customers for "${els.matrixSearchInput.value.trim()}".${sortText}${windowText}${subtotalText} Footer totals reflect all matched rows.`;
         } else {
             els.matrixSearchMeta.textContent = isRowWindowed
-                ? `Showing first ${formatCount(rows.length)} loaded machine rows out of ${formatCount(matchedRowCount)} matched rows. Footer totals reflect all matched rows.`
-                : `Showing all ${formatCount(matchedRowCount)} matched machine rows. Footer totals reflect all matched rows.`;
+                ? `Showing first ${formatCount(rows.length)} loaded machine rows out of ${formatCount(matchedRowCount)} matched rows across ${formatCount(filteredBranchCount)} branches / ${formatCount(filteredCompanyCount)} customers. Footer totals reflect all matched rows.`
+                : `Showing all ${formatCount(matchedRowCount)} matched machine rows across ${formatCount(filteredBranchCount)} branches / ${formatCount(filteredCompanyCount)} customers. Footer totals reflect all matched rows.`;
         }
     }
 
@@ -10944,6 +11293,53 @@ function getUnbilledCustomerKey(row) {
     return String(row?.company_id || row?.account_name || row?.company_name || row?.row_id || '').trim();
 }
 
+function isGroupedUnbilledProjectionCustomer(row) {
+    const companyName = String(row?.company_name || row?.account_name || '').trim().toLowerCase();
+    return companyName.endsWith(' - branches');
+}
+
+function getGroupedUnbilledProjectionCustomerKey(row) {
+    return String(row?.company_name || row?.account_name || getUnbilledCustomerKey(row) || '')
+        .trim()
+        .toLowerCase();
+}
+
+function getGroupedUnbilledProjectionMonthEntries(sourceRows = [], row, monthKey) {
+    const customerKey = getGroupedUnbilledProjectionCustomerKey(row);
+    return (Array.isArray(sourceRows) ? sourceRows : []).filter((entry) => (
+        entry
+        && !entry.is_summary_row
+        && !entry.isGroupedChild
+        && isGroupedUnbilledProjectionCustomer(entry)
+        && getGroupedUnbilledProjectionCustomerKey(entry) === customerKey
+        && entry.months?.[monthKey]?.pending
+    ));
+}
+
+function findLatestGroupedUnbilledProjectionTotal(sourceRows = [], row, monthKey, months = []) {
+    const customerKey = getGroupedUnbilledProjectionCustomerKey(row);
+    const previousMonths = (Array.isArray(months) ? months : [])
+        .filter((entry) => String(entry || '').trim() < monthKey)
+        .sort((left, right) => String(right || '').localeCompare(String(left || '')));
+    for (const previousMonthKey of previousMonths) {
+        const monthRows = (Array.isArray(sourceRows) ? sourceRows : []).filter((entry) => (
+            entry
+            && !entry.is_summary_row
+            && !entry.isGroupedChild
+            && isGroupedUnbilledProjectionCustomer(entry)
+            && getGroupedUnbilledProjectionCustomerKey(entry) === customerKey
+        ));
+        const amount = monthRows.reduce((sum, entry) => sum + Number(entry.months?.[previousMonthKey]?.amount_total || 0), 0);
+        if (amount > 0.01) {
+            return {
+                amount: Number(amount.toFixed(2)),
+                monthKey: previousMonthKey
+            };
+        }
+    }
+    return null;
+}
+
 function makeUnbilledProjectionDetail({ row, cell, monthKey, amount }) {
     const profile = row?.billing_profile || {};
     return {
@@ -10988,10 +11384,23 @@ function buildUnbilledProjectionData(payload, filteredRows = null) {
         detailsByMonth.set(monthKey, []);
     });
 
+    const groupedMonthBuckets = new Map();
     rows.forEach((row) => {
         months.forEach((monthKey) => {
             const cell = row.months?.[monthKey];
             if (!cell?.pending) return;
+            if (isGroupedUnbilledProjectionCustomer(row)) {
+                const bucketKey = `${getGroupedUnbilledProjectionCustomerKey(row)}::${monthKey}`;
+                if (!groupedMonthBuckets.has(bucketKey)) {
+                    groupedMonthBuckets.set(bucketKey, {
+                        row,
+                        monthKey,
+                        entries: []
+                    });
+                }
+                groupedMonthBuckets.get(bucketKey).entries.push({ row, cell });
+                return;
+            }
             const amount = getBillingScorecardPendingProjection(cell, row);
             const detail = makeUnbilledProjectionDetail({ row, cell, monthKey, amount });
             detailsByMonth.get(monthKey)?.push(detail);
@@ -11004,6 +11413,56 @@ function buildUnbilledProjectionData(payload, filteredRows = null) {
                 total.rowCount += 1;
             }
         });
+    });
+
+    groupedMonthBuckets.forEach((bucket) => {
+        const primaryRow = bucket.row;
+        const monthKey = bucket.monthKey;
+        const groupedCustomerKey = getGroupedUnbilledProjectionCustomerKey(primaryRow);
+        const currentBilledTotal = sourceRows.reduce((sum, entry) => {
+            if (!entry || entry.is_summary_row || entry.isGroupedChild) return sum;
+            if (!isGroupedUnbilledProjectionCustomer(entry)) return sum;
+            if (getGroupedUnbilledProjectionCustomerKey(entry) !== groupedCustomerKey) return sum;
+            return sum + Number(entry.months?.[monthKey]?.amount_total || 0);
+        }, 0);
+        if (currentBilledTotal > 0.01) return;
+
+        const projectedFromRows = bucket.entries.reduce((sum, entry) => (
+            sum + getBillingScorecardPendingProjection(entry.cell, entry.row)
+        ), 0);
+        const latestBilled = findLatestGroupedUnbilledProjectionTotal(sourceRows, primaryRow, monthKey, months);
+        const amount = Number((latestBilled?.amount || projectedFromRows || 0).toFixed(2));
+        if (amount <= 0) return;
+
+        const branchNames = Array.from(new Set(bucket.entries
+            .map((entry) => String(entry.row?.branch_name || '').trim())
+            .filter(Boolean)));
+        const detail = makeUnbilledProjectionDetail({
+            row: primaryRow,
+            cell: primaryRow?.months?.[monthKey],
+            monthKey,
+            amount
+        });
+        detail.customerKey = getGroupedUnbilledProjectionCustomerKey(primaryRow);
+        detail.isGroupedProjection = true;
+        detail.groupedProjectionBranchCount = branchNames.length;
+        detail.groupedProjectionRowCount = bucket.entries.length;
+        detail.groupedProjectionBranchNames = branchNames;
+        detail.serial = '';
+        detail.branch = '';
+        detail.reason = latestBilled?.amount > 0
+            ? `Pending grouped invoice projected from latest billed total (${formatMonthLabel(latestBilled.monthKey, latestBilled.monthKey)})`
+            : 'Pending grouped invoice projected from grouped branch rows';
+
+        detailsByMonth.get(monthKey)?.push(detail);
+        const customerKey = detail.customerKey || detail.rowId;
+        if (!detailsByCustomer.has(customerKey)) detailsByCustomer.set(customerKey, []);
+        detailsByCustomer.get(customerKey).push(detail);
+        const total = monthTotals.find((entry) => entry.monthKey === monthKey);
+        if (total) {
+            total.amount += amount;
+            total.rowCount += bucket.entries.length;
+        }
     });
 
     monthTotals.forEach((total) => {
@@ -11028,15 +11487,24 @@ function groupUnbilledDetailsByCustomer(details = []) {
                 amount: 0,
                 rowCount: 0,
                 months: new Set(),
+                isGroupedProjection: false,
+                groupedProjectionBranchCount: 0,
                 details: []
             });
         }
         const group = groups.get(key);
-        group.branchNames.add(detail.branch);
+        if (detail.branch) group.branchNames.add(detail.branch);
         group.serials.add(detail.serial);
         group.months.add(detail.monthKey);
         group.amount += Number(detail.amount || 0);
-        group.rowCount += 1;
+        group.rowCount += Number(detail.groupedProjectionRowCount || 1);
+        if (detail.isGroupedProjection) {
+            group.isGroupedProjection = true;
+            group.groupedProjectionBranchCount = Math.max(
+                Number(group.groupedProjectionBranchCount || 0),
+                Number(detail.groupedProjectionBranchCount || 0)
+            );
+        }
         group.details.push(detail);
     });
     return Array.from(groups.values())
@@ -11062,7 +11530,9 @@ function renderUnbilledCustomerRows(groups = []) {
                 >
                     <span>
                         <strong>${escapeHtml(group.customer)}</strong>
-                        <small>${escapeHtml(group.branchNames.slice(0, 3).join(', ') || 'Branch not mapped')}${group.branchNames.length > 3 ? ` +${formatCount(group.branchNames.length - 3)} more` : ''}</small>
+                        <small>${group.isGroupedProjection
+                            ? `${escapeHtml(formatMetricCount(group.groupedProjectionBranchCount || group.rowCount, 'branch', 'branches'))} / departments hidden inside one grouped pending invoice`
+                            : `${escapeHtml(group.branchNames.slice(0, 3).join(', ') || 'Branch not mapped')}${group.branchNames.length > 3 ? ` +${formatCount(group.branchNames.length - 3)} more` : ''}`}</small>
                     </span>
                     <span class="unbilled-card-meta">
                         <strong>${escapeHtml(formatAmount(group.amount))}</strong>
@@ -11141,12 +11611,18 @@ function renderUnbilledCustomerMonths(customerKey) {
             ${Array.from(groupedByMonth.entries()).map(([monthKey, monthDetails]) => {
                 const amount = monthDetails.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
                 const actionRow = findUnbilledActionRow(monthDetails, monthKey);
+                const groupedProjectionDetail = monthDetails.find((detail) => detail.isGroupedProjection) || null;
+                const rowCount = groupedProjectionDetail
+                    ? Number(groupedProjectionDetail.groupedProjectionRowCount || monthDetails.length)
+                    : monthDetails.length;
                 return `
                     <article class="unbilled-month-card">
                         <div>
                             <strong>${escapeHtml(formatMonthLabel(monthKey, monthKey))}</strong>
-                            <small>${escapeHtml(formatMetricCount(monthDetails.length, 'machine row'))} • ${escapeHtml(monthDetails[0]?.reason || 'Pending billing')}</small>
-                            <small>${escapeHtml(monthDetails.map((detail) => detail.branch).filter(Boolean).slice(0, 4).join(', ') || 'Branch not mapped')}</small>
+                            <small>${escapeHtml(formatMetricCount(rowCount, 'machine row'))} • ${escapeHtml(monthDetails[0]?.reason || 'Pending billing')}</small>
+                            <small>${groupedProjectionDetail
+                                ? `${escapeHtml(formatMetricCount(groupedProjectionDetail.groupedProjectionBranchCount || groupedProjectionDetail.groupedProjectionRowCount || monthDetails.length, 'branch', 'branches'))} / departments hidden inside one grouped pending invoice`
+                                : escapeHtml(monthDetails.map((detail) => detail.branch).filter(Boolean).slice(0, 4).join(', ') || 'Branch not mapped')}</small>
                         </div>
                         <div class="unbilled-card-meta">
                             <strong>${escapeHtml(formatAmount(amount))}</strong>
@@ -11170,10 +11646,125 @@ function renderUnbilledCustomerMonths(customerKey) {
     `;
 }
 
-function openUnbilledCustomerMonths(customerKey) {
+function getUnbilledCustomerMonthSummaries(customerKey) {
+    const details = (unbilledProjectionData?.detailsByCustomer?.get(customerKey) || [])
+        .slice()
+        .sort((left, right) => String(left.monthKey || '').localeCompare(String(right.monthKey || '')) || String(left.branch || '').localeCompare(String(right.branch || '')));
+    const groupedByMonth = new Map();
+    details.forEach((detail) => {
+        if (!groupedByMonth.has(detail.monthKey)) groupedByMonth.set(detail.monthKey, []);
+        groupedByMonth.get(detail.monthKey).push(detail);
+    });
+    return Array.from(groupedByMonth.entries())
+        .map(([monthKey, monthDetails]) => {
+            const groupedProjectionDetail = monthDetails.find((detail) => detail.isGroupedProjection) || null;
+            const rowCount = groupedProjectionDetail
+                ? Number(groupedProjectionDetail.groupedProjectionRowCount || monthDetails.length)
+                : monthDetails.length;
+            const amount = monthDetails.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+            return {
+                monthKey,
+                details: monthDetails,
+                groupedProjectionDetail,
+                rowCount,
+                amount: Number(amount.toFixed(2))
+            };
+        })
+        .sort((left, right) => String(left.monthKey || '').localeCompare(String(right.monthKey || '')));
+}
+
+function renderUnbilledCustomerMonthButtons(customerKey, monthSummaries = [], selectedMonthKey = '') {
+    if (!monthSummaries.length) return '';
+    return `
+        <div class="unbilled-month-button-row">
+            ${monthSummaries.map((summary) => `
+                <button
+                    class="btn ${summary.monthKey === selectedMonthKey ? 'btn-primary' : 'btn-secondary'} btn-sm unbilled-month-button"
+                    type="button"
+                    data-unbilled-customer-key-select="${escapeHtml(customerKey)}"
+                    data-unbilled-customer-month-select="${escapeHtml(summary.monthKey)}"
+                >
+                    <span>${escapeHtml(formatMonthLabel(summary.monthKey, summary.monthKey))}</span>
+                    <small>${escapeHtml(formatMetricCount(summary.rowCount, 'machine row'))}</small>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderUnbilledSelectedMonthRows(customerKey, selectedMonthKey, monthSummaries = []) {
+    const selected = monthSummaries.find((summary) => summary.monthKey === selectedMonthKey) || monthSummaries[0] || null;
+    if (!selected) return '<div class="detail-empty">No unbilled rows found for this customer.</div>';
+
+    const groupedProjectionDetail = selected.groupedProjectionDetail || null;
+    if (groupedProjectionDetail) {
+        const actionRow = findUnbilledActionRow(selected.details, selected.monthKey);
+        return `
+            <article class="unbilled-month-card">
+                <div>
+                    <strong>${escapeHtml(formatMonthLabel(selected.monthKey, selected.monthKey))}</strong>
+                    <small>${escapeHtml(formatMetricCount(selected.rowCount, 'machine row'))} • ${escapeHtml(groupedProjectionDetail.reason || 'Pending billing')}</small>
+                    <small>${escapeHtml(formatMetricCount(groupedProjectionDetail.groupedProjectionBranchCount || selected.rowCount, 'branch', 'branches'))} / departments hidden inside one grouped pending invoice</small>
+                </div>
+                <div class="unbilled-card-meta">
+                    <strong>${escapeHtml(formatAmount(selected.amount))}</strong>
+                    <button
+                        class="btn btn-primary btn-sm"
+                        type="button"
+                        data-unbilled-bill-now-row-id="${escapeHtml(actionRow.rowId || '')}"
+                        data-unbilled-bill-now-month="${escapeHtml(selected.monthKey)}"
+                    >Bill Now</button>
+                    <button
+                        class="btn btn-danger btn-sm"
+                        type="button"
+                        data-unbilled-inactivate-customer="${escapeHtml(customerKey)}"
+                        data-unbilled-inactivate-month="${escapeHtml(selected.monthKey)}"
+                    >Hide From Billing</button>
+                </div>
+            </article>
+        `;
+    }
+
+    const rows = selected.details
+        .slice()
+        .sort((left, right) => Number(right.amount || 0) - Number(left.amount || 0) || String(left.branch || '').localeCompare(String(right.branch || '')));
+
+    return `
+        <div class="detail-empty">
+            ${escapeHtml(formatMonthLabel(selected.monthKey, selected.monthKey))} • ${escapeHtml(formatMetricCount(selected.rowCount, 'machine row'))} • projected ${escapeHtml(formatCurrency(selected.amount))}
+        </div>
+        <div class="unbilled-machine-list">
+            ${rows.map((detail) => `
+                <article class="unbilled-machine-card">
+                    <div class="unbilled-machine-main">
+                        <strong>${escapeHtml(detail.branch || detail.customer || 'Branch not mapped')}</strong>
+                        <small>${escapeHtml(detail.serial || '-')} • Contract ${escapeHtml(detail.contractId || '-')} • ${escapeHtml(detail.reason || 'Pending billing')}</small>
+                    </div>
+                    <div class="unbilled-card-meta">
+                        <strong>${escapeHtml(formatAmount(detail.amount || 0))}</strong>
+                        <button
+                            class="btn btn-primary btn-sm"
+                            type="button"
+                            data-unbilled-bill-now-row-id="${escapeHtml(detail.rowId || '')}"
+                            data-unbilled-bill-now-month="${escapeHtml(selected.monthKey)}"
+                        >Bill Now</button>
+                    </div>
+                </article>
+            `).join('')}
+        </div>
+    `;
+}
+
+function openUnbilledCustomerMonths(customerKey, selectedMonthKey = '') {
     const details = unbilledProjectionData?.detailsByCustomer?.get(customerKey) || [];
     const customer = details[0]?.customer || 'Unbilled Customer';
     const total = details.reduce((sum, detail) => sum + Number(detail.amount || 0), 0);
+    const monthSummaries = getUnbilledCustomerMonthSummaries(customerKey);
+    const resolvedMonthKey = monthSummaries.some((summary) => summary.monthKey === selectedMonthKey)
+        ? selectedMonthKey
+        : (monthSummaries[0]?.monthKey || '');
+    activeUnbilledCustomerKey = customerKey;
+    activeUnbilledCustomerMonthKey = resolvedMonthKey;
     if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = customer;
     if (els.billingScorecardSubtitle) {
         els.billingScorecardSubtitle.textContent = `${formatCount(new Set(details.map((detail) => detail.monthKey)).size)} unbilled month(s) • projected ${formatCurrency(total)}`;
@@ -11183,7 +11774,8 @@ function openUnbilledCustomerMonths(customerKey) {
             <div class="detail-action-row">
                 <button class="btn btn-secondary" type="button" data-unbilled-back-month="${escapeHtml(activeUnbilledProjectionMonthKey || details[0]?.monthKey || '')}">Back to Month</button>
             </div>
-            ${renderUnbilledCustomerMonths(customerKey)}
+            ${renderUnbilledCustomerMonthButtons(customerKey, monthSummaries, resolvedMonthKey)}
+            ${renderUnbilledSelectedMonthRows(customerKey, resolvedMonthKey, monthSummaries)}
         `;
     }
 }
@@ -12136,6 +12728,8 @@ function bindEvents() {
     els.printedTodayCard?.addEventListener('click', openPrintedTodayReport);
     els.savedToPrintCard?.addEventListener('click', openSavedToPrintReport);
     els.printedMonthCard?.addEventListener('click', openPrintedMonthReport);
+    els.receivedTodayCard?.addEventListener('click', openReceivedTodayReport);
+    els.receivedMonthCard?.addEventListener('click', openReceivedMonthReport);
     els.invoiceSearchBtn?.addEventListener('click', searchInvoiceNumber);
     els.invoiceDeepSearchBtn?.addEventListener('click', deepSearchInvoiceNumbers);
     els.invoiceSearchInput?.addEventListener('keydown', (event) => {
@@ -12291,10 +12885,22 @@ function bindEvents() {
             });
             return;
         }
-        const savedPreparer = event.target.closest('[data-saved-dist-preparer]');
-        if (savedPreparer) {
+        const savedMonth = event.target.closest('[data-saved-dist-month]');
+        if (savedMonth) {
             event.preventDefault();
-            renderSavedToPrintPreparerDetail(savedPreparer.dataset.savedDistPreparer || '');
+            renderSavedToPrintMonthDetail(savedMonth.dataset.savedDistMonth || '');
+            return;
+        }
+        const receivedBack = event.target.closest('[data-received-detail-back]');
+        if (receivedBack) {
+            event.preventDefault();
+            renderReceivedAccountabilityReport(billingWorkDistributionState?.mode === 'received_month' ? 'month' : 'today');
+            return;
+        }
+        const receivedStaff = event.target.closest('[data-received-detail-staff-id]');
+        if (receivedStaff) {
+            event.preventDefault();
+            renderReceivedAccountabilityStaffDetail(receivedStaff.dataset.receivedDetailStaffId || '');
             return;
         }
         const workBack = event.target.closest('[data-work-dist-back]');
@@ -12359,6 +12965,15 @@ function bindEvents() {
         if (customerTrigger) {
             event.preventDefault();
             openUnbilledCustomerMonths(customerTrigger.dataset.unbilledCustomerKey);
+            return;
+        }
+        const customerMonthTrigger = event.target.closest('[data-unbilled-customer-month-select]');
+        if (customerMonthTrigger) {
+            event.preventDefault();
+            openUnbilledCustomerMonths(
+                customerMonthTrigger.dataset.unbilledCustomerKeySelect || activeUnbilledCustomerKey,
+                customerMonthTrigger.dataset.unbilledCustomerMonthSelect || activeUnbilledCustomerMonthKey
+            );
             return;
         }
         const billNowTrigger = event.target.closest('[data-unbilled-bill-now-row-id]');

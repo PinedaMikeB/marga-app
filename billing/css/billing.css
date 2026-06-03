@@ -780,8 +780,33 @@ button.matrix-total-card:focus-visible {
     gap: 0.7rem;
 }
 
+.unbilled-month-button-row,
+.unbilled-machine-list {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.unbilled-month-button-row {
+    grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
+    align-items: stretch;
+}
+
+.unbilled-month-button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.12rem;
+}
+
+.unbilled-month-button small {
+    margin-top: 0;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
 .unbilled-customer-card,
-.unbilled-month-card {
+.unbilled-month-card,
+.unbilled-machine-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -807,7 +832,8 @@ button.matrix-total-card:focus-visible {
 }
 
 .unbilled-customer-card strong,
-.unbilled-month-card strong {
+.unbilled-month-card strong,
+.unbilled-machine-card strong {
     display: block;
     color: var(--bill-ink);
     font-size: 0.96rem;
@@ -815,7 +841,8 @@ button.matrix-total-card:focus-visible {
 }
 
 .unbilled-customer-card small,
-.unbilled-month-card small {
+.unbilled-month-card small,
+.unbilled-machine-card small {
     display: block;
     margin-top: 0.22rem;
     color: var(--bill-muted);
@@ -841,6 +868,10 @@ button.matrix-total-card:focus-visible {
     gap: 0.45rem;
     margin-top: 0.35rem;
     flex-wrap: wrap;
+}
+
+.unbilled-machine-main {
+    min-width: 0;
 }
 
 .matrix-card .matrix-sheet {
@@ -927,6 +958,24 @@ button.matrix-total-card:focus-visible {
 
 .printed-month-card strong {
     color: #15803d;
+}
+
+.received-today-card {
+    border-color: #a8d6d1;
+    background: linear-gradient(180deg, #ffffff, #eefcf9);
+}
+
+.received-today-card strong {
+    color: #0f766e;
+}
+
+.received-month-card {
+    border-color: #f1c78e;
+    background: linear-gradient(180deg, #ffffff, #fff7eb);
+}
+
+.received-month-card strong {
+    color: #b45309;
 }
 
 .productivity-summary-grid {
@@ -2139,6 +2188,46 @@ button.matrix-total-card:focus-visible {
 
 .calc-line-panel .calc-note-tight {
     margin-top: 0;
+}
+
+.calc-line-panel-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.9rem;
+    justify-content: space-between;
+}
+
+.calc-inline-search {
+    display: grid;
+    gap: 0.3rem;
+    margin-left: auto;
+    min-width: min(360px, 100%);
+}
+
+.calc-inline-search span {
+    color: var(--bill-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.calc-inline-search input {
+    width: min(360px, 100%);
+    padding: 0.68rem 0.82rem;
+    border: 1px solid var(--bill-line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.96);
+    color: var(--bill-ink);
+    font-size: 0.9rem;
+}
+
+.calc-line-panel-count {
+    color: var(--bill-ink);
+    font-size: 0.84rem;
+    font-weight: 900;
+    white-space: nowrap;
 }
 
 .calc-note-warning {
