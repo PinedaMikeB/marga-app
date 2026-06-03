@@ -18,6 +18,7 @@ const pageSize = 50;
 let currentPriorityFilter = null;
 let currentWorkQueueMode = 'all';
 let currentPriorityWorklistView = 'list';
+let collectorComparisonViewMode = 'grid';
 let quickAgeFilter = 'all';
 let dataMode = 'active';
 let todayFollowups = [];
@@ -157,7 +158,8 @@ const COLLECTION_WORKFLOW_SETTINGS_DOC_ID = 'collections_workflow_settings_v1';
 let collectionWorkflowSettings = {
     targets: { ...COLLECTION_TARGET_DEFAULTS },
     assignments: {},
-    customerAssignments: {}
+    customerAssignments: {},
+    hiddenAccounts: {}
 };
 let collectionWorkflowSettingsLoaded = false;
 
@@ -1404,6 +1406,7 @@ function prepareCollectorRows(rows) {
             if (!matrixPriorityRowIds) return true;
             return matrixPriorityRowIds.has(String(row.rowId || '').trim());
         })
+        .filter((row) => !isCollectorRowHidden(row))
         .filter((row) => {
             if (!searchTerm) return true;
             return (row._collectorAccountSearchText || '').includes(searchTerm);
@@ -5156,7 +5159,11 @@ function getCollectorRowLatestHistory(row = {}) {
 }
 
 function getCollectorRowsForPriorityCards() {
-    return (collectorDashboardData?.customerRows || []).filter((row) => !row.isGroupedChild);
+    return (collectorDashboardData?.customerRows || []).filter((row) => !row.isGroupedChild && !isCollectorRowHidden(row));
+}
+
+function hasCollectorMatrixPrioritySource() {
+    return Array.isArray(collectorDashboardData?.customerRows) && collectorDashboardData.customerRows.length > 0;
 }
 
 function getMatrixPriorityRowsForMode(mode) {
@@ -5292,6 +5299,197 @@ function getPriorityMetricAmount(mode, invoice) {
     return Number(invoice?.amount || 0) || 0;
 }
 
+function buildCollectorComparisonListFromRows(rows = []) {
+    const groups = [];
+    const groupMap = new Map();
+    let invoiceCount = 0;
+    let total = 0;
+
+    rows.forEach((row) => {
+        const cells = getCollectorRowOpenCells(row);
+        cells.forEach((cell) => {
+            const records = Array.isArray(cell.records) ? cell.records : [];
+            const openRecords = records.filter((record) => getPriorityRecordAmount(record, cell) > 0.01);
+            const baseGroupKey = `${cell.customer || row.customer || ''}|${cell.branchName || row.branchName || ''}`;
+
+            if (openRecords.length) {
+                openRecords.forEach((record) => {
+                    const amount = getPriorityRecordAmount(record, cell);
+                    if (amount <= 0.01) return;
+                    const item = {
+                        rowId: row.rowId,
+                        cellId: cell.id,
+                        customer: cell.customer || row.customer || record.company || 'Unnamed account',
+                        branch: cell.branchName || row.branchName || record.branch || 'Main',
+                        accountLabel: row.accountLabel || '',
+                        companyId: row.companyId || '',
+                        branchId: row.branchId || '',
+                        invoiceNo: record.invoiceNo || record.invoiceId || record.invoiceKey || '-',
+                        invoiceDate: record.invoiceDate || record.dueDate || null,
+                        dateReceived: record.dateReceived || null,
+                        monthLabel: cell.label || cell.monthKey || '-',
+                        amount,
+                        serialNumber: record.serialNumber || cell.serialNumber || row.serialNumber || '',
+                        modelName: record.modelName || cell.modelName || row.modelName || '',
+                        history: cell.latestHistory || row.latestHistory || null
+                    };
+                    const itemSortTime = normalizeDate(item.invoiceDate)?.getTime() || 0;
+                    const itemSortKey = `${String(item.customer || '').toLowerCase()}|${String(item.branch || '').toLowerCase()}|${String(item.invoiceNo || '').toLowerCase()}`;
+                    const group = ensureCollectorComparisonGroup(groupMap, groups, baseGroupKey, item.customer, item.branch, row.accountLabel);
+                    group.items.push({ ...item, itemSortTime, itemSortKey });
+                    group.total += amount;
+                    invoiceCount += 1;
+                    total += amount;
+                });
+                return;
+            }
+
+            const amount = getPriorityCellAmount(cell);
+            if (amount <= 0.01) return;
+            const item = {
+                rowId: row.rowId,
+                cellId: cell.id,
+                customer: cell.customer || row.customer || 'Unnamed account',
+                branch: cell.branchName || row.branchName || 'Main',
+                accountLabel: row.accountLabel || '',
+                companyId: row.companyId || '',
+                branchId: row.branchId || '',
+                invoiceNo: cell.pendingBilling ? 'Pending billing' : 'No invoice linked',
+                invoiceDate: null,
+                dateReceived: null,
+                monthLabel: cell.label || cell.monthKey || '-',
+                amount,
+                serialNumber: cell.serialNumber || row.serialNumber || '',
+                modelName: cell.modelName || row.modelName || '',
+                history: cell.latestHistory || row.latestHistory || null,
+                itemSortTime: 0,
+                itemSortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${String(cell.label || cell.monthKey || '').toLowerCase()}`
+            };
+            const group = ensureCollectorComparisonGroup(groupMap, groups, baseGroupKey, item.customer, item.branch, row.accountLabel);
+            group.items.push(item);
+            group.total += amount;
+            invoiceCount += 1;
+            total += amount;
+        });
+    });
+
+    groups.forEach((group) => {
+        group.items.sort((left, right) => {
+            if (right.itemSortTime !== left.itemSortTime) return right.itemSortTime - left.itemSortTime;
+            return left.itemSortKey.localeCompare(right.itemSortKey);
+        });
+    });
+    groups.sort((left, right) => right.total - left.total || left.customer.localeCompare(right.customer));
+
+    return {
+        groups,
+        groupCount: groups.length,
+        invoiceCount,
+        total
+    };
+}
+
+function ensureCollectorComparisonGroup(groupMap, groups, groupKey, customer, branch, accountLabel = '') {
+    if (!groupMap.has(groupKey)) {
+        const group = {
+            key: groupKey,
+            customer,
+            branch,
+            accountLabel,
+            items: [],
+            total: 0
+        };
+        groupMap.set(groupKey, group);
+        groups.push(group);
+    }
+    return groupMap.get(groupKey);
+}
+
+function getCollectorHistorySummaryText(entry) {
+    if (!entry) return 'No follow-up yet';
+    const parts = [
+        entry.conversationResult,
+        entry.promiseToPay,
+        entry.issueType
+    ].filter((value) => value && value !== 'No Promise to Pay' && value !== 'No Issue');
+    return parts[0] || entry.statusLabel || 'Follow-up logged';
+}
+
+function renderCollectorComparisonListView(visibleRows) {
+    const comparison = buildCollectorComparisonListFromRows(visibleRows);
+    if (!comparison.groups.length) {
+        return '<div class="empty-followup">No unpaid invoice rows matched the current month comparison filters.</div>';
+    }
+
+    return `
+        <div class="priority-worklist-summary collector-comparison-summary">
+            <span class="priority-worklist-chip">${escapeHtml(comparison.groupCount.toLocaleString())} account group(s)</span>
+            <span class="priority-worklist-chip">${escapeHtml(comparison.invoiceCount.toLocaleString())} unpaid invoice row(s)</span>
+            <span class="priority-worklist-chip">${escapeHtml(formatCurrency(comparison.total))}</span>
+        </div>
+        <div class="priority-worklist-table-wrap collector-comparison-list-wrap">
+            <table class="priority-worklist-table collector-comparison-list-table">
+                <thead>
+                    <tr>
+                        <th>Invoice Date</th>
+                        <th>Invoice No.</th>
+                        <th>Customer</th>
+                        <th>Branch</th>
+                        <th>Month</th>
+                        <th>Received</th>
+                        <th class="text-right">Balance</th>
+                        <th>Status / Promise</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${comparison.groups.map((group) => `
+                        <tr class="priority-group-row">
+                            <td colspan="6">
+                                <div class="priority-worklist-account">
+                                    <strong>${escapeHtml(group.customer || 'Unnamed account')}</strong>
+                                    <span>${escapeHtml(group.branch || group.accountLabel || 'Main')}</span>
+                                </div>
+                            </td>
+                            <td class="text-right">${escapeHtml(formatCurrency(group.total))}</td>
+                            <td colspan="2">${escapeHtml(group.items.length.toLocaleString())} row(s)</td>
+                        </tr>
+                        ${group.items.map((item) => `
+                            <tr>
+                                <td>${escapeHtml(formatDate(item.invoiceDate))}</td>
+                                <td>
+                                    <div class="priority-worklist-account">
+                                        <strong>${escapeHtml(item.invoiceNo || '-')}</strong>
+                                        <span>${escapeHtml(item.modelName || item.serialNumber || '')}</span>
+                                    </div>
+                                </td>
+                                <td>${escapeHtml(item.customer || '-')}</td>
+                                <td>${escapeHtml(item.branch || 'Main')}</td>
+                                <td>${escapeHtml(item.monthLabel || '-')}</td>
+                                <td>${escapeHtml(formatDate(item.dateReceived))}</td>
+                                <td class="text-right"><strong>${escapeHtml(formatCurrency(item.amount))}</strong></td>
+                                <td>${escapeHtml(getCollectorHistorySummaryText(item.history))}</td>
+                                <td>
+                                    <div class="priority-worklist-actions">
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'followup')">Follow-up</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'payment')">Payment</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideCollectorComparisonAccount('${encodeURIComponent(item.rowId || '')}')">Hide</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    `).join('')}
+                    <tr class="priority-total-row">
+                        <td colspan="6">Total</td>
+                        <td class="text-right">${escapeHtml(formatCurrency(comparison.total))}</td>
+                        <td colspan="2">${escapeHtml(comparison.invoiceCount.toLocaleString())} invoice row(s)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
 function isCollectionPriorityCardMode(mode) {
     return COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === mode);
 }
@@ -5380,6 +5578,8 @@ function buildPriorityWorklistFromMatrix(mode = currentWorkQueueMode) {
                         monthLabel: cell.label,
                         amount: getPriorityRecordAmount(record, cell),
                         history: cell.latestHistory || row.latestHistory || null,
+                        companyId: row.companyId || '',
+                        branchId: row.branchId || '',
                         serialNumber: record.serialNumber || cell.serialNumber || row.serialNumber || '',
                         modelName: record.modelName || cell.modelName || row.modelName || '',
                         sortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${cell.monthKey}|${index}`
@@ -5402,6 +5602,8 @@ function buildPriorityWorklistFromMatrix(mode = currentWorkQueueMode) {
                     monthLabel: cell.label,
                     amount,
                     history: cell.latestHistory || row.latestHistory || null,
+                    companyId: row.companyId || '',
+                    branchId: row.branchId || '',
                     serialNumber: cell.serialNumber || row.serialNumber || '',
                     modelName: cell.modelName || row.modelName || '',
                     sortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${cell.monthKey}`
@@ -5545,6 +5747,7 @@ function renderPriorityWorklist() {
                                         <div class="priority-worklist-actions">
                                             <button type="button" class="btn btn-primary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'followup')">Follow-up</button>
                                             <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'payment')">Payment</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" onclick="hideCollectorComparisonAccount('${encodeURIComponent(item.rowId || '')}')">Hide</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -5608,12 +5811,6 @@ function invoiceMatchesWorkQueueMode(invoice) {
 }
 
 function setWorkQueueMode(mode) {
-    if (!isPriorityModeAllowedForCurrentLane(mode)) {
-        currentWorkQueueMode = 'all';
-        renderPriorityWorklist();
-        scrollToWorkQueue();
-        return;
-    }
     currentWorkQueueMode = currentWorkQueueMode === mode ? 'all' : mode;
     if (isCollectionPriorityCardMode(currentWorkQueueMode)) {
         currentPriorityWorklistView = 'list';
@@ -5829,7 +6026,7 @@ function updateQueueContext() {
     const queueText = currentWorkQueueMode !== 'all'
         ? getWorkQueueModeLabel(currentWorkQueueMode)
         : (currentPriorityFilter ? `Priority: ${currentPriorityFilter.toUpperCase()}` : 'All priorities');
-    const matrixCount = currentWorkQueueMode !== 'all' && !allInvoices.length && collectorDashboardData
+    const matrixCount = currentWorkQueueMode !== 'all' && collectorDashboardData && isCollectionPriorityCardMode(currentWorkQueueMode)
         ? getMatrixPriorityRowsForMode(currentWorkQueueMode).length
         : null;
     node.textContent = `${queueText} • ${(matrixCount ?? filteredInvoices.length).toLocaleString()} account(s) in queue`;
@@ -5877,7 +6074,11 @@ function updateAllStats() {
 
     document.getElementById('total-unpaid').textContent = formatCurrency(totalPayables);
     document.getElementById('total-active').textContent = formatCurrencyShort(activeAmount);
-    document.getElementById('invoice-count').textContent = filteredInvoices.length.toLocaleString();
+    const workQueueCount = currentWorkQueueMode !== 'all' && collectorDashboardData && isCollectionPriorityCardMode(currentWorkQueueMode)
+        ? getMatrixPriorityRowsForMode(currentWorkQueueMode).length
+        : filteredInvoices.length;
+
+    document.getElementById('invoice-count').textContent = workQueueCount.toLocaleString();
     document.getElementById('collectible-count').textContent = collectibleCount.toLocaleString();
     document.getElementById('dataMode').textContent = dataMode === 'all' ? '(All Data)' : '(Active 0-180 days)';
 
@@ -5903,7 +6104,9 @@ function updateAllStats() {
 
 function updatePriorityCardsFromCurrentData() {
     COLLECTION_PRIORITY_CARD_DEFINITIONS.forEach((card) => {
-        const rows = getPriorityRowsForMode(card.mode);
+        const rows = hasCollectorMatrixPrioritySource()
+            ? getMatrixPriorityRowsForMode(card.mode)
+            : getPriorityRowsForMode(card.mode);
         const amount = rows.reduce((sum, invoice) => sum + getPriorityMetricAmount(card.mode, invoice), 0);
         const safeId = card.mode.replace(/_/g, '-');
         const countEl = document.getElementById(`count-${safeId}`);
@@ -7057,6 +7260,15 @@ function openCollectorMatrixTotalDetailCell(cellId) {
 function renderCollectorMatrixTable(data, visibleRows) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
+    const comparisonListBtn = document.getElementById('collectorComparisonListBtn');
+    const comparisonGridBtn = document.getElementById('collectorComparisonGridBtn');
+    const scrollbarShell = document.getElementById('collectorHorizontalScrollbar');
+    const isListView = collectorComparisonViewMode === 'list';
+    if (comparisonListBtn) comparisonListBtn.classList.toggle('active', isListView);
+    if (comparisonGridBtn) comparisonGridBtn.classList.toggle('active', !isListView);
+    document.querySelectorAll('.collector-scroll-btn').forEach((button) => {
+        button.disabled = isListView;
+    });
     collectorMatrixTotalDetailMap = new Map();
     (data.matrixTotalRows || []).forEach((row) => {
         Object.entries(row.details || {}).forEach(([monthKey, details]) => {
@@ -7081,6 +7293,25 @@ function renderCollectorMatrixTable(data, visibleRows) {
             : '<div class="empty-followup">No collection rows available.</div>';
         return;
     }
+
+    if (isListView) {
+        container.classList.remove('matrix');
+        container.classList.add('list-view');
+        container.style.width = '';
+        container.style.maxWidth = '';
+        container.innerHTML = renderCollectorComparisonListView(visibleRows);
+        [
+            document.getElementById('collector-visible-range'),
+            document.getElementById('collector-visible-range-inline')
+        ].filter(Boolean).forEach((chip) => {
+            chip.textContent = `List view • ${visibleRows.length.toLocaleString()} account row(s)`;
+        });
+        if (scrollbarShell) scrollbarShell.classList.add('is-disabled');
+        return;
+    }
+
+    container.classList.add('matrix');
+    container.classList.remove('list-view');
 
     container.innerHTML = `
         <table class="collector-sheet">
@@ -7584,6 +7815,29 @@ function getCustomerAssignmentOwner(context = {}) {
     return String(collectionWorkflowSettings.customerAssignments?.[key] || '').trim();
 }
 
+function getCollectionHiddenAccountKey(context = {}) {
+    return collectionCustomerAssignmentKey(context);
+}
+
+function isCollectionContextHidden(context = {}) {
+    const key = getCollectionHiddenAccountKey(context);
+    return Boolean(key && collectionWorkflowSettings.hiddenAccounts?.[key]);
+}
+
+function isCollectorRowHidden(row = {}) {
+    return isCollectionContextHidden(row);
+}
+
+function getHiddenAccountEntries() {
+    const entries = collectionWorkflowSettings.hiddenAccounts || {};
+    return Object.entries(entries)
+        .map(([key, value]) => ({
+            key,
+            value: value && typeof value === 'object' ? value : { label: String(value || key) }
+        }))
+        .sort((left, right) => String(left.value.customer || left.value.label || left.key).localeCompare(String(right.value.customer || right.value.label || right.key)));
+}
+
 async function loadCollectionWorkflowSettings() {
     if (collectionWorkflowSettingsLoaded) return collectionWorkflowSettings;
     try {
@@ -7592,21 +7846,25 @@ async function loadCollectionWorkflowSettings() {
         const parsedTargets = safeParseJson(row.targets_json, {});
         const parsedAssignments = safeParseJson(row.assignments_json, {});
         const parsedCustomerAssignments = safeParseJson(row.customer_assignments_json, {});
+        const parsedHiddenAccounts = safeParseJson(row.hidden_accounts_json, {});
         collectionWorkflowSettings = {
             targets: { ...COLLECTION_TARGET_DEFAULTS, ...parsedTargets },
             assignments: parsedAssignments && typeof parsedAssignments === 'object' ? parsedAssignments : {},
-            customerAssignments: parsedCustomerAssignments && typeof parsedCustomerAssignments === 'object' ? parsedCustomerAssignments : {}
+            customerAssignments: parsedCustomerAssignments && typeof parsedCustomerAssignments === 'object' ? parsedCustomerAssignments : {},
+            hiddenAccounts: parsedHiddenAccounts && typeof parsedHiddenAccounts === 'object' ? parsedHiddenAccounts : {}
         };
     } catch (error) {
         console.warn('Unable to load collection workflow settings:', error);
         collectionWorkflowSettings = {
             targets: { ...COLLECTION_TARGET_DEFAULTS },
             assignments: {},
-            customerAssignments: {}
+            customerAssignments: {},
+            hiddenAccounts: {}
         };
     }
     collectionWorkflowSettingsLoaded = true;
     renderDashboardCollectionAssignment();
+    renderCollectionHiddenAccountsSettings();
     return collectionWorkflowSettings;
 }
 
@@ -7617,6 +7875,7 @@ async function saveCollectionWorkflowSettings() {
         targets_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.targets || {})),
         assignments_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.assignments || {})),
         customer_assignments_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.customerAssignments || {})),
+        hidden_accounts_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.hiddenAccounts || {})),
         updated_at: toFirestoreWriteValue(now),
         updated_by: toFirestoreWriteValue(getCurrentCollectorName()),
         source: toFirestoreWriteValue('collections_module_settings')
@@ -7650,6 +7909,81 @@ function renderCollectionAssignmentSettings() {
     `).join('');
 }
 
+function renderCollectionHiddenAccountsSettings() {
+    const container = document.getElementById('collectionHiddenAccountsSettings');
+    if (!container) return;
+    const entries = getHiddenAccountEntries();
+    if (!entries.length) {
+        container.innerHTML = '<div class="collection-hidden-empty">No hidden inactive accounts yet.</div>';
+        return;
+    }
+    container.innerHTML = entries.map((entry) => `
+        <div class="collection-hidden-account-card">
+            <div class="collection-hidden-account-text">
+                <strong>${escapeHtml(entry.value.customer || entry.value.label || entry.key)}</strong>
+                <span>${escapeHtml(entry.value.branch || entry.value.accountLabel || 'Main')}</span>
+                <small>${escapeHtml(entry.value.hiddenBy ? `Hidden by ${entry.value.hiddenBy}` : 'Hidden from month comparison')}</small>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="unhideCollectorComparisonAccount('${escapeHtml(entry.key)}')">Unhide</button>
+        </div>
+    `).join('');
+}
+
+function getCollectorRowById(rowId) {
+    const safeRowId = String(rowId || '').trim();
+    if (!safeRowId) return null;
+    return (collectorDashboardData?.customerRows || []).find((row) => String(row.rowId || '').trim() === safeRowId) || null;
+}
+
+async function hideCollectorComparisonAccount(token) {
+    const rowId = decodeURIComponent(String(token || ''));
+    const row = getCollectorRowById(rowId);
+    if (!row) return;
+    const key = getCollectionHiddenAccountKey(row);
+    if (!key) return;
+    const label = row.customer || row.accountLabel || 'this account';
+    if (!window.confirm(`Hide ${label} from the month-to-month comparison?`)) return;
+
+    collectionWorkflowSettings.hiddenAccounts = {
+        ...(collectionWorkflowSettings.hiddenAccounts || {}),
+        [key]: {
+            customer: row.customer || row.accountLabel || key,
+            branch: row.branchName || 'Main',
+            accountLabel: row.accountLabel || '',
+            rowId: row.rowId || '',
+            hiddenBy: getCurrentCollectorName(),
+            hiddenAt: toTimestampString(new Date())
+        }
+    };
+
+    try {
+        await saveCollectionWorkflowSettings();
+        renderCollectionHiddenAccountsSettings();
+        await recomputeFilteredInvoices();
+        const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+        if (statusNode) statusNode.textContent = `${label} hidden from month comparison.`;
+    } catch (error) {
+        console.warn('Unable to hide collector comparison account:', error);
+    }
+}
+
+async function unhideCollectorComparisonAccount(hiddenKey) {
+    const key = decodeURIComponent(String(hiddenKey || ''));
+    if (!key || !collectionWorkflowSettings.hiddenAccounts?.[key]) return;
+    const next = { ...(collectionWorkflowSettings.hiddenAccounts || {}) };
+    delete next[key];
+    collectionWorkflowSettings.hiddenAccounts = next;
+    try {
+        await saveCollectionWorkflowSettings();
+        renderCollectionHiddenAccountsSettings();
+        await recomputeFilteredInvoices();
+        const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+        if (statusNode) statusNode.textContent = 'Hidden account restored to the month comparison.';
+    } catch (error) {
+        console.warn('Unable to unhide collector comparison account:', error);
+    }
+}
+
 function renderDashboardCollectionAssignment() {
     const select = document.getElementById('collectionDashboardAssignmentRole');
     const statusNode = document.getElementById('collectionDashboardAssignmentStatus');
@@ -7675,32 +8009,20 @@ function renderDashboardCollectionAssignment() {
 }
 
 function syncPriorityCardsForCurrentLane() {
-    const allowedModes = getAllowedPriorityModesForCurrentLane();
-    const role = getCurrentCollectionRoleAssignment();
-    document.querySelectorAll('.priority-card[data-work-queue-mode]').forEach((card) => {
-        const mode = String(card.dataset.workQueueMode || '');
-        card.classList.toggle('lane-hidden', isCollectionPriorityCardMode(mode) && !allowedModes.has(mode));
-    });
-
-    if (currentWorkQueueMode !== 'all' && isCollectionPriorityCardMode(currentWorkQueueMode) && !allowedModes.has(currentWorkQueueMode)) {
-        currentWorkQueueMode = 'all';
-        currentPriorityWorklistView = 'list';
-        document.querySelectorAll('[data-work-queue-mode]').forEach((card) => card.classList.remove('active'));
-        recomputeFilteredInvoices();
-    }
-
     const titleNode = document.getElementById('priorityWorklistTitle');
     const subtitleNode = document.getElementById('priorityWorklistSubtitle');
     if (titleNode && currentWorkQueueMode === 'all') {
-        const label = role ? getCollectionRoleLabel(role) : 'All collection lanes';
-        titleNode.textContent = `${label} Worklist`;
+        titleNode.textContent = 'Priority Worklist';
     }
     if (subtitleNode && currentWorkQueueMode === 'all') {
-        subtitleNode.textContent = role === 'priority_accounts'
-            ? 'Priority lane shows promise, broken promise, high-value, overdue, and due follow-up accounts.'
-            : role === 'regular_accounts'
-                ? 'Regular lane shows billing received, document concerns, and approval follow-ups.'
-                : 'Collection Head sees every priority card and can monitor all lanes.';
+        subtitleNode.textContent = 'Click a priority card to see accounts as a fast list, or switch to the filtered grid cells.';
+    }
+}
+
+function setCollectorComparisonView(viewMode) {
+    collectorComparisonViewMode = viewMode === 'list' ? 'list' : 'grid';
+    if (collectorDashboardData) {
+        renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
     }
 }
 
@@ -9921,6 +10243,9 @@ window.openCollectorCellFullWorkspace = openCollectorCellFullWorkspace;
 window.openCollectorCell = openCollectorCell;
 window.openCollectorCellByToken = openCollectorCellByToken;
 window.openCollectorPriorityCell = openCollectorPriorityCell;
+window.hideCollectorComparisonAccount = hideCollectorComparisonAccount;
+window.unhideCollectorComparisonAccount = unhideCollectorComparisonAccount;
+window.setCollectorComparisonView = setCollectorComparisonView;
 window.setPriorityWorklistView = setPriorityWorklistView;
 window.saveDashboardCollectionAssignment = saveDashboardCollectionAssignment;
 

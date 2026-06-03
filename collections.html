@@ -447,10 +447,6 @@
             background: rgba(219, 234, 254, 0.85);
         }
 
-        .priority-card.lane-hidden {
-            display: none;
-        }
-
         .stat-card[data-work-queue-mode] {
             cursor: pointer;
             transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
@@ -743,6 +739,52 @@
             color: #54708d;
             font-size: 11px;
             line-height: 1.35;
+        }
+
+        .collection-hidden-accounts {
+            display: grid;
+            gap: 8px;
+        }
+
+        .collection-hidden-account-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 8px;
+            background: rgba(248, 250, 252, 0.85);
+        }
+
+        .collection-hidden-account-text {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .collection-hidden-account-text strong,
+        .collection-hidden-account-text span,
+        .collection-hidden-account-text small {
+            overflow-wrap: anywhere;
+        }
+
+        .collection-hidden-account-text strong {
+            color: #143e69;
+        }
+
+        .collection-hidden-account-text span {
+            color: #54708d;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .collection-hidden-account-text small,
+        .collection-hidden-empty {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 600;
         }
 
         .collection-settings-note {
@@ -1401,6 +1443,24 @@
         .collector-sheet-scroll.matrix::-webkit-scrollbar-track {
             background: rgba(219, 234, 254, 0.72);
             border-radius: 8px;
+        }
+
+        .collector-sheet-scroll.list-view {
+            max-height: none;
+            overflow: visible;
+            background: rgba(255, 255, 255, 0.82);
+        }
+
+        .collector-comparison-list-wrap {
+            max-height: 640px;
+        }
+
+        .collector-comparison-list-table {
+            min-width: 1120px;
+        }
+
+        .collector-comparison-summary {
+            margin-bottom: 12px;
         }
 
         .collector-sheet-scroll.matrix::-webkit-scrollbar-thumb {
@@ -3831,6 +3891,11 @@
                     <div class="collection-settings-assignments" id="collectionAssignmentSettings"></div>
                     <p class="collection-settings-note">This does not lock access. Collectors can meet, choose a lane, and update customer ownership so the same client is not called twice.</p>
                 </div>
+                <div class="brief-section">
+                    <h4>Hidden Inactive Accounts</h4>
+                    <div class="collection-hidden-accounts" id="collectionHiddenAccountsSettings"></div>
+                    <p class="collection-settings-note">Use Hide in the comparison list to remove inactive customers from the month-to-month comparison. You can restore them here anytime.</p>
+                </div>
                 <label class="collector-settings-row">
                     <input type="checkbox" id="collectorMatrixAutoRebuildEnabled" checked>
                     Enable automatic nightly matrix rebuild
@@ -4294,6 +4359,10 @@
                     <div class="collector-section-head">
                         <h3 class="collector-section-title">Month to Month Collection Comparison</h3>
                         <div class="collector-matrix-actions">
+                            <div class="priority-view-toggle" role="group" aria-label="Month comparison view">
+                                <button type="button" id="collectorComparisonListBtn" onclick="setCollectorComparisonView('list')">List</button>
+                                <button type="button" id="collectorComparisonGridBtn" class="active" onclick="setCollectorComparisonView('grid')">Grid Cells</button>
+                            </div>
                             <span class="collector-chip viewport" id="collector-visible-range">Viewing October 2025 to December 2026</span>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeft" aria-label="Scroll collection months left">←</button>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRight" aria-label="Scroll collection months right">→</button>
