@@ -152,44 +152,80 @@ def optional_number(value):
     return round_money(number(value))
 
 
+def payroll_row_number(value, fallback):
+    if value in (None, ""):
+        return int(fallback)
+    return int(value)
+
+
+def normalize_header(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower()).strip()
+
+
+HEADER_ALIASES = {
+    "employee": "employee",
+    "semimrate": "semi_monthly_rate",
+    "daily rate": "daily_rate",
+    "daily_rate": "daily_rate",
+    "allowance": "allowance",
+    "sss": "payroll_sss_amount",
+    "mandatory sss provident fund": "payroll_mandatory_sss_provident",
+    "phic": "payroll_phic_amount",
+    "hdmf": "payroll_hdmf_amount",
+    "nontax allowance": "payroll_nontax_allowance",
+    "withholding tax": "payroll_withholding_tax",
+    "withholding_tax": "payroll_withholding_tax",
+    "tax refund": "payroll_tax_refund",
+    "tax_refund": "payroll_tax_refund",
+    "sss loan": "payroll_sss_loan_per_payroll",
+    "sss_loan": "payroll_sss_loan_per_payroll",
+    "coop loan": "payroll_coop_loan_per_payroll",
+    "coop_loan": "payroll_coop_loan_per_payroll",
+    "bank loan": "payroll_bank_loan_per_payroll",
+    "cash adv": "payroll_cash_advance_per_payroll",
+    "cash_adv": "payroll_cash_advance_per_payroll",
+    "pagibig loan": "payroll_pagibig_loan_per_payroll",
+    "t shirt": "payroll_tshirt_deduction",
+    "t shirt deduction": "payroll_tshirt_deduction",
+    "t-shirt": "payroll_tshirt_deduction",
+    "tax adjustment": "payroll_tax_adjustment",
+    "adjustment": "payroll_deduction_adjustment",
+}
+
+
+def parse_row_from_cells(row_number, payroll_no, cells, header_map):
+    name = cells.get(header_map.get("employee"))
+    semi_monthly = cells.get(header_map.get("semi_monthly_rate"))
+    if not name or semi_monthly in (None, ""):
+        return None
+    return {
+        "payroll_no": payroll_row_number(payroll_no, row_number - 2),
+        "employee": str(name).strip(),
+        "normalized_name": normalize_name(name),
+        "semi_monthly_rate": round_money(number(semi_monthly)),
+        "monthly_salary": round_money(number(semi_monthly) * 2),
+        "daily_rate": round_money(number(cells.get(header_map.get("daily_rate")))),
+        "allowance": round_money(number(cells.get(header_map.get("allowance")))),
+        "payroll_sss_amount": optional_number(cells.get(header_map.get("payroll_sss_amount"))),
+        "payroll_mandatory_sss_provident": optional_number(cells.get(header_map.get("payroll_mandatory_sss_provident"))),
+        "payroll_phic_amount": optional_number(cells.get(header_map.get("payroll_phic_amount"))),
+        "payroll_hdmf_amount": optional_number(cells.get(header_map.get("payroll_hdmf_amount"))),
+        "payroll_nontax_allowance": optional_number(cells.get(header_map.get("payroll_nontax_allowance"))),
+        "payroll_withholding_tax": optional_number(cells.get(header_map.get("payroll_withholding_tax"))),
+        "payroll_tax_refund": optional_number(cells.get(header_map.get("payroll_tax_refund"))),
+        "payroll_sss_loan_per_payroll": round_money(number(cells.get(header_map.get("payroll_sss_loan_per_payroll")))),
+        "payroll_coop_loan_per_payroll": round_money(number(cells.get(header_map.get("payroll_coop_loan_per_payroll")))),
+        "payroll_bank_loan_per_payroll": round_money(number(cells.get(header_map.get("payroll_bank_loan_per_payroll")))),
+        "payroll_cash_advance_per_payroll": round_money(number(cells.get(header_map.get("payroll_cash_advance_per_payroll")))),
+        "payroll_pagibig_loan_per_payroll": round_money(number(cells.get(header_map.get("payroll_pagibig_loan_per_payroll")))),
+        "payroll_tshirt_deduction": optional_number(cells.get(header_map.get("payroll_tshirt_deduction"))),
+        "payroll_tax_adjustment": optional_number(cells.get(header_map.get("payroll_tax_adjustment"))),
+        "payroll_deduction_adjustment": optional_number(cells.get(header_map.get("payroll_deduction_adjustment"))),
+    }
+
+
 def read_workbook_rows(path):
-    if load_workbook is None:
-        return read_workbook_rows_from_xlsx_xml(path)
-    workbook = load_workbook(path, data_only=True)
-    worksheet = workbook["Sheet1"]
-    rows = []
-    for row_number in range(3, 37):
-        payroll_no = worksheet.cell(row_number, 2).value
-        name = worksheet.cell(row_number, 3).value
-        semi_monthly = worksheet.cell(row_number, 5).value
-        if not name or semi_monthly in (None, ""):
-            continue
-        rows.append(
-            {
-                "payroll_no": int(payroll_no),
-                "employee": str(name).strip(),
-                "normalized_name": normalize_name(name),
-                "semi_monthly_rate": round_money(number(semi_monthly)),
-                "monthly_salary": round_money(number(semi_monthly) * 2),
-                "daily_rate": round_money(number(worksheet.cell(row_number, 6).value)),
-                "allowance": round_money(number(worksheet.cell(row_number, 11).value)),
-                "payroll_sss_amount": optional_number(worksheet.cell(row_number, 18).value),
-                "payroll_phic_amount": optional_number(worksheet.cell(row_number, 19).value),
-                "payroll_hdmf_amount": optional_number(worksheet.cell(row_number, 20).value),
-                "payroll_nontax_allowance": optional_number(worksheet.cell(row_number, 24).value),
-                "payroll_withholding_tax": optional_number(worksheet.cell(row_number, 25).value),
-                "payroll_tax_refund": optional_number(worksheet.cell(row_number, 26).value),
-                "payroll_sss_loan_per_payroll": round_money(number(worksheet.cell(row_number, 27).value)),
-                "payroll_coop_loan_per_payroll": round_money(number(worksheet.cell(row_number, 28).value)),
-                "payroll_bank_loan_per_payroll": round_money(number(worksheet.cell(row_number, 29).value)),
-                "payroll_cash_advance_per_payroll": round_money(number(worksheet.cell(row_number, 30).value)),
-                "payroll_pagibig_loan_per_payroll": round_money(number(worksheet.cell(row_number, 31).value)),
-                "payroll_tshirt_deduction": optional_number(worksheet.cell(row_number, 32).value),
-                "payroll_tax_adjustment": optional_number(worksheet.cell(row_number, 33).value),
-                "payroll_deduction_adjustment": optional_number(worksheet.cell(row_number, 34).value),
-            }
-        )
-    return rows
+    return read_workbook_rows_from_xlsx_xml(path)
 
 
 def read_workbook_rows_from_xlsx_xml(path):
@@ -231,52 +267,39 @@ def read_workbook_rows_from_xlsx_xml(path):
         workbook_xml = ET.fromstring(workbook_zip.read("xl/workbook.xml"))
         rels_xml = ET.fromstring(workbook_zip.read("xl/_rels/workbook.xml.rels"))
         rel_map = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels_xml.findall("rel:Relationship", ns)}
-        sheet_target = None
-        for sheet in workbook_xml.find("a:sheets", ns):
-            if sheet.attrib.get("name") == "Sheet1":
-                sheet_target = rel_map.get(sheet.attrib.get(f"{{{ns['r']}}}id"))
-                break
-        if not sheet_target:
-            raise RuntimeError("Sheet1 not found in workbook.")
 
-        sheet_xml = ET.fromstring(workbook_zip.read(f"xl/{sheet_target}"))
-        for row in sheet_xml.findall(".//a:sheetData/a:row", ns):
-            row_number = int(row.attrib.get("r", "0"))
-            if row_number < 3 or row_number > 36:
+        for sheet in workbook_xml.find("a:sheets", ns):
+            sheet_target = rel_map.get(sheet.attrib.get(f"{{{ns['r']}}}id"))
+            if not sheet_target:
                 continue
-            values = {}
-            for cell in row.findall("a:c", ns):
-                values[column_number(cell.attrib.get("r", ""))] = decode_cell(cell, shared_strings)
-            payroll_no = values.get(2)
-            name = values.get(3)
-            semi_monthly = values.get(5)
-            if not name or semi_monthly in (None, ""):
+            sheet_xml = ET.fromstring(workbook_zip.read(f"xl/{sheet_target}"))
+            header_map = {}
+            candidate_rows = []
+            for row in sheet_xml.findall(".//a:sheetData/a:row", ns):
+                row_number = int(row.attrib.get("r", "0"))
+                values = {}
+                for cell in row.findall("a:c", ns):
+                    values[column_number(cell.attrib.get("r", ""))] = decode_cell(cell, shared_strings)
+                if row_number == 2:
+                    for col_number, value in values.items():
+                        mapped = HEADER_ALIASES.get(normalize_header(value))
+                        if mapped:
+                            header_map[mapped] = col_number
+                    continue
+                if row_number < 3 or row_number > 60:
+                    continue
+                candidate_rows.append((row_number, values))
+
+            if "employee" not in header_map or "semi_monthly_rate" not in header_map:
                 continue
-            rows.append(
-                {
-                    "payroll_no": int(payroll_no),
-                    "employee": str(name).strip(),
-                    "normalized_name": normalize_name(name),
-                    "semi_monthly_rate": round_money(number(semi_monthly)),
-                    "monthly_salary": round_money(number(semi_monthly) * 2),
-                    "daily_rate": round_money(number(values.get(6))),
-                    "allowance": round_money(number(values.get(11))),
-                    "payroll_sss_amount": optional_number(values.get(18)),
-                    "payroll_phic_amount": optional_number(values.get(19)),
-                    "payroll_hdmf_amount": optional_number(values.get(20)),
-                    "payroll_nontax_allowance": optional_number(values.get(24)),
-                    "payroll_withholding_tax": optional_number(values.get(25)),
-                    "payroll_tax_refund": optional_number(values.get(26)),
-                    "payroll_sss_loan_per_payroll": round_money(number(values.get(27))),
-                    "payroll_coop_loan_per_payroll": round_money(number(values.get(28))),
-                    "payroll_bank_loan_per_payroll": round_money(number(values.get(29))),
-                    "payroll_cash_advance_per_payroll": round_money(number(values.get(30))),
-                    "payroll_pagibig_loan_per_payroll": round_money(number(values.get(31))),
-                    "payroll_tshirt_deduction": optional_number(values.get(32)),
-                    "payroll_tax_adjustment": optional_number(values.get(33)),
-                    "payroll_deduction_adjustment": optional_number(values.get(34)),
-                }
-            )
+
+            sheet_rows = []
+            for row_number, values in candidate_rows:
+                parsed = parse_row_from_cells(row_number, values.get(2), values, header_map)
+                if parsed:
+                    sheet_rows.append(parsed)
+            if sheet_rows:
+                return sheet_rows
     return rows
 
 
@@ -345,6 +368,8 @@ def main():
     parser.add_argument("--api-base", default=DEFAULT_API)
     parser.add_argument("--api-key", default=DEFAULT_KEY)
     parser.add_argument("--report", default=DEFAULT_REPORT)
+    parser.add_argument("--source-label", default=SOURCE_LABEL)
+    parser.add_argument("--effective-cutoff", default=EFFECTIVE_CUTOFF)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -358,8 +383,8 @@ def main():
     report = {
         "dry_run": args.dry_run,
         "workbook": args.workbook,
-        "source_label": SOURCE_LABEL,
-        "effective_cutoff": EFFECTIVE_CUTOFF,
+        "source_label": args.source_label,
+        "effective_cutoff": args.effective_cutoff,
         "updated_at": updated_at,
         "rows": [],
         "summary": {"workbook_rows": len(workbook_rows), "matched": 0, "updated": 0, "missing": 0},
@@ -390,15 +415,15 @@ def main():
             "allowance": row["allowance"],
             "payroll_sequence": row["payroll_no"],
             "payroll_sheet_employee_name": row["employee"],
-            "payroll_rate_source": SOURCE_LABEL,
-            "payroll_rate_effective_cutoff": EFFECTIVE_CUTOFF,
+            "payroll_rate_source": args.source_label,
+            "payroll_rate_effective_cutoff": args.effective_cutoff,
             "payroll_sss_loan_per_payroll": row["payroll_sss_loan_per_payroll"],
             "payroll_coop_loan_per_payroll": row["payroll_coop_loan_per_payroll"],
             "payroll_bank_loan_per_payroll": row["payroll_bank_loan_per_payroll"],
             "payroll_cash_advance_per_payroll": row["payroll_cash_advance_per_payroll"],
             "payroll_pagibig_loan_per_payroll": row["payroll_pagibig_loan_per_payroll"],
-            "payroll_deduction_prefill_source": SOURCE_LABEL,
-            "payroll_deduction_prefill_cutoff": EFFECTIVE_CUTOFF,
+            "payroll_deduction_prefill_source": args.source_label,
+            "payroll_deduction_prefill_cutoff": args.effective_cutoff,
             "payroll_rate_updated_at": updated_at,
             "payroll_rate_updated_by": "codex-local-margabase",
         }
