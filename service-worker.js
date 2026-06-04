@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v107-attendance-add-click';
+const CACHE_NAME = 'marga-app-shell-v112-hr-payroll-deductions';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -32,8 +32,12 @@ const SHELL_ASSETS = [
     '/collections/js/collections.js?v=20260601-summary-autoupdate-1',
     '/field/',
     '/field/index.html',
-    '/field/css/field.css?v=20260602-attendance-flex-2',
-    '/field/js/field.js?v=20260602-attendance-flex-2',
+    '/field/css/field.css?v=20260604-field-tin-7',
+    '/field/js/field.js?v=20260604-field-tin-7',
+    '/hr/',
+    '/hr/index.html',
+    '/hr/css/hr.css?v=20260604-payroll-deductions-pdf-1',
+    '/hr/js/hr.js?v=20260604-payroll-deductions-pdf-1',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
