@@ -445,10 +445,20 @@ function employeeSummaryRow(employee) {
         payroll_rate_source: employee.payroll_rate_source || '',
         payroll_rate_effective_cutoff: employee.payroll_rate_effective_cutoff || '',
         payroll_sss_amount: employee.payroll_sss_amount ?? '',
+        sss_deduction: employee.sss_deduction ?? '',
+        employee_sss_share: employee.employee_sss_share ?? '',
         payroll_mandatory_sss_provident: employee.payroll_mandatory_sss_provident ?? '',
         payroll_phic_amount: employee.payroll_phic_amount ?? '',
+        phic_deduction: employee.phic_deduction ?? '',
+        philhealth_deduction: employee.philhealth_deduction ?? '',
+        employee_philhealth_share: employee.employee_philhealth_share ?? '',
         payroll_hdmf_amount: employee.payroll_hdmf_amount ?? '',
+        hdmf_deduction: employee.hdmf_deduction ?? '',
+        pagibig_deduction: employee.pagibig_deduction ?? '',
+        employee_pagibig_share: employee.employee_pagibig_share ?? '',
+        pagibig_ded: employee.pagibig_ded ?? '',
         payroll_withholding_tax: employee.payroll_withholding_tax ?? '',
+        withholding_tax: employee.withholding_tax ?? '',
         payroll_nontax_allowance: employee.payroll_nontax_allowance ?? '',
         payroll_tax_refund: employee.payroll_tax_refund ?? '',
         payroll_philhealth_adjustment: employee.payroll_philhealth_adjustment ?? '',
@@ -1504,9 +1514,24 @@ function findEmployeeById(employeeId) {
     return HR_STATE.employees.find((employee) => String(employee.id || employee._docId || '').trim() === id) || null;
 }
 
-function openEmployeeModal(employeeId) {
+async function hydrateEmployeeForEdit(employee) {
+    if (!employee || !HR_STATE.usingEmployeeSummary) return employee;
+    const docId = String(employee.id || employee._docId || '').trim();
+    if (!docId) return employee;
+    try {
+        const fullEmployee = await MargaUtils.fetchDoc('tbl_employee', docId);
+        if (!fullEmployee || typeof fullEmployee !== 'object') return employee;
+        Object.assign(employee, fullEmployee, { _docId: docId });
+    } catch (error) {
+        console.warn('Unable to hydrate full employee record for HR modal:', docId, error);
+    }
+    return employee;
+}
+
+async function openEmployeeModal(employeeId) {
     const employee = findEmployeeById(employeeId);
     if (!employee) return;
+    await hydrateEmployeeForEdit(employee);
     HR_STATE.employeeModalMode = 'edit';
     HR_STATE.editingEmployeeId = String(employee.id || employee._docId || '');
     document.getElementById('employeeDocId').value = HR_STATE.editingEmployeeId;
