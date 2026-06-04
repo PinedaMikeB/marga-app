@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v112-hr-payroll-deductions';
+const CACHE_NAME = 'marga-app-shell-v113-hr-payroll-deductions-summary';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -36,8 +36,8 @@ const SHELL_ASSETS = [
     '/field/js/field.js?v=20260604-field-tin-7',
     '/hr/',
     '/hr/index.html',
-    '/hr/css/hr.css?v=20260604-payroll-deductions-pdf-1',
-    '/hr/js/hr.js?v=20260604-payroll-deductions-pdf-1',
+    '/hr/css/hr.css?v=20260604-payroll-deductions-summary-2',
+    '/hr/js/hr.js?v=20260604-payroll-deductions-summary-2',
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',

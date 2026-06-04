@@ -222,20 +222,30 @@ async function loadHrModule() {
             ? summaryDoc.employees.map((row) => ({ ...row }))
             : [];
         if (summaryEmployees.length) {
-            HR_STATE.employees = summaryEmployees;
-            HR_STATE.usingEmployeeSummary = true;
-            HR_STATE.employeeSummaryBuiltAt = String(summaryDoc?.built_at || '');
-            HR_STATE.fullEmployeeRosterLoaded = false;
+            if (summaryEmployees.length > 50) {
+                const employees = await MargaUtils.fetchCollection('tbl_employee', 500);
+                const payrollSeededEmployees = getPayrollSeededEmployees(employees);
+                HR_STATE.employees = payrollSeededEmployees;
+                HR_STATE.usingEmployeeSummary = false;
+                HR_STATE.employeeSummaryBuiltAt = '';
+                HR_STATE.fullEmployeeRosterLoaded = true;
+                await persistActiveEmployeeSummary(payrollSeededEmployees);
+            } else {
+                HR_STATE.employees = summaryEmployees;
+                HR_STATE.usingEmployeeSummary = true;
+                HR_STATE.employeeSummaryBuiltAt = String(summaryDoc?.built_at || '');
+                HR_STATE.fullEmployeeRosterLoaded = false;
+            }
         } else {
             if (Array.isArray(summaryDoc?.employees) && summaryDoc.employees.length) {
                 console.warn('HR summary cache is malformed; rebuilding from tbl_employee.', summaryDoc.employees.slice(0, 3));
             }
             const employees = await MargaUtils.fetchCollection('tbl_employee', 500);
-            HR_STATE.employees = employees;
+            HR_STATE.employees = getPayrollSeededEmployees(employees);
             HR_STATE.usingEmployeeSummary = false;
             HR_STATE.employeeSummaryBuiltAt = '';
             HR_STATE.fullEmployeeRosterLoaded = true;
-            await persistActiveEmployeeSummary(employees);
+            await persistActiveEmployeeSummary(HR_STATE.employees);
         }
         HR_STATE.positions = new Map(positions.map((position) => [
             String(position.id || position._docId || ''),
@@ -486,8 +496,10 @@ function employeeSummaryRow(employee) {
 }
 
 async function persistActiveEmployeeSummary(sourceEmployees = HR_STATE.employees) {
-    const activeEmployees = (Array.isArray(sourceEmployees) ? sourceEmployees : [])
-        .filter((employee) => MargaUtils.isOfficialActiveEmployee(employee))
+    const sourceRows = Array.isArray(sourceEmployees) ? sourceEmployees : [];
+    const preserveSeededRoster = sourceRows.length > 0 && sourceRows.every((employee) => employee && hasSeededPayrollRate(employee));
+    const activeEmployees = sourceRows
+        .filter((employee) => preserveSeededRoster || MargaUtils.isOfficialActiveEmployee(employee))
         .map(employeeSummaryRow)
         .sort((left, right) => MargaUtils.getEmployeeFullName(left, '').localeCompare(MargaUtils.getEmployeeFullName(right, '')));
     const payload = {
@@ -505,9 +517,10 @@ function renderEmployees() {
     const tbody = document.querySelector('#hrEmployeesTable tbody');
     const query = String(document.getElementById('employeeSearch').value || '').trim().toLowerCase();
     const statusFilter = document.getElementById('employeeStatusFilter').value;
+    const usingSeededRoster = HR_STATE.employees.length > 0 && HR_STATE.employees.every((employee) => employee && hasSeededPayrollRate(employee));
     const rows = HR_STATE.employees
         .filter((employee) => {
-            const isActive = MargaUtils.isOfficialActiveEmployee(employee);
+            const isActive = usingSeededRoster ? true : MargaUtils.isOfficialActiveEmployee(employee);
             if (statusFilter === 'active' && !isActive) return false;
             if (statusFilter === 'inactive' && isActive) return false;
             if (!query) return true;
@@ -534,7 +547,7 @@ function renderEmployees() {
         const salary = getSalaryRate(employee);
         const rateType = getRateType(employee);
         const allowance = getAllowance(employee);
-        const active = MargaUtils.isOfficialActiveEmployee(employee);
+        const active = usingSeededRoster ? true : MargaUtils.isOfficialActiveEmployee(employee);
         return `
             <tr>
                 <td data-label="ID">${id || '-'}</td>
@@ -1183,21 +1196,71 @@ function formatPayrollNumber(value) {
     return rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function hasSeededPayrollRate(employee) {
+    const payrollSource = String(firstPresent(employee, ['payroll_rate_source']) || '').trim();
+    const sequence = toNumber(firstPresent(employee, ['payroll_sequence']));
+    return Boolean(payrollSource) || sequence > 0;
+}
+
+function comparePayrollSeedPriority(left, right) {
+    const leftCutoff = String(firstPresent(left, ['payroll_rate_effective_cutoff']) || '');
+    const rightCutoff = String(firstPresent(right, ['payroll_rate_effective_cutoff']) || '');
+    if (leftCutoff !== rightCutoff) return leftCutoff.localeCompare(rightCutoff);
+    const leftUpdated = Date.parse(firstPresent(left, ['payroll_rate_updated_at']) || '') || 0;
+    const rightUpdated = Date.parse(firstPresent(right, ['payroll_rate_updated_at']) || '') || 0;
+    if (leftUpdated !== rightUpdated) return leftUpdated - rightUpdated;
+    const leftRecurringScore = ['payroll_sss_amount', 'payroll_phic_amount', 'payroll_hdmf_amount', 'payroll_withholding_tax']
+        .reduce((sum, key) => sum + (roundMoney(toNumber(firstPresent(left, [key]))) > 0 ? 1 : 0), 0);
+    const rightRecurringScore = ['payroll_sss_amount', 'payroll_phic_amount', 'payroll_hdmf_amount', 'payroll_withholding_tax']
+        .reduce((sum, key) => sum + (roundMoney(toNumber(firstPresent(right, [key]))) > 0 ? 1 : 0), 0);
+    if (leftRecurringScore !== rightRecurringScore) return leftRecurringScore - rightRecurringScore;
+    const leftDocId = toNumber(firstPresent(left, ['_docId', 'id']));
+    const rightDocId = toNumber(firstPresent(right, ['_docId', 'id']));
+    return leftDocId - rightDocId;
+}
+
+function getPayrollSeedGroupKey(employee) {
+    const sequence = toNumber(firstPresent(employee, ['payroll_sequence']));
+    if (sequence > 0) return `sequence:${sequence}`;
+    const payrollName = normalizePayrollEmployeeName(
+        firstPresent(employee, ['payroll_sheet_employee_name'])
+        || MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || '')
+    );
+    return payrollName ? `name:${payrollName}` : `doc:${firstPresent(employee, ['_docId', 'id'])}`;
+}
+
+function getPayrollSeededEmployees(sourceEmployees = HR_STATE.employees) {
+    const groups = new Map();
+    (Array.isArray(sourceEmployees) ? sourceEmployees : [])
+        .filter((employee) => employee && hasSeededPayrollRate(employee))
+        .forEach((employee) => {
+            const key = getPayrollSeedGroupKey(employee);
+            const current = groups.get(key);
+            if (!current || comparePayrollSeedPriority(current, employee) < 0) {
+                groups.set(key, employee);
+            }
+        });
+    return Array.from(groups.values())
+        .sort((left, right) => {
+            const leftSequence = toNumber(firstPresent(left, ['payroll_sequence'])) || 9999;
+            const rightSequence = toNumber(firstPresent(right, ['payroll_sequence'])) || 9999;
+            if (leftSequence !== rightSequence) return leftSequence - rightSequence;
+            return MargaUtils.getEmployeeFullName(left, '').localeCompare(MargaUtils.getEmployeeFullName(right, ''));
+        });
+}
+
 function buildSamplePayrollRows() {
     const period = getPayrollPeriod();
     const cutoff = getPayrollCutoffProfile(period);
     const live = getLivePayrollWindow(period);
-    return HR_STATE.employees
+    return getPayrollSeededEmployees()
         .map((employee) => {
-            if (!MargaUtils.isOfficialActiveEmployee(employee)) return null;
             const rates = payrollRatesFor(employee);
             const deductionTotals = getEmployeeDeductionTotals(employee, period);
             const recurring = getRecurringPayrollValues(employee, cutoff);
             const attendance = getPayrollAttendanceSummary(employee, live);
             const payrollSource = firstPresent(employee, ['payroll_rate_source']);
             const sequence = toNumber(firstPresent(employee, ['payroll_sequence']));
-            const hasSeededPayrollRate = payrollSource === PAYROLL_RATE_SOURCE || sequence > 0;
-            if (!hasSeededPayrollRate) return null;
             const name = firstPresent(employee, ['payroll_sheet_employee_name'])
                 || MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || 'Employee');
             const semiMonthlyRate = roundMoney(rates.semiMonthlyRate);
@@ -1242,7 +1305,7 @@ function buildSamplePayrollRows() {
                 id: employee.id || employee._docId || '',
                 name,
                 organization: getPayrollOrganization(name, employee),
-                status: MargaUtils.isOfficialActiveEmployee(employee) ? 'Active' : 'Inactive',
+                status: MargaUtils.isOfficialActiveEmployee(employee) ? 'Active' : 'Seeded Payroll',
                 monthlyRate: roundMoney(rates.monthlyRate),
                 semiMonthlyRate,
                 dailyRate,
@@ -2555,7 +2618,10 @@ function renderLocations() {
 }
 
 function updateOverview() {
-    const activeEmployees = HR_STATE.employees.filter((employee) => MargaUtils.isOfficialActiveEmployee(employee)).length;
+    const usingSeededRoster = HR_STATE.employees.length > 0 && HR_STATE.employees.every((employee) => employee && hasSeededPayrollRate(employee));
+    const activeEmployees = usingSeededRoster
+        ? HR_STATE.employees.length
+        : HR_STATE.employees.filter((employee) => MargaUtils.isOfficialActiveEmployee(employee)).length;
     document.getElementById('activeEmployeeCount').textContent = activeEmployees.toLocaleString();
     document.getElementById('workLocationCount').textContent = HR_STATE.fieldEvents.length.toLocaleString();
     document.getElementById('strictestGate').textContent = 'Ready';
