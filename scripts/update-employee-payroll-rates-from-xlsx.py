@@ -16,9 +16,14 @@ import sys
 import unicodedata
 import urllib.parse
 import urllib.request
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from openpyxl import load_workbook
+try:
+    from openpyxl import load_workbook
+except ModuleNotFoundError:  # pragma: no cover - local fallback path
+    load_workbook = None
 
 
 DEFAULT_API = "http://127.0.0.1:9100/margabase-api/v1/projects/sah-spiritual-journal/databases/(default)/documents"
@@ -38,7 +43,7 @@ ALIASES = {
 }
 
 PREFERRED_DOC_IDS = {
-    "pineda irene": "106",
+    "pineda irene": "268",
     "toledo jemuel": "274",
 }
 
@@ -139,7 +144,17 @@ def round_money(value):
     return round(float(value or 0), 2)
 
 
+def optional_number(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    return round_money(number(value))
+
+
 def read_workbook_rows(path):
+    if load_workbook is None:
+        return read_workbook_rows_from_xlsx_xml(path)
     workbook = load_workbook(path, data_only=True)
     worksheet = workbook["Sheet1"]
     rows = []
@@ -158,8 +173,110 @@ def read_workbook_rows(path):
                 "monthly_salary": round_money(number(semi_monthly) * 2),
                 "daily_rate": round_money(number(worksheet.cell(row_number, 6).value)),
                 "allowance": round_money(number(worksheet.cell(row_number, 11).value)),
+                "payroll_sss_amount": optional_number(worksheet.cell(row_number, 18).value),
+                "payroll_phic_amount": optional_number(worksheet.cell(row_number, 19).value),
+                "payroll_hdmf_amount": optional_number(worksheet.cell(row_number, 20).value),
+                "payroll_nontax_allowance": optional_number(worksheet.cell(row_number, 24).value),
+                "payroll_withholding_tax": optional_number(worksheet.cell(row_number, 25).value),
+                "payroll_tax_refund": optional_number(worksheet.cell(row_number, 26).value),
+                "payroll_sss_loan_per_payroll": round_money(number(worksheet.cell(row_number, 27).value)),
+                "payroll_coop_loan_per_payroll": round_money(number(worksheet.cell(row_number, 28).value)),
+                "payroll_bank_loan_per_payroll": round_money(number(worksheet.cell(row_number, 29).value)),
+                "payroll_cash_advance_per_payroll": round_money(number(worksheet.cell(row_number, 30).value)),
+                "payroll_pagibig_loan_per_payroll": round_money(number(worksheet.cell(row_number, 31).value)),
+                "payroll_tshirt_deduction": optional_number(worksheet.cell(row_number, 32).value),
+                "payroll_tax_adjustment": optional_number(worksheet.cell(row_number, 33).value),
+                "payroll_deduction_adjustment": optional_number(worksheet.cell(row_number, 34).value),
             }
         )
+    return rows
+
+
+def read_workbook_rows_from_xlsx_xml(path):
+    ns = {
+        "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+
+    def column_number(ref):
+        letters = "".join(ch for ch in ref if ch.isalpha())
+        total = 0
+        for ch in letters:
+            total = total * 26 + (ord(ch.upper()) - 64)
+        return total
+
+    def decode_cell(cell, shared_strings):
+        cell_type = cell.attrib.get("t")
+        value_node = cell.find("a:v", ns)
+        if value_node is None or value_node.text is None:
+            return None
+        raw = value_node.text
+        if cell_type == "s":
+            return shared_strings[int(raw)]
+        try:
+            numeric = float(raw)
+            return int(numeric) if numeric.is_integer() else numeric
+        except ValueError:
+            return raw
+
+    rows = []
+    with zipfile.ZipFile(path) as workbook_zip:
+        shared_strings = []
+        if "xl/sharedStrings.xml" in workbook_zip.namelist():
+            root = ET.fromstring(workbook_zip.read("xl/sharedStrings.xml"))
+            for item in root.findall("a:si", ns):
+                shared_strings.append("".join(node.text or "" for node in item.findall(".//a:t", ns)))
+
+        workbook_xml = ET.fromstring(workbook_zip.read("xl/workbook.xml"))
+        rels_xml = ET.fromstring(workbook_zip.read("xl/_rels/workbook.xml.rels"))
+        rel_map = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels_xml.findall("rel:Relationship", ns)}
+        sheet_target = None
+        for sheet in workbook_xml.find("a:sheets", ns):
+            if sheet.attrib.get("name") == "Sheet1":
+                sheet_target = rel_map.get(sheet.attrib.get(f"{{{ns['r']}}}id"))
+                break
+        if not sheet_target:
+            raise RuntimeError("Sheet1 not found in workbook.")
+
+        sheet_xml = ET.fromstring(workbook_zip.read(f"xl/{sheet_target}"))
+        for row in sheet_xml.findall(".//a:sheetData/a:row", ns):
+            row_number = int(row.attrib.get("r", "0"))
+            if row_number < 3 or row_number > 36:
+                continue
+            values = {}
+            for cell in row.findall("a:c", ns):
+                values[column_number(cell.attrib.get("r", ""))] = decode_cell(cell, shared_strings)
+            payroll_no = values.get(2)
+            name = values.get(3)
+            semi_monthly = values.get(5)
+            if not name or semi_monthly in (None, ""):
+                continue
+            rows.append(
+                {
+                    "payroll_no": int(payroll_no),
+                    "employee": str(name).strip(),
+                    "normalized_name": normalize_name(name),
+                    "semi_monthly_rate": round_money(number(semi_monthly)),
+                    "monthly_salary": round_money(number(semi_monthly) * 2),
+                    "daily_rate": round_money(number(values.get(6))),
+                    "allowance": round_money(number(values.get(11))),
+                    "payroll_sss_amount": optional_number(values.get(18)),
+                    "payroll_phic_amount": optional_number(values.get(19)),
+                    "payroll_hdmf_amount": optional_number(values.get(20)),
+                    "payroll_nontax_allowance": optional_number(values.get(24)),
+                    "payroll_withholding_tax": optional_number(values.get(25)),
+                    "payroll_tax_refund": optional_number(values.get(26)),
+                    "payroll_sss_loan_per_payroll": round_money(number(values.get(27))),
+                    "payroll_coop_loan_per_payroll": round_money(number(values.get(28))),
+                    "payroll_bank_loan_per_payroll": round_money(number(values.get(29))),
+                    "payroll_cash_advance_per_payroll": round_money(number(values.get(30))),
+                    "payroll_pagibig_loan_per_payroll": round_money(number(values.get(31))),
+                    "payroll_tshirt_deduction": optional_number(values.get(32)),
+                    "payroll_tax_adjustment": optional_number(values.get(33)),
+                    "payroll_deduction_adjustment": optional_number(values.get(34)),
+                }
+            )
     return rows
 
 
@@ -275,9 +392,29 @@ def main():
             "payroll_sheet_employee_name": row["employee"],
             "payroll_rate_source": SOURCE_LABEL,
             "payroll_rate_effective_cutoff": EFFECTIVE_CUTOFF,
+            "payroll_sss_loan_per_payroll": row["payroll_sss_loan_per_payroll"],
+            "payroll_coop_loan_per_payroll": row["payroll_coop_loan_per_payroll"],
+            "payroll_bank_loan_per_payroll": row["payroll_bank_loan_per_payroll"],
+            "payroll_cash_advance_per_payroll": row["payroll_cash_advance_per_payroll"],
+            "payroll_pagibig_loan_per_payroll": row["payroll_pagibig_loan_per_payroll"],
+            "payroll_deduction_prefill_source": SOURCE_LABEL,
+            "payroll_deduction_prefill_cutoff": EFFECTIVE_CUTOFF,
             "payroll_rate_updated_at": updated_at,
             "payroll_rate_updated_by": "codex-local-margabase",
         }
+        for optional_key in (
+            "payroll_sss_amount",
+            "payroll_phic_amount",
+            "payroll_hdmf_amount",
+            "payroll_nontax_allowance",
+            "payroll_withholding_tax",
+            "payroll_tax_refund",
+            "payroll_tshirt_deduction",
+            "payroll_tax_adjustment",
+            "payroll_deduction_adjustment",
+        ):
+            if row.get(optional_key) is not None:
+                patch_fields[optional_key] = row[optional_key]
         entry["patch_fields"] = patch_fields
         if not args.dry_run:
             patch_employee(args.api_base, args.api_key, employee["_docId"], patch_fields)

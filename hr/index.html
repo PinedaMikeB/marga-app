@@ -17,6 +17,8 @@
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
     <link rel="stylesheet" href="css/hr.css?v=20260529-location-radius-200-1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -144,6 +146,7 @@
                         <p class="ops-subtext" id="hrDirectoryStatus">Loading HR records...</p>
                     </div>
                     <div class="card-actions hr-actions">
+                        <button type="button" class="btn btn-primary" id="addEmployeeBtn">Add Employee</button>
                         <div class="search-input-wrapper">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                             <input class="search-input" id="employeeSearch" placeholder="Search employee, role, email...">
@@ -184,6 +187,8 @@
                     <div class="hr-payroll-controls">
                         <label><span>Date From</span><input type="date" id="payrollDateFromInput" value="2026-05-10"></label>
                         <label><span>Date To</span><input type="date" id="payrollDateToInput" value="2026-05-25"></label>
+                        <button type="button" class="btn btn-primary" id="confirmPayrollBtn">Confirm Payroll</button>
+                        <button type="button" class="btn btn-secondary" id="exportPayrollPdfBtn">Export PDF</button>
                         <button type="button" class="btn btn-secondary" id="printPayrollBtn">Print Payroll</button>
                     </div>
                 </div>
@@ -392,12 +397,75 @@
                 </div>
             </div>
             <div class="hr-modal-section">
-                <h3>Government & Emergency Details</h3>
+                <div class="card-header">
+                    <div>
+                        <h3>Employee Deductions & Loans</h3>
+                        <p class="ops-subtext">Encode once, then successful payroll confirmations auto-deduct from the running balance and build SOA history.</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="employeePrintSoaBtn">Print SOA</button>
+                </div>
+                <div class="marga-form-grid hr-employee-detail-grid">
+                    <label class="marga-field"><span>Type</span><select id="employeeDeductionTypeInput"><option value="cash_advance">Cash Advance</option><option value="sss_loan">SSS Loan</option><option value="pagibig_loan">Pag-IBIG Loan</option><option value="bank_loan">Bank Loan</option><option value="coop_loan">Coop Loan</option><option value="other_loan">Other Loan</option></select></label>
+                    <label class="marga-field"><span>Lender / Source</span><input id="employeeDeductionSourceInput" placeholder="SSS, Pag-IBIG, BDO, Office"></label>
+                    <label class="marga-field"><span>Total Loan / Advance</span><input id="employeeDeductionTotalInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Deduction Per Payroll</span><input id="employeeDeductionPerPayrollInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Current Balance</span><input id="employeeDeductionBalanceInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Start Date</span><input id="employeeDeductionStartDateInput" type="date"></label>
+                    <label class="marga-field"><span>Reference</span><input id="employeeDeductionReferenceInput" placeholder="Voucher, note, approval no."></label>
+                    <label class="marga-field"><span>Status</span><select id="employeeDeductionStatusInput"><option value="setup_needed">Setup Needed</option><option value="active">Active</option><option value="closed">Closed</option></select></label>
+                    <label class="marga-field marga-field-full"><span>Remarks</span><textarea id="employeeDeductionRemarksInput" rows="2" placeholder="Optional remarks about this deduction plan"></textarea></label>
+                </div>
+                <div class="hr-deduction-prefills" id="employeeDeductionPrefills" aria-live="polite"></div>
+                <div class="hr-form-actions">
+                    <button type="button" class="btn btn-secondary" id="employeeDeductionCreateSuggestionsBtn">Create Workbook Drafts</button>
+                    <button type="button" class="btn btn-secondary" id="employeeDeductionResetBtn">Clear Deduction Form</button>
+                    <button type="button" class="btn btn-primary" id="employeeDeductionSaveBtn">Save Deduction Plan</button>
+                </div>
+                <p class="ops-subtext" id="employeeDeductionStatus">Save the employee first before adding a deduction plan.</p>
+                <div class="table-container">
+                    <table class="table hr-deduction-table" id="employeeDeductionsTable">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Source</th>
+                                <th>Total</th>
+                                <th>Per Payroll</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                                <th>Deducted</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody><tr><td colspan="8">No deduction plans yet.</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="hr-modal-section">
+                <h3>Government Numbers & Recurring Payroll Values</h3>
                 <div class="marga-form-grid hr-employee-detail-grid">
                     <label class="marga-field"><span>SSS Number</span><input id="employeeSssInput"></label>
                     <label class="marga-field"><span>PhilHealth Number</span><input id="employeePhilhealthInput"></label>
                     <label class="marga-field"><span>Pag-IBIG / HDMF Number</span><input id="employeePagibigInput"></label>
                     <label class="marga-field"><span>TIN Number</span><input id="employeeTinInput"></label>
+                    <label class="marga-field"><span>SSS Deduction</span><input id="employeeSssDeductionInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Mandatory SSS Provident</span><input id="employeeMandatorySssProvidentInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>PhilHealth Deduction</span><input id="employeePhilhealthDeductionInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Pag-IBIG / HDMF Deduction</span><input id="employeePagibigDeductionInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Withholding Tax</span><input id="employeeWithholdingTaxInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Non-tax Allowance</span><input id="employeeNontaxAllowanceInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Tax Refund</span><input id="employeeTaxRefundInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>PhilHealth Adjustment</span><input id="employeePhilhealthAdjustmentInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>T-Shirt Deduction</span><input id="employeeTshirtDeductionInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Other Deduction</span><input id="employeeOtherDeductionInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>House Rental</span><input id="employeeHouseRentalInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Tax Adjustment</span><input id="employeeTaxAdjustmentInput" type="number" step="0.01"></label>
+                    <label class="marga-field"><span>Deduction Adjustment</span><input id="employeeDeductionAdjustmentInput" type="number" step="0.01"></label>
+                    <p class="ops-subtext marga-field-full">Encode recurring statutory deductions here. The payroll model applies SSS, mandatory SSS provident, PhilHealth, HDMF, and withholding tax only on the second cutoff (11th to 25th). Loans and cash advances with balances belong in the deduction-plan section above.</p>
+                </div>
+            </div>
+            <div class="hr-modal-section">
+                <h3>Emergency & HR Notes</h3>
+                <div class="marga-form-grid hr-employee-detail-grid">
                     <label class="marga-field"><span>Emergency Contact</span><input id="employeeEmergencyNameInput"></label>
                     <label class="marga-field"><span>Emergency Phone</span><input id="employeeEmergencyPhoneInput"></label>
                     <label class="marga-field marga-field-full"><span>HR Notes</span><textarea id="employeeNotesInput" rows="3"></textarea></label>

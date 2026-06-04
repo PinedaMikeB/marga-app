@@ -763,6 +763,68 @@
     grid-column: 1 / -1;
 }
 
+.hr-deduction-prefills {
+    display: grid;
+    gap: 0.65rem;
+    grid-column: 1 / -1;
+    padding: 0.85rem 1rem;
+    border: 1px solid #d7e2f0;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+
+.hr-deduction-prefills:empty {
+    display: none;
+}
+
+.hr-deduction-prefills header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.hr-deduction-prefills h4 {
+    margin: 0;
+    color: #19345c;
+    font-size: 0.98rem;
+}
+
+.hr-deduction-prefills p {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.88rem;
+}
+
+.hr-deduction-prefill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.hr-deduction-prefill-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    min-height: 40px;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #bfd6ee;
+    border-radius: 10px;
+    background: #fff;
+    color: #1a4f84;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 800;
+}
+
+.hr-deduction-prefill-btn small {
+    color: #5c6f88;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 .hr-form-notice {
     grid-column: 1 / -1;
     min-height: 22px;
@@ -1171,6 +1233,7 @@
     .meeting-button,
     #refreshHrBtn,
     #printPayrollBtn,
+    #exportPayrollPdfBtn,
     .hr-payroll-controls {
         display: none !important;
     }
