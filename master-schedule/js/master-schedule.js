@@ -9,8 +9,6 @@ const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const MASTER_ACTIVITY_COLLECTION = 'marga_master_schedule_activity';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
-const PENDING_NOT_ROUTED_LOOKBACK_DAYS = 45;
-const PENDING_CARRYOVER_START_DATE = '2026-05-04';
 const REQUIRED_PRIORITY_COUNT = 5;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
@@ -857,7 +855,11 @@ function selectedMasterDate() {
 }
 
 function masterRowOriginalDate(row) {
-    return clean(row?.originalDate || dateOnly(row?.original_sched) || dateOnly(row?.task_datetime));
+    if (row?.originalDate) return clean(row.originalDate);
+    if (window.MargaScheduleWorkload?.originalScheduleDate) {
+        return MargaScheduleWorkload.originalScheduleDate(row);
+    }
+    return dateOnly(row?.original_sched) || dateOnly(row?.task_datetime);
 }
 
 function isPastPendingMasterRow(row) {
@@ -1302,7 +1304,7 @@ function buildLegacyScheduleRow(row) {
     const address = scheduleAddress(row, branch, deliveryInfo);
     const city = scheduleCity(row, branch, deliveryInfo, address);
     const tin = clean(company?.company_tin || company?.tin || company?.tin_no || company?.tin_number || row.tin);
-    const originalDate = dateOnly(row.original_sched) || dateOnly(row.task_datetime);
+    const originalDate = masterRowOriginalDate(row);
     const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const scheduleId = Number(row.id || row._docId || 0);
     const readyStatus = readyStatusForSchedule(row);
@@ -1583,56 +1585,35 @@ function loadCloseRequestLookup(rows = []) {
         });
 }
 
-async function loadPendingNotRoutedRows(date, routeRows) {
-    const routedIds = new Set(routeRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0));
+function workloadStaffIds(routeRows = []) {
     const staffIds = new Set(scheduleStaffOptions().map((employee) => Number(employee.id || 0)).filter(Boolean));
     routeRows.map(getAssignedStaffId).filter(Boolean).forEach((id) => staffIds.add(Number(id)));
-    if (!staffIds.length) return [];
+    return staffIds;
+}
 
-    const lookbackDate = addDays(date, -PENDING_NOT_ROUTED_LOOKBACK_DAYS);
-    const sinceDate = PENDING_CARRYOVER_START_DATE && PENDING_CARRYOVER_START_DATE > lookbackDate
-        ? PENDING_CARRYOVER_START_DATE
-        : lookbackDate;
-    const pendingRows = [];
-    const days = [];
-    for (let cursor = sinceDate; cursor && cursor < date; cursor = addDays(cursor, 1)) {
-        days.push(cursor);
-    }
+async function loadWorkloadCarryoverRows(date, { printedRows, savedRows, todayScheduleIds, staffIds }) {
+    const loader = window.MargaScheduleWorkload;
+    if (!loader?.loadCarryoverRows || !staffIds?.size) return [];
 
-    const concurrency = 6;
-    for (let index = 0; index < days.length; index += concurrency) {
-        const slice = days.slice(index, index + concurrency);
-        const results = await Promise.all(slice.map((day) => (
-            queryDateRange('tbl_schedule', 'task_datetime', `${day} 00:00:00`, `${day} 23:59:59`).catch(() => [])
-        )));
-        results.flat().map(parseFirestoreDoc).filter(Boolean).forEach((row) => {
-            const staffId = Number(row.tech_id || 0) || 0;
-            const scheduleId = Number(row.id || row._docId || 0);
-            const taskDate = dateOnly(row.task_datetime);
-            if (!staffIds.has(staffId)) return;
-            if (!scheduleId || routedIds.has(scheduleId)) return;
-            if (!taskDate || taskDate >= date || taskDate < sinceDate) return;
-            if (Number(row.iscancel || row.iscancelled || 0) === 1) return;
-            if (normalizeLegacyDateTime(row.date_finished)) return;
-            pendingRows.push({
-                ...row,
-                sourceBucket: 'pending-not-routed',
-                route_source: 'pending-not-routed',
-                route_task_datetime: row.task_datetime,
-                route_tech_id: row.tech_id,
-                route_status: row.status ?? ''
-            });
-        });
-    }
-
-    const unique = new Map();
-    pendingRows.forEach((row) => unique.set(Number(row.id || row._docId || 0), row));
-    return Array.from(unique.values()).sort((a, b) => {
-        const left = dateOnly(a.task_datetime);
-        const right = dateOnly(b.task_datetime);
-        if (left !== right) return left.localeCompare(right);
-        return Number(a.id || 0) - Number(b.id || 0);
+    const carryoverRows = await loader.loadCarryoverRows({
+        date,
+        printedRows,
+        savedRows,
+        todayScheduleIds,
+        staffIds,
+        buildRouteBoundRows: buildRouteBoundSchedules,
+        queryByDateRange,
+        parseDoc: parseFirestoreDoc
     });
+
+    return carryoverRows.map((row) => ({
+        ...row,
+        sourceBucket: 'pending-not-routed',
+        route_source: row.route_source || 'pending-not-routed',
+        route_task_datetime: row.route_task_datetime || row.task_datetime,
+        route_tech_id: row.route_tech_id || row.tech_id,
+        route_status: row.route_status ?? row.status ?? ''
+    }));
 }
 
 async function loadMasterConfigs() {
@@ -1713,7 +1694,14 @@ async function loadMasterSchedule() {
             routed: (routeCoverage.routed || 0) + carriedRouteRows.length,
             unrouted: routeCoverage.unrouted || 0
         };
-        const pendingRawRows = await loadPendingNotRoutedRows(date, legacyRows);
+        const staffIds = workloadStaffIds(legacyRows);
+        const todayScheduleIds = new Set(legacyRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0));
+        const pendingRawRows = await loadWorkloadCarryoverRows(date, {
+            printedRows: pickLatestRouteRows(printedRows, date),
+            savedRows: pickLatestRouteRows(savedRows, date),
+            todayScheduleIds,
+            staffIds
+        });
         const lookupRows = [...legacyRows, ...pendingRawRows];
         const plannerRows = plannerDocs.map(parseFirestoreDoc);
         const webRows = webDocs.map(parseFirestoreDoc);
@@ -1927,7 +1915,7 @@ function renderPriorityGate(rows = []) {
 }
 
 function renderMasterSchedule() {
-    const rows = combineMasterRows(getVisibleRows());
+    const rows = getVisibleRows();
     masterState.displayRows = rows;
     const pendingRows = getVisiblePendingRows();
     const exceptionRows = getVisibleExceptionRows();
