@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v113-hr-payroll-deductions-summary';
+const CACHE_NAME = 'marga-app-shell-v123-master-schedule-workload-align';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
