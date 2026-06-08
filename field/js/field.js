@@ -31,9 +31,9 @@ const PRODUCTION_QUEUE_COLLECTION = 'tbl_production_queue';
 const FIELD_VISIT_EVENT_COLLECTION = 'tbl_field_visit_events';
 const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
 const FIELD_LOCATION_REQUEST_COLLECTION = 'tbl_field_location_requests';
+const WORK_LOCATIONS_COLLECTION = 'marga_hr_work_locations';
 const FIELD_CALL_COLLECTION = 'tbl_field_call_requests';
 const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
-const WORK_LOCATIONS_COLLECTION = 'marga_hr_work_locations';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
 const PETTY_CASH_REQUEST_COLLECTION = 'tbl_pettycash_requests';
@@ -3544,7 +3544,7 @@ async function getAttendanceScheduleLocationMatch() {
 
     if (!snapshot.pinnedRows.length) {
         const sample = snapshot.missingPinRows.slice(0, 3).map((item) => item.label).filter(Boolean).join(', ');
-        throw new Error(`No scheduled customer has a saved pin yet. Open the customer task, tap Pin Customer Location while on site, then Time In.${sample ? ` Missing pin example: ${sample}.` : ''}`);
+        throw new Error(`No scheduled customer has a saved pin yet, and no approved office/production work pin is available. Open the customer task, tap Pin Customer Location while on site, then Time In.${sample ? ` Missing pin example: ${sample}.` : ''}`);
     }
 
     const nearest = snapshot.nearest;
@@ -3555,9 +3555,12 @@ async function getAttendanceScheduleLocationMatch() {
         const missingPinHint = snapshot.missingPinRows.length
             ? ' If you are already at a scheduled customer with no saved pin, open that task, tap Pin Customer Location, then Time In.'
             : '';
+        const allowedHint = snapshot.workLocationRanked.length
+            ? ' Field staff may also time in within 200m of an approved Office or Production pin.'
+            : '';
         const message = nearest
-            ? `You are ${Math.round(nearest.distance)}m from the nearest open/pending scheduled customer (${nearest.label}). Time In requires ${ATTENDANCE_LOCATION_RADIUS_METERS}m maximum.${missingPinHint}`
-            : `No pinned open/pending customer was found for attendance matching.${missingPinHint}`;
+            ? `You are ${Math.round(nearest.distance)}m from the nearest approved attendance location (${nearest.label}). Time In requires ${ATTENDANCE_LOCATION_RADIUS_METERS}m maximum.${missingPinHint}${allowedHint}`
+            : `No pinned open/pending customer or approved office/production pin was found for attendance matching.${missingPinHint}${allowedHint}`;
         throw new Error(message);
     }
 
@@ -3694,12 +3697,15 @@ function summarizeMissingPins(missingPinRows = []) {
 
 function renderAttendanceLocationSummary() {
     const rows = workloadRows();
+    const workLocationCount = (state.fieldWorkLocations || []).length;
     if (!rows.length) {
         setAttendanceLocationCheckUi({
-            status: 'warning',
-            title: 'Ready to check location',
-            body: 'Time In is allowed at an office/production pin. If you are at a customer with a saved pin, Check My Location can unlock Add Schedule.',
-            meta: ''
+            status: workLocationCount ? 'idle' : 'warning',
+            title: workLocationCount ? 'Ready to check location' : 'No open customer for this date',
+            body: workLocationCount
+                ? 'Time In is allowed at an office/production pin. If you are at a customer with a saved pin, Check My Location can unlock Add Schedule.'
+                : 'Time In needs an approved office/production pin, or a customer site with a saved pin so a schedule can be added.',
+            meta: workLocationCount ? `Loaded ${workLocationCount} approved office/production pin${workLocationCount === 1 ? '' : 's'}.` : ''
         });
         return;
     }
@@ -3713,7 +3719,10 @@ function renderAttendanceLocationSummary() {
         status: missingCount ? 'warning' : 'idle',
         title: 'Ready to check location',
         body: `Tap Check My Location to compare your GPS against office/production pins and ${pinnedCount} pinned scheduled customer${pinnedCount === 1 ? '' : 's'}.`,
-        meta: missingCount ? `${missingCount} scheduled customer${missingCount === 1 ? '' : 's'} still need location pin${missingCount === 1 ? '' : 's'}.` : ''
+        meta: [
+            missingCount ? `${missingCount} scheduled customer${missingCount === 1 ? '' : 's'} still need location pin${missingCount === 1 ? '' : 's'}.` : '',
+            workLocationCount ? `${workLocationCount} approved office/production pin${workLocationCount === 1 ? '' : 's'} loaded.` : ''
+        ].filter(Boolean).join(' ')
     });
 }
 
@@ -3749,20 +3758,22 @@ function renderAttendanceLocationResult(snapshot) {
             return;
         }
         setAttendanceLocationCheckUi({
-            status: 'warning',
-            title: 'No open customer for this date',
-            body: 'Time In is allowed at an office/production pin. Customer-site Time In needs a schedule or a nearby pinned customer to add one.',
+            status: snapshot.workLocationRanked.length ? 'idle' : 'warning',
+            title: snapshot.workLocationRanked.length ? 'No open customer loaded' : 'No open customer for this date',
+            body: snapshot.workLocationRanked.length
+                ? 'Time In is allowed at an office/production pin. Customer-site Time In needs a schedule or a nearby pinned customer to add one.'
+                : 'Time In needs an approved office/production pin, or a customer site with a saved pin so a schedule can be added.',
             meta
         });
-        return;
+        if (!snapshot.workLocationRanked.length) return;
     }
 
-    if (!snapshot.pinnedRows.length) {
+    if (!snapshot.pinnedRows.length && !snapshot.workLocationRanked.length) {
         const target = snapshot.missingPinRows[0];
         setAttendanceLocationCheckUi({
             status: 'warning',
-            title: 'No scheduled customer has a pin yet',
-            body: 'If you are already at a customer, open that task and pin the customer location first.',
+            title: 'No scheduled customer or work pin is ready',
+            body: 'If you are already at a customer, open that task and pin the customer location first. Office/production pins may also be used once saved in HR.',
             meta,
             scheduleId: target?.row?.id,
             buttonLabel: 'Open Task To Pin'
@@ -3774,10 +3785,12 @@ function renderAttendanceLocationResult(snapshot) {
         setAttendanceLocationCheckUi({
             status: 'allowed',
             title: `Within ${formatDistanceForLocationCheck(nearest.distance)} of ${nearest.label}`,
-            body: 'You are near a pinned scheduled customer. Official Time In is allowed.',
+            body: nearest.targetType === 'work_location'
+                ? 'You are near an approved office/production pin. Official Time In is allowed.'
+                : 'You are near a pinned scheduled customer. Official Time In is allowed.',
             meta,
-            scheduleId: nearest.row?.id,
-            buttonLabel: 'Open Customer Task'
+            scheduleId: nearest.targetType === 'scheduled_customer' ? nearest.row?.id : null,
+            buttonLabel: nearest.targetType === 'scheduled_customer' ? 'Open Customer Task' : 'Open Task'
         });
         return;
     }
@@ -5923,7 +5936,10 @@ async function loadMySchedule(options = {}) {
         state.rows = [...todayRows, ...forwardedPastPendingRows];
         updatePriorityGate(workloadRows());
         setRouteLoadProgress(62, 'Preparing customer and machine details...');
-        await hydrateLookups(state.rows);
+        await Promise.all([
+            hydrateLookups(state.rows),
+            loadFieldWorkLocations()
+        ]);
         renderAttendanceLocationSummary();
         renderActiveView();
 
