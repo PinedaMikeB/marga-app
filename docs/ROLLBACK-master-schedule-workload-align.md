@@ -40,5 +40,10 @@ git revert <commit-sha-of-workload-align-fix>
 
 ## Verify after deploy
 
-- Jonathan De Guzman on 6/8/26 and 6/9/26: Master Schedule open count should be closer to Field App (New Today + Past Pending).
-- Hard refresh Master Schedule and Field App (cache-bust query `?v=20260608-workload-align-1`).
+- Jonathan De Guzman on 6/8/26 and 6/9/26: Master Schedule staff header metrics should match Field App (New Today + Past Pending = Today's Workload).
+- Hard refresh Master Schedule (`?v=20260608-workload-align-2`) and Field App (`?v=20260608-field-carryover-restore-1`).
+- Field App carryover path was restored to the pre-shared inline loader to avoid any load regression.
+
+## Follow-up commit
+
+- `20260608-workload-align-2`: restore Field inline carryover, raise Master carryover query limit to 5000, add staff workload cards + export beside staff name.

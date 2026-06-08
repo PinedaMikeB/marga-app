@@ -1353,6 +1353,8 @@ function buildLegacyScheduleRow(row) {
         hasRequest,
         priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
         originalDate,
+        forwardedFromDate: dateOnly(row.forwarded_from_date),
+        routeForwardedFromDate: dateOnly(row.route_forwarded_from_date),
         routeDate: dateOnly(getRouteTaskDateTime(row)),
         daysPending: originalDate ? daysBetween(originalDate, selectedDate) : '',
         readyStatus,
@@ -1591,6 +1593,10 @@ function workloadStaffIds(routeRows = []) {
     return staffIds;
 }
 
+async function queryCarryoverDateRange(collection, fieldPath, start, end) {
+    return queryDateRangeLimit(collection, fieldPath, start, end, 5000);
+}
+
 async function loadWorkloadCarryoverRows(date, { printedRows, savedRows, todayScheduleIds, staffIds }) {
     const loader = window.MargaScheduleWorkload;
     if (!loader?.loadCarryoverRows || !staffIds?.size) return [];
@@ -1602,7 +1608,7 @@ async function loadWorkloadCarryoverRows(date, { printedRows, savedRows, todaySc
         todayScheduleIds,
         staffIds,
         buildRouteBoundRows: buildRouteBoundSchedules,
-        queryByDateRange,
+        queryByDateRange: queryCarryoverDateRange,
         parseDoc: parseFirestoreDoc
     });
 
@@ -1671,9 +1677,9 @@ async function loadMasterSchedule() {
         const start = `${date} 00:00:00`;
         const end = `${date} 23:59:59`;
         const [scheduleDocs, printedDocs, savedDocs, plannerDocs, webDocs, closeRequestDocs] = await Promise.all([
-            queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
-            queryDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', start, end).catch(() => []),
-            queryDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', start, end).catch(() => []),
+            queryDateRangeLimit('tbl_schedule', 'task_datetime', start, end, 5000).catch(() => []),
+            queryDateRangeLimit(ROUTE_COLLECTION_PRIMARY, 'task_datetime', start, end, 5000).catch(() => []),
+            queryDateRangeLimit(ROUTE_COLLECTION_FALLBACK, 'task_datetime', start, end, 5000).catch(() => []),
             queryEquals('tbl_schedule_planner', 'schedule_date', date).catch(() => []),
             queryEquals('marga_master_schedule', 'schedule_date', date).catch(() => []),
             queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending').catch(() => [])
@@ -1729,8 +1735,9 @@ async function loadMasterSchedule() {
             if (a.purpose !== b.purpose) return a.purpose.localeCompare(b.purpose);
             return a.customer.localeCompare(b.customer);
         });
-        masterState.exceptionRows = builtRows.filter(isScheduleExceptionRow);
-        masterState.rows = builtRows.filter((row) => !isScheduleExceptionRow(row));
+        const dedupedBuiltRows = dedupeBuiltScheduleRows(builtRows);
+        masterState.exceptionRows = dedupedBuiltRows.filter(isScheduleExceptionRow);
+        masterState.rows = dedupedBuiltRows.filter((row) => !isScheduleExceptionRow(row));
         masterState.pendingRows = [];
 
         renderMasterSchedule();
@@ -1914,6 +1921,134 @@ function renderPriorityGate(rows = []) {
     `;
 }
 
+function dedupeBuiltScheduleRows(rows = []) {
+    const byKey = new Map();
+    rows.forEach((row) => {
+        const scheduleId = Number(row.scheduleId || 0);
+        const key = scheduleId > 0 ? `schedule:${scheduleId}` : clean(row.rowKey || '');
+        if (!key) return;
+        if (!byKey.has(key)) byKey.set(key, row);
+    });
+    return Array.from(byKey.values());
+}
+
+function workloadRowAdapter(row) {
+    return {
+        original_sched: row.originalDate || row.original_sched,
+        forwarded_from_date: row.forwardedFromDate || row.forwarded_from_date,
+        route_forwarded_from_date: row.routeForwardedFromDate || row.route_forwarded_from_date,
+        task_datetime: row.routeDate || row.taskDatetime || row.task_datetime,
+        date_finished: row.dateFinished || row.date_finished,
+        route_date_finished: row.routeDateFinished || row.route_date_finished,
+        route_status: row.routeStatus ?? row.route_status,
+        route_iscancelled: row.routeCancelled ?? row.route_iscancelled,
+        iscancel: row.iscancel,
+        iscancelled: row.iscancelled
+    };
+}
+
+function isMasterOpenWorkloadRow(row) {
+    const loader = window.MargaScheduleWorkload;
+    if (loader?.isScheduleFinished?.(workloadRowAdapter(row))) return false;
+    const status = clean(row.status).toLowerCase();
+    if (status === 'cancelled' || status === 'closed') return false;
+    if (isClosedMasterStatus(row.masterStatusValue)) return false;
+    return true;
+}
+
+function computeStaffWorkloadMetrics(staffName) {
+    const selectedDate = selectedMasterDate();
+    const rows = masterState.rows.filter((row) => (row.assignedTo || 'Unassigned') === staffName);
+    const openRows = rows.filter(isMasterOpenWorkloadRow);
+    const loader = window.MargaScheduleWorkload;
+    let newToday = 0;
+    let pastPending = 0;
+    openRows.forEach((row) => {
+        const isPast = loader?.isPastPendingByOriginalDate
+            ? loader.isPastPendingByOriginalDate(workloadRowAdapter(row), selectedDate)
+            : isPastPendingMasterRow(row);
+        if (isPast) pastPending += 1;
+        else newToday += 1;
+    });
+    const closedToday = rows.filter((row) => {
+        if (isMasterOpenWorkloadRow(row)) return false;
+        const status = clean(row.status).toLowerCase();
+        if (status !== 'closed') return false;
+        const finished = dateOnly(row.dateFinished || row.date_finished || row.routeDateFinished || row.route_date_finished);
+        return finished === selectedDate || (!finished && dateOnly(row.routeDate) === selectedDate);
+    }).length;
+    return {
+        totalOpen: openRows.length,
+        newToday,
+        pastPending,
+        closedToday
+    };
+}
+
+function csvEscapeCell(value) {
+    return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+function exportStaffScheduleCsv(staffName) {
+    const rows = masterState.rows.filter((row) => (row.assignedTo || 'Unassigned') === staffName);
+    if (!rows.length) {
+        window.alert(`No schedule rows to export for ${staffName}.`);
+        return;
+    }
+    const selectedDate = selectedMasterDate();
+    const headers = [
+        'TIN #', 'Customer', 'Branch', 'Purpose', 'Model', 'Trouble', 'City', 'Address',
+        'Original Date', 'Days Pending', 'Ready', 'Priority', 'Status', 'Assigned To', 'Schedule ID'
+    ];
+    const lines = [
+        headers.join(','),
+        ...rows.map((row) => [
+            row.tin || '',
+            row.customer || '',
+            row.branch || '',
+            row.purpose || '',
+            row.model || '',
+            row.trouble || row.remarks || '',
+            row.city || '',
+            row.address || '',
+            masterRowOriginalDate(row) || '',
+            row.daysPending === '' ? '' : row.daysPending,
+            row.readyStatus || '',
+            schedulePriorityValue(row) || '',
+            row.status || '',
+            row.assignedTo || '',
+            row.scheduleId || ''
+        ].map(csvEscapeCell).join(','))
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `master-schedule-${staffName.replace(/[^\w.-]+/g, '_')}-${selectedDate || 'export'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function renderStaffWorkloadHeader(staffName) {
+    const metrics = computeStaffWorkloadMetrics(staffName);
+    const safeStaff = escapeHtml(staffName);
+    const staffArg = escapeHtml(JSON.stringify(staffName));
+    return `
+        <div class="master-staff-header">
+            <h2>${safeStaff}</h2>
+            <div class="master-staff-metrics">
+                <span class="master-staff-metric">Today's Workload <strong>${metrics.totalOpen}</strong></span>
+                <span class="master-staff-metric">New Today <strong>${metrics.newToday}</strong></span>
+                <span class="master-staff-metric">Past Pending <strong>${metrics.pastPending}</strong></span>
+                <span class="master-staff-metric">Closed Today <strong>${metrics.closedToday}</strong></span>
+                <button type="button" class="btn btn-secondary btn-sm master-staff-export-btn" onclick="exportStaffScheduleCsv(${staffArg})">Export to Excel</button>
+            </div>
+        </div>
+    `;
+}
+
 function renderMasterSchedule() {
     const rows = getVisibleRows();
     masterState.displayRows = rows;
@@ -1971,7 +2106,7 @@ function renderMasterSchedule() {
         ${exceptionRows.length ? renderAssignmentExceptions(exceptionRows) : ''}
         ${Array.from(groups.entries()).map(([group, groupRows]) => `
             <section class="master-group">
-                <h2>${escapeHtml(group)}</h2>
+                ${renderStaffWorkloadHeader(group)}
                 ${renderReadyTables(groupRows)}
             </section>
         `).join('')}
@@ -3111,6 +3246,7 @@ function activeRows() {
 }
 
 window.openMasterStatusModal = openMasterStatusModal;
+window.exportStaffScheduleCsv = exportStaffScheduleCsv;
 window.forwardScheduleRow = forwardScheduleRow;
 window.saveSchedulePriority = saveSchedulePriority;
 window.approveCloseRequest = approveCloseRequest;

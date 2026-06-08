@@ -5362,26 +5362,64 @@ function plannerRowToFieldSchedule(row) {
     };
 }
 
-async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
-    const loader = window.MargaScheduleWorkload;
-    const staffId = Number(state.staffId || 0);
-    if (!loader?.loadCarryoverRows || !staffId) return [];
+async function loadOlderCarryoverRows(date, excludedScheduleIds) {
+    const days = [];
+    for (let index = 1; index <= FIELD_CARRYOVER_DAYS; index += 1) {
+        days.push(addDaysYmd(date, -index));
+    }
 
-    const carryoverRows = await loader.loadCarryoverRows({
-        date,
-        printedRows,
-        savedRows,
-        todayScheduleIds: new Set(todayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0)),
-        staffIds: new Set([staffId]),
-        buildRouteBoundRows,
-        queryByDateRange,
-        parseDoc: parseFirestoreDoc
+    const rows = [];
+    const concurrency = 6;
+    for (let index = 0; index < days.length; index += concurrency) {
+        const slice = days.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map((day) => (
+            queryByDateRange('tbl_schedule', 'task_datetime', `${day} 00:00:00`, `${day} 23:59:59`).catch(() => [])
+        )));
+        results.flat().map(parseFirestoreDoc).filter(Boolean).forEach((row) => {
+            const scheduleId = Number(row.id || row._docId || 0);
+            if (!scheduleId || excludedScheduleIds.has(scheduleId)) return;
+            if (Number(row.tech_id || 0) !== Number(state.staffId || 0)) return;
+            if (isFinishedOrCancelled(row)) return;
+            rows.push(asOlderCarryoverRow(row));
+        });
+    }
+
+    return rows;
+}
+
+async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
+    const printedScheduleIds = new Set(printedRows.map((row) => Number(row.schedule_id || 0)).filter((id) => id > 0));
+    const currentScheduleIds = new Set(todayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
+
+    const savedCarryoverRoutes = savedRows
+        .filter((row) => !printedScheduleIds.has(Number(row.schedule_id || 0)))
+        .filter((row) => Number(row.iscancelled || row.iscancel || 0) !== 1);
+
+    const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'past pending'))
+        .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
+        .filter(isDispatchableFieldRow)
+        .filter((row) => !currentScheduleIds.has(Number(row.id || 0)))
+        .filter((row) => !isFinishedOrCancelled(row));
+
+    savedCarryoverRows.forEach((row) => {
+        currentScheduleIds.add(Number(row.id || 0));
+        row.route_source = 'Saved Past Pending';
     });
 
-    return carryoverRows.sort((a, b) => (
-        String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) ||
-        (Number(a.id || 0) - Number(b.id || 0))
-    ));
+    const olderRows = await loadOlderCarryoverRows(date, currentScheduleIds);
+    const combined = [...savedCarryoverRows, ...olderRows.filter(isDispatchableFieldRow)];
+    const unique = new Map();
+    combined.forEach((row) => {
+        const scheduleId = Number(row.id || row._docId || 0);
+        if (!scheduleId) return;
+        if (!unique.has(scheduleId)) unique.set(scheduleId, row);
+    });
+
+    return Array.from(unique.values())
+        .sort((a, b) => (
+            String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) ||
+            (Number(a.id || 0) - Number(b.id || 0))
+        ));
 }
 
 async function loadMySchedule(options = {}) {
