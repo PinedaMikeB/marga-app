@@ -8,6 +8,13 @@
 const API_KEY = FIREBASE_CONFIG.apiKey;
 const BASE_URL = FIREBASE_CONFIG.baseUrl;
 const COLLECTIONS_COMPARE_SNAPSHOT_KEY = 'marga_collections_compare_snapshots_v1';
+const FINANCE_MANAGER_ACTIONS_COLLECTION = 'sys_finance_manager_actions';
+const FINANCE_MANAGER_REMINDER_STORAGE_KEY = 'marga_finance_manager_reminder_seen_v1';
+const FINANCE_MANAGER_DRAFT_STATUS = {
+    approvalNeeded: 'approval_needed',
+    internalReminder: 'internal_reminder',
+    executed: 'executed'
+};
 const COLLECTIONS_LOAD_STARTED_AT = performance.now();
 
 // State
@@ -17,11 +24,21 @@ let currentPage = 1;
 const pageSize = 50;
 let currentPriorityFilter = null;
 let currentWorkQueueMode = 'all';
+let currentPriorityWorklistView = 'list';
+let collectorComparisonViewMode = 'grid';
 let quickAgeFilter = 'all';
 let dataMode = 'active';
 let todayFollowups = [];
 let collectionHistory = {};
 let collectionScheduleEntries = [];
+let financeManagerActions = [];
+let financeManagerActionsLoaded = false;
+let financeManagerSummaryAccounts = [];
+let financeManagerSummaryMeta = null;
+let financeManagerSummaryLoaded = false;
+let financeManagerSummaryLoading = false;
+let financeManagerSummaryPromise = null;
+let financeManagerAccountDetailCache = new Map();
 
 // Lookup maps
 let contractMap = {};
@@ -41,7 +58,11 @@ let billingEntriesForDuration = [];
 let billingMetaByInvoiceKey = new Map();
 let collectorBillingRecords = [];
 let collectorBillingRecordKeys = new Set();
+let contractReadingDayCache = new Map();
+let collectorInvoiceSourceDocKeys = new Set();
 let collectorCellMap = new Map();
+let collectorCellsByRowId = new Map();
+let collectionHistoryBulkLoaded = false;
 let collectorViewportBound = false;
 let analyticsDashboardVisible = false;
 let collectorBillingMatrixCache = null;
@@ -50,6 +71,7 @@ let collectorDashboardData = null;
 let collectorMatrixDragState = null;
 let collectorScrollbarDragState = null;
 let collectorDashboardRenderSeq = 0;
+let collectorMatrixFilterFrame = 0;
 let collectorInvoiceSearchSupplementTimer = null;
 let collectorInvoiceSearchSupplementTerm = '';
 let collectorInvoiceSearchSupplementPromise = null;
@@ -59,6 +81,28 @@ let collectorMatrixTotalDetailMap = new Map();
 let collectionWorkspaceLookupsLoaded = false;
 let collectionWorkspaceLookupsPromise = null;
 let collectionProfileByBranchId = new Map();
+const collectionProfileLoadPromises = new Map();
+const COLLECTOR_WORKSPACE_BILLING_BATCH_SIZE = 8;
+const COLLECTION_PROFILE_FIELD_MASK = [
+    'id',
+    'branch_id',
+    'acctcon',
+    'acctnum',
+    'cashcon',
+    'cashnum',
+    'treascon',
+    'treasnum',
+    'releasecon',
+    'releasenum',
+    'releaseadd',
+    'collection_days',
+    'collection_hours',
+    'followup_days',
+    'followup_time',
+    'time_from',
+    'time_to',
+    'last_contact'
+];
 let collectionProfileOverrides = new Map();
 let collectionStatusOptions = [];
 let troubleLookupMap = new Map();
@@ -119,6 +163,141 @@ const COLLECTION_SCHEDULE_OPTIONS = [
     'Pick up RFP'
 ];
 
+const COLLECTION_TARGET_DEFAULTS = {
+    minimumDailyTarget: 125000,
+    goodDailyTarget: 150000,
+    recoveryDailyTarget: 200000,
+    weeklyTarget: 625000,
+    weeklyTargetMin: 600000,
+    weeklyTargetMax: 750000,
+    monthlyTarget: 2500000,
+    week1Cumulative: 625000,
+    week2Cumulative: 1250000,
+    week3Cumulative: 1875000,
+    week4Cumulative: 2500000
+};
+const COLLECTION_ASSIGNMENT_ROLES = [
+    {
+        key: 'collection_head',
+        label: 'Collection Head',
+        description: 'View all collection accounts, assign/reassign collectors, monitor targets, and review performance.'
+    },
+    {
+        key: 'priority_accounts',
+        label: 'Collection - Priority Accounts',
+        description: 'High-value, urgent, escalated, broken promise, and top collectible accounts.'
+    },
+    {
+        key: 'regular_accounts',
+        label: 'Collection - Regular Accounts',
+        description: 'Regular follow-ups, newly received billings, for approval, and document concerns.'
+    }
+];
+const COLLECTION_WORKFLOW_SETTINGS_DOC_ID = 'collections_workflow_settings_v1';
+let collectionWorkflowSettings = {
+    targets: { ...COLLECTION_TARGET_DEFAULTS },
+    assignments: {},
+    customerAssignments: {},
+    hiddenAccounts: {}
+};
+let collectionWorkflowSettingsLoaded = false;
+
+const CONVERSATION_RESULT_OPTIONS = [
+    'Successful Conversation',
+    'No Answer',
+    'Busy',
+    'Unreachable',
+    'No Reply to Message',
+    'Left Message',
+    'Wrong Contact',
+    'Invalid Number',
+    'Client Not Available',
+    'For Callback'
+];
+const PROMISE_TO_PAY_OPTIONS = [
+    'No Promise to Pay',
+    'Promised to Pay',
+    'For Approval Only',
+    'For Payment Processing',
+    'For Check Release',
+    'For Bank Transfer',
+    'Already Paid, For Verification',
+    'Rescheduled Promise',
+    'Broken Promise'
+];
+const PROMISE_DATE_REQUIRED_OPTIONS = new Set([
+    'Promised to Pay',
+    'For Payment Processing',
+    'For Check Release',
+    'For Bank Transfer',
+    'Rescheduled Promise'
+]);
+const NEXT_FOLLOWUP_TIME_OPTIONS = [
+    'Anytime',
+    'Morning',
+    'Afternoon',
+    '9:00 AM',
+    '10:00 AM',
+    '11:00 AM',
+    '1:00 PM',
+    '2:00 PM',
+    '3:00 PM',
+    '4:00 PM'
+];
+const ISSUE_TYPE_OPTIONS = [
+    'No Issue',
+    'For Approval',
+    'Waiting for Budget',
+    'Waiting for Check Release',
+    'Payment Processing',
+    'Billing Not Received',
+    'Needs SOA',
+    'Needs Invoice Copy',
+    'Needs Delivery Proof',
+    'Needs Purchase Order',
+    'Wrong Amount',
+    'Meter Reading Concern',
+    'Machine Issue',
+    'Machine Not Working',
+    'Print Quality Issue',
+    'Toner Issue',
+    'Service Concern',
+    'Billing Dispute',
+    'Payment Already Made',
+    'Wrong Contact Person',
+    'Authorized Person Not Available',
+    'Client Requested Follow-up',
+    'Other Concern'
+];
+const DOCUMENT_ISSUE_TYPES = new Set(['Billing Not Received', 'Needs SOA', 'Needs Invoice Copy', 'Needs Delivery Proof', 'Needs Purchase Order']);
+const ISSUE_NOTE_SUGGESTIONS = [
+    'Machine sira',
+    'Needs service before payment',
+    'Waiting approval from accounting',
+    'Waiting approval from owner',
+    'Client requested SOA',
+    'Client requested invoice copy',
+    'Client said billing was not received',
+    'Client said payment already made',
+    'Client disputed amount',
+    'Client requested callback'
+];
+const COLLECTION_PRIORITY_CARD_DEFINITIONS = [
+    { mode: 'promise_today', title: 'Promise-to-Pay Today', countLabel: 'accounts', amountLabel: 'projected' },
+    { mode: 'broken_promise', title: 'Broken Promise-to-Pay', countLabel: 'accounts', amountLabel: 'at risk' },
+    { mode: 'followup_today', title: 'Follow-up Scheduled Today', countLabel: 'accounts', amountLabel: 'potential' },
+    { mode: 'needs_document', title: 'Needs Document', countLabel: 'accounts', amountLabel: 'affected' },
+    { mode: 'billing_received_unfollowed', title: 'Billing Received Not Yet Followed Up', countLabel: 'accounts', amountLabel: 'receivable' },
+    { mode: 'top_collectible', title: 'Top Collectible Accounts', countLabel: 'accounts', amountLabel: 'balance' },
+    { mode: 'overdue_accounts', title: 'Overdue Accounts', countLabel: 'accounts', amountLabel: 'overdue' },
+    { mode: 'for_approval', title: 'For Approval', countLabel: 'accounts', amountLabel: 'pending approval' }
+];
+const COLLECTION_ROLE_PRIORITY_MODES = {
+    collection_head: COLLECTION_PRIORITY_CARD_DEFINITIONS.map((card) => card.mode),
+    priority_accounts: ['promise_today', 'broken_promise', 'followup_today', 'top_collectible', 'overdue_accounts'],
+    regular_accounts: ['billing_received_unfollowed', 'needs_document', 'for_approval']
+};
+
 const dailyTips = [
     'Focus on URGENT (91-120 days) first - highest recovery potential.',
     'Best call times: 9-11 AM and 2-4 PM. Avoid lunch hours.',
@@ -130,6 +309,17 @@ const dailyTips = [
 const PROMISE_REMARK_PATTERN = /\b(ok na|for signing|check|pickup|ready|release|promise|ptp|payment|paid)\b/i;
 const COLLECTOR_DASHBOARD_START = new Date(2025, 9, 1);
 COLLECTOR_DASHBOARD_START.setHours(0, 0, 0, 0);
+const COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION = 1;
+let collectorMatrixSnapshotMeta = null;
+let collectorMatrixSnapshotLoaded = false;
+let collectorMatrixBuildInProgress = false;
+let collectorMatrixSnapshotLoadSeq = 0;
+let collectorMatrixSnapshotFetchPromise = null;
+const COLLECTOR_MATRIX_SNAPSHOT_DB_NAME = 'marga_collections_matrix_snapshot_v1';
+const COLLECTOR_MATRIX_SNAPSHOT_STORE = 'snapshots';
+const COLLECTOR_MATRIX_SNAPSHOT_CACHE_ID = 'current';
+const COLLECTOR_MATRIX_SNAPSHOT_FETCH_MS = 180000;
+let collectionsFullScanAuthorized = false;
 const MONTHLY_TREND_START = new Date(2025, 10, 1);
 MONTHLY_TREND_START.setHours(0, 0, 0, 0);
 const GROUPED_COLLECTION_COMPANIES = [
@@ -144,6 +334,18 @@ const GROUPED_COLLECTION_COMPANIES = [
         groupName: 'METALCAST'
     }
 ];
+const SERVICE_HISTORY_SCOPE_OPTIONS = [
+    { key: 'branch', label: 'This Department' },
+    { key: 'company', label: 'All Departments' }
+];
+const SERVICE_HISTORY_PURPOSE_LABELS = {
+    1: 'Billing',
+    3: 'Deliver Ink / Toner',
+    4: 'Deliver Cartridge',
+    5: 'Service',
+    8: 'Reading'
+};
+const SERVICE_HISTORY_INCLUDED_PURPOSE_IDS = new Set([1, 3, 4, 5, 8]);
 const collectorExpandedGroupRows = new Set();
 const COLLECTION_BILLING_FIELD_MASK = [
     'id',
@@ -187,7 +389,15 @@ const COLLECTION_BILLING_FIELD_MASK = [
     'category_code',
     'billing_mode',
     'billing_lines_json',
-    'billing_lines_count'
+    'billing_lines_count',
+    'reading_day',
+    'reading_date',
+    'billing_from',
+    'billing_to',
+    'datefrom',
+    'dateto',
+    'previous_reading_date',
+    'present_reading_date'
 ];
 const COLLECTION_PAYMENT_FIELD_MASK = [
     'id',
@@ -318,6 +528,16 @@ const COLLECTION_HISTORY_FIELD_MASK = [
     'remarks',
     'contact_person',
     'contact_number',
+    'conversation_result',
+    'promise_to_pay',
+    'promise_to_pay_amount',
+    'promise_to_pay_date',
+    'next_followup_date',
+    'next_followup_time',
+    'issue_type',
+    'issue_notes',
+    'collection_role_assignment',
+    'customer_assignment_owner',
     'account_ref',
     'account_group_ref',
     'branch_id',
@@ -670,6 +890,165 @@ function getBillingPeriodMonthKey(monthValue, yearValue, fallbackDate = null) {
     return getMonthKey(fallbackDate);
 }
 
+function parseMonthKeyToDate(monthKey) {
+    const match = String(monthKey || '').trim().match(/^(\d{4})-(\d{1,2})$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+    return new Date(year, month - 1, 1);
+}
+
+function resolveInvoiceBillingMonthKey(invoice = {}, cell = null) {
+    const lookupKeys = [
+        invoice.invoiceKey,
+        invoice.invoiceNo,
+        invoice.invoiceId
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+
+    for (const key of lookupKeys) {
+        const meta = billingMetaByInvoiceKey.get(key);
+        if (meta) {
+            const monthKey = getBillingPeriodMonthKey(meta.month, meta.year, invoice.invoiceDate || meta.invoiceDate);
+            if (monthKey) return monthKey;
+        }
+    }
+
+    if (invoice.billingMonthKey) return invoice.billingMonthKey;
+    if (invoice.monthKey && !invoice.carriedForward) return invoice.monthKey;
+    if (invoice.month || invoice.year) {
+        return getBillingPeriodMonthKey(invoice.month, invoice.year, invoice.invoiceDate || invoice.dueDate);
+    }
+    if (cell?.monthKey && !invoice.carriedForward) return cell.monthKey;
+    return '';
+}
+
+function clampBillingMonthDay(year, monthIndex, day) {
+    const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+    return Math.max(1, Math.min(lastDay, Number(day || 1) || 1));
+}
+
+function buildCollectorBillingPeriod(monthKey, readingDay) {
+    const parsed = parseMonthKeyToDate(monthKey);
+    if (!parsed) return { from: null, to: null };
+
+    const safeReadingDay = Math.max(1, Math.min(31, Number(readingDay || 1) || 1));
+    const endMonthIndex = parsed.getMonth();
+    const startMonthDate = new Date(parsed.getFullYear(), endMonthIndex - 1, 1);
+    const endDate = new Date(
+        parsed.getFullYear(),
+        endMonthIndex,
+        clampBillingMonthDay(parsed.getFullYear(), endMonthIndex, safeReadingDay)
+    );
+    const startDate = new Date(
+        startMonthDate.getFullYear(),
+        startMonthDate.getMonth(),
+        clampBillingMonthDay(startMonthDate.getFullYear(), startMonthDate.getMonth(), safeReadingDay)
+    );
+    return { from: startDate, to: endDate };
+}
+
+function firstNormalizedCoverageDate(...values) {
+    for (const value of values) {
+        const date = normalizeDate(value);
+        if (date) return date;
+    }
+    return null;
+}
+
+function parseBillingLinesCoverageHints(rawJson) {
+    if (!rawJson) return {};
+    try {
+        const lines = JSON.parse(String(rawJson));
+        if (!Array.isArray(lines) || !lines.length) return {};
+        const line = lines[0] || {};
+        return {
+            previousReadingDate: line.previousReadingDate || line.previous_reading_date || line.priorReadingDate || line.prior_reading_date,
+            presentReadingDate: line.presentReadingDate || line.present_reading_date,
+            readingDay: line.readingDay || line.reading_day || null
+        };
+    } catch (error) {
+        return {};
+    }
+}
+
+function resolveInvoiceReadingDay(invoice = {}, cell = null) {
+    const candidates = [
+        invoice.readingDay,
+        invoice.rd,
+        cell?.rd,
+        ...(Array.isArray(cell?.rdValues) ? cell.rdValues : [])
+    ].map((value) => Number(value || 0)).filter((day) => day >= 1 && day <= 31);
+    if (candidates.length) return candidates[0];
+
+    const contractId = String(invoice.contractmainId || cell?.contractmainId || '').trim();
+    if (contractId && contractReadingDayCache.has(contractId)) {
+        const cached = Number(contractReadingDayCache.get(contractId) || 0);
+        if (cached >= 1 && cached <= 31) return cached;
+    }
+
+    const invoiceDate = normalizeDate(invoice.invoiceDate || invoice.dueDate);
+    if (invoiceDate) {
+        const invoiceDay = invoiceDate.getDate();
+        if (invoiceDay >= 1 && invoiceDay <= 31) return invoiceDay;
+    }
+    return 0;
+}
+
+function resolveInvoiceCoverageDates(invoice = {}, cell = null) {
+    const fromStored = firstNormalizedCoverageDate(
+        invoice.coverageFrom,
+        invoice.billingFrom,
+        invoice.previousReadingDate,
+        invoice.previous_reading_date
+    );
+    const toStored = firstNormalizedCoverageDate(
+        invoice.coverageTo,
+        invoice.billingTo,
+        invoice.presentReadingDate,
+        invoice.present_reading_date
+    );
+    if (fromStored && toStored) {
+        return { from: fromStored, to: toStored };
+    }
+
+    const monthKey = resolveInvoiceBillingMonthKey(invoice, cell);
+    const readingDay = resolveInvoiceReadingDay(invoice, cell);
+    const period = buildCollectorBillingPeriod(monthKey, readingDay);
+    if (period.from && period.to) {
+        return period;
+    }
+
+    const monthStart = parseMonthKeyToDate(monthKey) || startOfMonth(invoice.invoiceDate || invoice.dueDate);
+    if (!monthStart) return { from: null, to: null };
+    return { from: monthStart, to: addMonths(monthStart, 1) };
+}
+
+function formatBillingCoveragePeriod(invoice = {}, cell = null) {
+    const { from, to } = resolveInvoiceCoverageDates(invoice, cell);
+    if (from && to) return `${formatDate(from)} to ${formatDate(to)}`;
+    return invoice.monthYear || '-';
+}
+
+async function loadContractReadingDay(contractmainId) {
+    const contractId = String(contractmainId || '').trim();
+    if (!contractId) return 0;
+    if (contractReadingDayCache.has(contractId)) {
+        return Number(contractReadingDayCache.get(contractId) || 0);
+    }
+
+    try {
+        const doc = await firestoreGetDocument('tbl_contractmain', contractId);
+        const readingDate = normalizeDate(getField(doc?.fields || {}, ['reading_date']));
+        const day = readingDate ? readingDate.getDate() : 0;
+        contractReadingDayCache.set(contractId, day);
+        return day;
+    } catch (error) {
+        contractReadingDayCache.set(contractId, 0);
+        return 0;
+    }
+}
+
 function formatMonthLabel(value, longLabel = false) {
     const d = startOfMonth(value);
     if (!d) return '-';
@@ -997,7 +1376,7 @@ function collectionAccountHistoryKeys(source = {}) {
 }
 
 function getCollectorSearchTerm() {
-    return String(document.getElementById('collectorSearchInput')?.value || '').trim().toLowerCase();
+    return normalizeCollectorTextSearchValue(document.getElementById('collectorSearchInput')?.value || '');
 }
 
 function getCollectorInvoiceSearchTerm() {
@@ -1008,6 +1387,10 @@ function normalizeCollectorInvoiceSearchValue(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function normalizeCollectorTextSearchValue(value) {
+    return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function getCollectorSortValue() {
     return String(document.getElementById('collectorSortInput')?.value || 'rd').trim().toLowerCase();
 }
@@ -1015,12 +1398,12 @@ function getCollectorSortValue() {
 function compareCollectorRows(left, right, sortValue) {
     const leftRd = Number(left.rd || 0) || Number.MAX_SAFE_INTEGER;
     const rightRd = Number(right.rd || 0) || Number.MAX_SAFE_INTEGER;
-    const leftCustomer = String(left.customer || '').toLowerCase();
-    const rightCustomer = String(right.customer || '').toLowerCase();
-    const leftBranch = String(left.branchName || left.accountLabel || '').toLowerCase();
-    const rightBranch = String(right.branchName || right.accountLabel || '').toLowerCase();
-    const leftSerial = String(left.serialNumber || left.machineLabel || '').toLowerCase();
-    const rightSerial = String(right.serialNumber || right.machineLabel || '').toLowerCase();
+    const leftCustomer = left._collectorSortCustomer || normalizeCollectorTextSearchValue(left.customer);
+    const rightCustomer = right._collectorSortCustomer || normalizeCollectorTextSearchValue(right.customer);
+    const leftBranch = left._collectorSortBranch || normalizeCollectorTextSearchValue(left.branchName || left.accountLabel);
+    const rightBranch = right._collectorSortBranch || normalizeCollectorTextSearchValue(right.branchName || right.accountLabel);
+    const leftSerial = left._collectorSortSerial || normalizeCollectorTextSearchValue(left.serialNumber || left.machineLabel);
+    const rightSerial = right._collectorSortSerial || normalizeCollectorTextSearchValue(right.serialNumber || right.machineLabel);
 
     if (sortValue === 'customer') {
         return leftCustomer.localeCompare(rightCustomer)
@@ -1037,9 +1420,47 @@ function compareCollectorRows(left, right, sortValue) {
 
 function getGroupedCollectionCompanyConfig(row) {
     const companyId = normalizeLookupId(row?.companyId);
-    return GROUPED_COLLECTION_COMPANIES.find((config) => (
+    const direct = GROUPED_COLLECTION_COMPANIES.find((config) => (
         companyId && companyId === normalizeLookupId(config.companyId)
-    )) || null;
+    ));
+    if (direct) return direct;
+
+    const contractId = getCollectorRowContractId(row);
+    const groupedContractIdsByCompany = collectorDashboardData?.groupedContractIdsByCompany || {};
+    if (contractId) {
+        const byGroupsum = GROUPED_COLLECTION_COMPANIES.find((config) => {
+            const ids = groupedContractIdsByCompany[normalizeLookupId(config.companyId)]
+                || groupedContractIdsByCompany[config.companyId]
+                || [];
+            return (Array.isArray(ids) ? ids : []).some((id) => normalizeLookupId(id) === contractId);
+        });
+        if (byGroupsum) return byGroupsum;
+    }
+
+    if (normalizeLookupId(row?.companyId) === '73' && isChinaBankBranchesGroupedRow(row)) {
+        return GROUPED_COLLECTION_COMPANIES.find((config) => normalizeLookupId(config.companyId) === '72') || null;
+    }
+
+    return null;
+}
+
+function isChinaBankBranchesGroupedRow(row = {}) {
+    const label = [
+        row?.customer,
+        row?.branchName,
+        row?.accountLabel,
+        row?.company_name
+    ].join(' ').toLowerCase();
+    return label.includes('china bank savings - branches')
+        && !label.includes('china bank savings inc.');
+}
+
+function getCollectorRowContractId(row = {}) {
+    const direct = normalizeLookupId(row?.contractmainId);
+    if (direct) return direct;
+    const rowId = String(row?.rowId || '').trim();
+    if (rowId.startsWith('contract:')) return normalizeLookupId(rowId.slice('contract:'.length));
+    return '';
 }
 
 function collectorGroupRowId(config) {
@@ -1156,7 +1577,11 @@ function applyCollectorGroupedRows(rows, monthColumns) {
                 rows: []
             });
         }
-        groupedRowsById.get(groupRowId).rows.push(row);
+        groupedRowsById.get(groupRowId).rows.push({
+            ...row,
+            companyId: normalizeLookupId(group.config.companyId),
+            customer: group.config.parentName
+        });
     });
 
     groupedRowsById.forEach((group) => {
@@ -1233,24 +1658,18 @@ function prepareCollectorRows(rows) {
     const searchTerm = getCollectorSearchTerm();
     const invoiceSearchTerm = getCollectorInvoiceSearchTerm();
     const normalizedInvoiceSearch = normalizeCollectorInvoiceSearchValue(invoiceSearchTerm);
+    const matrixPriorityRowIds = COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === currentWorkQueueMode)
+        ? getMatrixPriorityRowIdSet(currentWorkQueueMode)
+        : null;
     const filteredRows = rows
         .filter((row) => {
+            if (!matrixPriorityRowIds) return true;
+            return matrixPriorityRowIds.has(String(row.rowId || '').trim());
+        })
+        .filter((row) => !isCollectorRowHidden(row))
+        .filter((row) => {
             if (!searchTerm) return true;
-            const haystack = [
-                row.customer,
-                row.branchName,
-                row.accountLabel,
-                row.serialNumber,
-                row.machineLabel,
-                row.machineId,
-                row.contractmainId,
-                row.rd,
-                row.groupedParentName
-            ]
-                .filter(Boolean)
-                .join(' ')
-                .toLowerCase();
-            return haystack.includes(searchTerm);
+            return (row._collectorAccountSearchText || '').includes(searchTerm);
         })
         .filter((row) => {
             if (!invoiceSearchTerm) return true;
@@ -1270,21 +1689,48 @@ function prepareCollectorRows(rows) {
 }
 
 function collectorRowMatchesInvoiceSearch(row, rawTerm, normalizedTerm) {
-    const monthCellIds = Object.values(row?.months || {});
-    return monthCellIds.some((cellId) => {
-        const cell = collectorCellMap.get(cellId || '');
-        return (cell?.records || []).some((record) => {
-            const values = [
-                record.invoiceNo,
-                record.invoiceId,
-                record.invoiceKey
-            ];
-            return values.some((value) => {
-                const rawValue = String(value || '').toLowerCase();
-                const normalizedValue = normalizeCollectorInvoiceSearchValue(value);
-                return rawValue.includes(rawTerm) || (normalizedTerm && normalizedValue.includes(normalizedTerm));
+    const rawIndex = row?._collectorInvoiceSearchText || '';
+    const normalizedIndex = row?._collectorInvoiceSearchNormalizedText || '';
+    return rawIndex.includes(rawTerm) || (normalizedTerm && normalizedIndex.includes(normalizedTerm));
+}
+
+function ensureCollectorRowSearchIndexes(data) {
+    const rows = Array.isArray(data?.customerRows) ? data.customerRows : [];
+    rows.forEach((row) => {
+        if (row?._collectorSearchIndexReady) return;
+
+        row._collectorAccountSearchText = normalizeCollectorTextSearchValue([
+            row.customer,
+            row.branchName,
+            row.accountLabel,
+            row.serialNumber,
+            row.machineLabel,
+            row.machineId,
+            row.contractmainId,
+            row.companyId,
+            row.branchId,
+            row.rd,
+            row.groupedParentName
+        ].filter(Boolean).join(' '));
+        row._collectorSortCustomer = normalizeCollectorTextSearchValue(row.customer);
+        row._collectorSortBranch = normalizeCollectorTextSearchValue(row.branchName || row.accountLabel);
+        row._collectorSortSerial = normalizeCollectorTextSearchValue(row.serialNumber || row.machineLabel);
+
+        const invoiceValues = [];
+        Object.values(row?.months || {}).forEach((cellId) => {
+            const cell = collectorCellMap.get(cellId || '');
+            (cell?.records || []).forEach((record) => {
+                invoiceValues.push(
+                    record.invoiceNo,
+                    record.invoiceId,
+                    record.invoiceKey
+                );
             });
         });
+        const invoiceSearchText = invoiceValues.filter(Boolean).join(' ');
+        row._collectorInvoiceSearchText = normalizeCollectorTextSearchValue(invoiceSearchText);
+        row._collectorInvoiceSearchNormalizedText = normalizeCollectorInvoiceSearchValue(invoiceSearchText);
+        row._collectorSearchIndexReady = true;
     });
 }
 
@@ -1364,12 +1810,27 @@ function upsertCollectorCellRecord(cell, recordKey, payload) {
         });
     } else {
         const current = cell.recordMap.get(safeKey);
-        current.amount = Number(current.amount || 0) || Number(payload.amount || 0);
-        current.billedAmount = Number(current.billedAmount || 0) + Number(payload.billedAmount || 0);
-        current.collectedAmount = Number(current.collectedAmount || 0) + Number(payload.collectedAmount || 0);
-        current.totalCollectedAmount = Math.max(Number(current.totalCollectedAmount || 0), Number(payload.totalCollectedAmount || 0));
+        const mergeStrategy = String(payload.mergeStrategy || 'sum').trim().toLowerCase();
+        const incomingAmount = Number(payload.amount || 0);
+        const incomingBilledAmount = Number(payload.billedAmount || payload.amount || 0);
+        const incomingCollectedAmount = Number(payload.collectedAmount || 0);
+        const incomingTotalCollectedAmount = Number(payload.totalCollectedAmount || payload.collectedAmount || 0);
+        if (mergeStrategy === 'preserve_amounts') {
+            current.amount = Math.max(Number(current.amount || 0), incomingAmount);
+            current.billedAmount = Math.max(Number(current.billedAmount || 0), incomingBilledAmount);
+            current.collectedAmount = Math.max(Number(current.collectedAmount || 0), incomingCollectedAmount);
+            current.totalCollectedAmount = Math.max(Number(current.totalCollectedAmount || 0), incomingTotalCollectedAmount);
+        } else {
+            current.amount = Number(current.amount || 0) || incomingAmount;
+            current.billedAmount = Number(current.billedAmount || 0) + incomingBilledAmount;
+            current.collectedAmount = Number(current.collectedAmount || 0) + incomingCollectedAmount;
+            current.totalCollectedAmount = Math.max(Number(current.totalCollectedAmount || 0), incomingTotalCollectedAmount);
+        }
         if (payload.latestBalanceAmount !== undefined && payload.latestBalanceAmount !== null && Number.isFinite(Number(payload.latestBalanceAmount))) {
-            current.latestBalanceAmount = Number(payload.latestBalanceAmount);
+            const incomingBalanceAmount = Number(payload.latestBalanceAmount);
+            current.latestBalanceAmount = mergeStrategy === 'preserve_amounts'
+                ? Math.max(Number(current.latestBalanceAmount || 0), incomingBalanceAmount)
+                : incomingBalanceAmount;
         }
         current.branch = current.branch || payload.branch || cell.branchName;
         current.accountLabel = current.accountLabel || payload.accountLabel || cell.accountLabel;
@@ -1418,18 +1879,30 @@ function finalizeCollectorCellRecords(cellMap) {
     });
 }
 
-function getCollectorRecordOutstandingBalance(record) {
+function getCollectorRecordOutstandingBalance(record, cell = null) {
     if (!record) return 0;
-    const billed = Number(record.billedAmount || record.amount || 0);
+    const billed = getMatrixRecordBilledAmount(record, cell);
     if (billed <= 0) return 0;
-    return Math.max(0, billed - Number(record.collectedAmount || 0));
+    const collected = Number(record.collectedAmount || 0);
+    const recordBalance = Number(record.latestBalanceAmount);
+    if (Number.isFinite(recordBalance) && recordBalance > 0.01) {
+        const billedRecords = (cell?.records || []).filter((item) => Number(item.billedAmount || item.amount || 0) > 0.01);
+        if (billedRecords.length !== 1 || billed <= recordBalance + 0.01) {
+            return Math.max(0, Math.min(recordBalance, billed - collected));
+        }
+    }
+    return Math.max(0, billed - collected);
 }
 
 function getCellOutstandingBalance(cell) {
     if (!cell) return 0;
     const records = Array.isArray(cell.records) ? cell.records : [];
     if (records.length) {
-        return records.reduce((sum, record) => sum + getCollectorRecordOutstandingBalance(record), 0);
+        const fromRecords = records.reduce((sum, record) => sum + getCollectorRecordOutstandingBalance(record, cell), 0);
+        const cellBilled = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+        const collected = Number(cell.collectedTotal || 0);
+        const fromCell = Math.max(0, cellBilled - collected);
+        return Math.max(fromRecords, fromCell);
     }
     const explicit = Number(cell.outstandingBalance || 0);
     if (explicit > 0) return explicit;
@@ -2040,6 +2513,747 @@ function bindCollectorMatrixViewport() {
     updateCollectorHorizontalScrollbar();
 }
 
+function getMargabaseAdminUrl(path) {
+    const baseUrl = String(BASE_URL || window.MARGABASE_CONFIG?.baseUrl || '').trim();
+    if (baseUrl.startsWith('/margabase-api/')) return `/margabase-api${path}`;
+    if (baseUrl.includes('/v1/projects/')) {
+        const origin = new URL(baseUrl, window.location.href).origin;
+        return `${origin}${path}`;
+    }
+    return `http://127.0.0.1:8787${path}`;
+}
+
+function collectorSnapshotJsonReplacer(_key, value) {
+    if (value instanceof Date) return { __margaDate: value.toISOString() };
+    if (value instanceof Set) return { __margaSet: Array.from(value) };
+    return value;
+}
+
+function collectorSnapshotJsonReviver(_key, value) {
+    if (value && typeof value === 'object') {
+        if (value.__margaDate) return new Date(value.__margaDate);
+        if (value.__margaSet) return new Set(value.__margaSet);
+    }
+    return value;
+}
+
+function packCollectorDashboardSnapshot(data) {
+    const cells = [];
+    collectorCellMap.forEach((cell) => {
+        cells.push({
+            ...cell,
+            records: (cell.records || []).map((record) => ({
+                ...record,
+                paymentOrNumbers: Array.from(record.paymentOrNumbers || [])
+            }))
+        });
+    });
+    return JSON.parse(JSON.stringify({
+        schemaVersion: COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION,
+        dashboard: data,
+        cells
+    }, collectorSnapshotJsonReplacer));
+}
+
+function unpackCollectorDashboardSnapshot(payload) {
+    const parsed = typeof payload === 'string'
+        ? JSON.parse(payload, collectorSnapshotJsonReviver)
+        : JSON.parse(JSON.stringify(payload), collectorSnapshotJsonReviver);
+    if (!parsed?.dashboard) return null;
+    collectorCellMap = new Map();
+    (parsed.cells || []).forEach((cell) => {
+        const records = (cell.records || []).map((record) => ({
+            ...record,
+            paymentOrNumbers: new Set(record.paymentOrNumbers || [])
+        }));
+        collectorCellMap.set(cell.id, { ...cell, records });
+    });
+    rebuildCollectorCellsByRowId();
+    return ensureCollectorDashboardDerivedFields(parsed.dashboard);
+}
+
+function rebuildCollectorCellsByRowId() {
+    collectorCellsByRowId = new Map();
+    collectorCellMap.forEach((cell) => {
+        const rowId = String(cell.rowId || '').trim();
+        if (!rowId) return;
+        if (!collectorCellsByRowId.has(rowId)) collectorCellsByRowId.set(rowId, []);
+        collectorCellsByRowId.get(rowId).push(cell);
+    });
+}
+
+function buildCollectorAccountSetByMonth(customerRows, summaryMonthColumns) {
+    const accountSetByMonth = new Map();
+    (summaryMonthColumns || []).forEach((column) => {
+        accountSetByMonth.set(column.key, new Set());
+    });
+
+    (customerRows || [])
+        .filter((row) => !row.isGroupedChild)
+        .forEach((row) => {
+            (summaryMonthColumns || []).forEach((column) => {
+                const cell = collectorCellMap.get(String(row.months?.[column.key] || '').trim());
+                if (!cell) return;
+                const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+                if (billedTarget > 0 || cell.missedReading || cell.pendingBilling || cell.collectedTotal > 0) {
+                    accountSetByMonth.get(column.key).add(row.rowId);
+                }
+            });
+        });
+
+    return accountSetByMonth;
+}
+
+function buildCollectorMonthlySummaryRows(dashboard, accountSetByMonth) {
+    const summaryMonthColumns = dashboard.summaryMonthColumns || [];
+    const summaryCustomerRows = (dashboard.customerRows || []).filter((row) => !row.isGroupedChild);
+
+    return summaryMonthColumns
+        .map((column) => {
+            const previousCustomers = accountSetByMonth.get(getMonthKey(addMonths(column.monthStart, -1))) || new Set();
+            const currentCustomers = accountSetByMonth.get(column.key) || new Set();
+            const additional = Array.from(currentCustomers).filter((rowId) => !previousCustomers.has(rowId)).length;
+            const inactive = Array.from(previousCustomers).filter((rowId) => !currentCustomers.has(rowId)).length;
+            const toCollect = currentCustomers.size;
+            const collected = summaryCustomerRows.filter((row) => {
+                const cell = collectorCellMap.get(row.months[column.key] || '');
+                return cell && cell.collectedTotal > 0;
+            }).length;
+
+            return {
+                monthKey: column.key,
+                monthLabel: column.label,
+                balance: previousCustomers.size,
+                additional,
+                inactive,
+                toCollect,
+                collected,
+                pending: Math.max(0, toCollect - collected)
+            };
+        })
+        .reverse();
+}
+
+function ensureCollectorDashboardDerivedFields(dashboard) {
+    if (!dashboard || !Array.isArray(dashboard.customerRows)) return dashboard;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const windowStart = normalizeDate(dashboard.windowStart) || COLLECTOR_DASHBOARD_START;
+    const summaryEnd = startOfMonth(normalizeDate(dashboard.windowEnd) || today);
+    const matrixEnd = startOfMonth(normalizeDate(dashboard.matrixEnd) || new Date(today.getFullYear(), 11, 1));
+
+    if (!Array.isArray(dashboard.summaryMonthColumns) || !dashboard.summaryMonthColumns.length) {
+        dashboard.summaryMonthColumns = buildMonthColumns(windowStart, summaryEnd);
+    }
+    if (!Array.isArray(dashboard.monthColumns) || !dashboard.monthColumns.length) {
+        dashboard.monthColumns = buildMonthColumns(windowStart, matrixEnd);
+        const currentMonthKey = getMonthKey(today);
+        dashboard.monthColumns.forEach((column) => {
+            column.isCurrentMonth = column.key === currentMonthKey;
+        });
+    }
+
+    const hasGroupedParent = (dashboard.customerRows || []).some((row) => row.isGroupedParent);
+    if (!hasGroupedParent && collectorCellMap.size && Array.isArray(dashboard.monthColumns) && dashboard.monthColumns.length) {
+        dashboard.customerRows = applyCollectorGroupedRows(dashboard.customerRows, dashboard.monthColumns);
+    }
+
+    if (collectorCellMap.size) {
+        const needsSummaryRows = !Array.isArray(dashboard.monthlySummaryRows) || !dashboard.monthlySummaryRows.length;
+        if (needsSummaryRows) {
+            const accountSetByMonth = buildCollectorAccountSetByMonth(dashboard.customerRows, dashboard.summaryMonthColumns);
+            dashboard.monthlySummaryRows = buildCollectorMonthlySummaryRows(dashboard, accountSetByMonth);
+        }
+        if (!Array.isArray(dashboard.matrixTotalRows) || !dashboard.matrixTotalRows.length) {
+            dashboard.matrixTotalRows = buildCollectorMatrixTotalRows(dashboard.monthColumns, dashboard.customerRows);
+        }
+    }
+
+    return dashboard;
+}
+
+function canUseCollectorMatrixSnapshot() {
+    return Boolean(collectorMatrixSnapshotLoaded && collectorDashboardData && collectorCellMap.size);
+}
+
+function buildCollectorSnapshotCellWorkspace(cell) {
+    const context = resolveCollectorCellContext(cell);
+    return {
+        snapshot: true,
+        cell,
+        context,
+        latestHistory: cell.latestHistory || null,
+        records: Array.isArray(cell.records) ? cell.records : []
+    };
+}
+
+function renderCollectorSnapshotCellWorkspace(workspace) {
+    const { cell, context, latestHistory, records } = workspace;
+    const builtLabel = collectorMatrixSnapshotMeta?.builtAt
+        ? new Date(collectorMatrixSnapshotMeta.builtAt).toLocaleString('en-PH')
+        : 'the last matrix build';
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+    const pendingAmount = getCellOutstandingBalance(cell);
+    const invoiceRows = records
+        .filter((record) => String(record.invoiceNo || record.invoiceId || record.invoiceKey || '').trim())
+        .slice(0, 12)
+        .map((record) => `
+            <tr>
+                <td>${escapeHtml(record.invoiceNo || record.invoiceId || '-')}</td>
+                <td class="text-right">${escapeHtml(formatCurrency(record.billedAmount || record.amount || 0))}</td>
+                <td class="text-right">${escapeHtml(formatCurrency(record.collectedAmount || 0))}</td>
+            </tr>
+        `)
+        .join('');
+
+    return `
+        <div class="collection-followup-shell collection-followup-lite">
+            <section class="collection-followup-hero">
+                <div>
+                    <div class="collection-followup-kicker">Saved matrix snapshot • ${escapeHtml(cell.label || context.label || '')}</div>
+                    <h3>${escapeHtml(context.customer)}</h3>
+                    <p>${escapeHtml(context.branchName || context.accountLabel || 'Main')} • ${escapeHtml(displaySerialNumber(context.serialNumber))}</p>
+                </div>
+                <div class="collection-balance-card">
+                    <span>Cell totals</span>
+                    <strong>${escapeHtml(formatCurrency(pendingAmount || billedTarget))}</strong>
+                    <em>Billed ${escapeHtml(formatCurrency(billedTarget))} • Collected ${escapeHtml(formatCurrency(cell.collectedTotal || 0))}</em>
+                </div>
+            </section>
+            <div class="collection-followup-panel">
+                <div class="collection-followup-panel-title">Saved collection detail</div>
+                <p>Matrix colors and <strong>Followed up by …</strong> badges come from the summary saved ${escapeHtml(builtLabel)}. No live reload is required just to review this cell.</p>
+                ${renderFollowupBadge(latestHistory)}
+                ${invoiceRows ? `
+                    <table class="collection-followup-table">
+                        <thead><tr><th>Invoice</th><th>Billed</th><th>Collected</th></tr></thead>
+                        <tbody>${invoiceRows}</tbody>
+                    </table>
+                ` : '<div class="collection-followup-empty">No invoice rows were linked in this saved cell.</div>'}
+                <p class="collector-settings-help">Temporary mode: collectors can review saved customer details from the permanent summary. Live follow-up tools will be restored after the local summary table catch-up.</p>
+            </div>
+        </div>
+    `;
+}
+
+function patchCollectorCellFollowupDisplay(cellId, historyEntry) {
+    const cell = collectorCellMap.get(String(cellId || '').trim());
+    if (!cell || !historyEntry || !collectorDashboardData) return;
+
+    cell.latestHistory = historyEntry;
+    const rowId = String(cell.rowId || '').trim();
+    if (rowId) {
+        const row = (collectorDashboardData.customerRows || []).find((item) => String(item.rowId) === rowId);
+        if (row) {
+            row.latestHistory = historyEntry;
+        }
+    }
+
+    renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
+    void persistCollectorMatrixSnapshotFromCurrentData('followup-save');
+}
+
+function getCollectorMatrixBuiltByLabel() {
+    try {
+        const user = JSON.parse(window.localStorage?.getItem('marga_user') || window.sessionStorage?.getItem('marga_user') || 'null');
+        return String(user?.email || user?.name || user?.username || 'collections-ui').trim();
+    } catch (error) {
+        return 'collections-ui';
+    }
+}
+
+function updateCollectorMatrixHeaderStatus() {
+    const lastUpdated = document.getElementById('last-updated');
+    if (!lastUpdated) return;
+    if (collectorMatrixBuildInProgress) {
+        lastUpdated.textContent = 'Building matrix snapshot...';
+        return;
+    }
+    if (collectorMatrixSnapshotMeta?.builtAt) {
+        const builtAt = new Date(collectorMatrixSnapshotMeta.builtAt);
+        const label = Number.isNaN(builtAt.getTime())
+            ? collectorMatrixSnapshotMeta.builtAt
+            : builtAt.toLocaleString('en-PH');
+        lastUpdated.textContent = `Matrix ${label}`;
+        return;
+    }
+    lastUpdated.textContent = 'Matrix not built yet';
+}
+
+function openCollectorMatrixSnapshotDb() {
+    return new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+            reject(new Error('IndexedDB unavailable'));
+            return;
+        }
+        const request = indexedDB.open(COLLECTOR_MATRIX_SNAPSHOT_DB_NAME, 1);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(COLLECTOR_MATRIX_SNAPSHOT_STORE)) {
+                db.createObjectStore(COLLECTOR_MATRIX_SNAPSHOT_STORE, { keyPath: 'id' });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Unable to open matrix snapshot cache.'));
+    });
+}
+
+async function readCollectorMatrixSnapshotCache() {
+    try {
+        const db = await openCollectorMatrixSnapshotDb();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(COLLECTOR_MATRIX_SNAPSHOT_STORE, 'readonly');
+            const store = tx.objectStore(COLLECTOR_MATRIX_SNAPSHOT_STORE);
+            const request = store.get(COLLECTOR_MATRIX_SNAPSHOT_CACHE_ID);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.warn('Collector matrix snapshot cache read failed:', error);
+        return null;
+    }
+}
+
+async function writeCollectorMatrixSnapshotCache(serverPayload) {
+    if (!serverPayload?.exists || !serverPayload?.payload) return;
+    try {
+        const db = await openCollectorMatrixSnapshotDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(COLLECTOR_MATRIX_SNAPSHOT_STORE, 'readwrite');
+            const store = tx.objectStore(COLLECTOR_MATRIX_SNAPSHOT_STORE);
+            const request = store.put({
+                id: COLLECTOR_MATRIX_SNAPSHOT_CACHE_ID,
+                schemaVersion: Number(serverPayload.schemaVersion || COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION),
+                savedAt: new Date().toISOString(),
+                builtAt: serverPayload.builtAt || null,
+                builtBy: serverPayload.builtBy || '',
+                buildSource: serverPayload.buildSource || 'manual',
+                rowCount: Number(serverPayload.rowCount || 0),
+                pendingCellCount: Number(serverPayload.pendingCellCount || 0),
+                windowStart: serverPayload.windowStart || '',
+                windowEnd: serverPayload.windowEnd || '',
+                payload: serverPayload.payload
+            });
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.warn('Collector matrix snapshot cache write failed:', error);
+    }
+}
+
+function collectorMatrixCacheRecordToServerPayload(record) {
+    if (!record?.payload) return null;
+    return {
+        exists: true,
+        schemaVersion: Number(record.schemaVersion || COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION),
+        builtAt: record.builtAt || record.savedAt || null,
+        builtBy: record.builtBy || '',
+        buildSource: record.buildSource || 'cached',
+        rowCount: Number(record.rowCount || 0),
+        pendingCellCount: Number(record.pendingCellCount || 0),
+        windowStart: record.windowStart || '',
+        windowEnd: record.windowEnd || '',
+        payload: record.payload
+    };
+}
+
+function setCollectorMatrixLoadingOverlay(message) {
+    const matrixNode = document.getElementById('collector-matrix-table');
+    if (!matrixNode) return;
+    matrixNode.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div><span>${escapeHtml(message)}</span></div>`;
+}
+
+function applyCollectorMatrixSnapshotResponse(serverPayload, options = {}) {
+    if (!serverPayload?.exists || !serverPayload?.payload) {
+        collectorMatrixSnapshotMeta = null;
+        collectorMatrixSnapshotLoaded = false;
+        collectorDashboardData = null;
+        collectorCellMap = new Map();
+        collectorCellsByRowId = new Map();
+        return false;
+    }
+    const dashboard = unpackCollectorDashboardSnapshot(serverPayload.payload);
+    if (!dashboard) throw new Error('Saved matrix summary is unreadable.');
+    collectorDashboardData = dashboard;
+    collectorMatrixSnapshotMeta = {
+        builtAt: serverPayload.builtAt,
+        builtBy: serverPayload.builtBy,
+        buildSource: serverPayload.buildSource,
+        rowCount: serverPayload.rowCount,
+        pendingCellCount: serverPayload.pendingCellCount
+    };
+    collectorMatrixSnapshotLoaded = true;
+    renderCollectorDashboardFromData(collectorDashboardData);
+    void loadCollectionWorkspaceLookups().catch((error) => {
+        console.warn('Collection workspace lookup prefetch failed:', error);
+    });
+    updateCollectorMatrixHeaderStatus();
+    const noteNode = document.getElementById('collector-dashboard-note');
+    if (noteNode && options.fromCache && collectorMatrixSnapshotMeta?.builtAt) {
+        const builtAt = new Date(collectorMatrixSnapshotMeta.builtAt);
+        const builtLabel = Number.isNaN(builtAt.getTime())
+            ? collectorMatrixSnapshotMeta.builtAt
+            : builtAt.toLocaleString('en-PH');
+        noteNode.textContent = `Showing saved summary from ${builtLabel} (this device). Checking server for a newer build...`;
+    }
+    return true;
+}
+
+async function fetchCollectorMatrixSnapshot() {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), COLLECTOR_MATRIX_SNAPSHOT_FETCH_MS);
+    try {
+        const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-snapshot'), {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) {
+            throw new Error(payload?.error?.message || `Snapshot HTTP ${response.status}`);
+        }
+        return payload;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Saved month comparison took too long to download. Try Refresh or use a faster connection.');
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
+}
+
+function fetchCollectorMatrixSnapshotDeduped() {
+    if (!collectorMatrixSnapshotFetchPromise) {
+        collectorMatrixSnapshotFetchPromise = fetchCollectorMatrixSnapshot()
+            .finally(() => {
+                collectorMatrixSnapshotFetchPromise = null;
+            });
+    }
+    return collectorMatrixSnapshotFetchPromise;
+}
+
+function isCollectorWorkspacePerfDebugEnabled() {
+    try {
+        return window.localStorage?.getItem('marga_collections_workspace_perf') === '1';
+    } catch (error) {
+        return false;
+    }
+}
+
+function logCollectorWorkspacePerf(label, startedAt, extra = {}) {
+    if (!isCollectorWorkspacePerfDebugEnabled()) return;
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    console.info(`[collections-workspace] ${label}: ${elapsedMs}ms`, extra);
+}
+
+async function fetchCollectorFollowupPack(cell, scope = 'single') {
+    const context = resolveCollectorCellContext(cell);
+    const params = new URLSearchParams({
+        rowId: String(cell?.rowId || '').trim(),
+        cellId: String(cell?.id || '').trim(),
+        branchId: String(context.branchId || '').trim(),
+        scope: scope === 'all' ? 'all' : 'single'
+    });
+    const response = await fetch(getMargabaseAdminUrl(`/admin/collections-followup-pack?${params}`), {
+        cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error || `Follow-up pack HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+function applyFollowupPackProfile(pack) {
+    if (!pack?.ok) return false;
+    const branchId = normalizeLookupId(pack.context?.branchId);
+    if (branchId && pack.profile) collectionProfileByBranchId.set(branchId, pack.profile);
+    const docId = collectionProfileOverrideDocId(pack.context || {});
+    if (pack.override) {
+        collectionProfileOverrides.set(docId, { ...pack.override, _docId: docId });
+    }
+    return true;
+}
+
+async function persistCollectorMatrixSnapshotFromCurrentData(buildSource = 'manual') {
+    if (!collectorDashboardData) return null;
+    const packed = packCollectorDashboardSnapshot(collectorDashboardData);
+    const body = {
+        payload: packed,
+        meta: {
+            builtBy: getCollectorMatrixBuiltByLabel(),
+            buildSource,
+            schemaVersion: COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION,
+            rowCount: collectorDashboardData.customerRows?.length || 0,
+            pendingCellCount: collectorDashboardData.pendingCellCount || 0,
+            windowStart: collectorDashboardData.windowStart instanceof Date
+                ? collectorDashboardData.windowStart.toISOString().slice(0, 10)
+                : String(collectorDashboardData.windowStart || ''),
+            windowEnd: collectorDashboardData.matrixEnd instanceof Date
+                ? collectorDashboardData.matrixEnd.toISOString().slice(0, 10)
+                : String(collectorDashboardData.matrixEnd || collectorDashboardData.windowEnd || '')
+        }
+    };
+    const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-snapshot'), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const saved = await response.json().catch(() => ({}));
+    if (!response.ok || saved?.error) {
+        throw new Error(saved?.error?.message || `Snapshot save HTTP ${response.status}`);
+    }
+    collectorMatrixSnapshotMeta = {
+        builtAt: saved.builtAt,
+        builtBy: saved.builtBy,
+        buildSource: saved.buildSource,
+        rowCount: saved.rowCount,
+        pendingCellCount: saved.pendingCellCount
+    };
+    collectorMatrixSnapshotLoaded = true;
+    updateCollectorMatrixHeaderStatus();
+    void writeCollectorMatrixSnapshotCache({
+        exists: true,
+        schemaVersion: COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION,
+        builtAt: saved.builtAt,
+        builtBy: saved.builtBy,
+        buildSource: saved.buildSource,
+        rowCount: saved.rowCount,
+        pendingCellCount: saved.pendingCellCount,
+        windowStart: collectorDashboardData?.windowStart instanceof Date
+            ? collectorDashboardData.windowStart.toISOString().slice(0, 10)
+            : String(collectorDashboardData?.windowStart || ''),
+        windowEnd: collectorDashboardData?.matrixEnd instanceof Date
+            ? collectorDashboardData.matrixEnd.toISOString().slice(0, 10)
+            : String(collectorDashboardData?.matrixEnd || collectorDashboardData?.windowEnd || ''),
+        payload: packCollectorDashboardSnapshot(collectorDashboardData)
+    });
+    return saved;
+}
+
+async function refreshCollectorMatrixFromSnapshot(options = {}) {
+    const loadSeq = ++collectorMatrixSnapshotLoadSeq;
+    const matrixNode = document.getElementById('collector-matrix-table');
+    const noteNode = document.getElementById('collector-dashboard-note');
+    const hadRenderedMatrix = Boolean(collectorMatrixSnapshotLoaded && collectorDashboardData);
+    if (!options.quiet && !hadRenderedMatrix) {
+        setCollectorMatrixLoadingOverlay('Loading month comparison from summary...');
+    } else if (!options.quiet && noteNode) {
+        noteNode.textContent = 'Refreshing saved month-to-month summary...';
+    }
+
+    try {
+        const payload = await fetchCollectorMatrixSnapshotDeduped();
+        if (loadSeq !== collectorMatrixSnapshotLoadSeq) {
+            return { loaded: false, cancelled: true };
+        }
+        if (!payload?.exists || !payload?.payload) {
+            collectorMatrixSnapshotMeta = null;
+            collectorMatrixSnapshotLoaded = false;
+            collectorDashboardData = null;
+            collectorCellMap = new Map();
+            collectorCellsByRowId = new Map();
+            updateCollectorMatrixHeaderStatus();
+            if (!hadRenderedMatrix) renderCollectorMatrixEmptyState();
+            return { loaded: false, payload };
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        if (loadSeq !== collectorMatrixSnapshotLoadSeq) {
+            return { loaded: false, cancelled: true };
+        }
+
+        applyCollectorMatrixSnapshotResponse(payload);
+        void writeCollectorMatrixSnapshotCache(payload);
+        return { loaded: true, payload };
+    } catch (error) {
+        console.error('Collector matrix snapshot load failed:', error);
+        if (!hadRenderedMatrix) {
+            if (noteNode) {
+                noteNode.textContent = error?.message || 'Unable to load the saved month comparison. Try Refresh.';
+            }
+            if (matrixNode) {
+                matrixNode.innerHTML = '<div class="empty-followup">Unable to load saved month comparison.</div>';
+            }
+        } else if (noteNode) {
+            noteNode.textContent = 'Server refresh failed. Showing the last saved summary stored on this device.';
+        }
+        return { loaded: false, error };
+    }
+}
+
+async function hydrateCollectorMatrixFromDeviceCache() {
+    const cached = await readCollectorMatrixSnapshotCache();
+    const payload = collectorMatrixCacheRecordToServerPayload(cached);
+    if (!payload) return false;
+    if (Number(payload.schemaVersion) !== COLLECTOR_MATRIX_SNAPSHOT_SCHEMA_VERSION) return false;
+    try {
+        return applyCollectorMatrixSnapshotResponse(payload, { fromCache: true });
+    } catch (error) {
+        console.warn('Collector matrix device cache unreadable:', error);
+        return false;
+    }
+}
+
+function renderCollectorMatrixEmptyState() {
+    const matrixNode = document.getElementById('collector-matrix-table');
+    const noteNode = document.getElementById('collector-dashboard-note');
+    const summaryNode = document.getElementById('collector-summary-table');
+    if (summaryNode) summaryNode.innerHTML = '';
+    if (noteNode) {
+        noteNode.textContent = 'No month comparison in the permanent summary table yet. A controlled backend rebuild must create it before staff browsers load this grid.';
+    }
+    if (matrixNode) {
+        matrixNode.innerHTML = '<div class="empty-followup">No saved month comparison yet. The backend rebuild job must create the permanent summary first.</div>';
+    }
+    const rangeNode = document.getElementById('collector-dashboard-range');
+    if (rangeNode) rangeNode.textContent = 'Not built yet';
+    const pendingNode = document.getElementById('collector-dashboard-pending');
+    if (pendingNode) pendingNode.textContent = 'Pending cells: —';
+}
+
+function renderDeferredCollectionsWorkspaceNote() {
+    if (lastLoadSucceeded) return;
+    const container = document.getElementById('table-container');
+    if (!container) return;
+    container.innerHTML = `
+        <div class="empty-state">
+            <h3>Invoice work queue not loaded</h3>
+            <p>Priority buckets and the invoice list use live billing data when loaded separately. The month-to-month matrix and summary table always come from the permanent Postgres summary—not from a browser scan.</p>
+        </div>
+    `;
+    filteredInvoices = [];
+    updateAllStats();
+    updateDurationSummary();
+    renderTable();
+}
+
+async function loadCollectionsDataAndBuildMatrixSnapshot() {
+    if (collectorMatrixBuildInProgress) return false;
+
+    collectorMatrixBuildInProgress = true;
+    updateCollectorMatrixHeaderStatus();
+    const loadBtn = document.getElementById('btnLoadCollectionsData');
+    const refreshBtn = document.getElementById('btnRefreshCollectorMatrix');
+    if (loadBtn) loadBtn.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+
+    try {
+        hideLoadError();
+        const hydratedFromCache = await hydrateCollectorMatrixFromDeviceCache();
+        const result = await refreshCollectorMatrixFromSnapshot({ quiet: false });
+        if (!result?.loaded && !collectorMatrixSnapshotLoaded) {
+            if (!hydratedFromCache) {
+                renderCollectorMatrixEmptyState();
+            }
+            showLoadError('No saved month comparison is available yet. Run the controlled full summary build only when the office is idle.');
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('Collections matrix summary load failed:', error);
+        showLoadError(error.message || 'Unable to load the permanent month comparison summary.');
+        return false;
+    } finally {
+        collectorMatrixBuildInProgress = false;
+        if (loadBtn) loadBtn.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
+        updateCollectorMatrixHeaderStatus();
+    }
+}
+
+async function fetchCollectorMatrixSettings() {
+    const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-settings'), { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Settings HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+async function saveCollectorMatrixSettings(settings) {
+    const response = await fetch(getMargabaseAdminUrl('/admin/collections-matrix-settings'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ settings })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Settings save HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+function renderCollectorMatrixSettingsModal() {
+    const modal = document.getElementById('collectorMatrixSettingsModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+}
+
+function closeCollectorMatrixSettingsModal() {
+    document.getElementById('collectorMatrixSettingsModal')?.classList.add('hidden');
+}
+
+async function openCollectorMatrixSettingsModal() {
+    const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+    const enabledNode = document.getElementById('collectorMatrixAutoRebuildEnabled');
+    const timeNode = document.getElementById('collectorMatrixAutoRebuildTime');
+    const lastBuiltNode = document.getElementById('collectorMatrixLastBuiltAt');
+    if (statusNode) statusNode.textContent = 'Loading settings...';
+    renderCollectorMatrixSettingsModal();
+    try {
+        const [payload] = await Promise.all([
+            fetchCollectorMatrixSettings(),
+            loadCollectionWorkflowSettings()
+        ]);
+        const settings = payload.settings || {};
+        if (enabledNode) enabledNode.checked = settings.autoRebuildEnabled !== false;
+        if (timeNode) timeNode.value = settings.autoRebuildTime || '00:00';
+        fillCollectionTargetInputs();
+        renderCollectionAssignmentSettings();
+        const builtParts = [];
+        if (collectorMatrixSnapshotMeta?.builtAt) {
+            builtParts.push(`Last matrix build: ${new Date(collectorMatrixSnapshotMeta.builtAt).toLocaleString('en-PH')}`);
+        }
+        if (payload.lastAutoBuiltAt) {
+            builtParts.push(`Last scheduled run: ${new Date(payload.lastAutoBuiltAt).toLocaleString('en-PH')}`);
+        }
+        if (lastBuiltNode) {
+            lastBuiltNode.textContent = builtParts.length
+                ? builtParts.join(' • ')
+                : 'No saved matrix build yet. A controlled backend rebuild must create the permanent summary.';
+        }
+        if (statusNode) {
+            statusNode.textContent = `Automatic rebuild uses ${settings.timezone || 'Asia/Manila'} time. Server jobs rebuild the summary; staff browsers only read the saved result.`;
+        }
+    } catch (error) {
+        if (statusNode) statusNode.textContent = error.message || 'Unable to load matrix settings.';
+    }
+}
+
+async function saveCollectorMatrixSettingsFromModal() {
+    const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+    const enabledNode = document.getElementById('collectorMatrixAutoRebuildEnabled');
+    const timeNode = document.getElementById('collectorMatrixAutoRebuildTime');
+    if (statusNode) statusNode.textContent = 'Saving...';
+    try {
+        collectionWorkflowSettings.targets = collectCollectionTargetInputs();
+        collectionWorkflowSettings.assignments = collectCollectionAssignmentInputs();
+        await saveCollectionWorkflowSettings();
+        await saveCollectorMatrixSettings({
+            autoRebuildEnabled: Boolean(enabledNode?.checked),
+            autoRebuildTime: String(timeNode?.value || '00:00').trim(),
+            timezone: 'Asia/Manila'
+        });
+        if (statusNode) statusNode.textContent = 'Saved. Targets and open assignments are available inside Collections.';
+        setTimeout(() => closeCollectorMatrixSettingsModal(), 900);
+    } catch (error) {
+        if (statusNode) statusNode.textContent = error.message || 'Unable to save settings.';
+    }
+}
+
 function updateLoadingStatus(message) {
     const container = document.getElementById('table-container');
     if (!container) return;
@@ -2503,7 +3717,7 @@ function collectionHistoryDocToEntry(doc) {
     const accountGroupRef = String(getField(f, ['account_group_ref']) || '').trim();
     if (!invoiceKey && !accountRef && !accountGroupRef) return null;
 
-    const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup']);
+    const followupDateRaw = getField(f, ['followup_datetime', 'followup_date', 'next_followup_date', 'next_followup']);
     const callDateRaw = getField(f, ['timestamp', 'call_datetime', 'created_at', 'updated_at', 'timestmp', 'tmestamp', 'datex', 'date_created']) || followupDateRaw;
     const followupDate = normalizeDate(followupDateRaw);
     const callDate = normalizeDate(callDateRaw);
@@ -2521,6 +3735,16 @@ function collectionHistoryDocToEntry(doc) {
         remarks: getField(f, ['remarks']) || 'No remarks',
         contactPerson: getField(f, ['contact_person']) || '-',
         contactNumber: getField(f, ['contact_number']) || '',
+        conversationResult: getField(f, ['conversation_result']) || '',
+        promiseToPay: getField(f, ['promise_to_pay']) || '',
+        promiseToPayAmount: Number(getField(f, ['promise_to_pay_amount']) || getField(f, ['payment_amount']) || 0),
+        promiseToPayDate: normalizeDate(getField(f, ['promise_to_pay_date'])),
+        promiseToPayDateKey: toDateKey(getField(f, ['promise_to_pay_date'])),
+        nextFollowupTime: getField(f, ['next_followup_time']) || '',
+        issueType: getField(f, ['issue_type']) || '',
+        issueNotes: getField(f, ['issue_notes']) || '',
+        collectionRoleAssignment: getField(f, ['collection_role_assignment']) || '',
+        customerAssignmentOwner: getField(f, ['customer_assignment_owner']) || '',
         scheduleStatus: getField(f, ['schedule_status']),
         statusId: getField(f, ['status_id']),
         locationId: getField(f, ['location_id']),
@@ -2573,19 +3797,60 @@ function indexCollectionHistoryEntry(entry) {
 }
 
 async function loadCollectionHistoryForKeys(keys = []) {
+    if (collectionHistoryBulkLoaded) return;
+
     const uniqueKeys = Array.from(new Set(keys.map((key) => String(key || '').trim()).filter(Boolean)));
     if (!uniqueKeys.length) return;
 
-    const fields = ['invoice_num', 'invoice_id', 'account_ref', 'account_group_ref'];
+    const accountKeys = uniqueKeys.filter((key) => key.startsWith('account:'));
+    const invoiceKeys = uniqueKeys.filter((key) => !key.startsWith('account:'));
     const queries = [];
-    uniqueKeys.forEach((key) => {
-        fields.forEach((fieldPath) => {
+
+    accountKeys.forEach((key) => {
+        queries.push(
+            firestoreRunQuery({
+                from: [{ collectionId: 'tbl_collectionhistory' }],
+                where: {
+                    fieldFilter: {
+                        field: { fieldPath: 'account_ref' },
+                        op: 'EQUAL',
+                        value: { stringValue: key }
+                    }
+                },
+                select: { fields: COLLECTION_HISTORY_FIELD_MASK.map((fieldPath) => ({ fieldPath })) },
+                limit: 60
+            }).catch((error) => {
+                console.warn(`Collection history account lookup failed for ${key}:`, error);
+                return [];
+            })
+        );
+    });
+
+    invoiceKeys.forEach((key) => {
+        queries.push(
+            firestoreRunQuery({
+                from: [{ collectionId: 'tbl_collectionhistory' }],
+                where: {
+                    fieldFilter: {
+                        field: { fieldPath: 'invoice_num' },
+                        op: 'EQUAL',
+                        value: { stringValue: key }
+                    }
+                },
+                select: { fields: COLLECTION_HISTORY_FIELD_MASK.map((fieldPath) => ({ fieldPath })) },
+                limit: 40
+            }).catch((error) => {
+                console.warn(`Collection history invoice lookup failed for ${key}:`, error);
+                return [];
+            })
+        );
+        if (/^\d+$/.test(key)) {
             queries.push(
                 firestoreRunQuery({
                     from: [{ collectionId: 'tbl_collectionhistory' }],
                     where: {
                         fieldFilter: {
-                            field: { fieldPath },
+                            field: { fieldPath: 'invoice_id' },
                             op: 'EQUAL',
                             value: { stringValue: key }
                         }
@@ -2593,11 +3858,11 @@ async function loadCollectionHistoryForKeys(keys = []) {
                     select: { fields: COLLECTION_HISTORY_FIELD_MASK.map((fieldPath) => ({ fieldPath })) },
                     limit: 40
                 }).catch((error) => {
-                    console.warn(`Collection history lookup failed for ${fieldPath}=${key}:`, error);
+                    console.warn(`Collection history invoice_id lookup failed for ${key}:`, error);
                     return [];
                 })
             );
-        });
+        }
     });
 
     const docs = (await Promise.all(queries)).flat();
@@ -2645,13 +3910,11 @@ function latestHistoryForCell(cell = {}) {
 }
 
 function getHistoryForCollectorRow(rowId) {
-    const histories = [];
-    collectorCellMap.forEach((cell) => {
-        if (String(cell.rowId || '') === String(rowId || '')) {
-            histories.push(getHistoryForCell(cell));
-        }
-    });
-    return mergeHistoryLists(...histories);
+    const safeRowId = String(rowId || '').trim();
+    if (!safeRowId) return [];
+    const rowCells = collectorCellsByRowId.get(safeRowId) || [];
+    if (!rowCells.length) return [];
+    return mergeHistoryLists(...rowCells.map((cell) => getHistoryForCell(cell)));
 }
 
 function isCancelledLegacySchedule(row = {}) {
@@ -2885,6 +4148,7 @@ async function loadTodayCollectionHistoryDocs() {
 }
 
 async function loadCollectionHistory() {
+    collectionHistoryBulkLoaded = false;
     await loadCollectionEmployeeLookup();
 
     const [historyDocs, todayHistoryDocs] = await Promise.all([
@@ -2938,6 +4202,8 @@ async function loadCollectionHistory() {
         followupSeen.add(token);
         return true;
     });
+
+    collectionHistoryBulkLoaded = true;
 }
 
 function updateFollowupBadge() {
@@ -3561,6 +4827,163 @@ function buildAccountLabel(companyName, branchName) {
     return `${company} - ${branch}`;
 }
 
+function roundCollectionBillingAmount(value) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) return 0;
+    return Math.round(amount * 100) / 100;
+}
+
+function getBillingDocAmountFromFields(f = {}) {
+    const primaryAmount = Number(getField(f, ['totalamount']) || 0) > 0
+        ? Number(getField(f, ['totalamount']) || 0)
+        : Number(getField(f, ['amount']) || 0);
+    const secondaryAmount = Number(getField(f, ['totalamount2']) || 0) > 0
+        ? Number(getField(f, ['totalamount2']) || 0)
+        : Number(getField(f, ['amount2']) || 0);
+    return roundCollectionBillingAmount(primaryAmount + secondaryAmount);
+}
+
+function getMatrixRecordBilledAmount(record = {}, cell = null) {
+    const recordBilled = Number(record.billedAmount || record.amount || 0);
+    const cellBilled = Number(cell?.displayBilledTotal || cell?.billedTotal || 0);
+    const billedRecords = (cell?.records || []).filter((item) => Number(item.billedAmount || item.amount || 0) > 0.01);
+    if (billedRecords.length === 1 && cellBilled > recordBilled + 0.01) {
+        return cellBilled;
+    }
+    return recordBilled > 0 ? recordBilled : cellBilled;
+}
+
+function invoiceFromMatrixSnapshotRecord(record = {}, cell = null) {
+    const amount = getMatrixRecordBilledAmount(record, cell);
+    const collected = Number(record.collectedAmount || 0);
+    let latestBalanceAmount = Number(record.latestBalanceAmount);
+    const billedRecords = (cell?.records || []).filter((item) => Number(item.billedAmount || item.amount || 0) > 0.01);
+    if (!Number.isFinite(latestBalanceAmount) || latestBalanceAmount <= 0.01
+        || (billedRecords.length === 1 && amount > latestBalanceAmount + 0.01)) {
+        latestBalanceAmount = Math.max(0, amount - collected);
+    }
+    const invoiceNo = String(record.invoiceNo || record.invoiceId || record.invoiceKey || '').trim();
+    return {
+        ...record,
+        invoiceId: String(record.invoiceId || invoiceNo || '').trim(),
+        invoiceNo: invoiceNo || String(record.invoiceId || '').trim(),
+        invoiceKey: String(record.invoiceKey || invoiceNo || record.invoiceId || '').trim(),
+        invoiceDate: normalizeDate(record.invoiceDate || record.dueDate),
+        amount,
+        billedAmount: amount,
+        latestBalanceAmount,
+        company: record.company || cell?.customer || '',
+        branch: record.branch || cell?.branchName || '',
+        companyId: record.companyId || cell?.companyId || '',
+        branchId: record.branchId || cell?.branchId || '',
+        monthKey: resolveInvoiceBillingMonthKey(record, cell),
+        monthLabel: record.monthLabel || cell?.label || '',
+        monthYear: record.monthYear || cell?.label || '',
+        readingDay: Number(record.readingDay || record.rd || cell?.rd || 0) || 0,
+        billingCoverage: formatBillingCoveragePeriod({ ...record, readingDay: Number(record.readingDay || record.rd || 0) || 0 }, cell),
+        fromMatrixSnapshot: true
+    };
+}
+
+function getCollectorUnpaidListScope(workspaceOrScope = 'single') {
+    if (typeof workspaceOrScope === 'string') {
+        return workspaceOrScope === 'all' ? 'all' : 'single';
+    }
+    return workspaceOrScope?.unpaidListScope === 'all' ? 'all' : 'single';
+}
+
+function collectCollectorRowInvoiceKeys(cell, options = {}) {
+    const scope = options.scope || 'single';
+    const keys = new Set();
+    const appendFromRecords = (records = []) => {
+        records.forEach((record) => {
+            [record.invoiceNo, record.invoiceId, record.invoiceKey, record.id].forEach((value) => {
+                const key = String(value || '').trim();
+                if (key) keys.add(key);
+            });
+        });
+    };
+
+    appendFromRecords(cell?.records || []);
+
+    const rowId = String(cell?.rowId || '').trim();
+    if (!rowId || !collectorDashboardData?.customerRows?.length) {
+        return Array.from(keys);
+    }
+
+    const row = collectorDashboardData.customerRows.find((item) => String(item.rowId || '').trim() === rowId);
+    if (scope === 'single') {
+        if (row) {
+            getCollectorRowOpenCells(row).forEach((rowCell) => appendFromRecords(rowCell.records || []));
+        }
+        return Array.from(keys);
+    }
+
+    const context = resolveCollectorCellContext(cell);
+    const familyRows = getCollectorSoaFamilyRows(context);
+    const rowsToScan = familyRows.length ? familyRows : (row ? [row] : []);
+    rowsToScan.forEach((familyRow) => {
+        getCollectorRowOpenCells(familyRow).forEach((rowCell) => appendFromRecords(rowCell.records || []));
+    });
+    return Array.from(keys);
+}
+
+function getCollectorBranchRowCells(workspace) {
+    const context = workspace?.context || {};
+    const selectedCell = workspace?.cell || null;
+    const selectedRowId = String(selectedCell?.rowId || context.rowId || '').trim();
+    if (!selectedRowId) return selectedCell ? [selectedCell] : [];
+
+    const row = (collectorDashboardData?.customerRows || []).find((item) => String(item.rowId || '').trim() === selectedRowId);
+    const cells = row ? getCollectorRowOpenCells(row) : [];
+    if (selectedCell) cells.push(selectedCell);
+
+    const seen = new Set();
+    return cells.filter((cell) => {
+        const id = String(cell?.id || '').trim();
+        if (!cell || !id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+    });
+}
+
+function getCollectorMatrixRowUnpaidInvoices(cellOrWorkspace) {
+    const workspace = cellOrWorkspace?.context
+        ? cellOrWorkspace
+        : {
+            cell: cellOrWorkspace,
+            context: resolveCollectorCellContext(cellOrWorkspace),
+            unpaidListScope: 'single'
+        };
+    const cell = workspace?.cell;
+    if (!cell || !canUseCollectorMatrixSnapshot()) return [];
+
+    const seen = new Set();
+    const invoices = [];
+
+    getCollectorSoaListGroupCells(workspace).forEach((rowCell) => {
+        (rowCell.records || []).forEach((record) => {
+            const invoice = invoiceFromMatrixSnapshotRecord(record, rowCell);
+            const key = String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim();
+            const outstanding = getOutstandingInvoiceAmount(invoice);
+            if (!key || seen.has(key) || outstanding <= 0.01) return;
+            seen.add(key);
+            invoices.push({
+                ...invoice,
+                sourceCell: rowCell,
+                contractmainId: invoice.contractmainId || rowCell.contractmainId || ''
+            });
+        });
+    });
+
+    return invoices.sort((left, right) => {
+        const leftTime = (left.invoiceDate || new Date(0)).getTime();
+        const rightTime = (right.invoiceDate || new Date(0)).getTime();
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''));
+    });
+}
+
 function processInvoice(doc) {
     const f = doc.fields || {};
 
@@ -3571,7 +4994,6 @@ function processInvoice(doc) {
     const invoiceNoKey = invoiceNo !== null && invoiceNo !== undefined ? String(invoiceNo).trim() : '';
 
     if (!invoiceIdKey && !invoiceNoKey) return null;
-    if (paidInvoiceIds.has(invoiceIdKey) || paidInvoiceIds.has(invoiceNoKey)) return null;
 
     const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
     const location = getBillingLocationFromFields(f, contractmainId);
@@ -3586,7 +5008,8 @@ function processInvoice(doc) {
     const billingContactNumber = getField(f, ['contact_number']) || '';
 
     const age = calculateAge(dueDate, month, year);
-    const totalAmount = Number(getField(f, ['totalamount', 'amount']) || 0);
+    const totalAmount = getBillingDocAmountFromFields(f);
+    if (totalAmount <= 0) return null;
 
     const history = getHistoryForInvoice(invoiceIdKey, invoiceNoKey);
     const lastHistory = history.length > 0 ? history[0] : null;
@@ -3634,6 +5057,95 @@ function processInvoice(doc) {
     };
 }
 
+function mergeCollectorInvoice(existing, incoming) {
+    const mergedAmount = Number((Number(existing?.amount || 0) + Number(incoming?.amount || 0)).toFixed(2));
+    const mergedLastContactDate = [existing?.lastContactDate, incoming?.lastContactDate]
+        .filter((value) => value instanceof Date && !Number.isNaN(value.getTime()))
+        .sort((left, right) => right.getTime() - left.getTime())[0] || null;
+    const mergedAge = Math.max(Number(existing?.age || 0), Number(incoming?.age || 0));
+    const mergedHistory = Array.isArray(existing?.history) && existing.history.length
+        ? existing.history
+        : (Array.isArray(incoming?.history) ? incoming.history : []);
+
+    return {
+        ...existing,
+        ...incoming,
+        id: existing?.id ?? incoming?.id,
+        invoiceId: existing?.invoiceId || incoming?.invoiceId,
+        invoiceNo: existing?.invoiceNo || incoming?.invoiceNo,
+        invoiceKey: existing?.invoiceKey || incoming?.invoiceKey,
+        amount: mergedAmount,
+        month: existing?.month || incoming?.month,
+        year: existing?.year || incoming?.year,
+        monthYear: existing?.monthYear && existing.monthYear !== '-' ? existing.monthYear : (incoming?.monthYear || '-'),
+        invoiceDate: existing?.invoiceDate || incoming?.invoiceDate,
+        invoiceDateRaw: existing?.invoiceDateRaw || incoming?.invoiceDateRaw,
+        dueDate: existing?.dueDate || incoming?.dueDate,
+        dateReceived: existing?.dateReceived || incoming?.dateReceived,
+        receivedBy: existing?.receivedBy || incoming?.receivedBy,
+        billingStatus: existing?.billingStatus || incoming?.billingStatus,
+        billingLocation: existing?.billingLocation || incoming?.billingLocation,
+        billingRemarks: existing?.billingRemarks || incoming?.billingRemarks,
+        age: mergedAge,
+        priority: getPriority(mergedAge),
+        company: existing?.company || incoming?.company,
+        branch: existing?.branch || incoming?.branch,
+        accountLabel: existing?.accountLabel || incoming?.accountLabel,
+        companyId: existing?.companyId || incoming?.companyId,
+        branchId: existing?.branchId || incoming?.branchId,
+        machineId: existing?.machineId || incoming?.machineId,
+        contractmainId: existing?.contractmainId || incoming?.contractmainId,
+        serialNumber: existing?.serialNumber || incoming?.serialNumber,
+        modelName: existing?.modelName || incoming?.modelName,
+        machineLabel: existing?.machineLabel || incoming?.machineLabel,
+        contactNumber: existing?.contactNumber || incoming?.contactNumber,
+        category: existing?.category || incoming?.category,
+        lastRemarks: existing?.lastRemarks || incoming?.lastRemarks,
+        lastContactDate: mergedLastContactDate,
+        lastContactDays: mergedLastContactDate ? Math.max(0, daysBetween(mergedLastContactDate, new Date())) : null,
+        nextFollowup: existing?.nextFollowup || incoming?.nextFollowup,
+        historyCount: mergedHistory.length,
+        history: mergedHistory
+    };
+}
+
+function upsertCollectorInvoice(invoice, sourceDocKey = '') {
+    if (!invoice) return false;
+
+    const safeDocKey = String(sourceDocKey || '').trim();
+    if (safeDocKey) {
+        if (collectorInvoiceSourceDocKeys.has(safeDocKey)) return false;
+        collectorInvoiceSourceDocKeys.add(safeDocKey);
+    }
+
+    const invoiceKeys = new Set([
+        invoice.invoiceKey,
+        invoice.invoiceNo,
+        invoice.invoiceId
+    ].map((value) => String(value || '').trim()).filter(Boolean));
+    if (!invoiceKeys.size) return false;
+
+    const existingIndex = allInvoices.findIndex((item) => {
+        const itemKeys = [
+            item?.invoiceKey,
+            item?.invoiceNo,
+            item?.invoiceId
+        ].map((value) => String(value || '').trim()).filter(Boolean);
+        return itemKeys.some((key) => invoiceKeys.has(key));
+    });
+
+    if (existingIndex === -1) {
+        allInvoices.push({
+            ...invoice,
+            amount: Number(Number(invoice.amount || 0).toFixed(2))
+        });
+        return true;
+    }
+
+    allInvoices[existingIndex] = mergeCollectorInvoice(allInvoices[existingIndex], invoice);
+    return true;
+}
+
 function rebuildPaidInvoiceIdsFromPayments() {
     paidInvoiceIds = new Set();
     paymentEntries.forEach((payment) => {
@@ -3652,6 +5164,10 @@ function rebuildInvoiceIndex() {
         if (invoice.invoiceId) invoiceIndexMap.set(String(invoice.invoiceId), invoice);
         if (invoice.id !== null && invoice.id !== undefined) invoiceIndexMap.set(String(invoice.id), invoice);
     });
+}
+
+function pruneSettledCollectorInvoices() {
+    allInvoices = allInvoices.filter((invoice) => getOutstandingInvoiceAmount(invoice) > 0.01);
 }
 
 function findInvoiceByKey(key) {
@@ -3704,9 +5220,23 @@ function buildCollectorBillingRecordFromDoc(doc) {
     const billingPeriodMonthKey = getBillingPeriodMonthKey(billingMonth, billingYear, invoiceDate);
     const dateReceived = normalizeDate(getField(f, ['date_received']));
     const receivedBy = String(getField(f, ['receivedby']) || '').trim();
-    const amount = Number(getField(f, ['totalamount', 'amount']) || 0);
+    const amount = getBillingDocAmountFromFields(f);
     const contractmainId = String(getField(f, ['contractmain_id']) || '').trim();
     const location = getBillingLocationFromFields(f, contractmainId);
+    const lineHints = parseBillingLinesCoverageHints(getField(f, ['billing_lines_json']));
+    const readingDateField = normalizeDate(getField(f, ['reading_date']));
+    const readingDay = Number(getField(f, ['reading_day', 'rd']) || 0)
+        || (readingDateField ? readingDateField.getDate() : 0)
+        || Number(lineHints.readingDay || 0)
+        || 0;
+    const coverageFrom = firstNormalizedCoverageDate(
+        getField(f, ['billing_from', 'datefrom', 'previous_reading_date']),
+        lineHints.previousReadingDate
+    );
+    const coverageTo = firstNormalizedCoverageDate(
+        getField(f, ['billing_to', 'dateto', 'present_reading_date']),
+        lineHints.presentReadingDate
+    );
     const billingMeta = {
         company: location.companyName,
         branch: location.branchName,
@@ -3714,7 +5244,8 @@ function buildCollectorBillingRecordFromDoc(doc) {
         invoiceDate,
         dueDate,
         month: billingMonth,
-        year: billingYear
+        year: billingYear,
+        readingDay: readingDay >= 1 && readingDay <= 31 ? readingDay : 0
     };
 
     const record = invoiceDate && amount > 0 ? {
@@ -3740,8 +5271,18 @@ function buildCollectorBillingRecordFromDoc(doc) {
         billingLocation: getField(f, ['location']),
         billingRemarks: getField(f, ['remarks']),
         amount,
-        rd: invoiceDate.getDate(),
-        monthKey: billingPeriodMonthKey
+        month: billingMonth,
+        year: billingYear,
+        readingDay: readingDay >= 1 && readingDay <= 31 ? readingDay : 0,
+        rd: readingDay >= 1 && readingDay <= 31 ? readingDay : invoiceDate.getDate(),
+        monthKey: billingPeriodMonthKey,
+        billingMonthKey: billingPeriodMonthKey,
+        coverageFrom,
+        coverageTo,
+        billingFrom: coverageFrom,
+        billingTo: coverageTo,
+        previousReadingDate: coverageFrom,
+        presentReadingDate: coverageTo
     } : null;
 
     return {
@@ -3818,6 +5359,175 @@ async function queryCollectionBillingDocsByInvoice(invoiceNo) {
     return Array.from(byKey.values());
 }
 
+function collectionPaymentEntryToken(entry) {
+    return [
+        entry.docId,
+        entry.invoiceId,
+        entry.invoiceNo,
+        Number(entry.amount || 0).toFixed(2),
+        Number(entry.tax2307 || 0).toFixed(2),
+        entry.paymentDate ? toDateKey(entry.paymentDate) : '',
+        entry.orNumber
+    ].join('|');
+}
+
+function buildCollectionPaymentEntryFromDoc(doc) {
+    const f = doc.fields || {};
+    const paymentStatus = String(getField(f, ['payment_status']) || '').trim();
+    const isCancelled = Boolean(Number(getField(f, ['iscancel']) || 0)) || /^cancel/i.test(paymentStatus);
+    if (isCancelled) return null;
+
+    const source = String(getField(f, ['source']) || '').trim();
+    const isDraftPayment = /^draft/i.test(paymentStatus) || source === 'field_app_collection_payment_draft';
+    if (isDraftPayment) return null;
+
+    const invoiceId = getField(f, ['invoice_id']);
+    const invoiceIdKey = invoiceId !== null && invoiceId !== undefined ? String(invoiceId).trim() : '';
+    const invoiceNo = String(getField(f, ['invoice_num']) || '').trim();
+    const amount = Number(getField(f, ['payment_amt']) || 0);
+    const tax2307 = Number(getField(f, ['tax_2307']) || 0);
+    const deductionType = String(getField(f, ['deduction_type']) || (tax2307 > 0 ? '2307' : '')).trim().toLowerCase();
+    const deductionAmount = Number(getField(f, ['deduction_amount']) || tax2307 || 0);
+    const otherDeductionAmount = Number(getField(f, ['other_deduction_amount']) || (deductionType && deductionType !== '2307' ? deductionAmount : 0) || 0);
+    const balanceAmountRaw = getField(f, ['balance_amt']);
+    const balanceAmount = balanceAmountRaw !== null && balanceAmountRaw !== undefined ? Number(balanceAmountRaw) : null;
+    const datePaid = normalizeDate(getField(f, ['date_paid']));
+    const dateDeposit = normalizeDate(getField(f, ['date_deposit']));
+    const taxDatePaid = normalizeDate(getField(f, ['tax_date_paid']));
+    const paymentDate = datePaid || taxDatePaid || dateDeposit;
+    if (!(amount > 0 || tax2307 > 0 || deductionAmount > 0) && !paymentDate) return null;
+
+    return {
+        docId: getFirestoreDocumentId(doc),
+        id: String(getField(f, ['id']) || getFirestoreDocumentId(doc) || '').trim(),
+        invoiceId: invoiceIdKey,
+        invoiceNo,
+        client: String(getField(f, ['client']) || '').trim(),
+        category: String(getField(f, ['category']) || '').trim(),
+        invoiceAmount: Number(getField(f, ['invoice_amt']) || 0),
+        invoiceDate: normalizeDate(getField(f, ['invoice_date'])),
+        printedOr: String(getField(f, ['printed_or']) || '').trim(),
+        assigned: String(getField(f, ['assigned']) || '').trim(),
+        amount,
+        balanceAmount,
+        deductionType,
+        deductionAmount,
+        otherDeductionAmount,
+        paymentDate,
+        datePaid,
+        dateDeposit,
+        taxDatePaid,
+        orNumber: String(getField(f, ['ornum', 'or_number']) || '').trim(),
+        paymentType: String(getField(f, ['payment_type']) || '').trim(),
+        paymentStatus,
+        tax2307,
+        taxStatus: String(getField(f, ['tax_status']) || '').trim(),
+        taxFormStatus: String(getField(f, ['tax_form_status']) || '').trim().toLowerCase(),
+        taxFormReceivedAt: normalizeDate(getField(f, ['tax_form_received_at'])),
+        taxFormRemarks: String(getField(f, ['tax_form_remarks']) || '').trim(),
+        checkpaymentId: String(getField(f, ['checkpayment_id']) || '').trim(),
+        checkNumber: String(getField(f, ['check_number']) || '').trim(),
+        checkAmount: Number(getField(f, ['check_amt']) || 0),
+        checkDate: normalizeDate(getField(f, ['check_date'])),
+        accountBank: String(getField(f, ['account_bank']) || '').trim(),
+        remarks: String(getField(f, ['remarks']) || '').trim(),
+        source,
+        scheduleId: String(getField(f, ['schedule_id']) || '').trim(),
+        scheduleDocId: String(getField(f, ['schedule_doc_id']) || '').trim()
+    };
+}
+
+async function queryCollectionPaymentDocsByInvoice(invoiceKey) {
+    const normalizedInvoice = normalizeCollectorInvoiceSearchValue(invoiceKey);
+    if (!normalizedInvoice) return [];
+    const queryPairs = [
+        ['invoice_num', normalizedInvoice],
+        ['invoice_id', normalizedInvoice]
+    ];
+    if (/^\d+$/.test(normalizedInvoice)) {
+        queryPairs.push(['invoice_id', Number(normalizedInvoice)]);
+    }
+
+    const byKey = new Map();
+    const settled = await Promise.allSettled(queryPairs.map(([fieldPath, value]) => (
+        firestoreQueryEquals('tbl_paymentinfo', fieldPath, value, {
+            fieldMask: COLLECTION_PAYMENT_FIELD_MASK,
+            limit: 40
+        })
+    )));
+    settled.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        result.value.forEach((doc) => {
+            const key = getFirestoreDocumentId(doc) || doc.name || JSON.stringify(doc.fields || {});
+            if (key) byKey.set(key, doc);
+        });
+    });
+    return Array.from(byKey.values());
+}
+
+async function ensureCollectorCellDetailData(cell, options = {}) {
+    if (!cell) return;
+    const scope = options.scope || 'single';
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+    const invoiceKeys = collectCollectorRowInvoiceKeys(cell, { scope });
+    if (!invoiceKeys.length) return;
+
+    let done = 0;
+    const total = invoiceKeys.length;
+    onProgress?.({ done, total, label: `Loading unpaid invoice details (${done}/${total})...` });
+
+    const billingDocs = [];
+    for (const key of invoiceKeys) {
+        const docs = await queryCollectionBillingDocsByInvoice(key);
+        billingDocs.push(...docs);
+        done += 1;
+        onProgress?.({ done, total, label: `Loading unpaid invoice details (${done}/${total})...` });
+    }
+
+    let changedInvoices = false;
+    billingDocs.forEach((doc) => {
+        const detail = buildCollectorBillingRecordFromDoc(doc);
+        if (detail.invoiceId) billingMetaByInvoiceKey.set(detail.invoiceId, detail.billingMeta);
+        if (detail.invoiceNo) billingMetaByInvoiceKey.set(detail.invoiceNo, detail.billingMeta);
+        changedInvoices = ingestCollectorBillingRecord(detail.record) || changedInvoices;
+
+        const invoice = processInvoice(doc);
+        changedInvoices = upsertCollectorInvoice(invoice, collectionBillingDocKey(doc)) || changedInvoices;
+    });
+
+    done = 0;
+    onProgress?.({ done, total, label: 'Loading payment history...' });
+    const paymentDocs = [];
+    for (const key of invoiceKeys) {
+        const docs = await queryCollectionPaymentDocsByInvoice(key);
+        paymentDocs.push(...docs);
+        done += 1;
+        onProgress?.({ done, total, label: `Loading payment history (${done}/${total})...` });
+    }
+    const existingPaymentTokens = new Set(paymentEntries.map(collectionPaymentEntryToken));
+    paymentDocs.forEach((doc) => {
+        const entry = buildCollectionPaymentEntryFromDoc(doc);
+        if (!entry) return;
+        const token = collectionPaymentEntryToken(entry);
+        if (existingPaymentTokens.has(token)) return;
+        existingPaymentTokens.add(token);
+        paymentEntries.push(entry);
+        if (entry.balanceAmount !== null && Number(entry.balanceAmount) <= 0.01) {
+            if (entry.invoiceId) paidInvoiceIds.add(entry.invoiceId);
+            if (entry.invoiceNo) paidInvoiceIds.add(entry.invoiceNo);
+        }
+    });
+
+    const contractIds = new Set(
+        billingDocs
+            .map((doc) => String(getField(doc?.fields || {}, ['contractmain_id']) || '').trim())
+            .filter(Boolean)
+    );
+    await Promise.all(Array.from(contractIds).map((contractId) => loadContractReadingDay(contractId)));
+
+    if (changedInvoices) rebuildInvoiceIndex();
+}
+
 async function ensureCollectorInvoiceSearchSupplement() {
     const term = getCollectorInvoiceSearchTerm();
     const normalizedTerm = normalizeCollectorInvoiceSearchValue(term);
@@ -3839,10 +5549,7 @@ async function ensureCollectorInvoiceSearchSupplement() {
             changed = ingestCollectorBillingRecord(detail.record) || changed;
 
             const invoice = processInvoice(doc);
-            if (invoice && !allInvoices.some((item) => item.invoiceKey === invoice.invoiceKey || item.invoiceNo === invoice.invoiceNo)) {
-                allInvoices.push(invoice);
-                changed = true;
-            }
+            changed = upsertCollectorInvoice(invoice, collectionBillingDocKey(doc)) || changed;
         });
         collectorInvoiceSearchSupplementedTerms.add(normalizedTerm);
         if (changed) {
@@ -3894,6 +5601,12 @@ async function loadCollectionBillingDocs(statusCallback = null) {
 }
 
 async function loadInvoices(mode) {
+    if (!collectionsFullScanAuthorized) {
+        console.warn('Collections full scan blocked until Load Data is clicked.');
+        renderDeferredCollectionsWorkspaceNote();
+        return false;
+    }
+
     dataMode = mode;
     const isAllMode = mode === 'all';
     lastLoadSucceeded = false;
@@ -3912,6 +5625,7 @@ async function loadInvoices(mode) {
         billingMetaByInvoiceKey = new Map();
         collectorBillingRecords = [];
         collectorBillingRecordKeys = new Set();
+        collectorInvoiceSourceDocKeys = new Set();
         collectorInvoiceSearchSupplementedTerms.clear();
         const years = new Set();
 
@@ -3926,7 +5640,7 @@ async function loadInvoices(mode) {
             if (!invoice) return;
             if (!isAllMode && invoice.age > 180) return;
 
-            allInvoices.push(invoice);
+            upsertCollectorInvoice(invoice, collectionBillingDocKey(doc));
             if (invoice.year) years.add(String(invoice.year));
         });
 
@@ -3936,6 +5650,7 @@ async function loadInvoices(mode) {
             return b.amount - a.amount;
         });
 
+        pruneSettledCollectorInvoices();
         rebuildInvoiceIndex();
         populateYearFilter(years);
 
@@ -3963,6 +5678,10 @@ async function loadAllInvoices() {
 }
 
 function toggleBadDebt() {
+    if (!collectionsFullScanAuthorized) {
+        window.alert('Click Load Data first to scan billing and payment records.');
+        return;
+    }
     if (dataMode === 'active') loadAllInvoices();
     else loadActiveInvoices();
 }
@@ -4034,13 +5753,716 @@ function getWorkQueueModeLabel(mode) {
         scheduled_today: 'Scheduled Today',
         promise_due: 'Promise Due Today',
         urgent_stale: 'Urgent 20+ Days No Call',
-        missing_contact: 'Missing Contact / No Call Log'
+        missing_contact: 'Missing Contact / No Call Log',
+        promise_today: 'Promise-to-Pay Today',
+        broken_promise: 'Broken Promise-to-Pay',
+        followup_today: 'Follow-up Scheduled Today',
+        needs_document: 'Needs Document',
+        billing_received_unfollowed: 'Billing Received Not Yet Followed Up',
+        top_collectible: 'Top Collectible Accounts',
+        overdue_accounts: 'Overdue Accounts',
+        for_approval: 'For Approval'
     };
     return labels[mode] || 'All priorities';
 }
 
 function invoiceKeySetFromRows(rows = []) {
     return new Set(rows.map((invoice) => String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim()).filter(Boolean));
+}
+
+function getLatestHistoryForInvoice(invoice) {
+    const history = Array.isArray(invoice?.history) && invoice.history.length
+        ? invoice.history
+        : getHistoryForInvoice(invoice?.invoiceNo, invoice?.invoiceId, invoice?.invoiceKey);
+    return history[0] || null;
+}
+
+function getHistoryPromisedAmount(entry, invoice) {
+    const amount = Number(entry?.promiseToPayAmount || entry?.paymentAmount || 0);
+    return amount > 0 ? amount : Number(invoice?.amount || 0) || 0;
+}
+
+function hasRealReceivedDate(value) {
+    return Boolean(toDateKey(value));
+}
+
+function cellHasRealReceivedInvoice(cell = {}) {
+    const records = Array.isArray(cell.records) ? cell.records : [];
+    if (records.some((record) => hasRealReceivedDate(record.dateReceived))) return true;
+    return hasRealReceivedDate(cell.dateReceived);
+}
+
+function getCollectorRowOpenCells(row = {}) {
+    return Object.values(row.months || {})
+        .map((cellId) => collectorCellMap.get(String(cellId || '').trim()))
+        .filter((cell) => {
+            if (!cell) return false;
+            const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+            const outstanding = getCellOutstandingBalance(cell);
+            return (billedTarget > 0 || cell.pendingBilling || cell.missedReading) && Number(cell.collectedTotal || 0) <= 0 && outstanding > 0.01;
+        });
+}
+
+function getCollectorRowOpenAmount(row = {}) {
+    return getCollectorRowOpenCells(row).reduce((sum, cell) => {
+        const outstanding = getCellOutstandingBalance(cell);
+        const projected = Number(cell.pendingBillingProjectionTotal || 0);
+        const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+        return sum + Math.max(outstanding, projected, billedTarget, 0);
+    }, 0);
+}
+
+function getCollectorRowLatestHistory(row = {}) {
+    const histories = [
+        row.latestHistory,
+        ...Object.values(row.months || {}).map((cellId) => collectorCellMap.get(String(cellId || '').trim())?.latestHistory)
+    ].filter(Boolean);
+    histories.sort((left, right) => {
+        const leftDate = normalizeDate(left.callDate || left.callDateRaw) || new Date(0);
+        const rightDate = normalizeDate(right.callDate || right.callDateRaw) || new Date(0);
+        const leftTime = leftDate.getTime();
+        const rightTime = rightDate.getTime();
+        return rightTime - leftTime;
+    });
+    return histories[0] || null;
+}
+
+function getCollectorRowsForPriorityCards() {
+    return (collectorDashboardData?.customerRows || []).filter((row) => !row.isGroupedChild && !isCollectorRowHidden(row));
+}
+
+function hasCollectorMatrixPrioritySource() {
+    return Array.isArray(collectorDashboardData?.customerRows) && collectorDashboardData.customerRows.length > 0;
+}
+
+function getMatrixPriorityRowsForMode(mode) {
+    const todayKey = toDateKey(new Date());
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const rows = getCollectorRowsForPriorityCards();
+
+    if (mode === 'promise_today') {
+        return rows.filter((row) => {
+            const entry = getCollectorRowLatestHistory(row);
+            return entry?.promiseToPay === 'Promised to Pay' && (entry.promiseToPayDateKey || entry.followupDateKey) === todayKey;
+        });
+    }
+
+    if (mode === 'broken_promise') {
+        return rows.filter((row) => {
+            const entry = getCollectorRowLatestHistory(row);
+            if (!entry) return false;
+            if (entry.promiseToPay === 'Broken Promise') return true;
+            const promiseDate = entry.promiseToPayDate || entry.followupDate;
+            return ['Promised to Pay', 'Rescheduled Promise'].includes(entry.promiseToPay) && promiseDate && promiseDate < now;
+        });
+    }
+
+    if (mode === 'followup_today') {
+        return rows.filter((row) => getCollectorRowLatestHistory(row)?.followupDateKey === todayKey);
+    }
+
+    if (mode === 'needs_document') {
+        return rows.filter((row) => DOCUMENT_ISSUE_TYPES.has(getCollectorRowLatestHistory(row)?.issueType || ''));
+    }
+
+    if (mode === 'billing_received_unfollowed') {
+        return rows.filter((row) => {
+            return getCollectorRowOpenCells(row).some((cell) => cellHasRealReceivedInvoice(cell) && !cell.latestHistory?.callDate);
+        });
+    }
+
+    if (mode === 'top_collectible') {
+        return rows
+            .map((row) => ({ row, amount: getCollectorRowOpenAmount(row) }))
+            .filter((item) => item.amount > 0.01)
+            .sort((left, right) => right.amount - left.amount)
+            .slice(0, 25)
+            .map((item) => item.row);
+    }
+
+    if (mode === 'overdue_accounts') {
+        return rows
+            .filter((row) => getCollectorRowOpenAmount(row) > 0.01)
+            .sort((left, right) => getCollectorRowOpenAmount(right) - getCollectorRowOpenAmount(left));
+    }
+
+    if (mode === 'for_approval') {
+        return rows.filter((row) => {
+            const entry = getCollectorRowLatestHistory(row);
+            return entry?.promiseToPay === 'For Approval Only' || entry?.issueType === 'For Approval';
+        });
+    }
+
+    return [];
+}
+
+function getPriorityRowsForMode(mode) {
+    if (!allInvoices.length && collectorDashboardData) return getMatrixPriorityRowsForMode(mode);
+
+    const todayKey = toDateKey(new Date());
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    if (mode === 'promise_today') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            return entry?.promiseToPay === 'Promised to Pay' && (entry.promiseToPayDateKey || entry.followupDateKey) === todayKey;
+        });
+    }
+
+    if (mode === 'broken_promise') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            if (!entry) return false;
+            if (entry.promiseToPay === 'Broken Promise') return true;
+            const promiseDate = entry.promiseToPayDate || entry.followupDate;
+            return ['Promised to Pay', 'Rescheduled Promise'].includes(entry.promiseToPay) && promiseDate && promiseDate < now;
+        });
+    }
+
+    if (mode === 'followup_today') {
+        return allInvoices.filter((invoice) => getLatestHistoryForInvoice(invoice)?.followupDateKey === todayKey);
+    }
+
+    if (mode === 'needs_document') {
+        return allInvoices.filter((invoice) => DOCUMENT_ISSUE_TYPES.has(getLatestHistoryForInvoice(invoice)?.issueType || ''));
+    }
+
+    if (mode === 'billing_received_unfollowed') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            return hasRealReceivedDate(invoice.dateReceived) && (!entry || !entry.callDate);
+        });
+    }
+
+    if (mode === 'top_collectible') {
+        return [...allInvoices].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0)).slice(0, 25);
+    }
+
+    if (mode === 'overdue_accounts') {
+        return allInvoices.filter((invoice) => Number(invoice.age || 0) > 0).sort((a, b) => b.age - a.age || b.amount - a.amount);
+    }
+
+    if (mode === 'for_approval') {
+        return allInvoices.filter((invoice) => {
+            const entry = getLatestHistoryForInvoice(invoice);
+            return entry?.promiseToPay === 'For Approval Only' || entry?.issueType === 'For Approval';
+        });
+    }
+
+    return [];
+}
+
+function getPriorityMetricAmount(mode, invoice) {
+    if (invoice?.rowId && collectorDashboardData) {
+        const entry = getCollectorRowLatestHistory(invoice);
+        if (mode === 'promise_today' || mode === 'broken_promise') {
+            const promised = Number(entry?.promiseToPayAmount || entry?.paymentAmount || 0);
+            return promised > 0 ? promised : getCollectorRowOpenAmount(invoice);
+        }
+        return getCollectorRowOpenAmount(invoice);
+    }
+    const entry = getLatestHistoryForInvoice(invoice);
+    if (mode === 'promise_today' || mode === 'broken_promise') return getHistoryPromisedAmount(entry, invoice);
+    return Number(invoice?.amount || 0) || 0;
+}
+
+function buildCollectorComparisonListFromRows(rows = []) {
+    const groups = [];
+    const groupMap = new Map();
+    let invoiceCount = 0;
+    let total = 0;
+
+    rows.forEach((row) => {
+        const cells = getCollectorRowOpenCells(row);
+        cells.forEach((cell) => {
+            const records = Array.isArray(cell.records) ? cell.records : [];
+            const openRecords = records.filter((record) => getPriorityRecordAmount(record, cell) > 0.01);
+            const baseGroupKey = `${cell.customer || row.customer || ''}|${cell.branchName || row.branchName || ''}`;
+
+            if (openRecords.length) {
+                openRecords.forEach((record) => {
+                    const amount = getPriorityRecordAmount(record, cell);
+                    if (amount <= 0.01) return;
+                    const item = {
+                        rowId: row.rowId,
+                        cellId: cell.id,
+                        customer: cell.customer || row.customer || record.company || 'Unnamed account',
+                        branch: cell.branchName || row.branchName || record.branch || 'Main',
+                        accountLabel: row.accountLabel || '',
+                        companyId: row.companyId || '',
+                        branchId: row.branchId || '',
+                        invoiceNo: record.invoiceNo || record.invoiceId || record.invoiceKey || '-',
+                        invoiceDate: record.invoiceDate || record.dueDate || null,
+                        dateReceived: record.dateReceived || null,
+                        monthLabel: cell.label || cell.monthKey || '-',
+                        amount,
+                        serialNumber: record.serialNumber || cell.serialNumber || row.serialNumber || '',
+                        modelName: record.modelName || cell.modelName || row.modelName || '',
+                        history: cell.latestHistory || row.latestHistory || null
+                    };
+                    const itemSortTime = normalizeDate(item.invoiceDate)?.getTime() || 0;
+                    const itemSortKey = `${String(item.customer || '').toLowerCase()}|${String(item.branch || '').toLowerCase()}|${String(item.invoiceNo || '').toLowerCase()}`;
+                    const group = ensureCollectorComparisonGroup(groupMap, groups, baseGroupKey, item.customer, item.branch, row.accountLabel);
+                    group.items.push({ ...item, itemSortTime, itemSortKey });
+                    group.total += amount;
+                    invoiceCount += 1;
+                    total += amount;
+                });
+                return;
+            }
+
+            const amount = getPriorityCellAmount(cell);
+            if (amount <= 0.01) return;
+            const item = {
+                rowId: row.rowId,
+                cellId: cell.id,
+                customer: cell.customer || row.customer || 'Unnamed account',
+                branch: cell.branchName || row.branchName || 'Main',
+                accountLabel: row.accountLabel || '',
+                companyId: row.companyId || '',
+                branchId: row.branchId || '',
+                invoiceNo: cell.pendingBilling ? 'Pending billing' : 'No invoice linked',
+                invoiceDate: null,
+                dateReceived: null,
+                monthLabel: cell.label || cell.monthKey || '-',
+                amount,
+                serialNumber: cell.serialNumber || row.serialNumber || '',
+                modelName: cell.modelName || row.modelName || '',
+                history: cell.latestHistory || row.latestHistory || null,
+                itemSortTime: 0,
+                itemSortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${String(cell.label || cell.monthKey || '').toLowerCase()}`
+            };
+            const group = ensureCollectorComparisonGroup(groupMap, groups, baseGroupKey, item.customer, item.branch, row.accountLabel);
+            group.items.push(item);
+            group.total += amount;
+            invoiceCount += 1;
+            total += amount;
+        });
+    });
+
+    groups.forEach((group) => {
+        group.items.sort((left, right) => {
+            if (right.itemSortTime !== left.itemSortTime) return right.itemSortTime - left.itemSortTime;
+            return left.itemSortKey.localeCompare(right.itemSortKey);
+        });
+    });
+    groups.sort((left, right) => right.total - left.total || left.customer.localeCompare(right.customer));
+
+    return {
+        groups,
+        groupCount: groups.length,
+        invoiceCount,
+        total
+    };
+}
+
+function ensureCollectorComparisonGroup(groupMap, groups, groupKey, customer, branch, accountLabel = '') {
+    if (!groupMap.has(groupKey)) {
+        const group = {
+            key: groupKey,
+            customer,
+            branch,
+            accountLabel,
+            items: [],
+            total: 0
+        };
+        groupMap.set(groupKey, group);
+        groups.push(group);
+    }
+    return groupMap.get(groupKey);
+}
+
+function getCollectorHistorySummaryText(entry) {
+    if (!entry) return 'No follow-up yet';
+    const parts = [
+        entry.conversationResult,
+        entry.promiseToPay,
+        entry.issueType
+    ].filter((value) => value && value !== 'No Promise to Pay' && value !== 'No Issue');
+    return parts[0] || entry.statusLabel || 'Follow-up logged';
+}
+
+function renderCollectorComparisonListView(visibleRows) {
+    const comparison = buildCollectorComparisonListFromRows(visibleRows);
+    if (!comparison.groups.length) {
+        return '<div class="empty-followup">No unpaid invoice rows matched the current month comparison filters.</div>';
+    }
+
+    return `
+        <div class="priority-worklist-summary collector-comparison-summary">
+            <span class="priority-worklist-chip">${escapeHtml(comparison.groupCount.toLocaleString())} account group(s)</span>
+            <span class="priority-worklist-chip">${escapeHtml(comparison.invoiceCount.toLocaleString())} unpaid invoice row(s)</span>
+            <span class="priority-worklist-chip">${escapeHtml(formatCurrency(comparison.total))}</span>
+        </div>
+        <div class="priority-worklist-table-wrap collector-comparison-list-wrap">
+            <table class="priority-worklist-table collector-comparison-list-table">
+                <thead>
+                    <tr>
+                        <th>Invoice Date</th>
+                        <th>Invoice No.</th>
+                        <th>Customer</th>
+                        <th>Branch</th>
+                        <th>Month</th>
+                        <th>Received</th>
+                        <th class="text-right">Balance</th>
+                        <th>Status / Promise</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${comparison.groups.map((group) => `
+                        <tr class="priority-group-row">
+                            <td colspan="6">
+                                <div class="priority-worklist-account">
+                                    <strong>${escapeHtml(group.customer || 'Unnamed account')}</strong>
+                                    <span>${escapeHtml(group.branch || group.accountLabel || 'Main')}</span>
+                                </div>
+                            </td>
+                            <td class="text-right">${escapeHtml(formatCurrency(group.total))}</td>
+                            <td colspan="2">${escapeHtml(group.items.length.toLocaleString())} row(s)</td>
+                        </tr>
+                        ${group.items.map((item) => `
+                            <tr>
+                                <td>${escapeHtml(formatDate(item.invoiceDate))}</td>
+                                <td>
+                                    <div class="priority-worklist-account">
+                                        <strong>${escapeHtml(item.invoiceNo || '-')}</strong>
+                                        <span>${escapeHtml(item.modelName || item.serialNumber || '')}</span>
+                                    </div>
+                                </td>
+                                <td>${escapeHtml(item.customer || '-')}</td>
+                                <td>${escapeHtml(item.branch || 'Main')}</td>
+                                <td>${escapeHtml(item.monthLabel || '-')}</td>
+                                <td>${escapeHtml(formatDate(item.dateReceived))}</td>
+                                <td class="text-right"><strong>${escapeHtml(formatCurrency(item.amount))}</strong></td>
+                                <td>${escapeHtml(getCollectorHistorySummaryText(item.history))}</td>
+                                <td>
+                                    <div class="priority-worklist-actions">
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'followup')">Follow-up</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'payment')">Payment</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="hideCollectorComparisonAccount('${encodeURIComponent(item.rowId || '')}')">Hide</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    `).join('')}
+                    <tr class="priority-total-row">
+                        <td colspan="6">Total</td>
+                        <td class="text-right">${escapeHtml(formatCurrency(comparison.total))}</td>
+                        <td colspan="2">${escapeHtml(comparison.invoiceCount.toLocaleString())} invoice row(s)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function isCollectionPriorityCardMode(mode) {
+    return COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === mode);
+}
+
+function getAllowedPriorityModesForCurrentLane() {
+    const role = getCurrentCollectionRoleAssignment();
+    const modes = COLLECTION_ROLE_PRIORITY_MODES[role];
+    return new Set(modes || COLLECTION_ROLE_PRIORITY_MODES.collection_head);
+}
+
+function isPriorityModeAllowedForCurrentLane(mode) {
+    if (!isCollectionPriorityCardMode(mode)) return true;
+    return getAllowedPriorityModesForCurrentLane().has(mode);
+}
+
+function getPriorityCardDefinition(mode) {
+    return COLLECTION_PRIORITY_CARD_DEFINITIONS.find((card) => card.mode === mode) || null;
+}
+
+function getPriorityWorklistCellsForRow(row = {}, mode = currentWorkQueueMode) {
+    const cells = getCollectorRowOpenCells(row);
+    if (mode === 'billing_received_unfollowed') {
+        return cells.filter((cell) => cellHasRealReceivedInvoice(cell) && !cell.latestHistory?.callDate);
+    }
+    return cells;
+}
+
+function getPriorityCellAmount(cell = {}) {
+    const outstanding = getCellOutstandingBalance(cell);
+    const projected = Number(cell.pendingBillingProjectionTotal || 0);
+    const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
+    return Math.max(outstanding, projected, billedTarget, 0);
+}
+
+function getPriorityRecordAmount(record = {}, cell = {}) {
+    const latestBalance = record.latestBalanceAmount !== null && record.latestBalanceAmount !== undefined
+        ? Number(record.latestBalanceAmount)
+        : 0;
+    const recordBalance = latestBalance > 0 ? latestBalance : getCollectorRecordOutstandingBalance(record);
+    if (recordBalance > 0) return recordBalance;
+    return Number(record.billedAmount || record.amount || 0) || getPriorityCellAmount(cell);
+}
+
+function getPriorityWorklistMonthColumns(items = []) {
+    const available = new Map((collectorDashboardData?.monthColumns || []).map((column) => [column.key, column]));
+    const activeKeys = new Set(items.map((item) => item.monthKey).filter(Boolean));
+    const columns = (collectorDashboardData?.monthColumns || [])
+        .filter((column) => activeKeys.has(column.key))
+        .slice(-4);
+
+    if (columns.length) return columns;
+
+    return Array.from(activeKeys)
+        .slice(-4)
+        .map((key) => available.get(key) || { key, label: key, fullLabel: key });
+}
+
+function buildPriorityWorklistFromMatrix(mode = currentWorkQueueMode) {
+    if (!collectorDashboardData || !isCollectionPriorityCardMode(mode)) {
+        return { groups: [], monthColumns: [], total: 0, rowCount: 0, invoiceCount: 0 };
+    }
+
+    const sourceRows = getMatrixPriorityRowsForMode(mode);
+    const items = [];
+
+    sourceRows.forEach((row) => {
+        getPriorityWorklistCellsForRow(row, mode).forEach((cell) => {
+            const records = Array.isArray(cell.records) ? cell.records : [];
+            const openRecords = records
+                .filter((record) => getPriorityRecordAmount(record, cell) > 0.01)
+                .filter((record) => mode !== 'billing_received_unfollowed' || hasRealReceivedDate(record.dateReceived));
+
+            if (openRecords.length) {
+                openRecords.forEach((record, index) => {
+                    items.push({
+                        groupKey: `${cell.customer || row.customer || ''}|${cell.branchName || row.branchName || ''}`,
+                        cellId: cell.id,
+                        rowId: row.rowId,
+                        customer: cell.customer || row.customer || record.company || '',
+                        branch: cell.branchName || row.branchName || record.branch || 'Main',
+                        accountLabel: cell.accountLabel || row.accountLabel || record.accountLabel || '',
+                        invoiceNo: record.invoiceNo || record.invoiceId || record.invoiceKey || '-',
+                        invoiceDate: record.invoiceDate || record.dueDate || null,
+                        dateReceived: record.dateReceived || null,
+                        monthKey: cell.monthKey,
+                        monthLabel: cell.label,
+                        amount: getPriorityRecordAmount(record, cell),
+                        history: cell.latestHistory || row.latestHistory || null,
+                        companyId: row.companyId || '',
+                        branchId: row.branchId || '',
+                        serialNumber: record.serialNumber || cell.serialNumber || row.serialNumber || '',
+                        modelName: record.modelName || cell.modelName || row.modelName || '',
+                        sortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${cell.monthKey}|${index}`
+                    });
+                });
+            } else {
+                const amount = getPriorityCellAmount(cell);
+                if (amount <= 0.01) return;
+                items.push({
+                    groupKey: `${cell.customer || row.customer || ''}|${cell.branchName || row.branchName || ''}`,
+                    cellId: cell.id,
+                    rowId: row.rowId,
+                    customer: cell.customer || row.customer || '',
+                    branch: cell.branchName || row.branchName || 'Main',
+                    accountLabel: cell.accountLabel || row.accountLabel || '',
+                    invoiceNo: cell.pendingBilling ? 'Pending billing' : 'No invoice linked',
+                    invoiceDate: null,
+                    dateReceived: null,
+                    monthKey: cell.monthKey,
+                    monthLabel: cell.label,
+                    amount,
+                    history: cell.latestHistory || row.latestHistory || null,
+                    companyId: row.companyId || '',
+                    branchId: row.branchId || '',
+                    serialNumber: cell.serialNumber || row.serialNumber || '',
+                    modelName: cell.modelName || row.modelName || '',
+                    sortKey: `${String(cell.customer || row.customer || '').toLowerCase()}|${String(cell.branchName || row.branchName || '').toLowerCase()}|${cell.monthKey}`
+                });
+            }
+        });
+    });
+
+    const monthColumns = getPriorityWorklistMonthColumns(items);
+    const groups = [];
+    const groupMap = new Map();
+
+    items
+        .sort((left, right) => left.sortKey.localeCompare(right.sortKey) || right.amount - left.amount)
+        .forEach((item) => {
+            if (!groupMap.has(item.groupKey)) {
+                const group = {
+                    key: item.groupKey,
+                    customer: item.customer,
+                    branch: item.branch,
+                    accountLabel: item.accountLabel,
+                    items: [],
+                    monthTotals: {},
+                    total: 0
+                };
+                groupMap.set(item.groupKey, group);
+                groups.push(group);
+            }
+            const group = groupMap.get(item.groupKey);
+            group.items.push(item);
+            group.monthTotals[item.monthKey] = Number(group.monthTotals[item.monthKey] || 0) + Number(item.amount || 0);
+            group.total += Number(item.amount || 0);
+        });
+
+    groups.sort((left, right) => right.total - left.total || left.customer.localeCompare(right.customer));
+
+    return {
+        groups,
+        monthColumns,
+        total: groups.reduce((sum, group) => sum + group.total, 0),
+        rowCount: groups.length,
+        invoiceCount: items.length
+    };
+}
+
+function renderPriorityWorklist() {
+    const titleNode = document.getElementById('priorityWorklistTitle');
+    const subtitleNode = document.getElementById('priorityWorklistSubtitle');
+    const bodyNode = document.getElementById('priorityWorklistBody');
+    const listBtn = document.getElementById('priorityViewListBtn');
+    const gridBtn = document.getElementById('priorityViewGridBtn');
+    if (!bodyNode) return;
+
+    if (listBtn) listBtn.classList.toggle('active', currentPriorityWorklistView === 'list');
+    if (gridBtn) gridBtn.classList.toggle('active', currentPriorityWorklistView === 'grid');
+    syncPriorityCardsForCurrentLane();
+
+    const definition = getPriorityCardDefinition(currentWorkQueueMode);
+    const title = definition?.title || 'Priority Worklist';
+    if (titleNode) titleNode.textContent = title;
+
+    if (!definition) {
+        if (subtitleNode) subtitleNode.textContent = 'Click a priority card to see accounts as a fast list, or switch to the filtered grid cells.';
+        bodyNode.innerHTML = '<div class="priority-worklist-empty">Choose a priority card above to load the collector list.</div>';
+        return;
+    }
+
+    const worklist = buildPriorityWorklistFromMatrix(currentWorkQueueMode);
+    if (subtitleNode) {
+        subtitleNode.textContent = `${worklist.rowCount.toLocaleString()} account group(s), ${worklist.invoiceCount.toLocaleString()} invoice row(s), ${formatCurrency(worklist.total)} ${definition.amountLabel}.`;
+    }
+
+    if (currentPriorityWorklistView === 'grid') {
+        bodyNode.innerHTML = `
+            <div class="priority-worklist-summary">
+                <span class="priority-worklist-chip">${escapeHtml(title)}</span>
+                <span class="priority-worklist-chip">${escapeHtml(worklist.rowCount.toLocaleString())} account group(s)</span>
+                <span class="priority-worklist-chip">${escapeHtml(formatCurrency(worklist.total))}</span>
+            </div>
+            <div class="priority-worklist-empty">Filtered grid cells are shown in the Collector Dashboard below. Switch back to List when scrolling the matrix takes too long.</div>
+        `;
+        return;
+    }
+
+    if (!worklist.groups.length) {
+        bodyNode.innerHTML = `<div class="priority-worklist-empty">No accounts match ${escapeHtml(title)} right now.</div>`;
+        return;
+    }
+
+    const monthHeaders = worklist.monthColumns
+        .map((column) => `<th class="text-right">${escapeHtml(column.label || column.fullLabel || column.key)}</th>`)
+        .join('');
+    const totalColspan = 3 + worklist.monthColumns.length;
+    const limitedGroups = worklist.groups.slice(0, 80);
+
+    bodyNode.innerHTML = `
+        <div class="priority-worklist-summary">
+            <span class="priority-worklist-chip">${escapeHtml(title)}</span>
+            <span class="priority-worklist-chip">${escapeHtml(worklist.rowCount.toLocaleString())} account group(s)</span>
+            <span class="priority-worklist-chip">${escapeHtml(formatCurrency(worklist.total))}</span>
+        </div>
+        <div class="priority-worklist-table-wrap">
+            <table class="priority-worklist-table">
+                <thead>
+                    <tr>
+                        <th>Invoice Date</th>
+                        <th>Account</th>
+                        <th>Branch</th>
+                        ${monthHeaders}
+                        <th class="text-right">Total</th>
+                        <th>Status / Promise</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${limitedGroups.map((group) => {
+                        const groupRows = group.items.slice(0, 12).map((item) => {
+                            const monthCells = worklist.monthColumns.map((column) => `
+                                <td class="text-right">${column.key === item.monthKey ? escapeHtml(formatCurrency(item.amount)) : ''}</td>
+                            `).join('');
+                            const historyText = [
+                                item.history?.conversationResult,
+                                item.history?.promiseToPay,
+                                item.history?.issueType
+                            ].filter(Boolean).join(' / ') || '-';
+                            return `
+                                <tr>
+                                    <td>${escapeHtml(formatDate(item.invoiceDate))}</td>
+                                    <td>
+                                        <div class="priority-worklist-account">
+                                            <strong>${escapeHtml(item.invoiceNo)}</strong>
+                                            <span>${escapeHtml(item.modelName || displaySerialNumber(item.serialNumber) || item.monthLabel || '-')}</span>
+                                            ${item.dateReceived ? `<span>Received ${escapeHtml(formatDate(item.dateReceived))}</span>` : ''}
+                                        </div>
+                                    </td>
+                                    <td>${escapeHtml(item.branch || 'Main')}</td>
+                                    ${monthCells}
+                                    <td class="text-right"><strong>${escapeHtml(formatCurrency(item.amount))}</strong></td>
+                                    <td>${escapeHtml(historyText)}</td>
+                                    <td>
+                                        <div class="priority-worklist-actions">
+                                            <button type="button" class="btn btn-primary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'followup')">Follow-up</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorPriorityCell('${encodeURIComponent(item.cellId)}', 'payment')">Payment</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" onclick="hideCollectorComparisonAccount('${encodeURIComponent(item.rowId || '')}')">Hide</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                        const totalCells = worklist.monthColumns.map((column) => `
+                            <td class="text-right">${group.monthTotals[column.key] ? escapeHtml(formatCurrency(group.monthTotals[column.key])) : ''}</td>
+                        `).join('');
+                        return `
+                            <tr class="priority-group-row">
+                                <td colspan="3">
+                                    <div class="priority-worklist-account">
+                                        <strong>${escapeHtml(group.customer || 'Unnamed account')}</strong>
+                                        <span>${escapeHtml(group.branch || group.accountLabel || 'Main')}</span>
+                                    </div>
+                                </td>
+                                ${totalCells}
+                                <td class="text-right">${escapeHtml(formatCurrency(group.total))}</td>
+                                <td colspan="2">${escapeHtml(group.items.length.toLocaleString())} row(s)</td>
+                            </tr>
+                            ${groupRows}
+                        `;
+                    }).join('')}
+                    <tr class="priority-total-row">
+                        <td colspan="${escapeHtml(String(totalColspan))}">Total</td>
+                        <td class="text-right">${escapeHtml(formatCurrency(worklist.total))}</td>
+                        <td colspan="2">${limitedGroups.length < worklist.groups.length ? `Showing ${escapeHtml(limitedGroups.length.toLocaleString())} of ${escapeHtml(worklist.groups.length.toLocaleString())} groups` : 'Complete list'}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function setPriorityWorklistView(viewMode) {
+    currentPriorityWorklistView = viewMode === 'grid' ? 'grid' : 'list';
+    renderPriorityWorklist();
+    if (currentPriorityWorklistView === 'grid') {
+        document.getElementById('collector-dashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        document.getElementById('priorityWorklistPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function getMatrixPriorityRowIdSet(mode) {
+    return new Set(getMatrixPriorityRowsForMode(mode).map((row) => String(row.rowId || '').trim()).filter(Boolean));
 }
 
 function invoiceMatchesWorkQueueMode(invoice) {
@@ -4051,11 +6473,17 @@ function invoiceMatchesWorkQueueMode(invoice) {
     if (currentWorkQueueMode === 'promise_due') return invoiceKeySetFromRows(getPromiseDueTodayInvoices()).has(invoiceKey);
     if (currentWorkQueueMode === 'urgent_stale') return invoiceKeySetFromRows(getUrgentNotCalledInvoices()).has(invoiceKey);
     if (currentWorkQueueMode === 'missing_contact') return invoiceKeySetFromRows(getMissingContactInvoices()).has(invoiceKey);
+    if (COLLECTION_PRIORITY_CARD_DEFINITIONS.some((card) => card.mode === currentWorkQueueMode)) {
+        return invoiceKeySetFromRows(getPriorityRowsForMode(currentWorkQueueMode)).has(invoiceKey);
+    }
     return true;
 }
 
 function setWorkQueueMode(mode) {
     currentWorkQueueMode = currentWorkQueueMode === mode ? 'all' : mode;
+    if (isCollectionPriorityCardMode(currentWorkQueueMode)) {
+        currentPriorityWorklistView = 'list';
+    }
     currentPriorityFilter = null;
     currentPage = 1;
     clearFilterInputs();
@@ -4065,6 +6493,7 @@ function setWorkQueueMode(mode) {
         card.classList.toggle('active', currentWorkQueueMode !== 'all' && card.dataset.workQueueMode === currentWorkQueueMode);
     });
     recomputeFilteredInvoices();
+    renderPriorityWorklist();
     scrollToWorkQueue();
 }
 
@@ -4107,7 +6536,9 @@ function recomputeFilteredInvoices() {
 
     updateAllStats();
     updateDurationSummary();
-    const collectorDashboardPromise = renderCollectorDashboard();
+    const collectorDashboardPromise = collectorDashboardData
+        ? renderCollectorDashboardFromData(collectorDashboardData)
+        : Promise.resolve(renderCollectorMatrixEmptyState());
     renderTrendDashboard();
     renderTable();
     showActiveFilters();
@@ -4118,6 +6549,7 @@ function recomputeFilteredInvoices() {
     renderCollectorActivityTable();
     updateFollowupBadge();
     updateActionBrief();
+    renderFinanceManagerBoard();
     updateQueueContext();
     return collectorDashboardPromise;
 }
@@ -4264,11 +6696,18 @@ function updateQueueContext() {
     const queueText = currentWorkQueueMode !== 'all'
         ? getWorkQueueModeLabel(currentWorkQueueMode)
         : (currentPriorityFilter ? `Priority: ${currentPriorityFilter.toUpperCase()}` : 'All priorities');
-    node.textContent = `${queueText} • ${filteredInvoices.length.toLocaleString()} account(s) in queue`;
+    const matrixCount = currentWorkQueueMode !== 'all' && collectorDashboardData && isCollectionPriorityCardMode(currentWorkQueueMode)
+        ? getMatrixPriorityRowsForMode(currentWorkQueueMode).length
+        : null;
+    node.textContent = `${queueText} • ${(matrixCount ?? filteredInvoices.length).toLocaleString()} account(s) in queue`;
 }
 
 function scrollToWorkQueue() {
-    const node = document.getElementById('collector-work-queue');
+    const node = isCollectionPriorityCardMode(currentWorkQueueMode)
+        ? document.getElementById('priorityWorklistPanel')
+        : !allInvoices.length && collectorDashboardData
+        ? document.getElementById('collector-dashboard')
+        : document.getElementById('collector-work-queue');
     if (!node) return;
     node.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -4297,13 +6736,19 @@ function updateAllStats() {
     if (reviewCountEl) reviewCountEl.textContent = reviewCount.toLocaleString();
     if (reviewAmountEl) reviewAmountEl.textContent = formatCurrencyShort(reviewAmount);
 
+    updatePriorityCardsFromCurrentData();
+
     const totalPayables = allInvoices.reduce((sum, inv) => sum + inv.amount, 0);
     const activeAmount = allInvoices.filter((inv) => inv.age <= 120).reduce((sum, inv) => sum + inv.amount, 0);
     const collectibleCount = allInvoices.filter((inv) => inv.age <= 120).length;
 
     document.getElementById('total-unpaid').textContent = formatCurrency(totalPayables);
     document.getElementById('total-active').textContent = formatCurrencyShort(activeAmount);
-    document.getElementById('invoice-count').textContent = filteredInvoices.length.toLocaleString();
+    const workQueueCount = currentWorkQueueMode !== 'all' && collectorDashboardData && isCollectionPriorityCardMode(currentWorkQueueMode)
+        ? getMatrixPriorityRowsForMode(currentWorkQueueMode).length
+        : filteredInvoices.length;
+
+    document.getElementById('invoice-count').textContent = workQueueCount.toLocaleString();
     document.getElementById('collectible-count').textContent = collectibleCount.toLocaleString();
     document.getElementById('dataMode').textContent = dataMode === 'all' ? '(All Data)' : '(Active 0-180 days)';
 
@@ -4325,6 +6770,20 @@ function updateAllStats() {
     document.getElementById('stale-urgent-count').textContent = staleUrgent.length.toLocaleString();
     document.getElementById('stale-urgent-amount').textContent = formatCurrencyShort(staleUrgentTotal);
     renderCollectionsCompareScorecard();
+}
+
+function updatePriorityCardsFromCurrentData() {
+    COLLECTION_PRIORITY_CARD_DEFINITIONS.forEach((card) => {
+        const rows = hasCollectorMatrixPrioritySource()
+            ? getMatrixPriorityRowsForMode(card.mode)
+            : getPriorityRowsForMode(card.mode);
+        const amount = rows.reduce((sum, invoice) => sum + getPriorityMetricAmount(card.mode, invoice), 0);
+        const safeId = card.mode.replace(/_/g, '-');
+        const countEl = document.getElementById(`count-${safeId}`);
+        const amountEl = document.getElementById(`amount-${safeId}`);
+        if (countEl) countEl.textContent = rows.length.toLocaleString();
+        if (amountEl) amountEl.textContent = `${formatCurrencyShort(amount)} ${card.amountLabel}`;
+    });
 }
 
 function updateDurationSummary() {
@@ -5156,6 +7615,7 @@ async function computeCollectorDashboardData() {
                     collectedAmount: paidAgainstInvoice,
                     totalCollectedAmount: Number(paymentSummary.amount || 0),
                     latestBalanceAmount: invoiceOutstanding,
+                    mergeStrategy: 'preserve_amounts',
                     company: accountRow.customer,
                     branch: accountRow.branchName,
                     accountLabel: accountRow.accountLabel,
@@ -5181,6 +7641,7 @@ async function computeCollectorDashboardData() {
     });
 
     finalizeCollectorCellRecords(collectorCellMap);
+    rebuildCollectorCellsByRowId();
 
     let customerRows = Array.from(accountRowsMap.values())
         .map((row) => {
@@ -5313,6 +7774,13 @@ function renderCollectorSummaryTable(data) {
     const container = document.getElementById('collector-summary-table');
     if (!container) return;
 
+    ensureCollectorDashboardDerivedFields(data);
+    const summaryRows = Array.isArray(data.monthlySummaryRows) ? data.monthlySummaryRows : [];
+    if (!summaryRows.length) {
+        container.innerHTML = '<div class="empty-followup">No summary counts in this saved build yet. The controlled backend job must rebuild the month summary.</div>';
+        return;
+    }
+
     container.innerHTML = `
         <table class="collector-sheet">
             <thead>
@@ -5327,7 +7795,7 @@ function renderCollectorSummaryTable(data) {
                 </tr>
             </thead>
             <tbody>
-                ${data.monthlySummaryRows
+                ${summaryRows
                     .map(
                         (row) => `
                             <tr>
@@ -5463,6 +7931,15 @@ function openCollectorMatrixTotalDetailCell(cellId) {
 function renderCollectorMatrixTable(data, visibleRows) {
     const container = document.getElementById('collector-matrix-table');
     if (!container) return;
+    const comparisonListBtn = document.getElementById('collectorComparisonListBtn');
+    const comparisonGridBtn = document.getElementById('collectorComparisonGridBtn');
+    const scrollbarShell = document.getElementById('collectorHorizontalScrollbar');
+    const isListView = collectorComparisonViewMode === 'list';
+    if (comparisonListBtn) comparisonListBtn.classList.toggle('active', isListView);
+    if (comparisonGridBtn) comparisonGridBtn.classList.toggle('active', !isListView);
+    document.querySelectorAll('.collector-scroll-btn').forEach((button) => {
+        button.disabled = isListView;
+    });
     collectorMatrixTotalDetailMap = new Map();
     (data.matrixTotalRows || []).forEach((row) => {
         Object.entries(row.details || {}).forEach(([monthKey, details]) => {
@@ -5487,6 +7964,25 @@ function renderCollectorMatrixTable(data, visibleRows) {
             : '<div class="empty-followup">No collection rows available.</div>';
         return;
     }
+
+    if (isListView) {
+        container.classList.remove('matrix');
+        container.classList.add('list-view');
+        container.style.width = '';
+        container.style.maxWidth = '';
+        container.innerHTML = renderCollectorComparisonListView(visibleRows);
+        [
+            document.getElementById('collector-visible-range'),
+            document.getElementById('collector-visible-range-inline')
+        ].filter(Boolean).forEach((chip) => {
+            chip.textContent = `List view • ${visibleRows.length.toLocaleString()} account row(s)`;
+        });
+        if (scrollbarShell) scrollbarShell.classList.add('is-disabled');
+        return;
+    }
+
+    container.classList.add('matrix');
+    container.classList.remove('list-view');
 
     container.innerHTML = `
         <table class="collector-sheet">
@@ -5601,12 +8097,8 @@ function renderCollectorMatrixTable(data, visibleRows) {
     scheduleCollectorLatestScroll(data);
 }
 
-function renderCollectorDashboardFromData(data) {
-    if (!data) return null;
-
-    const visibleRows = prepareCollectorRows(data.customerRows);
-    renderCollectorSummaryTable(data);
-    renderCollectorMatrixTable(data, visibleRows);
+function updateCollectorDashboardMatrixStatus(data, visibleRows) {
+    if (!data) return;
 
     const noteNode = document.getElementById('collector-dashboard-note');
     if (noteNode) {
@@ -5616,10 +8108,8 @@ function renderCollectorDashboardFromData(data) {
             searchTerm ? `account "${searchTerm}"` : '',
             invoiceSearchTerm ? `invoice "${invoiceSearchTerm}"` : ''
         ].filter(Boolean);
-        const filterText = searchTerm
+        const filterText = filterParts.length
             ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
-            : invoiceSearchTerm
-                ? `Showing ${visibleRows.length.toLocaleString()} of ${data.customerRows.length.toLocaleString()} account row(s) for ${filterParts.join(' and ')}.`
             : `${data.customerRows.length.toLocaleString()} account row(s) across ${data.monthColumns.length.toLocaleString()} month(s).`;
         noteNode.textContent = `${filterText} Collected Against Billed follows the invoice billing month. Payments Dated This Month follows the payment/OR date for bank reconciliation, regardless of what billing month the invoice belongs to. Pending billing counts only rows with a contract or meter-reading peso estimate.`;
     }
@@ -5633,10 +8123,38 @@ function renderCollectorDashboardFromData(data) {
     if (pendingNode) {
         pendingNode.textContent = `Pending cells: ${data.pendingCellCount.toLocaleString()}`;
     }
+}
 
-    updateCollectorTodaySummaryCard();
-    renderCollectionsCompareScorecard();
+function renderCollectorDashboardFromData(data, options = {}) {
+    if (!data) return null;
+
+    ensureCollectorDashboardDerivedFields(data);
+    ensureCollectorRowSearchIndexes(data);
+    const visibleRows = prepareCollectorRows(data.customerRows);
+    if (!options.matrixOnly) renderCollectorSummaryTable(data);
+    renderCollectorMatrixTable(data, visibleRows);
+    updateCollectorDashboardMatrixStatus(data, visibleRows);
+    updatePriorityCardsFromCurrentData();
+    renderPriorityWorklist();
+
+    if (!options.matrixOnly) {
+        updateCollectorTodaySummaryCard();
+        renderCollectionsCompareScorecard();
+    }
     return data;
+}
+
+function queueCollectorMatrixFilterRender() {
+    if (!collectorDashboardData) {
+        if (lastLoadSucceeded) void renderCollectorDashboard();
+        return;
+    }
+
+    if (collectorMatrixFilterFrame) window.cancelAnimationFrame(collectorMatrixFilterFrame);
+    collectorMatrixFilterFrame = window.requestAnimationFrame(() => {
+        collectorMatrixFilterFrame = 0;
+        renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
+    });
 }
 
 function toggleCollectorGroupedRows(groupRowId) {
@@ -5648,7 +8166,7 @@ function toggleCollectorGroupedRows(groupRowId) {
         collectorExpandedGroupRows.add(safeRowId);
     }
     if (collectorDashboardData) {
-        renderCollectorDashboardFromData(collectorDashboardData);
+        renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
     }
 }
 
@@ -5789,10 +8307,17 @@ async function saveCollectorBranchStatus() {
 
 async function renderCollectorDashboard(options = {}) {
     const renderSeq = ++collectorDashboardRenderSeq;
-    const shouldRecompute = Boolean(options.recompute) || !collectorDashboardData;
 
-    if (!shouldRecompute) {
+    if (options.fromSnapshot && collectorDashboardData) {
         return renderCollectorDashboardFromData(collectorDashboardData);
+    }
+
+    if (!options.recompute && collectorDashboardData) {
+        return renderCollectorDashboardFromData(collectorDashboardData);
+    }
+
+    if (!lastLoadSucceeded) {
+        return refreshCollectorMatrixFromSnapshot({ quiet: Boolean(options.quiet) });
     }
 
     const noteNode = document.getElementById('collector-dashboard-note');
@@ -5820,6 +8345,24 @@ async function renderCollectorDashboard(options = {}) {
             matrixNode.innerHTML = '<div class="empty-followup">Unable to finalize payment status. Please refresh Collections.</div>';
         }
         return null;
+    }
+}
+
+async function refreshCollectorMatrixAfterStaffWrite() {
+    await refreshCollectorMatrixFromSnapshot({ quiet: true });
+    updateCollectorMatrixHeaderStatus();
+}
+
+async function refreshCollectorMatrixOnly() {
+    const refreshBtn = document.getElementById('btnRefreshCollectorMatrix');
+    if (refreshBtn) refreshBtn.disabled = true;
+    try {
+        await refreshCollectorMatrixFromSnapshot({ quiet: true });
+        if (!collectorMatrixSnapshotLoaded) {
+            renderCollectorMatrixEmptyState();
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
     }
 }
 
@@ -5920,6 +8463,359 @@ function getCurrentCollectorName() {
     ).trim() || 'Collector';
 }
 
+function getCollectionRoleLabel(roleKey) {
+    return COLLECTION_ASSIGNMENT_ROLES.find((role) => role.key === roleKey)?.label || '';
+}
+
+function getCurrentCollectionRoleAssignment() {
+    const collectorName = getCurrentCollectorName();
+    const assignments = collectionWorkflowSettings.assignments || {};
+    return String(assignments[collectorName] || '').trim();
+}
+
+function collectionCustomerAssignmentKey(context = {}) {
+    const branchId = normalizeLookupId(context.branchId);
+    if (branchId && !branchId.startsWith('unlinked:')) return `branch_${branchId}`;
+    const companyId = normalizeLookupId(context.companyId);
+    if (companyId) return `company_${companyId}`;
+    return scheduleSlug(context.accountLabel || context.customer || 'unknown');
+}
+
+function getCustomerAssignmentOwner(context = {}) {
+    const key = collectionCustomerAssignmentKey(context);
+    return String(collectionWorkflowSettings.customerAssignments?.[key] || '').trim();
+}
+
+function getCollectionHiddenAccountKey(context = {}) {
+    return collectionCustomerAssignmentKey(context);
+}
+
+function isCollectionContextHidden(context = {}) {
+    const key = getCollectionHiddenAccountKey(context);
+    return Boolean(key && collectionWorkflowSettings.hiddenAccounts?.[key]);
+}
+
+function isCollectorRowHidden(row = {}) {
+    return isCollectionContextHidden(row);
+}
+
+function getHiddenAccountEntries() {
+    const entries = collectionWorkflowSettings.hiddenAccounts || {};
+    return Object.entries(entries)
+        .map(([key, value]) => ({
+            key,
+            value: value && typeof value === 'object' ? value : { label: String(value || key) }
+        }))
+        .sort((left, right) => String(left.value.customer || left.value.label || left.key).localeCompare(String(right.value.customer || right.value.label || right.key)));
+}
+
+async function loadCollectionWorkflowSettings() {
+    if (collectionWorkflowSettingsLoaded) return collectionWorkflowSettings;
+    try {
+        const doc = await firestoreGetDocument('tbl_app_settings', COLLECTION_WORKFLOW_SETTINGS_DOC_ID);
+        const row = doc ? documentFieldsToPlain(doc) : {};
+        const parsedTargets = safeParseJson(row.targets_json, {});
+        const parsedAssignments = safeParseJson(row.assignments_json, {});
+        const parsedCustomerAssignments = safeParseJson(row.customer_assignments_json, {});
+        const parsedHiddenAccounts = safeParseJson(row.hidden_accounts_json, {});
+        collectionWorkflowSettings = {
+            targets: { ...COLLECTION_TARGET_DEFAULTS, ...parsedTargets },
+            assignments: parsedAssignments && typeof parsedAssignments === 'object' ? parsedAssignments : {},
+            customerAssignments: parsedCustomerAssignments && typeof parsedCustomerAssignments === 'object' ? parsedCustomerAssignments : {},
+            hiddenAccounts: parsedHiddenAccounts && typeof parsedHiddenAccounts === 'object' ? parsedHiddenAccounts : {}
+        };
+    } catch (error) {
+        console.warn('Unable to load collection workflow settings:', error);
+        collectionWorkflowSettings = {
+            targets: { ...COLLECTION_TARGET_DEFAULTS },
+            assignments: {},
+            customerAssignments: {},
+            hiddenAccounts: {}
+        };
+    }
+    collectionWorkflowSettingsLoaded = true;
+    renderDashboardCollectionAssignment();
+    renderCollectionHiddenAccountsSettings();
+    return collectionWorkflowSettings;
+}
+
+async function saveCollectionWorkflowSettings() {
+    const now = toTimestampString(new Date());
+    await firestoreSetDocument('tbl_app_settings', COLLECTION_WORKFLOW_SETTINGS_DOC_ID, {
+        id: toFirestoreWriteValue(COLLECTION_WORKFLOW_SETTINGS_DOC_ID),
+        targets_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.targets || {})),
+        assignments_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.assignments || {})),
+        customer_assignments_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.customerAssignments || {})),
+        hidden_accounts_json: toFirestoreWriteValue(JSON.stringify(collectionWorkflowSettings.hiddenAccounts || {})),
+        updated_at: toFirestoreWriteValue(now),
+        updated_by: toFirestoreWriteValue(getCurrentCollectorName()),
+        source: toFirestoreWriteValue('collections_module_settings')
+    });
+}
+
+function safeParseJson(value, fallback) {
+    if (!value) return fallback;
+    try {
+        const parsed = JSON.parse(String(value));
+        return parsed && typeof parsed === 'object' ? parsed : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function renderCollectionAssignmentSettings() {
+    const container = document.getElementById('collectionAssignmentSettings');
+    if (!container) return;
+    const collectorName = getCurrentCollectorName();
+    const currentRole = getCurrentCollectionRoleAssignment();
+    container.innerHTML = COLLECTION_ASSIGNMENT_ROLES.map((role) => `
+        <div class="collection-settings-role-card">
+            <strong>${escapeHtml(role.label)}</strong>
+            <p>${escapeHtml(role.description)}</p>
+            <label>
+                Collector Name
+                <input type="text" data-collection-role="${escapeHtml(role.key)}" value="${escapeHtml(getAssignmentNameForRole(role.key, collectorName, currentRole))}" placeholder="Open / collector name">
+            </label>
+        </div>
+    `).join('');
+}
+
+function renderCollectionHiddenAccountsSettings() {
+    const container = document.getElementById('collectionHiddenAccountsSettings');
+    if (!container) return;
+    const entries = getHiddenAccountEntries();
+    if (!entries.length) {
+        container.innerHTML = '<div class="collection-hidden-empty">No hidden inactive accounts yet.</div>';
+        return;
+    }
+    container.innerHTML = entries.map((entry) => `
+        <div class="collection-hidden-account-card">
+            <div class="collection-hidden-account-text">
+                <strong>${escapeHtml(entry.value.customer || entry.value.label || entry.key)}</strong>
+                <span>${escapeHtml(entry.value.branch || entry.value.accountLabel || 'Main')}</span>
+                <small>${escapeHtml(entry.value.hiddenBy ? `Hidden by ${entry.value.hiddenBy}` : 'Hidden from month comparison')}</small>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="unhideCollectorComparisonAccount('${escapeHtml(entry.key)}')">Unhide</button>
+        </div>
+    `).join('');
+}
+
+function getCollectorRowById(rowId) {
+    const safeRowId = String(rowId || '').trim();
+    if (!safeRowId) return null;
+    return (collectorDashboardData?.customerRows || []).find((row) => String(row.rowId || '').trim() === safeRowId) || null;
+}
+
+async function hideCollectorComparisonAccount(token) {
+    const rowId = decodeURIComponent(String(token || ''));
+    const row = getCollectorRowById(rowId);
+    if (!row) return;
+    const key = getCollectionHiddenAccountKey(row);
+    if (!key) return;
+    const label = row.customer || row.accountLabel || 'this account';
+    if (!window.confirm(`Hide ${label} from the month-to-month comparison?`)) return;
+
+    collectionWorkflowSettings.hiddenAccounts = {
+        ...(collectionWorkflowSettings.hiddenAccounts || {}),
+        [key]: {
+            customer: row.customer || row.accountLabel || key,
+            branch: row.branchName || 'Main',
+            accountLabel: row.accountLabel || '',
+            rowId: row.rowId || '',
+            hiddenBy: getCurrentCollectorName(),
+            hiddenAt: toTimestampString(new Date())
+        }
+    };
+
+    try {
+        await saveCollectionWorkflowSettings();
+        renderCollectionHiddenAccountsSettings();
+        await recomputeFilteredInvoices();
+        const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+        if (statusNode) statusNode.textContent = `${label} hidden from month comparison.`;
+    } catch (error) {
+        console.warn('Unable to hide collector comparison account:', error);
+    }
+}
+
+async function unhideCollectorComparisonAccount(hiddenKey) {
+    const key = decodeURIComponent(String(hiddenKey || ''));
+    if (!key || !collectionWorkflowSettings.hiddenAccounts?.[key]) return;
+    const next = { ...(collectionWorkflowSettings.hiddenAccounts || {}) };
+    delete next[key];
+    collectionWorkflowSettings.hiddenAccounts = next;
+    try {
+        await saveCollectionWorkflowSettings();
+        renderCollectionHiddenAccountsSettings();
+        await recomputeFilteredInvoices();
+        const statusNode = document.getElementById('collectorMatrixSettingsStatus');
+        if (statusNode) statusNode.textContent = 'Hidden account restored to the month comparison.';
+    } catch (error) {
+        console.warn('Unable to unhide collector comparison account:', error);
+    }
+}
+
+function renderDashboardCollectionAssignment() {
+    const select = document.getElementById('collectionDashboardAssignmentRole');
+    const statusNode = document.getElementById('collectionDashboardAssignmentStatus');
+    const textNode = document.getElementById('collectionAssignmentToolbarText');
+    if (!select && !statusNode && !textNode) return;
+
+    const collectorName = getCurrentCollectorName();
+    const currentRole = getCurrentCollectionRoleAssignment();
+    if (select) select.value = currentRole;
+    if (statusNode) {
+        statusNode.textContent = currentRole
+            ? `${collectorName}: ${getCollectionRoleLabel(currentRole)}`
+            : `${collectorName}: Open / not set`;
+    }
+    if (textNode) {
+        const assignments = collectionWorkflowSettings.assignments || {};
+        const assignedText = Object.entries(assignments)
+            .map(([name, role]) => `${name} - ${getCollectionRoleLabel(role) || role}`)
+            .join(' | ');
+        textNode.textContent = assignedText || 'Choose the lane you are handling today. This is coordination only, not an access lock.';
+    }
+    syncPriorityCardsForCurrentLane();
+}
+
+function syncPriorityCardsForCurrentLane() {
+    const titleNode = document.getElementById('priorityWorklistTitle');
+    const subtitleNode = document.getElementById('priorityWorklistSubtitle');
+    if (titleNode && currentWorkQueueMode === 'all') {
+        titleNode.textContent = 'Priority Worklist';
+    }
+    if (subtitleNode && currentWorkQueueMode === 'all') {
+        subtitleNode.textContent = 'Click a priority card to see accounts as a fast list, or switch to the filtered grid cells.';
+    }
+}
+
+function setCollectorComparisonView(viewMode) {
+    collectorComparisonViewMode = viewMode === 'list' ? 'list' : 'grid';
+    if (collectorDashboardData) {
+        renderCollectorDashboardFromData(collectorDashboardData, { matrixOnly: true });
+    }
+}
+
+async function saveDashboardCollectionAssignment() {
+    const select = document.getElementById('collectionDashboardAssignmentRole');
+    const statusNode = document.getElementById('collectionDashboardAssignmentStatus');
+    const collectorName = getCurrentCollectorName();
+    const role = String(select?.value || '').trim();
+    collectionWorkflowSettings.assignments = {
+        ...(collectionWorkflowSettings.assignments || {})
+    };
+
+    if (role) {
+        collectionWorkflowSettings.assignments[collectorName] = role;
+    } else {
+        delete collectionWorkflowSettings.assignments[collectorName];
+    }
+
+    try {
+        if (statusNode) statusNode.textContent = 'Saving lane...';
+        await saveCollectionWorkflowSettings();
+        renderDashboardCollectionAssignment();
+        renderCollectionAssignmentSettings();
+        renderPriorityWorklist();
+        updatePriorityCardsFromCurrentData();
+        if (statusNode) statusNode.textContent = role
+            ? `Saved: ${getCollectionRoleLabel(role)}`
+            : 'Saved: Open / not set';
+    } catch (error) {
+        console.warn('Unable to save collection dashboard assignment:', error);
+        if (statusNode) statusNode.textContent = 'Lane save failed.';
+    }
+}
+
+function getAssignmentNameForRole(roleKey, collectorName, currentRole) {
+    const assignments = collectionWorkflowSettings.assignments || {};
+    const found = Object.entries(assignments).find(([, assignedRole]) => assignedRole === roleKey);
+    if (found) return found[0];
+    return currentRole === roleKey ? collectorName : '';
+}
+
+function fillCollectionTargetInputs() {
+    const targets = { ...COLLECTION_TARGET_DEFAULTS, ...(collectionWorkflowSettings.targets || {}) };
+    const map = {
+        collectionTargetMinimumDaily: 'minimumDailyTarget',
+        collectionTargetGoodDaily: 'goodDailyTarget',
+        collectionTargetRecoveryDaily: 'recoveryDailyTarget',
+        collectionTargetWeekly: 'weeklyTarget',
+        collectionTargetWeeklyMin: 'weeklyTargetMin',
+        collectionTargetWeeklyMax: 'weeklyTargetMax',
+        collectionTargetMonthly: 'monthlyTarget',
+        collectionTargetWeek1: 'week1Cumulative',
+        collectionTargetWeek2: 'week2Cumulative',
+        collectionTargetWeek3: 'week3Cumulative',
+        collectionTargetWeek4: 'week4Cumulative'
+    };
+    Object.entries(map).forEach(([id, key]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(Number(targets[key] || 0));
+    });
+}
+
+function collectCollectionTargetInputs() {
+    const map = {
+        minimumDailyTarget: 'collectionTargetMinimumDaily',
+        goodDailyTarget: 'collectionTargetGoodDaily',
+        recoveryDailyTarget: 'collectionTargetRecoveryDaily',
+        weeklyTarget: 'collectionTargetWeekly',
+        weeklyTargetMin: 'collectionTargetWeeklyMin',
+        weeklyTargetMax: 'collectionTargetWeeklyMax',
+        monthlyTarget: 'collectionTargetMonthly',
+        week1Cumulative: 'collectionTargetWeek1',
+        week2Cumulative: 'collectionTargetWeek2',
+        week3Cumulative: 'collectionTargetWeek3',
+        week4Cumulative: 'collectionTargetWeek4'
+    };
+    const targets = {};
+    Object.entries(map).forEach(([key, id]) => {
+        targets[key] = Number(document.getElementById(id)?.value || COLLECTION_TARGET_DEFAULTS[key] || 0) || 0;
+    });
+    return targets;
+}
+
+function collectCollectionAssignmentInputs() {
+    const assignments = {};
+    document.querySelectorAll('[data-collection-role]').forEach((input) => {
+        const name = String(input.value || '').trim();
+        const role = String(input.dataset.collectionRole || '').trim();
+        if (name && role) assignments[name] = role;
+    });
+    return assignments;
+}
+
+async function saveCurrentCustomerAssignment() {
+    if (!currentCollectorWorkspace?.context) return;
+    const owner = String(document.getElementById('collectorCustomerOwner')?.value || getCurrentCollectorName()).trim();
+    const role = String(document.getElementById('collectorCustomerOwnerRole')?.value || getCurrentCollectionRoleAssignment() || '').trim();
+    const statusNode = document.getElementById('collectorCustomerAssignmentStatus');
+    const key = collectionCustomerAssignmentKey(currentCollectorWorkspace.context);
+    collectionWorkflowSettings.customerAssignments = {
+        ...(collectionWorkflowSettings.customerAssignments || {}),
+        [key]: owner
+    };
+    if (owner && role) {
+        collectionWorkflowSettings.assignments = {
+            ...(collectionWorkflowSettings.assignments || {}),
+            [owner]: role
+        };
+    }
+    try {
+        if (statusNode) statusNode.textContent = 'Saving customer assignment...';
+        await saveCollectionWorkflowSettings();
+        if (statusNode) statusNode.textContent = 'Saved. This is coordination only; access stays open.';
+        const content = document.getElementById('collectorCellContent');
+        if (content && currentCollectorWorkspace) content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+        bindCollectorPaymentForm();
+    } catch (error) {
+        console.warn('Unable to save customer assignment:', error);
+        if (statusNode) statusNode.textContent = 'Assignment save failed.';
+    }
+}
+
 function getSchedulePurposeLabel(scheduleStatus) {
     const label = String(scheduleStatus || '').trim();
     if (/promise/i.test(label)) return 'Promise to Pay';
@@ -5947,6 +8843,72 @@ function upsertCollectionProfileOverride(context, override) {
 function getCollectionProfileForContext(context) {
     const branchId = normalizeLookupId(context?.branchId);
     if (branchId && collectionProfileByBranchId.has(branchId)) return collectionProfileByBranchId.get(branchId);
+    return null;
+}
+
+async function loadCollectionProfileForBranch(branchId) {
+    const normalizedBranchId = normalizeLookupId(branchId);
+    if (!normalizedBranchId || normalizedBranchId.startsWith('unlinked:')) return null;
+    if (collectionProfileByBranchId.has(normalizedBranchId)) {
+        return collectionProfileByBranchId.get(normalizedBranchId);
+    }
+    if (collectionProfileLoadPromises.has(normalizedBranchId)) {
+        return collectionProfileLoadPromises.get(normalizedBranchId);
+    }
+
+    const promise = (async () => {
+        const docs = await firestoreQueryEquals('tbl_collectioninfo', 'branch_id', normalizedBranchId, {
+            fieldMask: COLLECTION_PROFILE_FIELD_MASK,
+            limit: 4
+        });
+        const profile = docs[0] ? documentFieldsToPlain(docs[0]) : null;
+        if (profile) collectionProfileByBranchId.set(normalizedBranchId, profile);
+        return profile;
+    })();
+    collectionProfileLoadPromises.set(normalizedBranchId, promise);
+    try {
+        return await promise;
+    } finally {
+        collectionProfileLoadPromises.delete(normalizedBranchId);
+    }
+}
+
+async function loadCollectionProfileOverrideForContext(context) {
+    const docId = collectionProfileOverrideDocId(context);
+    if (collectionProfileOverrides.has(docId)) return collectionProfileOverrides.get(docId);
+    try {
+        const doc = await firestoreGetDocument('marga_collection_profiles', docId);
+        if (!doc) return null;
+        const override = documentFieldsToPlain(doc);
+        collectionProfileOverrides.set(docId, { ...override, _docId: docId });
+        return override;
+    } catch (error) {
+        console.warn(`Unable to load collection profile override ${docId}:`, error);
+        return null;
+    }
+}
+
+async function ensureCollectorCallingWorkspaceData(context, options = {}) {
+    const perfStart = performance.now();
+    if (options.useFollowupPack && options.cell) {
+        try {
+            const pack = await fetchCollectorFollowupPack(options.cell, options.scope || 'single');
+            applyFollowupPackProfile(pack);
+            logCollectorWorkspacePerf('followup-pack', perfStart, {
+                branchId: context?.branchId || '',
+                invoiceCount: pack.invoiceCount || 0
+            });
+            return pack;
+        } catch (error) {
+            console.warn('Follow-up pack failed, falling back to branch profile query:', error);
+        }
+    }
+
+    await Promise.all([
+        loadCollectionProfileForBranch(context?.branchId),
+        loadCollectionProfileOverrideForContext(context)
+    ]);
+    logCollectorWorkspacePerf('calling-profile', perfStart, { branchId: context?.branchId || '' });
     return null;
 }
 
@@ -6013,26 +8975,7 @@ async function loadCollectionWorkspaceLookups() {
     collectionWorkspaceLookupsPromise = (async () => {
         const [profileDocs, statusDocs, overrideDocs, troubleDocs, activeRoster, employeeDocs, positionDocs] = await Promise.all([
             safeFirestoreGetAll('tbl_collectioninfo', null, {
-                fieldMask: [
-                    'id',
-                    'branch_id',
-                    'acctcon',
-                    'acctnum',
-                    'cashcon',
-                    'cashnum',
-                    'treascon',
-                    'treasnum',
-                    'releasecon',
-                    'releasenum',
-                    'releaseadd',
-                    'collection_days',
-                    'collection_hours',
-                    'followup_days',
-                    'followup_time',
-                    'time_from',
-                    'time_to',
-                    'last_contact'
-                ],
+                fieldMask: COLLECTION_PROFILE_FIELD_MASK,
                 maxPages: 80
             }),
             safeFirestoreGetAll('tbl_collectionstatus', null, {
@@ -6150,14 +9093,36 @@ function resolveCollectorCellContext(cell) {
 }
 
 function sameBranch(invoice, context) {
+    if (matchesCollectorAccountIdentity(invoice, context)) return true;
     if (context.branchId && invoice.branchId && String(invoice.branchId) === String(context.branchId)) return true;
     return normalizeText(invoice.branch) === normalizeText(context.branchName)
         && normalizeText(invoice.company) === normalizeText(context.customer);
 }
 
 function sameCompany(invoice, context) {
+    if (matchesCollectorAccountIdentity(invoice, context)) return true;
     if (context.companyId && invoice.companyId && String(invoice.companyId) === String(context.companyId)) return true;
     return normalizeText(invoice.company) === normalizeText(context.customer);
+}
+
+function matchesCollectorAccountIdentity(invoice, context) {
+    const invoiceContractId = normalizeLookupId(invoice?.contractmainId);
+    const contextContractId = normalizeLookupId(context?.contractmainId);
+    if (invoiceContractId && contextContractId && invoiceContractId === contextContractId) return true;
+
+    const invoiceMachineId = normalizeLookupId(invoice?.machineId);
+    const contextMachineId = normalizeLookupId(context?.machineId);
+    if (invoiceMachineId && contextMachineId && invoiceMachineId === contextMachineId) return true;
+
+    const invoiceSerial = normalizeSerialNumber(invoice?.serialNumber);
+    const contextSerial = normalizeSerialNumber(context?.serialNumber);
+    if (invoiceSerial && contextSerial && invoiceSerial === contextSerial) return true;
+
+    const invoiceAccountLabel = normalizeText(invoice?.accountLabel);
+    const contextAccountLabel = normalizeText(context?.accountLabel);
+    if (invoiceAccountLabel && contextAccountLabel && invoiceAccountLabel === contextAccountLabel) return true;
+
+    return false;
 }
 
 function normalizeText(value) {
@@ -6230,7 +9195,13 @@ function getSelectedInvoiceForCell(cell, context, branchInvoices) {
 function getOutstandingInvoiceAmount(invoice) {
     const baseAmount = Number(invoice?.amount || invoice?.billedAmount || 0);
     const payments = getPaymentsForSelectedInvoice(invoice);
-    if (!payments.length) return baseAmount;
+    if (!payments.length) {
+        const matrixBalance = Number(invoice?.latestBalanceAmount);
+        if (invoice?.fromMatrixSnapshot && Number.isFinite(matrixBalance) && matrixBalance > 0.01) {
+            return Math.min(matrixBalance, baseAmount);
+        }
+        return baseAmount;
+    }
 
     const latestWithBalance = payments
         .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
@@ -6273,49 +9244,147 @@ function queryScheduleByField(fieldPath, value) {
     });
 }
 
-async function loadServiceDeliveryHistory(context) {
-    const cacheKey = `${context.branchId || 'branchless'}:${context.companyId || 'companyless'}`;
-    if (serviceHistoryCache.has(cacheKey)) return serviceHistoryCache.get(cacheKey);
+function queryOrderedScheduleByField(fieldPath, value, limit = 120) {
+    if (!value) return Promise.resolve([]);
+    return firestoreRunQuery({
+        from: [{ collectionId: 'tbl_schedule' }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath },
+                op: 'EQUAL',
+                value: toFirestoreQueryValue(value)
+            }
+        },
+        select: {
+            fields: LEGACY_COLLECTION_SCHEDULE_FIELD_MASK.map((selectedFieldPath) => ({ fieldPath: selectedFieldPath }))
+        },
+        orderBy: [{ field: { fieldPath: 'date_finished' }, direction: 'DESCENDING' }],
+        limit
+    });
+}
 
-    const [branchDocs, companyDocs] = await Promise.all([
-        queryScheduleByField('branch_id', context.branchId).catch((error) => {
-            console.warn('Branch service history query failed:', error);
-            return [];
-        }),
-        queryScheduleByField('company_id', context.companyId).catch((error) => {
-            console.warn('Company service history query failed:', error);
-            return [];
-        })
-    ]);
+function getServiceHistoryPurposeLabel(purposeId, row = {}) {
+    const numericPurposeId = Number(purposeId || row.purpose_id || 0);
+    return SERVICE_HISTORY_PURPOSE_LABELS[numericPurposeId]
+        || String(row.purpose || row.schedule_purpose || row.collection_schedule_status || '').trim()
+        || 'Schedule';
+}
 
-    const seen = new Set();
-    const rows = [...branchDocs, ...companyDocs]
-        .filter((doc) => {
-            const id = doc.name || '';
-            if (seen.has(id)) return false;
-            seen.add(id);
-            return true;
-        })
+function getServiceHistoryBranchLabel(row, context = {}) {
+    const explicit = String(row.branch || row.branch_name || '').trim();
+    if (explicit) return explicit;
+    const branch = branchMap[normalizeLookupId(row.branch_id)] || {};
+    return branch.name || context.branchName || '-';
+}
+
+function isScheduleCancelled(row) {
+    const statusText = String(row.status || row.master_schedule_status || row.collection_schedule_status || '').trim().toLowerCase();
+    return Number(row.iscancel || row.iscancelled || 0) === 1
+        || Boolean(row.cancelled_at)
+        || statusText === 'cancelled';
+}
+
+function matchesServiceHistoryBranchScope(row, context) {
+    const branchId = normalizeLookupId(row.branch_id);
+    const contractmainId = normalizeLookupId(row.contractmain_id);
+    const machineId = normalizeLookupId(row.machine_id || row.serial);
+    const requestSerial = normalizeSerialNumber(row.request_serial_number || row.serial_number);
+    if (context.branchId && branchId && branchId === context.branchId) return true;
+    if (context.contractmainId && contractmainId && contractmainId === context.contractmainId) return true;
+    if (context.machineId && machineId && machineId === context.machineId) return true;
+    if (context.serialNumber && requestSerial && requestSerial === context.serialNumber) return true;
+    return normalizeText(row.branch || row.branch_name) === normalizeText(context.branchName)
+        && normalizeText(row.customer || row.company_name) === normalizeText(context.customer);
+}
+
+function matchesServiceHistoryCompanyScope(row, context) {
+    const companyId = normalizeLookupId(row.company_id);
+    if (context.companyId && companyId && companyId === context.companyId) return true;
+    if (matchesServiceHistoryBranchScope(row, context)) return true;
+    return normalizeText(row.customer || row.company_name) === normalizeText(context.customer);
+}
+
+function buildServiceHistoryRows(docs, context, scope = 'branch') {
+    const matcher = scope === 'company' ? matchesServiceHistoryCompanyScope : matchesServiceHistoryBranchScope;
+    const rows = docs
         .map((doc) => {
             const row = documentFieldsToPlain(doc);
             const purposeId = Number(row.purpose_id || 0);
             return {
+                docId: getFirestoreDocumentId(doc),
                 scheduleId: row.id || getFirestoreDocumentId(doc),
                 purposeId,
+                type: getServiceHistoryPurposeLabel(purposeId, row),
+                branchLabel: getServiceHistoryBranchLabel(row, context),
                 trouble: troubleLookupMap.get(normalizeLookupId(row.trouble_id)) || row.trouble || row.problem || '-',
-                tech: employeeLookupMap.get(normalizeLookupId(row.tech_id)) || row.tech || '-',
+                tech: employeeLookupMap.get(normalizeLookupId(row.tech_id || row.assigned_to_id)) || row.assigned_to || row.tech || '-',
                 taskDate: normalizeDate(row.task_datetime || row.task_date || row.scheduled || row.schedule_date || row.datex),
                 dateFinished: normalizeDate(row.date_finished || row.datefinished || row.finished_date),
-                remarks: row.remarks || row.action_taken || row.findings || ''
+                remarks: row.remarks || row.action_taken || row.findings || '',
+                raw: row
             };
         })
-        .filter((row) => row.purposeId !== 1)
+        .filter((row) => SERVICE_HISTORY_INCLUDED_PURPOSE_IDS.has(Number(row.purposeId || 0)))
+        .filter((row) => !isScheduleCancelled(row.raw))
+        .filter((row) => matcher(row.raw, context));
+
+    const deduped = [];
+    const seen = new Set();
+    rows.forEach((row) => {
+        const token = String(row.docId || row.scheduleId || '').trim();
+        if (token && seen.has(token)) return;
+        if (token) seen.add(token);
+        deduped.push(row);
+    });
+
+    return deduped
         .sort((a, b) => {
             const aTime = (a.dateFinished || a.taskDate || new Date(0)).getTime();
             const bTime = (b.dateFinished || b.taskDate || new Date(0)).getTime();
             return bTime - aTime;
         })
         .slice(0, 20);
+}
+
+async function loadServiceDeliveryHistory(context) {
+    const cacheKey = `${context.branchId || 'branchless'}:${context.companyId || 'companyless'}`;
+    if (serviceHistoryCache.has(cacheKey)) return serviceHistoryCache.get(cacheKey);
+
+    const [branchDocs, companyDocs, contractDocs, machineDocs, serialDocs] = await Promise.all([
+        queryOrderedScheduleByField('branch_id', context.branchId, 160).catch((error) => {
+            console.warn('Branch service history query failed:', error);
+            return [];
+        }),
+        queryOrderedScheduleByField('company_id', context.companyId, 220).catch((error) => {
+            console.warn('Company service history query failed:', error);
+            return [];
+        }),
+        queryOrderedScheduleByField('contractmain_id', context.contractmainId, 80).catch((error) => {
+            console.warn('Contract service history query failed:', error);
+            return [];
+        }),
+        queryOrderedScheduleByField('machine_id', context.machineId, 80).catch((error) => {
+            console.warn('Machine service history query failed:', error);
+            return [];
+        }),
+        queryOrderedScheduleByField('request_serial_number', context.serialNumber, 80).catch((error) => {
+            console.warn('Serial service history query failed:', error);
+            return [];
+        })
+    ]);
+
+    const docsById = new Map();
+    [...branchDocs, ...companyDocs, ...contractDocs, ...machineDocs, ...serialDocs].forEach((doc) => {
+        const key = doc.name || getFirestoreDocumentId(doc);
+        if (key && !docsById.has(key)) docsById.set(key, doc);
+    });
+
+    const allDocs = Array.from(docsById.values());
+    const rows = {
+        branchRows: buildServiceHistoryRows(allDocs, context, 'branch'),
+        companyRows: buildServiceHistoryRows(allDocs, context, 'company'),
+        currentScope: 'branch'
+    };
 
     serviceHistoryCache.set(cacheKey, rows);
     return rows;
@@ -6389,45 +9458,123 @@ async function loadCollectionActivityHistory(context) {
     return rows;
 }
 
-async function buildCollectorFollowupWorkspace(cell) {
-    await loadCollectionWorkspaceLookups();
+function isCollectorProjectionOnlyCell(cell) {
+    if (!cell?.pendingBilling && !cell?.missedReading) return false;
+    const records = Array.isArray(cell.records) ? cell.records : [];
+    const hasInvoiceRecord = records.some((record) => {
+        const key = String(record.invoiceNo || record.invoiceId || record.invoiceKey || '').trim();
+        return Boolean(key);
+    });
+    return !hasInvoiceRecord;
+}
 
+function buildCollectorProjectionOnlyWorkspace(cell) {
+    const context = resolveCollectorCellContext(cell);
+    const projectionAmount = Number(cell.pendingBillingProjectionTotal || cell.displayBilledTotal || cell.billedTotal || 0);
+    return {
+        lite: true,
+        cell,
+        context,
+        projectionAmount,
+        statusLabel: cell.missedReading ? 'Missed Reading' : 'Pending Billing'
+    };
+}
+
+function renderCollectorProjectionOnlyWorkspace(workspace) {
+    const { cell, context, projectionAmount, statusLabel } = workspace;
+    return `
+        <div class="collection-followup-shell collection-followup-lite">
+            <section class="collection-followup-hero">
+                <div>
+                    <div class="collection-followup-kicker">${escapeHtml(statusLabel)} • ${escapeHtml(cell.label || context.label || '')}</div>
+                    <h3>${escapeHtml(context.customer)}</h3>
+                    <p>${escapeHtml(context.branchName || context.accountLabel || 'Main')} • ${escapeHtml(displaySerialNumber(context.serialNumber))}</p>
+                </div>
+            </section>
+            <div class="collection-followup-panel">
+                <div class="collection-followup-panel-title">Matrix Projection</div>
+                <p>This month cell is a <strong>${escapeHtml(statusLabel)}</strong> projection from the saved matrix summary. There is no saved invoice row linked yet, so invoice history, schedules, and service records were not loaded.</p>
+                <div class="collection-followup-facts">
+                    <div><span>Estimated amount</span><strong>${escapeHtml(formatCurrency(projectionAmount))}</strong></div>
+                    <div><span>Reading tasks</span><strong>${escapeHtml(String(cell.readingTaskCount || 0))}</strong></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function decodeCollectorCellToken(cellId) {
+    try {
+        return decodeURIComponent(String(cellId || '').trim());
+    } catch (error) {
+        return String(cellId || '').trim();
+    }
+}
+
+async function openCollectorCellFullWorkspace(cellId) {
+    const safeCellId = decodeCollectorCellToken(cellId);
+    const cell = collectorCellMap.get(safeCellId);
+    if (!cell) {
+        console.warn('Collection cell not found for follow-up workspace:', safeCellId);
+        window.alert('Unable to open this cell. Refresh the matrix and try again.');
+        return;
+    }
+    const modal = document.getElementById('collectorCellModal');
+    const subtitle = document.getElementById('collectorCellSubtitle');
+    const content = document.getElementById('collectorCellContent');
+    if (subtitle) subtitle.textContent = 'Loading full invoice detail, history, and schedules...';
+    if (content) {
+        content.innerHTML = `
+            <div class="loading-overlay"><div class="loading-spinner"></div><span>Loading full follow-up workspace...</span></div>
+        `;
+    }
+    if (modal) modal.classList.remove('hidden');
+    currentCollectorWorkspace = {
+        cell,
+        context: resolveCollectorCellContext(cell),
+        cellId: cell.id
+    };
+
+    try {
+        if (!lastLoadSucceeded) await ensureCollectorCellDetailData(cell);
+        const workspace = await buildCollectorFollowupWorkspace(cell, { forceFull: true });
+        if (currentCollectorWorkspace?.cellId !== cell.id) return;
+        currentCollectorWorkspace = { ...workspace, cellId: cell.id };
+        const title = document.getElementById('collectorCellTitle');
+        if (title) {
+            title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
+        }
+        if (subtitle) {
+            subtitle.textContent = workspace.selectedInvoice
+                ? `Invoice #${workspace.selectedInvoice.invoiceNo || workspace.selectedInvoice.invoiceId || '-'} follow-up`
+                : 'Follow-up workspace';
+        }
+        if (content) {
+            content.innerHTML = renderCollectorFollowupWorkspace(workspace);
+            bindCollectorPaymentForm();
+        }
+    } catch (error) {
+        console.error('Failed to open full collection follow-up workspace:', error);
+        if (subtitle) subtitle.textContent = 'Full follow-up workspace could not load.';
+    }
+}
+
+function assembleCollectorFollowupWorkspace(cell, unpaidListScope) {
     const context = resolveCollectorCellContext(cell);
     const profile = getCollectionProfileForContext(context);
     const override = getCollectionOverrideForContext(context);
-    const branchInvoices = getRelatedUnpaidInvoices(context, 'branch');
-    const companyInvoices = getRelatedUnpaidInvoices(context, 'company');
+    const workspaceStub = { cell, context, unpaidListScope };
+    const matrixRowInvoices = getCollectorMatrixRowUnpaidInvoices(workspaceStub);
+    let branchInvoices = getRelatedUnpaidInvoices(context, 'branch');
+    let companyInvoices = getRelatedUnpaidInvoices(context, 'company');
+    if (matrixRowInvoices.length) {
+        branchInvoices = matrixRowInvoices.filter((invoice) => sameBranch(invoice, context));
+        companyInvoices = matrixRowInvoices.filter((invoice) => sameCompany(invoice, context));
+    }
     const selectedInvoice = getSelectedInvoiceForCell(cell, context, branchInvoices);
-    await loadCollectionHistoryForKeys([
-        selectedInvoice?.invoiceNo,
-        selectedInvoice?.invoiceId,
-        selectedInvoice?.invoiceKey,
-        ...(cell.records || []).flatMap((record) => [record.invoiceNo, record.invoiceId, record.invoiceKey, record.id]),
-        ...collectionAccountHistoryKeys(context),
-        ...collectionAccountHistoryKeys(cell)
-    ]);
-    const directInvoiceHistory = mergeInvoiceHistories(
-        selectedInvoice ? [selectedInvoice, ...branchInvoices] : branchInvoices,
-        cell.records || []
-    );
-    const accountHistory = getHistoryForCollectorRow(cell.rowId);
-    const [serviceHistory, activeSchedule, collectionActivityHistory] = await Promise.all([
-        loadServiceDeliveryHistory(context),
-        loadCollectionScheduleForWorkspace(context, selectedInvoice),
-        loadCollectionActivityHistory(context)
-    ]);
-    const invoiceHistory = mergeHistoryLists(directInvoiceHistory, accountHistory, collectionActivityHistory);
-    const lastHistory = invoiceHistory[0] || null;
-
     const branchBalance = branchInvoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
     const companyBalance = companyInvoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
-    const selectedContact = lastHistory && hasMeaningfulContact(lastHistory.contactPerson)
-        ? lastHistory.contactPerson
-        : getCollectionContactRows(profile, override)[0]?.name || '';
-    const selectedContactNumber = lastHistory?.contactNumber
-        || getCollectionContactRows(profile, override)[0]?.number
-        || selectedInvoice?.contactNumber
-        || '';
+    const contacts = getCollectionContactRows(profile, override);
 
     return {
         cell,
@@ -6437,16 +9584,411 @@ async function buildCollectorFollowupWorkspace(cell) {
         selectedInvoice,
         branchInvoices,
         companyInvoices,
+        branchBalance,
+        companyBalance,
+        unpaidListScope,
+        invoiceHistory: [],
+        lastHistory: null,
+        serviceHistory: null,
+        activeSchedule: null,
+        selectedContact: contacts[0]?.name || '',
+        selectedContactNumber: contacts[0]?.number || selectedInvoice?.contactNumber || '',
+        address: getCollectionAddress(context, profile, override),
+        deferredSectionsLoading: true,
+        contactsLoading: false
+    };
+}
+
+async function buildCollectorFollowupWorkspaceFast(cell, options = {}) {
+    const perfStart = performance.now();
+    if (!options.forceFull && isCollectorProjectionOnlyCell(cell)) {
+        return buildCollectorProjectionOnlyWorkspace(cell);
+    }
+
+    const context = resolveCollectorCellContext(cell);
+    const unpaidListScope = getCollectorUnpaidListScope(options.unpaidListScope || 'single');
+    if (options.loadCallingProfile !== false) {
+        await ensureCollectorCallingWorkspaceData(context, {
+            useFollowupPack: options.useFollowupPack !== false,
+            cell,
+            scope: unpaidListScope
+        });
+    }
+    logCollectorWorkspacePerf('calling-data', perfStart);
+
+    if (options.forceFull || options.forceBillingFetch) {
+        await ensureCollectorCellDetailData(cell, { scope: unpaidListScope });
+    }
+
+    const workspace = assembleCollectorFollowupWorkspace(cell, unpaidListScope);
+    logCollectorWorkspacePerf('fast-total', perfStart, { scope: unpaidListScope });
+    return workspace;
+}
+
+async function hydrateCollectorFollowupWorkspaceDeferred(workspace, options = {}) {
+    const perfStart = performance.now();
+    const cell = workspace?.cell;
+    if (!cell) return workspace;
+
+    const context = workspace.context || resolveCollectorCellContext(cell);
+    const unpaidListScope = getCollectorUnpaidListScope(workspace.unpaidListScope || 'single');
+    const workspaceStub = { cell, context, unpaidListScope };
+    const matrixRowInvoices = getCollectorMatrixRowUnpaidInvoices(workspaceStub);
+    const contractIds = new Set(
+        [
+            context.contractmainId,
+            cell.contractmainId,
+            ...matrixRowInvoices.map((invoice) => invoice.contractmainId)
+        ].map((value) => String(value || '').trim()).filter(Boolean)
+    );
+
+    const historyKeys = Array.from(new Set([
+        workspace.selectedInvoice?.invoiceNo,
+        workspace.selectedInvoice?.invoiceId,
+        workspace.selectedInvoice?.invoiceKey,
+        ...collectionAccountHistoryKeys(context),
+        ...collectionAccountHistoryKeys(cell)
+    ].map((value) => String(value || '').trim()).filter(Boolean)));
+
+    const historyStart = performance.now();
+    const [
+        ,
+        ,
+        ,
+        serviceHistory,
+        activeSchedule,
+        collectionActivityHistory
+    ] = await Promise.all([
+        Promise.all(Array.from(contractIds).map((contractId) => loadContractReadingDay(contractId))),
+        loadCollectionHistoryForKeys(historyKeys),
+        Promise.all([loadCollectionWorkspaceLookups(), loadCollectionWorkflowSettings()]).catch((error) => {
+            console.warn('Deferred collection workspace lookup load failed:', error);
+        }),
+        loadServiceDeliveryHistory(context),
+        loadCollectionScheduleForWorkspace(context, workspace.selectedInvoice),
+        loadCollectionActivityHistory(context)
+    ]);
+    logCollectorWorkspacePerf('deferred-history-schedules', historyStart, {
+        contractCount: contractIds.size,
+        historyKeyCount: historyKeys.length
+    });
+
+    const refreshed = assembleCollectorFollowupWorkspace(cell, unpaidListScope);
+    const directInvoiceHistory = mergeInvoiceHistories(
+        refreshed.selectedInvoice ? [refreshed.selectedInvoice, ...refreshed.branchInvoices] : refreshed.branchInvoices,
+        cell.records || []
+    );
+    const accountHistory = getHistoryForCollectorRow(cell.rowId);
+    const invoiceHistory = mergeHistoryLists(directInvoiceHistory, accountHistory, collectionActivityHistory);
+    const lastHistory = invoiceHistory[0] || null;
+    const contacts = getCollectionContactRows(refreshed.profile, refreshed.override);
+    const preservedServiceHistoryScope = (
+        options.serviceHistoryScope
+        || (currentCollectorWorkspace?.cell?.id === cell.id ? currentCollectorWorkspace?.serviceHistory?.currentScope : '')
+    ) === 'company' ? 'company' : 'branch';
+    if (serviceHistory) serviceHistory.currentScope = preservedServiceHistoryScope;
+
+    const hydrated = {
+        ...workspace,
+        ...refreshed,
         invoiceHistory,
         lastHistory,
         serviceHistory,
         activeSchedule,
-        branchBalance,
-        companyBalance,
-        selectedContact,
-        selectedContactNumber,
-        address: getCollectionAddress(context, profile, override)
+        selectedContact: lastHistory && hasMeaningfulContact(lastHistory.contactPerson)
+            ? lastHistory.contactPerson
+            : contacts[0]?.name || workspace.selectedContact || '',
+        selectedContactNumber: lastHistory?.contactNumber
+            || contacts[0]?.number
+            || refreshed.selectedInvoice?.contactNumber
+            || workspace.selectedContactNumber
+            || '',
+        deferredSectionsLoading: false
     };
+
+    logCollectorWorkspacePerf('deferred-total', perfStart);
+    return hydrated;
+}
+
+async function buildCollectorFollowupWorkspace(cell, options = {}) {
+    const workspace = await buildCollectorFollowupWorkspaceFast(cell, options);
+    if (workspace?.lite || options.phase === 'fast') return workspace;
+    return hydrateCollectorFollowupWorkspaceDeferred(workspace, options);
+}
+
+function renderCollectorWorkspaceContactsPhase(workspace) {
+    const { cell, context, profile, override, contactsLoading } = workspace;
+    const contacts = contactsLoading ? [] : getCollectionContactRows(profile, override);
+    const address = getCollectionAddress(context, profile, override);
+
+    return `
+        <div class="collection-followup-shell collection-followup-contacts-phase">
+            <section class="collection-followup-hero collection-followup-hero-lite">
+                <div>
+                    <h3>${escapeHtml(context.customer)}</h3>
+                    <p>${escapeHtml(context.branchName || context.accountLabel || 'Main')} • ${escapeHtml(cell.label || context.label || '')}</p>
+                </div>
+            </section>
+            <section class="collection-followup-grid">
+                <div class="collection-followup-panel" id="collectorContactsPanel">
+                    <div class="collection-followup-panel-title">Contacts</div>
+                    ${contactsLoading ? '<div class="collection-followup-loading">Loading branch contacts...</div>' : (contacts.length ? `
+                        <table class="collection-contact-table">
+                            <thead><tr><th>Location</th><th>Contact</th><th>Contact No.</th><th></th></tr></thead>
+                            <tbody>
+                                ${contacts.map((row) => `
+                                    <tr data-contact-person="${escapeHtml(row.name)}" data-contact-number="${escapeHtml(row.number)}">
+                                        <td>${escapeHtml(row.location)}</td>
+                                        <td>${escapeHtml(row.name || '-')}</td>
+                                        <td>${escapeHtml(row.number || '-')}</td>
+                                        <td><button class="btn btn-secondary btn-sm" onclick="useCollectorContact(this)">Use</button></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    ` : '<div class="collection-followup-empty">No contact profile found in collection info.</div>')}
+                    ${contactsLoading ? '' : `
+                        <div class="collection-followup-mini-form">
+                            <label>Collection Add.</label>
+                            <textarea id="collectorProfileAddress">${escapeHtml(address || '')}</textarea>
+                        </div>
+                    `}
+                </div>
+            </section>
+            <div id="collectorUnpaidPhaseMount"></div>
+            <div id="collectorWorkspaceDetailMount"></div>
+        </div>
+    `;
+}
+
+function mountCollectorWorkspaceUnpaidPhase(workspace) {
+    const mount = document.getElementById('collectorUnpaidPhaseMount');
+    if (!mount) return false;
+    mount.innerHTML = renderCollectorWorkspaceInvoiceList(workspace, workspace.selectedInvoice);
+    return true;
+}
+
+function waitNextCollectorWorkspaceFrame() {
+    return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function sortCollectorUnpaidInvoices(invoices = []) {
+    return [...invoices].sort((left, right) => {
+        const leftTime = (left.invoiceDate || normalizeDate(left.dueDate) || new Date(0)).getTime();
+        const rightTime = (right.invoiceDate || normalizeDate(right.dueDate) || new Date(0)).getTime();
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''));
+    });
+}
+
+function renderCollectorUnpaidInvoicesTable(invoices = [], selectedInvoice = null) {
+    if (!invoices.length) {
+        return '<div class="collection-followup-empty">No unpaid invoices in this list yet.</div>';
+    }
+
+    const selectedKeys = new Set([
+        selectedInvoice?.invoiceKey,
+        selectedInvoice?.invoiceNo,
+        selectedInvoice?.invoiceId
+    ].map((value) => String(value || '').trim()).filter(Boolean));
+
+    return `
+        <div class="collection-followup-table-wrap">
+            <table class="collection-followup-table">
+                <thead>
+                    <tr>
+                        <th>Invoice Date</th>
+                        <th>Invoice #</th>
+                        <th>Branch</th>
+                        <th>Coverage</th>
+                        <th class="text-right">Amount</th>
+                        <th class="text-right">Balance</th>
+                        <th>Received</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${invoices.map((invoice) => {
+                        const key = String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim();
+                        const isSelected = key && selectedKeys.has(key);
+                        const rowToken = encodeURIComponent(key);
+                        return `
+                            <tr class="collector-unpaid-invoice-row ${isSelected ? 'selected' : ''}" data-invoice-key="${escapeHtml(key)}" onclick="selectCollectorUnpaidInvoice('${rowToken}')" role="button" tabindex="0" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectCollectorUnpaidInvoice('${rowToken}'); }">
+                                <td>${escapeHtml(formatDate(invoice.invoiceDate || invoice.dueDate))}</td>
+                                <td>${escapeHtml(invoice.invoiceNo || invoice.invoiceId || invoice.invoiceKey || '-')}</td>
+                                <td>${escapeHtml(invoice.branch || '-')}</td>
+                                <td>${escapeHtml(formatBillingCoveragePeriod(invoice, invoice.sourceCell || currentCollectorWorkspace?.cell))}</td>
+                                <td class="text-right">${escapeHtml(formatCurrency(invoice.amount || invoice.billedAmount || 0))}</td>
+                                <td class="text-right">${escapeHtml(formatCurrency(getOutstandingInvoiceAmount(invoice)))}</td>
+                                <td>${escapeHtml(formatDate(invoice.dateReceived))}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function updateCollectorUnpaidListProgress(progress = {}) {
+    const el = document.getElementById('collectorUnpaidListProgress');
+    if (!el) return;
+    const done = Number(progress.done || 0);
+    const total = Number(progress.total || 0);
+    const label = String(progress.label || 'Loading unpaid invoices...');
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 12;
+    el.innerHTML = `
+        <div class="collection-unpaid-progress-copy">${escapeHtml(label)}</div>
+        <div class="collection-unpaid-progress-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
+    `;
+    el.classList.remove('hidden');
+}
+
+function hideCollectorUnpaidListProgress() {
+    document.getElementById('collectorUnpaidListProgress')?.classList.add('hidden');
+}
+
+function syncCollectorUnpaidScopeButtons(scope = 'single', loading = false) {
+    const singleButton = document.getElementById('collectorUnpaidScopeSingle');
+    const allButton = document.getElementById('collectorUnpaidScopeAll');
+    [singleButton, allButton].forEach((button) => {
+        if (!button) return;
+        button.disabled = loading;
+    });
+    if (singleButton) {
+        singleButton.classList.toggle('btn-primary', scope === 'single');
+        singleButton.classList.toggle('btn-secondary', scope !== 'single');
+    }
+    if (allButton) {
+        allButton.classList.toggle('btn-primary', scope === 'all');
+        allButton.classList.toggle('btn-secondary', scope !== 'all');
+    }
+}
+
+function mergeCollectorInvoiceWithLoadedBilling(invoice = {}) {
+    const keys = new Set([
+        invoice.invoiceKey,
+        invoice.invoiceNo,
+        invoice.invoiceId
+    ].map((value) => String(value || '').trim()).filter(Boolean));
+    const loaded = collectorBillingRecords.find((record) => (
+        keys.has(String(record.invoiceKey || '').trim())
+        || keys.has(String(record.invoiceNo || '').trim())
+        || keys.has(String(record.invoiceId || '').trim())
+    ));
+    if (!loaded) return invoice;
+    return {
+        ...invoice,
+        ...loaded,
+        amount: Number(invoice.amount || invoice.billedAmount || loaded.amount || 0),
+        billedAmount: Number(invoice.billedAmount || invoice.amount || loaded.amount || 0)
+    };
+}
+
+function findCollectorUnpaidInvoiceByKey(invoiceKey = '') {
+    const key = decodeURIComponent(String(invoiceKey || '').trim());
+    if (!key || !currentCollectorWorkspace) return null;
+    const invoices = sortCollectorUnpaidInvoices(getCollectorMatrixRowUnpaidInvoices(currentCollectorWorkspace));
+    return invoices.find((invoice) => (
+        key === String(invoice.invoiceKey || '').trim()
+        || key === String(invoice.invoiceNo || '').trim()
+        || key === String(invoice.invoiceId || '').trim()
+    )) || null;
+}
+
+function refreshCollectorPaymentPanelForSelectedInvoice(invoice) {
+    if (!currentCollectorWorkspace || !invoice) return;
+    currentCollectorWorkspace.selectedInvoice = invoice;
+    const workspace = currentCollectorWorkspace;
+    const paymentRecords = getPaymentsForSelectedInvoice(invoice);
+    const paymentTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const taxTotal = paymentRecords.reduce((sum, payment) => sum + Number(payment.tax2307 || 0), 0);
+    const selectedOutstanding = getOutstandingInvoiceAmount(invoice);
+    const paymentBalance = paymentRecords.length
+        ? selectedOutstanding
+        : Math.max(0, Number(invoice.amount || invoice.billedAmount || 0) - paymentTotal - taxTotal);
+    const panel = document.getElementById('collectorPaymentPanel');
+    const wasHidden = panel?.hidden ?? true;
+    if (panel) {
+        panel.outerHTML = renderCollectorPaymentTab(workspace, paymentRecords, paymentTotal, taxTotal, paymentBalance);
+        const nextPanel = document.getElementById('collectorPaymentPanel');
+        if (nextPanel) nextPanel.hidden = wasHidden;
+    }
+    bindCollectorPaymentForm();
+}
+
+function selectCollectorUnpaidInvoice(invoiceKey = '') {
+    const workspace = currentCollectorWorkspace;
+    if (!workspace?.cell) return;
+    const rawInvoice = findCollectorUnpaidInvoiceByKey(invoiceKey);
+    if (!rawInvoice) return;
+
+    const invoice = mergeCollectorInvoiceWithLoadedBilling(rawInvoice);
+    workspace.selectedInvoice = invoice;
+
+    const invoices = sortCollectorUnpaidInvoices(getCollectorMatrixRowUnpaidInvoices(workspace));
+    const tableEl = document.getElementById('collectorUnpaidInvoicesTable');
+    if (tableEl) {
+        tableEl.innerHTML = renderCollectorUnpaidInvoicesTable(invoices, invoice);
+    }
+
+    const kicker = document.querySelector('.collection-followup-kicker');
+    if (kicker) {
+        kicker.textContent = `Invoice No. ${invoice.invoiceNo || invoice.invoiceId || '-'}`;
+    }
+
+    refreshCollectorPaymentPanelForSelectedInvoice(invoice);
+    setCollectorWorkspaceTab('payment');
+}
+
+async function refreshCollectorUnpaidListPanel() {
+    const workspace = currentCollectorWorkspace;
+    if (!workspace?.cell) return;
+
+    const invoices = sortCollectorUnpaidInvoices(getCollectorMatrixRowUnpaidInvoices(workspace));
+    const totalBalance = invoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
+    const totalEl = document.getElementById('collectorUnpaidInvoicesTotal');
+    if (totalEl) {
+        totalEl.textContent = `${invoices.length.toLocaleString()} row(s) • ${formatCurrency(totalBalance)}`;
+    }
+
+    const tableEl = document.getElementById('collectorUnpaidInvoicesTable');
+    if (tableEl) {
+        tableEl.innerHTML = renderCollectorUnpaidInvoicesTable(invoices, workspace.selectedInvoice);
+    }
+
+    const balanceCard = document.querySelector('.collection-balance-card strong');
+    if (balanceCard) balanceCard.textContent = formatCurrency(totalBalance);
+}
+
+async function setCollectorUnpaidListScope(scope = 'single') {
+    const workspace = currentCollectorWorkspace;
+    if (!workspace?.cell) return;
+
+    const normalizedScope = getCollectorUnpaidListScope(scope);
+    if (workspace.unpaidListScope === normalizedScope) return;
+
+    workspace.unpaidListScope = normalizedScope;
+    syncCollectorUnpaidScopeButtons(normalizedScope, true);
+
+    try {
+        if (normalizedScope === 'all') {
+            updateCollectorUnpaidListProgress({ done: 0, total: 0, label: 'Gathering unpaid invoices across branches...' });
+            await ensureCollectorCellDetailData(workspace.cell, {
+                scope: 'all',
+                onProgress: updateCollectorUnpaidListProgress
+            });
+        } else {
+            await ensureCollectorCellDetailData(workspace.cell, { scope: 'single' });
+        }
+        await refreshCollectorUnpaidListPanel();
+    } catch (error) {
+        console.error('Failed to switch unpaid invoice scope:', error);
+        updateCollectorUnpaidListProgress({ done: 0, total: 0, label: 'Unable to load all branches. Please try again.' });
+        window.setTimeout(hideCollectorUnpaidListProgress, 2400);
+    } finally {
+        hideCollectorUnpaidListProgress();
+        syncCollectorUnpaidScopeButtons(normalizedScope, false);
+    }
 }
 
 function renderMiniInvoiceRows(invoices, emptyText) {
@@ -6486,6 +10028,29 @@ function renderMiniInvoiceRows(invoices, emptyText) {
     `;
 }
 
+function renderCollectorWorkspaceInvoiceList(workspace, selectedInvoice) {
+    const scope = getCollectorUnpaidListScope(workspace);
+    const invoices = sortCollectorUnpaidInvoices(getCollectorMatrixRowUnpaidInvoices(workspace));
+    const totalBalance = invoices.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
+
+    return `
+        <section class="collection-account-invoices-panel" id="collectorUnpaidInvoicesPanel">
+            <div class="collection-account-invoices-head">
+                <div>
+                    <div class="collection-account-invoices-title">Unpaid Invoices In This List</div>
+                    <div class="collection-account-invoices-total" id="collectorUnpaidInvoicesTotal">${escapeHtml(invoices.length.toLocaleString())} row(s) • ${escapeHtml(formatCurrency(totalBalance))}</div>
+                </div>
+                <div class="collection-unpaid-scope-toggle" role="group" aria-label="Unpaid invoice scope">
+                    <button type="button" class="btn btn-sm ${scope === 'single' ? 'btn-primary' : 'btn-secondary'}" id="collectorUnpaidScopeSingle" onclick="setCollectorUnpaidListScope('single')">Single Branch</button>
+                    <button type="button" class="btn btn-sm ${scope === 'all' ? 'btn-primary' : 'btn-secondary'}" id="collectorUnpaidScopeAll" onclick="setCollectorUnpaidListScope('all')">All Branches</button>
+                </div>
+            </div>
+            <div id="collectorUnpaidListProgress" class="collection-unpaid-list-progress hidden" aria-live="polite"></div>
+            <div id="collectorUnpaidInvoicesTable">${renderCollectorUnpaidInvoicesTable(invoices, selectedInvoice)}</div>
+        </section>
+    `;
+}
+
 function closeCollectorSoaPeriodModal() {
     document.getElementById('collectorSoaPeriodModal')?.classList.add('hidden');
 }
@@ -6501,27 +10066,187 @@ function openCollectorSoaPeriodModal() {
     const status = document.getElementById('collectorSoaStatus');
     const context = currentCollectorWorkspace.context || {};
     const accountLabel = context.accountLabel || context.customer || 'this account';
+    const defaultFromDate = getCollectorSoaDefaultFromDate(currentCollectorWorkspace);
+    const defaultFromKey = toDateKey(defaultFromDate) || (window.MargaSoaPolicy?.INVOICE_FROM_YMD || '2025-01-01');
 
-    if (fromInput && !fromInput.value) fromInput.value = '2026-01-01';
+    const familyRows = getCollectorSoaFamilyRows(context);
+    const familyNote = familyRows.length > 1
+        ? ` Includes all ${familyRows.length} related branch/department row(s) under ${context.customer || accountLabel}.`
+        : '';
+
+    if (fromInput) fromInput.value = defaultFromKey;
     if (toInput) toInput.value = getTodayInputValue(0);
     if (subtitle) subtitle.textContent = `Choose the SOA period for ${accountLabel}.`;
-    if (note) note.textContent = 'Default starts January 1, 2026 so 2025 invoices are excluded unless you change the date.';
+    if (note) note.textContent = `Default starts ${formatDate(defaultFromDate)}. Invoices dated before Jan 1, 2025 are excluded from SOA.${familyNote}`;
     if (status) status.textContent = 'Ready.';
 
     modal.classList.remove('hidden');
 }
 
+function getCollectorSoaCandidateInvoices(workspace) {
+    const context = workspace?.context || {};
+    const candidates = [];
+    const append = (invoice, source = 'workspace', cell = workspace?.cell || null) => {
+        if (!invoice) return;
+        const cellAmount = cell ? getPriorityCellAmount(cell) : 0;
+        candidates.push({
+            ...invoice,
+            source,
+            invoiceDate: normalizeDate(invoice.invoiceDate || invoice.dueDate) || null,
+            amount: Number(invoice.amount || invoice.billedAmount || invoice.displayBilledTotal || cellAmount || 0) || 0,
+            company: invoice.company || cell?.customer || context.customer,
+            branch: invoice.branch || cell?.branchName || context.branchName,
+            companyId: invoice.companyId || cell?.companyId || context.companyId,
+            branchId: invoice.branchId || cell?.branchId || context.branchId,
+            billingCoverage: formatBillingCoveragePeriod(invoice, cell)
+        });
+    };
+
+    if (canUseCollectorMatrixSnapshot()) {
+        getCollectorSoaListGroupCells(workspace).forEach((rowCell) => {
+            (rowCell.records || []).forEach((record) => {
+                const invoice = invoiceFromMatrixSnapshotRecord(record, rowCell);
+                if (getOutstandingInvoiceAmount(invoice) > 0.01) {
+                    append(invoice, 'matrix_row', rowCell);
+                }
+            });
+        });
+    }
+
+    if (!candidates.length) {
+        (workspace?.companyInvoices || []).forEach((invoice) => append(invoice, 'company'));
+    }
+    if (!candidates.length && workspace?.selectedInvoice) append(workspace.selectedInvoice, 'selected');
+    if (!candidates.length) {
+        (workspace?.branchInvoices || []).forEach((invoice) => append(invoice, 'branch'));
+    }
+    if (!candidates.length) {
+        (workspace?.cell?.records || []).forEach((record) => append(invoiceFromMatrixSnapshotRecord(record, workspace?.cell), 'cell', workspace?.cell));
+    }
+
+    if (!candidates.length) {
+        collectorBillingRecords
+            .filter((record) => isCollectorSoaRecordMatch(record, context))
+            .forEach((record) => append(record, 'loaded_billing_fallback'));
+    }
+
+    const seen = new Set();
+    return candidates
+        .filter((invoice) => {
+            const key = String(invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId || '').trim();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .filter((invoice) => getOutstandingInvoiceAmount(invoice) > 0.01);
+}
+
+function getCollectorSoaCompanyFamilyPrefix(name) {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const dashIndex = raw.indexOf(' - ');
+    return dashIndex > 0 ? raw.slice(0, dashIndex).trim() : raw;
+}
+
+function normalizeCompanyFamilyKey(name) {
+    return normalizeText(getCollectorSoaCompanyFamilyPrefix(name));
+}
+
+function getCollectorSoaGroupedCompanyConfig(context = {}) {
+    const direct = getGroupedCollectionCompanyConfig({ companyId: context.companyId });
+    if (direct) return direct;
+    const rowId = String(context.rowId || '').trim();
+    if (!rowId || !collectorDashboardData?.customerRows?.length) return null;
+    const row = collectorDashboardData.customerRows.find((item) => String(item.rowId || '').trim() === rowId);
+    return row ? getGroupedCollectionCompanyConfig(row) : null;
+}
+
+function belongsToCollectorSoaCompanyFamily(record, context = {}) {
+    const groupedConfig = getCollectorSoaGroupedCompanyConfig(context);
+    if (groupedConfig) {
+        return normalizeLookupId(record?.companyId) === normalizeLookupId(groupedConfig.companyId);
+    }
+
+    const contextFamily = normalizeCompanyFamilyKey(context.customer || context.accountLabel);
+    if (!contextFamily) return normalizeText(record?.company) === normalizeText(context?.customer);
+
+    const recordFamily = normalizeCompanyFamilyKey(record?.company || record?.accountLabel || record?.branch);
+    return Boolean(recordFamily && recordFamily === contextFamily);
+}
+
+function getCollectorSoaFamilyRows(context = {}) {
+    const rows = collectorDashboardData?.customerRows || [];
+    const groupedConfig = getCollectorSoaGroupedCompanyConfig(context);
+    if (groupedConfig) {
+        const groupCompanyId = normalizeLookupId(groupedConfig.companyId);
+        return rows.filter((row) => normalizeLookupId(row.companyId) === groupCompanyId);
+    }
+
+    const contextFamily = normalizeCompanyFamilyKey(context.customer || context.accountLabel);
+    if (!contextFamily) return [];
+
+    return rows.filter((row) => {
+        const rowFamily = normalizeCompanyFamilyKey(row.customer || row.accountLabel || row.branchName);
+        return Boolean(rowFamily && rowFamily === contextFamily);
+    });
+}
+
+function getCollectorSoaAccountSubtitle(context = {}) {
+    const familyRows = getCollectorSoaFamilyRows(context);
+    if (familyRows.length > 1) {
+        return `All branches and departments (${familyRows.length} account row(s))`;
+    }
+    return context.branchName || context.accountLabel || '';
+}
+
+function getCollectorSoaListGroupCells(workspace) {
+    const context = workspace?.context || {};
+    const selectedCell = workspace?.cell || null;
+    if (getCollectorUnpaidListScope(workspace) === 'single') {
+        return getCollectorBranchRowCells(workspace);
+    }
+
+    const familyRows = getCollectorSoaFamilyRows(context);
+    const selectedRowId = String(selectedCell?.rowId || context.rowId || '').trim();
+    const rows = familyRows.length
+        ? familyRows
+        : (selectedRowId
+            ? (collectorDashboardData?.customerRows || []).filter((row) => String(row.rowId || '').trim() === selectedRowId)
+            : []);
+    const cells = rows.flatMap((row) => getCollectorRowOpenCells(row));
+    if (selectedCell) cells.push(selectedCell);
+
+    const seen = new Set();
+    return cells
+        .filter((cell) => {
+            const id = String(cell?.id || '').trim();
+            if (!cell || !id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        })
+        .filter((cell) => belongsToCollectorSoaCompanyFamily({
+            company: cell.customer,
+            branch: cell.branchName,
+            accountLabel: cell.accountLabel,
+            companyId: cell.companyId,
+            branchId: cell.branchId
+        }, context));
+}
+
+function getCollectorSoaDefaultFromDate(workspace) {
+    const dates = getCollectorSoaCandidateInvoices(workspace)
+        .map((invoice) => normalizeDate(invoice.invoiceDate || invoice.dueDate))
+        .filter(Boolean)
+        .sort((left, right) => left.getTime() - right.getTime());
+    const earliest = dates[0] || null;
+    if (window.MargaSoaPolicy?.clampFromDate) {
+        return window.MargaSoaPolicy.clampFromDate(earliest);
+    }
+    return earliest || normalizeDate('2025-01-01') || new Date();
+}
+
 function isCollectorSoaRecordMatch(record, context) {
-    const companyId = normalizeLookupId(context?.companyId);
-    const branchId = normalizeLookupId(context?.branchId);
-    const recordCompanyId = normalizeLookupId(record?.companyId);
-    const recordBranchId = normalizeLookupId(record?.branchId);
-
-    if (companyId && recordCompanyId && companyId !== recordCompanyId) return false;
-    if (branchId && recordBranchId) return branchId === recordBranchId;
-    if (companyId && recordCompanyId) return companyId === recordCompanyId;
-
-    return normalizeText(record?.company) === normalizeText(context?.customer);
+    return belongsToCollectorSoaCompanyFamily(record, context);
 }
 
 function getPaymentsForInvoiceKeys(invoice) {
@@ -6534,21 +10259,14 @@ function getPaymentsForInvoiceKeys(invoice) {
     return paymentEntries.filter((entry) => (
         keys.has(String(entry.invoiceId || '').trim())
         || keys.has(String(entry.invoiceNo || '').trim())
-    ));
+    )).filter((entry) => isCollectorPaymentChronologicallyRelevant(entry, invoice));
 }
 
 function buildCollectorSoaRows(workspace, fromDate, toDate) {
-    const context = workspace?.context || {};
-    const seen = new Set();
-    const matchedInvoices = collectorBillingRecords
-        .filter((record) => record.invoiceDate && isDateWithinRange(record.invoiceDate, fromDate, toDate))
-        .filter((record) => isCollectorSoaRecordMatch(record, context))
-        .filter((record) => {
-            const key = String(record.invoiceKey || record.invoiceNo || record.invoiceId || '').trim();
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        })
+    const policyFromDate = window.MargaSoaPolicy?.clampFromDate?.(fromDate) || fromDate;
+    const matchedInvoices = getCollectorSoaCandidateInvoices(workspace)
+        .filter((record) => record.invoiceDate && window.MargaSoaPolicy?.isInvoiceEligible?.(record.invoiceDate))
+        .filter((record) => record.invoiceDate && isDateWithinRange(record.invoiceDate, policyFromDate, toDate))
         .sort((left, right) => {
             const leftTime = (left.invoiceDate || new Date(0)).getTime();
             const rightTime = (right.invoiceDate || new Date(0)).getTime();
@@ -6558,7 +10276,7 @@ function buildCollectorSoaRows(workspace, fromDate, toDate) {
 
     let finalBalance = 0;
     const rows = matchedInvoices.map((invoice) => {
-        const payments = getPaymentsForInvoiceKeys(invoice).filter((payment) => isDateWithinRange(getCollectorPaymentTotalDate(payment), fromDate, toDate));
+        const payments = getPaymentsForInvoiceKeys(invoice).filter((payment) => isDateWithinRange(getCollectorPaymentTotalDate(payment), policyFromDate, toDate));
         const paymentAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + getPaymentDeductionAmount(payment), 0);
         const latestBalance = payments
             .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
@@ -6567,16 +10285,19 @@ function buildCollectorSoaRows(workspace, fromDate, toDate) {
                 const rightTime = (right.paymentDate || new Date(0)).getTime();
                 return rightTime - leftTime;
             })[0]?.balanceAmount;
-        const computedBalance = Math.max(0, Number(invoice.amount || 0) - paymentAmount);
+        const workspaceBalance = getOutstandingInvoiceAmount(invoice);
+        const computedBalance = Math.max(0, Number(invoice.amount || invoice.billedAmount || 0) - paymentAmount);
         const balance = latestBalance !== undefined
             ? Math.min(Math.max(0, Number(latestBalance || 0)), computedBalance)
-            : computedBalance;
+            : (workspaceBalance > 0 ? workspaceBalance : computedBalance);
         finalBalance += balance;
 
         return {
             date: invoice.invoiceDate,
             invoiceNo: invoice.invoiceNo || invoice.invoiceId || invoice.invoiceKey || '-',
-            amountBilled: Number(invoice.amount || 0),
+            branch: invoice.branch || invoice.accountLabel || '-',
+            coverage: invoice.billingCoverage || formatBillingCoveragePeriod(invoice),
+            amountBilled: Number(invoice.amount || invoice.billedAmount || 0),
             payment: paymentAmount,
             balance
         };
@@ -6594,17 +10315,20 @@ function buildCollectorSoaRows(workspace, fromDate, toDate) {
 
 function renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa) {
     const context = workspace.context || {};
+    const accountSubtitle = getCollectorSoaAccountSubtitle(context);
     const rows = soa.rows.length
         ? soa.rows.map((row) => `
             <tr>
                 <td>${escapeHtml(formatDate(row.date))}</td>
                 <td>${escapeHtml(row.invoiceNo)}</td>
+                <td>${escapeHtml(row.coverage || '-')}</td>
+                <td>${escapeHtml(row.branch || '-')}</td>
                 <td class="num">${escapeHtml(formatCurrency(row.amountBilled))}</td>
                 <td class="num">${escapeHtml(formatCurrency(row.payment))}</td>
                 <td class="num">${escapeHtml(formatCurrency(row.balance))}</td>
             </tr>
         `).join('')
-        : '<tr><td colspan="5" class="empty">No SOA rows found for the selected period.</td></tr>';
+        : '<tr><td colspan="7" class="empty">No SOA rows found for the selected period.</td></tr>';
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -6637,7 +10361,7 @@ function renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa) {
             <h1>Statement of Account</h1>
             <div class="meta">
                 <strong>${escapeHtml(context.customer || '-')}</strong><br>
-                ${escapeHtml(context.branchName || context.accountLabel || '')}<br>
+                ${escapeHtml(accountSubtitle)}<br>
                 Period: ${escapeHtml(formatRangeLabel(fromDate, toDate))}
             </div>
         </div>
@@ -6651,6 +10375,8 @@ function renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa) {
             <tr>
                 <th>Date</th>
                 <th>Inv No.</th>
+                <th>Coverage</th>
+                <th>Branch</th>
                 <th class="num">Amount Billed</th>
                 <th class="num">Payment</th>
                 <th class="num">Balance</th>
@@ -6659,7 +10385,7 @@ function renderCollectorSoaPrintHtml(workspace, fromDate, toDate, soa) {
         <tbody>${rows}</tbody>
         <tfoot>
             <tr>
-                <td colspan="2">Totals</td>
+                <td colspan="4">Totals</td>
                 <td class="num">${escapeHtml(formatCurrency(soa.totals.amountBilled))}</td>
                 <td class="num">${escapeHtml(formatCurrency(soa.totals.payment))}</td>
                 <td class="num">${escapeHtml(formatCurrency(soa.totals.finalBalance))}</td>
@@ -6689,7 +10415,9 @@ function getCollectorSoaPayloadFromModal() {
         return null;
     }
 
-    const fromDate = normalizeDate(document.getElementById('collectorSoaFromDate')?.value || '2026-01-01');
+    const fromDate = window.MargaSoaPolicy?.clampFromDate?.(
+        normalizeDate(document.getElementById('collectorSoaFromDate')?.value || window.MargaSoaPolicy?.INVOICE_FROM_YMD || '2025-01-01')
+    ) || normalizeDate('2025-01-01');
     const toDate = normalizeDate(document.getElementById('collectorSoaToDate')?.value || getTodayInputValue(0));
     if (!fromDate || !toDate || fromDate > toDate) {
         if (status) status.textContent = 'Please choose a valid from/to period.';
@@ -6733,10 +10461,13 @@ function safePdfFilePart(value) {
 
 function buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa) {
     const context = workspace.context || {};
+    const accountSubtitle = getCollectorSoaAccountSubtitle(context);
     const tableBody = [
         [
             { text: 'Date', style: 'tableHeader' },
             { text: 'Inv No.', style: 'tableHeader' },
+            { text: 'Coverage', style: 'tableHeader' },
+            { text: 'Branch', style: 'tableHeader' },
             { text: 'Amount Billed', style: 'tableHeader', alignment: 'right' },
             { text: 'Payment', style: 'tableHeader', alignment: 'right' },
             { text: 'Balance', style: 'tableHeader', alignment: 'right' }
@@ -6745,17 +10476,19 @@ function buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa) {
             ? soa.rows.map((row) => [
                 formatDate(row.date),
                 String(row.invoiceNo || '-'),
+                String(row.coverage || '-'),
+                String(row.branch || '-'),
                 { text: formatCurrency(row.amountBilled), alignment: 'right' },
                 { text: formatCurrency(row.payment), alignment: 'right' },
                 { text: formatCurrency(row.balance), alignment: 'right' }
             ])
             : [[
-                { text: 'No SOA rows found for the selected period.', colSpan: 5, alignment: 'center', color: '#64748b', bold: true },
-                {}, {}, {}, {}
+                { text: 'No SOA rows found for the selected period.', colSpan: 7, alignment: 'center', color: '#64748b', bold: true },
+                {}, {}, {}, {}, {}, {}
             ]]),
         [
-            { text: 'Totals', colSpan: 2, bold: true, fillColor: '#f8fafc' },
-            {},
+            { text: 'Totals', colSpan: 4, bold: true, fillColor: '#f8fafc' },
+            {}, {}, {},
             { text: formatCurrency(soa.totals.amountBilled), alignment: 'right', bold: true, fillColor: '#f8fafc' },
             { text: formatCurrency(soa.totals.payment), alignment: 'right', bold: true, fillColor: '#f8fafc' },
             { text: formatCurrency(soa.totals.finalBalance), alignment: 'right', bold: true, fillColor: '#f8fafc' }
@@ -6777,7 +10510,7 @@ function buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa) {
                         stack: [
                             { text: 'Statement of Account', style: 'title' },
                             { text: context.customer || '-', style: 'accountName' },
-                            { text: context.branchName || context.accountLabel || '', style: 'meta' },
+                            { text: accountSubtitle, style: 'meta' },
                             { text: `Period: ${formatRangeLabel(fromDate, toDate)}`, style: 'meta' }
                         ]
                     },
@@ -6795,7 +10528,7 @@ function buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa) {
             {
                 table: {
                     headerRows: 1,
-                    widths: [78, 78, '*', '*', '*'],
+                    widths: [58, 52, '*', '*', 62, 52, 52],
                     body: tableBody
                 },
                 layout: {
@@ -6869,7 +10602,7 @@ function downloadCollectorSoaPdfFromModal() {
 }
 
 function renderHistoryRows(history) {
-    if (!history.length) return '<div class="collection-followup-empty">No payment progress remarks yet.</div>';
+    if (!history.length) return '<div class="collection-followup-empty">No conversation history yet.</div>';
 
     return `
         <div class="collection-followup-table-wrap">
@@ -6878,8 +10611,11 @@ function renderHistoryRows(history) {
                     <tr>
                         <th>Invoice No.</th>
                         <th>Date / Time</th>
-                        <th>Followed Up By</th>
-                        <th>Status</th>
+	                        <th>Followed Up By</th>
+	                        <th>Conversation Result</th>
+	                        <th>Promise To Pay</th>
+	                        <th>Issue</th>
+	                        <th>Status</th>
                         <th>Location</th>
                         <th>Remarks</th>
                     </tr>
@@ -6887,10 +10623,13 @@ function renderHistoryRows(history) {
                 <tbody>
                     ${history.slice(0, 30).map((item) => `
                         <tr>
-                            <td>${escapeHtml(item.invoiceKey || item.collectionId || '-')}</td>
-                            <td>${escapeHtml(formatDate(item.callDate))}</td>
-                            <td>${escapeHtml(getHistoryActor(item) || '-')}</td>
-                            <td>${escapeHtml(getCollectionStatusLabel(item.statusId) || item.scheduleStatus || '-')}</td>
+	                            <td>${escapeHtml(item.invoiceKey || item.collectionId || '-')}</td>
+	                            <td>${escapeHtml(formatDate(item.callDate))}</td>
+	                            <td>${escapeHtml(getHistoryActor(item) || '-')}</td>
+	                            <td>${escapeHtml(item.conversationResult || '-')}</td>
+	                            <td>${escapeHtml(item.promiseToPay || '-')}</td>
+	                            <td>${escapeHtml(item.issueType || '-')}</td>
+	                            <td>${escapeHtml(getCollectionStatusLabel(item.statusId) || item.scheduleStatus || '-')}</td>
                             <td>${escapeHtml(getCollectionLocationLabel(item.locationId, item.locationLabel))}</td>
                             <td>${escapeHtml(item.remarks || '-')}</td>
                         </tr>
@@ -6901,15 +10640,52 @@ function renderHistoryRows(history) {
     `;
 }
 
-function renderServiceRows(rows) {
-    if (!rows.length) return '<div class="collection-followup-empty">No recent service or delivery history found for this branch/company.</div>';
+function renderServiceRows(serviceHistory, scope = 'branch') {
+    const branchRows = Array.isArray(serviceHistory?.branchRows) ? serviceHistory.branchRows : [];
+    const companyRows = Array.isArray(serviceHistory?.companyRows) ? serviceHistory.companyRows : [];
+    const activeScope = scope === 'company' ? 'company' : 'branch';
+    const rows = activeScope === 'company' ? companyRows : branchRows;
+    const latestDate = rows[0]?.dateFinished || rows[0]?.taskDate || null;
+
+    if (!rows.length) {
+        return `
+            <div class="collection-history-toolbar">
+                <div class="collection-history-scope" role="tablist" aria-label="Service history scope">
+                    ${SERVICE_HISTORY_SCOPE_OPTIONS.map((option) => `
+                        <button
+                            type="button"
+                            class="collection-history-scope-btn${option.key === activeScope ? ' active' : ''}"
+                            onclick="setCollectorServiceHistoryScope('${escapeHtml(option.key)}')"
+                        >${escapeHtml(option.label)}</button>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="collection-followup-empty">No recent service or delivery history found for this ${activeScope === 'company' ? 'company' : 'department'}.</div>
+        `;
+    }
 
     return `
+        <div class="collection-history-toolbar">
+            <div class="collection-history-scope" role="tablist" aria-label="Service history scope">
+                ${SERVICE_HISTORY_SCOPE_OPTIONS.map((option) => `
+                    <button
+                        type="button"
+                        class="collection-history-scope-btn${option.key === activeScope ? ' active' : ''}"
+                        onclick="setCollectorServiceHistoryScope('${escapeHtml(option.key)}')"
+                    >${escapeHtml(option.label)}</button>
+                `).join('')}
+            </div>
+            <div class="collection-history-meta">
+                Showing ${escapeHtml(String(rows.length))} recent row(s)${latestDate ? ` • Latest ${escapeHtml(formatDate(latestDate))}` : ''}
+            </div>
+        </div>
         <div class="collection-followup-table-wrap">
             <table class="collection-followup-table">
                 <thead>
                     <tr>
                         <th>Sched ID</th>
+                        <th>Type</th>
+                        <th>Dept / Branch</th>
                         <th>Trouble</th>
                         <th>Tech</th>
                         <th>Task Date</th>
@@ -6921,6 +10697,8 @@ function renderServiceRows(rows) {
                     ${rows.map((row) => `
                         <tr>
                             <td>${escapeHtml(row.scheduleId || '-')}</td>
+                            <td>${escapeHtml(row.type || '-')}</td>
+                            <td>${escapeHtml(row.branchLabel || '-')}</td>
                             <td>${escapeHtml(row.trouble || '-')}</td>
                             <td>${escapeHtml(row.tech || '-')}</td>
                             <td>${escapeHtml(formatDate(row.taskDate))}</td>
@@ -6954,11 +10732,19 @@ function getPaymentsForSelectedInvoice(invoice) {
 
     return paymentEntries
         .filter((entry) => keys.has(String(entry.invoiceId || '').trim()) || keys.has(String(entry.invoiceNo || '').trim()))
+        .filter((entry) => isCollectorPaymentChronologicallyRelevant(entry, invoice))
         .sort((left, right) => {
             const leftTime = (left.paymentDate || new Date(0)).getTime();
             const rightTime = (right.paymentDate || new Date(0)).getTime();
             return rightTime - leftTime;
         });
+}
+
+function isCollectorPaymentChronologicallyRelevant(payment, invoice) {
+    const paymentDate = getCollectorPaymentTotalDate(payment);
+    const invoiceDate = normalizeDate(invoice?.invoiceDate || invoice?.dueDate);
+    if (!paymentDate || !invoiceDate) return true;
+    return paymentDate.getTime() >= invoiceDate.getTime();
 }
 
 function getPaymentDeductionAmount(payment) {
@@ -7022,6 +10808,29 @@ function render2307PendingPanel(payments = []) {
             </table>
         </div>
     `;
+}
+
+function buildSelectOptions(options, selectedValue = '') {
+    return options.map((option) => {
+        const selected = String(option).toLowerCase() === String(selectedValue || '').toLowerCase() ? ' selected' : '';
+        return `<option value="${escapeHtml(option)}"${selected}>${escapeHtml(option)}</option>`;
+    }).join('');
+}
+
+function getDefaultConversationResult(lastHistory) {
+    return lastHistory?.conversationResult || 'Successful Conversation';
+}
+
+function getDefaultPromiseToPay(lastHistory) {
+    return lastHistory?.promiseToPay || 'No Promise to Pay';
+}
+
+function getDefaultIssueType(lastHistory) {
+    return lastHistory?.issueType || 'No Issue';
+}
+
+function getDefaultFollowupTime(lastHistory) {
+    return lastHistory?.nextFollowupTime || 'Morning';
 }
 
 async function markCollector2307Submitted(paymentDocId) {
@@ -7335,6 +11144,20 @@ function renderCollectorFollowupWorkspace(workspace) {
     const displayBalance = paymentRecords.length
         ? paymentBalance
         : (Number(branchBalance || 0) > 0 ? Number(branchBalance || 0) : cellOutstanding);
+    const workspaceInvoiceList = sortCollectorUnpaidInvoices(getCollectorMatrixRowUnpaidInvoices(workspace));
+    const workspaceInvoiceListBalance = workspaceInvoiceList.reduce((sum, invoice) => sum + getOutstandingInvoiceAmount(invoice), 0);
+    const displayAccountBalance = workspaceInvoiceListBalance > 0 ? workspaceInvoiceListBalance : displayBalance;
+    const conversationResultValue = getDefaultConversationResult(lastHistory);
+    const promiseToPayValue = getDefaultPromiseToPay(lastHistory);
+    const promiseAmountValue = Number(lastHistory?.promiseToPayAmount || lastHistory?.paymentAmount || 0);
+    const promiseDateValue = toDateKey(lastHistory?.promiseToPayDate) || '';
+    const nextFollowupDateValue = toDateKey(lastHistory?.followupDate) || defaultFollowup;
+    const nextFollowupTimeValue = getDefaultFollowupTime(lastHistory);
+    const issueTypeValue = getDefaultIssueType(lastHistory);
+    const issueNotesValue = lastHistory?.issueNotes || '';
+    const assignedOwner = getCustomerAssignmentOwner(context);
+    const assignedRole = getCurrentCollectionRoleAssignment();
+    const serviceHistoryScope = serviceHistory?.currentScope === 'company' ? 'company' : 'branch';
 
     return `
         <div class="collection-followup-shell">
@@ -7345,11 +11168,13 @@ function renderCollectorFollowupWorkspace(workspace) {
                     <p>Status: Active • Model: ${escapeHtml(context.modelName || selectedInvoice?.modelName || '-')} • Serial: ${escapeHtml(displaySerialNumber(context.serialNumber || selectedInvoice?.serialNumber))}</p>
                 </div>
                 <div class="collection-balance-card">
-                    <span>Branch Balance</span>
-                    <strong>${escapeHtml(formatCurrency(displayBalance))}</strong>
+                    <span>List Balance</span>
+                    <strong>${escapeHtml(formatCurrency(displayAccountBalance))}</strong>
                     <em>Company open: ${escapeHtml(formatCurrency(companyBalance))}</em>
                 </div>
             </section>
+
+            ${renderCollectorWorkspaceInvoiceList(workspace, selectedInvoice)}
 
             <div class="collection-workspace-tabs" role="tablist" aria-label="Collection workspace sections">
                 <button type="button" class="collection-workspace-tab active" id="collectorFollowupTab" role="tab" aria-selected="true" aria-controls="collectorFollowupPanel" onclick="setCollectorWorkspaceTab('followup')">Follow-up</button>
@@ -7361,9 +11186,9 @@ function renderCollectorFollowupWorkspace(workspace) {
                 <button type="button" class="btn btn-secondary btn-sm" onclick="openCollectorSoaPeriodModal()">Print SOA</button>
             </div>
             <section class="collection-followup-grid">
-                <div class="collection-followup-panel">
+                <div class="collection-followup-panel" id="collectorContactsPanel">
                     <div class="collection-followup-panel-title">Contacts</div>
-                    ${contacts.length ? `
+                    ${workspace.contactsLoading ? '<div class="collection-followup-loading">Loading branch contacts...</div>' : (contacts.length ? `
                         <table class="collection-contact-table">
                             <thead><tr><th>Location</th><th>Contact</th><th>Contact No.</th><th></th></tr></thead>
                             <tbody>
@@ -7377,9 +11202,19 @@ function renderCollectorFollowupWorkspace(workspace) {
                                 `).join('')}
                             </tbody>
                         </table>
-                    ` : '<div class="collection-followup-empty">No contact profile found in collection info.</div>'}
+                    ` : '<div class="collection-followup-empty">No contact profile found in collection info.</div>')}
 
                     <div class="collection-followup-mini-form">
+                        <div class="collection-customer-assignment-row">
+                            <label>Customer Assignment Owner</label>
+                            <input id="collectorCustomerOwner" type="text" value="${escapeHtml(assignedOwner || getCurrentCollectorName())}" placeholder="Collector responsible for this customer">
+                            <select id="collectorCustomerOwnerRole">
+                                <option value="">Open lane</option>
+                                ${COLLECTION_ASSIGNMENT_ROLES.map((role) => `<option value="${escapeHtml(role.key)}"${role.key === assignedRole ? ' selected' : ''}>${escapeHtml(role.label)}</option>`).join('')}
+                            </select>
+                            <button class="btn btn-secondary btn-sm" onclick="saveCurrentCustomerAssignment()">Save Customer Assignment</button>
+                            <span class="detail-save-status" id="collectorCustomerAssignmentStatus">Coordination only. Anyone can still open this account.</span>
+                        </div>
                         <label>Collection Add.</label>
                         <textarea id="collectorProfileAddress">${escapeHtml(address || '')}</textarea>
                         <div class="collection-followup-two">
@@ -7421,16 +11256,65 @@ function renderCollectorFollowupWorkspace(workspace) {
 
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Invoice State</div>
-                    <div class="collection-followup-facts">
-                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(displayBalance))}</strong></div>
-                        <div><span>Date Received</span><strong>${escapeHtml(formatDate(selectedInvoice?.dateReceived || selectedInvoice?.invoiceDate))}</strong></div>
-                        <div><span>Received By</span><strong>${escapeHtml(selectedInvoice?.receivedBy || '-')}</strong></div>
-                        <div><span>Invoice Month</span><strong>${escapeHtml(selectedInvoice?.monthYear || context.label || '-')}</strong></div>
-                    </div>
-                    <div class="collection-followup-form">
-                        <div>
-                            <label>Received By</label>
-                            <input id="collectorReceivedBy" type="text" value="${escapeHtml(selectedInvoice?.receivedBy || '')}">
+	                    <div class="collection-followup-facts">
+	                        <div><span>Balance</span><strong>${escapeHtml(formatCurrency(displayBalance))}</strong></div>
+	                        <div><span>Date Received</span><strong>${escapeHtml(formatDate(selectedInvoice?.dateReceived || selectedInvoice?.invoiceDate))}</strong></div>
+	                        <div><span>Received By</span><strong>${escapeHtml(selectedInvoice?.receivedBy || '-')}</strong></div>
+	                        <div><span>Invoice Month</span><strong>${escapeHtml(selectedInvoice?.monthYear || context.label || '-')}</strong></div>
+	                        <div><span>Collector Lane</span><strong>${escapeHtml(getCollectionRoleLabel(assignedRole) || '-')}</strong></div>
+	                        <div><span>Customer Owner</span><strong>${escapeHtml(assignedOwner || 'Open')}</strong></div>
+	                    </div>
+                    <div class="collection-followup-panel-title">Conversation History</div>
+                    ${workspace.deferredSectionsLoading
+                        ? '<div class="collection-followup-loading">Loading call history...</div>'
+                        : renderHistoryRows(invoiceHistory)}
+	                    <div class="collection-followup-form">
+	                        <div>
+	                            <label>Conversation Result</label>
+	                            <select id="collectorConversationResult" required>
+	                                ${buildSelectOptions(CONVERSATION_RESULT_OPTIONS, conversationResultValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Promise To Pay</label>
+	                            <select id="collectorPromiseToPay" required>
+	                                ${buildSelectOptions(PROMISE_TO_PAY_OPTIONS, promiseToPayValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Promise Amount</label>
+	                            <input id="collectorPromiseAmount" type="number" min="0" step="0.01" value="${escapeHtml(promiseAmountValue.toFixed(2))}">
+	                        </div>
+	                        <div>
+	                            <label>Promise Date</label>
+	                            <input id="collectorPromiseDate" type="date" value="${escapeHtml(promiseDateValue)}">
+	                        </div>
+	                        <div>
+	                            <label>Next Follow-up Date</label>
+	                            <input id="collectorFollowupDate" type="date" value="${escapeHtml(nextFollowupDateValue)}" required>
+	                        </div>
+	                        <div>
+	                            <label>Next Follow-up Time</label>
+	                            <select id="collectorNextFollowupTime" required>
+	                                ${buildSelectOptions(NEXT_FOLLOWUP_TIME_OPTIONS, nextFollowupTimeValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Issue Type</label>
+	                            <select id="collectorIssueType" required>
+	                                ${buildSelectOptions(ISSUE_TYPE_OPTIONS, issueTypeValue)}
+	                            </select>
+	                        </div>
+	                        <div>
+	                            <label>Issue Notes</label>
+	                            <input id="collectorIssueNotes" type="text" list="collectorIssueNoteSuggestions" value="${escapeHtml(issueNotesValue)}" placeholder="Optional explanation">
+	                            <datalist id="collectorIssueNoteSuggestions">
+	                                ${ISSUE_NOTE_SUGGESTIONS.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('')}
+	                            </datalist>
+	                        </div>
+	                        <div>
+	                            <label>Received By</label>
+	                            <input id="collectorReceivedBy" type="text" value="${escapeHtml(selectedInvoice?.receivedBy || '')}">
                         </div>
                         <div>
                             <label>Contact No.</label>
@@ -7448,15 +11332,11 @@ function renderCollectorFollowupWorkspace(workspace) {
                                 ${COLLECTION_LOCATION_OPTIONS.map((option) => `<option value="${escapeHtml(option.id)}"${Number(option.id) === locationId ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}
                             </select>
                         </div>
-                        <div>
-                            <label>Follow-up Date</label>
-                            <input id="collectorFollowupDate" type="date" value="${escapeHtml(defaultFollowup)}">
-                        </div>
-                        <div>
-                            <label>Coll Time</label>
-                            <input id="collectorCollectionTime" type="time" value="${escapeHtml(fromTime || followupTime || '')}">
-                        </div>
-                        <div class="full">
+	                        <div>
+	                            <label>Coll Time</label>
+	                            <input id="collectorCollectionTime" type="time" value="${escapeHtml(fromTime || followupTime || '')}">
+	                        </div>
+	                        <div class="full">
                             <label>Remarks</label>
                             <textarea id="collectorRemarks" placeholder="Write where the invoice is now, who was contacted, and the next action."></textarea>
                         </div>
@@ -7534,16 +11414,12 @@ function renderCollectorFollowupWorkspace(workspace) {
                     ${renderMiniInvoiceRows(companyInvoices, 'No unpaid company invoices found in the current Collections data.')}
                 </div>
                 <div class="collection-followup-panel">
-                    <div class="collection-followup-panel-title">Payment Progress Remarks</div>
-                    ${renderHistoryRows(invoiceHistory)}
-                </div>
-                <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Pending 2307 Forms</div>
                     ${render2307PendingPanel(paymentRecords)}
                 </div>
                 <div class="collection-followup-panel">
                     <div class="collection-followup-panel-title">Service / Delivery History</div>
-                    ${renderServiceRows(serviceHistory)}
+                    ${renderServiceRows(serviceHistory, serviceHistoryScope)}
                 </div>
             </section>
             </section>
@@ -7554,8 +11430,12 @@ function renderCollectorFollowupWorkspace(workspace) {
 }
 
 async function openCollectorCell(cellId) {
-    const cell = collectorCellMap.get(String(cellId || '').trim());
+    const cell = collectorCellMap.get(decodeCollectorCellToken(cellId));
     if (!cell) return;
+    if (!lastLoadSucceeded && !canUseCollectorMatrixSnapshot()) {
+        window.alert('No saved matrix summary yet. The backend rebuild job must create the month comparison table.');
+        return;
+    }
     captureCollectorReturnBookmark(cell.id || cellId);
 
     const modal = document.getElementById('collectorCellModal');
@@ -7567,7 +11447,7 @@ async function openCollectorCell(cellId) {
     const billedTarget = Number(cell.displayBilledTotal || cell.billedTotal || 0);
     const pendingAmount = getCellOutstandingBalance(cell);
     title.textContent = `${cell.customer} • ${cell.branchName || cell.accountLabel || 'Main'} • ${cell.label}`;
-    subtitle.textContent = `Loading collection profile, unpaid invoices, history, and service records for this follow-up.`;
+    subtitle.textContent = 'Loading branch contacts...';
     content.innerHTML = `
         <div class="cell-modal-summary">
             <div class="cell-modal-card">
@@ -7591,7 +11471,7 @@ async function openCollectorCell(cellId) {
             ${cell.missedReading ? '<span class="collector-chip pending">Missed Reading</span>' : ''}
             ${cell.catchUpBilling ? `<span class="collector-chip viewport">Catch-up Billing${cell.catchUpGapMonths > 1 ? ` (${escapeHtml(String(cell.catchUpGapMonths))} months)` : ''}</span>` : ''}
             ${cell.pendingBilling && !cell.missedReading ? '<span class="collector-chip pending">Pending Billing</span>' : ''}
-            <span class="collector-chip">Preparing follow-up workspace...</span>
+            <span class="collector-chip">Loading contacts...</span>
         </div>
     `;
 
@@ -7603,21 +11483,66 @@ async function openCollectorCell(cellId) {
         cellId: cell.id
     };
 
-    try {
-        const workspace = await buildCollectorFollowupWorkspace(cell);
+    const renderWorkspaceShell = (workspace, phaseLabel = '') => {
         if (currentCollectorWorkspace?.cellId !== cell.id) return;
-        currentCollectorWorkspace = {
-            ...workspace,
-            cellId: cell.id
-        };
-
+        currentCollectorWorkspace = { ...workspace, cellId: cell.id };
         const selectedInvoice = workspace.selectedInvoice;
         title.textContent = `${workspace.context.customer} • ${workspace.context.branchName || 'Main'} • ${workspace.context.label}`;
-        subtitle.textContent = selectedInvoice
+        subtitle.textContent = phaseLabel || (selectedInvoice
             ? `Invoice #${selectedInvoice.invoiceNo || selectedInvoice.invoiceId || '-'} follow-up`
-            : `Follow-up workspace`;
-        content.innerHTML = renderCollectorFollowupWorkspace(workspace);
-        bindCollectorPaymentForm();
+            : 'Follow-up workspace');
+        content.innerHTML = workspace.lite
+            ? renderCollectorProjectionOnlyWorkspace(workspace)
+            : renderCollectorFollowupWorkspace(workspace);
+        if (!workspace.lite) bindCollectorPaymentForm();
+    };
+
+    try {
+        if (isCollectorProjectionOnlyCell(cell)) {
+            const workspace = await buildCollectorFollowupWorkspace(cell, { phase: 'fast' });
+            renderWorkspaceShell(workspace);
+            return;
+        }
+
+        if (!canUseCollectorMatrixSnapshot()) {
+            const workspace = await buildCollectorFollowupWorkspace(cell, {
+                forceFull: true,
+                useFollowupPack: false
+            });
+            renderWorkspaceShell(workspace);
+            return;
+        }
+
+        let workspace = assembleCollectorFollowupWorkspace(cell, 'single');
+        workspace.contactsLoading = true;
+        content.innerHTML += renderCollectorWorkspaceContactsPhase(workspace);
+
+        await ensureCollectorCallingWorkspaceData(workspace.context, { useFollowupPack: true, cell, scope: 'single' });
+        if (currentCollectorWorkspace?.cellId !== cell.id) return;
+
+        workspace = assembleCollectorFollowupWorkspace(cell, 'single');
+        const contactsMount = document.getElementById('collectorContactsPanel')?.closest('.collection-followup-contacts-phase');
+        if (contactsMount) {
+            contactsMount.outerHTML = renderCollectorWorkspaceContactsPhase(workspace);
+        } else {
+            content.innerHTML += renderCollectorWorkspaceContactsPhase(workspace);
+        }
+        subtitle.textContent = 'Contacts ready • loading unpaid invoices...';
+        currentCollectorWorkspace = { ...workspace, cellId: cell.id };
+
+        await waitNextCollectorWorkspaceFrame();
+        mountCollectorWorkspaceUnpaidPhase(workspace);
+        subtitle.textContent = 'Contacts ready • loading call history in background...';
+
+        await waitNextCollectorWorkspaceFrame();
+        renderWorkspaceShell({ ...workspace, deferredSectionsLoading: true }, subtitle.textContent);
+
+        void hydrateCollectorFollowupWorkspaceDeferred(workspace).then((hydrated) => {
+            renderWorkspaceShell(hydrated);
+        }).catch((error) => {
+            console.error('Deferred follow-up workspace load failed:', error);
+            subtitle.textContent = 'Contacts ready. History and schedules may be incomplete.';
+        });
     } catch (error) {
         console.error('Failed to open collection follow-up workspace:', error);
         subtitle.textContent = 'Collection follow-up workspace could not load completely.';
@@ -7631,8 +11556,26 @@ async function openCollectorCell(cellId) {
 }
 
 function openCollectorCellByToken(token) {
-    void openCollectorCell(decodeURIComponent(String(token || '')));
+    void openCollectorCell(token);
 }
+
+async function openCollectorPriorityCell(token, tabName = 'followup') {
+    await openCollectorCell(decodeURIComponent(String(token || '')));
+    if (tabName === 'payment') {
+        setTimeout(() => setCollectorWorkspaceTab('payment'), 250);
+    }
+}
+
+window.openCollectorCellFullWorkspace = openCollectorCellFullWorkspace;
+window.openCollectorCell = openCollectorCell;
+window.openCollectorCellByToken = openCollectorCellByToken;
+window.openCollectorPriorityCell = openCollectorPriorityCell;
+window.hideCollectorComparisonAccount = hideCollectorComparisonAccount;
+window.unhideCollectorComparisonAccount = unhideCollectorComparisonAccount;
+window.setCollectorComparisonView = setCollectorComparisonView;
+window.setPriorityWorklistView = setPriorityWorklistView;
+window.saveDashboardCollectionAssignment = saveDashboardCollectionAssignment;
+window.setCollectorServiceHistoryScope = setCollectorServiceHistoryScope;
 
 function closeCollectorCellModal() {
     document.getElementById('collectorCellModal')?.classList.add('hidden');
@@ -7690,6 +11633,20 @@ function updateCollectorPaymentBalance() {
     if (actualNode) actualNode.textContent = formatCurrency(paidAmount);
     if (taxNode) taxNode.textContent = formatCurrency(deductionAmount);
     if (balanceNode) balanceNode.textContent = formatCurrency(balance);
+}
+
+function rerenderCollectorWorkspace(activeTab = 'followup') {
+    const content = document.getElementById('collectorCellContent');
+    if (!content || !currentCollectorWorkspace) return;
+    content.innerHTML = renderCollectorFollowupWorkspace(currentCollectorWorkspace);
+    bindCollectorPaymentForm();
+    setCollectorWorkspaceTab(activeTab);
+}
+
+function setCollectorServiceHistoryScope(scope) {
+    if (!currentCollectorWorkspace?.serviceHistory) return;
+    currentCollectorWorkspace.serviceHistory.currentScope = scope === 'company' ? 'company' : 'branch';
+    rerenderCollectorWorkspace('followup');
 }
 
 function bindCollectorPaymentForm() {
@@ -8674,8 +12631,7 @@ async function saveCollectorPayment() {
         rebuildPaidInvoiceIdsFromPayments();
 
         await refreshCollectorPaymentWorkspace(editingDocId ? 'Updated. Payment record was edited.' : 'Saved. Payment record updated.');
-        collectorDashboardData = null;
-        void renderCollectorDashboard({ recompute: true });
+        void refreshCollectorMatrixAfterStaffWrite();
     } catch (error) {
         console.error('Failed to save collection payment:', error);
         if (statusNode) statusNode.textContent = 'Payment save failed. Please try again.';
@@ -8693,6 +12649,14 @@ async function saveCollectorFollowup() {
 
     const remarks = String(document.getElementById('collectorRemarks')?.value || '').trim();
     const followupDate = String(document.getElementById('collectorFollowupDate')?.value || '').trim();
+    const conversationResult = String(document.getElementById('collectorConversationResult')?.value || '').trim();
+    const promiseToPay = String(document.getElementById('collectorPromiseToPay')?.value || '').trim();
+    const promiseAmountRaw = String(document.getElementById('collectorPromiseAmount')?.value || '').trim();
+    const promiseAmount = promiseAmountRaw ? Number(promiseAmountRaw) : 0;
+    const promiseDate = String(document.getElementById('collectorPromiseDate')?.value || '').trim();
+    const nextFollowupTime = String(document.getElementById('collectorNextFollowupTime')?.value || '').trim();
+    const issueType = String(document.getElementById('collectorIssueType')?.value || '').trim();
+    const issueNotes = String(document.getElementById('collectorIssueNotes')?.value || '').trim();
     const collectionTime = String(document.getElementById('collectorCollectionTime')?.value || '').trim();
     const contactPerson = String(document.getElementById('collectorLastContact')?.value || '').trim();
     const contactNumber = String(document.getElementById('collectorContactNumber')?.value || '').trim();
@@ -8703,6 +12667,21 @@ async function saveCollectorFollowup() {
     const checkNumber = String(document.getElementById('collectorCheckNumber')?.value || '').trim();
     const paymentAmountRaw = String(document.getElementById('collectorPaymentAmount')?.value || '').trim();
     const paymentAmount = paymentAmountRaw ? Number(paymentAmountRaw) : 0;
+
+    if (!conversationResult || !promiseToPay || !nextFollowupTime || !issueType) {
+        if (statusNode) statusNode.textContent = 'Please complete Conversation Result, Promise To Pay, Next Follow-up Time, and Issue Type.';
+        return;
+    }
+
+    if (PROMISE_DATE_REQUIRED_OPTIONS.has(promiseToPay) && !promiseDate) {
+        if (statusNode) statusNode.textContent = 'Please set Promise To Pay Date for this payment schedule.';
+        return;
+    }
+
+    if (promiseAmount < 0 || !Number.isFinite(promiseAmount)) {
+        if (statusNode) statusNode.textContent = 'Promise amount must be zero or higher.';
+        return;
+    }
 
     if (!remarks) {
         if (statusNode) statusNode.textContent = 'Please enter remarks before saving.';
@@ -8739,6 +12718,16 @@ async function saveCollectorFollowup() {
             remarks: { stringValue: remarks },
             contact_person: { stringValue: contactPerson || '-' },
             contact_number: { stringValue: contactNumber || '' },
+            conversation_result: { stringValue: conversationResult },
+            promise_to_pay: { stringValue: promiseToPay },
+            promise_to_pay_amount: { doubleValue: promiseAmount },
+            promise_to_pay_date: { stringValue: promiseDate },
+            next_followup_date: { stringValue: followupDate },
+            next_followup_time: { stringValue: nextFollowupTime },
+            issue_type: { stringValue: issueType },
+            issue_notes: { stringValue: issueNotes },
+            collection_role_assignment: { stringValue: getCurrentCollectionRoleAssignment() },
+            customer_assignment_owner: { stringValue: getCustomerAssignmentOwner(context) || getCurrentCollectorName() },
             followed_up_by: { stringValue: getCurrentCollectorName() },
             collector_name: { stringValue: getCurrentCollectorName() },
             followup_datetime: { stringValue: `${followupDate} ${normalizedTime}` },
@@ -8752,8 +12741,13 @@ async function saveCollectorFollowup() {
             payment_amount: { doubleValue: Number.isFinite(paymentAmount) ? paymentAmount : 0 }
         });
 
-        await loadCollectionHistory();
-        indexCollectionHistoryEntry(collectionHistoryDocToEntry(createdHistory));
+        const savedHistoryEntry = collectionHistoryDocToEntry(createdHistory);
+        if (collectionHistoryBulkLoaded) {
+            indexCollectionHistoryEntry(savedHistoryEntry);
+        } else {
+            await loadCollectionHistory();
+            indexCollectionHistoryEntry(savedHistoryEntry);
+        }
 
         const refreshed = await buildCollectorFollowupWorkspace(currentCollectorWorkspace.cell);
         currentCollectorWorkspace = {
@@ -8766,8 +12760,7 @@ async function saveCollectorFollowup() {
         bindCollectorPaymentForm();
         const refreshedStatusNode = document.getElementById('collectorFollowupSaveStatus');
         if (refreshedStatusNode) refreshedStatusNode.textContent = 'Saved. Follow-up history updated.';
-        collectorDashboardData = null;
-        void renderCollectorDashboard({ recompute: true });
+        void refreshCollectorMatrixAfterStaffWrite();
     } catch (error) {
         console.error('Failed to save collection follow-up:', error);
         if (statusNode) statusNode.textContent = 'Save failed. Please try again.';
@@ -9683,6 +13676,625 @@ function getMissingContactInvoices() {
         });
 }
 
+function normalizeFinanceManagerAccountSummary(account = {}) {
+    const lastContactDate = normalizeDate(account.last_followup_date);
+    return {
+        key: String(account.account_key || '').trim(),
+        customer: account.company_name || account.account_label || 'Unnamed account',
+        branch: account.branch_name || 'Main',
+        accountLabel: account.account_label || account.branch_name || '',
+        companyId: account.company_id || '',
+        branchId: account.branch_id || '',
+        contactPerson: account.contact_person || '',
+        contactNumber: account.contact_number || '',
+        totalBalance: Number(account.total_outstanding_amount || 0) || 0,
+        overdueMonths: Number(account.overdue_month_count || 0) || 0,
+        unpaidInvoiceCount: Number(account.unpaid_invoice_count || 0) || 0,
+        maxAge: Number(account.max_age_days || 0) || 0,
+        assignedCollector: account.assigned_collector || '',
+        collectionRoleAssignment: account.collection_role_assignment || '',
+        hasTodayCall: Boolean(account.has_today_call),
+        lastContactDate,
+        lastContactDays: lastContactDate ? Math.max(0, daysBetween(lastContactDate, new Date())) : null,
+        needsSoaPolicy: Boolean(account.needs_soa),
+        reminderNeeded: Boolean(account.reminder_needed),
+        latestHistory: {
+            remarks: account.last_followup_remarks || '',
+            followedUpBy: account.last_followup_by || '',
+            nextFollowupDate: account.next_followup_date || '',
+            issueType: account.latest_issue_type || '',
+            promiseToPay: account.latest_promise_to_pay || '',
+            promiseToPayDate: account.latest_promise_to_pay_date || ''
+        }
+    };
+}
+
+function normalizeFinanceManagerInvoiceFact(invoice = {}) {
+    return {
+        invoiceKey: String(invoice.invoice_key || '').trim(),
+        invoiceId: String(invoice.invoice_public_id || invoice.invoice_key || '').trim(),
+        invoiceNo: String(invoice.invoice_no || invoice.invoice_key || '').trim(),
+        invoiceDate: normalizeDate(invoice.invoice_date),
+        dueDate: normalizeDate(invoice.due_date),
+        amount: Number(invoice.billed_amount || 0) || 0,
+        billedAmount: Number(invoice.billed_amount || 0) || 0,
+        outstandingBalance: Number(invoice.outstanding_balance || 0) || 0,
+        latestBalanceAmount: Number(invoice.latest_balance_amount || 0) || 0,
+        company: invoice.company_name || '',
+        branch: invoice.branch_name || 'Main',
+        companyId: invoice.company_id || '',
+        branchId: invoice.branch_id || ''
+    };
+}
+
+function normalizeFinanceManagerPaymentFact(payment = {}) {
+    return {
+        paymentKey: String(payment.payment_key || '').trim(),
+        invoiceKey: String(payment.invoice_key || '').trim(),
+        invoiceId: String(payment.invoice_key || '').trim(),
+        invoiceNo: String(payment.invoice_no || payment.invoice_key || '').trim(),
+        paymentDate: normalizeDate(payment.payment_date),
+        amount: Number(payment.payment_amount || 0) || 0,
+        deductionAmount: Number(payment.deduction_amount || 0) || 0,
+        tax2307: Number(payment.tax_2307 || 0) || 0,
+        balanceAmount: Number(payment.balance_amount || 0) || 0,
+        orNumber: payment.or_no || '',
+        receiptStatus: payment.receipt_status || ''
+    };
+}
+
+async function fetchFinanceManagerSummary({ forceRefresh = false } = {}) {
+    const url = new URL(getMargabaseAdminUrl('/admin/finance-manager-summary'), window.location.href);
+    if (forceRefresh) url.searchParams.set('refresh', '1');
+    const response = await fetch(url.toString(), { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Finance summary HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+function fetchFinanceManagerSummaryDeduped(options = {}) {
+    if (options.forceRefresh) return fetchFinanceManagerSummary(options);
+    if (!financeManagerSummaryPromise) {
+        financeManagerSummaryPromise = fetchFinanceManagerSummary(options)
+            .finally(() => {
+                financeManagerSummaryPromise = null;
+            });
+    }
+    return financeManagerSummaryPromise;
+}
+
+async function loadFinanceManagerSummary({ quiet = false, forceRefresh = false } = {}) {
+    financeManagerSummaryLoading = true;
+    renderFinanceManagerBoard();
+    try {
+        const payload = await fetchFinanceManagerSummaryDeduped({ forceRefresh });
+        financeManagerSummaryAccounts = (payload.accounts || []).map(normalizeFinanceManagerAccountSummary);
+        financeManagerSummaryMeta = payload;
+        financeManagerSummaryLoaded = true;
+        if (forceRefresh) financeManagerAccountDetailCache = new Map();
+        renderFinanceManagerBoard();
+    } catch (error) {
+        financeManagerSummaryAccounts = [];
+        financeManagerSummaryMeta = null;
+        financeManagerSummaryLoaded = false;
+        if (!quiet) console.warn('Finance manager summary failed to load:', error);
+        renderFinanceManagerBoard();
+    } finally {
+        financeManagerSummaryLoading = false;
+        renderFinanceManagerBoard();
+    }
+}
+
+async function fetchFinanceManagerAccountDetail(accountKey = '', { forceRefresh = false } = {}) {
+    const normalizedKey = decodeURIComponent(String(accountKey || '')).trim();
+    if (!normalizedKey) throw new Error('Account key is required.');
+    if (!forceRefresh && financeManagerAccountDetailCache.has(normalizedKey)) {
+        return financeManagerAccountDetailCache.get(normalizedKey);
+    }
+
+    const url = new URL(getMargabaseAdminUrl('/admin/finance-manager-summary/account'), window.location.href);
+    url.searchParams.set('account_key', normalizedKey);
+    if (forceRefresh) url.searchParams.set('refresh', '1');
+    const response = await fetch(url.toString(), { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Finance account detail HTTP ${response.status}`);
+    }
+    const detail = {
+        summary: normalizeFinanceManagerAccountSummary(payload.summary || {}),
+        invoiceFacts: (payload.invoiceFacts || []).map(normalizeFinanceManagerInvoiceFact),
+        paymentFacts: (payload.paymentFacts || []).map(normalizeFinanceManagerPaymentFact)
+    };
+    financeManagerAccountDetailCache.set(normalizedKey, detail);
+    return detail;
+}
+
+function getFinanceManagerWatchAccounts() {
+    return [...financeManagerSummaryAccounts].sort((left, right) => {
+        if (right.overdueMonths !== left.overdueMonths) return right.overdueMonths - left.overdueMonths;
+        if (right.maxAge !== left.maxAge) return right.maxAge - left.maxAge;
+        return right.totalBalance - left.totalBalance;
+    });
+}
+
+function buildFinanceManagerWorkspaceFromDetail(detail = {}) {
+    const summary = detail.summary || {};
+    return {
+        context: {
+            customer: summary.customer || 'Unnamed account',
+            branchName: summary.branch || 'Main',
+            accountLabel: summary.accountLabel || summary.branch || '',
+            companyId: summary.companyId || '',
+            branchId: summary.branchId || ''
+        }
+    };
+}
+
+function buildFinanceManagerSoaRowsFromDetail(detail = {}, fromDate, toDate) {
+    const paymentMap = new Map();
+    (detail.paymentFacts || []).forEach((payment) => {
+        const invoiceKey = String(payment.invoiceKey || payment.invoiceNo || '').trim();
+        if (!invoiceKey) return;
+        if (!paymentMap.has(invoiceKey)) paymentMap.set(invoiceKey, []);
+        paymentMap.get(invoiceKey).push(payment);
+        const invoiceNo = String(payment.invoiceNo || '').trim();
+        if (invoiceNo && invoiceNo !== invoiceKey) {
+            if (!paymentMap.has(invoiceNo)) paymentMap.set(invoiceNo, []);
+            paymentMap.get(invoiceNo).push(payment);
+        }
+    });
+
+    const rows = (detail.invoiceFacts || [])
+        .filter((invoice) => invoice.invoiceDate && window.MargaSoaPolicy?.isInvoiceEligible?.(invoice.invoiceDate))
+        .filter((invoice) => invoice.invoiceDate && isDateWithinRange(invoice.invoiceDate, fromDate, toDate))
+        .sort((left, right) => {
+            const leftTime = (left.invoiceDate || new Date(0)).getTime();
+            const rightTime = (right.invoiceDate || new Date(0)).getTime();
+            if (leftTime !== rightTime) return leftTime - rightTime;
+            return String(left.invoiceNo || '').localeCompare(String(right.invoiceNo || ''));
+        })
+        .map((invoice) => {
+            const keys = Array.from(new Set([
+                String(invoice.invoiceKey || '').trim(),
+                String(invoice.invoiceNo || '').trim(),
+                String(invoice.invoiceId || '').trim()
+            ].filter(Boolean)));
+            const payments = keys
+                .flatMap((key) => paymentMap.get(key) || [])
+                .filter((payment, index, source) => source.findIndex((candidate) => candidate.paymentKey === payment.paymentKey) === index)
+                .filter((payment) => isDateWithinRange(payment.paymentDate, fromDate, toDate));
+            const paymentAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0) + getPaymentDeductionAmount(payment), 0);
+            const latestBalance = payments
+                .filter((payment) => payment.balanceAmount !== null && payment.balanceAmount !== undefined && Number.isFinite(Number(payment.balanceAmount)))
+                .sort((left, right) => {
+                    const leftTime = (left.paymentDate || new Date(0)).getTime();
+                    const rightTime = (right.paymentDate || new Date(0)).getTime();
+                    return rightTime - leftTime;
+                })[0]?.balanceAmount;
+            const computedBalance = Math.max(0, Number(invoice.amount || invoice.billedAmount || 0) - paymentAmount);
+            const currentOutstanding = Math.max(0, Number(invoice.outstandingBalance || invoice.latestBalanceAmount || 0) || 0);
+            const balance = latestBalance !== undefined
+                ? Math.min(Math.max(0, Number(latestBalance || 0)), computedBalance)
+                : (currentOutstanding > 0 ? Math.min(currentOutstanding, computedBalance || currentOutstanding) : computedBalance);
+            return {
+                date: invoice.invoiceDate,
+                invoiceNo: invoice.invoiceNo || invoice.invoiceKey || '-',
+                branch: invoice.branch || invoice.accountLabel || '-',
+                coverage: invoice.billingCoverage || formatBillingCoveragePeriod(invoice),
+                amountBilled: Number(invoice.amount || invoice.billedAmount || 0) || 0,
+                payment: paymentAmount,
+                balance: Math.max(0, balance)
+            };
+        });
+
+    return {
+        rows,
+        totals: {
+            amountBilled: rows.reduce((sum, row) => sum + row.amountBilled, 0),
+            payment: rows.reduce((sum, row) => sum + row.payment, 0),
+            finalBalance: rows.reduce((sum, row) => sum + row.balance, 0)
+        }
+    };
+}
+
+function buildFinanceManagerSoaPayloadFromDetail(detail = {}) {
+    const invoiceDates = (detail.invoiceFacts || [])
+        .map((invoice) => normalizeDate(invoice.invoiceDate || invoice.dueDate))
+        .filter(Boolean)
+        .sort((left, right) => left.getTime() - right.getTime());
+    const fromDate = window.MargaSoaPolicy?.clampFromDate?.(invoiceDates[0]) || window.MargaSoaPolicy?.getFromDate?.() || normalizeDate('2025-01-01') || new Date();
+    const toDate = normalizeDate(getTodayInputValue(0)) || new Date();
+    const workspace = buildFinanceManagerWorkspaceFromDetail(detail);
+    const soa = buildFinanceManagerSoaRowsFromDetail(detail, fromDate, toDate);
+    return { workspace, fromDate, toDate, soa };
+}
+
+function buildFinanceManagerApprovalDraft(account = {}, payload = {}) {
+    const { fromDate, toDate, soa } = payload;
+    const totalBalance = formatCurrency(soa?.totals?.finalBalance || account.totalBalance || 0);
+    const contactNumber = account.contactNumber ? ` Last known contact number: ${account.contactNumber}.` : '';
+    return {
+        subject: `Past Due SOA for ${account.customer}${account.branch ? ` - ${account.branch}` : ''}`,
+        body: [
+            `Good day ${account.customer},`,
+            '',
+            `Our records show ${account.overdueMonths} unpaid month(s) covering ${account.unpaidInvoiceCount} open invoice row(s), with a current outstanding balance of ${totalBalance}.`,
+            `Attached is the updated Statement of Account for ${formatRangeLabel(fromDate, toDate)} so your team can review the long past due billings before the next billing printout.`,
+            '',
+            'Please let us know your payment schedule or any billing concern so we can update our records immediately.',
+            '',
+            'Thank you,',
+            'MARGA Finance and Collections'
+        ].join('\n'),
+        note: account.needsSoaPolicy
+            ? `Policy suggestion: attach SOA to every billing printout for this account until the ${account.overdueMonths} overdue month(s) are resolved.${contactNumber}`
+            : `Monitor this account closely while it is still within recoverable overdue range.${contactNumber}`
+    };
+}
+
+async function loadFinanceManagerActions({ quiet = false } = {}) {
+    try {
+        const docs = await runQuery({
+            from: [{ collectionId: FINANCE_MANAGER_ACTIONS_COLLECTION }],
+            orderBy: [{ field: { fieldPath: 'updated_at' }, direction: 'DESCENDING' }],
+            limit: 25
+        });
+        financeManagerActions = docs.map(documentFieldsToPlain).filter(Boolean);
+        financeManagerActionsLoaded = true;
+        renderFinanceManagerBoard();
+    } catch (error) {
+        financeManagerActions = [];
+        financeManagerActionsLoaded = false;
+        if (!quiet) console.warn('Finance manager actions failed to load:', error);
+        renderFinanceManagerBoard();
+    }
+}
+
+function getFinanceManagerActionStatusLabel(status) {
+    if (status === FINANCE_MANAGER_DRAFT_STATUS.approvalNeeded) return 'Approval Needed';
+    if (status === FINANCE_MANAGER_DRAFT_STATUS.internalReminder) return 'Internal Reminder';
+    if (status === FINANCE_MANAGER_DRAFT_STATUS.executed) return 'Executed';
+    return 'Draft';
+}
+
+function renderFinanceManagerMetrics(accounts = [], collectorGroups = []) {
+    const host = document.getElementById('financeManagerMetrics');
+    if (!host) return;
+    const criticalAccounts = accounts.filter((account) => account.overdueMonths >= 5);
+    const draftCount = financeManagerActions.filter((action) => action.status === FINANCE_MANAGER_DRAFT_STATUS.approvalNeeded).length;
+    const reminderCount = collectorGroups.reduce((sum, group) => sum + group.accounts.length, 0);
+    host.innerHTML = [
+        {
+            label: '5+ Month Accounts',
+            value: criticalAccounts.length.toLocaleString(),
+            text: `${formatCurrencyShort(criticalAccounts.reduce((sum, account) => sum + account.totalBalance, 0))} tied up in long-past-due balances.`
+        },
+        {
+            label: 'SOA-Ready Balance',
+            value: formatCurrencyShort(criticalAccounts.reduce((sum, account) => sum + account.totalBalance, 0)),
+            text: 'These accounts are the first candidates for mandatory SOA attachment on billing prints.'
+        },
+        {
+            label: 'Approval Drafts',
+            value: draftCount.toLocaleString(),
+            text: draftCount ? 'Customer-facing drafts are waiting in the owner approval queue.' : 'No customer-facing finance drafts are waiting right now.'
+        },
+        {
+            label: 'Collector Nudges',
+            value: reminderCount.toLocaleString(),
+            text: reminderCount ? `${collectorGroups.length.toLocaleString()} collector(s) still have stale overdue accounts without a fresh call today.` : 'No collector reminder is currently needed from this board.'
+        }
+    ].map((item) => `
+        <div class="finance-manager-metric">
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${escapeHtml(item.value)}</strong>
+            <p>${escapeHtml(item.text)}</p>
+        </div>
+    `).join('');
+}
+
+function renderFinanceManagerWatchlist(accounts = []) {
+    const host = document.getElementById('financeManagerWatchlist');
+    const badge = document.getElementById('financeManagerWatchlistBadge');
+    if (badge) badge.textContent = accounts.length.toLocaleString();
+    if (!host) return;
+    if (!accounts.length) {
+        host.innerHTML = financeManagerSummaryLoaded
+            ? '<div class="finance-manager-empty">Finance summary is ready. No watched accounts are currently above the overdue watcher threshold.</div>'
+            : '<div class="finance-manager-empty">Waiting for the server-side finance summary.</div>';
+        return;
+    }
+
+    host.innerHTML = `
+        <div class="finance-manager-table-wrap">
+            <table class="finance-manager-table">
+                <thead>
+                    <tr>
+                        <th>Account</th>
+                        <th>Overdue Span</th>
+                        <th class="text-right">Balance</th>
+                        <th>Collector</th>
+                        <th>Last Call</th>
+                        <th>Policy</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${accounts.slice(0, 20).map((account) => `
+                        <tr>
+                            <td>
+                                <div class="finance-manager-account">
+                                    <strong>${escapeHtml(account.customer)}</strong>
+                                    <span>${escapeHtml(account.branch || account.accountLabel || 'Main')}</span>
+                                    <span>${escapeHtml(account.unpaidInvoiceCount.toLocaleString())} unpaid invoice row(s)</span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="finance-manager-aging-pill ${account.overdueMonths >= 5 ? 'critical' : ''}">
+                                    ${escapeHtml(account.overdueMonths.toLocaleString())} month(s)
+                                </span>
+                            </td>
+                            <td class="text-right"><strong>${escapeHtml(formatCurrency(account.totalBalance))}</strong></td>
+                            <td>${escapeHtml(account.assignedCollector || 'Unassigned')}</td>
+                            <td>${escapeHtml(account.lastContactDays === null ? 'No call yet' : `${account.lastContactDays} day(s) ago`)}</td>
+                            <td><div class="finance-manager-policy-note">${escapeHtml(account.needsSoaPolicy ? 'Attach SOA to billing print and prep owner approval draft.' : 'Monitor and keep follow-up active before it reaches 5+ months.')}</div></td>
+                            <td>
+                                <div class="finance-manager-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="downloadFinanceManagerSoa('${encodeURIComponent(account.key)}')">SOA PDF</button>
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="prepareFinanceManagerApprovalDraft('${encodeURIComponent(account.key)}')">Prepare Draft</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderFinanceManagerApprovalQueue() {
+    const host = document.getElementById('financeManagerApprovalQueue');
+    const badge = document.getElementById('financeManagerQueueBadge');
+    if (badge) badge.textContent = financeManagerActions.length.toLocaleString();
+    if (!host) return;
+    if (!financeManagerActions.length) {
+        host.innerHTML = '<div class="finance-manager-empty">Prepare a draft from the overdue watcher and it will appear here for approval tracking.</div>';
+        return;
+    }
+
+    host.innerHTML = `
+        <div class="finance-manager-list">
+            ${financeManagerActions.slice(0, 8).map((action) => `
+                <article class="finance-manager-card">
+                    <div class="finance-manager-card-top">
+                        <div>
+                            <div class="finance-manager-card-title">${escapeHtml(action.customer || action.title || 'Finance action')}</div>
+                            <p class="finance-manager-card-meta">${escapeHtml(action.branch || action.account_label || 'Main')} • ${escapeHtml(formatCurrency(Number(action.total_balance || 0)))} • ${escapeHtml(String(action.overdue_months || 0))} month(s) overdue</p>
+                        </div>
+                        <span class="finance-manager-card-status ${escapeHtml(action.status || '')}">${escapeHtml(getFinanceManagerActionStatusLabel(action.status))}</span>
+                    </div>
+                    <p>${escapeHtml(action.subject || action.note || 'No subject prepared yet.')}</p>
+                    <p class="finance-manager-card-meta">Updated ${escapeHtml(formatDate(action.updated_at || action.created_at))} by ${escapeHtml(action.created_by || 'MARGA')}</p>
+                    <div class="finance-manager-card-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="copyFinanceManagerDraft('${encodeURIComponent(String(action._docId || ''))}')">Copy Draft</button>
+                    </div>
+                </article>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildFinanceManagerCollectorGroups(accounts = []) {
+    const groups = new Map();
+    accounts
+        .filter((account) => account.reminderNeeded)
+        .forEach((account) => {
+            const staff = account.assignedCollector || 'Unassigned';
+            if (!groups.has(staff)) groups.set(staff, { staff, accounts: [], totalBalance: 0 });
+            const group = groups.get(staff);
+            group.accounts.push(account);
+            group.totalBalance += Number(account.totalBalance || 0) || 0;
+        });
+    return Array.from(groups.values()).sort((left, right) => right.accounts.length - left.accounts.length || right.totalBalance - left.totalBalance);
+}
+
+function renderFinanceManagerCollectorMonitor(accounts = []) {
+    const host = document.getElementById('financeManagerCollectorMonitor');
+    const previewHost = document.getElementById('financeManagerReminderPreview');
+    if (!host || !previewHost) return;
+    const groups = buildFinanceManagerCollectorGroups(accounts);
+
+    if (!groups.length) {
+        host.innerHTML = '<div class="finance-manager-empty">No assigned collector has stale overdue accounts without a call today.</div>';
+        previewHost.innerHTML = '<div class="finance-manager-empty">No reminder is queued for the current collector right now.</div>';
+        return groups;
+    }
+
+    host.innerHTML = groups.map((group) => `
+        <div class="finance-manager-collector-item">
+            <div>
+                <strong>${escapeHtml(group.staff)}</strong>
+                <span>${escapeHtml(group.accounts.length.toLocaleString())} overdue account(s) need a fresh call today.</span>
+            </div>
+            <span>${escapeHtml(formatCurrency(group.totalBalance))}</span>
+        </div>
+    `).join('');
+
+    const currentReminder = getFinanceManagerReminderForCurrentUser(groups);
+    if (!currentReminder) {
+        previewHost.innerHTML = '<div class="finance-manager-empty">The current user has no collector reminder assigned from this board.</div>';
+        return groups;
+    }
+
+    previewHost.innerHTML = currentReminder.accounts.slice(0, 4).map((account) => `
+        <div class="finance-manager-collector-item">
+            <div>
+                <strong>${escapeHtml(account.customer)}</strong>
+                <span>${escapeHtml(account.branch || account.accountLabel || 'Main')} • ${escapeHtml(account.lastContactDays === null ? 'No call yet' : `${account.lastContactDays} day(s) since last call`)}</span>
+            </div>
+            <span>${escapeHtml(formatCurrency(account.totalBalance))}</span>
+        </div>
+    `).join('');
+
+    return groups;
+}
+
+function getFinanceManagerReminderForCurrentUser(groups = []) {
+    const currentUser = getCurrentCollectorName().trim().toLowerCase();
+    if (!currentUser) return null;
+    return groups.find((group) => group.staff.trim().toLowerCase() === currentUser) || null;
+}
+
+function maybeShowFinanceManagerReminder(groups = []) {
+    const reminder = getFinanceManagerReminderForCurrentUser(groups);
+    if (!reminder) return;
+    const todayKey = toDateKey(new Date());
+    const storageKey = `${FINANCE_MANAGER_REMINDER_STORAGE_KEY}:${todayKey}:${reminder.staff.toLowerCase()}`;
+    try {
+        if (sessionStorage.getItem(storageKey)) return;
+        sessionStorage.setItem(storageKey, '1');
+    } catch (error) {
+        console.warn('Unable to persist finance manager reminder session flag.', error);
+    }
+    const first = reminder.accounts[0];
+    window.MargaUtils?.showToast?.(
+        `${reminder.staff}, you have ${reminder.accounts.length} overdue account(s) with no fresh call today. Start with ${first.customer}${first.branch ? ` - ${first.branch}` : ''}.`,
+        'warning',
+        5200
+    );
+}
+
+function renderFinanceManagerBoard() {
+    const statusNode = document.getElementById('financeManagerStatusText');
+    if (!statusNode) return;
+    const accounts = getFinanceManagerWatchAccounts();
+    const collectorGroups = buildFinanceManagerCollectorGroups(accounts);
+    renderFinanceManagerMetrics(accounts, collectorGroups);
+    renderFinanceManagerWatchlist(accounts);
+    renderFinanceManagerApprovalQueue();
+    renderFinanceManagerCollectorMonitor(accounts);
+    if (financeManagerSummaryLoading) {
+        statusNode.textContent = 'Finance Manager is loading the saved overdue summary from the server.';
+        return;
+    }
+    if (!financeManagerSummaryLoaded) {
+        statusNode.textContent = 'Finance Manager summary is not available yet. Check the Margabase finance summary endpoint.';
+        return;
+    }
+    const criticalCount = accounts.filter((account) => account.overdueMonths >= 5).length;
+    const builtLabel = financeManagerSummaryMeta?.builtAt
+        ? new Date(financeManagerSummaryMeta.builtAt).toLocaleString('en-PH')
+        : '';
+    statusNode.textContent = criticalCount
+        ? `${criticalCount} account(s) already crossed the 5+ month overdue threshold. Draft SOA follow-up before the next billing print.${builtLabel ? ` Summary built ${builtLabel}.` : ''}`
+        : `${accounts.length} watched account(s) are in the overdue queue. Keep collector follow-up moving before they become critical.${builtLabel ? ` Summary built ${builtLabel}.` : ''}`;
+    maybeShowFinanceManagerReminder(collectorGroups);
+}
+
+function findFinanceManagerAccountByKey(accountKey = '') {
+    const decoded = decodeURIComponent(String(accountKey || ''));
+    return getFinanceManagerWatchAccounts().find((account) => account.key === decoded) || null;
+}
+
+async function prepareFinanceManagerApprovalDraft(accountKey = '') {
+    const account = findFinanceManagerAccountByKey(accountKey);
+    if (!account) {
+        alert('Account was not found in the current overdue watcher.');
+        return;
+    }
+    let detail;
+    try {
+        detail = await fetchFinanceManagerAccountDetail(account.key);
+    } catch (error) {
+        alert(`Unable to load account detail: ${error.message}`);
+        return;
+    }
+    const soaPayload = buildFinanceManagerSoaPayloadFromDetail(detail);
+    const draft = buildFinanceManagerApprovalDraft(account, soaPayload);
+    const now = new Date().toISOString();
+    const docId = `finance_draft_${toDateKey(new Date())}_${safePdfFilePart(account.key)}`;
+    const userLabel = getCurrentCollectorName();
+    try {
+        await firestoreSetDocument(FINANCE_MANAGER_ACTIONS_COLLECTION, docId, {
+            title: { stringValue: `SOA follow-up for ${account.customer}` },
+            action_type: { stringValue: 'overdue_soa_email' },
+            status: { stringValue: FINANCE_MANAGER_DRAFT_STATUS.approvalNeeded },
+            customer: { stringValue: account.customer || '' },
+            branch: { stringValue: account.branch || '' },
+            account_label: { stringValue: account.accountLabel || '' },
+            contact_number: { stringValue: account.contactNumber || '' },
+            assigned_collector: { stringValue: account.assignedCollector || '' },
+            total_balance: { doubleValue: Number(account.totalBalance || 0) || 0 },
+            overdue_months: { integerValue: String(account.overdueMonths || 0) },
+            unpaid_invoice_count: { integerValue: String(account.unpaidInvoiceCount || 0) },
+            soa_from: { stringValue: toDateKey(soaPayload.fromDate) || '' },
+            soa_to: { stringValue: toDateKey(soaPayload.toDate) || '' },
+            soa_balance: { doubleValue: Number(soaPayload.soa?.totals?.finalBalance || 0) || 0 },
+            invoice_keys_json: { stringValue: JSON.stringify((detail.invoiceFacts || []).map((invoice) => invoice.invoiceKey || invoice.invoiceNo || invoice.invoiceId).filter(Boolean)) },
+            subject: { stringValue: draft.subject },
+            body: { stringValue: draft.body },
+            note: { stringValue: draft.note },
+            created_at: { stringValue: now },
+            created_by: { stringValue: userLabel },
+            updated_at: { stringValue: now },
+            updated_by: { stringValue: userLabel }
+        });
+        await loadFinanceManagerActions({ quiet: true });
+        renderFinanceManagerBoard();
+        window.MargaUtils?.showToast?.(`Draft prepared for ${account.customer}. Approval queue updated.`, 'success', 3600);
+    } catch (error) {
+        console.error('Failed to prepare finance manager draft:', error);
+        alert(`Unable to prepare draft: ${error.message}`);
+    }
+}
+
+function downloadFinanceManagerSoa(accountKey = '') {
+    const account = findFinanceManagerAccountByKey(accountKey);
+    if (!account) {
+        alert('Account was not found in the current overdue watcher.');
+        return;
+    }
+    void (async () => {
+        let detail;
+        try {
+            detail = await fetchFinanceManagerAccountDetail(account.key);
+        } catch (error) {
+            alert(`Unable to load SOA detail: ${error.message}`);
+            return;
+        }
+        const { workspace, fromDate, toDate, soa } = buildFinanceManagerSoaPayloadFromDetail(detail);
+        if (!window.pdfMake?.createPdf) {
+            alert('PDF download library is still loading. Please try again in a moment.');
+            return;
+        }
+        const fileName = `SOA-${safePdfFilePart(account.customer)}-${toDateKey(fromDate) || 'from'}-to-${toDateKey(toDate) || 'today'}.pdf`;
+        const definition = buildCollectorSoaPdfDefinition(workspace, fromDate, toDate, soa);
+        window.pdfMake.createPdf(definition).download(fileName);
+    })();
+}
+
+async function copyFinanceManagerDraft(docId = '') {
+    const decodedId = decodeURIComponent(String(docId || ''));
+    const action = financeManagerActions.find((item) => String(item._docId || '') === decodedId);
+    if (!action) {
+        alert('Draft not found.');
+        return;
+    }
+    const payload = [action.subject, '', action.body, '', action.note].filter(Boolean).join('\n');
+    try {
+        await navigator.clipboard.writeText(payload);
+        window.MargaUtils?.showToast?.('Finance draft copied to clipboard.', 'success', 2600);
+    } catch (error) {
+        alert('Clipboard access was blocked. Please try again from a secure browser context.');
+    }
+}
+
+window.prepareFinanceManagerApprovalDraft = prepareFinanceManagerApprovalDraft;
+window.downloadFinanceManagerSoa = downloadFinanceManagerSoa;
+window.copyFinanceManagerDraft = copyFinanceManagerDraft;
+
 function updateActionBrief() {
     const scheduled = getTodayScheduledInvoices();
     const promises = getPromiseDueTodayInvoices();
@@ -10126,8 +14738,37 @@ function viewInvoiceDetail(invoiceKey) {
                     <textarea id="detailRemarksInput" placeholder="Write what happened in the call..."></textarea>
                 </div>
                 <div class="detail-form-group">
-                    <label>Follow-up Date</label>
+                    <label>Conversation Result</label>
+                    <select id="detailConversationResult">${buildSelectOptions(CONVERSATION_RESULT_OPTIONS, getDefaultConversationResult(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Promise To Pay</label>
+                    <select id="detailPromiseToPay">${buildSelectOptions(PROMISE_TO_PAY_OPTIONS, getDefaultPromiseToPay(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Promise Amount</label>
+                    <input id="detailPromiseAmount" type="number" min="0" step="0.01" value="${escapeHtml(Number(lastHistory?.promiseToPayAmount || 0).toFixed(2))}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Promise Date</label>
+                    <input id="detailPromiseDate" type="date" value="${escapeHtml(toDateKey(lastHistory?.promiseToPayDate) || '')}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Next Follow-up Date</label>
                     <input id="detailFollowupInput" type="date" value="${escapeHtml(defaultFollowup)}">
+                </div>
+                <div class="detail-form-group">
+                    <label>Next Follow-up Time</label>
+                    <select id="detailNextFollowupTime">${buildSelectOptions(NEXT_FOLLOWUP_TIME_OPTIONS, getDefaultFollowupTime(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Issue Type</label>
+                    <select id="detailIssueType">${buildSelectOptions(ISSUE_TYPE_OPTIONS, getDefaultIssueType(lastHistory))}</select>
+                </div>
+                <div class="detail-form-group">
+                    <label>Issue Notes</label>
+                    <input id="detailIssueNotes" type="text" list="detailIssueNoteSuggestions" value="${escapeHtml(lastHistory?.issueNotes || '')}">
+                    <datalist id="detailIssueNoteSuggestions">${ISSUE_NOTE_SUGGESTIONS.map((item) => `<option value="${escapeHtml(item)}"></option>`).join('')}</datalist>
                 </div>
                 <div class="detail-form-group">
                     <label>Schedule Type</label>
@@ -10187,6 +14828,13 @@ async function saveCollectionConversation() {
     const remarks = String(remarksInput?.value || '').trim();
     const followupDate = String(followupInput?.value || '').trim();
     const scheduleStatus = Number(scheduleInput?.value || 0);
+    const conversationResult = String(document.getElementById('detailConversationResult')?.value || '').trim();
+    const promiseToPay = String(document.getElementById('detailPromiseToPay')?.value || '').trim();
+    const promiseAmount = Number(document.getElementById('detailPromiseAmount')?.value || 0) || 0;
+    const promiseDate = String(document.getElementById('detailPromiseDate')?.value || '').trim();
+    const nextFollowupTime = String(document.getElementById('detailNextFollowupTime')?.value || '').trim();
+    const issueType = String(document.getElementById('detailIssueType')?.value || '').trim();
+    const issueNotes = String(document.getElementById('detailIssueNotes')?.value || '').trim();
 
     if (!remarks) {
         if (statusNode) statusNode.textContent = 'Please enter conversation remarks before saving.';
@@ -10195,6 +14843,16 @@ async function saveCollectionConversation() {
 
     if (!followupDate) {
         if (statusNode) statusNode.textContent = 'Please set a follow-up date.';
+        return;
+    }
+
+    if (!conversationResult || !promiseToPay || !nextFollowupTime || !issueType) {
+        if (statusNode) statusNode.textContent = 'Please complete Conversation Result, Promise To Pay, Next Follow-up Time, and Issue Type.';
+        return;
+    }
+
+    if (PROMISE_DATE_REQUIRED_OPTIONS.has(promiseToPay) && !promiseDate) {
+        if (statusNode) statusNode.textContent = 'Please set Promise To Pay Date for this payment schedule.';
         return;
     }
 
@@ -10208,6 +14866,15 @@ async function saveCollectionConversation() {
             remarks: { stringValue: remarks },
             contact_person: { stringValue: contactPerson || '-' },
             contact_number: { stringValue: contactNumber || '' },
+            conversation_result: { stringValue: conversationResult },
+            promise_to_pay: { stringValue: promiseToPay },
+            promise_to_pay_amount: { doubleValue: promiseAmount },
+            promise_to_pay_date: { stringValue: promiseDate },
+            next_followup_date: { stringValue: followupDate },
+            next_followup_time: { stringValue: nextFollowupTime },
+            issue_type: { stringValue: issueType },
+            issue_notes: { stringValue: issueNotes },
+            collection_role_assignment: { stringValue: getCurrentCollectionRoleAssignment() },
             followed_up_by: { stringValue: getCurrentCollectorName() },
             collector_name: { stringValue: getCurrentCollectorName() },
             followup_datetime: { stringValue: `${followupDate} 00:00:00` },
@@ -10291,6 +14958,7 @@ function setupModalEvents() {
     const collectorTotalModal = document.getElementById('collectorTotalModal');
     const collectorSoaPeriodModal = document.getElementById('collectorSoaPeriodModal');
     const receivePaymentModal = document.getElementById('receivePaymentModal');
+    const welcomeModal = document.getElementById('welcomeModal');
 
     followupModal?.addEventListener('click', (event) => {
         if (event.target === followupModal) closeFollowupModal();
@@ -10318,6 +14986,10 @@ function setupModalEvents() {
 
     receivePaymentModal?.addEventListener('click', (event) => {
         if (event.target === receivePaymentModal) closeReceivePaymentModal();
+    });
+
+    welcomeModal?.addEventListener('click', (event) => {
+        if (event.target === welcomeModal) closeWelcomeModal();
     });
 
     document.getElementById('receivePaymentInvoiceSearch')?.addEventListener('input', runReceivePaymentSearch);
@@ -10356,25 +15028,45 @@ function initQuickAgeButtons() {
     setQuickAgeFilter('all');
 }
 
+function clearCollectionsResponseCache() {
+    try {
+        let removed = 0;
+        for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+            const key = localStorage.key(index);
+            if (!key) continue;
+            if (key.startsWith('marga_firestore_response_cache_v1') || key.startsWith('marga_firestore_cache_v1:')) {
+                localStorage.removeItem(key);
+                removed += 1;
+            }
+        }
+        if (removed > 0) {
+            console.info(`Collections cleared ${removed} cached API response(s) from local storage.`);
+        }
+    } catch (error) {
+        console.warn('Unable to clear Collections response cache.', error);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    collectorMatrixBuildInProgress = false;
+    clearCollectionsResponseCache();
     setupModalEvents();
     showRandomTip();
     initQuickAgeButtons();
     toggleAnalyticsDashboard(false);
+    renderFinanceManagerBoard();
     renderCollectionsCompareScorecard();
     document.getElementById('saveCollectionsSnapshotBtn')?.addEventListener('click', saveCollectionsCompareSnapshot);
 
     document.getElementById('collectorSearchInput')?.addEventListener('input', () => {
-        if (lastLoadSucceeded) void renderCollectorDashboard();
+        queueCollectorMatrixFilterRender();
     });
     document.getElementById('collectorInvoiceSearchInput')?.addEventListener('input', () => {
-        if (lastLoadSucceeded) {
-            void renderCollectorDashboard();
-            queueCollectorInvoiceSearchSupplement();
-        }
+        queueCollectorMatrixFilterRender();
+        queueCollectorInvoiceSearchSupplement();
     });
     document.getElementById('collectorSortInput')?.addEventListener('change', () => {
-        if (lastLoadSucceeded) void renderCollectorDashboard();
+        queueCollectorMatrixFilterRender();
     });
     document.getElementById('collectorTodayConfirmedBtn')?.addEventListener('click', () => {
         openCollectorTodaySummary('confirmed');
@@ -10393,6 +15085,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    await loadActiveInvoices();
+    renderDeferredCollectionsWorkspaceNote();
+    void loadFinanceManagerActions({ quiet: true });
+    void loadFinanceManagerSummary({ quiet: true });
+    void loadCollectionWorkflowSettings().catch((error) => {
+        console.warn('Collection workflow settings preload failed:', error);
+    });
+    const hydratedFromCache = await hydrateCollectorMatrixFromDeviceCache();
+    if (!hydratedFromCache) {
+        const noteNode = document.getElementById('collector-dashboard-note');
+        if (noteNode) {
+            noteNode.textContent = 'Loading saved month-to-month summary from server...';
+        }
+    }
+    void refreshCollectorMatrixFromSnapshot({ quiet: true }).then((result) => {
+        if (!result?.loaded && !collectorMatrixSnapshotLoaded) {
+            renderCollectorMatrixEmptyState();
+        }
+        updateCollectorMatrixHeaderStatus();
+    });
+    updateCollectorMatrixHeaderStatus();
     if (lastLoadSucceeded) checkWelcomeModal();
 });

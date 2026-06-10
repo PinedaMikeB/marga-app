@@ -349,6 +349,466 @@
             margin-bottom: 14px;
         }
 
+        .collection-assignment-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 0 0 14px;
+            padding: 12px 14px;
+            background: rgba(248, 250, 252, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 8px;
+            box-shadow: var(--panel-shadow-soft);
+        }
+
+        .collection-assignment-title {
+            font-size: 12px;
+            font-weight: 900;
+            color: #1f3956;
+        }
+
+        .collection-assignment-subtitle {
+            margin-top: 2px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+        }
+
+        .collection-assignment-controls {
+            display: flex;
+            align-items: end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .collection-assignment-controls label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #486682;
+        }
+
+        .collection-assignment-controls select {
+            min-width: 230px;
+            border: 1px solid #d8e2ed;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #1f3956;
+            background: #ffffff;
+        }
+
+        .collection-assignment-status {
+            min-width: 170px;
+            font-size: 11px;
+            font-weight: 800;
+            color: #4f6f8f;
+        }
+
+        .finance-manager-board {
+            margin: 0 0 14px;
+            border: 1px solid rgba(143, 168, 196, 0.24);
+            border-radius: 18px;
+            background:
+                radial-gradient(circle at top left, rgba(255, 236, 201, 0.7), transparent 36%),
+                radial-gradient(circle at top right, rgba(186, 230, 253, 0.7), transparent 34%),
+                linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(246, 250, 255, 0.94));
+            box-shadow: var(--panel-shadow);
+            overflow: hidden;
+        }
+
+        .finance-manager-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            flex-wrap: wrap;
+            padding: 16px 18px 14px;
+            border-bottom: 1px solid rgba(191, 219, 254, 0.5);
+        }
+
+        .finance-manager-kicker {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #24364f;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .finance-manager-title {
+            margin: 10px 0 0;
+            font-size: 30px;
+            line-height: 1;
+            color: #15385e;
+        }
+
+        .finance-manager-subtitle {
+            margin: 8px 0 0;
+            max-width: 760px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #4d6784;
+            font-weight: 700;
+        }
+
+        .finance-manager-status {
+            min-width: 220px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(186, 230, 253, 0.7);
+            box-shadow: 0 10px 22px rgba(37, 99, 235, 0.08);
+        }
+
+        .finance-manager-status strong,
+        .finance-manager-status span {
+            display: block;
+        }
+
+        .finance-manager-status span {
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6a7f98;
+            font-weight: 900;
+        }
+
+        .finance-manager-status strong {
+            margin-top: 6px;
+            font-size: 13px;
+            line-height: 1.45;
+            color: #17385d;
+        }
+
+        .finance-manager-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            padding: 0 18px 16px;
+        }
+
+        .finance-manager-metric {
+            min-height: 118px;
+            padding: 14px 15px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.82);
+            border: 1px solid rgba(214, 228, 241, 0.95);
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+        }
+
+        .finance-manager-metric span {
+            display: block;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #60748d;
+            font-weight: 900;
+        }
+
+        .finance-manager-metric strong {
+            display: block;
+            margin-top: 8px;
+            font-size: 33px;
+            line-height: 0.95;
+            color: #12395f;
+        }
+
+        .finance-manager-metric p {
+            margin: 10px 0 0;
+            color: #4d6784;
+            font-size: 12px;
+            line-height: 1.45;
+            font-weight: 700;
+        }
+
+        .finance-manager-panels {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+            gap: 14px;
+            padding: 0 18px 18px;
+        }
+
+        .finance-manager-panel {
+            border: 1px solid rgba(214, 228, 241, 0.95);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.82);
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+            overflow: hidden;
+        }
+
+        .finance-manager-panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+            background: rgba(248, 250, 252, 0.9);
+        }
+
+        .finance-manager-panel-head h4 {
+            margin: 0;
+            font-size: 17px;
+            color: #17385d;
+        }
+
+        .finance-manager-panel-head p {
+            margin: 4px 0 0;
+            color: #5f738d;
+            font-size: 12px;
+            line-height: 1.45;
+            font-weight: 700;
+        }
+
+        .finance-manager-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 52px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            background: #e8f1fb;
+            color: #204b73;
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .finance-manager-table-wrap {
+            overflow: auto;
+        }
+
+        .finance-manager-table {
+            width: 100%;
+            min-width: 920px;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+            color: #17385d;
+        }
+
+        .finance-manager-table th,
+        .finance-manager-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+            vertical-align: top;
+        }
+
+        .finance-manager-table th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #edf4fb;
+            color: #486682;
+            text-align: left;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .finance-manager-account {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .finance-manager-account strong {
+            font-size: 13px;
+            color: #15385e;
+        }
+
+        .finance-manager-account span {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .finance-manager-aging-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 9px;
+            border-radius: 999px;
+            background: #fff2dd;
+            color: #92400e;
+            font-size: 11px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .finance-manager-aging-pill.critical {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .finance-manager-policy-note {
+            font-size: 11px;
+            line-height: 1.4;
+            color: #7c4a03;
+            font-weight: 800;
+        }
+
+        .finance-manager-actions {
+            display: inline-flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .finance-manager-list {
+            display: grid;
+            gap: 10px;
+            padding: 14px 16px 16px;
+        }
+
+        .finance-manager-card {
+            padding: 12px 13px;
+            border-radius: 14px;
+            border: 1px solid rgba(214, 228, 241, 0.95);
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        .finance-manager-card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .finance-manager-card-title {
+            font-size: 13px;
+            font-weight: 900;
+            color: #17385d;
+        }
+
+        .finance-manager-card-meta,
+        .finance-manager-card p {
+            margin: 0;
+            font-size: 11px;
+            line-height: 1.45;
+            color: #64748b;
+            font-weight: 700;
+        }
+
+        .finance-manager-card-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .finance-manager-card-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 8px;
+            border-radius: 999px;
+            background: #e8f1fb;
+            color: #21496f;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .finance-manager-card-status.approval_needed {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .finance-manager-card-status.internal_reminder {
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+
+        .finance-manager-card-status.executed {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .finance-manager-empty {
+            padding: 18px;
+            border: 1px dashed rgba(148, 163, 184, 0.45);
+            border-radius: 12px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.5;
+            font-weight: 800;
+            background: rgba(248, 250, 252, 0.7);
+        }
+
+        .finance-manager-collector-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            padding: 0 18px 18px;
+        }
+
+        .finance-manager-collector-card {
+            padding: 14px 15px;
+            border-radius: 16px;
+            border: 1px solid rgba(214, 228, 241, 0.95);
+            background: rgba(255, 255, 255, 0.82);
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+        }
+
+        .finance-manager-collector-card h4 {
+            margin: 0 0 6px;
+            color: #17385d;
+            font-size: 16px;
+        }
+
+        .finance-manager-collector-card p {
+            margin: 0;
+            color: #5f738d;
+            font-size: 12px;
+            line-height: 1.45;
+            font-weight: 700;
+        }
+
+        .finance-manager-collector-list {
+            display: grid;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .finance-manager-collector-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 11px;
+            border-radius: 12px;
+            background: #f8fbff;
+            border: 1px solid rgba(214, 228, 241, 0.95);
+        }
+
+        .finance-manager-collector-item strong {
+            display: block;
+            color: #17385d;
+            font-size: 12px;
+        }
+
+        .finance-manager-collector-item span {
+            display: block;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.4;
+            font-weight: 700;
+        }
+
         .priority-section h3 {
             font-size: 12px;
             text-transform: uppercase;
@@ -360,7 +820,7 @@
 
         .priority-cards {
             display: grid;
-            grid-template-columns: repeat(6, minmax(140px, 1fr));
+            grid-template-columns: repeat(4, minmax(180px, 1fr));
             gap: 10px;
         }
 
@@ -408,12 +868,14 @@
             box-shadow: var(--panel-shadow);
         }
 
-        .priority-card.urgent { border-top-color: #dc2626; }
-        .priority-card.high { border-top-color: #f97316; }
-        .priority-card.medium { border-top-color: #f59e0b; }
-        .priority-card.current { border-top-color: #16a34a; }
-        .priority-card.review { border-top-color: #7c3aed; }
-        .priority-card.baddebt { border-top-color: #475569; }
+        .priority-card.promise-today { border-top-color: #2563eb; }
+        .priority-card.broken-promise { border-top-color: #dc2626; }
+        .priority-card.followup-today { border-top-color: #0ea5e9; }
+        .priority-card.needs-document { border-top-color: #f59e0b; }
+        .priority-card.billing-received { border-top-color: #14b8a6; }
+        .priority-card.top-collectible { border-top-color: #16a34a; }
+        .priority-card.overdue { border-top-color: #f97316; }
+        .priority-card.for-approval { border-top-color: #7c3aed; }
 
         .priority-card .card-title {
             font-size: 12px;
@@ -436,6 +898,181 @@
             font-weight: 700;
         }
 
+        .priority-worklist-panel {
+            margin-bottom: 14px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .priority-worklist-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(248, 250, 252, 0.84);
+        }
+
+        .priority-worklist-title {
+            font-size: 14px;
+            font-weight: 900;
+            color: #1f3956;
+        }
+
+        .priority-worklist-subtitle {
+            margin-top: 3px;
+            font-size: 11px;
+            line-height: 1.4;
+            font-weight: 700;
+            color: #64748b;
+        }
+
+        .priority-view-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        .priority-view-toggle button {
+            border: 0;
+            border-radius: 6px;
+            padding: 7px 10px;
+            background: transparent;
+            color: #31577d;
+            font-size: 11px;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .priority-view-toggle button.active {
+            background: #2563eb;
+            color: #ffffff;
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.2);
+        }
+
+        .priority-worklist-body {
+            padding: 12px 14px 14px;
+            background: rgba(255, 255, 255, 0.76);
+        }
+
+        .priority-worklist-summary {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .priority-worklist-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 9px;
+            border-radius: 999px;
+            background: #eaf4ff;
+            border: 1px solid #bfdbfe;
+            color: #1f4f7a;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        .priority-worklist-table-wrap {
+            overflow: auto;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        .priority-worklist-table {
+            width: 100%;
+            min-width: 980px;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+            color: #1f3956;
+        }
+
+        .priority-worklist-table th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            padding: 9px 10px;
+            background: #e8f1fb;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.32);
+            color: #486682;
+            text-align: left;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .priority-worklist-table td {
+            padding: 9px 10px;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+            vertical-align: top;
+        }
+
+        .priority-group-row td {
+            background: #f8fafc;
+            font-weight: 900;
+            color: #17385d;
+        }
+
+        .priority-total-row td {
+            background: #eff6ff;
+            font-weight: 900;
+            color: #1f4f7a;
+        }
+
+        .priority-worklist-account {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .priority-worklist-account strong {
+            font-weight: 900;
+        }
+
+        .priority-worklist-account span {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 700;
+        }
+
+        .priority-worklist-actions {
+            display: inline-flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .priority-worklist-empty {
+            padding: 20px;
+            border: 1px dashed rgba(148, 163, 184, 0.45);
+            border-radius: 8px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+            background: rgba(248, 250, 252, 0.72);
+        }
+
+        .priority-card .card-count {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        .priority-card .card-count small {
+            font-size: 11px;
+            color: #5a7390;
+            font-weight: 700;
+        }
+
         .priority-card .card-hint {
             margin-top: 6px;
             font-size: 10px;
@@ -449,6 +1086,110 @@
             grid-template-columns: repeat(6, minmax(140px, 1fr));
             gap: 10px;
             margin-bottom: 14px;
+        }
+
+        .collection-settings-grid,
+        .collection-settings-assignments {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .collection-settings-grid label,
+        .collection-settings-assignments label,
+        .collection-customer-assignment-row {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            color: #315777;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .collection-settings-grid input,
+        .collection-settings-assignments input,
+        .collection-customer-assignment-row input,
+        .collection-customer-assignment-row select {
+            border: 1px solid rgba(148, 163, 184, 0.36);
+            border-radius: 8px;
+            padding: 7px 9px;
+            font-size: 12px;
+            color: #12395f;
+            background: rgba(255, 255, 255, 0.88);
+        }
+
+        .collection-settings-role-card {
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 8px;
+            padding: 9px;
+            background: rgba(248, 250, 252, 0.85);
+        }
+
+        .collection-settings-role-card strong {
+            display: block;
+            color: #143e69;
+            margin-bottom: 4px;
+        }
+
+        .collection-settings-role-card p {
+            margin: 0 0 8px;
+            color: #54708d;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+        .collection-hidden-accounts {
+            display: grid;
+            gap: 8px;
+        }
+
+        .collection-hidden-account-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 8px;
+            background: rgba(248, 250, 252, 0.85);
+        }
+
+        .collection-hidden-account-text {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .collection-hidden-account-text strong,
+        .collection-hidden-account-text span,
+        .collection-hidden-account-text small {
+            overflow-wrap: anywhere;
+        }
+
+        .collection-hidden-account-text strong {
+            color: #143e69;
+        }
+
+        .collection-hidden-account-text span {
+            color: #54708d;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .collection-hidden-account-text small,
+        .collection-hidden-empty {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .collection-settings-note {
+            margin: 8px 0 0;
+            color: #526f8d;
+            font-size: 11px;
+            line-height: 1.45;
+            font-weight: 600;
         }
 
         .stat-card {
@@ -769,6 +1510,23 @@
             color: #4f6f8f;
         }
 
+        .collector-settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 12px 0;
+            font-weight: 700;
+            color: #334155;
+        }
+
+        .collector-settings-meta,
+        .collector-settings-help {
+            font-size: 12px;
+            line-height: 1.5;
+            color: #64748b;
+        }
+
         .collections-compare-card {
             margin: 12px;
             padding: 12px;
@@ -1082,6 +1840,24 @@
         .collector-sheet-scroll.matrix::-webkit-scrollbar-track {
             background: rgba(219, 234, 254, 0.72);
             border-radius: 8px;
+        }
+
+        .collector-sheet-scroll.list-view {
+            max-height: none;
+            overflow: visible;
+            background: rgba(255, 255, 255, 0.82);
+        }
+
+        .collector-comparison-list-wrap {
+            max-height: 640px;
+        }
+
+        .collector-comparison-list-table {
+            min-width: 1120px;
+        }
+
+        .collector-comparison-summary {
+            margin-bottom: 12px;
         }
 
         .collector-sheet-scroll.matrix::-webkit-scrollbar-thumb {
@@ -2323,6 +3099,7 @@
             border-bottom: 1px solid rgba(148, 163, 184, 0.2);
             background: linear-gradient(135deg, rgba(37, 99, 235, 0.93) 0%, rgba(30, 73, 118, 0.94) 100%);
             color: #fff;
+            position: relative;
         }
 
         .modal-header h2 {
@@ -2337,6 +3114,25 @@
             font-size: 12px;
             opacity: 0.9;
             font-weight: 600;
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            border: 1px solid rgba(255, 255, 255, 0.42);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.16);
+            color: #fff;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .modal-close-btn:hover {
+            background: rgba(15, 23, 42, 0.3);
         }
 
         .modal-body {
@@ -2693,6 +3489,88 @@
             font-weight: 700;
         }
 
+        .collection-account-invoices-panel {
+            border-radius: 10px;
+            border: 1px solid rgba(147, 197, 253, 0.35);
+            background: rgba(255, 255, 255, 0.92);
+            padding: 12px;
+        }
+
+        .collection-account-invoices-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .collection-account-invoices-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #526f8d;
+            font-weight: 800;
+        }
+
+        .collection-account-invoices-total {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #4d6b89;
+            font-weight: 700;
+        }
+
+        .collection-unpaid-scope-toggle {
+            display: inline-flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .collection-unpaid-list-progress {
+            margin-bottom: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(147, 197, 253, 0.45);
+            background: rgba(239, 246, 255, 0.9);
+        }
+
+        .collection-unpaid-list-progress.hidden {
+            display: none;
+        }
+
+        .collection-unpaid-progress-copy {
+            font-size: 12px;
+            color: #33516f;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .collection-unpaid-progress-bar {
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.35);
+            overflow: hidden;
+        }
+
+        .collection-unpaid-progress-bar span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #2563eb, #1d4ed8);
+            transition: width 0.2s ease;
+        }
+
+        .collection-followup-table tr.collector-unpaid-invoice-row {
+            cursor: pointer;
+        }
+
+        .collection-followup-table tr.collector-unpaid-invoice-row:hover {
+            background: rgba(239, 246, 255, 0.9);
+        }
+
+        .collection-followup-table tr.collector-unpaid-invoice-row.selected {
+            background: rgba(191, 219, 254, 0.65);
+        }
+
         .collection-followup-shell {
             display: grid;
             gap: 12px;
@@ -2758,6 +3636,45 @@
             font-size: 24px;
             color: #12395f;
             line-height: 1;
+        }
+
+        .collection-account-invoices-panel {
+            border: 1px solid rgba(147, 197, 253, 0.34);
+            border-radius: 10px;
+            background: rgba(248, 250, 252, 0.92);
+            padding: 10px 12px;
+        }
+
+        .collection-account-invoices-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .collection-account-invoices-title {
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 900;
+            color: #315b83;
+        }
+
+        .collection-account-invoices-total {
+            font-size: 12px;
+            font-weight: 900;
+            color: #12395f;
+        }
+
+        .collection-account-invoices-panel .collection-followup-table-wrap {
+            max-height: 178px;
+        }
+
+        .collection-account-invoices-panel tr.selected td {
+            background: rgba(219, 234, 254, 0.58);
+            font-weight: 800;
         }
 
         .collection-followup-grid {
@@ -2853,6 +3770,51 @@
             max-height: 220px;
             overflow: auto;
             border-radius: 8px;
+        }
+
+        .collection-history-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .collection-history-scope {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px;
+            border-radius: 999px;
+            background: rgba(219, 234, 254, 0.62);
+            border: 1px solid rgba(147, 197, 253, 0.52);
+        }
+
+        .collection-history-scope-btn {
+            appearance: none;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: #476783;
+            padding: 7px 11px;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        .collection-history-scope-btn.active {
+            background: #1d4ed8;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(29, 78, 216, 0.24);
+        }
+
+        .collection-history-meta {
+            font-size: 11px;
+            font-weight: 800;
+            color: #607895;
         }
 
         .collection-followup-mini-form,
@@ -3143,6 +4105,20 @@
             font-weight: 700;
         }
 
+        .collection-followup-loading {
+            border-radius: 8px;
+            background: rgba(248, 250, 252, 0.85);
+            border: 1px dashed rgba(148, 163, 184, 0.32);
+            padding: 12px;
+            color: #5b718d;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .collection-followup-contacts-phase .collection-followup-hero-lite {
+            margin-bottom: 12px;
+        }
+
         @media (max-width: 1300px) {
             .priority-cards,
             .stats-row {
@@ -3172,7 +4148,18 @@
                 grid-template-columns: 1fr;
             }
 
+            .collection-settings-grid,
+            .collection-settings-assignments {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .comparison-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .finance-manager-metrics,
+            .finance-manager-panels,
+            .finance-manager-collector-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -3204,6 +4191,8 @@
 
             .priority-cards,
             .stats-row,
+            .finance-manager-metrics,
+            .finance-manager-collector-grid,
             .trend-summary-grid,
             .cell-modal-summary,
             .brief-grid,
@@ -3218,12 +4207,26 @@
             .collection-payment-form,
             .collection-followup-form,
             .collection-followup-two,
+            .collection-settings-grid,
+            .collection-settings-assignments,
             .collection-soa-period-form {
                 grid-template-columns: 1fr;
             }
 
             .collection-followup-hero {
                 flex-direction: column;
+            }
+
+            .finance-manager-title {
+                font-size: 24px;
+            }
+
+            .finance-manager-panels {
+                grid-template-columns: 1fr;
+            }
+
+            .finance-manager-table {
+                min-width: 760px;
             }
 
             .collection-balance-card {
@@ -3325,6 +4328,21 @@
                 left: auto;
             }
 
+            .collector-sheet td.sticky-col.customer,
+            .collector-sheet td.sticky-col.branch {
+                position: static;
+                left: auto;
+                z-index: 1;
+                box-shadow: none;
+            }
+
+            .collector-sheet th.sticky-col.customer,
+            .collector-sheet th.sticky-col.branch {
+                left: auto;
+                z-index: 4;
+                box-shadow: none;
+            }
+
             .collector-sheet td.sticky-col.rd,
             .collector-sheet th.sticky-col.rd {
                 left: auto;
@@ -3341,6 +4359,18 @@
             .collector-sheet td.total-cell:not(.sticky-col) {
                 min-width: 104px;
                 width: 104px;
+            }
+
+            .collector-sheet td.sticky-col.customer,
+            .collector-sheet th.sticky-col.customer {
+                min-width: 188px;
+                width: 188px;
+            }
+
+            .collector-sheet td.sticky-col.branch,
+            .collector-sheet th.sticky-col.branch {
+                min-width: 174px;
+                width: 174px;
             }
         }
 
@@ -3390,6 +4420,18 @@
                 padding: 8px 7px;
             }
 
+            .collector-sheet td.sticky-col.customer,
+            .collector-sheet th.sticky-col.customer {
+                min-width: 170px;
+                width: 170px;
+            }
+
+            .collector-sheet td.sticky-col.branch,
+            .collector-sheet th.sticky-col.branch {
+                min-width: 160px;
+                width: 160px;
+            }
+
             .collector-sub {
                 font-size: 10px;
             }
@@ -3415,11 +4457,65 @@
     </style>
 </head>
 <body>
-    <div class="modal-overlay" id="welcomeModal">
+    <div class="modal-overlay hidden" id="collectorMatrixSettingsModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2>Collection Settings</h2>
+                <button type="button" class="modal-close" onclick="closeCollectorMatrixSettingsModal()">x</button>
+            </div>
+            <div class="modal-body">
+                <p id="collectorMatrixSettingsStatus">Loading settings...</p>
+                <p id="collectorMatrixLastBuiltAt" class="collector-settings-meta"></p>
+                <div class="brief-section">
+                    <h4>Targets</h4>
+                    <div class="collection-settings-grid">
+                        <label>Minimum Daily Target<input type="number" id="collectionTargetMinimumDaily" min="0" step="1000"></label>
+                        <label>Good Daily Target<input type="number" id="collectionTargetGoodDaily" min="0" step="1000"></label>
+                        <label>Recovery Daily Target<input type="number" id="collectionTargetRecoveryDaily" min="0" step="1000"></label>
+                        <label>Weekly Target<input type="number" id="collectionTargetWeekly" min="0" step="1000"></label>
+                        <label>Weekly Min<input type="number" id="collectionTargetWeeklyMin" min="0" step="1000"></label>
+                        <label>Weekly Max<input type="number" id="collectionTargetWeeklyMax" min="0" step="1000"></label>
+                        <label>Monthly Target<input type="number" id="collectionTargetMonthly" min="0" step="1000"></label>
+                        <label>Week 1 Cumulative<input type="number" id="collectionTargetWeek1" min="0" step="1000"></label>
+                        <label>Week 2 Cumulative<input type="number" id="collectionTargetWeek2" min="0" step="1000"></label>
+                        <label>Week 3 Cumulative<input type="number" id="collectionTargetWeek3" min="0" step="1000"></label>
+                        <label>Week 4 Cumulative<input type="number" id="collectionTargetWeek4" min="0" step="1000"></label>
+                    </div>
+                    <p class="collection-settings-note">When monthly collection falls behind, divide the remaining target by the remaining working days and use the higher daily target.</p>
+                </div>
+                <div class="brief-section">
+                    <h4>Open Collector Assignment</h4>
+                    <div class="collection-settings-assignments" id="collectionAssignmentSettings"></div>
+                    <p class="collection-settings-note">This does not lock access. Collectors can meet, choose a lane, and update customer ownership so the same client is not called twice.</p>
+                </div>
+                <div class="brief-section">
+                    <h4>Hidden Inactive Accounts</h4>
+                    <div class="collection-hidden-accounts" id="collectionHiddenAccountsSettings"></div>
+                    <p class="collection-settings-note">Use Hide in the comparison list to remove inactive customers from the month-to-month comparison. You can restore them here anytime.</p>
+                </div>
+                <label class="collector-settings-row">
+                    <input type="checkbox" id="collectorMatrixAutoRebuildEnabled" checked>
+                    Enable automatic nightly matrix rebuild
+                </label>
+                <label class="collector-settings-row">
+                    <span>Rebuild time (Asia/Manila)</span>
+                    <input type="time" id="collectorMatrixAutoRebuildTime" value="00:00">
+                </label>
+                <p class="collector-settings-help">Normal page loads, Load Data, and Refresh read the permanent Postgres month-comparison summary. Full rebuilds run only as controlled backend jobs so staff browsers do not scan the whole dataset.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeCollectorMatrixSettingsModal()">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveCollectorMatrixSettingsFromModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="welcomeModal">
         <div class="modal">
             <div class="modal-header">
                 <h2>Today's Action Brief</h2>
                 <p>Collector-first queue for immediate work and reminders</p>
+                <button type="button" class="modal-close-btn" onclick="closeWelcomeModal()" aria-label="Close today's action brief">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="brief-section">
@@ -3475,7 +4571,7 @@
             </div>
             <div class="modal-footer">
                 <label class="checkbox-row"><input type="checkbox" id="dontShowAgain"> Do not show on startup</label>
-                <button class="btn btn-primary" onclick="closeWelcomeModal()">Start Queue</button>
+                <button class="btn btn-primary" onclick="closeWelcomeModal()">Close</button>
             </div>
         </div>
     </div>
@@ -3641,7 +4737,7 @@
                 <div class="collection-soa-period-form">
                     <div>
                         <label for="collectorSoaFromDate">From Date</label>
-                        <input id="collectorSoaFromDate" type="date" value="2026-01-01">
+                        <input id="collectorSoaFromDate" type="date" value="">
                     </div>
                     <div>
                         <label for="collectorSoaToDate">To Date</label>
@@ -3649,7 +4745,7 @@
                     </div>
                 </div>
                 <div class="collection-soa-period-note" id="collectorSoaPeriodNote">
-                    The SOA defaults to January 1, 2026 so 2025 invoices are not included.
+                    The SOA starts from the earliest unpaid invoice in the opened follow-up workspace.
                 </div>
             </div>
             <div class="modal-footer">
@@ -3672,6 +4768,7 @@
                 <a href="billing/" class="nav-item"><span class="icon">📄</span> Billing</a>
                 <a href="collections.html" class="nav-item active"><span class="icon">💰</span> Collections</a>
                 <a href="accounting/" class="nav-item" data-module="accounting"><span class="icon">AC</span> Accounting</a>
+                <a href="expenses/" class="nav-item" data-module="expenses"><span class="icon">💸</span> Money Requests</a>
                 <a href="master-schedule.html" class="nav-item"><span class="icon">📅</span> Master Schedule</a>
                 <a href="#" class="nav-item"><span class="icon">🔧</span> Service</a>
                 <a href="#" class="nav-item"><span class="icon">📈</span> Reports</a>
@@ -3687,12 +4784,14 @@
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-primary btn-sm" onclick="openReceivePaymentModal()">Receive Payment</button>
+                    <button class="btn btn-success btn-sm" id="btnLoadCollectionsData" disabled title="Permanent summary auto-updates from Postgres movements">Load Data</button>
                     <button class="btn btn-warning btn-sm followup-btn" onclick="showTodayFollowups()">Today's Follow-ups <span class="followup-badge" id="followupBadge">0</span></button>
                     <button class="btn btn-secondary btn-sm" onclick="showWelcomeModal()">Today's Brief</button>
                     <button class="btn btn-secondary btn-sm" id="btnToggleAnalytics" onclick="toggleAnalyticsDashboard()">Analytics</button>
                     <button class="btn btn-secondary btn-sm" id="btnShowBadDebt" onclick="toggleBadDebt()">Bad Debt</button>
-                    <span id="last-updated"></span>
-                    <button class="btn btn-primary btn-sm" onclick="loadUnpaidInvoices()">Refresh</button>
+                    <button class="btn btn-secondary btn-sm" title="Matrix settings" onclick="openCollectorMatrixSettingsModal()">Settings</button>
+                    <span id="last-updated">Matrix not built yet</span>
+                    <button class="btn btn-primary btn-sm" id="btnRefreshCollectorMatrix" onclick="refreshCollectorMatrixOnly()" title="Reload month comparison from saved summary only">Refresh</button>
                 </div>
             </div>
 
@@ -3704,47 +4803,151 @@
                 <span class="tip-close" onclick="closeTip()">x</span>
             </div>
 
+            <section class="collection-assignment-toolbar" id="collectionAssignmentToolbar">
+                <div>
+                    <div class="collection-assignment-title">Collection Assignment Lane</div>
+                    <div class="collection-assignment-subtitle" id="collectionAssignmentToolbarText">Choose the lane you are handling today. This is coordination only, not an access lock.</div>
+                </div>
+                <div class="collection-assignment-controls">
+                    <label>
+                        My Lane
+                        <select id="collectionDashboardAssignmentRole">
+                            <option value="">Open / Not Set</option>
+                            <option value="collection_head">Collection Head</option>
+                            <option value="priority_accounts">Collection - Priority Accounts</option>
+                            <option value="regular_accounts">Collection - Regular Accounts</option>
+                        </select>
+                    </label>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="saveDashboardCollectionAssignment()">Save Lane</button>
+                    <span class="collection-assignment-status" id="collectionDashboardAssignmentStatus">Open.</span>
+                </div>
+            </section>
+
+            <section class="finance-manager-board" id="financeManagerBoard">
+                <div class="finance-manager-head">
+                    <div>
+                        <span class="finance-manager-kicker">Finance Manager Phase 1</span>
+                        <h2 class="finance-manager-title">Overdue Watcher And Action Queue</h2>
+                        <p class="finance-manager-subtitle">This board watches long-overdue accounts, prepares SOA-ready follow-up drafts for approval, and tracks whether assigned collectors are actually moving aging accounts.</p>
+                    </div>
+                    <div class="finance-manager-status">
+                        <span>Automation Status</span>
+                        <strong id="financeManagerStatusText">Finance Manager reads the saved server summary for overdue accounts, approval drafts, and collector reminders.</strong>
+                    </div>
+                </div>
+
+                <div class="finance-manager-metrics" id="financeManagerMetrics">
+                    <div class="finance-manager-metric">
+                        <span>5+ Month Accounts</span>
+                        <strong>0</strong>
+                        <p>Waiting for Collections data.</p>
+                    </div>
+                </div>
+
+                <div class="finance-manager-panels">
+                    <section class="finance-manager-panel">
+                        <div class="finance-manager-panel-head">
+                            <div>
+                                <h4>Overdue Watcher</h4>
+                                <p>Grouped by account so the finance action is based on the real overdue relationship, not just one invoice row.</p>
+                            </div>
+                            <div class="finance-manager-badge" id="financeManagerWatchlistBadge">0</div>
+                        </div>
+                        <div id="financeManagerWatchlist" class="finance-manager-empty">Loading the saved finance summary for the overdue watcher.</div>
+                    </section>
+
+                    <section class="finance-manager-panel">
+                        <div class="finance-manager-panel-head">
+                            <div>
+                                <h4>Approval Draft Queue</h4>
+                                <p>Customer-facing collection emails stay in draft for owner approval first.</p>
+                            </div>
+                            <div class="finance-manager-badge" id="financeManagerQueueBadge">0</div>
+                        </div>
+                        <div id="financeManagerApprovalQueue" class="finance-manager-empty">No finance manager drafts yet.</div>
+                    </section>
+                </div>
+
+                <div class="finance-manager-collector-grid">
+                    <section class="finance-manager-collector-card">
+                        <h4>Collector Remark Monitoring</h4>
+                        <p>Assigned overdue accounts with no call today or stale follow-up should not sit quietly in the queue.</p>
+                        <div class="finance-manager-collector-list" id="financeManagerCollectorMonitor">
+                            <div class="finance-manager-empty">Collector monitoring will appear after Collections data loads.</div>
+                        </div>
+                    </section>
+
+                    <section class="finance-manager-collector-card">
+                        <h4>App-Open Reminder Preview</h4>
+                        <p>When a collector opens the app, the system can greet them with the specific stale accounts they still need to call.</p>
+                        <div class="finance-manager-collector-list" id="financeManagerReminderPreview">
+                            <div class="finance-manager-empty">No reminder preview yet.</div>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
             <div class="priority-section">
-                <h3>Priority Buckets</h3>
-                <div class="priority-cards">
-                    <div class="priority-card urgent" onclick="filterByPriority('urgent')">
-                        <div class="card-title">Urgent</div>
-                        <div class="card-count" id="count-urgent">0</div>
-                        <div class="card-amount" id="amount-urgent">P0</div>
-                        <div class="card-hint">91-120 days: call now</div>
+                <h3>Priority To Collect</h3>
+                <div class="priority-cards" id="collectionPriorityCards">
+                    <div class="priority-card promise-today" data-work-queue-mode="promise_today" onclick="setWorkQueueMode('promise_today')">
+                        <div class="card-title">Promise-to-Pay Today</div>
+                        <div class="card-count"><span id="count-promise-today">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-promise-today">₱0 projected</div>
                     </div>
-                    <div class="priority-card high" onclick="filterByPriority('high')">
-                        <div class="card-title">High</div>
-                        <div class="card-count" id="count-high">0</div>
-                        <div class="card-amount" id="amount-high">P0</div>
-                        <div class="card-hint">61-90 days: aggressive follow-up</div>
+                    <div class="priority-card broken-promise" data-work-queue-mode="broken_promise" onclick="setWorkQueueMode('broken_promise')">
+                        <div class="card-title">Broken Promise-to-Pay</div>
+                        <div class="card-count"><span id="count-broken-promise">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-broken-promise">₱0 at risk</div>
                     </div>
-                    <div class="priority-card medium" onclick="filterByPriority('medium')">
-                        <div class="card-title">Medium</div>
-                        <div class="card-count" id="count-medium">0</div>
-                        <div class="card-amount" id="amount-medium">P0</div>
-                        <div class="card-hint">31-60 days: reminders</div>
+                    <div class="priority-card followup-today" data-work-queue-mode="followup_today" onclick="setWorkQueueMode('followup_today')">
+                        <div class="card-title">Follow-up Scheduled Today</div>
+                        <div class="card-count"><span id="count-followup-today">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-followup-today">₱0 potential</div>
                     </div>
-                    <div class="priority-card current" onclick="filterByPriority('current')">
-                        <div class="card-title">Current</div>
-                        <div class="card-count" id="count-current">0</div>
-                        <div class="card-amount" id="amount-current">P0</div>
-                        <div class="card-hint">0-30 days: standard follow-up</div>
+                    <div class="priority-card needs-document" data-work-queue-mode="needs_document" onclick="setWorkQueueMode('needs_document')">
+                        <div class="card-title">Needs Document</div>
+                        <div class="card-count"><span id="count-needs-document">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-needs-document">₱0 affected</div>
                     </div>
-                    <div class="priority-card review" onclick="filterByPriority('review')">
-                        <div class="card-title">For Review</div>
-                        <div class="card-count" id="count-review">0</div>
-                        <div class="card-amount" id="amount-review">P0</div>
-                        <div class="card-hint">121-365 days: management review</div>
+                    <div class="priority-card billing-received" data-work-queue-mode="billing_received_unfollowed" onclick="setWorkQueueMode('billing_received_unfollowed')">
+                        <div class="card-title">Billing Received Not Yet Followed Up</div>
+                        <div class="card-count"><span id="count-billing-received-unfollowed">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-billing-received-unfollowed">₱0 receivable</div>
                     </div>
-                    <div class="priority-card baddebt" onclick="filterByPriority('baddebt')">
-                        <div class="card-title">Bad Debt</div>
-                        <div class="card-count" id="count-baddebt">0</div>
-                        <div class="card-amount" id="amount-baddebt">P0</div>
-                        <div class="card-hint">365+ days: write-off candidate</div>
+                    <div class="priority-card top-collectible" data-work-queue-mode="top_collectible" onclick="setWorkQueueMode('top_collectible')">
+                        <div class="card-title">Top Collectible Accounts</div>
+                        <div class="card-count"><span id="count-top-collectible">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-top-collectible">₱0 balance</div>
+                    </div>
+                    <div class="priority-card overdue" data-work-queue-mode="overdue_accounts" onclick="setWorkQueueMode('overdue_accounts')">
+                        <div class="card-title">Overdue Accounts</div>
+                        <div class="card-count"><span id="count-overdue-accounts">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-overdue-accounts">₱0 overdue</div>
+                    </div>
+                    <div class="priority-card for-approval" data-work-queue-mode="for_approval" onclick="setWorkQueueMode('for_approval')">
+                        <div class="card-title">For Approval</div>
+                        <div class="card-count"><span id="count-for-approval">0</span><small>accounts</small></div>
+                        <div class="card-amount" id="amount-for-approval">₱0 pending approval</div>
                     </div>
                 </div>
             </div>
+
+            <section class="data-table-container priority-worklist-panel" id="priorityWorklistPanel">
+                <div class="priority-worklist-head">
+                    <div>
+                        <div class="priority-worklist-title" id="priorityWorklistTitle">Priority Worklist</div>
+                        <div class="priority-worklist-subtitle" id="priorityWorklistSubtitle">Click a priority card to see accounts as a fast list, or switch to the filtered grid cells.</div>
+                    </div>
+                    <div class="priority-view-toggle" role="group" aria-label="Priority view">
+                        <button type="button" id="priorityViewListBtn" class="active" onclick="setPriorityWorklistView('list')">List</button>
+                        <button type="button" id="priorityViewGridBtn" onclick="setPriorityWorklistView('grid')">Grid Cells</button>
+                    </div>
+                </div>
+                <div class="priority-worklist-body" id="priorityWorklistBody">
+                    <div class="priority-worklist-empty">Choose a priority card above to load the collector list.</div>
+                </div>
+            </section>
 
             <div class="stats-row">
                 <div class="stat-card primary">
@@ -3804,29 +5007,6 @@
                 <div class="active-filters" id="active-filters"></div>
             </div>
 
-            <div class="duration-summary" id="duration-summary">
-                <div class="duration-card">
-                    <div class="label">Duration Analysis</div>
-                    <div class="value" id="duration-range-label">All Dates</div>
-                    <div class="subvalue" id="duration-range-help">Set from/to date to analyze billing and collection totals.</div>
-                </div>
-                <div class="duration-card bill">
-                    <div class="label">Total Bill</div>
-                    <div class="value" id="duration-total-bill">₱0.00</div>
-                    <div class="subvalue" id="duration-total-bill-count">0 invoice(s)</div>
-                </div>
-                <div class="duration-card collections">
-                    <div class="label">Total Collections</div>
-                    <div class="value" id="duration-total-collections">₱0.00</div>
-                    <div class="subvalue" id="duration-total-collections-count">0 payment(s)</div>
-                </div>
-                <div class="duration-card need">
-                    <div class="label">Need To Collect</div>
-                    <div class="value" id="duration-need-collect">₱0.00</div>
-                    <div class="subvalue" id="duration-need-collect-count">0 unpaid invoice(s)</div>
-                </div>
-            </div>
-
             <section class="data-table-container collector-dashboard" id="collector-dashboard">
                 <div class="report-panel-title">Collector Dashboard</div>
                 <div class="report-panel-subtitle">Quarter 4 2025 to December 2026 display window. Each row is one machine/account. Beige empty cells mean billed but no payment yet. Click a cell to inspect invoices, last remarks, and continue follow-up.</div>
@@ -3837,29 +5017,14 @@
                         <span class="collector-chip pending" id="collector-dashboard-pending">Pending cells: 0</span>
                     </div>
                 </div>
-                <div class="collections-compare-card" id="collectionsCompareCard">
-                    <div class="collections-compare-head">
-                        <div>
-                            <div class="collections-compare-title">Firebase Snapshot</div>
-                            <div class="collections-compare-subtitle" id="collectionsCompareSubtitle">Capture the current Firebase render after loading Collections.</div>
-                        </div>
-                        <button type="button" class="btn btn-secondary btn-sm" id="saveCollectionsSnapshotBtn">Save Snapshot</button>
-                    </div>
-                    <div class="collections-compare-grid" id="collectionsCompareGrid">
-                        <div class="collections-compare-metric"><span>Backend</span><strong>Loading</strong><small>Current browser</small></div>
-                    </div>
-                    <div class="collections-compare-saved" id="collectionsCompareSaved">No saved snapshots yet.</div>
-                </div>
-                <div class="collector-table-wrap">
-                    <h3 class="collector-section-title">Collection for the Last 6 Months</h3>
-                    <div class="collector-sheet-scroll" id="collector-summary-table">
-                        <div class="empty-followup">Loading collector summary...</div>
-                    </div>
-                </div>
                 <div class="collector-table-wrap">
                     <div class="collector-section-head">
                         <h3 class="collector-section-title">Month to Month Collection Comparison</h3>
                         <div class="collector-matrix-actions">
+                            <div class="priority-view-toggle" role="group" aria-label="Month comparison view">
+                                <button type="button" id="collectorComparisonListBtn" onclick="setCollectorComparisonView('list')">List</button>
+                                <button type="button" id="collectorComparisonGridBtn" class="active" onclick="setCollectorComparisonView('grid')">Grid Cells</button>
+                            </div>
                             <span class="collector-chip viewport" id="collector-visible-range">Viewing October 2025 to December 2026</span>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollLeft" aria-label="Scroll collection months left">←</button>
                             <button type="button" class="btn btn-secondary btn-sm collector-scroll-btn" id="collectorScrollRight" aria-label="Scroll collection months right">→</button>
@@ -3992,15 +5157,16 @@
         </main>
     </div>
 
-    <script src="shared/js/firebase-config.js?v=20260521-margabase-documents-1"></script>
+    <script src="shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
     <script src="shared/js/auth.js?v=20260518-company-meeting-1"></script>
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
     <script src="shared/js/schedule-consolidation.js?v=20260518-combined-visit-1"></script>
-    <script src="shared/js/offline-sync.js"></script>
+    <script src="shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="collections/js/collections.js?v=20260526-official-receipt-payments-1"></script>
+    <script src="shared/js/soa-policy.js?v=20260609-service-soa-1"></script>
+    <script src="collections/js/collections.js?v=20260610-contacts-first-followup-pack-1"></script>
 </body>
 </html>
