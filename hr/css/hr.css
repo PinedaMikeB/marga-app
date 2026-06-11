@@ -457,6 +457,32 @@
     gap: 1rem;
 }
 
+.hr-payroll-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    align-items: end;
+    justify-content: flex-end;
+}
+
+.hr-payroll-controls label {
+    display: grid;
+    gap: 0.25rem;
+    color: #50627d;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.hr-payroll-controls input {
+    min-height: 38px;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #cfe0f4;
+    border-radius: 8px;
+    color: #19345c;
+    font-weight: 800;
+}
+
 .hr-payroll-sample {
     display: grid;
     gap: 0.85rem;
@@ -553,7 +579,7 @@
 }
 
 .hr-payroll-table td:first-child {
-    min-width: 190px;
+    min-width: 0;
 }
 
 .hr-payroll-table small {
@@ -735,6 +761,68 @@
 
 .hr-form-actions {
     grid-column: 1 / -1;
+}
+
+.hr-deduction-prefills {
+    display: grid;
+    gap: 0.65rem;
+    grid-column: 1 / -1;
+    padding: 0.85rem 1rem;
+    border: 1px solid #d7e2f0;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+
+.hr-deduction-prefills:empty {
+    display: none;
+}
+
+.hr-deduction-prefills header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.hr-deduction-prefills h4 {
+    margin: 0;
+    color: #19345c;
+    font-size: 0.98rem;
+}
+
+.hr-deduction-prefills p {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.88rem;
+}
+
+.hr-deduction-prefill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.hr-deduction-prefill-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    min-height: 40px;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #bfd6ee;
+    border-radius: 10px;
+    background: #fff;
+    color: #1a4f84;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 800;
+}
+
+.hr-deduction-prefill-btn small {
+    color: #5c6f88;
+    font-size: 0.78rem;
+    font-weight: 700;
 }
 
 .hr-form-notice {
@@ -1144,7 +1232,9 @@
     .hr-payroll-analysis,
     .meeting-button,
     #refreshHrBtn,
-    #printPayrollBtn {
+    #printPayrollBtn,
+    #exportPayrollPdfBtn,
+    .hr-payroll-controls {
         display: none !important;
     }
 
@@ -1236,7 +1326,8 @@
     .hr-payroll-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 7.5pt;
+        table-layout: fixed;
+        font-size: 5.2pt;
     }
 
     .hr-payroll-org-select {
@@ -1253,12 +1344,16 @@
         background: #e8eef7 !important;
         border: 1px solid #000;
         text-transform: none;
+        padding: 0.025in;
+        word-break: break-word;
     }
 
     .hr-payroll-table td {
         color: #000;
         border: 1px solid #000;
-        padding: 0.05in 0.06in;
+        padding: 0.025in;
+        line-height: 1.15;
+        word-break: break-word;
     }
 
     .hr-payroll-table td:first-child {
