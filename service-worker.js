@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v113-hr-payroll-deductions-summary';
+const CACHE_NAME = 'marga-app-shell-v130-time-records-ot-form-4';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -34,6 +34,10 @@ const SHELL_ASSETS = [
     '/field/index.html',
     '/field/css/field.css?v=20260604-field-tin-7',
     '/field/js/field.js?v=20260604-field-tin-7',
+    '/purchasing/',
+    '/purchasing/index.html',
+    '/purchasing/css/purchasing.css?v=20260616-purchasing-4',
+    '/purchasing/js/purchasing.js?v=20260616-purchasing-5',
     '/hr/',
     '/hr/index.html',
     '/hr/css/hr.css?v=20260604-payroll-deductions-summary-2',
@@ -69,10 +73,16 @@ const SHELL_ASSETS = [
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
+    '/shared/css/attendance-time-records.css?v=20260616-time-records-ot-form-4',
+    '/shared/js/payroll-cutoff.js?v=20260615-time-records-5',
+    '/shared/js/attendance-time-records.js?v=20260616-time-records-ot-form-4',
     '/shared/js/firebase-config.js?v=20260601-local-postgres-live-1',
     '/shared/js/auth.js?v=20260518-login-permissions-2',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
+    '/shared/js/expense-request-catalog.js?v=20260609-item-group-catalog-1',
+    '/shared/js/expense-line-item-ui.js?v=20260609-item-group-catalog-1',
+    '/shared/js/expense-supplier-options.js?v=20260609-supplier-datalist-1',
     '/shared/js/offline-sync.js?v=20260601-local-postgres-live-1',
     '/shared/js/pwa-install.js?v=20260520-update-waits-1'
 ];

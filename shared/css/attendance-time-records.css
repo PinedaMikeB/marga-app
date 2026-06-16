@@ -1,0 +1,541 @@
+.attendance-time-records-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(12, 28, 52, 0.55);
+}
+
+.attendance-time-records-modal.open {
+    display: flex;
+}
+
+.attendance-time-records-panel {
+    width: min(960px, 100%);
+    max-height: 92vh;
+    overflow: auto;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: #f7faff;
+    box-shadow: 0 24px 48px rgba(16, 40, 74, 0.22);
+}
+
+.attendance-time-records-header,
+.attendance-time-records-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem 1.15rem;
+    border-bottom: 1px solid #d9e4f2;
+}
+
+.attendance-time-records-footer {
+    border-bottom: 0;
+    border-top: 1px solid #d9e4f2;
+}
+
+.attendance-time-records-header h2 {
+    margin: 0;
+    color: #19345c;
+    font-size: 1.15rem;
+}
+
+.attendance-time-records-header p {
+    margin: 0.2rem 0 0;
+    color: #50627d;
+    font-size: 0.86rem;
+}
+
+.attendance-time-records-body {
+    padding: 1rem 1.15rem 1.2rem;
+    display: grid;
+    gap: 1rem;
+}
+
+.attendance-time-records-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+}
+
+.attendance-time-records-period-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: end;
+}
+
+.attendance-time-records-period-label {
+    display: grid;
+    gap: 0.25rem;
+    min-width: min(100%, 420px);
+    flex: 1 1 320px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #50627d;
+}
+
+.attendance-time-records-period-label select {
+    min-height: 38px;
+    border: 1px solid #d9e4f2;
+    border-radius: 7px;
+    padding: 0 0.55rem;
+    background: #fff;
+    color: #1d3355;
+    font: inherit;
+}
+
+.attendance-time-records-totals.is-compact {
+    gap: 0.55rem;
+}
+
+.attendance-time-records-totals.is-compact .attendance-time-records-total {
+    padding: 0.65rem 0.75rem;
+}
+
+.attendance-time-records-totals.is-compact .attendance-time-records-total strong {
+    font-size: 1.15rem;
+}
+
+.attendance-time-records-payroll-note {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #5f7390;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.attendance-time-records-total {
+    padding: 0.85rem 0.95rem;
+    border-radius: 8px;
+    border: 1px solid #d9e4f2;
+    background: #fff;
+}
+
+.attendance-time-records-total span {
+    display: block;
+    color: #50627d;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.attendance-time-records-total strong {
+    display: block;
+    margin-top: 0.25rem;
+    color: #19345c;
+    font-size: 1.35rem;
+}
+
+.attendance-time-records-table-wrap {
+    overflow: auto;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.attendance-time-records-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.attendance-time-records-table th,
+.attendance-time-records-table td {
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid #e8eef6;
+    text-align: left;
+    vertical-align: top;
+}
+
+.attendance-time-records-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #eef4fc;
+    color: #27466f;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.attendance-time-records-table tr.is-absent-day td {
+    background: #fff8f2;
+    color: #6a4d3d;
+}
+
+.attendance-time-records-table tr.is-absent-day td:first-child {
+    font-weight: 700;
+}
+
+.attendance-time-records-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.attendance-time-records-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: #fff4d6;
+    color: #8a5b00;
+}
+
+.attendance-time-records-total small {
+    display: block;
+    margin-top: 0.2rem;
+    color: #5d7394;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.attendance-time-records-total.is-requested-ot strong {
+    color: #0f6a3f;
+}
+
+.attendance-time-records-badge.is-approved-ot {
+    background: #e7f6ee;
+    color: #0f6a3f;
+}
+
+.attendance-time-records-badge.is-approved-ot-missing {
+    background: #ffe9e3;
+    color: #9a3412;
+}
+
+.attendance-time-records-form {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.attendance-time-records-form label {
+    display: grid;
+    gap: 0.3rem;
+    color: #27466f;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.attendance-time-records-form [hidden],
+.attendance-time-records-form label[hidden] {
+    display: none !important;
+}
+
+#attendanceTimeRecordsFixTimeInWrap,
+#attendanceTimeRecordsLocationWrap {
+    display: grid;
+    gap: 0.75rem;
+}
+
+#attendanceTimeRecordsFixTimeInWrap[hidden],
+#attendanceTimeRecordsLocationWrap[hidden] {
+    display: none !important;
+}
+
+#attendanceTimeRecordsOtWrap {
+    display: grid;
+    gap: 0.75rem;
+}
+
+#attendanceTimeRecordsOtWrap[hidden] {
+    display: none !important;
+}
+
+.attendance-time-records-form input,
+.attendance-time-records-form select,
+.attendance-time-records-form textarea {
+    min-height: 38px;
+    border: 1px solid #d9e4f2;
+    border-radius: 7px;
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+    color: #1d3355;
+}
+
+.attendance-time-records-form textarea {
+    min-height: 84px;
+    resize: vertical;
+}
+
+.attendance-time-records-image-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.attendance-time-records-image-preview img {
+    width: 52px;
+    height: 52px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #d9e4f2;
+    background: #fff;
+}
+
+.attendance-time-records-image-preview span {
+    color: #50627d;
+    font-size: 0.82rem;
+    font-weight: 700;
+    word-break: break-word;
+}
+
+.attendance-time-records-subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.attendance-time-records-subtab {
+    min-height: 36px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #50627d;
+    cursor: pointer;
+    padding: 0 0.8rem;
+    font-weight: 800;
+}
+
+.attendance-time-records-subtab.active {
+    background: #24528f;
+    color: #fff;
+}
+
+.attendance-time-records-status {
+    color: #50627d;
+    font-size: 0.86rem;
+}
+
+.hr-time-records-shell {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.hr-time-records-toolbar {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #f8fbff 0%, #f2f7fd 100%);
+}
+
+.hr-time-records-cutoff-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: end;
+}
+
+.hr-time-records-cutoff-group label,
+.hr-time-records-staff-select-wrap {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #50627d;
+}
+
+.hr-time-records-staff-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #d9e4f2;
+    border-radius: 999px;
+    background: #fff;
+}
+
+.hr-time-records-nav-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #c9d9ee;
+    border-radius: 999px;
+    background: #fff;
+    color: #24528f;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.hr-time-records-nav-btn:hover:not(:disabled) {
+    background: #eef4fc;
+}
+
+.hr-time-records-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.hr-time-records-staff-meta {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 180px;
+}
+
+.hr-time-records-staff-meta strong {
+    color: #19345c;
+    font-size: 0.95rem;
+    letter-spacing: 0.03em;
+}
+
+.hr-time-records-staff-meta span {
+    color: #50627d;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.hr-time-records-staff-select-wrap select {
+    min-width: 220px;
+    min-height: 36px;
+    border: 1px solid #d9e4f2;
+    border-radius: 7px;
+    padding: 0 0.55rem;
+    background: #fff;
+    color: #1d3355;
+    font: inherit;
+}
+
+.hr-time-records-context-bar {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.65rem 0.8rem;
+    border-left: 4px solid #24528f;
+    border-radius: 0 8px 8px 0;
+    background: #eef4fc;
+}
+
+.hr-time-records-context-title {
+    color: #19345c;
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
+.hr-time-records-context-meta {
+    color: #50627d;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.hr-time-records-table-wrap {
+    max-height: min(62vh, 720px);
+}
+
+.attendance-approval-page {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background: linear-gradient(180deg, #eef4fc 0%, #f8fbff 100%);
+}
+
+.attendance-approval-card {
+    width: min(720px, 100%);
+    border: 1px solid #d9e4f2;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 20px 40px rgba(16, 40, 74, 0.12);
+    padding: 1.25rem;
+    display: grid;
+    gap: 0.85rem;
+}
+
+.attendance-approval-card h1 {
+    margin: 0;
+    font-size: 1.35rem;
+    color: #19345c;
+}
+
+.attendance-approval-meta {
+    display: grid;
+    gap: 0.35rem;
+    color: #27466f;
+    font-size: 0.92rem;
+}
+
+.attendance-approval-image-wrap {
+    display: flex;
+    justify-content: center;
+}
+
+.attendance-approval-image {
+    width: 50%;
+    max-width: 280px;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid #d9e4f2;
+    object-fit: contain;
+}
+
+.attendance-approval-success {
+    display: grid;
+    gap: 0.75rem;
+    justify-items: center;
+    text-align: center;
+    padding: 1rem 0.5rem 0.25rem;
+}
+
+.attendance-approval-success-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    background: #e8f8ee;
+    color: #16794c;
+    font-size: 1.75rem;
+    font-weight: 800;
+}
+
+.attendance-approval-success h2 {
+    margin: 0;
+    color: #16794c;
+    font-size: 1.35rem;
+}
+
+.attendance-approval-success p {
+    margin: 0;
+    color: #27466f;
+    font-size: 0.95rem;
+    line-height: 1.45;
+    max-width: 34rem;
+}
+
+.attendance-approval-card.is-approved {
+    border-color: #b9e3c8;
+    box-shadow: 0 20px 40px rgba(22, 121, 76, 0.12);
+}
+
+@media (max-width: 720px) {
+    .attendance-time-records-totals {
+        grid-template-columns: 1fr;
+    }
+
+    .hr-time-records-staff-nav {
+        border-radius: 12px;
+    }
+
+    .hr-time-records-staff-select-wrap select {
+        min-width: 160px;
+    }
+}
