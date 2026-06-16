@@ -1737,6 +1737,7 @@ async function onFieldRequestGroupAction(button) {
 
 async function updateFieldRequestStatus(request, patch, action, remarks = '', options = {}) {
     const previous = cloneData(request);
+    const previousEntries = getFieldRequestEntriesByRequestId(request.id).map((entry) => cloneData(entry));
     const next = normalizeRequest({
         ...request,
         ...patch,
@@ -1744,12 +1745,43 @@ async function updateFieldRequestStatus(request, patch, action, remarks = '', op
     });
     Object.assign(request, next);
     syncEntriesForFieldRequest(request);
+    await persistFieldRequestCloudChange(request, patch, previousEntries);
     writeLocalPettyCashSnapshot();
-    await queuePettyCashCloudSync({ deleteRemoved: false, silent: true });
     await writeFieldRequestAudit(request.id, action, previous, next, remarks);
     if (options.render !== false) {
         renderAll();
         MargaUtils.showToast(`Field request ${request.id} updated.`, 'success');
+    }
+}
+
+async function persistFieldRequestCloudChange(request, patch, previousEntries = []) {
+    const requestId = String(request?.id || '').trim();
+    if (!requestId) return;
+    const requestPatch = {
+        ...patch,
+        updatedAt: String(request.updatedAt || isoNow()).trim()
+    };
+    await patchDocument(PETTY_CASH_FIRESTORE.requests, requestId, requestPatch, {
+        label: `Field request ${requestId}`,
+        dedupeKey: `${PETTY_CASH_FIRESTORE.requests}:${requestId}:status`
+    });
+
+    const nextEntries = getFieldRequestEntriesByRequestId(requestId);
+    const nextEntryIds = new Set(nextEntries.map((entry) => String(entry.id || '').trim()).filter(Boolean));
+
+    for (const entry of nextEntries) {
+        await setDocument(PETTY_CASH_FIRESTORE.entries, entry.id, buildPettyCashEntryPayload(entry), {
+            label: `Petty cash field voucher ${entry.voucherNumber || entry.id}`,
+            dedupeKey: `${PETTY_CASH_FIRESTORE.entries}:${entry.id}:field-request`
+        });
+    }
+
+    for (const previousEntry of previousEntries) {
+        const previousId = String(previousEntry?.id || '').trim();
+        if (!previousId || nextEntryIds.has(previousId)) continue;
+        await deleteDocument(PETTY_CASH_FIRESTORE.entries, previousId, {
+            label: `Delete petty cash field voucher ${previousId}`
+        });
     }
 }
 
@@ -3019,6 +3051,15 @@ function isFieldStaffRequest(request) {
 
 function getFieldStaffRequests() {
     return PETTY_CASH_STATE.requests.filter(isFieldStaffRequest).map(normalizeFieldStaffRequest);
+}
+
+function getFieldRequestEntriesByRequestId(requestId) {
+    const normalized = String(requestId || '').trim();
+    if (!normalized) return [];
+    return PETTY_CASH_STATE.entries.filter((entry) => (
+        isFieldRequestEntry(entry)
+        && String(entry.sourceRequestId || entry.bundleId || '').trim() === normalized
+    ));
 }
 
 function isFieldRequestEntry(entry) {
