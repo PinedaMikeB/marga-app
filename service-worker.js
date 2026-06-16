@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v140-pettycash-field-direct-save-1';
+const CACHE_NAME = 'marga-app-shell-v141-pettycash-supplier-summary-toggle-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
-    '/pettycash/js/pettycash.js?v=20260616-field-request-direct-save-1',
+    '/pettycash/js/pettycash.js?v=20260616-supplier-summary-toggle-1',
     '/accounting/',
     '/accounting/index.html',
     '/accounting/css/accounting.css',

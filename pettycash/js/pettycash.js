@@ -227,6 +227,7 @@ let pettyCashCloudSyncQueued = false;
 let lastFocusedSupplierInput = null;
 let selectedRequestBreakdownId = '';
 let selectedFieldRequestId = '';
+let supplierSummaryPanelOpen = false;
 let pettyCashDeletePassRequested = false;
 let pettyCashHasSharedBaseline = false;
 
@@ -361,6 +362,8 @@ function bindControls() {
     document.getElementById('requestStatusInput').addEventListener('change', renderRequestPreview);
     document.getElementById('entrySearchInput').addEventListener('input', renderEntriesTable);
     document.getElementById('entryStatusFilter').addEventListener('change', renderEntriesTable);
+    document.getElementById('toggleSupplierSummaryBtn')?.addEventListener('click', toggleSupplierSummaryPanel);
+    document.getElementById('closeSupplierSummaryBtn')?.addEventListener('click', closeSupplierSummaryPanel);
     document.getElementById('accountSearchInput').addEventListener('input', renderAccountCards);
     document.getElementById('accountScopeFilter').addEventListener('change', renderAccountCards);
     document.getElementById('entriesTableBody').addEventListener('click', onEntriesTableAction);
@@ -940,6 +943,7 @@ function renderAll() {
     renderDailySummary();
     renderEntriesTable();
     renderSupplierSummary();
+    renderSupplierSummaryPanelVisibility();
     renderRequestsTable();
     renderRequestBreakdownPanel();
     renderFieldRequestsTable();
@@ -1143,6 +1147,7 @@ function revealSavedVoucher(bundleId) {
 
 function renderSupplierSummary() {
     const tbody = document.getElementById('supplierSummaryBody');
+    if (!tbody) return;
     const selectedDate = getSelectedDateValue();
     const selectedMonth = String(selectedDate || '').slice(0, 7);
     const rows = new Map();
@@ -1179,6 +1184,28 @@ function renderSupplierSummary() {
             <td>${MargaUtils.formatCurrency(row.total)}</td>
         </tr>
     `).join('');
+}
+
+function toggleSupplierSummaryPanel() {
+    supplierSummaryPanelOpen = !supplierSummaryPanelOpen;
+    renderSupplierSummaryPanelVisibility();
+    if (supplierSummaryPanelOpen) {
+        document.getElementById('supplierSummaryPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function closeSupplierSummaryPanel() {
+    supplierSummaryPanelOpen = false;
+    renderSupplierSummaryPanelVisibility();
+}
+
+function renderSupplierSummaryPanelVisibility() {
+    const panel = document.getElementById('supplierSummaryPanel');
+    const button = document.getElementById('toggleSupplierSummaryBtn');
+    if (!panel || !button) return;
+    panel.classList.toggle('hidden', !supplierSummaryPanelOpen);
+    button.textContent = supplierSummaryPanelOpen ? 'Hide Monthly Supplier Summary' : 'See Monthly Supplier Summary';
+    button.setAttribute('aria-expanded', supplierSummaryPanelOpen ? 'true' : 'false');
 }
 
 function renderRequestsTable() {

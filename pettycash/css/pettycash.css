@@ -921,6 +921,15 @@ body::before {
     display: none;
 }
 
+.supplier-summary-panel {
+    margin-top: 1rem;
+}
+
+.supplier-summary-panel .history-note {
+    display: inline-flex;
+    align-items: center;
+}
+
 .request-breakdown-head,
 .request-voucher-head {
     display: flex;
