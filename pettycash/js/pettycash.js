@@ -337,6 +337,7 @@ async function hydrateState() {
     PETTY_CASH_STATE.settings = settings;
     syncRequestsFromApd();
     reconcileFieldRequestEntries();
+    dedupePettyCashEntries();
     reconcileRequests();
     writeLocalPettyCashSnapshot();
 
@@ -809,6 +810,7 @@ function onEntrySubmit(event) {
 
     PETTY_CASH_STATE.entries = PETTY_CASH_STATE.entries.filter((entry) => getBundleKey(entry) !== bundleId);
     PETTY_CASH_STATE.entries.push(...nextEntries);
+    dedupePettyCashEntries();
 
     ensurePayeeOption(sharedFields.payee);
     items.forEach((item) => ensureSupplierOption(item.supplier));
@@ -3118,6 +3120,7 @@ function reconcileFieldRequestEntries() {
         const requestId = String(entry.sourceRequestId || entry.bundleId || '').trim();
         return !requestId || activeRequestIds.has(requestId);
     });
+    dedupePettyCashEntries();
 }
 
 function syncEntriesForFieldRequest(request) {
@@ -3136,6 +3139,7 @@ function syncEntriesForFieldRequest(request) {
     const nextEntries = buildEntriesFromFieldRequest(request, existingEntries);
     PETTY_CASH_STATE.entries = PETTY_CASH_STATE.entries.filter((entry) => !existingEntries.includes(entry));
     PETTY_CASH_STATE.entries.push(...nextEntries);
+    dedupePettyCashEntries();
 }
 
 function shouldCreateEntriesForFieldRequest(request) {
@@ -3501,6 +3505,56 @@ function normalizeEntry(entry) {
     };
 }
 
+function dedupePettyCashEntries() {
+    const deduped = new Map();
+    PETTY_CASH_STATE.entries.forEach((entry) => {
+        const normalized = normalizeEntry(entry);
+        const dedupeKey = String(normalized.id || '').trim() || [
+            normalized.bundleId,
+            normalized.date,
+            normalized.requestedBy,
+            normalized.supplier,
+            normalized.receiptNumber,
+            normalized.accountId,
+            normalized.amount.toFixed(2),
+            normalized.itemNote
+        ].join('|');
+        if (!dedupeKey) return;
+        const existing = deduped.get(dedupeKey);
+        if (!existing) {
+            deduped.set(dedupeKey, normalized);
+            return;
+        }
+        deduped.set(dedupeKey, mergePettyCashEntryDuplicate(existing, normalized));
+    });
+    PETTY_CASH_STATE.entries = [...deduped.values()];
+}
+
+function mergePettyCashEntryDuplicate(existing, incoming) {
+    const pickText = (...values) => values.map((value) => String(value || '').trim()).find(Boolean) || '';
+    return {
+        ...existing,
+        ...incoming,
+        voucherNumber: pickText(existing.voucherNumber, incoming.voucherNumber),
+        bundleId: pickText(existing.bundleId, incoming.bundleId),
+        replenishmentId: pickText(existing.replenishmentId, incoming.replenishmentId),
+        sourceModule: pickText(existing.sourceModule, incoming.sourceModule),
+        sourceRequestId: pickText(existing.sourceRequestId, incoming.sourceRequestId),
+        sourceRequestType: pickText(existing.sourceRequestType, incoming.sourceRequestType),
+        sourceRequestStatus: pickText(existing.sourceRequestStatus, incoming.sourceRequestStatus),
+        payee: pickText(existing.payee, incoming.payee),
+        supplier: pickText(existing.supplier, incoming.supplier),
+        requestedBy: pickText(existing.requestedBy, incoming.requestedBy),
+        accountId: pickText(existing.accountId, incoming.accountId),
+        itemNote: pickText(existing.itemNote, incoming.itemNote),
+        receiptNumber: pickText(existing.receiptNumber, incoming.receiptNumber),
+        description: pickText(existing.description, incoming.description),
+        createdAt: pickText(existing.createdAt, incoming.createdAt),
+        amount: Math.max(Number(existing.amount || 0), Number(incoming.amount || 0)),
+        staffId: Number(existing.staffId || incoming.staffId || 0)
+    };
+}
+
 function normalizeRequest(request) {
     if (isFieldStaffRequest(request)) return normalizeFieldStaffRequest(request);
     const legacyStatus = String(request.status || '').trim();
@@ -3596,6 +3650,7 @@ function normalizeFieldStaffRequest(request = {}) {
         paymentReferenceNumber: String(request.paymentReferenceNumber || '').trim(),
         proofOfTransferImageUrl: String(request.proofOfTransferImageUrl || '').trim(),
         payoutBatchId: String(request.payoutBatchId || '').trim(),
+        pettyCashPostedDate: String(request.pettyCashPostedDate || '').trim(),
         transferFee: Number(request.transferFee || 0),
         paymentStatus: String(request.paymentStatus || '').trim(),
         completenessStatus: String(request.completenessStatus || '').trim(),
