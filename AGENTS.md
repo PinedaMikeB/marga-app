@@ -28,6 +28,12 @@ Before doing a task, choose the cheapest safe path that preserves business truth
 - Add validation and audit trails for billing, collections, payments, schedules, petty cash, DR/releasing, and status changes.
 - Prefer reusable helpers and database-side rules over copy-paste browser logic that can drift between modules.
 
+## Deploy And Release (Canonical)
+- Work in `/Volumes/Wotg Drive Mike/GitHub/Marga-App` on `main` for production staff testing at `app.marga.biz`.
+- After verified Marga-App fixes: **commit and push to `main`** so Netlify deploys automatically, unless the user explicitly says not to push in that message.
+- Verify on `app.marga.biz` (hard refresh for service worker), then sync to `Marga-App-staging` / `codex/staging` only after production is confirmed.
+- Bump `service-worker.js` cache name and critical script `?v=` query strings on every deploy.
+
 ## Migration Guardrail
 Migration is not complete when data is copied. Migration is complete only when old backend secrets/config are removed, old domains are blocked, service worker cache is reset, all write paths are proven against the new database through the production URL staff use, and stale writes from the old database are reconciled with an auditable report.
 

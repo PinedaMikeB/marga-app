@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f6df2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="MARGA">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon-16.png">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png">
+    <title>MARGA - Purchasing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
+    <link rel="stylesheet" href="../field/css/field.css?v=20260608-reimbursement-storage-1">
+    <link rel="stylesheet" href="css/purchasing.css?v=20260616-purchasing-4">
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="10" fill="url(#logo-gradient)"/>
+                    <path d="M10 28V12h4l4 10 4-10h4v16h-3V17l-4 11h-2l-4-11v11h-3z" fill="white"/>
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#3b82f6"/>
+                            <stop offset="1" stop-color="#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">MARGA<span>.</span></span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-title">Operations</div>
+                <a href="../dashboard.html" class="nav-item" data-module="dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="../service/index.html" class="nav-item" data-module="service">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+                    <span>Service</span>
+                </a>
+                <a href="index.html" class="nav-item active" data-module="purchasing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6h15l-1.5 9h-12z"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M6 6L5 3H2"/></svg>
+                    <span>Purchasing</span>
+                </a>
+                <a href="../inventory/" class="nav-item" data-module="inventory">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                    <span>Inventory</span>
+                </a>
+                <a href="../receiving/" class="nav-item" data-module="receiving">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16v10H4z"/><path d="M8 4h8v3"/><path d="M12 17V9"/><path d="M8 13l4 4 4-4"/></svg>
+                    <span>Receiving</span>
+                </a>
+                <a href="../field/index.html" class="nav-item" data-module="field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/></svg>
+                    <span>Field App</span>
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-title">System</div>
+                <a href="../settings/index.html" class="nav-item" data-module="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">Admin</div>
+                    <div class="user-role" id="userRole">Administrator</div>
+                </div>
+                <button class="logout-btn" onclick="MargaAuth.logout()" title="Logout">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content purchasing-main">
+        <header class="main-header purchasing-header">
+            <button class="menu-toggle" type="button" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+            <div class="header-title">
+                <h1>Purchasing</h1>
+                <p>Encode purchase requests with the same item fields as Money Requests, then set schedule so field staff see what to buy and from which supplier.</p>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="purchasingViewListBtn">View Saved Requests</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="purchasingRefreshBtn">Refresh</button>
+                <button type="button" class="btn btn-primary btn-sm" id="purchasingNewBtn">New Request</button>
+            </div>
+        </header>
+
+        <div class="dashboard-content purchasing-content">
+            <div class="purchasing-grid">
+                <article class="purchasing-panel purchasing-requests-panel" id="purchasingRequestsPanel">
+                    <div class="purchasing-panel-head">
+                        <h2>Recent Requests</h2>
+                        <strong id="purchasingRequestCount">0</strong>
+                    </div>
+                    <div class="purchasing-list" id="purchasingRequestList">
+                        <div class="purchasing-empty">Loading purchase requests...</div>
+                    </div>
+                </article>
+
+                <article class="purchasing-panel">
+                    <div class="purchasing-panel-head">
+                        <h2 id="purchasingFormTitle">New Purchase Request</h2>
+                    </div>
+                    <form class="purchasing-form" id="purchasingRequestForm">
+                        <input type="hidden" id="purchasingRequestId">
+
+                        <label class="purchasing-field">
+                            <span>Request Date</span>
+                            <input type="date" id="purchasingRequestDate" required>
+                        </label>
+
+                        <section class="field-reimbursement-entry-card purchasing-entry-card" id="purchasingItemEntry"></section>
+                        <div class="purchasing-line-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" id="purchasingAddLineBtn">Add Item Row</button>
+                        </div>
+                        <section class="purchasing-item-list" id="purchasingItemList"></section>
+
+                        <label class="purchasing-field purchasing-field-full">
+                            <span>Remarks</span>
+                            <textarea id="purchasingRemarks" rows="2" placeholder="Optional notes for office or field staff."></textarea>
+                        </label>
+
+                        <div class="purchasing-form-actions">
+                            <button type="submit" class="btn btn-primary btn-sm" id="purchasingSaveBtn">Save Request</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="purchasingClearBtn">Clear</button>
+                            <span class="purchasing-save-status" id="purchasingSaveStatus">Ready.</span>
+                        </div>
+                    </form>
+
+                    <section class="purchasing-schedule-panel" id="purchasingSchedulePanel">
+                        <div class="purchasing-schedule-title">Set Schedule</div>
+                        <div class="purchasing-schedule-form">
+                            <label class="purchasing-field">
+                                <span>Schedule Date</span>
+                                <input type="date" id="purchasingScheduleDate" required>
+                            </label>
+                            <label class="purchasing-field">
+                                <span>Time</span>
+                                <input type="time" id="purchasingScheduleTime" value="08:00" required>
+                            </label>
+                            <label class="purchasing-field">
+                                <span>Purpose</span>
+                                <select id="purchasingSchedulePurpose" required>
+                                    <option value="buy_items" selected>Buy Items</option>
+                                    <option value="pick_up_machine">Pick Up Machine</option>
+                                    <option value="supplier_follow_up">Supplier Follow-up</option>
+                                    <option value="others">Others</option>
+                                </select>
+                            </label>
+                            <label class="purchasing-field">
+                                <span>Assign To</span>
+                                <select id="purchasingAssignee" required>
+                                    <option value="">Select field staff...</option>
+                                </select>
+                            </label>
+                            <div class="purchasing-schedule-actions purchasing-field-full">
+                                <button type="button" class="btn btn-primary btn-sm" id="purchasingSaveScheduleBtn">Save Schedule</button>
+                                <span class="purchasing-save-status" id="purchasingScheduleStatus">Save the request first, then set schedule for the field route.</span>
+                            </div>
+                        </div>
+                    </section>
+                </article>
+            </div>
+        </div>
+    </main>
+
+    <datalist id="purchasingSupplierList"></datalist>
+
+    <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
+    <script src="../shared/js/utils.js?v=20260516-field-permissions-3"></script>
+    <script src="../shared/js/finance-accounts.js"></script>
+    <script src="../shared/js/expense-request-catalog.js?v=20260609-item-group-catalog-1"></script>
+    <script src="../shared/js/expense-line-item-ui.js?v=20260609-item-group-catalog-1"></script>
+    <script src="../shared/js/expense-supplier-options.js?v=20260609-supplier-datalist-1"></script>
+    <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
+    <script src="/shared/js/pwa-install.js?v=20260520-update-waits-1"></script>
+    <script src="js/purchasing.js?v=20260616-purchasing-5"></script>
+</body>
+</html>

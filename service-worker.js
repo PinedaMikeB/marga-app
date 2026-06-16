@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v130-time-records-ot-form-4';
+const CACHE_NAME = 'marga-app-shell-v131-purchasing-expense-shared';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
