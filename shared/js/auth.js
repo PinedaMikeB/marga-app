@@ -4,7 +4,7 @@
  */
 
 const MargaAuth = {
-    SESSION_VERSION: '20260518-login-permissions-2',
+    SESSION_VERSION: '20260616-purchasing-staff-1',
 
     // User roles
     ROLES: {
@@ -27,7 +27,10 @@ const MargaAuth = {
         billing: ['customers', 'billing', 'schedule', 'apd', 'accounting', 'pettycash', 'reports'],
         cashier: ['customers', 'billing', 'collections', 'schedule', 'apd', 'accounting', 'pettycash', 'reports'],
         collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
-        service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'receiving', 'inventory', 'field'],
+        service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'receiving', 'inventory', 'purchasing', 'field'],
+        'purchasing-staff': ['purchasing'],
+        'account-payables': ['apd', 'accounting', 'pettycash'],
+        'inventory-controller': ['inventory', 'receiving'],
         hr: ['hr', 'settings'],
         technician: ['field'],
         'team-leader-field-technicians': ['field', 'service', 'master-schedule'],
@@ -425,7 +428,8 @@ MargaAuth.normalizeModules = function normalizeModules(modules) {
         'payroll-module': 'hr',
         'billing-module': 'billing',
         'service-module': 'service',
-        'field-app': 'field'
+        'field-app': 'field',
+        'purchasing-module': 'purchasing'
     };
     const normalizeModule = (module) => String(module || '')
         .trim()
@@ -541,7 +545,9 @@ MargaAuth.fetchRoleModules = async function fetchRoleModules(role) {
             this.PERMISSIONS[normalizedRole] = [];
             return [];
         }
-        const modules = this.normalizeModules(parsed.allowed_modules);
+        const dbModules = this.normalizeModules(parsed.allowed_modules);
+        const codeDefaults = this.normalizeModules(this.PERMISSIONS[normalizedRole] || []);
+        const modules = [...new Set([...dbModules, ...codeDefaults])];
         this.PERMISSIONS[normalizedRole] = modules;
         return modules;
     } catch (error) {
@@ -602,6 +608,7 @@ MargaAuth.refreshCurrentUserFromDirectory = async function refreshCurrentUserFro
     const roleModules = roles.includes('admin')
         ? this.normalizeModules(this.PERMISSIONS.admin || [])
         : await this.fetchRoleModulesForRoles(roles);
+    const employeeModules = this.normalizeModules(employee.marga_allowed_modules || employee.allowed_modules || []);
     const sessionName = String(
         employee.marga_fullname
         || employee.name
@@ -622,7 +629,7 @@ MargaAuth.refreshCurrentUserFromDirectory = async function refreshCurrentUserFro
         role,
         roles,
         allowed_modules: allowedModules,
-        role_modules: this.normalizeModules(roleModules),
+        role_modules: this.normalizeModules([...this.normalizeModules(roleModules), ...employeeModules]),
         allowed_modules_configured: userModulesConfigured
     };
     this.reconcileStoredSessionModules();

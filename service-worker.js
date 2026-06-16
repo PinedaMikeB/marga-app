@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v131-purchasing-expense-shared';
+const CACHE_NAME = 'marga-app-shell-v133-purchasing-staff-login';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -77,7 +77,7 @@ const SHELL_ASSETS = [
     '/shared/js/payroll-cutoff.js?v=20260615-time-records-5',
     '/shared/js/attendance-time-records.js?v=20260616-time-records-ot-form-4',
     '/shared/js/firebase-config.js?v=20260601-local-postgres-live-1',
-    '/shared/js/auth.js?v=20260518-login-permissions-2',
+    '/shared/js/auth.js?v=20260616-purchasing-staff-1',
     '/shared/js/utils.js?v=20260516-field-permissions-3',
     '/shared/js/finance-accounts.js',
     '/shared/js/expense-request-catalog.js?v=20260609-item-group-catalog-1',

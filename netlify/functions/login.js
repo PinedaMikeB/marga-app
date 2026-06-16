@@ -10,7 +10,10 @@ const PERMISSIONS = {
   billing: ["customers", "billing", "schedule", "apd", "accounting", "pettycash", "reports"],
   cashier: ["customers", "billing", "collections", "schedule", "apd", "accounting", "pettycash", "reports"],
   collection: ["customers", "collections", "schedule", "master-schedule", "reports"],
-  service: ["customers", "ai-product-consultant", "master-schedule", "service", "schedule", "general-production", "releasing", "receiving", "inventory", "field"],
+  service: ["customers", "ai-product-consultant", "master-schedule", "service", "schedule", "general-production", "releasing", "receiving", "inventory", "purchasing", "field"],
+  "purchasing-staff": ["purchasing"],
+  "account-payables": ["apd", "accounting", "pettycash"],
+  "inventory-controller": ["inventory", "receiving"],
   hr: ["hr", "settings"],
   technician: ["field"],
   messenger: ["field", "schedule"],
@@ -158,13 +161,72 @@ function inferRole(user) {
 }
 
 function normalizeModules(modules) {
-  if (!modules) return [];
-  const raw = Array.isArray(modules) ? modules : String(modules).split(",");
-  return [...new Set(raw.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean))];
+  const aliases = {
+    collection: "collections",
+    "collection-module": "collections",
+    "collections-module": "collections",
+    "petty-cash": "pettycash",
+    "pettycash-module": "pettycash",
+    "accounting-module": "accounting",
+    "inventory-module": "inventory",
+    "logistics-inventory": "inventory",
+    "production-machine-module": "general-production",
+    "production-toner-module": "general-production",
+    "payroll-module": "hr",
+    "billing-module": "billing",
+    "service-module": "service",
+    "field-app": "field",
+    "purchasing-module": "purchasing",
+  };
+  const normalizeModule = (module) => String(module || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const resolveModule = (module) => aliases[module] || module;
+  if (Array.isArray(modules)) {
+    return [...new Set(modules.map((item) => resolveModule(normalizeModule(item))).filter(Boolean))];
+  }
+  if (typeof modules === "string" && modules.trim()) {
+    return [...new Set(modules.split(",").map((item) => resolveModule(normalizeModule(item))).filter(Boolean))];
+  }
+  return [];
 }
 
-function roleModules(roles) {
+function roleModulesFromDefaults(roles) {
   return [...new Set(normalizeRoles(roles).flatMap((role) => normalizeModules(PERMISSIONS[role] || [])))];
+}
+
+async function fetchRolePermissionDoc(role) {
+  const normalizedRole = normalizeRole(role);
+  const key = env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
+  const token = usesGoogleFirestore() ? await getGoogleAccessToken() : "";
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(
+    `${firestoreBaseUrl()}/marga_role_permissions/${encodeURIComponent(normalizedRole)}?key=${encodeURIComponent(key)}`,
+    { headers }
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.error) return null;
+  return parseFirestoreDoc(payload);
+}
+
+async function resolveRoleModules(roles) {
+  const normalizedRoles = normalizeRoles(roles);
+  if (!normalizedRoles.length) return roleModulesFromDefaults(["viewer"]);
+  if (normalizedRoles.includes("admin")) return normalizeModules(PERMISSIONS.admin);
+  const resolved = [];
+  for (const role of normalizedRoles) {
+    const codeDefaults = normalizeModules(PERMISSIONS[role] || []);
+    const doc = await fetchRolePermissionDoc(role);
+    if (doc && doc.active !== false) {
+      resolved.push(...normalizeModules(doc.allowed_modules), ...codeDefaults);
+    } else {
+      resolved.push(...codeDefaults);
+    }
+  }
+  return [...new Set(resolved)];
 }
 
 function isEmployeeActive(user) {
@@ -246,12 +308,18 @@ function verifyPassword(user, password) {
   return derived.toString("base64") === hashB64;
 }
 
-function buildSession(user, ident) {
+async function buildSession(user, ident) {
   const roles = normalizeRoles(user.marga_roles || user.roles || user.marga_role || user.role || inferRole(user));
   const resolvedRoles = roles.length ? roles : ["viewer"];
   const role = resolvedRoles[0] || "viewer";
   const userModulesConfigured = user.allowed_modules_configured === true;
   const allowedModules = userModulesConfigured ? normalizeModules(user.marga_allowed_modules || user.allowed_modules) : [];
+  const savedRoleModules = userModulesConfigured
+    ? allowedModules
+    : [...new Set([
+      ...(await resolveRoleModules(resolvedRoles)),
+      ...normalizeModules(user.marga_allowed_modules || user.allowed_modules || []),
+    ])];
   const sessionName = String(
     user.marga_fullname
       || user.name
@@ -271,7 +339,7 @@ function buildSession(user, ident) {
     email: sessionEmail,
     staff_id: user.id || user.staff_id || user.staffId || null,
     allowed_modules: allowedModules,
-    role_modules: resolvedRoles.includes("admin") ? normalizeModules(PERMISSIONS.admin) : roleModules(resolvedRoles),
+    role_modules: savedRoleModules,
     allowed_modules_configured: userModulesConfigured,
   };
 }
@@ -302,7 +370,7 @@ exports.handler = async function login(event) {
     if (!employee || !isEmployeeActive(employee) || !verifyPassword(employee, password)) {
       return json({ success: false, message: "Invalid email or password" }, 401);
     }
-    return json({ success: true, user: buildSession(employee, ident) });
+    return json({ success: true, user: await buildSession(employee, ident) });
   } catch (error) {
     console.error("Server login failed:", error);
     const details = String(error?.message || error || "").toLowerCase();
