@@ -183,6 +183,16 @@
                     </svg>
                     <span>Receiving</span>
                 </a>
+
+                <a href="purchasing/" class="nav-item" data-module="purchasing">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 6h15l-1.5 9h-12z"/>
+                        <circle cx="9" cy="20" r="1"/>
+                        <circle cx="18" cy="20" r="1"/>
+                        <path d="M6 6L5 3H2"/>
+                    </svg>
+                    <span>Purchasing</span>
+                </a>
             </div>
 
             <div class="nav-section">
@@ -450,7 +460,7 @@
     </main>
 
 	    <script src="shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-	    <script src="shared/js/auth.js?v=20260518-login-permissions-2"></script>
+	    <script src="shared/js/auth.js?v=20260616-purchasing-staff-1"></script>
 	    <script src="shared/js/utils.js"></script>
 	    <script src="shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
     <script src="shared/js/payroll-cutoff.js?v=20260615-time-records-5"></script>
@@ -484,6 +494,7 @@
 	            'general-production': { label: 'General Production', href: 'general-production/', note: 'Machine requests, readiness, and machine checker' },
 	            releasing: { label: 'Releasing', href: 'releasing/', note: 'Delivery receipt item queue, DR printing, and release saving' },
 	            receiving: { label: 'Receiving', href: 'receiving/', note: 'Inbound returns, pullouts, supplies, and office receipt' },
+	            purchasing: { label: 'Purchasing', href: 'purchasing/', note: 'Purchase requests, supplier line items, and field schedule assignment' },
 	            field: { label: 'Field App', href: 'field/index.html', note: 'Tech/messenger daily tasks, close and pending flow' },
 	            inventory: { label: 'Inventory', href: 'inventory/', note: 'Parts, toner, stock movements' },
 	            hr: { label: 'Human Resource', href: 'hr/', note: 'Employees, position mapping, and GPS work-location settings' },
