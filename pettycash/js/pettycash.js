@@ -3208,7 +3208,8 @@ function fieldRequestStaffGroupKey(request = {}) {
 }
 
 function getFieldRequestsForStaffKey(staffKey) {
-    return getFieldStaffRequests().filter((request) => fieldRequestStaffGroupKey(request) === staffKey && request.status !== 'Cancelled / Deleted');
+    return PETTY_CASH_STATE.requests
+        .filter((request) => isFieldStaffRequest(request) && fieldRequestStaffGroupKey(request) === staffKey && request.status !== 'Cancelled / Deleted');
 }
 
 function getUnliquidatedAdvancesForStaff(staffId, excludeRequestId = '') {

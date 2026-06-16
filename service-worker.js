@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v138-pettycash-field-register-sync-1';
+const CACHE_NAME = 'marga-app-shell-v139-pettycash-field-approve-live-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
-    '/pettycash/js/pettycash.js?v=20260616-field-request-register-sync-1',
+    '/pettycash/js/pettycash.js?v=20260616-field-request-register-sync-2',
     '/accounting/',
     '/accounting/index.html',
     '/accounting/css/accounting.css',
