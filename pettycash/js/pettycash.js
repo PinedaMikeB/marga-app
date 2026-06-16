@@ -335,6 +335,7 @@ async function hydrateState() {
     PETTY_CASH_STATE.requests = requests;
     PETTY_CASH_STATE.settings = settings;
     syncRequestsFromApd();
+    reconcileFieldRequestEntries();
     reconcileRequests();
     writeLocalPettyCashSnapshot();
 
@@ -795,7 +796,12 @@ function onEntrySubmit(event) {
         itemNote: item.itemNote,
         status: sharedFields.status,
         replenishmentId: previousEntryMap.get(item.entryId)?.replenishmentId || sharedReplenishmentId,
-        createdAt: previousEntryMap.get(item.entryId)?.createdAt || sharedCreatedAt
+        createdAt: previousEntryMap.get(item.entryId)?.createdAt || sharedCreatedAt,
+        sourceModule: previousEntryMap.get(item.entryId)?.sourceModule || '',
+        sourceRequestId: previousEntryMap.get(item.entryId)?.sourceRequestId || '',
+        sourceRequestType: previousEntryMap.get(item.entryId)?.sourceRequestType || '',
+        sourceRequestStatus: previousEntryMap.get(item.entryId)?.sourceRequestStatus || '',
+        staffId: previousEntryMap.get(item.entryId)?.staffId || 0
     }));
 
     PETTY_CASH_STATE.entries = PETTY_CASH_STATE.entries.filter((entry) => getBundleKey(entry) !== bundleId);
@@ -1737,7 +1743,9 @@ async function updateFieldRequestStatus(request, patch, action, remarks = '', op
         updatedAt: isoNow()
     });
     Object.assign(request, next);
-    persistState({ deleteRemoved: false, silent: true });
+    syncEntriesForFieldRequest(request);
+    writeLocalPettyCashSnapshot();
+    await queuePettyCashCloudSync({ deleteRemoved: false, silent: true });
     await writeFieldRequestAudit(request.id, action, previous, next, remarks);
     if (options.render !== false) {
         renderAll();
@@ -3013,6 +3021,165 @@ function getFieldStaffRequests() {
     return PETTY_CASH_STATE.requests.filter(isFieldStaffRequest).map(normalizeFieldStaffRequest);
 }
 
+function isFieldRequestEntry(entry) {
+    return String(entry?.sourceModule || '').trim() === 'field_app'
+        || String(entry?.sourceRequestId || '').startsWith('FR-')
+        || String(entry?.bundleId || '').startsWith('FR-');
+}
+
+function reconcileFieldRequestEntries() {
+    const fieldRequests = PETTY_CASH_STATE.requests.filter(isFieldStaffRequest).map(normalizeFieldStaffRequest);
+    const activeRequestIds = new Set(fieldRequests.map((request) => String(request.id || '').trim()).filter(Boolean));
+    fieldRequests.forEach((request) => syncEntriesForFieldRequest(request));
+    PETTY_CASH_STATE.entries = PETTY_CASH_STATE.entries.filter((entry) => {
+        if (!isFieldRequestEntry(entry)) return true;
+        const requestId = String(entry.sourceRequestId || entry.bundleId || '').trim();
+        return !requestId || activeRequestIds.has(requestId);
+    });
+}
+
+function syncEntriesForFieldRequest(request) {
+    const requestId = String(request?.id || '').trim();
+    if (!requestId) return;
+    const existingEntries = PETTY_CASH_STATE.entries.filter((entry) => (
+        isFieldRequestEntry(entry)
+        && String(entry.sourceRequestId || entry.bundleId || '').trim() === requestId
+    ));
+    if (!shouldCreateEntriesForFieldRequest(request)) {
+        if (existingEntries.length) {
+            PETTY_CASH_STATE.entries = PETTY_CASH_STATE.entries.filter((entry) => !existingEntries.includes(entry));
+        }
+        return;
+    }
+    const nextEntries = buildEntriesFromFieldRequest(request, existingEntries);
+    PETTY_CASH_STATE.entries = PETTY_CASH_STATE.entries.filter((entry) => !existingEntries.includes(entry));
+    PETTY_CASH_STATE.entries.push(...nextEntries);
+}
+
+function shouldCreateEntriesForFieldRequest(request) {
+    const status = String(request?.status || '').trim();
+    const type = String(request?.requestType || '').trim();
+    if (!status) return false;
+    if (['Draft', 'Submitted', 'For Completeness Check', 'Incomplete / Needs Correction', 'Rejected', 'Cancelled / Deleted', 'Failed Payment'].includes(status)) {
+        return false;
+    }
+    if (type === 'Cash Advance') {
+        return ['Paid / Released', 'For Liquidation', 'Partially Liquidated', 'Liquidated', 'Closed'].includes(status);
+    }
+    return ['Approved', 'Included in Payout Batch', 'Funded', 'Paid / Released', 'For Liquidation', 'Partially Liquidated', 'Liquidated', 'Closed'].includes(status);
+}
+
+function buildEntriesFromFieldRequest(request, existingEntries = []) {
+    const requestId = String(request.id || '').trim();
+    const sourceItems = getFieldRequestSourceItems(request);
+    const approvedTotal = Number(request.approvedAmount || request.amount || 0);
+    const entryStatus = fieldRequestEntryStatus(request);
+    const amounts = distributeFieldRequestAmounts(sourceItems, approvedTotal);
+    const existingById = new Map(existingEntries.map((entry) => [String(entry.id || '').trim(), entry]));
+    return sourceItems.map((item, index) => {
+        const entryId = `${requestId}-L${index + 1}`;
+        const existing = existingById.get(entryId) || existingEntries[index] || null;
+        return normalizeEntry({
+            id: entryId,
+            bundleId: requestId,
+            voucherNumber: requestId,
+            date: String(request.reportDate || request.dateOfExpense || request.requestDate || getSelectedDateValue()).trim(),
+            payee: String(request.staffName || request.requestedBy || '').trim(),
+            supplier: String(item.supplierStoreName || request.supplierStoreName || '').trim(),
+            requestedBy: String(request.staffName || request.requestedBy || '').trim(),
+            expenseGroup: inferFieldRequestEntryGroup(item, request),
+            accountId: String(item.accountId || '').trim(),
+            itemNote: String(item.itemNote || item.description || request.description || '').trim(),
+            amount: amounts[index],
+            receiptNumber: String(item.receiptNumber || request.receiptNumber || request.orSiNumber || '').trim(),
+            description: String(request.description || request.notes || '').trim(),
+            status: entryStatus,
+            replenishmentId: String(existing?.replenishmentId || '').trim(),
+            createdAt: String(existing?.createdAt || request.approvedAt || request.paidDateTime || request.createdAt || isoNow()).trim(),
+            sourceModule: 'field_app',
+            sourceRequestId: requestId,
+            sourceRequestType: String(request.requestType || '').trim(),
+            sourceRequestStatus: String(request.status || '').trim(),
+            staffId: Number(request.staffId || 0)
+        });
+    });
+}
+
+function getFieldRequestSourceItems(request) {
+    const rows = Array.isArray(request?.lineItems) && request.lineItems.length
+        ? request.lineItems
+        : [{
+            accountId: request?.accountId || '',
+            itemNote: request?.description || '',
+            supplierStoreName: request?.supplierStoreName || '',
+            amount: Number(request?.receiptAmount || request?.amount || 0),
+            receiptNumber: request?.receiptNumber || '',
+            expenseCategory: request?.expenseCategory || ''
+        }];
+    return rows.map((item) => ({
+        accountId: String(item?.accountId || '').trim(),
+        itemNote: String(item?.itemNote || item?.description || '').trim(),
+        supplierStoreName: String(item?.supplierStoreName || item?.supplier || '').trim(),
+        amount: Number(item?.amount || 0),
+        receiptNumber: String(item?.receiptNumber || '').trim(),
+        expenseCategory: String(item?.expenseCategory || request?.expenseCategory || '').trim(),
+        groupId: String(item?.groupId || item?.expenseGroup || '').trim()
+    }));
+}
+
+function distributeFieldRequestAmounts(items, approvedTotal) {
+    const safeItems = Array.isArray(items) ? items : [];
+    if (!safeItems.length) return [];
+    const baseAmounts = safeItems.map((item) => Math.max(Number(item.amount || 0), 0));
+    const baseTotal = sumAmounts(baseAmounts);
+    const targetTotal = Number(approvedTotal || 0) > 0 ? Number(approvedTotal || 0) : baseTotal;
+    if (safeItems.length === 1) return [Number(targetTotal.toFixed(2))];
+    if (baseTotal <= 0) {
+        const even = Number((targetTotal / safeItems.length).toFixed(2));
+        return safeItems.map((_, index) => index === safeItems.length - 1 ? Number((targetTotal - even * (safeItems.length - 1)).toFixed(2)) : even);
+    }
+    let assigned = 0;
+    return safeItems.map((item, index) => {
+        if (index === safeItems.length - 1) {
+            return Number((targetTotal - assigned).toFixed(2));
+        }
+        const value = Number(((Number(item.amount || 0) / baseTotal) * targetTotal).toFixed(2));
+        assigned += value;
+        return value;
+    });
+}
+
+function fieldRequestEntryStatus(request) {
+    const type = String(request?.requestType || '').trim();
+    const status = String(request?.status || '').trim();
+    const liquidationStatus = String(request?.liquidationStatus || '').trim();
+    if (type === 'Cash Advance') {
+        if (status === 'Liquidated' || status === 'Closed' || liquidationStatus === 'Liquidated') {
+            return 'Liquidated';
+        }
+        return 'Pending Liquidation';
+    }
+    return 'Liquidated';
+}
+
+function inferFieldRequestEntryGroup(item, request) {
+    const direct = String(item?.groupId || '').trim();
+    if (direct) return direct;
+    const category = String(item?.expenseCategory || request?.expenseCategory || '').trim().toLowerCase();
+    const map = {
+        'gasoline / fuel': 'gasoline',
+        'meal allowance': 'meal_allowance',
+        'toll': 'commute_fare',
+        'parking': 'parking',
+        'transportation / fare': 'commute_fare',
+        'parts / supplies': 'field_parts',
+        'delivery / courier': 'commute_fare',
+        'emergency purchase': 'other_materials',
+        'other': 'other'
+    };
+    return map[category] || inferExpenseGroupFromAccount(item?.accountId) || 'other';
+}
+
 function groupFieldRequestsByStaff(requests = []) {
     const groups = new Map();
     requests.forEach((request) => {
@@ -3205,7 +3372,12 @@ function normalizeEntry(entry) {
         description: String(entry.description || '').trim(),
         status: ENTRY_STATUSES.includes(String(entry.status || '').trim()) ? String(entry.status).trim() : 'Pending Liquidation',
         replenishmentId: String(entry.replenishmentId || '').trim(),
-        createdAt: String(entry.createdAt || isoNow())
+        createdAt: String(entry.createdAt || isoNow()),
+        sourceModule: String(entry.sourceModule || '').trim(),
+        sourceRequestId: String(entry.sourceRequestId || '').trim(),
+        sourceRequestType: String(entry.sourceRequestType || '').trim(),
+        sourceRequestStatus: String(entry.sourceRequestStatus || '').trim(),
+        staffId: Number(entry.staffId || 0)
     };
 }
 
