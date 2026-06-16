@@ -1768,6 +1768,7 @@ async function updateFieldRequestStatus(request, patch, action, remarks = '', op
     const next = normalizeRequest({
         ...request,
         ...patch,
+        pettyCashPostedDate: resolveNextFieldRequestPostedDate(request, patch),
         updatedAt: isoNow()
     });
     Object.assign(request, next);
@@ -1810,6 +1811,19 @@ async function persistFieldRequestCloudChange(request, patch, previousEntries = 
             label: `Delete petty cash field voucher ${previousId}`
         });
     }
+}
+
+function resolveNextFieldRequestPostedDate(request, patch = {}) {
+    const currentPostedDate = String(request?.pettyCashPostedDate || '').trim();
+    if (currentPostedDate) return currentPostedDate;
+    const nextRequest = {
+        ...request,
+        ...patch
+    };
+    if (shouldCreateEntriesForFieldRequest(nextRequest)) {
+        return extractYmdFromDateTime(isoNow()) || getSelectedDateValue();
+    }
+    return String(patch?.pettyCashPostedDate || '').trim();
 }
 
 async function writeFieldRequestAudit(requestId, action, previous, next, remarks = '') {
@@ -3142,6 +3156,7 @@ function buildEntriesFromFieldRequest(request, existingEntries = []) {
     const sourceItems = getFieldRequestSourceItems(request);
     const approvedTotal = Number(request.approvedAmount || request.amount || 0);
     const entryStatus = fieldRequestEntryStatus(request);
+    const postingDate = getFieldRequestPostingDate(request);
     const amounts = distributeFieldRequestAmounts(sourceItems, approvedTotal);
     const existingById = new Map(existingEntries.map((entry) => [String(entry.id || '').trim(), entry]));
     return sourceItems.map((item, index) => {
@@ -3151,7 +3166,7 @@ function buildEntriesFromFieldRequest(request, existingEntries = []) {
             id: entryId,
             bundleId: requestId,
             voucherNumber: requestId,
-            date: String(request.reportDate || request.dateOfExpense || request.requestDate || getSelectedDateValue()).trim(),
+            date: postingDate,
             payee: String(request.staffName || request.requestedBy || '').trim(),
             supplier: String(item.supplierStoreName || request.supplierStoreName || '').trim(),
             requestedBy: String(request.staffName || request.requestedBy || '').trim(),
@@ -3168,9 +3183,45 @@ function buildEntriesFromFieldRequest(request, existingEntries = []) {
             sourceRequestId: requestId,
             sourceRequestType: String(request.requestType || '').trim(),
             sourceRequestStatus: String(request.status || '').trim(),
+            sourceExpenseDate: String(request.reportDate || request.dateOfExpense || request.requestDate || '').trim(),
             staffId: Number(request.staffId || 0)
         });
     });
+}
+
+function getFieldRequestPostingDate(request) {
+    const status = String(request?.status || '').trim();
+    const approvedStatuses = new Set([
+        'Approved',
+        'Included in Payout Batch',
+        'Funded',
+        'Paid / Released',
+        'For Liquidation',
+        'Partially Liquidated',
+        'Liquidated',
+        'Closed'
+    ]);
+    const recordedPostedDate = String(request?.pettyCashPostedDate || '').trim();
+    if (recordedPostedDate) return recordedPostedDate;
+    if (approvedStatuses.has(status)) {
+        const approvedDate = extractYmdFromDateTime(
+            request?.updatedAt
+            || request?.approvedAt
+            || request?.paidDateTime
+            || request?.releasedAt
+            || request?.fundedAt
+        );
+        if (approvedDate) return approvedDate;
+    }
+    return String(request?.reportDate || request?.dateOfExpense || request?.requestDate || getSelectedDateValue()).trim();
+}
+
+function extractYmdFromDateTime(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+    const match = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : '';
 }
 
 function getFieldRequestSourceItems(request) {
