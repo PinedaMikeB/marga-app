@@ -2901,8 +2901,26 @@ async function attachReimbursementUploads(request) {
 }
 
 async function prepareReimbursementImageUpload(file, requestId, kind) {
-    const blob = await compressImageFile(file, { maxDimension: 1400, quality: 0.74 });
-    return uploadReimbursementImageToStorage(blob, { requestId, kind });
+    const blob = await compressImageFile(file, { maxDimension: 1280, quality: 0.68 });
+    try {
+        return {
+            ...(await uploadReimbursementImageToStorage(blob, { requestId, kind })),
+            storageMode: 'storage'
+        };
+    } catch (storageError) {
+        console.warn('Reimbursement receipt Storage upload failed; falling back to inline image data.', storageError);
+        const dataUrl = await blobToDataUrl(blob);
+        if (dataUrl.length > 550000) {
+            throw new Error('Receipt image is still too large after compression. Retake a closer, clearer photo before submitting.');
+        }
+        return {
+            path: '',
+            url: dataUrl,
+            size: Number(blob.size || 0) || 0,
+            type: 'image/jpeg',
+            storageMode: 'inline_data_url'
+        };
+    }
 }
 
 async function uploadReimbursementImageToStorage(blob, { requestId, kind }) {
