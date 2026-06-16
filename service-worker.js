@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v134-dashboard-purchasing-menu';
+const CACHE_NAME = 'marga-app-shell-v135-time-records-ot-form-5';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -73,9 +73,9 @@ const SHELL_ASSETS = [
     '/sync/js/sync.js',
     '/shared/css/styles.css',
     '/shared/css/dashboard.css',
-    '/shared/css/attendance-time-records.css?v=20260616-time-records-ot-form-4',
+    '/shared/css/attendance-time-records.css?v=20260616-time-records-ot-form-5',
     '/shared/js/payroll-cutoff.js?v=20260615-time-records-5',
-    '/shared/js/attendance-time-records.js?v=20260616-time-records-ot-form-4',
+    '/shared/js/attendance-time-records.js?v=20260616-time-records-ot-form-5',
     '/shared/js/firebase-config.js?v=20260601-local-postgres-live-1',
     '/shared/js/auth.js?v=20260616-purchasing-staff-1',
     '/shared/js/utils.js?v=20260516-field-permissions-3',

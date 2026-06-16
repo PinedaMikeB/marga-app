@@ -6,7 +6,7 @@
     const ZERO_DATETIME = '0000-00-00 00:00:00';
     const EMPTY_DATES = new Set(['', ZERO_DATETIME, 'null', 'undefined', 'invalid date']);
 
-    const TIME_RECORDS_FORM_VERSION = '20260616-ot-form-4';
+    const TIME_RECORDS_FORM_VERSION = '20260616-ot-form-5';
 
     const modalState = {
         staffId: 0,
@@ -664,6 +664,24 @@
         return Boolean(el && !el.hidden && el.getClientRects().length > 0);
     }
 
+    function isOtSubmissionIntent(otTimes = readOtRequestTimes(), formMode = '') {
+        const title = String(document.getElementById('attendanceTimeRecordsFormTitle')?.textContent || '').trim();
+        const otWrap = document.getElementById('attendanceTimeRecordsOtWrap');
+        const form = document.getElementById('attendanceTimeRecordsForm');
+        if (/overtime/i.test(title)) return true;
+        if (form?.dataset.formMode === 'request_ot' || modalState.formMode === 'request_ot') return true;
+        if (formMode === 'request_ot') return true;
+        if (otWrap && !otWrap.hidden) return true;
+        if (otTimes.fromTime || otTimes.toTime) return true;
+        return false;
+    }
+
+    function isLegacyOtApiRejection(error, otTimes = readOtRequestTimes()) {
+        const message = String(error?.message || '');
+        return /time-in is required/i.test(message)
+            && Boolean(otTimes.fromTime && otTimes.toTime);
+    }
+
     function resolveActiveFormMode() {
         const form = document.getElementById('attendanceTimeRecordsForm');
         const otWrap = document.getElementById('attendanceTimeRecordsOtWrap');
@@ -887,12 +905,9 @@
         const requestedLocationType = String(document.getElementById('attendanceTimeRecordsLocation')?.value || '').trim();
         const otTimes = readOtRequestTimes();
         const imageInput = document.getElementById('attendanceTimeRecordsImage');
-        const title = document.getElementById('attendanceTimeRecordsFormTitle');
-        const isOtRequest = formMode === 'request_ot'
-            || /overtime/i.test(String(title?.textContent || ''))
-            || (Boolean(otTimes.fromTime && otTimes.toTime) && formMode !== 'delete_day' && formMode !== 'adjust_time_in');
-        const isDeleteDay = formMode === 'delete_day';
-        const isTimeInFix = !isOtRequest && formMode === 'adjust_time_in';
+        const isOtRequest = isOtSubmissionIntent(otTimes, formMode);
+        const isDeleteDay = !isOtRequest && formMode === 'delete_day';
+        const isTimeInFix = !isOtRequest && !isDeleteDay && formMode === 'adjust_time_in';
         if (!reason) throw new Error('Reason is required.');
         if (!formDate) throw new Error('Attendance date is required.');
         if (isOtRequest) {
@@ -939,8 +954,22 @@
             try {
                 payload = await postAdjustmentRequest(requestBody);
             } catch (error) {
-                if (!error?.isAdminRouteUnavailable) throw error;
-                payload = await submitAdjustmentFallback(requestBody, imageDataUrl);
+                if (!error?.isAdminRouteUnavailable && isLegacyOtApiRejection(error, otTimes)) {
+                    const otBody = {
+                        ...requestBody,
+                        request_type: 'request_ot',
+                        requested_time_in: '',
+                        requested_location_type: '',
+                        ot_from_time: otTimes.fromTime ? `${formDate} ${otTimes.fromTime}:00` : '',
+                        ot_to_time: otTimes.toTime ? `${formDate} ${otTimes.toTime}:00` : '',
+                        ot_hours: otHours
+                    };
+                    payload = await submitAdjustmentFallback(otBody, imageDataUrl);
+                } else if (!error?.isAdminRouteUnavailable) {
+                    throw error;
+                } else {
+                    payload = await submitAdjustmentFallback(requestBody, imageDataUrl);
+                }
             }
             hideForm();
             await refreshModalData();
