@@ -3594,9 +3594,32 @@ function normalizeRequest(request) {
     };
 }
 
+function resolveCanonicalFieldRequestStatus(request = {}) {
+    const deletedAt = String(request.deletedAt || '').trim();
+    const deletedBy = String(request.deletedBy || '').trim();
+    if (deletedAt || deletedBy) return 'Cancelled / Deleted';
+
+    const approvedAt = String(request.approvedAt || '').trim();
+    const approvedBy = String(request.approvedBy || '').trim();
+    const requestType = String(request.requestType || request.type || 'Reimbursement').trim();
+    const rawStatus = String(request.status || 'Draft').trim();
+    if (approvedAt || approvedBy) {
+        if (requestType === 'Cash Advance') {
+            if (['Paid / Released', 'For Liquidation', 'Partially Liquidated', 'Liquidated', 'Closed'].includes(rawStatus)) {
+                return rawStatus;
+            }
+        } else if (['Approved', 'Included in Payout Batch', 'Funded', 'Paid / Released', 'For Liquidation', 'Partially Liquidated', 'Liquidated', 'Closed'].includes(rawStatus)) {
+            return rawStatus;
+        }
+        return 'Approved';
+    }
+
+    return rawStatus || 'Draft';
+}
+
 function normalizeFieldStaffRequest(request = {}) {
     const id = String(request.id || request.requestId || createFieldStaffRequestId()).trim();
-    const status = String(request.status || 'Draft').trim();
+    const status = resolveCanonicalFieldRequestStatus(request);
     const requestType = String(request.requestType || request.type || 'Reimbursement').trim();
     const amount = Number(request.amount || 0);
     const approvedAmount = Number(request.approvedAmount || 0);
