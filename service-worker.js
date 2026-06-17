@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v152-field-request-status-2';
+const CACHE_NAME = 'marga-app-shell-v153-pettycash-replenishment-print-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
-    '/pettycash/js/pettycash.js?v=20260617-pettycash-field-queue-fix-1',
+    '/pettycash/js/pettycash.js?v=20260617-pettycash-replenishment-print-1',
     '/accounting/',
     '/accounting/index.html',
     '/accounting/css/accounting.css',

@@ -369,6 +369,7 @@ function bindControls() {
     document.getElementById('requestForm').addEventListener('submit', onRequestSubmit);
     document.getElementById('requestClearBtn').addEventListener('click', clearRequestForm);
     document.getElementById('generateRequestBtn').addEventListener('click', generateRequestFromSelectedDay);
+    document.getElementById('requestPrintBtn').addEventListener('click', printReplenishmentRequest);
     document.getElementById('requestReportDateInput').addEventListener('change', renderRequestPreview);
     document.getElementById('requestStatusInput').addEventListener('change', renderRequestPreview);
     document.getElementById('entrySearchInput').addEventListener('input', renderEntriesTable);
