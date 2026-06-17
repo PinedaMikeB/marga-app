@@ -2707,7 +2707,25 @@ function previewReimbursementImage(inputId, previewId, hintId) {
 async function saveReimbursementRequest(targetStatus) {
     const form = document.getElementById('fieldReimbursementForm');
     if (!form) return;
-    const existing = state.reimbursementRequests.find((request) => request.id === state.editingReimbursementId) || null;
+    let existing = state.reimbursementRequests.find((request) => request.id === state.editingReimbursementId) || null;
+    if (existing?.id) {
+        const liveRequest = await fetchCurrentReimbursementRequest(existing.id).catch((error) => {
+            console.warn('Unable to refresh live reimbursement request before save:', error);
+            return null;
+        });
+        if (liveRequest) {
+            existing = liveRequest;
+            const index = state.reimbursementRequests.findIndex((request) => request.id === liveRequest.id);
+            if (index >= 0) state.reimbursementRequests[index] = liveRequest;
+            else state.reimbursementRequests.unshift(liveRequest);
+            const liveStatus = resolveCanonicalFieldReimbursementStatus(liveRequest);
+            if (!FIELD_REIMBURSEMENT_EDITABLE_STATUSES.has(liveStatus)) {
+                renderReimbursementRequests();
+                alert(`This request is already ${liveStatus} and can no longer be edited from Field App.`);
+                return;
+            }
+        }
+    }
     const next = readReimbursementForm(targetStatus, existing);
     const validation = validateReimbursementRequest(next, existing);
     if (!validation.ok) {
@@ -2743,6 +2761,17 @@ async function saveReimbursementRequest(targetStatus) {
             submitButton.textContent = targetStatus === 'Draft' ? 'Save Draft' : 'Submit Request';
         }
     }
+}
+
+async function fetchCurrentReimbursementRequest(requestId) {
+    const normalizedId = String(requestId || '').trim();
+    if (!normalizedId) return null;
+    const response = await fetch(`${FIREBASE_CONFIG.baseUrl}/${PETTY_CASH_REQUEST_COLLECTION}/${encodeURIComponent(normalizedId)}?key=${FIREBASE_CONFIG.apiKey}`);
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Unable to load request ${normalizedId}`);
+    }
+    return normalizeFieldReimbursementRequest(parseFirestoreDoc(payload));
 }
 
 function readReimbursementForm(targetStatus, existing = null) {
