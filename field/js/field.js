@@ -2681,8 +2681,76 @@ function getClosedRowsForReimbursement() {
     return state.rows.filter(isClosedOnSelectedDate);
 }
 
+function isPlaceholderFieldCustomerLabel(label) {
+    const normalized = String(label || '').trim().toLowerCase();
+    return !normalized || normalized === 'customer';
+}
+
+function pickFieldBranchLabel(row = {}, branchDoc = null) {
+    return String(
+        row.branchname
+        || row.branch_name
+        || row.location
+        || branchDoc?.branchname
+        || branchDoc?.branch_name
+        || branchDoc?.name
+        || ''
+    ).trim();
+}
+
+function pickFieldCompanyLabel(row = {}, companyDoc = null) {
+    return String(
+        row.customer_name
+        || row.companyname
+        || row.company_name
+        || row.customer
+        || row.branch_customer_name
+        || row.assigned_customer
+        || row.client
+        || companyDoc?.companyname
+        || companyDoc?.company_name
+        || companyDoc?.name
+        || ''
+    ).trim();
+}
+
 function getFieldRowCustomerLabel(row = {}) {
-    return String(row.customer_name || row.companyname || row.company_name || row.customer || row.branch_customer_name || row.assigned_customer || row.client || 'Customer').trim();
+    const branchId = String(row.branch_id || '').trim();
+    const companyId = String(row.company_id || '').trim();
+    const branchDoc = branchId ? caches.branch.get(branchId) : null;
+    const fallbackCompanyId = companyId || String(branchDoc?.company_id || branchDoc?.companyid || '').trim();
+    const companyDoc = fallbackCompanyId ? caches.company.get(fallbackCompanyId) : null;
+    const direct = pickFieldCompanyLabel(row, companyDoc);
+    if (!isPlaceholderFieldCustomerLabel(direct)) return direct;
+    const branchLabel = pickFieldBranchLabel(row, branchDoc);
+    return branchLabel || 'Customer';
+}
+
+async function resolveFieldRowClientContext(row = {}) {
+    const branchId = String(row.branch_id || '').trim();
+    let branchDoc = branchId ? caches.branch.get(branchId) : null;
+    if (!branchDoc && branchId) {
+        branchDoc = await ensureLookup('tbl_branchinfo', branchId, caches.branch).catch(() => null);
+    }
+    const companyId = String(row.company_id || branchDoc?.company_id || branchDoc?.companyid || '').trim();
+    let companyDoc = companyId ? caches.company.get(companyId) : null;
+    if (!companyDoc && companyId) {
+        companyDoc = await ensureLookup('tbl_companylist', companyId, caches.company).catch(() => null);
+    }
+    const companyLabel = pickFieldCompanyLabel(row, companyDoc);
+    const branchLabel = pickFieldBranchLabel(row, branchDoc);
+    const customerLabel = !isPlaceholderFieldCustomerLabel(companyLabel)
+        ? companyLabel
+        : (branchLabel || 'Customer');
+    return {
+        scheduleId: String(row.id || '').trim(),
+        companyId,
+        branchId,
+        customerLabel,
+        branchLabel,
+        reference: getFieldRowReferenceLabel(row),
+        closedAt: String(row.date_finished || row.closed_at || row.field_time_out || '').trim()
+    };
 }
 
 function getFieldRowReferenceLabel(row = {}) {
@@ -2726,7 +2794,7 @@ async function saveReimbursementRequest(targetStatus) {
             }
         }
     }
-    const next = readReimbursementForm(targetStatus, existing);
+    const next = await readReimbursementForm(targetStatus, existing);
     const validation = validateReimbursementRequest(next, existing);
     if (!validation.ok) {
         alert(validation.message);
@@ -2774,7 +2842,7 @@ async function fetchCurrentReimbursementRequest(requestId) {
     return normalizeFieldReimbursementRequest(parseFirestoreDoc(payload));
 }
 
-function readReimbursementForm(targetStatus, existing = null) {
+async function readReimbursementForm(targetStatus, existing = null) {
     const user = MargaAuth.getUser();
     const now = new Date();
     const id = String(document.getElementById('fieldReimbursementId')?.value || existing?.id || createFieldReimbursementId()).trim();
@@ -2790,6 +2858,9 @@ function readReimbursementForm(targetStatus, existing = null) {
     const liquidatedAmount = rowsTotal;
     const primaryItem = items[0] || createReimbursementItem();
     const visitedRows = getClosedRowsForReimbursement();
+    const visitContexts = await Promise.all(visitedRows.map((row) => resolveFieldRowClientContext(row)));
+    const uniqueClients = [...new Set(visitContexts.map((context) => context.customerLabel).filter((value) => !isPlaceholderFieldCustomerLabel(value)))];
+    const uniqueBranches = [...new Set(visitContexts.map((context) => context.branchLabel).filter(Boolean))];
     return {
         ...(existing || {}),
         id,
@@ -2807,8 +2878,8 @@ function readReimbursementForm(targetStatus, existing = null) {
         amount,
         expenseCategory: primaryItem.expenseCategory || '',
         description: document.getElementById('fieldReimbursementDescription')?.value || '',
-        clientCompanyVisited: visitedRows.map(getFieldRowCustomerLabel).filter(Boolean).join(', ').slice(0, 500),
-        branchLocation: visitedRows.map((row) => row.branchname || row.branch_name || row.location || '').filter(Boolean).join(', ').slice(0, 500),
+        clientCompanyVisited: uniqueClients.join(', ').slice(0, 500),
+        branchLocation: uniqueBranches.join(', ').slice(0, 500),
         serviceTicketId: document.getElementById('fieldReimbursementServiceTicket')?.value || '',
         machineSerialNumber: document.getElementById('fieldReimbursementSerial')?.value || '',
         jobOrderReferenceNumber: document.getElementById('fieldReimbursementJobOrder')?.value || '',
@@ -2851,11 +2922,14 @@ function readReimbursementForm(targetStatus, existing = null) {
         paymentStatus: String(existing?.paymentStatus || ''),
         lineItems: items.map(serializeReimbursementItem),
         closedVisitCount: visitedRows.length,
-        closedVisitDetails: visitedRows.map((row) => ({
-            scheduleId: String(row.id || ''),
-            customer: getFieldRowCustomerLabel(row),
-            reference: getFieldRowReferenceLabel(row),
-            closedAt: String(row.date_finished || row.closed_at || row.field_time_out || '')
+        closedVisitDetails: visitContexts.map((context) => ({
+            scheduleId: context.scheduleId,
+            companyId: context.companyId,
+            branchId: context.branchId,
+            customer: context.customerLabel,
+            branchName: context.branchLabel,
+            reference: context.reference,
+            closedAt: context.closedAt
         })),
         status: resolveReimbursementNextStatus(targetStatus, existing),
         createdAt: String(existing?.createdAt || now.toISOString()),

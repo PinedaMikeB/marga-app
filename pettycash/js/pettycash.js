@@ -239,6 +239,9 @@ let selectedFieldRequestId = '';
 let supplierSummaryPanelOpen = false;
 let pettyCashDeletePassRequested = false;
 let pettyCashHasSharedBaseline = false;
+const fieldRequestScheduleContextCache = new Map();
+const fieldRequestBranchLookupCache = new Map();
+const fieldRequestCompanyLookupCache = new Map();
 
 document.addEventListener('DOMContentLoaded', async () => {
     loadUserHeader();
@@ -344,6 +347,7 @@ async function hydrateState() {
     PETTY_CASH_STATE.entries = entries;
     PETTY_CASH_STATE.requests = requests;
     PETTY_CASH_STATE.settings = settings;
+    await enrichFieldStaffRequestsFromSchedules();
     syncRequestsFromApd();
     reconcileFieldRequestEntries();
     dedupePettyCashEntries();
@@ -352,6 +356,165 @@ async function hydrateState() {
 
     if (migrateLocalToCloud) {
         queuePettyCashCloudSync({ deleteRemoved: true, silent: true });
+    }
+}
+
+function isPlaceholderFieldRequestClientLabel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return !normalized || normalized === 'customer';
+}
+
+function normalizeFieldRequestLineItems(items = []) {
+    if (!Array.isArray(items)) return [];
+    return items
+        .map((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+            return {
+                id: String(item.id || '').trim(),
+                groupId: String(item.groupId || item.expenseGroup || '').trim(),
+                expenseGroup: String(item.expenseGroup || item.groupId || '').trim(),
+                expenseCategory: String(item.expenseCategory || '').trim(),
+                accountId: String(item.accountId || '').trim(),
+                itemNote: String(item.itemNote || item.description || '').trim(),
+                supplierStoreName: String(item.supplierStoreName || item.supplier || '').trim(),
+                amount: Number(item.amount || 0),
+                receiptNumber: String(item.receiptNumber || '').trim(),
+                receiptImageUrl: String(item.receiptImageUrl || '').trim(),
+                receiptImagePath: String(item.receiptImagePath || '').trim(),
+                receiptImageName: String(item.receiptImageName || '').trim()
+            };
+        })
+        .filter(Boolean);
+}
+
+function normalizeFieldRequestClosedVisitDetails(details = []) {
+    if (!Array.isArray(details)) return [];
+    return details
+        .map((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+            return {
+                scheduleId: String(item.scheduleId || item.id || '').trim(),
+                companyId: String(item.companyId || '').trim(),
+                branchId: String(item.branchId || '').trim(),
+                customer: String(item.customer || '').trim(),
+                branchName: String(item.branchName || '').trim(),
+                reference: String(item.reference || '').trim(),
+                closedAt: String(item.closedAt || '').trim()
+            };
+        })
+        .filter(Boolean);
+}
+
+async function fetchFieldRequestLookupDoc(collection, docId, cache) {
+    const key = String(docId || '').trim();
+    if (!key || key === '0') return null;
+    if (cache.has(key)) return cache.get(key);
+    const doc = await MargaUtils.fetchDoc(collection, key).catch(() => null);
+    if (doc) cache.set(key, doc);
+    return doc;
+}
+
+function buildFieldRequestScheduleCacheKey(staffId, reportDate) {
+    return `${Number(staffId || 0)}|${String(reportDate || '').trim()}`;
+}
+
+async function loadClosedSchedulesForFieldRequest(staffId, reportDate) {
+    const cacheKey = buildFieldRequestScheduleCacheKey(staffId, reportDate);
+    if (fieldRequestScheduleContextCache.has(cacheKey)) return fieldRequestScheduleContextCache.get(cacheKey);
+    const numericStaffId = Number(staffId || 0);
+    const safeDate = String(reportDate || '').trim();
+    if (!numericStaffId || !safeDate) {
+        fieldRequestScheduleContextCache.set(cacheKey, []);
+        return [];
+    }
+    const docs = await runQuery({
+        from: [{ collectionId: 'tbl_schedule' }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath: 'closedby' },
+                op: 'EQUAL',
+                value: { integerValue: String(numericStaffId) }
+            }
+        },
+        limit: 400
+    }).catch(() => []);
+    const rows = docs
+        .map((doc) => MargaAuth.parseFirestoreDoc(doc))
+        .filter(Boolean)
+        .filter((row) => String(row.date_finished || '').startsWith(safeDate));
+    fieldRequestScheduleContextCache.set(cacheKey, rows);
+    return rows;
+}
+
+async function buildResolvedFieldRequestScheduleDetail(row = {}) {
+    const branchId = String(row.branch_id || '').trim();
+    const companyIdFromRow = String(row.company_id || '').trim();
+    const branchDoc = branchId ? await fetchFieldRequestLookupDoc('tbl_branchinfo', branchId, fieldRequestBranchLookupCache) : null;
+    const companyId = companyIdFromRow || String(branchDoc?.company_id || branchDoc?.companyid || '').trim();
+    const companyDoc = companyId ? await fetchFieldRequestLookupDoc('tbl_companylist', companyId, fieldRequestCompanyLookupCache) : null;
+    const branchName = String(
+        row.branchname
+        || row.branch_name
+        || row.location
+        || branchDoc?.branchname
+        || branchDoc?.branch_name
+        || branchDoc?.name
+        || ''
+    ).trim();
+    const customer = String(
+        row.customer_name
+        || row.companyname
+        || row.company_name
+        || row.customer
+        || row.branch_customer_name
+        || row.assigned_customer
+        || row.client
+        || companyDoc?.companyname
+        || companyDoc?.company_name
+        || companyDoc?.name
+        || branchName
+        || 'Customer'
+    ).trim();
+    return {
+        scheduleId: String(row.id || row.schedule_id || '').trim(),
+        companyId,
+        branchId,
+        customer,
+        branchName,
+        reference: [
+            branchName,
+            String(row.purpose_label || row.purpose || '').trim(),
+            row.id ? `#${row.id}` : ''
+        ].filter(Boolean).join(' · '),
+        closedAt: String(row.date_finished || row.closed_at || row.field_time_out || '').trim()
+    };
+}
+
+async function enrichFieldStaffRequestsFromSchedules() {
+    const requestsNeedingRepair = PETTY_CASH_STATE.requests.filter((request) => {
+        if (!isFieldStaffRequest(request)) return false;
+        const normalized = normalizeFieldStaffRequest(request);
+        if (!normalized.staffId || !normalized.reportDate) return false;
+        const hasBadClosedDetails = Array.isArray(request.closedVisitDetails)
+            && request.closedVisitDetails.some((item) => typeof item !== 'object' || item == null || Array.isArray(item));
+        return hasBadClosedDetails
+            || isPlaceholderFieldRequestClientLabel(normalized.clientCompanyVisited)
+            || !normalized.branchLocation
+            || !normalized.closedVisitDetails.length;
+    });
+
+    for (const request of requestsNeedingRepair) {
+        const schedules = await loadClosedSchedulesForFieldRequest(request.staffId, request.reportDate);
+        if (!schedules.length) continue;
+        const resolvedDetails = (await Promise.all(schedules.map((row) => buildResolvedFieldRequestScheduleDetail(row))))
+            .filter((detail) => detail.scheduleId);
+        if (!resolvedDetails.length) continue;
+        const uniqueClients = [...new Set(resolvedDetails.map((detail) => detail.customer).filter((value) => !isPlaceholderFieldRequestClientLabel(value)))];
+        const uniqueBranches = [...new Set(resolvedDetails.map((detail) => detail.branchName).filter(Boolean))];
+        request.closedVisitDetails = resolvedDetails;
+        request.closedVisitCount = resolvedDetails.length;
+        if (uniqueClients.length) request.clientCompanyVisited = uniqueClients.join(', ').slice(0, 500);
+        if (uniqueBranches.length) request.branchLocation = uniqueBranches.join(', ').slice(0, 500);
     }
 }
 
@@ -3626,6 +3789,12 @@ function normalizeFieldStaffRequest(request = {}) {
     const approvedAmount = Number(request.approvedAmount || 0);
     const amountLiquidated = Number(request.amountLiquidated || 0);
     const advanceAmount = Number(request.cashAdvanceAmountRequested || (requestType === 'Cash Advance' ? amount : 0));
+    const lineItems = normalizeFieldRequestLineItems(request.lineItems || request.items || []);
+    const closedVisitDetails = normalizeFieldRequestClosedVisitDetails(request.closedVisitDetails || []);
+    const derivedClients = [...new Set(closedVisitDetails.map((detail) => detail.customer).filter((value) => !isPlaceholderFieldRequestClientLabel(value)))];
+    const derivedBranches = [...new Set(closedVisitDetails.map((detail) => detail.branchName).filter(Boolean))];
+    const clientCompanyVisited = String(request.clientCompanyVisited || '').trim();
+    const branchLocation = String(request.branchLocation || '').trim();
     return {
         ...request,
         id,
@@ -3645,8 +3814,10 @@ function normalizeFieldStaffRequest(request = {}) {
         expenseCategory: String(request.expenseCategory || '').trim(),
         description: String(request.description || '').trim(),
         notes: String(request.notes || '').trim(),
-        clientCompanyVisited: String(request.clientCompanyVisited || '').trim(),
-        branchLocation: String(request.branchLocation || '').trim(),
+        clientCompanyVisited: !isPlaceholderFieldRequestClientLabel(clientCompanyVisited)
+            ? clientCompanyVisited
+            : derivedClients.join(', ').slice(0, 500),
+        branchLocation: branchLocation || derivedBranches.join(', ').slice(0, 500),
         serviceTicketId: String(request.serviceTicketId || '').trim(),
         machineSerialNumber: String(request.machineSerialNumber || '').trim(),
         jobOrderReferenceNumber: String(request.jobOrderReferenceNumber || '').trim(),
@@ -3701,6 +3872,9 @@ function normalizeFieldStaffRequest(request = {}) {
         rejectionReason: String(request.rejectionReason || '').trim(),
         approvedBy: String(request.approvedBy || '').trim(),
         approvedAt: String(request.approvedAt || '').trim(),
+        lineItems,
+        closedVisitDetails,
+        closedVisitCount: Number(request.closedVisitCount || closedVisitDetails.length || 0),
         status: FIELD_REQUEST_STATUSES.includes(status) ? status : 'Draft',
         createdAt: String(request.createdAt || isoNow()),
         updatedAt: String(request.updatedAt || isoNow())

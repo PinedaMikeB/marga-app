@@ -78,6 +78,14 @@
             if (Number.isInteger(value)) return { integerValue: String(value) };
             return { doubleValue: value };
         }
+        if (value && typeof value === 'object') {
+            const fields = {};
+            Object.entries(value).forEach(([key, child]) => {
+                if (child === undefined || typeof child === 'function') return;
+                fields[key] = toFirestoreFieldValue(child);
+            });
+            return { mapValue: { fields } };
+        }
         return { stringValue: String(value ?? '') };
     }
 
