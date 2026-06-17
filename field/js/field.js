@@ -2902,27 +2902,25 @@ async function attachReimbursementUploads(request) {
 
 async function prepareReimbursementImageUpload(file, requestId, kind) {
     const blob = await compressImageFile(file, { maxDimension: 1280, quality: 0.68 });
-    if (String(FIREBASE_CONFIG?.storageBucket || '').trim()) {
-        try {
-            return {
-                ...(await uploadReimbursementImageToStorage(blob, { requestId, kind })),
-                storageMode: 'storage'
-            };
-        } catch (storageError) {
-            console.warn('Reimbursement receipt storage upload failed; falling back to inline image data.', storageError);
+    try {
+        return {
+            ...(await uploadReimbursementImageToStorage(blob, { requestId, kind })),
+            storageMode: 'storage'
+        };
+    } catch (storageError) {
+        console.warn('Reimbursement receipt Storage upload failed; falling back to inline image data.', storageError);
+        const dataUrl = await blobToDataUrl(blob);
+        if (dataUrl.length > 550000) {
+            throw new Error('Receipt image is still too large after compression. Retake a closer, clearer photo before submitting.');
         }
+        return {
+            path: '',
+            url: dataUrl,
+            size: Number(blob.size || 0) || 0,
+            type: 'image/jpeg',
+            storageMode: 'inline_data_url'
+        };
     }
-    const dataUrl = await blobToDataUrl(blob);
-    if (dataUrl.length > 550000) {
-        throw new Error('Receipt image is still too large after compression. Retake a closer, clearer photo before submitting.');
-    }
-    return {
-        path: '',
-        url: dataUrl,
-        size: Number(blob.size || 0) || 0,
-        type: 'image/jpeg',
-        storageMode: 'inline_data_url'
-    };
 }
 
 async function uploadReimbursementImageToStorage(blob, { requestId, kind }) {
@@ -6710,28 +6708,26 @@ async function uploadLocationPhotoToStorage(blob, { branchId, scheduleId, now })
 
 async function prepareLocationPhotoUpload(file, context) {
     const blob = await compressImageFile(file);
-    if (String(FIREBASE_CONFIG?.storageBucket || '').trim()) {
-        try {
-            return {
-                ...(await uploadLocationPhotoToStorage(blob, context)),
-                storageMode: 'storage'
-            };
-        } catch (storageError) {
-            console.warn('Location photo storage upload failed; falling back to local field proof.', storageError);
+    try {
+        return {
+            ...(await uploadLocationPhotoToStorage(blob, context)),
+            storageMode: 'storage'
+        };
+    } catch (storageError) {
+        console.warn('Location photo Storage upload failed; falling back to Firestore data URL.', storageError);
+        const dataUrl = await blobToDataUrl(blob);
+        if (dataUrl.length > 900000) {
+            throw new Error('Photo is still too large after compression. Please retake a clearer, smaller frontage photo.');
         }
+        return {
+            path: '',
+            url: '',
+            dataUrl,
+            size: Number(blob.size || 0) || 0,
+            type: 'image/jpeg',
+            storageMode: 'firestore_data_url'
+        };
     }
-    const dataUrl = await blobToDataUrl(blob);
-    if (dataUrl.length > 900000) {
-        throw new Error('Photo is still too large after compression. Please retake a clearer, smaller frontage photo.');
-    }
-    return {
-        path: '',
-        url: '',
-        dataUrl,
-        size: Number(blob.size || 0) || 0,
-        type: 'image/jpeg',
-        storageMode: 'firestore_data_url'
-    };
 }
 
 function normalizeTicketPurpose(row) {
@@ -7470,10 +7466,7 @@ async function openModal(scheduleId) {
     document.getElementById('fieldCollectionPaymentDate').value = dateOnly(row.field_collection_payment_date) || localDateYmd();
     document.getElementById('fieldCollectionDepositDate').value = dateOnly(row.field_collection_deposit_date) || localDateYmd();
     document.getElementById('fieldCollectionOrNumber').value = String(row.field_collection_or_number || '').trim();
-    document.getElementById('fieldCollectionPaymentType').value = String(row.field_collection_payment_type || '')
-        .trim()
-        .replace(/_/g, ' ')
-        .toLowerCase();
+    document.getElementById('fieldCollectionPaymentType').value = String(row.field_collection_payment_type || '').trim();
     document.getElementById('fieldCollectionPaymentStatus').value = String(row.field_collection_payment_status || '').trim() || 'Paid';
     document.getElementById('fieldCollectionDeductionType').value = String(row.field_collection_deduction_type || '').trim();
     document.getElementById('fieldCollectionDeductionAmount').value = String(row.field_collection_deduction_amount || '').trim();
@@ -8408,7 +8401,7 @@ async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
             date_paid: paymentDateDb,
             ornum: form.collectionOrNumber || form.collectionReceiptRefs,
             or_number: form.collectionOrNumber || form.collectionReceiptRefs,
-            payment_type: form.collectionPaymentType || (isCheck ? 'check' : 'cash'),
+            payment_type: isCheck ? 1 : 0,
             payment_status: 'Draft Payment',
             check_number: form.collectionCheckNumber,
             check_amt: isCheck ? paymentAmount : 0,

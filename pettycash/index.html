@@ -164,6 +164,12 @@
                     <a href="../docs/APD-PC-CHART-OF-ACCOUNTS.md" class="btn btn-secondary btn-sm">Open COA Reference</a>
                     <button type="button" class="btn btn-secondary btn-sm" id="printDailyReportBtn">Print Daily Report</button>
                     <button type="button" class="btn btn-primary btn-sm" id="printReplenishmentBtn">Print Replenishment</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-toggle-section="pettycashHeroSection">Show Read-Only COA</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-toggle-section="pettycashSetupSection">Show One-Time Setup</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-toggle-section="pettycashEntrySection">Show Petty Cash Entry</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-toggle-section="pettycashRequestSection">Show Request For Replenishment</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-toggle-section="pettycashHistorySection">Show Replenishment History</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-toggle-section="pettycashAccountsSection">Show Chart Of Accounts To Use</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="resetTrialEntriesBtn">Reset Trial Entries</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="resetDemoBtn">Reset Demo Data</button>
                 </div>
@@ -185,7 +191,7 @@
                 </div>
             </section>
 
-            <section class="hero-panel animate-in" style="animation-delay: 0.05s">
+            <section class="hero-panel animate-in" id="pettycashHeroSection" style="animation-delay: 0.05s" hidden>
                 <div class="hero-copy">
                     <div class="hero-chip">Read-Only COA</div>
                     <h2>Track the box, keep the remarks, and print the paper trail before day-end.</h2>
@@ -220,7 +226,7 @@
                 </div>
             </section>
 
-            <section class="content-card setup-card animate-in" style="animation-delay: 0.08s">
+            <section class="content-card setup-card animate-in" id="pettycashSetupSection" style="animation-delay: 0.08s" hidden>
                 <details class="setup-details" id="fundControlDrawer">
                     <summary class="setup-summary">
                         <div class="setup-copy">
@@ -268,7 +274,7 @@
                 </details>
             </section>
 
-            <section class="entry-stage">
+            <section class="entry-stage" id="pettycashEntrySection" hidden>
                 <article class="content-card entry-card animate-in" style="animation-delay: 0.1s">
                     <div class="card-header">
                         <div>
@@ -383,7 +389,7 @@
                 </article>
             </section>
 
-            <section class="content-card request-card animate-in" style="animation-delay: 0.2s">
+            <section class="content-card request-card animate-in" id="pettycashRequestSection" style="animation-delay: 0.2s" hidden>
                 <div class="card-header">
                     <div>
                         <h3>Request For Replenishment</h3>
@@ -498,7 +504,7 @@
                 </div>
             </section>
 
-            <section class="content-card history-card animate-in" style="animation-delay: 0.3s">
+            <section class="content-card history-card animate-in" id="pettycashHistorySection" style="animation-delay: 0.3s" hidden>
                 <div class="card-header table-header">
                     <div>
                         <h3>Replenishment History</h3>
@@ -536,7 +542,6 @@
                         <select id="fieldRequestStatusFilter" class="form-select compact-select"></select>
                         <select id="fieldRequestTypeFilter" class="form-select compact-select"></select>
                         <button type="button" class="btn btn-secondary btn-sm" id="fieldRequestExportBtn">Export CSV</button>
-                        <button type="button" class="btn btn-primary btn-sm" id="fieldRequestBatchBtn">Create Payout Batch</button>
                     </div>
                 </div>
                 <div class="table-scroll">
@@ -560,7 +565,7 @@
                 <div id="fieldRequestDetailPanel" class="request-breakdown-panel hidden" aria-live="polite"></div>
             </section>
 
-            <section class="content-card reference-card animate-in" style="animation-delay: 0.35s">
+            <section class="content-card reference-card animate-in" id="pettycashAccountsSection" style="animation-delay: 0.35s" hidden>
                 <div class="card-header reference-header">
                     <div>
                         <h3>Chart Of Accounts To Use</h3>
@@ -588,6 +593,6 @@
     <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/pettycash.js?v=20260616-daily-register-dedupe-1"></script>
+    <script src="js/pettycash.js?v=20260617-pettycash-workflow-focus-1"></script>
 </body>
 </html>

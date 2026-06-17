@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v145-field-local-image-fallback-1';
+const CACHE_NAME = 'marga-app-shell-v147-pettycash-workflow-focus-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
-    '/pettycash/js/pettycash.js?v=20260616-daily-register-dedupe-1',
+    '/pettycash/js/pettycash.js?v=20260617-pettycash-workflow-focus-1',
     '/accounting/',
     '/accounting/index.html',
     '/accounting/css/accounting.css',

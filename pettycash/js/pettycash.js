@@ -85,6 +85,15 @@ const FIELD_REQUEST_AUDIT_COLLECTION = 'tbl_pettycash_audit_logs';
 const FIELD_REQUEST_EDITABLE_BY_STAFF = new Set(['Draft', 'Incomplete / Needs Correction']);
 const FIELD_REQUEST_HANDLER_ROLES = new Set(['admin', 'billing', 'cashier', 'accounting', 'petty-cash-handler', 'pettycash-handler']);
 const FIELD_REQUEST_ADMIN_ROLES = new Set(['admin', 'owner', 'manager']);
+const FIELD_REQUEST_ACTIVE_QUEUE_STATUSES = [
+    'Draft',
+    'Submitted',
+    'For Completeness Check',
+    'Incomplete / Needs Correction',
+    'Verified by Petty Cash Handler',
+    'For Approval',
+    'Rejected'
+];
 
 const EXPENSE_GROUPS = [
     { id: 'field_parts', label: 'Printer Parts - Field Repair', accountId: 'printer_repair_parts_field_expense' },
@@ -347,6 +356,7 @@ async function hydrateState() {
 }
 
 function bindControls() {
+    bindSectionToggleButtons();
     document.getElementById('reportDateInput').addEventListener('change', onWorkingDateChange);
     document.getElementById('entryForm').addEventListener('submit', onEntrySubmit);
     document.getElementById('entryFormClearBtn').addEventListener('click', clearEntryForm);
@@ -385,6 +395,35 @@ function bindControls() {
     document.getElementById('quickSupplierCancelBtn').addEventListener('click', closeQuickSupplierPanel);
     document.getElementById('quickSupplierClearBtn').addEventListener('click', resetQuickSupplierForm);
     document.getElementById('quickSupplierSaveBtn').addEventListener('click', onQuickSupplierSave);
+}
+
+function bindSectionToggleButtons() {
+    document.querySelectorAll('[data-toggle-section]').forEach((button) => {
+        button.addEventListener('click', () => toggleOptionalSection(button.dataset.toggleSection));
+        syncSectionToggleButton(button);
+    });
+}
+
+function toggleOptionalSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    section.hidden = !section.hidden;
+    syncSectionToggleButtons();
+    if (!section.hidden) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function syncSectionToggleButtons() {
+    document.querySelectorAll('[data-toggle-section]').forEach(syncSectionToggleButton);
+}
+
+function syncSectionToggleButton(button) {
+    const sectionId = button.dataset.toggleSection;
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    const label = String(button.textContent || '').replace(/^(Show|Hide)\s+/, '');
+    button.textContent = `${section.hidden ? 'Show' : 'Hide'} ${label}`;
 }
 
 function openQuickSupplierPanel() {
@@ -448,7 +487,7 @@ function populateSelects() {
     document.getElementById('requestStatusInput').innerHTML = REQUEST_STATUSES.map((status) => `<option value="${status}">${escapeHtml(status)}</option>`).join('');
     const fieldStatusFilter = document.getElementById('fieldRequestStatusFilter');
     if (fieldStatusFilter) {
-        fieldStatusFilter.innerHTML = '<option value="all">All Field Request Statuses</option>' + FIELD_REQUEST_STATUSES.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('');
+        fieldStatusFilter.innerHTML = '<option value="all">All Active Request Statuses</option>' + FIELD_REQUEST_ACTIVE_QUEUE_STATUSES.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('');
     }
     const fieldTypeFilter = document.getElementById('fieldRequestTypeFilter');
     if (fieldTypeFilter) {
@@ -1271,7 +1310,7 @@ function renderFieldRequestsTable() {
     const typeFilter = String(document.getElementById('fieldRequestTypeFilter')?.value || 'all');
     const staffFilter = String(document.getElementById('fieldRequestStaffFilter')?.value || '').trim().toLowerCase();
     const rows = getFieldStaffRequests()
-        .filter((request) => statusFilter === 'Cancelled / Deleted' || request.status !== 'Cancelled / Deleted')
+        .filter(shouldShowFieldRequestInQueue)
         .filter((request) => statusFilter === 'all' || request.status === statusFilter)
         .filter((request) => typeFilter === 'all' || request.requestType === typeFilter)
         .filter((request) => {
@@ -1291,6 +1330,10 @@ function renderFieldRequestsTable() {
     }
 
     tbody.innerHTML = buildGroupedFieldRequestRows(rows);
+}
+
+function shouldShowFieldRequestInQueue(request) {
+    return FIELD_REQUEST_ACTIVE_QUEUE_STATUSES.includes(String(request?.status || '').trim());
 }
 
 function buildGroupedFieldRequestRows(rows) {
@@ -1370,8 +1413,6 @@ function renderGroupedFieldRequestRow(request) {
                     <button type="button" class="row-btn" data-action="field-delete" data-id="${escapeHtml(request.id)}">Delete</button>
                     <button type="button" class="row-btn" data-action="field-approve" data-id="${escapeHtml(request.id)}">Approve</button>
                     <button type="button" class="row-btn" data-action="field-reject" data-id="${escapeHtml(request.id)}">Reject</button>
-                    <button type="button" class="row-btn" data-action="field-paid" data-id="${escapeHtml(request.id)}">Mark Paid</button>
-                    <button type="button" class="row-btn" data-action="field-liquidated" data-id="${escapeHtml(request.id)}">Liquidated</button>
                 </div>
             </td>
         </tr>
@@ -1481,7 +1522,7 @@ function renderFieldRequestDetailPanel() {
     const panel = document.getElementById('fieldRequestDetailPanel');
     if (!panel) return;
     const request = getRequestById(selectedFieldRequestId);
-    if (!request || !isFieldStaffRequest(request)) {
+    if (!request || !isFieldStaffRequest(request) || !shouldShowFieldRequestInQueue(request)) {
         selectedFieldRequestId = '';
         panel.classList.add('hidden');
         panel.innerHTML = '';
@@ -1816,16 +1857,14 @@ async function persistFieldRequestCloudChange(request, patch, previousEntries = 
 }
 
 function resolveNextFieldRequestPostedDate(request, patch = {}) {
-    const currentPostedDate = String(request?.pettyCashPostedDate || '').trim();
-    if (currentPostedDate) return currentPostedDate;
-    const nextRequest = {
-        ...request,
-        ...patch
-    };
-    if (shouldCreateEntriesForFieldRequest(nextRequest)) {
-        return extractYmdFromDateTime(isoNow()) || getSelectedDateValue();
-    }
-    return String(patch?.pettyCashPostedDate || '').trim();
+    return String(
+        request?.pettyCashPostedDate
+        || patch?.pettyCashPostedDate
+        || request?.reportDate
+        || request?.dateOfExpense
+        || request?.requestDate
+        || ''
+    ).trim();
 }
 
 async function writeFieldRequestAudit(requestId, action, previous, next, remarks = '') {
@@ -3194,29 +3233,6 @@ function buildEntriesFromFieldRequest(request, existingEntries = []) {
 }
 
 function getFieldRequestPostingDate(request) {
-    const status = String(request?.status || '').trim();
-    const approvedStatuses = new Set([
-        'Approved',
-        'Included in Payout Batch',
-        'Funded',
-        'Paid / Released',
-        'For Liquidation',
-        'Partially Liquidated',
-        'Liquidated',
-        'Closed'
-    ]);
-    const recordedPostedDate = String(request?.pettyCashPostedDate || '').trim();
-    if (recordedPostedDate) return recordedPostedDate;
-    if (approvedStatuses.has(status)) {
-        const approvedDate = extractYmdFromDateTime(
-            request?.updatedAt
-            || request?.approvedAt
-            || request?.paidDateTime
-            || request?.releasedAt
-            || request?.fundedAt
-        );
-        if (approvedDate) return approvedDate;
-    }
     return String(request?.reportDate || request?.dateOfExpense || request?.requestDate || getSelectedDateValue()).trim();
 }
 
@@ -3386,8 +3402,9 @@ function findDuplicateFieldReceipt(request) {
 
 function buildFieldRequestSummaryText(rows) {
     const total = sumAmounts(rows.map((request) => request.approvedAmount || request.amount));
-    const approvedToday = getFieldStaffRequests().filter((request) => request.status === 'Approved');
-    return `${rows.length.toLocaleString()} field request(s) shown. Approved waiting payout: ${approvedToday.length.toLocaleString()} / ${MargaUtils.formatCurrency(sumAmounts(approvedToday.map((request) => request.approvedAmount || request.amount)))}. Filter total: ${MargaUtils.formatCurrency(total)}.`;
+    const pendingOwnerApproval = rows.filter((request) => ['Verified by Petty Cash Handler', 'For Approval'].includes(request.status));
+    const pendingVerification = rows.filter((request) => ['Submitted', 'For Completeness Check', 'Incomplete / Needs Correction'].includes(request.status));
+    return `${rows.length.toLocaleString()} active field request(s) shown. Pending verification: ${pendingVerification.length.toLocaleString()}. Pending owner approval: ${pendingOwnerApproval.length.toLocaleString()} / ${MargaUtils.formatCurrency(sumAmounts(pendingOwnerApproval.map((request) => request.approvedAmount || request.amount)))}. Filter total: ${MargaUtils.formatCurrency(total)}.`;
 }
 
 function getAccountById(accountId) {

@@ -384,7 +384,6 @@ function normalizePaymentType(value, check) {
     const raw = String(value ?? '').trim().toLowerCase();
     if (check && Object.keys(check).length) return 'CHECK';
     if (raw === '1' || raw.includes('check')) return 'CHECK';
-    if (raw.includes('bank') && raw.includes('transfer')) return 'BANK TRANSFER';
     if (raw === '0' || raw.includes('cash')) return 'CASH';
     return raw ? raw.toUpperCase() : 'CASH';
 }

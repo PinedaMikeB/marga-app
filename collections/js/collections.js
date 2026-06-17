@@ -9653,7 +9653,6 @@ function renderPaymentHistoryRows(payments) {
 function formatPaymentTypeLabel(value) {
     const raw = String(value ?? '').trim().toLowerCase();
     if (raw === '1' || raw.includes('check')) return 'CHECK';
-    if (raw.includes('bank') && raw.includes('transfer')) return 'BANK TRANSFER';
     if (raw === '0' || raw.includes('cash')) return 'CASH';
     return raw ? raw.toUpperCase() : '-';
 }
