@@ -3012,6 +3012,29 @@ function buildReimbursementViewText(request) {
     ].filter(Boolean).join('\n');
 }
 
+function resolveCanonicalFieldReimbursementStatus(row = {}) {
+    const deletedAt = String(row.deletedAt || '').trim();
+    const deletedBy = String(row.deletedBy || '').trim();
+    if (deletedAt || deletedBy) return 'Cancelled / Deleted';
+
+    const approvedAt = String(row.approvedAt || '').trim();
+    const approvedBy = String(row.approvedBy || '').trim();
+    const requestType = String(row.requestType || row.type || 'Reimbursement').trim();
+    const rawStatus = String(row.status || 'Draft').trim();
+    if (approvedAt || approvedBy) {
+        if (requestType === 'Cash Advance') {
+            if (['Paid / Released', 'For Liquidation', 'Partially Liquidated', 'Liquidated', 'Closed'].includes(rawStatus)) {
+                return rawStatus;
+            }
+        } else if (['Approved', 'Included in Payout Batch', 'Funded', 'Paid / Released', 'For Liquidation', 'Partially Liquidated', 'Liquidated', 'Closed'].includes(rawStatus)) {
+            return rawStatus;
+        }
+        return 'Approved';
+    }
+
+    return rawStatus || 'Draft';
+}
+
 function normalizeFieldReimbursementRequest(row = {}) {
     return {
         ...row,
@@ -3020,7 +3043,7 @@ function normalizeFieldReimbursementRequest(row = {}) {
         requestType: String(row.requestType || row.type || '').trim(),
         staffId: Number(row.staffId || 0),
         staffName: String(row.staffName || '').trim(),
-        status: String(row.status || 'Draft').trim(),
+        status: resolveCanonicalFieldReimbursementStatus(row),
         amount: Number(row.amount || 0),
         approvedAmount: Number(row.approvedAmount || 0),
         receiptAmount: Number(row.receiptAmount || 0),
