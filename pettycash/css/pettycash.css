@@ -28,6 +28,10 @@ body::before {
     opacity: 0.25;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 .pettycash-main {
     position: relative;
     z-index: 1;

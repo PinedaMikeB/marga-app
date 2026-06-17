@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v147-pettycash-workflow-focus-1';
+const CACHE_NAME = 'marga-app-shell-v148-pettycash-workflow-focus-2';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -45,7 +45,7 @@ const SHELL_ASSETS = [
     '/pettycash/',
     '/pettycash/index.html',
     '/pettycash/css/pettycash.css',
-    '/pettycash/js/pettycash.js?v=20260617-pettycash-workflow-focus-1',
+    '/pettycash/js/pettycash.js?v=20260617-pettycash-workflow-focus-2',
     '/accounting/',
     '/accounting/index.html',
     '/accounting/css/accounting.css',
