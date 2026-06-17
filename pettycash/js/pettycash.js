@@ -8,6 +8,10 @@ const PETTY_CASH_STORAGE_KEYS = {
     settings: 'marga_petty_cash_settings_v1'
 };
 
+const PETTY_CASH_ACTIVE_TAB_KEY = 'marga_petty_cash_active_tab_v1';
+const PETTY_CASH_TAB_HEARTBEAT_MS = 10000;
+const PETTY_CASH_TAB_STALE_MS = 25000;
+
 const PETTY_CASH_FIRESTORE = {
     entries: 'tbl_pettycash_entries',
     requests: 'tbl_pettycash_requests',
@@ -239,11 +243,15 @@ let selectedFieldRequestId = '';
 let supplierSummaryPanelOpen = false;
 let pettyCashDeletePassRequested = false;
 let pettyCashHasSharedBaseline = false;
+let pettyCashTabSessionId = '';
+let pettyCashTabHeartbeatTimer = null;
+let pettyCashTabWarningShown = false;
 const fieldRequestScheduleContextCache = new Map();
 const fieldRequestBranchLookupCache = new Map();
 const fieldRequestCompanyLookupCache = new Map();
 
 document.addEventListener('DOMContentLoaded', async () => {
+    initializePettyCashTabGuard();
     loadUserHeader();
     await hydrateState();
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
@@ -262,6 +270,7 @@ window.addEventListener('focus', onExternalPettyCashStateChange);
 window.addEventListener('online', () => {
     queuePettyCashCloudSync({ deleteRemoved: true });
 });
+window.addEventListener('beforeunload', releasePettyCashTabGuard);
 
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
@@ -275,6 +284,76 @@ function loadUserHeader() {
     document.getElementById('userName').textContent = user.name;
     document.getElementById('userRole').textContent = MargaAuth.getDisplayRoles(user);
     document.getElementById('userAvatar').textContent = String(user.name || 'A').charAt(0).toUpperCase();
+}
+
+function createPettyCashTabSessionId() {
+    try {
+        if (window.crypto?.randomUUID) return `pettycash-${window.crypto.randomUUID()}`;
+    } catch (error) {
+        /* ignore */
+    }
+    return `pettycash-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function readPettyCashActiveTabState() {
+    try {
+        const raw = localStorage.getItem(PETTY_CASH_ACTIVE_TAB_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        return parsed;
+    } catch (error) {
+        return null;
+    }
+}
+
+function writePettyCashActiveTabState() {
+    if (!pettyCashTabSessionId) return;
+    try {
+        localStorage.setItem(PETTY_CASH_ACTIVE_TAB_KEY, JSON.stringify({
+            sessionId: pettyCashTabSessionId,
+            updatedAt: Date.now(),
+            href: String(window.location.href || '').trim()
+        }));
+    } catch (error) {
+        console.warn('Unable to write petty cash active tab marker.', error);
+    }
+}
+
+function hasOtherFreshPettyCashTab() {
+    const activeTab = readPettyCashActiveTabState();
+    if (!activeTab?.sessionId || activeTab.sessionId === pettyCashTabSessionId) return false;
+    const ageMs = Date.now() - Number(activeTab.updatedAt || 0);
+    return Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= PETTY_CASH_TAB_STALE_MS;
+}
+
+function maybeWarnAboutOtherPettyCashTab() {
+    if (pettyCashTabWarningShown || !hasOtherFreshPettyCashTab()) return;
+    pettyCashTabWarningShown = true;
+    MargaUtils.showToast('Another Petty Cash tab is open. Use only one tab when approving field requests to avoid stale overwrites.', 'info', 7000);
+}
+
+function initializePettyCashTabGuard() {
+    pettyCashTabSessionId = createPettyCashTabSessionId();
+    maybeWarnAboutOtherPettyCashTab();
+    writePettyCashActiveTabState();
+    pettyCashTabHeartbeatTimer = window.setInterval(() => {
+        writePettyCashActiveTabState();
+    }, PETTY_CASH_TAB_HEARTBEAT_MS);
+}
+
+function releasePettyCashTabGuard() {
+    if (pettyCashTabHeartbeatTimer) {
+        window.clearInterval(pettyCashTabHeartbeatTimer);
+        pettyCashTabHeartbeatTimer = null;
+    }
+    const activeTab = readPettyCashActiveTabState();
+    if (activeTab?.sessionId !== pettyCashTabSessionId) return;
+    try {
+        localStorage.removeItem(PETTY_CASH_ACTIVE_TAB_KEY);
+    } catch (error) {
+        /* ignore */
+    }
 }
 
 async function bootstrapReferenceDataInBackground() {
@@ -2964,9 +3043,15 @@ async function onExternalPettyCashStateChange(event) {
         PETTY_CASH_STORAGE_KEYS.entries,
         PETTY_CASH_STORAGE_KEYS.requests,
         PETTY_CASH_STORAGE_KEYS.settings,
+        PETTY_CASH_ACTIVE_TAB_KEY,
         APD_SYNC_STORAGE_KEYS.bills,
         APD_SYNC_STORAGE_KEYS.checks
     ].includes(event.key)) {
+        return;
+    }
+
+    if (event?.key === PETTY_CASH_ACTIVE_TAB_KEY) {
+        maybeWarnAboutOtherPettyCashTab();
         return;
     }
 
@@ -3312,6 +3397,14 @@ function isFieldRequestEntry(entry) {
     return String(entry?.sourceModule || '').trim() === 'field_app'
         || String(entry?.sourceRequestId || '').startsWith('FR-')
         || String(entry?.bundleId || '').startsWith('FR-');
+}
+
+function shouldSyncEntryThroughFullState(entry) {
+    return !isFieldRequestEntry(entry);
+}
+
+function shouldSyncRequestThroughFullState(request) {
+    return !isFieldStaffRequest(request);
 }
 
 function reconcileFieldRequestEntries() {
@@ -4612,8 +4705,12 @@ function queuePettyCashCloudSync(options = {}) {
 }
 
 async function syncPettyCashStateToCloud({ deleteRemoved = true } = {}) {
-    const entryDocs = PETTY_CASH_STATE.entries.map((entry) => buildPettyCashEntryPayload(entry));
-    const requestDocs = PETTY_CASH_STATE.requests.map((request) => buildPettyCashRequestPayload(request));
+    const entryDocs = PETTY_CASH_STATE.entries
+        .filter((entry) => shouldSyncEntryThroughFullState(entry))
+        .map((entry) => buildPettyCashEntryPayload(entry));
+    const requestDocs = PETTY_CASH_STATE.requests
+        .filter((request) => shouldSyncRequestThroughFullState(request))
+        .map((request) => buildPettyCashRequestPayload(request));
     const settingsDoc = buildPettyCashSettingsPayload(PETTY_CASH_STATE.settings);
 
     for (const entry of entryDocs) {
@@ -4645,6 +4742,7 @@ async function syncPettyCashStateToCloud({ deleteRemoved = true } = {}) {
 
         for (const remoteEntry of remoteEntries) {
             const remoteId = String(remoteEntry._docId || remoteEntry.id || '').trim();
+            if (isFieldRequestEntry(remoteEntry)) continue;
             if (remoteId && !entryIds.has(remoteId)) {
                 await deleteDocument(PETTY_CASH_FIRESTORE.entries, remoteId, { label: `Delete petty cash voucher ${remoteId}` });
             }
