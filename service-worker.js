@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v155-pettycash-field-sync-guard-1';
+const CACHE_NAME = 'marga-app-shell-v158-master-snapshot-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -27,13 +27,15 @@ const SHELL_ASSETS = [
     '/customers/index.html',
     '/customers.html',
     '/customers/js/customer-form.js',
-    '/customers/js/customers.js',
+    '/customers/js/customers.js?v=20260617-customer-toolbar-1',
     '/collections.html',
     '/collections/js/collections.js?v=20260601-summary-autoupdate-1',
+    '/master-schedule.html',
+    '/master-schedule/js/master-schedule.js?v=20260618-master-snapshot-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260604-field-tin-7',
-    '/field/js/field.js?v=20260617-field-client-context-fix-1',
+    '/field/js/field.js?v=20260618-workload-cutoff-1',
     '/purchasing/',
     '/purchasing/index.html',
     '/purchasing/css/purchasing.css?v=20260616-purchasing-4',
@@ -75,7 +77,7 @@ const SHELL_ASSETS = [
     '/shared/css/dashboard.css',
     '/shared/css/attendance-time-records.css?v=20260616-time-records-ot-form-5',
     '/shared/js/payroll-cutoff.js?v=20260615-time-records-5',
-    '/shared/js/attendance-time-records.js?v=20260616-time-records-ot-form-5',
+    '/shared/js/attendance-time-records.js?v=20260616-time-records-ot-remove-6',
     '/shared/js/firebase-config.js?v=20260601-local-postgres-live-1',
     '/shared/js/auth.js?v=20260616-purchasing-staff-1',
     '/shared/js/utils.js?v=20260516-field-permissions-3',

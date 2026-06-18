@@ -391,7 +391,7 @@
 
         .master-group {
             margin-bottom: 30px;
-            min-width: 1540px;
+            min-width: 0;
         }
 
         .master-group h2 {
@@ -399,6 +399,72 @@
             color: #111827;
             font-size: 19px;
             line-height: 1.2;
+        }
+
+        .master-group-header {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .master-group-header h2 {
+            margin: 0;
+        }
+
+        .master-staff-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: nowrap;
+            justify-content: flex-end;
+            overflow-x: auto;
+            overflow-y: hidden;
+            max-width: 100%;
+            padding-bottom: 4px;
+            scrollbar-width: thin;
+        }
+
+        .master-staff-filters::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .master-staff-filters::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.55);
+            border-radius: 999px;
+        }
+
+        .master-staff-filter {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            background: #f8fafc;
+            color: #334155;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        .master-staff-filter.is-active {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            color: #1d4f83;
+        }
+
+        .master-staff-filter-count {
+            display: inline-flex;
+            min-width: 22px;
+            justify-content: center;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.95);
+            color: inherit;
         }
 
         .master-summary h1 {
@@ -432,7 +498,7 @@
 
         .master-priority-gate {
             margin: 0 0 18px;
-            min-width: 1540px;
+            min-width: 0;
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 14px;
@@ -533,6 +599,23 @@
             color: #0f2742;
             table-layout: fixed;
             width: 100%;
+        }
+
+        .master-table-shell {
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: visible;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+        }
+
+        .master-table-shell::-webkit-scrollbar {
+            height: 10px;
+        }
+
+        .master-table-shell::-webkit-scrollbar-thumb {
+            background: rgba(59, 130, 246, 0.35);
+            border-radius: 999px;
         }
 
         .master-table th,
@@ -667,6 +750,11 @@
             gap: 6px;
         }
 
+        .inactive-staff-option {
+            color: #9a3412;
+            font-weight: 800;
+        }
+
         .schedule-status-label {
             display: inline-flex;
             align-items: center;
@@ -776,6 +864,92 @@
             color: #4f6584;
             font-size: 14px;
             line-height: 1.35;
+        }
+
+        .master-override-modal {
+            position: fixed;
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, -50%);
+            width: min(460px, calc(100vw - 32px));
+            background: #fff;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 14px;
+            box-shadow: 0 28px 60px rgba(15, 23, 42, 0.28);
+            z-index: 40;
+            display: none;
+        }
+
+        .master-override-modal.open {
+            display: block;
+        }
+
+        .master-override-form {
+            display: grid;
+            gap: 14px;
+            padding: 20px;
+        }
+
+        .master-override-form h2 {
+            margin: 0;
+            color: #153b60;
+            font-size: 22px;
+        }
+
+        .master-override-form p {
+            margin: 0;
+            color: #526f8d;
+            font-size: 13px;
+            line-height: 1.45;
+            font-weight: 650;
+        }
+
+        .master-override-note {
+            border-radius: 10px;
+            padding: 12px 14px;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            color: #9a3412;
+            font-size: 12px;
+            font-weight: 750;
+            line-height: 1.4;
+        }
+
+        .master-override-field {
+            display: grid;
+            gap: 6px;
+        }
+
+        .master-override-field label {
+            color: #264a6f;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .master-override-field input {
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            border-radius: 9px;
+            padding: 11px 12px;
+            font-size: 14px;
+            font-weight: 650;
+            color: #0f2742;
+        }
+
+        .master-override-field input:focus {
+            outline: 2px solid rgba(37, 99, 235, 0.18);
+            outline-offset: 1px;
+        }
+
+        .master-override-error {
+            min-height: 18px;
+            color: #b91c1c;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .master-override-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
         }
 
         .master-close-request-actions {
@@ -1223,8 +1397,18 @@
 
             .master-group,
             .master-priority-gate,
-            .master-table {
+            .master-table,
+            .master-table-shell {
                 min-width: 0;
+            }
+
+            .master-group-header {
+                align-items: flex-start;
+            }
+
+            .master-staff-filters {
+                width: 100%;
+                justify-content: flex-start;
             }
 
             .master-priority-gate {
@@ -1328,7 +1512,6 @@
                 <a href="billing/" class="nav-item"><span>Billing</span></a>
                 <a href="collections.html" class="nav-item"><span>Collections</span></a>
                 <a href="master-schedule.html" class="nav-item active"><span>Master Schedule</span></a>
-                <a href="schedule/" class="nav-item"><span>Schedule Planner</span></a>
                 <a href="service/index.html" class="nav-item"><span>Service</span></a>
             </div>
         </nav>
@@ -1357,11 +1540,14 @@
                 <div class="master-control">
                     <label for="masterStatusInput">Status</label>
                     <select id="masterStatusInput">
+                        <option value="all">All Buckets</option>
                         <option value="active">Open / Needs Action</option>
                         <option value="today">Today</option>
                         <option value="past_pending">Past Pending</option>
                         <option value="pending">Pending</option>
                         <option value="ongoing">Ongoing</option>
+                        <option value="parts">Pending Parts / Machine</option>
+                        <option value="closed">Closed</option>
                     </select>
                 </div>
                 <div class="master-control master-search-control">
@@ -1398,6 +1584,7 @@
                 <button class="btn btn-secondary" id="masterForwardOpenBtn" type="button">Forward Open</button>
                 <button class="btn btn-secondary" id="masterKaizenBtn" type="button">Kaizen Advisor</button>
                 <button class="btn btn-primary" id="masterRefreshBtn" type="button">Refresh</button>
+                <button class="btn btn-secondary" id="masterRescanBtn" type="button">Rescan Cache</button>
                 <button class="btn btn-secondary" id="masterPrintBtn" type="button">Print Schedule</button>
             </div>
         </header>
@@ -1599,11 +1786,36 @@
         </div>
     </section>
 
+    <section class="master-override-modal" id="masterOverrideModal" aria-hidden="true">
+        <form class="master-override-form" id="masterOverrideForm">
+            <div>
+                <h2 id="masterOverrideTitle">Supervisor Override</h2>
+                <p id="masterOverrideMessage">Enter an approved supervisor account to continue this scheduling exception.</p>
+            </div>
+            <div class="master-override-note" id="masterOverrideReason">
+                This action needs approval because it overrides the default routing guard.
+            </div>
+            <div class="master-override-field">
+                <label for="masterOverrideIdentifier">Approver Email or Username</label>
+                <input id="masterOverrideIdentifier" type="text" autocomplete="username" placeholder="emman / cha / analee account">
+            </div>
+            <div class="master-override-field">
+                <label for="masterOverridePassword">PIN or Password</label>
+                <input id="masterOverridePassword" type="password" autocomplete="current-password" placeholder="Enter PIN or password">
+            </div>
+            <div class="master-override-error" id="masterOverrideError"></div>
+            <div class="master-override-actions">
+                <button class="btn btn-secondary" type="button" id="masterOverrideCancelBtn">Cancel</button>
+                <button class="btn btn-primary" type="submit" id="masterOverrideApproveBtn">Approve Override</button>
+            </div>
+        </form>
+    </section>
+
     <script src="shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
     <script src="shared/js/auth.js?v=20260518-login-permissions-2"></script>
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
     <script src="shared/js/schedule-consolidation.js?v=20260518-combined-visit-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260518-close-requests-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260618-master-snapshot-1"></script>
 </body>
 </html>

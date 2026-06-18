@@ -5,6 +5,8 @@ if (window.MargaAuth && !MargaAuth.requireAccess('master-schedule')) {
 const MASTER_API_KEY = FIREBASE_CONFIG.apiKey;
 const MASTER_BASE_URL = FIREBASE_CONFIG.baseUrl;
 const MASTER_LIMIT = 1200;
+const MASTER_CARRYOVER_CUTOFF_HOUR = 17;
+const MASTER_CARRYOVER_CUTOFF_MINUTE = 30;
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const MASTER_ACTIVITY_COLLECTION = 'marga_master_schedule_activity';
@@ -12,6 +14,9 @@ const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const PENDING_NOT_ROUTED_LOOKBACK_DAYS = 45;
 const PENDING_CARRYOVER_START_DATE = '2026-05-04';
 const REQUIRED_PRIORITY_COUNT = 5;
+const MASTER_OVERRIDE_TTL_MS = 15 * 60 * 1000;
+const MASTER_OVERRIDE_APPROVER_KEYWORDS = ['emman', 'john emmanuel', 'olbedo', 'cha', 'analee'];
+const MASTER_SNAPSHOT_FETCH_MS = 20000;
 const ZERO_DATETIME = '0000-00-00 00:00:00';
 const LEGACY_EMPTY_DATETIME_VALUES = new Set([
     '',
@@ -114,6 +119,9 @@ const masterState = {
     activityLogs: new Map(),
     routeForwarding: false,
     activeEmployeeEmails: new Set(),
+    inactiveRosterApprovals: new Map(),
+    staffBucketFilters: new Map(),
+    staffFieldBuckets: new Map(),
     settings: {
         branches: [],
         employees: []
@@ -146,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMasterSchedule();
     });
     document.getElementById('masterRefreshBtn')?.addEventListener('click', loadMasterSchedule);
+    document.getElementById('masterRescanBtn')?.addEventListener('click', rescanMasterScheduleSnapshot);
     document.getElementById('masterPrintBtn')?.addEventListener('click', printMasterSchedule);
     document.getElementById('masterForwardOpenBtn')?.addEventListener('click', forwardVisibleOpenSchedules);
     document.getElementById('masterKaizenBtn')?.addEventListener('click', toggleKaizenAdvisor);
@@ -158,6 +167,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCancelBtn')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusSaveBtn')?.addEventListener('click', saveMasterStatusFromModal);
+    document.getElementById('masterOverrideCancelBtn')?.addEventListener('click', closeMasterOverrideModal);
+    document.addEventListener('click', (event) => {
+        const filterButton = event.target.closest('.master-staff-filter[data-staff-key][data-bucket]');
+        if (!filterButton) return;
+        setStaffBucketFilter(filterButton.dataset.staffKey || '', filterButton.dataset.bucket || 'all');
+    });
     applyCloseRequestAccess();
     document.getElementById('masterCloseRequestsSelectAllBtn')?.addEventListener('click', () => setAllCloseRequestChecks(true));
     document.getElementById('masterCloseRequestsClearBtn')?.addEventListener('click', () => setAllCloseRequestChecks(false));
@@ -317,6 +332,16 @@ function defaultMargabaseDocumentsBaseUrl() {
         // Use the normal configured backend when browser location is unavailable.
     }
     return '';
+}
+
+function getMargabaseAdminUrl(path) {
+    const baseUrl = String(MASTER_BASE_URL || window.MARGABASE_CONFIG?.baseUrl || '').trim();
+    if (baseUrl.startsWith('/margabase-api/')) return `/margabase-api${path}`;
+    if (baseUrl.includes('/v1/projects/')) {
+        const origin = new URL(baseUrl, window.location.href).origin;
+        return `${origin}${path}`;
+    }
+    return `http://127.0.0.1:8787${path}`;
 }
 
 async function fetchCollectionFromBase(collection, options = {}) {
@@ -577,6 +602,22 @@ function clean(value) {
     return String(value || '').trim();
 }
 
+function identityTokens(value) {
+    return clean(value).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+function normalizeIdentityText(...values) {
+    return values.map((value) => clean(value).toLowerCase()).filter(Boolean).join(' ');
+}
+
+function matchesApproverKeyword(text, keyword) {
+    const normalizedText = clean(text).toLowerCase();
+    const normalizedKeyword = clean(keyword).toLowerCase();
+    if (!normalizedText || !normalizedKeyword) return false;
+    if (normalizedKeyword.length <= 3) return identityTokens(normalizedText).includes(normalizedKeyword);
+    return normalizedText.includes(normalizedKeyword);
+}
+
 function currentActorLabel() {
     if (window.MargaAuth?.getUser) {
         const user = window.MargaAuth.getUser();
@@ -822,8 +863,116 @@ function getAssignedStaffId(row) {
     return Number(row?.route_tech_id || row?.tech_id || 0) || 0;
 }
 
+function parseComparableTime(value) {
+    const text = String(value || '').trim();
+    if (!text) return NaN;
+    const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+    return Date.parse(normalized);
+}
+
+function shouldPreferScheduleState(row) {
+    const scheduleSignals = [
+        row?.field_updated_at,
+        row?.bridge_updated_at,
+        row?.bridge_pushed_at
+    ];
+    const routeSignals = [
+        row?.route_bridge_pushed_at,
+        row?.route_timestmp
+    ];
+
+    const scheduleTimes = scheduleSignals.map(parseComparableTime).filter(Number.isFinite);
+    const routeTimes = routeSignals.map(parseComparableTime).filter(Number.isFinite);
+    const scheduleTime = scheduleTimes.length ? Math.max(...scheduleTimes) : NaN;
+    const routeTime = routeTimes.length ? Math.max(...routeTimes) : NaN;
+
+    if (!Number.isFinite(scheduleTime)) return false;
+    if (!Number.isFinite(routeTime)) return true;
+    return scheduleTime >= routeTime;
+}
+
 function isRouteCancelled(row) {
     return Number(row?.route_iscancelled || row?.iscancel || row?.iscancelled || 0) === 1;
+}
+
+function isFinishedOrCancelled(row) {
+    if (isRouteCancelled(row)) return true;
+    if (normalizeLegacyDateTime(row.route_date_finished || row.date_finished)) return true;
+    const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
+        ? null
+        : Number(row.route_status);
+    return routeStatus === 0;
+}
+
+function masterOriginalScheduleDateRaw(row) {
+    return dateOnly(row?.original_sched)
+        || dateOnly(row?.forwarded_from_date)
+        || dateOnly(row?.route_forwarded_from_date)
+        || dateOnly(row?.task_datetime);
+}
+
+function masterRawIsPastPendingByOriginalDate(row) {
+    const originalDate = masterOriginalScheduleDateRaw(row);
+    const selectedDate = selectedMasterDate();
+    return isMasterCarryoverEligibleForSelectedDate(originalDate, selectedDate);
+}
+
+function hasReachedMasterCarryoverCutoff(baseDate = formatDateYmd(new Date())) {
+    const today = formatDateYmd(new Date());
+    if (baseDate < today) return true;
+    if (baseDate > today) return false;
+    const now = new Date();
+    return now.getHours() > MASTER_CARRYOVER_CUTOFF_HOUR
+        || (now.getHours() === MASTER_CARRYOVER_CUTOFF_HOUR && now.getMinutes() >= MASTER_CARRYOVER_CUTOFF_MINUTE);
+}
+
+function isMasterCarryoverEligibleForSelectedDate(originalDate, selectedDate) {
+    if (!originalDate || !selectedDate || originalDate >= selectedDate) return false;
+    const today = formatDateYmd(new Date());
+    if (selectedDate <= today) return true;
+    if (originalDate < today) return true;
+    return originalDate === today && hasReachedMasterCarryoverCutoff(today);
+}
+
+function masterRawStatusKey(row) {
+    if (Number(row.route_iscancelled || 0) === 1) return 'cancelled';
+    if (Number(row.iscancel || 0) === 1) return 'cancelled';
+
+    const preferScheduleState = shouldPreferScheduleState(row);
+    const finished = normalizeLegacyDateTime(row.date_finished);
+    if (finished || Number(row.closedby || 0) > 0) return 'closed';
+    if (preferScheduleState) {
+        if (Number(row.isongoing || 0) === 1) return 'ongoing';
+    }
+
+    const routeFinished = normalizeLegacyDateTime(row.route_date_finished);
+    if (routeFinished) return 'closed';
+    const routeStatus = row.route_status === '' || row.route_status === undefined || row.route_status === null
+        ? null
+        : Number(row.route_status);
+    if (routeStatus === 0) return 'closed';
+    const hasActiveRouteRow = Boolean(getRouteTaskDateTime(row)) && routeStatus !== 0;
+    if (hasActiveRouteRow) {
+        if (Number(row.isongoing || 0) === 1) return 'ongoing';
+        if (masterRawIsPastPendingByOriginalDate(row)) return 'carryover';
+        const taskDate = getRouteTaskDateTime(row).slice(0, 10);
+        if (taskDate && selectedMasterDate() && taskDate < selectedMasterDate()) return 'carryover';
+        return 'pending';
+    }
+    if (Number(row.isongoing || 0) === 1) return 'ongoing';
+    if (masterRawIsPastPendingByOriginalDate(row)) return 'carryover';
+    const taskDate = getRouteTaskDateTime(row).slice(0, 10);
+    if (taskDate && selectedMasterDate() && taskDate < selectedMasterDate()) return 'carryover';
+    return 'pending';
+}
+
+function isMasterRawClosedOnSelectedDate(row) {
+    if (masterRawStatusKey(row) !== 'closed') return false;
+    const selectedDate = selectedMasterDate();
+    const finishedDate = dateOnly(normalizeLegacyDateTime(row.date_finished))
+        || dateOnly(normalizeLegacyDateTime(row.route_date_finished));
+    if (finishedDate) return finishedDate === selectedDate;
+    return dateOnly(getRouteTaskDateTime(row)) === selectedDate;
 }
 
 function isScheduleClosed(row) {
@@ -852,12 +1001,31 @@ function rowStatusBucket(row) {
     return 'pending';
 }
 
+function masterRowTroubleText(row) {
+    return clean([
+        row?.trouble,
+        row?.remarks,
+        row?.sourceNote,
+        row?.status,
+        row?.masterStatusLabel,
+        row?.route_remarks,
+        row?.caller
+    ].filter(Boolean).join(' ')).toLowerCase();
+}
+
+function isMasterPartsPendingRow(row) {
+    const text = masterRowTroubleText(row);
+    return (rowStatusBucket(row) === 'ongoing')
+        || Number(row?.pending_parts || 0) === 1
+        || /parts needed|request part|replace part|part request|pending parts|waiting for parts|waiting for machine|change unit|scanner assy|fuser assy/.test(text);
+}
+
 function selectedMasterDate() {
     return clean(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()));
 }
 
 function masterRowOriginalDate(row) {
-    return clean(row?.originalDate || dateOnly(row?.original_sched) || dateOnly(row?.task_datetime));
+    return clean(row?.originalDate || masterOriginalScheduleDateRaw(row));
 }
 
 function isPastPendingMasterRow(row) {
@@ -870,10 +1038,115 @@ function isPastPendingMasterRow(row) {
 
 function rowMatchesStatusFilter(row, statusFilter) {
     const bucket = rowStatusBucket(row);
+    if (statusFilter === 'all') return bucket !== 'cancelled';
     if (statusFilter === 'active') return bucket === 'pending' || bucket === 'ongoing';
     if (statusFilter === 'today') return (bucket === 'pending' || bucket === 'ongoing') && !isPastPendingMasterRow(row);
     if (statusFilter === 'past_pending') return isPastPendingMasterRow(row);
+    if (statusFilter === 'parts') return bucket !== 'closed' && bucket !== 'cancelled' && isMasterPartsPendingRow(row);
     return bucket === statusFilter;
+}
+
+function masterScheduleBucketStoreForStaff(staffKey) {
+    const normalized = clean(staffKey) || 'Unassigned';
+    if (masterState.staffFieldBuckets.has(normalized)) {
+        return masterState.staffFieldBuckets.get(normalized);
+    }
+    const normalizedSearch = normalized.toLowerCase();
+    for (const [key, value] of masterState.staffFieldBuckets.entries()) {
+        if (clean(key).toLowerCase() === normalizedSearch) return value;
+    }
+    return {
+        totalRows: [],
+        todayRows: [],
+        pastPendingRows: [],
+        unfinishedRows: [],
+        closedRows: [],
+        partsRows: []
+    };
+}
+
+function masterStaffBucketRows(staffKey, bucket = 'total') {
+    const stored = masterScheduleBucketStoreForStaff(staffKey);
+    if (bucket === 'total' || bucket === 'all') return stored.totalRows;
+    if (bucket === 'today') return stored.todayRows;
+    if (bucket === 'past_pending') return stored.pastPendingRows;
+    if (bucket === 'unfinished') return stored.unfinishedRows;
+    if (bucket === 'closed') return stored.closedRows;
+    if (bucket === 'parts') return stored.partsRows;
+    return stored.totalRows;
+}
+
+function masterStaffBucketCounts(staffKey) {
+    const stored = masterScheduleBucketStoreForStaff(staffKey);
+    return {
+        total: stored.totalRows.length,
+        today: stored.todayRows.length,
+        past_pending: stored.pastPendingRows.length,
+        unfinished: stored.unfinishedRows.length,
+        closed: stored.closedRows.length,
+        parts: stored.partsRows.length
+    };
+}
+
+function masterFallbackBucketRows(rows = [], bucket = 'total') {
+    if (bucket === 'total' || bucket === 'all') return rows.filter((row) => rowStatusBucket(row) !== 'cancelled');
+    if (bucket === 'today') {
+        return rows.filter((row) => rowStatusBucket(row) !== 'cancelled' && !isPastPendingMasterRow(row));
+    }
+    if (bucket === 'past_pending') return rows.filter((row) => rowStatusBucket(row) !== 'cancelled' && isPastPendingMasterRow(row));
+    if (bucket === 'unfinished') {
+        return rows.filter((row) => {
+            const status = rowStatusBucket(row);
+            return status !== 'closed' && status !== 'cancelled';
+        });
+    }
+    if (bucket === 'closed') return rows.filter((row) => rowStatusBucket(row) === 'closed');
+    if (bucket === 'parts') {
+        return rows.filter((row) => {
+            const status = rowStatusBucket(row);
+            return status !== 'closed' && status !== 'cancelled' && isMasterPartsPendingRow(row);
+        });
+    }
+    return rows.filter((row) => rowStatusBucket(row) !== 'cancelled');
+}
+
+function getStaffBucketFilter(staffKey) {
+    const stored = clean(masterState.staffBucketFilters.get(staffKey) || 'total').toLowerCase() || 'total';
+    return stored === 'all' ? 'total' : stored;
+}
+
+function setStaffBucketFilter(staffKey, bucket) {
+    const normalizedStaff = clean(staffKey) || 'Unassigned';
+    const allowed = new Set(['total', 'today', 'past_pending', 'unfinished', 'closed', 'parts']);
+    masterState.staffBucketFilters.set(normalizedStaff, allowed.has(bucket) ? bucket : 'total');
+    renderMasterSchedule();
+}
+
+function renderStaffBucketFilters(staffKey, counts) {
+    const activeBucket = getStaffBucketFilter(staffKey);
+    const options = [
+        { key: 'total', label: 'Total Workload', count: counts.total },
+        { key: 'today', label: 'New Today', count: counts.today },
+        { key: 'past_pending', label: 'Past Pending', count: counts.past_pending },
+        { key: 'unfinished', label: 'Unfinished Schedule', count: counts.unfinished },
+        { key: 'parts', label: 'Pending Parts/Machine', count: counts.parts },
+        { key: 'closed', label: 'Closed', count: counts.closed }
+    ];
+    return `
+        <div class="master-staff-filters">
+            ${options.map((option) => `
+                <button
+                    type="button"
+                    class="master-staff-filter ${activeBucket === option.key ? 'is-active' : ''}"
+                    data-staff-key="${escapeHtml(staffKey)}"
+                    data-bucket="${option.key}"
+                >
+                    <span>${escapeHtml(option.label)}</span>
+                    <span class="master-staff-filter-count">${option.count}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
 }
 
 function employeeName(employee, fallbackId = '') {
@@ -909,6 +1182,10 @@ function employeeRole(employee) {
     return label ? clean(position?.position || position?.name || employee?.position) : 'Staff';
 }
 
+function isPotentialScheduleStaff(employee) {
+    return Boolean(clean(window.MargaUtils?.getEmployeeId ? MargaUtils.getEmployeeId(employee) : (employee?.id || employee?._docId || '')));
+}
+
 function isActiveScheduleEmployee(employee) {
     if (window.MargaUtils?.isOfficialActiveEmployee) return MargaUtils.isOfficialActiveEmployee(employee);
     if (!employee) return false;
@@ -920,18 +1197,183 @@ function isActiveScheduleEmployee(employee) {
 }
 
 function isScheduleStaff(employee) {
-    if (!isActiveScheduleEmployee(employee)) return false;
-    if (window.MargaUtils?.getEmployeeRoleKey) {
-        return ['technician', 'messenger', 'driver', 'production'].includes(MargaUtils.getEmployeeRoleKey(employee, masterState.lookups.positions));
-    }
-    const role = employeeRole(employee).toLowerCase();
-    return role.includes('technician') || role.includes('messenger') || role.includes('driver');
+    return isActiveScheduleEmployee(employee);
 }
 
 function scheduleStaffOptions() {
     const employees = masterState.settings.employees;
-    const filtered = employees.filter(isScheduleStaff);
-    return filtered.length ? filtered : employees.filter(isActiveScheduleEmployee);
+    return employees.filter(isScheduleStaff);
+}
+
+function scheduleInactiveStaffOptions() {
+    const activeIds = new Set(scheduleStaffOptions().map((employee) => String(employee.id || '')));
+    return masterState.settings.employees
+        .filter((employee) => employee?.id)
+        .filter((employee) => !activeIds.has(String(employee.id || '')))
+        .sort((left, right) => employeeName(left, left.id).localeCompare(employeeName(right, right.id)));
+}
+
+function scheduleAssignableStaffOptions() {
+    return [...scheduleStaffOptions(), ...scheduleInactiveStaffOptions()];
+}
+
+function pruneInactiveRosterApprovals() {
+    const now = Date.now();
+    masterState.inactiveRosterApprovals.forEach((value, key) => {
+        if (!value || Number(value.expiresAt || 0) <= now) masterState.inactiveRosterApprovals.delete(key);
+    });
+}
+
+function getInactiveRosterApproval(staffId) {
+    pruneInactiveRosterApprovals();
+    return masterState.inactiveRosterApprovals.get(String(staffId || '')) || null;
+}
+
+function hasInactiveRosterApproval(staffId) {
+    return Boolean(getInactiveRosterApproval(staffId));
+}
+
+function rememberInactiveRosterApproval(staffId, approval = {}) {
+    const id = String(staffId || '').trim();
+    if (!id) return;
+    masterState.inactiveRosterApprovals.set(id, {
+        approverLabel: approval.approverLabel || 'Approved override',
+        approvedAt: approval.approvedAt || new Date().toISOString(),
+        expiresAt: approval.expiresAt || (Date.now() + MASTER_OVERRIDE_TTL_MS)
+    });
+}
+
+function isOverrideApproverUser(user = {}) {
+    const identity = normalizeIdentityText(user.name, user.email, user.username);
+    return MASTER_OVERRIDE_APPROVER_KEYWORDS.some((keyword) => matchesApproverKeyword(identity, keyword));
+}
+
+async function verifyOverrideCredentials(identifier, password) {
+    const ident = clean(identifier);
+    const secret = String(password || '');
+    if (!ident || !secret) return { success: false, message: 'Approver login and PIN/password are required.' };
+
+    let result = await window.MargaAuth?.loginViaServer?.(ident, secret);
+    if (result?.success && result.user) return result;
+
+    if (result?.unavailable === true && window.location.hostname && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+        const user = await window.MargaAuth?.findUserByEmailOrUsername?.(ident).catch(() => null);
+        if (user && window.MargaAuth?.isEmployeeActive?.(user)) {
+            const ok = await window.MargaAuth.verifyPassword(user, secret).catch(() => false);
+            if (ok) {
+                const roles = window.MargaAuth.normalizeRoles(user.marga_roles || user.roles || user.marga_role || user.role || window.MargaAuth.inferRole(user));
+                return {
+                    success: true,
+                    user: {
+                        id: user._docId,
+                        username: user.username || ident,
+                        name: clean(user.marga_fullname || user.name || `${clean(user.firstname)} ${clean(user.lastname)}` || user.nickname || ident),
+                        email: clean(user.email || user.marga_login_email).toLowerCase(),
+                        staff_id: user.id || user.staff_id || null,
+                        roles
+                    }
+                };
+            }
+        }
+    }
+
+    return {
+        success: false,
+        message: result?.message || 'Invalid approver PIN/password.'
+    };
+}
+
+function openMasterOverrideModal({ title, message, reason, defaultIdentifier = '' } = {}) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('masterOverrideModal');
+        const overlay = document.getElementById('masterStatusOverlay');
+        const form = document.getElementById('masterOverrideForm');
+        const identifierInput = document.getElementById('masterOverrideIdentifier');
+        const passwordInput = document.getElementById('masterOverridePassword');
+        const errorEl = document.getElementById('masterOverrideError');
+        const approveBtn = document.getElementById('masterOverrideApproveBtn');
+        const cancelBtn = document.getElementById('masterOverrideCancelBtn');
+        const titleEl = document.getElementById('masterOverrideTitle');
+        const messageEl = document.getElementById('masterOverrideMessage');
+        const reasonEl = document.getElementById('masterOverrideReason');
+        if (!modal || !overlay || !form || !identifierInput || !passwordInput || !errorEl || !approveBtn || !cancelBtn) {
+            resolve(null);
+            return;
+        }
+
+        titleEl.textContent = title || 'Supervisor Override';
+        messageEl.textContent = message || 'Enter an approved supervisor account to continue this scheduling exception.';
+        reasonEl.textContent = reason || 'This action needs approval because it overrides the default routing guard.';
+        identifierInput.value = defaultIdentifier || '';
+        passwordInput.value = '';
+        errorEl.textContent = '';
+        overlay.classList.add('visible');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+
+        let settled = false;
+        const cleanup = (result) => {
+            if (settled) return;
+            settled = true;
+            overlay.classList.remove('visible');
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+            form.removeEventListener('submit', onSubmit);
+            cancelBtn.removeEventListener('click', onCancel);
+            overlay.removeEventListener('click', onCancel);
+            resolve(result);
+        };
+
+        const onCancel = () => cleanup(null);
+        const onSubmit = async (event) => {
+            event.preventDefault();
+            errorEl.textContent = '';
+            approveBtn.disabled = true;
+            try {
+                const result = await verifyOverrideCredentials(identifierInput.value, passwordInput.value);
+                if (!result?.success || !result.user) {
+                    errorEl.textContent = result?.message || 'Unable to verify override credentials.';
+                    return;
+                }
+                if (!isOverrideApproverUser(result.user)) {
+                    errorEl.textContent = 'This account is not allowed to approve Master Schedule overrides.';
+                    return;
+                }
+                cleanup({
+                    approverLabel: clean(result.user.name || result.user.email || result.user.username) || 'Approved override',
+                    approverUser: result.user,
+                    approvedAt: new Date().toISOString(),
+                    expiresAt: Date.now() + MASTER_OVERRIDE_TTL_MS
+                });
+            } finally {
+                approveBtn.disabled = false;
+            }
+        };
+
+        form.addEventListener('submit', onSubmit);
+        cancelBtn.addEventListener('click', onCancel);
+        overlay.addEventListener('click', onCancel);
+        window.setTimeout(() => identifierInput.focus(), 0);
+    });
+}
+
+function closeMasterOverrideModal() {
+    document.getElementById('masterOverrideCancelBtn')?.click();
+}
+
+async function requestScheduleOverride(options = {}) {
+    if (options.existingApproval && Number(options.existingApproval.expiresAt || 0) > Date.now()) return options.existingApproval;
+    const currentUser = window.MargaAuth?.getUser?.() || {};
+    const defaultIdentifier = clean(currentUser.email || currentUser.username || '');
+    const approval = await openMasterOverrideModal({
+        title: options.title,
+        message: options.message,
+        reason: options.reason,
+        defaultIdentifier
+    });
+    if (!approval) throw new Error('Override cancelled.');
+    if (options.targetStaffId) rememberInactiveRosterApproval(options.targetStaffId, approval);
+    return approval;
 }
 
 function activeScheduleStaffIds() {
@@ -941,18 +1383,29 @@ function activeScheduleStaffIds() {
 function validateScheduleAssignment(row, overrides = {}) {
     const staffId = clean(overrides.staffId ?? row?.techId ?? row?.assigned_to_id ?? row?.tech_id);
     const staffName = clean(overrides.staffName ?? row?.assignedTo ?? row?.assigned_to ?? row?.assigned_staff_name);
+    const allowInactiveRoster = overrides.allowInactiveRoster === true || hasInactiveRosterApproval(staffId);
     if (window.MargaScheduleConsolidation?.validateRequiredAssignment) {
-        return MargaScheduleConsolidation.validateRequiredAssignment({
+        const result = MargaScheduleConsolidation.validateRequiredAssignment({
             staffId,
             staffName,
             activeStaffIds: activeScheduleStaffIds()
         });
+        if (!result.ok && allowInactiveRoster && getStaffById(staffId) && isPotentialScheduleStaff(getStaffById(staffId))) {
+            return { ok: true, staffId, staffName, override: 'inactive_roster' };
+        }
+        return result;
     }
     if (!Number(staffId || 0)) return { ok: false, reason: 'Choose an active assigned staff member before saving this schedule.' };
     if (!staffName || /^(unassigned|suggested \/ unassigned|others?)$/i.test(staffName)) {
         return { ok: false, reason: 'Assigned staff must have a real active name, not Unassigned or Others.' };
     }
-    if (!activeScheduleStaffIds().includes(String(staffId))) return { ok: false, reason: `${staffName} is not in the active scheduling roster.` };
+    if (!activeScheduleStaffIds().includes(String(staffId))) {
+        const employee = getStaffById(staffId);
+        if (allowInactiveRoster && employee && isPotentialScheduleStaff(employee)) {
+            return { ok: true, staffId, staffName, override: 'inactive_roster' };
+        }
+        return { ok: false, reason: `${staffName} is not in the active scheduling roster.` };
+    }
     return { ok: true, staffId, staffName };
 }
 
@@ -977,6 +1430,10 @@ function purposeFromLegacy(row, trouble) {
     if (clue.includes('collection')) return 'Confirmed Collection';
     if (clue.includes('billing') || clue.includes('invoice')) return 'Printed Billing';
     return explicit || `Purpose ${purposeId || '-'}`;
+}
+
+function isDispatchableMasterRow(row) {
+    return Number(row?.purpose_id || 0) !== 9;
 }
 
 function pickLatestRouteRows(rows, selectedDate) {
@@ -1023,6 +1480,164 @@ async function buildRouteBoundSchedules(routeRows, routeSourceLabel) {
             };
         })
         .filter(Boolean);
+}
+
+function asMasterDirectTodayScheduleRow(row) {
+    return {
+        ...row,
+        route_id: 0,
+        route_doc_id: '',
+        route_source: 'Schedule',
+        route_tech_id: Number(row.tech_id || 0) || 0,
+        route_task_datetime: clean(row.task_datetime || ''),
+        route_status: '',
+        route_iscancelled: Number(row.iscancel || row.iscancelled || 0) || 0,
+        route_date_finished: clean(row.date_finished || ''),
+        route_remarks: clean(row.remarks || row.caller || '')
+    };
+}
+
+async function buildMasterStaffFieldBuckets({ scheduleRows, pendingRawRows }) {
+    const staffIds = new Set([
+        ...scheduleStaffOptions().map((employee) => Number(employee.id || 0)).filter(Boolean),
+        ...scheduleRows.map((row) => Number(row.tech_id || 0)).filter(Boolean),
+        ...pendingRawRows.map((row) => Number(getAssignedStaffId(row) || row.tech_id || 0)).filter(Boolean)
+    ]);
+
+    masterState.staffFieldBuckets = new Map();
+
+    for (const staffId of staffIds) {
+        const directTodayRows = scheduleRows
+            .filter((row) => Number(row.tech_id || 0) === staffId)
+            .filter(isDispatchableMasterRow)
+            .map(asMasterDirectTodayScheduleRow);
+
+        const allCurrentRows = [...directTodayRows]
+            .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
+        const currentWorkloadRows = allCurrentRows
+            .filter((row) => masterRawStatusKey(row) !== 'cancelled');
+        const forwardedPastPendingRows = currentWorkloadRows
+            .filter(masterRawIsPastPendingByOriginalDate)
+            .map((row) => ({
+                ...row,
+                route_source: row.route_source || 'Forwarded Past Pending'
+            }));
+        const todayRows = currentWorkloadRows
+            .filter((row) => !masterRawIsPastPendingByOriginalDate(row));
+
+        const currentScheduleIds = new Set(currentWorkloadRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
+        const olderRows = (await loadMasterOlderCarryoverRows(selectedMasterDate(), currentScheduleIds, staffId))
+            .filter(isDispatchableMasterRow);
+
+        const uniqueCarryover = new Map();
+        [...forwardedPastPendingRows, ...olderRows].forEach((row) => {
+            const scheduleId = Number(row.id || row._docId || 0);
+            if (!scheduleId || uniqueCarryover.has(scheduleId)) return;
+            uniqueCarryover.set(scheduleId, row);
+        });
+        const pastPendingRows = Array.from(uniqueCarryover.values())
+            .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
+
+        const totalRows = [...todayRows, ...pastPendingRows].sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
+        const unfinishedRows = totalRows.filter((row) => {
+            const status = masterRawStatusKey(row);
+            return ['pending', 'carryover', 'ongoing'].includes(status);
+        });
+        const closedRows = totalRows
+            .filter(isMasterRawClosedOnSelectedDate)
+            .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
+        const partsRows = unfinishedRows.filter((row) => {
+            const status = masterRawStatusKey(row);
+            return ['pending', 'carryover', 'ongoing'].includes(status) && isMasterPartsPendingRow(row);
+        });
+        const staffName = employeeName(masterState.lookups.employees.get(String(staffId || '')), staffId) || 'Unassigned';
+        const buildRows = (rawRows) => rawRows.map(buildLegacyScheduleRow);
+
+        masterState.staffFieldBuckets.set(staffName, {
+            totalRows: buildRows(totalRows),
+            todayRows: buildRows(todayRows),
+            pastPendingRows: buildRows(pastPendingRows),
+            unfinishedRows: buildRows(unfinishedRows),
+            closedRows: buildRows(closedRows),
+            partsRows: buildRows(partsRows)
+        });
+    }
+}
+
+function buildMasterStaffFieldBucketsFromRows(rows = []) {
+    const groups = new Map();
+    rows.forEach((row) => {
+        const staffName = clean(row.assignedTo) || 'Unassigned';
+        if (!groups.has(staffName)) groups.set(staffName, []);
+        groups.get(staffName).push(refreshMasterRowSearch({ ...row }));
+    });
+
+    masterState.staffFieldBuckets = new Map();
+    groups.forEach((staffRows, staffName) => {
+        masterState.staffFieldBuckets.set(staffName, {
+            totalRows: masterFallbackBucketRows(staffRows, 'total'),
+            todayRows: masterFallbackBucketRows(staffRows, 'today'),
+            pastPendingRows: masterFallbackBucketRows(staffRows, 'past_pending'),
+            unfinishedRows: masterFallbackBucketRows(staffRows, 'unfinished'),
+            closedRows: masterFallbackBucketRows(staffRows, 'closed'),
+            partsRows: masterFallbackBucketRows(staffRows, 'parts')
+        });
+    });
+}
+
+function applyMasterScheduleSnapshotResponse(serverPayload) {
+    if (!serverPayload?.exists || !serverPayload?.payload) return false;
+    const payload = serverPayload.payload || {};
+    masterState.routeSourceLabel = clean(payload.routeSourceLabel || 'Schedule');
+    masterState.routeCoverage = {
+        routed: Number(payload.routeCoverage?.routed || 0) || 0,
+        unrouted: Number(payload.routeCoverage?.unrouted || 0) || 0
+    };
+    masterState.rows = (Array.isArray(payload.rows) ? payload.rows : [])
+        .map((row) => refreshMasterRowSearch({ ...row }))
+        .filter((row) => !isScheduleExceptionRow(row));
+    masterState.exceptionRows = (Array.isArray(payload.exceptionRows) ? payload.exceptionRows : [])
+        .map((row) => refreshMasterRowSearch({ ...row }));
+    masterState.pendingRows = (Array.isArray(payload.pendingRows) ? payload.pendingRows : [])
+        .map((row) => refreshMasterRowSearch({ ...row }));
+    buildMasterStaffFieldBucketsFromRows(masterState.rows);
+    return true;
+}
+
+async function fetchMasterScheduleSnapshot(date) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), MASTER_SNAPSHOT_FETCH_MS);
+    try {
+        const response = await fetch(`${getMargabaseAdminUrl('/admin/master-schedule-snapshot')}?date=${encodeURIComponent(date)}`, {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) {
+            throw new Error(payload?.error?.message || `Master schedule snapshot HTTP ${response.status}`);
+        }
+        return payload;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Master schedule snapshot took too long to load.');
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
+}
+
+async function rebuildMasterScheduleSnapshotCache(date) {
+    const response = await fetch(getMargabaseAdminUrl('/admin/master-schedule-snapshot'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ date })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Master schedule snapshot rebuild HTTP ${response.status}`);
+    }
+    return payload;
 }
 
 function overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows, selectedDate) {
@@ -1465,61 +2080,6 @@ function buildWebScheduleRow(row) {
     return refreshMasterRowSearch(data);
 }
 
-function buildPlannerScheduleRow(row) {
-    const serials = parseJsonArray(row.serial_numbers_json || row.serial_numbers).filter(Boolean);
-    const branchNames = parseJsonArray(row.branch_names_json || row.branch_names).filter(Boolean);
-    const explicitPurpose = clean(row.schedule_purpose || row.purpose || row.schedule_type);
-    const purpose = explicitPurpose || (row.department === 'collection' ? 'Confirmed Collection' : 'Printed Billing');
-    const area = clean(row.area || row.area_group) || 'N/A';
-    const assignedTo = clean(row.assigned_staff_name || row.suggested_staff_name || row.suggested_messenger_name) || 'Suggested / Unassigned';
-    const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
-    const originalDate = dateOnly(row.original_date || row.schedule_date || row.created_at) || selectedDate;
-    const masterStatusValue = deriveMasterStatusValue(row);
-    const superUrgent = truthyFlag(row.super_urgent, row.superUrgent);
-    const hasComplaint = truthyFlag(row.withcomplain, row.with_complain, row.withComplaint, row.withcomplaint);
-    const hasRequest = truthyFlag(row.withrequest, row.with_request, row.withRequest)
-        || hasExplicitReleaseRequest(row)
-        || masterStatusValue === 'open_with_request';
-    const data = {
-        source: 'planner',
-        sourceBucket: 'daily-route',
-        rowKey: `planner_${row._docId || row.id || ''}`,
-        docId: row._docId || row.id || '',
-        techId: String(row.assigned_staff_id || row.suggested_staff_id || ''),
-        branchId: String(row.branch_id || row.primary_branch_id || ''),
-        companyId: String(row.company_id || ''),
-        purposeId: String(row.purpose_id || ''),
-        referenceNo: pickReferenceNo(row, row.id || row._docId),
-        activityKey: buildActivityKey('tbl_schedule_planner', row._docId || row.id || '', row.id || row._docId),
-        purpose,
-        area,
-        tin: clean(row.tin || row.company_tin || row.tin_no),
-        customer: row.company_name || row.account_name || 'Unknown Customer',
-        branch: row.primary_branch_name || branchNames[0] || 'Main',
-        model: row.model || '',
-        serial: serials[0] || row.serial || '',
-        trouble: clean(row.trouble || row.issue || row.remarks),
-        city: clean(row.city),
-        address: compactAddress(row.address || row.delivery_address || row.collection_address),
-        assignedTo,
-        status: row.planner_status || row.task_status || 'Suggested',
-        masterStatusValue,
-        masterStatusLabel: statusLabel(masterStatusValue),
-        superUrgent,
-        hasComplaint,
-        hasRequest,
-        priorityOrder: Number(row.master_priority_order || row.priority || 0) || 0,
-        originalDate,
-        routeDate: selectedDate,
-        daysPending: daysBetween(originalDate, selectedDate),
-        readyStatus: 'N/A',
-        readyLabel: readyLabel('N/A'),
-        sourceNote: 'Planner'
-    };
-
-    return refreshMasterRowSearch(data);
-}
-
 async function hydrateLegacyLookups(rows) {
     const branchIds = rows.map((row) => row.branch_id);
     const companyIds = rows.map((row) => row.company_id);
@@ -1635,6 +2195,49 @@ async function loadPendingNotRoutedRows(date, routeRows) {
     });
 }
 
+async function loadMasterOlderCarryoverRows(date, excludedScheduleIds, staffId) {
+    const days = [];
+    for (let index = 1; index <= PENDING_NOT_ROUTED_LOOKBACK_DAYS; index += 1) {
+        days.push(addDays(date, -index));
+    }
+
+    const rows = [];
+    const concurrency = 6;
+    for (let index = 0; index < days.length; index += concurrency) {
+        const slice = days.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map((day) => (
+            queryDateRange('tbl_schedule', 'task_datetime', `${day} 00:00:00`, `${day} 23:59:59`).catch(() => [])
+        )));
+        results.flat().map(parseFirestoreDoc).filter(Boolean).forEach((row) => {
+            const scheduleId = Number(row.id || row._docId || 0);
+            if (!scheduleId || excludedScheduleIds.has(scheduleId)) return;
+            if (Number(row.tech_id || 0) !== Number(staffId || 0)) return;
+            if (isFinishedOrCancelled(row)) return;
+            if (!isMasterCarryoverEligibleForSelectedDate(masterOriginalScheduleDateRaw(row), date)) return;
+            rows.push({
+                ...row,
+                sourceBucket: 'pending-not-routed',
+                route_source: 'Older Pending',
+                route_task_datetime: row.task_datetime,
+                route_tech_id: row.tech_id,
+                route_status: row.status ?? '',
+                route_iscancelled: Number(row.iscancel || row.iscancelled || 0) || 0,
+                route_date_finished: clean(row.date_finished || ''),
+                route_remarks: clean(row.remarks || row.caller || '')
+            });
+        });
+    }
+
+    const unique = new Map();
+    rows.forEach((row) => unique.set(Number(row.id || row._docId || 0), row));
+    return Array.from(unique.values()).sort((a, b) => {
+        const left = dateOnly(a.task_datetime);
+        const right = dateOnly(b.task_datetime);
+        if (left !== right) return left.localeCompare(right);
+        return Number(a.id || 0) - Number(b.id || 0);
+    });
+}
+
 async function loadMasterConfigs() {
     const [areaCities, techAreas, clientAreas] = await Promise.all([
         fetchConfigCollection('marga_master_schedule_area_cities', { maxPages: 10 }),
@@ -1677,6 +2280,52 @@ async function loadMasterConfigs() {
     });
 }
 
+async function loadMasterScheduleLive(date) {
+    const start = `${date} 00:00:00`;
+    const end = `${date} 23:59:59`;
+    const [scheduleDocs, closeRequestDocs] = await Promise.all([
+        queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
+        queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending').catch(() => [])
+    ]);
+
+    const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
+    const sameDayScheduleRows = scheduleRows.map(asMasterDirectTodayScheduleRow);
+    const pendingRawRows = await loadPendingNotRoutedRows(date, sameDayScheduleRows);
+    const legacyRows = [...sameDayScheduleRows, ...pendingRawRows];
+    const lookupRows = legacyRows;
+    const closeRequestRows = closeRequestDocs.map(parseFirestoreDoc).filter(Boolean);
+    loadCloseRequestLookup(closeRequestRows);
+    await hydrateLegacyLookups(lookupRows);
+    await hydrateReadyLookups(lookupRows);
+
+    masterState.routeSourceLabel = 'Schedule';
+    masterState.routeCoverage = {
+        routed: sameDayScheduleRows.length,
+        unrouted: 0
+    };
+    const builtRows = [
+        ...legacyRows.map(buildLegacyScheduleRow)
+    ].sort((a, b) => {
+        if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
+        const ap = schedulePriorityValue(a);
+        const bp = schedulePriorityValue(b);
+        if (ap && bp && ap !== bp) return ap - bp;
+        if (ap && !bp) return -1;
+        if (!ap && bp) return 1;
+        if (a.readyStatus !== b.readyStatus) return ['YES', 'NO', 'N/A'].indexOf(a.readyStatus) - ['YES', 'NO', 'N/A'].indexOf(b.readyStatus);
+        if (a.area !== b.area) return a.area.localeCompare(b.area);
+        if (a.purpose !== b.purpose) return a.purpose.localeCompare(b.purpose);
+        return a.customer.localeCompare(b.customer);
+    });
+    masterState.exceptionRows = builtRows.filter(isScheduleExceptionRow);
+    masterState.rows = builtRows.filter((row) => !isScheduleExceptionRow(row));
+    masterState.pendingRows = [];
+    await buildMasterStaffFieldBuckets({
+        scheduleRows,
+        pendingRawRows
+    });
+}
+
 async function loadMasterSchedule() {
     const date = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
     const sheet = document.getElementById('masterScheduleSheet');
@@ -1687,63 +2336,18 @@ async function loadMasterSchedule() {
     try {
         await loadMasterConfigs();
         await ensureSettingsData();
-        const start = `${date} 00:00:00`;
-        const end = `${date} 23:59:59`;
-        const [scheduleDocs, printedDocs, savedDocs, plannerDocs, webDocs, closeRequestDocs] = await Promise.all([
-            queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
-            queryDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', start, end).catch(() => []),
-            queryDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', start, end).catch(() => []),
-            queryEquals('tbl_schedule_planner', 'schedule_date', date).catch(() => []),
-            queryEquals('marga_master_schedule', 'schedule_date', date).catch(() => []),
+        const [snapshotPayload, closeRequestDocs] = await Promise.all([
+            fetchMasterScheduleSnapshot(date).catch((error) => {
+                console.warn('Master schedule snapshot unavailable, falling back to live scan:', error);
+                return null;
+            }),
             queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending').catch(() => [])
         ]);
-
-        const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
-        const printedRows = printedDocs.map(parseFirestoreDoc).filter(Boolean);
-        const savedRows = savedDocs.map(parseFirestoreDoc).filter(Boolean);
-        const { mergedRows: sameDayLegacyRows, routeCoverage } = overlayRouteRowsOnSchedules(scheduleRows, printedRows, savedRows, date);
-        const routeBoundRows = await buildRouteBoundSchedules(mergeRouteRows(savedRows, printedRows, date), 'Saved');
-        const sameDayScheduleIds = new Set(sameDayLegacyRows.map((row) => Number(row.id || row._docId || 0)).filter((id) => id > 0));
-        const carriedRouteRows = routeBoundRows.filter((row) => {
-            const scheduleId = Number(row.id || row._docId || 0);
-            return scheduleId > 0 && !sameDayScheduleIds.has(scheduleId);
-        });
-        const legacyRows = [...sameDayLegacyRows, ...carriedRouteRows];
-        const routeCoverageWithCarry = {
-            routed: (routeCoverage.routed || 0) + carriedRouteRows.length,
-            unrouted: routeCoverage.unrouted || 0
-        };
-        const pendingRawRows = await loadPendingNotRoutedRows(date, legacyRows);
-        const lookupRows = [...legacyRows, ...pendingRawRows];
-        const plannerRows = plannerDocs.map(parseFirestoreDoc);
-        const webRows = webDocs.map(parseFirestoreDoc);
         const closeRequestRows = closeRequestDocs.map(parseFirestoreDoc).filter(Boolean);
         loadCloseRequestLookup(closeRequestRows);
-        await hydrateLegacyLookups(lookupRows);
-        await hydrateReadyLookups(lookupRows);
-
-        masterState.routeSourceLabel = routeCoverageWithCarry.routed ? 'Schedule + Routes' : 'Schedule';
-        masterState.routeCoverage = routeCoverageWithCarry;
-        const builtRows = [
-            ...webRows.map(buildWebScheduleRow),
-            ...legacyRows.map(buildLegacyScheduleRow),
-            ...pendingRawRows.map(buildLegacyScheduleRow),
-            ...plannerRows.map(buildPlannerScheduleRow)
-        ].sort((a, b) => {
-            if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
-            const ap = schedulePriorityValue(a);
-            const bp = schedulePriorityValue(b);
-            if (ap && bp && ap !== bp) return ap - bp;
-            if (ap && !bp) return -1;
-            if (!ap && bp) return 1;
-            if (a.readyStatus !== b.readyStatus) return ['YES', 'NO', 'N/A'].indexOf(a.readyStatus) - ['YES', 'NO', 'N/A'].indexOf(b.readyStatus);
-            if (a.area !== b.area) return a.area.localeCompare(b.area);
-            if (a.purpose !== b.purpose) return a.purpose.localeCompare(b.purpose);
-            return a.customer.localeCompare(b.customer);
-        });
-        masterState.exceptionRows = builtRows.filter(isScheduleExceptionRow);
-        masterState.rows = builtRows.filter((row) => !isScheduleExceptionRow(row));
-        masterState.pendingRows = [];
+        if (!applyMasterScheduleSnapshotResponse(snapshotPayload)) {
+            await loadMasterScheduleLive(date);
+        }
 
         renderMasterSchedule();
         renderSettingsIfVisible();
@@ -1751,6 +2355,28 @@ async function loadMasterSchedule() {
         console.error('Master Schedule load failed:', error);
         if (count) count.textContent = 'Unable to load';
         if (sheet) sheet.innerHTML = `<div class="master-empty">Master Schedule failed to load: ${escapeHtml(error.message || error)}</div>`;
+    }
+}
+
+async function rescanMasterScheduleSnapshot() {
+    const date = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+    const button = document.getElementById('masterRescanBtn');
+    const originalLabel = button?.textContent || 'Rescan';
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Rescanning...';
+    }
+    try {
+        await rebuildMasterScheduleSnapshotCache(date);
+        await loadMasterSchedule();
+    } catch (error) {
+        console.error('Master schedule rescan failed:', error);
+        window.alert(`Master schedule rescan failed: ${error.message || error}`);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalLabel;
+        }
     }
 }
 
@@ -1927,7 +2553,8 @@ function renderPriorityGate(rows = []) {
 }
 
 function renderMasterSchedule() {
-    const rows = combineMasterRows(getVisibleRows());
+    const sourceRows = getVisibleRows();
+    const rows = combineMasterRows(sourceRows);
     masterState.displayRows = rows;
     const pendingRows = getVisiblePendingRows();
     const exceptionRows = getVisibleExceptionRows();
@@ -1960,7 +2587,7 @@ function renderMasterSchedule() {
     }, {});
 
     const groups = new Map();
-    rows.forEach((row) => {
+    sourceRows.forEach((row) => {
         const key = row.assignedTo || 'Unassigned';
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(row);
@@ -1981,12 +2608,39 @@ function renderMasterSchedule() {
         </section>
         ${renderPriorityGate(rows)}
         ${exceptionRows.length ? renderAssignmentExceptions(exceptionRows) : ''}
-        ${Array.from(groups.entries()).map(([group, groupRows]) => `
-            <section class="master-group">
-                <h2>${escapeHtml(group)}</h2>
-                ${renderReadyTables(groupRows)}
-            </section>
-        `).join('')}
+        ${Array.from(groups.entries()).map(([group, groupRows]) => {
+            const counts = masterStaffBucketCounts(group);
+            const activeBucket = getStaffBucketFilter(group);
+            const storedBucketRows = masterStaffBucketRows(group, activeBucket);
+            const bucketRows = storedBucketRows.length ? storedBucketRows : masterFallbackBucketRows(groupRows, activeBucket);
+            const combinedBucketRows = combineMasterRows(bucketRows);
+            const labelMap = {
+                total: 'Total Workload',
+                today: 'New Today',
+                past_pending: 'Past Pending',
+                unfinished: 'Unfinished Schedule',
+                parts: 'Pending Parts / Machine',
+                closed: 'Closed'
+            };
+            const countMap = {
+                total: counts.total,
+                today: counts.today,
+                past_pending: counts.past_pending,
+                unfinished: counts.unfinished,
+                parts: counts.parts,
+                closed: counts.closed
+            };
+            return `
+                <section class="master-group">
+                    <div class="master-group-header">
+                        <h2>${escapeHtml(group)}</h2>
+                        ${renderStaffBucketFilters(group, counts)}
+                    </div>
+                    <p class="master-note">${escapeHtml(labelMap[activeBucket] || 'Total Workload')}: ${combinedBucketRows.length} shown from ${countMap[activeBucket] ?? counts.total} workload row(s) for this staff, using the same route bucket build as Field App.</p>
+                    ${combinedBucketRows.length ? renderReadyTables(combinedBucketRows) : '<div class="master-empty">No schedules in this staff bucket.</div>'}
+                </section>
+            `;
+        }).join('')}
         ${pendingRows.length ? renderPendingNotRouted(pendingRows) : ''}
     `;
     if (masterState.kaizen.visible) renderKaizenAdvisor();
@@ -2068,7 +2722,7 @@ function renderAssignmentExceptions(rows) {
     return `
         <section class="master-group pending-not-routed">
             <h2>Needs Assignment / Stale Pending</h2>
-            <p class="master-note">These rows are quarantined from normal Master Schedule, print, forward, and Field App routes until assigned to active staff with a real purpose and area.</p>
+            <p class="master-note">These rows are quarantined from normal Master Schedule, print, forward, and Field App routes until assigned to an active employee with a real purpose and area.</p>
             ${renderScheduleTable(rows.map((row) => ({
                 ...row,
                 trouble: `${scheduleExceptionReason(row)}${row.trouble ? ` · ${row.trouble}` : ''}`
@@ -2150,7 +2804,7 @@ function buildKaizenReport() {
             rows: items,
             nextStep: transferRows.length
                 ? `Transfer ${transferRows.length} messenger-type task${transferRows.length === 1 ? '' : 's'} to ${owner.assignedTo}.`
-                : 'Review and keep one field owner unless separate trip is required.'
+                : 'Review and keep one visit owner unless separate trip is required.'
         };
     });
 
@@ -2434,29 +3088,31 @@ function renderReadyTables(rows) {
 
 function renderScheduleTable(rows) {
     return `
-        <table class="master-table">
-            <thead>
-                <tr>
-                    <th>TIN #</th>
-                    <th>Flags</th>
-                    <th>Priority</th>
-                    <th>Original Date</th>
-                    <th>Customer / Branch</th>
-                    <th>Purpose</th>
-                    <th>Model</th>
-                    <th>Trouble</th>
-                    <th>City</th>
-                    <th>Address</th>
-                    <th>Days Pending</th>
-                    <th>Ready</th>
-                    <th>Assigned To</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rows.map(renderMasterScheduleRow).join('')}
-            </tbody>
-        </table>
+        <div class="master-table-shell">
+            <table class="master-table">
+                <thead>
+                    <tr>
+                        <th>TIN #</th>
+                        <th>Flags</th>
+                        <th>Priority</th>
+                        <th>Original Date</th>
+                        <th>Customer / Branch</th>
+                        <th>Purpose</th>
+                        <th>Model</th>
+                        <th>Trouble</th>
+                        <th>City</th>
+                        <th>Address</th>
+                        <th>Days Pending</th>
+                        <th>Ready</th>
+                        <th>Assigned To</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(renderMasterScheduleRow).join('')}
+                </tbody>
+            </table>
+        </div>
     `;
 }
 
@@ -2541,7 +3197,8 @@ function renderMasterScheduleRow(row) {
 }
 
 function renderStaffSelectOptions(row) {
-    const staff = scheduleStaffOptions();
+    const staff = scheduleAssignableStaffOptions();
+    const activeIds = new Set(activeScheduleStaffIds());
     const selectedId = clean(row.techId);
     const selectedKnown = selectedId && staff.some((employee) => String(employee.id) === selectedId);
     const options = [];
@@ -2551,7 +3208,11 @@ function renderStaffSelectOptions(row) {
     options.push(...staff.map((employee) => {
         const id = String(employee.id);
         const selected = selectedId ? id === selectedId : employeeName(employee, id) === row.assignedTo;
-        return `<option value="${escapeHtml(id)}"${selected ? ' selected' : ''}>${escapeHtml(employeeName(employee, id))}</option>`;
+        const inactiveRoster = !activeIds.has(id);
+        const label = inactiveRoster
+            ? `${employeeName(employee, id)} (inactive roster - override)`
+            : employeeName(employee, id);
+        return `<option value="${escapeHtml(id)}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
     }));
     return options.join('');
 }
@@ -2572,7 +3233,11 @@ async function updateScheduleOwner(row, employee) {
     const staffId = String(employee?.id || '').trim();
     const staffName = employeeName(employee, staffId);
     if (!row || !staffId) return;
-    const assignment = validateScheduleAssignment(row, { staffId, staffName });
+    const assignment = validateScheduleAssignment(row, {
+        staffId,
+        staffName,
+        allowInactiveRoster: !activeScheduleStaffIds().includes(staffId)
+    });
     if (!assignment.ok) throw new Error(assignment.reason);
 
     if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
@@ -2897,8 +3562,18 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
     masterState.reassigning = true;
     const count = document.getElementById('masterCount');
     if (count) count.textContent = `Moving ${targets.length} schedule row(s)...`;
+    let overrideApproval = null;
 
     try {
+        if (!activeScheduleStaffIds().includes(String(staffId))) {
+            overrideApproval = await requestScheduleOverride({
+                existingApproval: overrideApproval,
+                targetStaffId: staffId,
+                title: 'Inactive Staff Override',
+                message: `${newStaff} is outside the active scheduling roster.`,
+                reason: 'Use this only when the office intentionally wants this inactive employee to keep or receive the schedule, even though they are not in today\'s active scheduling roster.'
+            });
+        }
         for (const target of targets) {
             const previousOwner = target.assignedTo || 'Unassigned';
             let targetEmployee = employee;
@@ -2919,6 +3594,14 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
                     getStaffName: (id) => employeeName(masterState.lookups.employees.get(String(id)), id)
                 });
                 if (!consolidation.ok) throw new Error('Reassignment cancelled by consolidation rule.');
+                if (consolidation.reassignmentOverride) {
+                    overrideApproval = await requestScheduleOverride({
+                        existingApproval: overrideApproval,
+                        title: 'Same-Location Route Override',
+                        message: `${target.customer || 'This customer'} already has a same-location owner for that visit.`,
+                        reason: 'Default rule keeps toner, billing, collection, and service stops under one visit owner to avoid unnecessary trips. Only approve this if the office intentionally wants a different employee owner for this visit.'
+                    });
+                }
                 if (String(consolidation.staffId || staffId) !== String(staffId)) {
                     targetEmployee = getStaffById(consolidation.staffId);
                     if (!targetEmployee) throw new Error(`Consolidation target staff #${consolidation.staffId} is not loaded.`);
@@ -2928,7 +3611,7 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
             await appendActivityLog(target, {
                 actionType: 'reassign',
                 actionLabel: 'Assigned Staff Updated',
-                detail: `Reassigned from ${previousOwner} to ${employeeName(targetEmployee, targetEmployee?.id || staffId)}.`
+                detail: `Reassigned from ${previousOwner} to ${employeeName(targetEmployee, targetEmployee?.id || staffId)}.${overrideApproval ? ` Override approved by ${overrideApproval.approverLabel}.` : ''}`
             });
         }
         masterState.rows.sort((a, b) => {
@@ -3037,7 +3720,7 @@ async function saveForwardedRoute(row, targetDate) {
     refreshMasterRowSearch(row);
 }
 
-async function forwardScheduleRows(rows, targetDate) {
+async function forwardScheduleRows(rows, targetDate, approval = null) {
     const validRows = rows.filter(isOpenScheduleRow);
     if (!validRows.length) {
         window.alert('No open schedule rows are available to forward.');
@@ -3059,7 +3742,7 @@ async function forwardScheduleRows(rows, targetDate) {
             appendActivityLog(row, {
                 actionType: 'forward',
                 actionLabel: 'Forwarded To Schedule',
-                detail: `Forwarded open schedule to ${targetDate}.`
+                detail: `Forwarded open schedule to ${targetDate}.${approval ? ` Override approved by ${approval.approverLabel}.` : ''}`
             }).catch((error) => {
                 console.warn('Forward activity log failed:', error);
             });
@@ -3094,9 +3777,20 @@ async function forwardScheduleRow(rowKey, button) {
         ? window.confirm(`Move all the schedule of ${staffName} to ${targetDate}?\n\nOK = move all ${staffRows.length} open schedule(s).\nCancel = move only the selected row.`)
         : false;
     const targets = moveAllStaff ? staffRows : (Array.isArray(row.combinedRows) && row.combinedRows.length ? row.combinedRows : [row]);
+    let overrideApproval = null;
+    const targetStaffId = clean(row.techId);
+    if (targetStaffId && !activeScheduleStaffIds().includes(targetStaffId)) {
+        overrideApproval = await requestScheduleOverride({
+            existingApproval: overrideApproval,
+            targetStaffId,
+            title: 'Inactive Staff Forward Override',
+            message: `${staffName} is not in the active scheduling roster.`,
+            reason: 'Forwarding normally stays locked to active employees only. Approve this only when the office intentionally wants this inactive-roster employee to keep the follow-up visit.'
+        });
+    }
     button.disabled = true;
     try {
-        await forwardScheduleRows(targets, targetDate);
+        await forwardScheduleRows(targets, targetDate, overrideApproval);
     } finally {
         button.disabled = false;
     }
@@ -3113,7 +3807,23 @@ async function forwardVisibleOpenSchedules() {
     }
     const ok = window.confirm(`Forward ${rows.length} open schedule row(s) to ${targetDate}?`);
     if (!ok) return;
-    await forwardScheduleRows(rows, targetDate);
+    let overrideApproval = null;
+    const inactiveStaffIds = [...new Set(
+        rows
+            .map((row) => clean(row.techId))
+            .filter(Boolean)
+            .filter((staffId) => !activeScheduleStaffIds().includes(staffId))
+    )];
+    if (inactiveStaffIds.length) {
+        overrideApproval = await requestScheduleOverride({
+            existingApproval: overrideApproval,
+            title: 'Inactive Staff Forward Override',
+            message: `${inactiveStaffIds.length} inactive-roster assignee${inactiveStaffIds.length === 1 ? '' : 's'} are included in this forward action.`,
+            reason: 'Bulk forwarding normally stays limited to active employees. Approve this only when the office intentionally wants these inactive-roster employees to keep the next-day or carry-over route.'
+        });
+        inactiveStaffIds.forEach((staffId) => rememberInactiveRosterApproval(staffId, overrideApproval));
+    }
+    await forwardScheduleRows(rows, targetDate, overrideApproval);
 }
 
 function activeRows() {
@@ -3363,8 +4073,8 @@ async function ensureSettingsData() {
     });
 
     const activeEmployeeIds = new Set(
-        (window.MargaUtils?.filterEmployeeAssignmentOptions
-            ? MargaUtils.filterEmployeeAssignmentOptions(employeeRows, { positions: masterState.lookups.positions })
+        (window.MargaUtils?.getActiveAssignmentEmployees
+            ? MargaUtils.getActiveAssignmentEmployees(employeeRows, { positions: masterState.lookups.positions })
             : employeeRows.filter(isActiveScheduleEmployee))
             .map((employee) => String(employee.id || ''))
             .filter(Boolean)
