@@ -1029,8 +1029,6 @@ function masterRowOriginalDate(row) {
 }
 
 function isPastPendingMasterRow(row) {
-    const bucket = rowStatusBucket(row);
-    if (bucket !== 'pending' && bucket !== 'ongoing') return false;
     const originalDate = masterRowOriginalDate(row);
     const selectedDate = selectedMasterDate();
     return Boolean(originalDate && selectedDate && originalDate < selectedDate);
