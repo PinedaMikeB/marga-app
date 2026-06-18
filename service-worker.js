@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v158-master-snapshot-1';
+const CACHE_NAME = 'marga-app-shell-v159-master-snapshot-live-query-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -31,7 +31,7 @@ const SHELL_ASSETS = [
     '/collections.html',
     '/collections/js/collections.js?v=20260601-summary-autoupdate-1',
     '/master-schedule.html',
-    '/master-schedule/js/master-schedule.js?v=20260618-master-snapshot-1',
+    '/master-schedule/js/master-schedule.js?v=20260618-master-snapshot-live-query-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260604-field-tin-7',

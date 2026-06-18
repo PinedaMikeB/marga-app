@@ -1588,17 +1588,21 @@ function buildMasterStaffFieldBucketsFromRows(rows = []) {
 function applyMasterScheduleSnapshotResponse(serverPayload) {
     if (!serverPayload?.exists || !serverPayload?.payload) return false;
     const payload = serverPayload.payload || {};
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const exceptionRows = Array.isArray(payload.exceptionRows) ? payload.exceptionRows : [];
+    const pendingRows = Array.isArray(payload.pendingRows) ? payload.pendingRows : [];
+    if (!rows.length && !exceptionRows.length && !pendingRows.length) return false;
     masterState.routeSourceLabel = clean(payload.routeSourceLabel || 'Schedule');
     masterState.routeCoverage = {
         routed: Number(payload.routeCoverage?.routed || 0) || 0,
         unrouted: Number(payload.routeCoverage?.unrouted || 0) || 0
     };
-    masterState.rows = (Array.isArray(payload.rows) ? payload.rows : [])
+    masterState.rows = rows
         .map((row) => refreshMasterRowSearch({ ...row }))
         .filter((row) => !isScheduleExceptionRow(row));
-    masterState.exceptionRows = (Array.isArray(payload.exceptionRows) ? payload.exceptionRows : [])
+    masterState.exceptionRows = exceptionRows
         .map((row) => refreshMasterRowSearch({ ...row }));
-    masterState.pendingRows = (Array.isArray(payload.pendingRows) ? payload.pendingRows : [])
+    masterState.pendingRows = pendingRows
         .map((row) => refreshMasterRowSearch({ ...row }));
     buildMasterStaffFieldBucketsFromRows(masterState.rows);
     return true;
@@ -1636,6 +1640,40 @@ async function rebuildMasterScheduleSnapshotCache(date) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) {
         throw new Error(payload?.error?.message || `Master schedule snapshot rebuild HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+function buildMasterScheduleSnapshotPayloadFromState() {
+    return {
+        routeSourceLabel: clean(masterState.routeSourceLabel || 'Schedule'),
+        routeCoverage: {
+            routed: Number(masterState.routeCoverage?.routed || 0) || 0,
+            unrouted: Number(masterState.routeCoverage?.unrouted || 0) || 0
+        },
+        rows: (masterState.rows || []).map((row) => ({ ...row })),
+        exceptionRows: (masterState.exceptionRows || []).map((row) => ({ ...row })),
+        pendingRows: (masterState.pendingRows || []).map((row) => ({ ...row }))
+    };
+}
+
+async function saveMasterScheduleSnapshotFromState(date, buildSource = 'page-live-query') {
+    const response = await fetch(getMargabaseAdminUrl('/admin/master-schedule-snapshot'), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+            date,
+            payload: buildMasterScheduleSnapshotPayloadFromState(),
+            meta: {
+                builtBy: currentActorLabel(),
+                buildSource,
+                schemaVersion: 1
+            }
+        })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Master schedule snapshot save HTTP ${response.status}`);
     }
     return payload;
 }
@@ -2347,6 +2385,9 @@ async function loadMasterSchedule() {
         loadCloseRequestLookup(closeRequestRows);
         if (!applyMasterScheduleSnapshotResponse(snapshotPayload)) {
             await loadMasterScheduleLive(date);
+            saveMasterScheduleSnapshotFromState(date, 'page-fallback-live-query').catch((error) => {
+                console.warn('Master schedule fallback snapshot save failed:', error);
+            });
         }
 
         renderMasterSchedule();
@@ -2367,8 +2408,18 @@ async function rescanMasterScheduleSnapshot() {
         button.textContent = 'Rescanning...';
     }
     try {
-        await rebuildMasterScheduleSnapshotCache(date);
-        await loadMasterSchedule();
+        const sheet = document.getElementById('masterScheduleSheet');
+        const count = document.getElementById('masterCount');
+        if (sheet) sheet.innerHTML = '<div class="master-empty">Rebuilding snapshot from exact Master Schedule live query...</div>';
+        if (count) count.textContent = 'Running exact live query...';
+        await loadMasterConfigs();
+        await ensureSettingsData();
+        await loadMasterScheduleLive(date);
+        renderMasterSchedule();
+        renderSettingsIfVisible();
+        if (count) count.textContent = 'Saving exact live query to snapshot...';
+        await saveMasterScheduleSnapshotFromState(date, 'page-live-query');
+        if (count) count.textContent = 'Snapshot updated from exact live query.';
     } catch (error) {
         console.error('Master schedule rescan failed:', error);
         window.alert(`Master schedule rescan failed: ${error.message || error}`);
