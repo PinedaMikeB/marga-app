@@ -2372,8 +2372,6 @@ async function loadMasterSchedule() {
     if (count) count.textContent = 'Loading schedules...';
 
     try {
-        await loadMasterConfigs();
-        await ensureSettingsData();
         const [snapshotPayload, closeRequestDocs] = await Promise.all([
             fetchMasterScheduleSnapshot(date).catch((error) => {
                 console.warn('Master schedule snapshot unavailable, falling back to live scan:', error);
@@ -2383,7 +2381,10 @@ async function loadMasterSchedule() {
         ]);
         const closeRequestRows = closeRequestDocs.map(parseFirestoreDoc).filter(Boolean);
         loadCloseRequestLookup(closeRequestRows);
-        if (!applyMasterScheduleSnapshotResponse(snapshotPayload)) {
+        const usedSnapshot = applyMasterScheduleSnapshotResponse(snapshotPayload);
+        if (!usedSnapshot) {
+            await loadMasterConfigs();
+            await ensureSettingsData();
             await loadMasterScheduleLive(date);
             saveMasterScheduleSnapshotFromState(date, 'page-fallback-live-query').catch((error) => {
                 console.warn('Master schedule fallback snapshot save failed:', error);
@@ -2392,6 +2393,19 @@ async function loadMasterSchedule() {
 
         renderMasterSchedule();
         renderSettingsIfVisible();
+        if (usedSnapshot) {
+            Promise.all([
+                loadMasterConfigs().catch((error) => {
+                    console.warn('Master config background load failed:', error);
+                }),
+                ensureSettingsData().catch((error) => {
+                    console.warn('Master settings background load failed:', error);
+                })
+            ]).then(() => {
+                renderSettingsIfVisible();
+                renderMasterSchedule();
+            });
+        }
     } catch (error) {
         console.error('Master Schedule load failed:', error);
         if (count) count.textContent = 'Unable to load';
