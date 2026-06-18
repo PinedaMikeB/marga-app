@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-06-01
+Last Updated: 2026-06-16 (Purchasing module + production-first test workflow)
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -9,6 +9,9 @@ Start every new Marga-App thread by reading:
 3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
 ## Current Focus
+- **2026-06-19 Master Schedule snapshot queue:** `tbl_schedule` remains the source of truth; `app_meta.master_schedule_snapshot` is the fast read model. Backend writes now enqueue affected rebuild dates into Postgres table `app_meta.master_schedule_snapshot_rebuild_queue` through a trigger on `app_meta.firestore_documents`, and the Margabase API can process the queue through `GET/POST /admin/master-schedule-snapshot/queue` or script `scripts/process-master-schedule-snapshot-queue.mjs`. Hot rebuild dates currently include the changed schedule date, its next-day carryover date, plus Manila `today` and `tomorrow` so Master Schedule can stay warm without a browser-triggered rescan.
+- **2026-06-16 shipped (verified on `app.marga.biz`):** **Purchasing** module at `/purchasing/` — Money Request item fields + Set Schedule for field staff (`purpose_id: 7`). Dashboard sidebar: **Purchasing** (after Receiving).
+- **2026-06-16 owner testing workflow (canonical):** push and verify on **production first** (`/Volumes/Wotg Drive Mike/GitHub/Marga-App`, `main`, `app.marga.biz`), then sync to **staging** (`Marga-App-staging`, `codex/staging`) **only after live verification succeeds**. Hard refresh after deploy for service worker cache. Staging is not the first acceptance gate for normal UI/module work.
 - Standing Codex purpose from the owner:
   - Protect the owner from unnecessary cost. Before acting, prefer the cheapest safe path that keeps business data accurate and avoids repeated paid reads/writes, recurring services, wasteful scans, duplicate manual work, and repeated prompts for problems already solved.
   - If a workflow, report, query, UI pattern, rescue command, or business rule will likely be reused, preserve it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, an automation, or a skill so future work starts from the proven method instead of rediscovering it.
@@ -117,6 +120,11 @@ Start every new Marga-App thread by reading:
 - Protect the working Billing dashboard presentation and save/print workflow before changing shared resolver logic.
 - Billing print/productivity rule from 2026-05-25: `Saved Invoice To Print` opens the actual billing calculation by row/month, while printed-today/month reports count only explicit `billing_printed_at` audit events from the print buttons. Do not fall back to old save/date fields as "printed" because that recreated false counts.
 - 2026-05-28 saved-to-print queue rule: count only invoice-numbered, positive-amount saved billing rows with no explicit `billing_printed_at`/print audit from the print-queue tracking window onward. Current queue window starts `2026-05-25` (`OPENCLAW_BILLING_SAVED_QUEUE_START_YMD`) because older saved rows do not have reliable print-audit status. Do not count all current-month no-audit rows because that creates false backlogs such as 777; do not limit to only today because that hides real unprinted prepared invoices from Monday/yesterday. Keep older pre-audit no-print rows out of the live queue unless they are reviewed in a separate reconciliation report. Dedupe grouped/multi-branch invoices by invoice number + billing month.
+- 2026-06-17 prepared-invoice reconciliation incident:
+  - Live queue at `app.marga.biz/billing/` showed `144` grouped invoices / `PHP 802,213.37` still waiting, backed by `315` raw `tbl_billing` rows with no `billing_printed_at`.
+  - Local API/process logs did not contain request-level print-audit PATCH traces, so we could not prove which of those invoices were physically printed from logs alone.
+  - Reusable local report/backfill tool added: `node scripts/reconcile-prepared-billing-queue.mjs --out=reports/prepared-billing-queue.json` for read-only inspection, and `--apply --targets=INV[:YYYY-MM] --printed-by="NAME"` only after business confirmation that the listed invoice groups were really printed and need manual `billing_printed_at` recovery.
+  - Current biggest waiting invoice group in the queue was `131216` (`May 2026`, China Bank Savings branches) at `PHP 419,492.64` across `169` raw billing rows saved on `2026-06-16`, all still missing print audit.
 - 2026-05-26 Billing printed-count correction:
   - The print-audit timestamp is stored as UTC ISO (`billing_printed_at`), so report parsing must respect timezone-aware `Z`/offset strings before applying Manila-local parsing. Treating ISO strings as local Manila time shifted early-day print events back to the prior day and undercounted `Total Printed Invoice Today`.
   - `Total Printed Invoice This Month` is a calendar print-date running total from May 1 through today, not the May billing-month cell count. Count explicit print-audit rows when present; for pre-audit historical rows, count saved invoice rows dated before today as operationally printed, but keep unstamped rows saved today in `Saved Invoice To Print` so computed-but-not-yet-printed invoices are not mixed into today's printed total.
@@ -574,6 +582,10 @@ Important Collections SN rule:
 6. Continue module work without reverting unrelated dirty files.
 
 ## Session Log (Top First)
+### 2026-06-16 - Purchasing Module And Production-First Test Workflow
+- **Purchasing** verified on `app.marga.biz` (`/purchasing/`): Money Request item fields, amount, Set Schedule (Buy Items purpose), field schedule via `tbl_schedule` `purpose_id: 7`.
+- **Owner test order:** production (`main` / `app.marga.biz`) first; staging (`codex/staging`) only after production is confirmed working.
+
 ### 2026-05-05 - Field Customer Location Pin Permission Hotfix
 - Urgent production issue: Field App could not pin customer location and therefore could not close a ticket. Mobile alert showed `Failed to pin customer location: Missing or insufficient permissions.`
 - Root cause: the new helper collections `marga_field_visit_events` / `marga_location_frontage_photos` were not allowed by the current Firestore legacy `tbl_.*` rules.
