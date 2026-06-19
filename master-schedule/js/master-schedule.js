@@ -1409,7 +1409,7 @@ function validateScheduleAssignment(row, overrides = {}) {
 }
 
 function scheduleExceptionReason(row) {
-    const assignment = validateScheduleAssignment(row);
+    const assignment = validateScheduleAssignment(row, { allowInactiveRoster: true });
     if (!assignment.ok) return assignment.reason;
     if (/^others?$/i.test(clean(row.area))) return 'Area is Others and needs a real route area before dispatch.';
     if (/^others?$/i.test(clean(row.purpose)) || Number(row.purposeId || 0) === 9) return 'Purpose is Others and needs a real schedule purpose before dispatch.';
@@ -3243,7 +3243,7 @@ function renderMasterScheduleRow(row) {
     const canMove = true;
     const displayStatus = row.masterStatusLabel || 'Not Set';
     const displayStatusClass = row.masterStatusValue ? statusClassName(row.masterStatusValue) : '';
-    const assignment = validateScheduleAssignment(row);
+    const assignment = validateScheduleAssignment(row, { allowInactiveRoster: true });
     const exceptionReason = scheduleExceptionReason(row);
     const canForward = isOpenScheduleRow(row) && assignment.ok && !exceptionReason;
     const defaultForwardDate = clean(document.getElementById('masterForwardDateInput')?.value) || addDays(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()), 1);
