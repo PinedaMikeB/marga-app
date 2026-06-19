@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v161-master-pastpending-fix-1';
+const CACHE_NAME = 'marga-app-shell-v162-field-mobile-task-tabs-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -34,7 +34,7 @@ const SHELL_ASSETS = [
     '/master-schedule/js/master-schedule.js?v=20260618-master-pastpending-fix-1',
     '/field/',
     '/field/index.html',
-    '/field/css/field.css?v=20260604-field-tin-7',
+    '/field/css/field.css?v=20260602-mobile-scroll-landscape-1',
     '/field/js/field.js?v=20260618-workload-cutoff-1',
     '/purchasing/',
     '/purchasing/index.html',
