@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v162-field-mobile-task-tabs-1';
+const CACHE_NAME = 'marga-app-shell-v163-master-staff-filter-assign-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -31,7 +31,7 @@ const SHELL_ASSETS = [
     '/collections.html',
     '/collections/js/collections.js?v=20260601-summary-autoupdate-1',
     '/master-schedule.html',
-    '/master-schedule/js/master-schedule.js?v=20260618-master-pastpending-fix-1',
+    '/master-schedule/js/master-schedule.js?v=20260619-master-staff-filter-assign-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260602-mobile-scroll-landscape-1',

@@ -163,6 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('masterAutoPriorityBtn')?.addEventListener('click', autoNumberKaizenPriorities);
     document.getElementById('masterKaizenAutoPriorityBtn')?.addEventListener('click', autoNumberKaizenPriorities);
     document.getElementById('masterPrintScopeInput')?.addEventListener('change', updatePrintStaffVisibility);
+    document.getElementById('masterPrintStaffInput')?.addEventListener('change', renderMasterSchedule);
+    document.getElementById('masterStaffSearchInput')?.addEventListener('input', renderMasterSchedule);
     document.getElementById('masterStatusOverlay')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCloseBtn')?.addEventListener('click', closeMasterStatusModal);
     document.getElementById('masterStatusCancelBtn')?.addEventListener('click', closeMasterStatusModal);
@@ -2446,10 +2448,12 @@ async function rescanMasterScheduleSnapshot() {
 function getVisibleRows() {
     const statusFilter = clean(document.getElementById('masterStatusInput')?.value || 'active').toLowerCase();
     const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
+    const staffSearch = normalizeSearch(document.getElementById('masterStaffSearchInput')?.value || '');
 
     return masterState.rows.filter((row) => {
         if (!rowMatchesStatusFilter(row, statusFilter)) return false;
         if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
+        if (staffSearch && !normalizeSearch(row.assignedTo || '').includes(staffSearch)) return false;
         return true;
     });
 }
@@ -2457,18 +2461,22 @@ function getVisibleRows() {
 function getVisiblePendingRows() {
     const statusFilter = clean(document.getElementById('masterStatusInput')?.value || 'active').toLowerCase();
     const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
+    const staffSearch = normalizeSearch(document.getElementById('masterStaffSearchInput')?.value || '');
 
     return masterState.pendingRows.filter((row) => {
         if (!rowMatchesStatusFilter(row, statusFilter)) return false;
         if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
+        if (staffSearch && !normalizeSearch(row.assignedTo || '').includes(staffSearch)) return false;
         return true;
     });
 }
 
 function getVisibleExceptionRows() {
     const search = normalizeSearch(document.getElementById('masterSearchInput')?.value || '');
+    const staffSearch = normalizeSearch(document.getElementById('masterStaffSearchInput')?.value || '');
     return masterState.exceptionRows.filter((row) => {
         if (search && !(row.searchIndex || normalizeSearch(row.searchText)).includes(search)) return false;
+        if (staffSearch && !normalizeSearch(row.assignedTo || '').includes(staffSearch)) return false;
         return true;
     });
 }
@@ -3299,7 +3307,7 @@ async function updateScheduleOwner(row, employee) {
     const assignment = validateScheduleAssignment(row, {
         staffId,
         staffName,
-        allowInactiveRoster: !activeScheduleStaffIds().includes(staffId)
+        allowInactiveRoster: true
     });
     if (!assignment.ok) throw new Error(assignment.reason);
 
@@ -3625,58 +3633,20 @@ async function reassignScheduleFromSelect(rowKey, staffId) {
     masterState.reassigning = true;
     const count = document.getElementById('masterCount');
     if (count) count.textContent = `Moving ${targets.length} schedule row(s)...`;
-    let overrideApproval = null;
 
     try {
-        if (!activeScheduleStaffIds().includes(String(staffId))) {
-            overrideApproval = await requestScheduleOverride({
-                existingApproval: overrideApproval,
-                targetStaffId: staffId,
-                title: 'Inactive Staff Override',
-                message: `${newStaff} is outside the active scheduling roster.`,
-                reason: 'Use this only when the office intentionally wants this inactive employee to keep or receive the schedule, even though they are not in today\'s active scheduling roster.'
-            });
-        }
         for (const target of targets) {
             const previousOwner = target.assignedTo || 'Unassigned';
-            let targetEmployee = employee;
-            if (window.MargaScheduleConsolidation) {
-                const consolidation = await MargaScheduleConsolidation.resolveAssignment({
-                    moduleName: 'master-schedule',
-                    date: target.routeDate || target.originalDate || dateOnly(getRouteTaskDateTime(target)),
-                    taskDatetime: getRouteTaskDateTime(target),
-                    companyId: target.companyId,
-                    branchId: target.branchId,
-                    staffId,
-                    staffName: newStaff,
-                    purposeId: target.purposeId || '',
-                    scheduleId: target.scheduleId,
-                    currentDocId: target.docId,
-                    customerName: target.customer,
-                    allowReassignmentOverride: true,
-                    getStaffName: (id) => employeeName(masterState.lookups.employees.get(String(id)), id)
-                });
-                if (!consolidation.ok) throw new Error('Reassignment cancelled by consolidation rule.');
-                if (consolidation.reassignmentOverride) {
-                    overrideApproval = await requestScheduleOverride({
-                        existingApproval: overrideApproval,
-                        title: 'Same-Location Route Override',
-                        message: `${target.customer || 'This customer'} already has a same-location owner for that visit.`,
-                        reason: 'Default rule keeps toner, billing, collection, and service stops under one visit owner to avoid unnecessary trips. Only approve this if the office intentionally wants a different employee owner for this visit.'
-                    });
-                }
-                if (String(consolidation.staffId || staffId) !== String(staffId)) {
-                    targetEmployee = getStaffById(consolidation.staffId);
-                    if (!targetEmployee) throw new Error(`Consolidation target staff #${consolidation.staffId} is not loaded.`);
-                }
-            }
-            await updateScheduleOwner(target, targetEmployee);
+            await updateScheduleOwner(target, employee);
             await appendActivityLog(target, {
                 actionType: 'reassign',
                 actionLabel: 'Assigned Staff Updated',
-                detail: `Reassigned from ${previousOwner} to ${employeeName(targetEmployee, targetEmployee?.id || staffId)}.${overrideApproval ? ` Override approved by ${overrideApproval.approverLabel}.` : ''}`
+                detail: `Reassigned from ${previousOwner} to ${newStaff}.`
             });
         }
+        const selectedDate = document.getElementById('masterDateInput')?.value || formatDateYmd(new Date());
+        if (count) count.textContent = 'Refreshing field schedule snapshot...';
+        await rebuildMasterScheduleSnapshotCache(selectedDate);
         masterState.rows.sort((a, b) => {
             if (a.assignedTo !== b.assignedTo) return a.assignedTo.localeCompare(b.assignedTo);
             if (a.area !== b.area) return a.area.localeCompare(b.area);
