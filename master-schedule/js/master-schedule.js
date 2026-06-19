@@ -10,7 +10,6 @@ const MASTER_CARRYOVER_CUTOFF_MINUTE = 30;
 const ROUTE_COLLECTION_PRIMARY = 'tbl_printedscheds';
 const ROUTE_COLLECTION_FALLBACK = 'tbl_savedscheds';
 const MASTER_ACTIVITY_COLLECTION = 'marga_master_schedule_activity';
-const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const PENDING_NOT_ROUTED_LOOKBACK_DAYS = 45;
 const PENDING_CARRYOVER_START_DATE = '2026-05-04';
 const REQUIRED_PRIORITY_COUNT = 5;
@@ -1999,6 +1998,11 @@ function buildLegacyScheduleRow(row) {
         status: lifecycle,
         masterStatusValue,
         masterStatusLabel: statusLabel(masterStatusValue),
+        closeRequestStatus: clean(row.close_request_status),
+        closeRequestReason: clean(row.close_request_reason),
+        closeRequestRequestedAt: clean(row.close_request_requested_at),
+        closeRequestRequesterStaffId: String(row.close_request_requested_by || ''),
+        closeRequestRequesterName: clean(row.close_request_requester_name),
         superUrgent,
         hasComplaint,
         hasRequest,
@@ -2165,10 +2169,36 @@ async function hydrateReadyLookups(rows) {
     await queryByReferenceIds('tbl_finaldr', finalDrIds, masterState.lookups.finalDeliveryReceipts);
 }
 
+function normalizeCloseRequestRow(row) {
+    if (!row) return null;
+    const pendingStatus = clean(row.closeRequestStatus || row.close_request_status || row.status).toLowerCase();
+    if (row.schedule_id || row.requester_staff_id) {
+        if (pendingStatus !== 'pending') return null;
+        return row;
+    }
+    const scheduleId = Number(row.scheduleId || row.id || 0) || 0;
+    if (!scheduleId || clean(row.closeRequestStatus || row.close_request_status).toLowerCase() !== 'pending') return null;
+    return {
+        schedule_id: scheduleId,
+        requester_staff_id: Number(row.closeRequestRequesterStaffId || row.close_request_requested_by || 0) || 0,
+        requester_name: clean(row.closeRequestRequesterName || row.close_request_requester_name),
+        requested_at: clean(row.closeRequestRequestedAt || row.close_request_requested_at),
+        reason: clean(row.closeRequestReason || row.close_request_reason),
+        task_datetime: clean(row.taskDatetime || row.routeDate || ''),
+        branch_id: Number(row.branchId || row.branch_id || 0) || 0,
+        company_id: Number(row.companyId || row.company_id || 0) || 0,
+        tech_id: Number(row.techId || row.tech_id || 0) || 0,
+        route_doc_id: clean(row.routeDocId || row.route_doc_id),
+        route_source: clean(row.routeSource || row.route_source),
+        status: 'pending'
+    };
+}
+
 function loadCloseRequestLookup(rows = []) {
     masterState.lookups.closeRequestsBySchedule = new Map();
     masterState.closeRequestRows = rows
-        .filter((row) => clean(row.status || 'pending').toLowerCase() === 'pending')
+        .map(normalizeCloseRequestRow)
+        .filter(Boolean)
         .sort((a, b) => clean(b.requested_at).localeCompare(clean(a.requested_at)));
     masterState.closeRequestRows
         .forEach((row) => {
@@ -2321,18 +2351,13 @@ async function loadMasterConfigs() {
 async function loadMasterScheduleLive(date) {
     const start = `${date} 00:00:00`;
     const end = `${date} 23:59:59`;
-    const [scheduleDocs, closeRequestDocs] = await Promise.all([
-        queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []),
-        queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending').catch(() => [])
-    ]);
+    const scheduleDocs = await queryDateRange('tbl_schedule', 'task_datetime', start, end).catch(() => []);
 
     const scheduleRows = scheduleDocs.map(parseFirestoreDoc).filter(Boolean);
     const sameDayScheduleRows = scheduleRows.map(asMasterDirectTodayScheduleRow);
     const pendingRawRows = await loadPendingNotRoutedRows(date, sameDayScheduleRows);
     const legacyRows = [...sameDayScheduleRows, ...pendingRawRows];
     const lookupRows = legacyRows;
-    const closeRequestRows = closeRequestDocs.map(parseFirestoreDoc).filter(Boolean);
-    loadCloseRequestLookup(closeRequestRows);
     await hydrateLegacyLookups(lookupRows);
     await hydrateReadyLookups(lookupRows);
 
@@ -2358,6 +2383,7 @@ async function loadMasterScheduleLive(date) {
     masterState.exceptionRows = builtRows.filter(isScheduleExceptionRow);
     masterState.rows = builtRows.filter((row) => !isScheduleExceptionRow(row));
     masterState.pendingRows = [];
+    loadCloseRequestLookup(builtRows);
     await buildMasterStaffFieldBuckets({
         scheduleRows,
         pendingRawRows
@@ -2387,21 +2413,16 @@ async function loadMasterSchedule() {
                 console.warn('Master schedule fallback snapshot save failed:', error);
             });
         }
+        loadCloseRequestLookup([
+            ...(masterState.rows || []),
+            ...(masterState.pendingRows || []),
+            ...(masterState.exceptionRows || [])
+        ]);
 
         renderMasterSchedule();
         renderSettingsIfVisible();
         if (usedSnapshot) {
             Promise.all([
-                queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending')
-                    .then((docs) => {
-                        const closeRequestRows = docs.map(parseFirestoreDoc).filter(Boolean);
-                        loadCloseRequestLookup(closeRequestRows);
-                        renderCloseRequestsPanel();
-                        renderMasterSchedule();
-                    })
-                    .catch((error) => {
-                        console.warn('Master close requests background load failed:', error);
-                    }),
                 loadMasterConfigs().catch((error) => {
                     console.warn('Master config background load failed:', error);
                 }),
@@ -3406,6 +3427,7 @@ async function applyApprovedCloseRequest(request, row = null, options = {}) {
         master_schedule_status_label: statusLabel('closed_fixed'),
         master_schedule_status_updated_at: nowIso,
         master_schedule_status_updated_by: actor,
+        close_request_status: 'approved',
         close_request_approved_at: nowIso,
         close_request_approved_by: actor
     });
@@ -3420,13 +3442,6 @@ async function applyApprovedCloseRequest(request, row = null, options = {}) {
             bridge_pushed_at: nowIso
         }).catch((error) => console.warn('Route close update failed; schedule was closed.', error));
     }
-
-    await updateDocFields(CLOSE_REQUEST_COLLECTION, request?._docId || request?.id, {
-        status: 'approved',
-        approved_at: nowIso,
-        approved_by: actor,
-        closed_schedule_at: finishTime
-    });
 
     if (row) {
         await appendActivityLog(row, {

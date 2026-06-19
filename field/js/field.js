@@ -4,6 +4,8 @@ if (!MargaAuth.requireAccess('field')) {
 
 const FIELD_QUERY_LIMIT = 5000;
 const FIELD_CARRYOVER_DAYS = 45;
+const FIELD_CARRYOVER_CUTOFF_HOUR = 17;
+const FIELD_CARRYOVER_CUTOFF_MINUTE = 30;
 const REQUIRED_PRIORITY_COUNT = 5;
 const ATTENDANCE_LOCATION_RADIUS_METERS = 200;
 const FIELD_ATTENDANCE_START_TIME = '08:00';
@@ -33,7 +35,6 @@ const FIELD_ATTENDANCE_COLLECTION = 'tbl_field_attendance';
 const FIELD_LOCATION_REQUEST_COLLECTION = 'tbl_field_location_requests';
 const WORK_LOCATIONS_COLLECTION = 'marga_hr_work_locations';
 const FIELD_CALL_COLLECTION = 'tbl_field_call_requests';
-const CLOSE_REQUEST_COLLECTION = 'tbl_schedule_close_requests';
 const LOCATION_PHOTO_COLLECTION = 'tbl_location_frontage_photos';
 const PETTY_CASH_ENTRY_COLLECTION = 'tbl_pettycash_entries';
 const PETTY_CASH_REQUEST_COLLECTION = 'tbl_pettycash_requests';
@@ -75,6 +76,7 @@ const FIELD_CALL_ALLOW_PUBLIC_FALLBACK = false;
 const FIELD_CALL_POLL_MS = 7000;
 const FIELD_CALL_RING_TIMEOUT_MS = 120000;
 const FIELD_CALL_SCRIPT_TIMEOUT_MS = 4500;
+const FIELD_SNAPSHOT_FETCH_MS = 20000;
 const FIELD_MODAL_DRAFT_KEY_PREFIX = 'marga_field_modal_draft_v1';
 const FIELD_REIMBURSEMENT_DRAFT_KEY_PREFIX = 'marga_field_reimbursement_draft_v1';
 const FIELD_MODAL_DRAFT_INPUT_IDS = [
@@ -122,6 +124,8 @@ const FIELD_MODAL_DRAFT_FILE_IDS = [
     'fieldAfterPhoto',
     'fieldCollectionVoucherImage',
     'fieldCollectionCheckImage',
+    'fieldCollectionCreditMemoImage',
+    'fieldCollectionEwalletImage',
     'fieldLocationPhoto'
 ];
 
@@ -304,9 +308,35 @@ const state = {
     closeRequestsBySchedule: new Map()
 };
 
+function resolveFieldStaffId(user = MargaAuth.getUser?.() || {}) {
+    return Number(user?.staff_id || user?.staffId || user?.employee_id || user?.employeeId || user?.id || 0) || null;
+}
+
+function openFieldTimeRecords() {
+    const user = MargaAuth.getUser();
+    const staffId = Number(state.staffId || resolveFieldStaffId(user) || 0) || 0;
+    if (!staffId) {
+        alert('This account has no active tbl_employee ID mapped.');
+        return;
+    }
+    const openTimeRecords = window.MargaAttendanceTimeRecords?.openModal;
+    if (typeof openTimeRecords !== 'function') {
+        alert('Time Record is not ready yet. Reload the page and try again.');
+        return;
+    }
+    openTimeRecords({
+        staffId,
+        staffName: String(user?.name || user?.username || user?.email || '').trim(),
+        sourceModule: 'field'
+    }).catch((error) => {
+        console.error('Field time records open failed:', error);
+        alert(error?.message || 'Unable to open time records.');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const user = MargaAuth.getUser();
-    state.staffId = Number(user?.staff_id || 0) || null;
+    state.staffId = resolveFieldStaffId(user);
     if (!state.staffId) {
         alert('This account has no active tbl_employee ID mapped.');
     }
@@ -333,6 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldRefresh').addEventListener('click', () => loadMySchedule({ keepTab: true }));
     document.getElementById('fieldAttendanceTimeInBtn')?.addEventListener('click', () => markAttendanceTime('in'));
     document.getElementById('fieldAttendanceTimeOutBtn')?.addEventListener('click', () => markAttendanceTime('out'));
+    document.getElementById('fieldAttendanceTimeRecordBtn')?.addEventListener('click', openFieldTimeRecords);
     document.getElementById('fieldCheckLocationBtn')?.addEventListener('click', checkAttendanceLocation);
     document.getElementById('fieldOpenLocationTaskBtn')?.addEventListener('click', openAttendanceLocationTask);
     document.getElementById('fieldAddNearbyScheduleBtn')?.addEventListener('click', openAddNearbySchedulePanel);
@@ -483,6 +514,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('fieldCollectionCheckImage').addEventListener('change', () => {
         updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldCollectionCreditMemoImage').addEventListener('change', () => {
+        updatePhotoHint('fieldCollectionCreditMemoImage', 'fieldCollectionCreditMemoHint', 'field_collection_credit_memo_name');
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldCollectionEwalletImage').addEventListener('change', () => {
+        updatePhotoHint('fieldCollectionEwalletImage', 'fieldCollectionEwalletHint', 'field_collection_ewallet_name');
+        queueFieldModalDraftSave();
+    });
+    document.getElementById('fieldCollectionPaymentType').addEventListener('change', () => {
+        syncCollectionPaymentProofFields();
         queueFieldModalDraftSave();
     });
     document.getElementById('fieldCollectionInvoiceSearch')?.addEventListener('input', runFieldCollectionInvoiceSearch);
@@ -844,6 +887,9 @@ function applyFieldModalDraft(draft) {
         updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name');
         updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name');
         updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
+        updatePhotoHint('fieldCollectionCreditMemoImage', 'fieldCollectionCreditMemoHint', 'field_collection_credit_memo_name');
+        updatePhotoHint('fieldCollectionEwalletImage', 'fieldCollectionEwalletHint', 'field_collection_ewallet_name');
+        syncCollectionPaymentProofFields();
         updateActionButtons();
         return true;
     } finally {
@@ -1803,7 +1849,25 @@ function formatShortDate(value) {
 
 function isPastPendingByOriginalDate(row) {
     const originalDate = originalScheduleDate(row);
-    return Boolean(originalDate && state.selectedDate && originalDate < state.selectedDate);
+    const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
+    return isCarryoverEligibleForSelectedDate(originalDate, selectedDate);
+}
+
+function hasReachedFieldCarryoverCutoff(baseDate = localDateYmd()) {
+    const today = localDateYmd();
+    if (baseDate < today) return true;
+    if (baseDate > today) return false;
+    const now = new Date();
+    return now.getHours() > FIELD_CARRYOVER_CUTOFF_HOUR
+        || (now.getHours() === FIELD_CARRYOVER_CUTOFF_HOUR && now.getMinutes() >= FIELD_CARRYOVER_CUTOFF_MINUTE);
+}
+
+function isCarryoverEligibleForSelectedDate(originalDate, selectedDate) {
+    if (!originalDate || !selectedDate || originalDate >= selectedDate) return false;
+    const today = localDateYmd();
+    if (selectedDate <= today) return true;
+    if (originalDate < today) return true;
+    return originalDate === today && hasReachedFieldCarryoverCutoff(today);
 }
 
 function getStatusKey(row) {
@@ -1959,10 +2023,36 @@ function getModalRelatedRows(row = getCurrentRow()) {
     return rows.length ? rows : [row];
 }
 
+function normalizeCloseRequestRow(row) {
+    if (!row) return null;
+    const pendingStatus = String(row.close_request_status || row.closeRequestStatus || row.status || '').trim().toLowerCase();
+    if (row.schedule_id || row.requester_staff_id) {
+        if (pendingStatus !== 'pending') return null;
+        return row;
+    }
+    const scheduleId = String(row.id || row.scheduleId || '').trim();
+    if (!scheduleId || String(row.close_request_status || row.closeRequestStatus || '').trim().toLowerCase() !== 'pending') return null;
+    return {
+        schedule_id: scheduleId,
+        requester_staff_id: Number(row.close_request_requested_by || row.closeRequestRequesterStaffId || 0) || 0,
+        requester_name: String(row.close_request_requester_name || row.closeRequestRequesterName || '').trim(),
+        requested_at: String(row.close_request_requested_at || row.closeRequestRequestedAt || '').trim(),
+        reason: String(row.close_request_reason || row.closeRequestReason || '').trim(),
+        task_datetime: String(row.task_datetime || row.taskDatetime || '').trim(),
+        branch_id: Number(row.branch_id || row.branchId || 0) || 0,
+        company_id: Number(row.company_id || row.companyId || 0) || 0,
+        tech_id: Number(row.tech_id || row.techId || 0) || 0,
+        route_doc_id: String(row.route_doc_id || row.routeDocId || '').trim(),
+        route_source: String(row.route_source || row.routeSource || '').trim(),
+        status: 'pending'
+    };
+}
+
 function loadCloseRequestLookup(rows = []) {
     state.closeRequestsBySchedule = new Map();
     rows
-        .filter((row) => String(row.status || 'pending').trim().toLowerCase() === 'pending')
+        .map(normalizeCloseRequestRow)
+        .filter(Boolean)
         .forEach((row) => {
             const scheduleId = String(row.schedule_id || '');
             if (scheduleId) state.closeRequestsBySchedule.set(scheduleId, row);
@@ -1971,6 +2061,7 @@ function loadCloseRequestLookup(rows = []) {
 
 function activeRows() {
     if (state.activeTab === 'closed') return state.rows.filter(isClosedOnSelectedDate);
+    if (state.activeTab === 'parts') return workloadRows().filter(isPartsDiagnosisRisk);
     return state.activeTab === 'carryover' ? state.carryoverRows : state.todayRows;
 }
 
@@ -2004,6 +2095,22 @@ function workloadRows() {
     });
 }
 
+function uniqueRouteRows(rows = []) {
+    const seen = new Set();
+    return rows.filter((row) => {
+        const key = String(row?.id || row?._docId || row?.route_doc_id || '');
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function routeUniverseRows() {
+    return uniqueRouteRows([...state.todayRows, ...state.carryoverRows])
+        .filter((row) => getStatusKey(row) !== 'cancelled');
+}
+
 function isWorkingRouteRow(row) {
     return ['pending', 'carryover', 'ongoing'].includes(getStatusKey(row));
 }
@@ -2017,7 +2124,10 @@ function closedRowsForSelectedDate() {
 }
 
 function setActiveTab(tab) {
-    state.activeTab = tab === 'carryover' ? 'carryover' : (tab === 'closed' ? 'closed' : 'today');
+    if (tab === 'carryover') state.activeTab = 'carryover';
+    else if (tab === 'closed') state.activeTab = 'closed';
+    else if (tab === 'parts') state.activeTab = 'parts';
+    else state.activeTab = 'today';
     state.statusFilter = 'all';
     const statusFilter = document.getElementById('fieldStatusFilter');
     if (statusFilter) statusFilter.value = 'all';
@@ -2058,9 +2168,11 @@ function updateTabControls() {
 
     const todayCount = document.getElementById('fieldTodayCount');
     const carryoverCount = document.getElementById('fieldCarryoverCount');
+    const partsCount = document.getElementById('fieldPartsCount');
     const closedCount = document.getElementById('fieldClosedCount');
     if (todayCount) todayCount.textContent = String(workingRouteRows(state.todayRows).length);
     if (carryoverCount) carryoverCount.textContent = String(workingRouteRows(state.carryoverRows).length);
+    if (partsCount) partsCount.textContent = String(workloadRows().filter(isPartsDiagnosisRisk).length);
     if (closedCount) closedCount.textContent = String(closedRowsForSelectedDate().length);
 }
 
@@ -2068,11 +2180,8 @@ function updateSubtitle() {
     const subtitle = document.getElementById('fieldSubtitle');
     if (!subtitle) return;
     const date = state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date());
-    const newToday = todayWorkingRows().length;
-    const pastPending = pastPendingWorkingRows().length;
-    const closedToday = closedRowsForSelectedDate().length;
-    const total = newToday + pastPending;
-    subtitle.textContent = `${total} open workload task(s) for ${date}: ${newToday} new + ${pastPending} past pending, ${closedToday} closed.`;
+    const summary = getWorkloadSummary();
+    subtitle.textContent = `${summary.totalWorkload} total workload task(s) for ${date}: ${summary.newTodayRows.length} new today + ${summary.pastPendingRows.length} past pending, ${summary.unfinishedCount} unfinished, ${summary.closedCount} closed, ${summary.pendingPartsRows.length} pending parts/machine.`;
 }
 
 function setRouteLoadProgress(percent, label, status = 'loading') {
@@ -2868,7 +2977,7 @@ async function readReimbursementForm(targetStatus, existing = null) {
         expenseId: id,
         sourceModule: 'field_app',
         requestType,
-        staffId: Number(state.staffId || user?.staff_id || 0) || 0,
+        staffId: Number(state.staffId || resolveFieldStaffId(user) || 0) || 0,
         staffName: currentFieldDisplayName(),
         departmentTeam: String(user?.department || user?.department_name || user?.team || '').trim(),
         requestDate: existing?.requestDate || localDateYmd(now),
@@ -3005,25 +3114,27 @@ async function attachReimbursementUploads(request) {
 
 async function prepareReimbursementImageUpload(file, requestId, kind) {
     const blob = await compressImageFile(file, { maxDimension: 1280, quality: 0.68 });
-    try {
-        return {
-            ...(await uploadReimbursementImageToStorage(blob, { requestId, kind })),
-            storageMode: 'storage'
-        };
-    } catch (storageError) {
-        console.warn('Reimbursement receipt Storage upload failed; falling back to inline image data.', storageError);
-        const dataUrl = await blobToDataUrl(blob);
-        if (dataUrl.length > 550000) {
-            throw new Error('Receipt image is still too large after compression. Retake a closer, clearer photo before submitting.');
+    if (String(FIREBASE_CONFIG?.storageBucket || '').trim()) {
+        try {
+            return {
+                ...(await uploadReimbursementImageToStorage(blob, { requestId, kind })),
+                storageMode: 'storage'
+            };
+        } catch (storageError) {
+            console.warn('Reimbursement receipt storage upload failed; falling back to inline image data.', storageError);
         }
-        return {
-            path: '',
-            url: dataUrl,
-            size: Number(blob.size || 0) || 0,
-            type: 'image/jpeg',
-            storageMode: 'inline_data_url'
-        };
     }
+    const dataUrl = await blobToDataUrl(blob);
+    if (dataUrl.length > 550000) {
+        throw new Error('Receipt image is still too large after compression. Retake a closer, clearer photo before submitting.');
+    }
+    return {
+        path: '',
+        url: dataUrl,
+        size: Number(blob.size || 0) || 0,
+        type: 'image/jpeg',
+        storageMode: 'inline_data_url'
+    };
 }
 
 async function uploadReimbursementImageToStorage(blob, { requestId, kind }) {
@@ -3070,7 +3181,7 @@ async function writeReimbursementAudit(requestId, action, previous, next, remark
         id: docId,
         requestId,
         action,
-        userId: String(user?.staff_id || user?.id || state.staffId || ''),
+        userId: String(resolveFieldStaffId(user) || user?.id || state.staffId || ''),
         userName: currentFieldDisplayName(),
         role: currentFieldRoles().join(', '),
         timestamp: now,
@@ -3187,6 +3298,39 @@ function getRouteTaskDateTime(row) {
     return String(row?.task_datetime || '').trim();
 }
 
+function getMargabaseAdminUrl(path) {
+    const baseUrl = String(FIREBASE_CONFIG?.baseUrl || window.MARGABASE_CONFIG?.baseUrl || '').trim();
+    if (baseUrl.startsWith('/margabase-api/')) return `/margabase-api${path}`;
+    if (baseUrl.includes('/v1/projects/')) {
+        const origin = new URL(baseUrl, window.location.href).origin;
+        return `${origin}${path}`;
+    }
+    return `http://127.0.0.1:8787${path}`;
+}
+
+async function fetchFieldScheduleSnapshot(date) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), FIELD_SNAPSHOT_FETCH_MS);
+    try {
+        const response = await fetch(`${getMargabaseAdminUrl('/admin/master-schedule-snapshot')}?date=${encodeURIComponent(date)}`, {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) {
+            throw new Error(payload?.error?.message || `Field schedule snapshot HTTP ${response.status}`);
+        }
+        return payload;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Field schedule snapshot took too long to load.');
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeoutId);
+    }
+}
+
 function getAssignedStaffId(row) {
     return Number(row?.route_tech_id || row?.tech_id || 0);
 }
@@ -3239,6 +3383,119 @@ async function fetchDocsByIdList(collection, ids) {
             .map((doc) => [String(doc.id || doc._docId || ''), doc])
             .filter(([key]) => key)
     );
+}
+
+function sortFieldRouteRows(rows = []) {
+    return [...rows].sort((a, b) => (
+        String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) ||
+        (Number(a.id || 0) - Number(b.id || 0))
+    ));
+}
+
+async function loadSnapshotBoundScheduleRows(date) {
+    const snapshotPayload = await fetchFieldScheduleSnapshot(date);
+    if (!snapshotPayload?.exists || !snapshotPayload?.payload) return null;
+
+    const payloadRows = Array.isArray(snapshotPayload.payload.rows) ? snapshotPayload.payload.rows : [];
+    const staffId = Number(state.staffId || 0);
+    const scheduleIds = payloadRows
+        .filter((row) => Number(row?.techId || 0) === staffId)
+        .map((row) => Number(row?.scheduleId || 0))
+        .filter((id) => id > 0);
+
+    const scheduleMap = await fetchDocsByIdList('tbl_schedule', scheduleIds);
+    const rawRows = scheduleIds
+        .map((id) => scheduleMap.get(String(id)))
+        .filter(Boolean)
+        .filter((row) => Number(row.tech_id || 0) === staffId)
+        .filter(isDispatchableFieldRow)
+        .map(asDirectTodayScheduleRow);
+
+    const allCurrentRows = sortFieldRouteRows(rawRows);
+    const carryoverRows = allCurrentRows.filter(isPastPendingByOriginalDate);
+    const todayRows = allCurrentRows.filter((row) => !isPastPendingByOriginalDate(row));
+    return {
+        routeSourceLabel: String(snapshotPayload.payload.routeSourceLabel || 'Schedule').trim() || 'Schedule',
+        todayRows,
+        carryoverRows,
+        rows: [...todayRows, ...carryoverRows]
+    };
+}
+
+function buildLiveDayRouteState(scheduleDocs = []) {
+    const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
+    const directTodayRows = scheduleSourceRows
+        .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
+        .filter(isDispatchableFieldRow)
+        .map(asDirectTodayScheduleRow);
+    const allCurrentRows = sortFieldRouteRows(directTodayRows);
+    const carryoverRows = allCurrentRows.filter((row) => isPastPendingByOriginalDate(row))
+        .map((row) => ({
+            ...row,
+            route_source: row.route_source || 'Forwarded Past Pending'
+        }));
+    const todayRows = allCurrentRows.filter((row) => !isPastPendingByOriginalDate(row));
+    return {
+        routeSourceLabel: 'Schedule',
+        todayRows,
+        carryoverRows,
+        rows: [...todayRows, ...carryoverRows]
+    };
+}
+
+function mergeRouteState(primaryState = null, liveState = null) {
+    if (!primaryState && !liveState) return null;
+    if (!primaryState) return liveState;
+    if (!liveState) return primaryState;
+
+    const merged = new Map();
+    [...(primaryState.rows || []), ...(liveState.rows || [])].forEach((row) => {
+        const key = String(row?.id || row?._docId || '');
+        if (!key) return;
+        const current = merged.get(key);
+        if (!current) {
+            merged.set(key, row);
+            return;
+        }
+        merged.set(key, { ...current, ...row });
+    });
+
+    const combinedRows = sortFieldRouteRows(Array.from(merged.values()));
+    const carryoverRows = combinedRows.filter((row) => isPastPendingByOriginalDate(row))
+        .map((row) => ({
+            ...row,
+            route_source: row.route_source || 'Forwarded Past Pending'
+        }));
+    const todayRows = combinedRows.filter((row) => !isPastPendingByOriginalDate(row));
+
+    if (combinedRows.length !== (primaryState.rows || []).length) {
+        console.warn('Field snapshot/live day mismatch detected; merged live rows into snapshot result.', {
+            staffId: Number(state.staffId || 0),
+            snapshotCount: Number((primaryState.rows || []).length),
+            liveCount: Number((liveState.rows || []).length),
+            mergedCount: Number(combinedRows.length)
+        });
+    }
+
+    return {
+        routeSourceLabel: String(primaryState.routeSourceLabel || liveState.routeSourceLabel || 'Schedule').trim() || 'Schedule',
+        todayRows,
+        carryoverRows,
+        rows: [...todayRows, ...carryoverRows]
+    };
+}
+
+async function loadSkillHistoryForSelectedDate(date) {
+    const historyStart = `${addDaysYmd(date, -30)} 00:00:00`;
+    const dayEnd = `${date} 23:59:59`;
+    try {
+        const skillHistoryDocs = await queryByDateRange('tbl_schedule', 'task_datetime', historyStart, dayEnd);
+        state.skillHistoryRows = mergePendingOfflineRows('tbl_schedule', skillHistoryDocs.map(parseFirestoreDoc).filter(Boolean))
+            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
+    } catch (error) {
+        console.warn('Field skill history load failed; continuing without history summary.', error);
+        state.skillHistoryRows = [];
+    }
 }
 
 async function buildRouteBoundRows(routeRows, routeSourceLabel) {
@@ -4317,26 +4574,26 @@ function isCancelledOnSelectedDate(row) {
 }
 
 function getWorkloadSummary() {
-    const todayOpen = todayWorkingRows();
-    const pastOpen = pastPendingWorkingRows();
-    const openRows = workloadRows();
-    const openCounts = openRows.reduce((acc, r) => {
-        const k = getStatusKey(r);
-        acc[k] = (acc[k] || 0) + 1;
-        return acc;
-    }, {});
-    const closedToday = state.rows.filter(isClosedOnSelectedDate).length;
-    const cancelledToday = state.rows.filter(isCancelledOnSelectedDate).length;
-    const pendingNeedsAction = (openCounts.pending || 0) + (openCounts.carryover || 0);
+    const totalRows = routeUniverseRows();
+    const newTodayRows = totalRows.filter((row) => !isPastPendingByOriginalDate(row));
+    const pastPendingRows = totalRows.filter((row) => isPastPendingByOriginalDate(row));
+    const closedRows = totalRows.filter(isClosedOnSelectedDate);
+    const unfinishedRows = totalRows.filter((row) => !isClosedOnSelectedDate(row));
+    const pendingPartsRows = unfinishedRows.filter(isPartsDiagnosisRisk);
     return {
-        todayOpen,
-        pastOpen,
-        openRows,
-        openCounts,
-        closedToday,
-        cancelledToday,
-        pendingNeedsAction,
-        totalWorkload: openRows.length
+        totalRows,
+        newTodayRows,
+        pastPendingRows,
+        unfinishedRows,
+        pendingPartsRows,
+        closedRows,
+        todayOpen: unfinishedRows.filter((row) => !isPastPendingByOriginalDate(row)),
+        pastOpen: unfinishedRows.filter((row) => isPastPendingByOriginalDate(row)),
+        pendingNeedsAction: unfinishedRows.length,
+        closedToday: closedRows.length,
+        totalWorkload: totalRows.length,
+        unfinishedCount: unfinishedRows.length,
+        closedCount: closedRows.length
     };
 }
 
@@ -4344,12 +4601,12 @@ function renderKpis() {
     const summary = getWorkloadSummary();
 
     document.getElementById('fieldKpis').innerHTML = `
-        <div class="field-kpi ${state.activeTab === 'closed' ? '' : 'is-active-filter'}" data-view-jump="tasks"><div class="label">Today's Workload</div><div class="value">${summary.totalWorkload}</div></div>
-        <div class="field-kpi" data-tab-jump="today"><div class="label">New Today</div><div class="value">${summary.todayOpen.length}</div></div>
-        <div class="field-kpi" data-tab-jump="carryover"><div class="label">Past Pending</div><div class="value">${summary.pastOpen.length}</div></div>
-        <div class="field-kpi ${state.activeTab !== 'closed' && state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">Pending / Needs Action</div><div class="value">${summary.pendingNeedsAction}</div></div>
-        <div class="field-kpi ${state.activeTab !== 'closed' && state.statusFilter === 'ongoing' ? 'is-active-filter' : ''}" data-status-filter="ongoing"><div class="label">Ongoing (Parts)</div><div class="value">${summary.openCounts.ongoing || 0}</div></div>
-        <div class="field-kpi ${state.activeTab === 'closed' ? 'is-active-filter' : ''}" data-closed-today="1"><div class="label">Closed Today</div><div class="value">${summary.closedToday}</div></div>
+        <div class="field-kpi" data-view-jump="tasks"><div class="label">Total Workload</div><div class="value">${summary.totalWorkload}</div></div>
+        <div class="field-kpi" data-tab-jump="today"><div class="label">New Today</div><div class="value">${summary.newTodayRows.length}</div></div>
+        <div class="field-kpi" data-tab-jump="carryover"><div class="label">Past Pending</div><div class="value">${summary.pastPendingRows.length}</div></div>
+        <div class="field-kpi ${state.activeTab !== 'closed' && state.statusFilter === 'all' ? 'is-active-filter' : ''}" data-status-filter="all"><div class="label">Unfinished Schedule</div><div class="value">${summary.unfinishedCount}</div></div>
+        <div class="field-kpi ${state.activeTab === 'parts' ? 'is-active-filter' : ''}" data-tab-jump="parts"><div class="label">Pending Parts / Machine</div><div class="value">${summary.pendingPartsRows.length}</div></div>
+        <div class="field-kpi ${state.activeTab === 'closed' ? 'is-active-filter' : ''}" data-closed-today="1"><div class="label">Closed</div><div class="value">${summary.closedCount}</div></div>
     `;
 }
 
@@ -4363,9 +4620,8 @@ function countRowsByStatus(rows) {
 
 function shouldShowEndOfDayReview() {
     const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
-    const now = new Date();
     const isSelectedTodayOrPast = selectedDate <= localDateYmd();
-    const isEndOfDayWindow = now.getHours() >= 17;
+    const isEndOfDayWindow = selectedDate < localDateYmd() || hasReachedFieldCarryoverCutoff(selectedDate);
     return isSelectedTodayOrPast && (isEndOfDayWindow || state.todayRows.length || state.carryoverRows.length);
 }
 
@@ -4379,12 +4635,12 @@ function renderEndOfDayReview() {
     }
 
     const summary = getWorkloadSummary();
-    const pendingToday = summary.pendingNeedsAction;
-    const pastPending = summary.pastOpen.length;
-    const closedToday = summary.closedToday;
+    const pastPending = summary.pastPendingRows.length;
+    const closedToday = summary.closedCount;
+    const unfinishedCount = summary.unfinishedCount;
     const selectedDate = state.selectedDate || document.getElementById('fieldDate')?.value || localDateYmd();
     const staffName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || 'Staff';
-    const needsLeader = summary.totalWorkload > 0 || pastPending > 0;
+    const needsLeader = unfinishedCount > 0;
 
     card.hidden = false;
     card.innerHTML = `
@@ -4392,13 +4648,13 @@ function renderEndOfDayReview() {
             <div class="field-endofday-label">End of Day Review</div>
             <h2>${sanitize(staffName)} route status for ${sanitize(selectedDate)}</h2>
             <p>${needsLeader
-                ? `Team leader review needed: ${summary.totalWorkload} open workload task(s), including ${pastPending} past pending.`
+                ? `Team leader review needed: ${unfinishedCount} unfinished schedule(s) out of ${summary.totalWorkload} total workload, including ${pastPending} past pending.`
                 : 'All visible work for this route date is closed.'}</p>
         </div>
         <div class="field-endofday-stats">
-            <div><span>${summary.totalWorkload}</span><small>Workload</small></div>
+            <div><span>${summary.totalWorkload}</span><small>Total Workload</small></div>
             <div><span>${closedToday}</span><small>Closed</small></div>
-            <div><span>${pendingToday}</span><small>Needs Action</small></div>
+            <div><span>${unfinishedCount}</span><small>Unfinished</small></div>
             <div><span>${pastPending}</span><small>Past Pending</small></div>
         </div>
     `;
@@ -5582,6 +5838,7 @@ function renderList() {
     const filtered = rows.filter((row) => {
         const status = getStatusKey(row);
         if (state.activeTab === 'closed') return rowMatchesCustomerSearch(row, state.searchQuery);
+        if (state.activeTab === 'parts' && !isPartsDiagnosisRisk(row)) return false;
         if (state.statusFilter === 'all' && !isWorkingRouteRow(row)) return false;
         if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
         return rowMatchesCustomerSearch(row, state.searchQuery);
@@ -5590,6 +5847,8 @@ function renderList() {
     if (!filtered.length) {
         const emptyText = state.activeTab === 'closed'
             ? 'No closed tasks for the selected date.'
+            : state.activeTab === 'parts'
+            ? 'No pending parts or machine follow-up tasks for selected date/filter.'
             : state.activeTab === 'carryover'
             ? 'No past pending tasks for selected date/filter.'
             : closedRowsForSelectedDate().length
@@ -5605,7 +5864,7 @@ function renderList() {
             <p>Use Reopen only if a task was accidentally closed or you are testing. Reopened tasks return to open/pending work.</p>
         </div>
     ` : '';
-    const priorityNotice = state.activeTab !== 'closed' && !state.priorityGate.ready ? `
+    const priorityNotice = !['closed', 'parts'].includes(state.activeTab) && !state.priorityGate.ready ? `
         <div class="field-priority-lock">
             <strong>Priority discussion pending.</strong>
             <p>Team leader or CSR has numbered ${state.priorityGate.numbered}/${state.priorityGate.required} priority schedule${state.priorityGate.required === 1 ? '' : 's'}. Review your route while final priority is being discussed.</p>
@@ -5614,7 +5873,7 @@ function renderList() {
     ` : '';
 
     state.combinedTaskGroups = new Map();
-    const taskGroups = state.activeTab === 'closed'
+    const taskGroups = ['closed', 'parts'].includes(state.activeTab)
         ? prioritySortedRows(filtered).map((row) => ({ primary: row, rows: [row] }))
         : buildCombinedTaskGroups(filtered);
 
@@ -5649,8 +5908,11 @@ function renderList() {
         const originalDateLine = originalDate
             ? `<div class="sub"><strong>Original schedule:</strong> ${sanitize(formatShortDate(originalDate))}${routeDate && routeDate !== originalDate ? ` · Forwarded to ${sanitize(formatShortDate(routeDate))}` : ''}</div>`
             : '';
-        const routeSourceLine = state.activeTab === 'carryover'
-            ? `<div class="sub"><strong>Source:</strong> ${sanitize(String(row.route_source || 'Past Pending').replace(/carry[ -]?over/ig, 'Past Pending'))}</div>`
+        const routeSourceLabel = state.activeTab === 'parts'
+            ? (Number(row.pending_parts || 0) === 1 ? 'Pending Parts / Machine' : (row.route_source || 'Ongoing Parts Follow-up'))
+            : String(row.route_source || 'Past Pending').replace(/carry[ -]?over/ig, 'Past Pending');
+        const routeSourceLine = ['carryover', 'parts'].includes(state.activeTab)
+            ? `<div class="sub"><strong>Source:</strong> ${sanitize(routeSourceLabel)}</div>`
             : '';
         const closeRequest = state.closeRequestsBySchedule.get(String(row.id || ''));
         const canRequestClose = state.activeTab !== 'closed';
@@ -5761,28 +6023,24 @@ async function requestCloseForSchedule(row) {
     const staffId = Number(state.staffId || 0) || 0;
     const staffName = document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] || '';
     const nowIso = new Date().toISOString();
-    const docId = `close_${scheduleId}_${staffId}_${Date.now()}`;
     const payload = {
-        id: docId,
-        schedule_id: scheduleId,
-        schedule_doc_id: scheduleDocIdForRow(row),
-        requester_staff_id: staffId,
-        requester_name: staffName,
-        request_date: localDateYmd(),
-        requested_at: nowIso,
-        status: 'pending',
-        reason: safeReason,
-        task_datetime: String(row.task_datetime || ''),
-        branch_id: Number(row.branch_id || 0) || 0,
-        company_id: Number(row.company_id || 0) || 0,
-        tech_id: Number(row.tech_id || 0) || 0,
-        route_doc_id: String(row.route_doc_id || ''),
-        route_source: String(row.route_source || ''),
-        source: state.activeTab === 'carryover' ? 'field_app_past_pending' : 'field_app_today'
+        close_request_status: 'pending',
+        close_request_reason: safeReason,
+        close_request_requested_at: nowIso,
+        close_request_requested_by: staffId,
+        close_request_requester_name: staffName,
+        close_request_request_date: localDateYmd(),
+        close_request_source: state.activeTab === 'carryover' ? 'field_app_past_pending' : 'field_app_today',
+        close_request_approved_at: '',
+        close_request_approved_by: '',
+        close_request_rejected_at: '',
+        close_request_rejected_by: '',
+        close_request_rejection_reason: ''
     };
 
-    await setDocument(CLOSE_REQUEST_COLLECTION, docId, payload);
-    state.closeRequestsBySchedule.set(String(scheduleId), { ...payload, _docId: docId });
+    await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
+    applyRowPatch(row.id, payload);
+    state.closeRequestsBySchedule.set(String(scheduleId), normalizeCloseRequestRow({ ...row, ...payload }));
     renderActiveView();
     alert('Close request sent for approval.');
 }
@@ -5956,6 +6214,7 @@ async function loadOlderCarryoverRows(date, excludedScheduleIds) {
             if (!scheduleId || excludedScheduleIds.has(scheduleId)) return;
             if (Number(row.tech_id || 0) !== Number(state.staffId || 0)) return;
             if (isFinishedOrCancelled(row)) return;
+            if (!isCarryoverEligibleForSelectedDate(originalScheduleDate(row), date)) return;
             rows.push(asOlderCarryoverRow(row));
         });
     }
@@ -5963,27 +6222,10 @@ async function loadOlderCarryoverRows(date, excludedScheduleIds) {
     return rows;
 }
 
-async function buildCarryoverRows({ date, printedRows, savedRows, todayRows }) {
-    const printedScheduleIds = new Set(printedRows.map((row) => Number(row.schedule_id || 0)).filter((id) => id > 0));
-    const currentScheduleIds = new Set(todayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
-
-    const savedCarryoverRoutes = savedRows
-        .filter((row) => !printedScheduleIds.has(Number(row.schedule_id || 0)))
-        .filter((row) => Number(row.iscancelled || row.iscancel || 0) !== 1);
-
-    const savedCarryoverRows = (await buildRouteBoundRows(savedCarryoverRoutes, 'past pending'))
-        .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
-        .filter(isDispatchableFieldRow)
-        .filter((row) => !currentScheduleIds.has(Number(row.id || 0)))
-        .filter((row) => !isFinishedOrCancelled(row));
-
-    savedCarryoverRows.forEach((row) => {
-        currentScheduleIds.add(Number(row.id || 0));
-        row.route_source = 'Saved Past Pending';
-    });
-
+async function buildCarryoverRows({ date, currentRows }) {
+    const currentScheduleIds = new Set((currentRows || []).map((row) => Number(row.id || 0)).filter((id) => id > 0));
     const olderRows = await loadOlderCarryoverRows(date, currentScheduleIds);
-    const combined = [...savedCarryoverRows, ...olderRows.filter(isDispatchableFieldRow)];
+    const combined = [...olderRows.filter(isDispatchableFieldRow)];
     const unique = new Map();
     combined.forEach((row) => {
         const scheduleId = Number(row.id || row._docId || 0);
@@ -6006,7 +6248,7 @@ async function loadMySchedule(options = {}) {
     state.attendanceLocationCheckScheduleId = null;
     setAttendanceLocationCheckUi();
     const subtitle = document.getElementById('fieldSubtitle');
-    subtitle.textContent = 'Loading printed route...';
+    subtitle.textContent = 'Loading schedule...';
     setRouteLoadProgress(8, 'Loading attendance record...');
     await loadAttendanceForSelectedDate().catch((error) => {
         console.warn('Attendance load failed:', error);
@@ -6017,67 +6259,38 @@ async function loadMySchedule(options = {}) {
     document.getElementById('fieldList').innerHTML = '<div class="loading-cell">Loading...</div>';
 
     try {
-        setRouteLoadProgress(22, 'Loading today route...');
+        setRouteLoadProgress(22, 'Loading today schedule...');
         const dayStart = `${date} 00:00:00`;
         const dayEnd = `${date} 23:59:59`;
-        const historyStart = `${addDaysYmd(date, -30)} 00:00:00`;
-        const [printedDocs, savedDocs, scheduleDocs, plannerDocs, closeRequestDocs, pettyCashDocs, reviewDocs, skillHistoryDocs] = await Promise.all([
-            queryByDateRange(ROUTE_COLLECTION_PRIMARY, 'task_datetime', dayStart, dayEnd).catch(() => []),
-            queryByDateRange(ROUTE_COLLECTION_FALLBACK, 'task_datetime', dayStart, dayEnd).catch(() => []),
+        const [snapshotRouteState, scheduleDocs, pettyCashDocs, reviewDocs] = await Promise.all([
+            loadSnapshotBoundScheduleRows(date).catch((error) => {
+                console.warn('Field snapshot unavailable, falling back to live day query:', error);
+                return null;
+            }),
             queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
-            queryEquals(SCHEDULE_PLANNER_COLLECTION, 'schedule_date', date, 'string', FIELD_QUERY_LIMIT).catch(() => []),
-            queryEquals(CLOSE_REQUEST_COLLECTION, 'requester_staff_id', Number(state.staffId || 0), 'integer', FIELD_QUERY_LIMIT).catch(() => []),
             queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => []),
-            queryCollection(CUSTOMER_REVIEW_COLLECTION, FIELD_QUERY_LIMIT).catch(() => []),
-            queryByDateRange('tbl_schedule', 'task_datetime', historyStart, dayEnd).catch(() => [])
+            queryCollection(CUSTOMER_REVIEW_COLLECTION, FIELD_QUERY_LIMIT).catch(() => [])
         ]);
 
-        setRouteLoadProgress(45, 'Matching route rows to schedules...');
-        const printedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_PRIMARY, printedDocs.map(parseFirestoreDoc).filter(Boolean));
-        const savedSourceRows = mergePendingOfflineRows(ROUTE_COLLECTION_FALLBACK, savedDocs.map(parseFirestoreDoc).filter(Boolean));
-        const scheduleSourceRows = mergePendingOfflineRows('tbl_schedule', scheduleDocs.map(parseFirestoreDoc).filter(Boolean));
-        const plannerSourceRows = mergePendingOfflineRows(SCHEDULE_PLANNER_COLLECTION, plannerDocs.map(parseFirestoreDoc).filter(Boolean));
+        setRouteLoadProgress(45, 'Building staff schedule...');
         state.pettyCashEntries = mergePendingOfflineRows(PETTY_CASH_ENTRY_COLLECTION, pettyCashDocs.map(parseFirestoreDoc).filter(Boolean));
         state.customerReviews = mergePendingOfflineRows(CUSTOMER_REVIEW_COLLECTION, reviewDocs.map(parseFirestoreDoc).filter(Boolean));
-        state.skillHistoryRows = mergePendingOfflineRows('tbl_schedule', skillHistoryDocs.map(parseFirestoreDoc).filter(Boolean))
-            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0));
-        loadCloseRequestLookup(closeRequestDocs.map(parseFirestoreDoc).filter(Boolean));
+        loadSkillHistoryForSelectedDate(date);
+        const liveDayRouteState = buildLiveDayRouteState(scheduleDocs);
+        const mergedRouteState = mergeRouteState(snapshotRouteState, liveDayRouteState);
 
-        const printedRows = pickLatestRouteRows(printedSourceRows, date);
-        const savedRows = pickLatestRouteRows(savedSourceRows, date);
-        const routeRows = mergeTodayRouteRows(printedRows, savedRows);
-        const routeSourceLabel = printedRows.length && savedRows.length ? 'Printed + Saved' : (printedRows.length ? 'Printed' : 'Saved');
-
-        const routeBoundTodayRows = (await buildRouteBoundRows(routeRows, routeSourceLabel.toLowerCase()))
-            .filter((row) => getAssignedStaffId(row) === Number(state.staffId || 0))
-            .filter(isDispatchableFieldRow);
-        const routeScheduleIds = new Set(routeBoundTodayRows.map((row) => Number(row.id || 0)).filter((id) => id > 0));
-        const directTodayRows = scheduleSourceRows
-            .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
-            .filter(isDispatchableFieldRow)
-            .filter((row) => !routeScheduleIds.has(Number(row.id || row._docId || 0)))
-            .map(asDirectTodayScheduleRow);
-        const existingPlannerIds = new Set(directTodayRows.map((row) => String(row.field_billing_schedule_doc_id || row.source_planner_doc_id || '').trim()).filter(Boolean));
-        const closedPlannerIds = await getClosedPlannerSourceIds(plannerSourceRows);
-        const plannerTodayRows = plannerSourceRows
-            .filter((row) => String(row.department || '') === 'billing')
-            .filter((row) => Number(row.assigned_staff_id || row.assigned_to_id || row.suggested_staff_id || 0) === Number(state.staffId || 0))
-            .filter((row) => Number(row.purpose_id || 0) !== 9)
-            .filter((row) => !existingPlannerIds.has(String(row._docId || row.id || '').trim()))
-            .filter((row) => !closedPlannerIds.has(String(row._docId || row.id || '').trim()))
-            .map(plannerRowToFieldSchedule);
-        const allCurrentRows = [...routeBoundTodayRows, ...directTodayRows, ...plannerTodayRows]
-            .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
-        const forwardedPastPendingRows = allCurrentRows.filter((row) => isPastPendingByOriginalDate(row));
-        forwardedPastPendingRows.forEach((row) => {
-            row.route_source = row.route_source || 'Forwarded Past Pending';
-        });
-        const todayRows = allCurrentRows.filter((row) => !isPastPendingByOriginalDate(row));
-
-        state.routeSourceLabel = routeRows.length ? routeSourceLabel : 'Schedule';
-        state.todayRows = todayRows;
-        state.carryoverRows = forwardedPastPendingRows;
-        state.rows = [...todayRows, ...forwardedPastPendingRows];
+        if (mergedRouteState) {
+            state.routeSourceLabel = mergedRouteState.routeSourceLabel;
+            state.todayRows = mergedRouteState.todayRows;
+            state.carryoverRows = mergedRouteState.carryoverRows;
+            state.rows = mergedRouteState.rows;
+        } else {
+            state.routeSourceLabel = liveDayRouteState.routeSourceLabel;
+            state.todayRows = liveDayRouteState.todayRows;
+            state.carryoverRows = liveDayRouteState.carryoverRows;
+            state.rows = liveDayRouteState.rows;
+        }
+        loadCloseRequestLookup(state.rows);
         updatePriorityGate(workloadRows());
         setRouteLoadProgress(62, 'Preparing customer and machine details...');
         await Promise.all([
@@ -6089,26 +6302,30 @@ async function loadMySchedule(options = {}) {
 
         const carryoverCount = document.getElementById('fieldCarryoverCount');
         if (carryoverCount) carryoverCount.textContent = '...';
-        try {
-            setRouteLoadProgress(78, 'Checking past pending routes...');
-            const carryoverRows = await buildCarryoverRows({ date, printedRows, savedRows, todayRows });
-            const knownCarryoverIds = new Set(forwardedPastPendingRows.map((row) => Number(row.id || 0)).filter(Boolean));
-            state.carryoverRows = [
-                ...forwardedPastPendingRows,
-                ...carryoverRows.filter((row) => !knownCarryoverIds.has(Number(row.id || 0)))
-            ];
-            state.rows = [...todayRows, ...carryoverRows];
-            state.rows = [...todayRows, ...state.carryoverRows];
-            setRouteLoadProgress(92, 'Finalizing past pending details...');
-            await hydrateLookups(state.carryoverRows);
-            renderAttendanceLocationSummary();
+        if (snapshotRouteState && (!liveDayRouteState?.rows?.length || (snapshotRouteState.rows || []).length >= (liveDayRouteState.rows || []).length)) {
             setRouteLoadProgress(100, 'Route loaded.', 'complete');
-        } catch (carryoverError) {
-            console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
-            state.carryoverRows = forwardedPastPendingRows;
-            state.rows = [...todayRows, ...forwardedPastPendingRows];
-            renderAttendanceLocationSummary();
-            setRouteLoadProgress(100, 'Route loaded; past pending check needs refresh.', 'error');
+        } else {
+            try {
+                setRouteLoadProgress(78, 'Checking past pending routes...');
+                const todayRows = state.todayRows || [];
+                const forwardedPastPendingRows = state.carryoverRows || [];
+                const allCurrentRows = [...todayRows, ...forwardedPastPendingRows];
+                const carryoverRows = await buildCarryoverRows({ date, currentRows: allCurrentRows });
+                const knownCarryoverIds = new Set(forwardedPastPendingRows.map((row) => Number(row.id || 0)).filter(Boolean));
+                state.carryoverRows = [
+                    ...forwardedPastPendingRows,
+                    ...carryoverRows.filter((row) => !knownCarryoverIds.has(Number(row.id || 0)))
+                ];
+                state.rows = [...todayRows, ...state.carryoverRows];
+                setRouteLoadProgress(92, 'Finalizing past pending details...');
+                await hydrateLookups(state.carryoverRows);
+                renderAttendanceLocationSummary();
+                setRouteLoadProgress(100, 'Route loaded.', 'complete');
+            } catch (carryoverError) {
+                console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
+                renderAttendanceLocationSummary();
+                setRouteLoadProgress(100, 'Route loaded; past pending check needs refresh.', 'error');
+            }
         }
         updatePriorityGate(workloadRows());
         renderActiveView();
@@ -6555,6 +6772,53 @@ function getFileMeta(inputId) {
     };
 }
 
+function hasSelectedOrRememberedFile(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return false;
+    return Boolean(input.files?.[0] || input.dataset.savedName || input.dataset.draftName);
+}
+
+function syncCollectionPaymentProofField({ inputId, hintId, paymentTypeValue, fallbackField, idleHint, disabledHint }) {
+    const input = document.getElementById(inputId);
+    const hint = document.getElementById(hintId);
+    const paymentType = String(document.getElementById('fieldCollectionPaymentType')?.value || '').trim().toLowerCase();
+    if (!input || !hint) return;
+    const enabled = paymentType === paymentTypeValue;
+    input.disabled = state.modalReadOnly || !enabled;
+    if (enabled) {
+        updatePhotoHint(inputId, hintId, fallbackField);
+        return;
+    }
+    if (hasSelectedOrRememberedFile(inputId)) {
+        hint.textContent = disabledHint;
+        return;
+    }
+    hint.textContent = idleHint;
+}
+
+function syncCollectionPaymentProofFields() {
+    syncCollectionPaymentProofField({
+        inputId: 'fieldCollectionCreditMemoImage',
+        hintId: 'fieldCollectionCreditMemoHint',
+        paymentTypeValue: 'bank transfer',
+        fallbackField: 'field_collection_credit_memo_name',
+        idleHint: 'Only enabled for bank transfer.',
+        disabledHint: 'Disabled for this payment type. Switch back to bank transfer to review or replace the saved credit memo image.'
+    });
+    syncCollectionPaymentProofField({
+        inputId: 'fieldCollectionEwalletImage',
+        hintId: 'fieldCollectionEwalletHint',
+        paymentTypeValue: 'e-wallet',
+        fallbackField: 'field_collection_ewallet_name',
+        idleHint: 'Only enabled for E-Wallet.',
+        disabledHint: 'Disabled for this payment type. Switch back to E-Wallet to review or replace the saved transaction image.'
+    });
+}
+
+function syncCollectionCreditMemoField() {
+    syncCollectionPaymentProofFields();
+}
+
 function parseCoordinate(value) {
     const numeric = Number(String(value ?? '').trim());
     if (!Number.isFinite(numeric) || numeric === 0) return null;
@@ -6834,26 +7098,28 @@ async function uploadLocationPhotoToStorage(blob, { branchId, scheduleId, now })
 
 async function prepareLocationPhotoUpload(file, context) {
     const blob = await compressImageFile(file);
-    try {
-        return {
-            ...(await uploadLocationPhotoToStorage(blob, context)),
-            storageMode: 'storage'
-        };
-    } catch (storageError) {
-        console.warn('Location photo Storage upload failed; falling back to Firestore data URL.', storageError);
-        const dataUrl = await blobToDataUrl(blob);
-        if (dataUrl.length > 900000) {
-            throw new Error('Photo is still too large after compression. Please retake a clearer, smaller frontage photo.');
+    if (String(FIREBASE_CONFIG?.storageBucket || '').trim()) {
+        try {
+            return {
+                ...(await uploadLocationPhotoToStorage(blob, context)),
+                storageMode: 'storage'
+            };
+        } catch (storageError) {
+            console.warn('Location photo storage upload failed; falling back to local field proof.', storageError);
         }
-        return {
-            path: '',
-            url: '',
-            dataUrl,
-            size: Number(blob.size || 0) || 0,
-            type: 'image/jpeg',
-            storageMode: 'firestore_data_url'
-        };
     }
+    const dataUrl = await blobToDataUrl(blob);
+    if (dataUrl.length > 900000) {
+        throw new Error('Photo is still too large after compression. Please retake a clearer, smaller frontage photo.');
+    }
+    return {
+        path: '',
+        url: '',
+        dataUrl,
+        size: Number(blob.size || 0) || 0,
+        type: 'image/jpeg',
+        storageMode: 'firestore_data_url'
+    };
 }
 
 function normalizeTicketPurpose(row) {
@@ -6982,23 +7248,34 @@ function resetModalFields() {
     const after = document.getElementById('fieldAfterPhoto');
     const collectionVoucher = document.getElementById('fieldCollectionVoucherImage');
     const collectionCheck = document.getElementById('fieldCollectionCheckImage');
+    const collectionCreditMemo = document.getElementById('fieldCollectionCreditMemoImage');
+    const collectionEwallet = document.getElementById('fieldCollectionEwalletImage');
     before.value = '';
     after.value = '';
     collectionVoucher.value = '';
     collectionCheck.value = '';
+    collectionCreditMemo.value = '';
+    collectionEwallet.value = '';
     before.dataset.savedName = '';
     after.dataset.savedName = '';
     collectionVoucher.dataset.savedName = '';
     collectionCheck.dataset.savedName = '';
+    collectionCreditMemo.dataset.savedName = '';
+    collectionEwallet.dataset.savedName = '';
     before.dataset.draftName = '';
     after.dataset.draftName = '';
     collectionVoucher.dataset.draftName = '';
     collectionCheck.dataset.draftName = '';
+    collectionCreditMemo.dataset.draftName = '';
+    collectionEwallet.dataset.draftName = '';
     document.getElementById('fieldLocationPhoto').dataset.draftName = '';
     document.getElementById('fieldBeforePhotoHint').textContent = 'No file selected.';
     document.getElementById('fieldAfterPhotoHint').textContent = 'No file selected.';
     document.getElementById('fieldCollectionVoucherHint').textContent = 'No file selected.';
     document.getElementById('fieldCollectionCheckHint').textContent = 'No file selected.';
+    document.getElementById('fieldCollectionCreditMemoHint').textContent = 'Only enabled for bank transfer.';
+    document.getElementById('fieldCollectionEwalletHint').textContent = 'Only enabled for E-Wallet.';
+    syncCollectionPaymentProofFields();
 
     document.getElementById('fieldPinHint').textContent = TEMPORARILY_DISABLED_FIELD_GROUPS.customerPin
         ? 'Temporarily disabled. Finish is allowed without PIN.'
@@ -7055,6 +7332,8 @@ function setFormDisabled(isReadOnly) {
         'fieldBillingTime',
         'fieldCollectionVoucherImage',
         'fieldCollectionCheckImage',
+        'fieldCollectionCreditMemoImage',
+        'fieldCollectionEwalletImage',
         'fieldCollectionInvoiceSearch',
         'fieldCollectionInvoiceAddBtn',
         'fieldCollectionCheckNumber',
@@ -7087,6 +7366,7 @@ function setFormDisabled(isReadOnly) {
     applyTemporaryFieldMode();
     toggleMissingSerialMode();
     applyModalWorkflowState();
+    syncCollectionPaymentProofFields();
     updateModalFooterState();
     updateActionButtons();
     setLocationPinUi();
@@ -7592,7 +7872,10 @@ async function openModal(scheduleId) {
     document.getElementById('fieldCollectionPaymentDate').value = dateOnly(row.field_collection_payment_date) || localDateYmd();
     document.getElementById('fieldCollectionDepositDate').value = dateOnly(row.field_collection_deposit_date) || localDateYmd();
     document.getElementById('fieldCollectionOrNumber').value = String(row.field_collection_or_number || '').trim();
-    document.getElementById('fieldCollectionPaymentType').value = String(row.field_collection_payment_type || '').trim();
+    document.getElementById('fieldCollectionPaymentType').value = String(row.field_collection_payment_type || '')
+        .trim()
+        .replace(/_/g, ' ')
+        .toLowerCase();
     document.getElementById('fieldCollectionPaymentStatus').value = String(row.field_collection_payment_status || '').trim() || 'Paid';
     document.getElementById('fieldCollectionDeductionType').value = String(row.field_collection_deduction_type || '').trim();
     document.getElementById('fieldCollectionDeductionAmount').value = String(row.field_collection_deduction_amount || '').trim();
@@ -7603,18 +7886,27 @@ async function openModal(scheduleId) {
     const afterSaved = String(row.field_after_photo_name || '').trim();
     const collectionVoucherSaved = String(row.field_collection_voucher_name || '').trim();
     const collectionCheckSaved = String(row.field_collection_check_name || '').trim();
+    const collectionCreditMemoSaved = String(row.field_collection_credit_memo_name || '').trim();
+    const collectionEwalletSaved = String(row.field_collection_ewallet_name || '').trim();
     const beforeInput = document.getElementById('fieldBeforePhoto');
     const afterInput = document.getElementById('fieldAfterPhoto');
     const collectionVoucherInput = document.getElementById('fieldCollectionVoucherImage');
     const collectionCheckInput = document.getElementById('fieldCollectionCheckImage');
+    const collectionCreditMemoInput = document.getElementById('fieldCollectionCreditMemoImage');
+    const collectionEwalletInput = document.getElementById('fieldCollectionEwalletImage');
     beforeInput.dataset.savedName = beforeSaved;
     afterInput.dataset.savedName = afterSaved;
     collectionVoucherInput.dataset.savedName = collectionVoucherSaved;
     collectionCheckInput.dataset.savedName = collectionCheckSaved;
+    collectionCreditMemoInput.dataset.savedName = collectionCreditMemoSaved;
+    collectionEwalletInput.dataset.savedName = collectionEwalletSaved;
     updatePhotoHint('fieldBeforePhoto', 'fieldBeforePhotoHint', 'field_before_photo_name');
     updatePhotoHint('fieldAfterPhoto', 'fieldAfterPhotoHint', 'field_after_photo_name');
     updatePhotoHint('fieldCollectionVoucherImage', 'fieldCollectionVoucherHint', 'field_collection_voucher_name');
     updatePhotoHint('fieldCollectionCheckImage', 'fieldCollectionCheckHint', 'field_collection_check_name');
+    updatePhotoHint('fieldCollectionCreditMemoImage', 'fieldCollectionCreditMemoHint', 'field_collection_credit_memo_name');
+    updatePhotoHint('fieldCollectionEwalletImage', 'fieldCollectionEwalletHint', 'field_collection_ewallet_name');
+    syncCollectionPaymentProofFields();
 
     const billingPreviousMeter = await resolvePreviousMeter(row, Number(row.id || 0), row.task_datetime, Number(machine?.bmeter || 0), machine || null);
     const previousMeter = parseIntegerInput(row.field_previous_meter);
@@ -8171,7 +8463,9 @@ function collectModalFormData() {
         beforePhoto: getFileMeta('fieldBeforePhoto'),
         afterPhoto: getFileMeta('fieldAfterPhoto'),
         collectionVoucherImage: getFileMeta('fieldCollectionVoucherImage'),
-        collectionCheckImage: getFileMeta('fieldCollectionCheckImage')
+        collectionCheckImage: getFileMeta('fieldCollectionCheckImage'),
+        collectionCreditMemoImage: getFileMeta('fieldCollectionCreditMemoImage'),
+        collectionEwalletImage: getFileMeta('fieldCollectionEwalletImage')
     };
 }
 
@@ -8232,6 +8526,12 @@ function buildSchedulePayload(row, form, tag) {
         field_collection_check_name: form.collectionCheckImage?.name || '',
         field_collection_check_size: Number(form.collectionCheckImage?.size || 0) || 0,
         field_collection_check_type: form.collectionCheckImage?.type || '',
+        field_collection_credit_memo_name: form.collectionPaymentType === 'bank transfer' ? (form.collectionCreditMemoImage?.name || '') : '',
+        field_collection_credit_memo_size: form.collectionPaymentType === 'bank transfer' ? (Number(form.collectionCreditMemoImage?.size || 0) || 0) : 0,
+        field_collection_credit_memo_type: form.collectionPaymentType === 'bank transfer' ? (form.collectionCreditMemoImage?.type || '') : '',
+        field_collection_ewallet_name: form.collectionPaymentType === 'e-wallet' ? (form.collectionEwalletImage?.name || '') : '',
+        field_collection_ewallet_size: form.collectionPaymentType === 'e-wallet' ? (Number(form.collectionEwalletImage?.size || 0) || 0) : 0,
+        field_collection_ewallet_type: form.collectionPaymentType === 'e-wallet' ? (form.collectionEwalletImage?.type || '') : '',
         field_serial_selected: form.selectedMachineSerial || form.serialInput || '',
         field_serial_selected_machine_id: form.selectedMachineId || 0,
         field_updated_by: staffId,
@@ -8407,6 +8707,12 @@ function getCloseTaskIssues(row, form) {
                 return [closeIssue('Cannot mark finished: select the check date first.', 'fieldCollectionSection', 'fieldCollectionCheckDate', 'missing_check_date')];
             }
         }
+        if (form.collectionPaymentType === 'bank transfer' && !hasSelectedOrRememberedFile('fieldCollectionCreditMemoImage')) {
+            return [closeIssue('Cannot mark finished: attach the credit memo image for bank transfer first.', 'fieldCollectionSection', 'fieldCollectionCreditMemoImage', 'missing_credit_memo_image')];
+        }
+        if (form.collectionPaymentType === 'e-wallet' && !hasSelectedOrRememberedFile('fieldCollectionEwalletImage')) {
+            return [closeIssue('Cannot mark finished: attach the E-Wallet transaction image first.', 'fieldCollectionSection', 'fieldCollectionEwalletImage', 'missing_ewallet_image')];
+        }
         if (form.collectionDeductionType === '2307' && !form.collection2307Status) {
             return [closeIssue('Cannot mark finished: select the 2307 form status first.', 'fieldCollectionSection', 'fieldCollection2307Status', 'missing_2307_status')];
         }
@@ -8527,7 +8833,7 @@ async function saveFieldCollectionPaymentRecord(row, form, nowIso, staffId) {
             date_paid: paymentDateDb,
             ornum: form.collectionOrNumber || form.collectionReceiptRefs,
             or_number: form.collectionOrNumber || form.collectionReceiptRefs,
-            payment_type: isCheck ? 1 : 0,
+            payment_type: form.collectionPaymentType || (isCheck ? 'check' : 'cash'),
             payment_status: 'Draft Payment',
             check_number: form.collectionCheckNumber,
             check_amt: isCheck ? paymentAmount : 0,
@@ -9125,6 +9431,12 @@ function buildReopenPayload(row, form = null) {
         field_collection_check_name: '',
         field_collection_check_size: 0,
         field_collection_check_type: '',
+        field_collection_credit_memo_name: '',
+        field_collection_credit_memo_size: 0,
+        field_collection_credit_memo_type: '',
+        field_collection_ewallet_name: '',
+        field_collection_ewallet_size: 0,
+        field_collection_ewallet_type: '',
         field_customer_location_pinned: 0,
         field_customer_location_pinned_at: '',
         field_customer_location_pinned_by: 0,
@@ -9160,7 +9472,19 @@ function buildReopenPayload(row, form = null) {
         field_updated_by: staffId,
         field_updated_at: nowIso,
         bridge_updated_by: staffId,
-        bridge_updated_at: nowIso
+        bridge_updated_at: nowIso,
+        close_request_status: '',
+        close_request_reason: '',
+        close_request_requested_at: '',
+        close_request_requested_by: '',
+        close_request_requester_name: '',
+        close_request_request_date: '',
+        close_request_source: '',
+        close_request_approved_at: '',
+        close_request_approved_by: '',
+        close_request_rejected_at: '',
+        close_request_rejected_by: '',
+        close_request_rejection_reason: ''
     };
 }
 
