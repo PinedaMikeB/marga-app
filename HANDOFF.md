@@ -9,7 +9,16 @@ Start every new Marga-App thread by reading:
 3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
 ## Current Focus
-- **2026-06-19 Master Schedule snapshot queue:** `tbl_schedule` remains the source of truth; `app_meta.master_schedule_snapshot` is the fast read model. Backend writes now enqueue affected rebuild dates into Postgres table `app_meta.master_schedule_snapshot_rebuild_queue` through a trigger on `app_meta.firestore_documents`, and the Margabase API can process the queue through `GET/POST /admin/master-schedule-snapshot/queue` or script `scripts/process-master-schedule-snapshot-queue.mjs`. Hot rebuild dates currently include the changed schedule date, its next-day carryover date, plus Manila `today` and `tomorrow` so Master Schedule can stay warm without a browser-triggered rescan.
+- **2026-06-19 Master Schedule / Field App unification plan (canonical next step):**
+  - `tbl_schedule` is the only operational source of truth for route/workload rows.
+  - `app_meta.master_schedule_snapshot` is read-only cache / read model only. It must never become a second source of truth.
+  - Master Schedule and Field App must read the **same snapshot payload**, built from the **same canonical query/bucket logic**, so counts and visible rows are identical for the same staff/date.
+  - Neither UI should keep separate browser-side workload counting logic once Phase 1 is complete.
+  - Snapshot rebuilds should happen in the backend after `tbl_schedule` writes, not because a browser changed date or ran a heavy page scan.
+- **2026-06-19 Master Schedule snapshot queue (already implemented):** backend writes now enqueue affected rebuild dates into Postgres table `app_meta.master_schedule_snapshot_rebuild_queue` through a trigger on `app_meta.firestore_documents`, and the Margabase API can process the queue through `GET/POST /admin/master-schedule-snapshot/queue` or script `scripts/process-master-schedule-snapshot-queue.mjs`. Hot rebuild dates currently include the changed schedule date, its next-day carryover date, plus Manila `today` and `tomorrow` so Master Schedule can stay warm without a browser-triggered rescan.
+- **2026-06-19 planned implementation phases for schedule parity:**
+  - **Phase 1:** both UIs write directly to `tbl_schedule`; backend snapshot rebuild picks up the change; both UIs read the same snapshot; add only light/quiet partial refresh behavior; do not auto-refresh whole page; never wipe fields while staff are encoding.
+  - **Phase 2 (next thread / target Saturday 2026-06-20):** replace or reduce light polling with websocket/push-style updates so the browser receives `snapshot updated` events and patches only the affected row/staff/date widgets.
 - **2026-06-16 shipped (verified on `app.marga.biz`):** **Purchasing** module at `/purchasing/` — Money Request item fields + Set Schedule for field staff (`purpose_id: 7`). Dashboard sidebar: **Purchasing** (after Receiving).
 - **2026-06-16 owner testing workflow (canonical):** push and verify on **production first** (`/Volumes/Wotg Drive Mike/GitHub/Marga-App`, `main`, `app.marga.biz`), then sync to **staging** (`Marga-App-staging`, `codex/staging`) **only after live verification succeeds**. Hard refresh after deploy for service worker cache. Staging is not the first acceptance gate for normal UI/module work.
 - Standing Codex purpose from the owner:

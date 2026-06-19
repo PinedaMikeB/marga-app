@@ -191,6 +191,15 @@ This file exists to protect the project across new chats by recording:
   - Preserve the ability to hard switch back to Firebase during the test period.
 
 ## Current Protected State
+- Master Schedule / Field App workload architecture rule as of 2026-06-19:
+  - `tbl_schedule` is the single source of truth for route/workload state.
+  - `app_meta.master_schedule_snapshot` is a backend-generated read model for speed only.
+  - Master Schedule and Field App must read the same snapshot payload for the same staff/date.
+  - The snapshot must be built from one canonical query/final row universe so totals, carryover, pending parts, unfinished, closed, and visible rows cannot drift between modules.
+  - UI modules must not keep separate browser-side bucket/count logic once the shared snapshot read path is complete.
+- Schedule live-update roadmap:
+  - **Phase 1:** UI writes directly to `tbl_schedule`; backend queue rebuilds affected snapshots; Master Schedule and Field App read the same snapshot; light partial refresh only; no whole-page automatic refresh; never interrupt active encoding.
+  - **Phase 2:** move from light polling toward websocket/push notification so only affected widgets/rows refresh after backend snapshot completion. Keep full-page reloads out of the normal workflow.
 - Billing protected operational baseline: commit `8df832d`
 - That protected state means:
   - Billing save-first workflow works
