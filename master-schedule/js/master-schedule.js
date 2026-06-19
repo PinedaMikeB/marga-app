@@ -2370,17 +2370,14 @@ async function loadMasterSchedule() {
     const count = document.getElementById('masterCount');
     if (sheet) sheet.innerHTML = '<div class="master-empty">Loading Master Schedule...</div>';
     if (count) count.textContent = 'Loading schedules...';
+    loadCloseRequestLookup([]);
+    renderCloseRequestsPanel();
 
     try {
-        const [snapshotPayload, closeRequestDocs] = await Promise.all([
-            fetchMasterScheduleSnapshot(date).catch((error) => {
-                console.warn('Master schedule snapshot unavailable, falling back to live scan:', error);
-                return null;
-            }),
-            queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending').catch(() => [])
-        ]);
-        const closeRequestRows = closeRequestDocs.map(parseFirestoreDoc).filter(Boolean);
-        loadCloseRequestLookup(closeRequestRows);
+        const snapshotPayload = await fetchMasterScheduleSnapshot(date).catch((error) => {
+            console.warn('Master schedule snapshot unavailable, falling back to live scan:', error);
+            return null;
+        });
         const usedSnapshot = applyMasterScheduleSnapshotResponse(snapshotPayload);
         if (!usedSnapshot) {
             await loadMasterConfigs();
@@ -2395,6 +2392,16 @@ async function loadMasterSchedule() {
         renderSettingsIfVisible();
         if (usedSnapshot) {
             Promise.all([
+                queryEquals(CLOSE_REQUEST_COLLECTION, 'status', 'pending')
+                    .then((docs) => {
+                        const closeRequestRows = docs.map(parseFirestoreDoc).filter(Boolean);
+                        loadCloseRequestLookup(closeRequestRows);
+                        renderCloseRequestsPanel();
+                        renderMasterSchedule();
+                    })
+                    .catch((error) => {
+                        console.warn('Master close requests background load failed:', error);
+                    }),
                 loadMasterConfigs().catch((error) => {
                     console.warn('Master config background load failed:', error);
                 }),
