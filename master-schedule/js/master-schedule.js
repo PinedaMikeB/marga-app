@@ -1379,6 +1379,14 @@ function activeScheduleStaffIds() {
     return scheduleStaffOptions().map((employee) => String(employee.id || '').trim()).filter(Boolean);
 }
 
+function hasManualAssignmentOverride(row) {
+    return truthyFlag(
+        row?.master_manual_assignment_override,
+        row?.manual_assignment_override,
+        row?.dispatch_manual_override
+    );
+}
+
 function validateScheduleAssignment(row, overrides = {}) {
     const staffId = clean(overrides.staffId ?? row?.techId ?? row?.assigned_to_id ?? row?.tech_id);
     const staffName = clean(overrides.staffName ?? row?.assignedTo ?? row?.assigned_to ?? row?.assigned_staff_name);
@@ -1411,6 +1419,7 @@ function validateScheduleAssignment(row, overrides = {}) {
 function scheduleExceptionReason(row) {
     const assignment = validateScheduleAssignment(row, { allowInactiveRoster: true });
     if (!assignment.ok) return assignment.reason;
+    if (hasManualAssignmentOverride(row)) return '';
     if (/^others?$/i.test(clean(row.area))) return 'Area is Others and needs a real route area before dispatch.';
     if (/^others?$/i.test(clean(row.purpose)) || Number(row.purposeId || 0) === 9) return 'Purpose is Others and needs a real schedule purpose before dispatch.';
     return '';
@@ -2014,7 +2023,10 @@ function buildLegacyScheduleRow(row) {
         readyLabel: readyLabel(readyStatus),
         sourceNote,
         trouble: clean(trouble?.trouble),
-        remarks: clean(row.route_remarks || row.remarks || row.caller)
+        remarks: clean(row.route_remarks || row.remarks || row.caller),
+        master_manual_assignment_override: row.master_manual_assignment_override,
+        master_manual_assignment_override_at: clean(row.master_manual_assignment_override_at),
+        master_manual_assignment_override_by: clean(row.master_manual_assignment_override_by)
     };
 
     return refreshMasterRowSearch(data);
@@ -3332,6 +3344,8 @@ async function updateScheduleOwner(row, employee) {
     const staffId = String(employee?.id || '').trim();
     const staffName = employeeName(employee, staffId);
     if (!row || !staffId) return;
+    const nowIso = new Date().toISOString();
+    const actor = currentActorLabel();
     const assignment = validateScheduleAssignment(row, {
         staffId,
         staffName,
@@ -3340,7 +3354,12 @@ async function updateScheduleOwner(row, employee) {
     if (!assignment.ok) throw new Error(assignment.reason);
 
     if (row.source === 'legacy' || row.source === 'legacy-route' || row.source === 'pending') {
-        await updateDocFields('tbl_schedule', row.docId, { tech_id: Number(staffId) || staffId });
+        await updateDocFields('tbl_schedule', row.docId, {
+            tech_id: Number(staffId) || staffId,
+            master_manual_assignment_override: 1,
+            master_manual_assignment_override_at: nowIso,
+            master_manual_assignment_override_by: actor
+        });
         if (row.routeDocId && row.routeSource && row.routeSource !== 'Schedule') {
             const routeCollection = String(row.routeSource).toLowerCase().includes('printed') ? ROUTE_COLLECTION_PRIMARY : ROUTE_COLLECTION_FALLBACK;
             await updateDocFields(routeCollection, row.routeDocId, { tech_id: Number(staffId) || staffId });
@@ -3361,6 +3380,9 @@ async function updateScheduleOwner(row, employee) {
 
     row.techId = staffId;
     row.assignedTo = staffName;
+    row.master_manual_assignment_override = 1;
+    row.master_manual_assignment_override_at = nowIso;
+    row.master_manual_assignment_override_by = actor;
     refreshMasterRowSearch(row);
 }
 

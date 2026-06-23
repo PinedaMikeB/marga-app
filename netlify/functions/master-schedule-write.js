@@ -38,7 +38,10 @@ const ALLOWED_PATCH_FIELDS = {
     "dispatch_consolidated_at",
     "dispatch_consolidated_by_module",
     "dispatch_consolidated_reason",
-    "original_sched"
+    "original_sched",
+    "master_manual_assignment_override",
+    "master_manual_assignment_override_at",
+    "master_manual_assignment_override_by"
   ]),
   marga_master_schedule: new Set([
     "assigned_to_id",
